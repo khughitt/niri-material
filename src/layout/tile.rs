@@ -6,6 +6,7 @@ use niri_config::{Color, CornerRadius, GradientInterpolation};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::Texture as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
@@ -22,6 +23,7 @@ use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
+use crate::render_helpers::material::{bg_uv_rect, MaterialRenderElement, MaterialState};
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
@@ -116,6 +118,9 @@ pub struct Tile<W: LayoutElement> {
     /// Clock for driving animations.
     pub(super) clock: Clock,
 
+    /// State for slice-0 material rendering.
+    material: Option<MaterialState>,
+
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
 }
@@ -127,6 +132,7 @@ niri_render_elements! {
         SolidColor = SolidColorRenderElement,
         Opening = OpeningWindowRenderElement,
         Resize = ResizeRenderElement,
+        Material = MaterialRenderElement,
         Border = BorderRenderElement,
         Shadow = ShadowRenderElement,
         ClippedSurface = ClippedSurfaceRenderElement<R>,
@@ -187,6 +193,7 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
+        let material = window.material_slice0().then(MaterialState::new);
 
         Self {
             window,
@@ -211,6 +218,7 @@ impl<W: LayoutElement> Tile<W> {
             view_size,
             scale,
             clock,
+            material,
             options,
         }
     }
@@ -408,6 +416,14 @@ impl<W: LayoutElement> Tile<W> {
             .geometry_corner_radius()
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
+
+        if self.window.material_slice0() {
+            if self.material.is_none() {
+                self.material = Some(MaterialState::new());
+            }
+        } else {
+            self.material = None;
+        }
     }
 
     pub fn advance_animations(&mut self) {
@@ -442,7 +458,9 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.are_transitions_ongoing() || self.window.rules().baba_is_float == Some(true)
+        self.are_transitions_ongoing()
+            || self.window.rules().baba_is_float == Some(true)
+            || self.material.is_some()
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
@@ -1034,6 +1052,8 @@ impl<W: LayoutElement> Tile<W> {
         let scale = Scale::from(self.scale);
         let fullscreen_progress = self.fullscreen_progress();
         let expanded_progress = self.expanded_progress();
+        let material_ready = self.material.is_some() && ctx.xray.is_some();
+        let clock_time = self.clock.now();
 
         let win_alpha = if self.window.is_ignoring_opacity_window_rule() {
             1.
@@ -1117,7 +1137,7 @@ impl<W: LayoutElement> Tile<W> {
                             clip_to_geometry
                         };
 
-                    if let Some((elem_current, _sync_point, mut data)) = current {
+                    if let Some((elem_current, _sync_point, data)) = current {
                         let texture_current = elem_current.texture().clone();
                         // The offset and size are computed in physical pixels and converted to
                         // logical with the same `scale`, so converting them back with rounding
@@ -1138,14 +1158,85 @@ impl<W: LayoutElement> Tile<W> {
                             win_alpha,
                         );
 
-                        // We're drawing the resize shader, not the offscreen directly.
-                        data.id = elem.id().clone();
+                        let mut data = Some(data);
+                        let mut done = false;
+                        if material_ready {
+                            let material = self.material.as_ref().unwrap();
+                            let xray = ctx.xray.unwrap();
+                            let bg = xray.background[ctx.target as usize].clone();
 
-                        // This is not a problem for split popups as the code will look for them by
-                        // original id when it doesn't find them on the offscreen.
-                        self.window.set_offscreen_data(Some(data));
-                        push(elem.into());
-                        pushed_resize = true;
+                            if MaterialState::has_program(ctx.renderer)
+                                && bg.borrow_mut().prepare(ctx.renderer, false)
+                            {
+                                match material.offscreen.render(
+                                    ctx.renderer,
+                                    scale,
+                                    std::slice::from_ref(&elem),
+                                ) {
+                                    Ok((offscreen_elem, _sync, mat_data)) => {
+                                        let offscreen_geo = offscreen_elem
+                                            .geometry(scale)
+                                            .to_f64()
+                                            .to_logical(scale);
+                                        let rel = offscreen_geo.loc - window_render_loc;
+                                        let area =
+                                            Rectangle::new(offscreen_geo.loc, offscreen_geo.size);
+
+                                        let win_texture = offscreen_elem.texture().clone();
+                                        let win_src = offscreen_elem.src();
+                                        let tex_size = win_texture.size().to_f64();
+                                        let win_rect = [
+                                            (win_src.loc.x / tex_size.w) as f32,
+                                            (win_src.loc.y / tex_size.h) as f32,
+                                            (win_src.size.w / tex_size.w) as f32,
+                                            (win_src.size.h / tex_size.h) as f32,
+                                        ];
+
+                                        let bg_size = bg.borrow().logical_size();
+                                        let geo_in_backdrop = Rectangle::new(
+                                            (xray_pos.pos_in_backdrop + rel).upscale(xray_pos.zoom),
+                                            area.size.upscale(xray_pos.zoom),
+                                        );
+                                        let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+
+                                        let mat_elem = material.element(
+                                            area,
+                                            self.scale,
+                                            1.,
+                                            clock_time,
+                                            win_rect,
+                                            win_src,
+                                            bg_rect,
+                                            win_texture,
+                                            bg,
+                                        );
+
+                                        let render_data = data.as_mut().unwrap();
+                                        render_data.id = mat_elem.id().clone();
+                                        render_data.states.states.extend(mat_data.states.states);
+                                        self.window.set_offscreen_data(data.take());
+                                        push(mat_elem.into());
+                                        pushed_resize = true;
+                                        done = true;
+                                    }
+                                    Err(err) => {
+                                        warn!("material: error rendering resize element to offscreen: {err:?}");
+                                    }
+                                }
+                            }
+                        }
+
+                        if !done {
+                            let mut data = data.unwrap();
+                            // We're drawing the resize shader, not the offscreen directly.
+                            data.id = elem.id().clone();
+
+                            // This is not a problem for split popups as the code will look for them by
+                            // original id when it doesn't find them on the offscreen.
+                            self.window.set_offscreen_data(Some(data));
+                            push(elem.into());
+                            pushed_resize = true;
+                        }
                     }
                 }
             }
@@ -1166,76 +1257,155 @@ impl<W: LayoutElement> Tile<W> {
         // If we're not resizing, render the window itself.
         let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
         if !pushed_resize {
-            let geo = Rectangle::new(window_render_loc, window_size);
-            let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
+            let mut pushed_material = false;
+            if material_ready {
+                let material = self.material.as_ref().unwrap();
+                let mut ctx = ctx.as_gles();
 
-            let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
-            let clip = |elem| match elem {
-                LayoutElementRenderElement::Wayland(elem) => {
-                    // If we should clip to geometry, render a clipped window.
-                    if clip_to_geometry {
-                        if let Some(shader) = clip_shader.clone() {
-                            if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
-                                return ClippedSurfaceRenderElement::new(
-                                    elem,
-                                    scale,
-                                    geo,
-                                    shader.clone(),
-                                    radius,
-                                )
-                                .into();
+                if MaterialState::has_program(ctx.renderer) {
+                    let mut window_elements = Vec::new();
+                    self.window.render_normal(
+                        ctx.r(),
+                        Point::from((0., 0.)),
+                        scale,
+                        1.,
+                        &mut |elem| window_elements.push(elem),
+                    );
+
+                    let xray = ctx.xray.unwrap();
+                    let bg = xray.background[ctx.target as usize].clone();
+                    if bg.borrow_mut().prepare(ctx.renderer, false) {
+                        match material
+                            .offscreen
+                            .render(ctx.renderer, scale, &window_elements)
+                        {
+                            Ok((offscreen_elem, _sync, mut data)) => {
+                                let offscreen_geo =
+                                    offscreen_elem.geometry(scale).to_f64().to_logical(scale);
+                                let area = Rectangle::new(
+                                    window_render_loc + offscreen_geo.loc,
+                                    offscreen_geo.size,
+                                );
+
+                                let win_texture = offscreen_elem.texture().clone();
+                                let win_src = offscreen_elem.src();
+                                let tex_size = win_texture.size().to_f64();
+                                let win_rect = [
+                                    (win_src.loc.x / tex_size.w) as f32,
+                                    (win_src.loc.y / tex_size.h) as f32,
+                                    (win_src.size.w / tex_size.w) as f32,
+                                    (win_src.size.h / tex_size.h) as f32,
+                                ];
+
+                                let bg_size = bg.borrow().logical_size();
+                                let geo_in_backdrop = Rectangle::new(
+                                    (xray_pos.pos_in_backdrop + offscreen_geo.loc)
+                                        .upscale(xray_pos.zoom),
+                                    area.size.upscale(xray_pos.zoom),
+                                );
+                                let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+
+                                let elem = material.element(
+                                    area,
+                                    self.scale,
+                                    win_alpha,
+                                    clock_time,
+                                    win_rect,
+                                    win_src,
+                                    bg_rect,
+                                    win_texture,
+                                    bg,
+                                );
+
+                                data.id = elem.id().clone();
+                                self.window.set_offscreen_data(Some(data));
+                                push(elem.into());
+                                pushed_material = true;
+                            }
+                            Err(err) => {
+                                warn!("material: error rendering window to offscreen: {err:?}");
                             }
                         }
                     }
-
-                    // Otherwise, render it normally.
-                    LayoutElementRenderElement::Wayland(elem).into()
                 }
-                LayoutElementRenderElement::SolidColor(elem) => {
-                    // In this branch we're rendering a blocked-out window with a solid
-                    // color. We need to render it with a rounded corner shader even if
-                    // clip_to_geometry is false, because in this case we're assuming that
-                    // the unclipped window CSD already has corners rounded to the
-                    // user-provided radius, so our blocked-out rendering should match that
-                    // radius.
-                    if radius != CornerRadius::default() && has_border_shader {
-                        return BorderRenderElement::new(
-                            geo.size,
-                            Rectangle::from_size(geo.size),
-                            GradientInterpolation::default(),
-                            Color::from_color32f(elem.color()),
-                            Color::from_color32f(elem.color()),
-                            0.,
-                            Rectangle::from_size(geo.size),
-                            0.,
-                            radius,
-                            scale.x as f32,
-                            1.,
-                        )
-                        .with_location(geo.loc)
-                        .into();
-                    }
-
-                    // Otherwise, render the solid color as is.
-                    LayoutElementRenderElement::SolidColor(elem).into()
-                }
-                elem @ LayoutElementRenderElement::BackgroundEffect(_) => {
-                    // This is only used on popups for now. If subsurface blur is implemented, this
-                    // will need to be handled somehow.
-                    error!("background effect clipping is unimplemented");
-                    elem.into()
-                }
-            };
-
-            if clip_to_geometry && clip_shader.is_some() {
-                let damage = self.rounded_corner_damage.render(geo);
-                push(damage.into());
             }
 
-            self.window
-                .render_normal(ctx.r(), window_render_loc, scale, win_alpha, &mut |elem| {
-                    push(clip(elem))
-                });
+            if !pushed_material {
+                let geo = Rectangle::new(window_render_loc, window_size);
+                let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
+
+                let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
+                let clip = |elem| match elem {
+                    LayoutElementRenderElement::Wayland(elem) => {
+                        // If we should clip to geometry, render a clipped window.
+                        if clip_to_geometry {
+                            if let Some(shader) = clip_shader.clone() {
+                                if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius)
+                                {
+                                    return ClippedSurfaceRenderElement::new(
+                                        elem,
+                                        scale,
+                                        geo,
+                                        shader.clone(),
+                                        radius,
+                                    )
+                                    .into();
+                                }
+                            }
+                        }
+
+                        // Otherwise, render it normally.
+                        LayoutElementRenderElement::Wayland(elem).into()
+                    }
+                    LayoutElementRenderElement::SolidColor(elem) => {
+                        // In this branch we're rendering a blocked-out window with a solid
+                        // color. We need to render it with a rounded corner shader even if
+                        // clip_to_geometry is false, because in this case we're assuming that
+                        // the unclipped window CSD already has corners rounded to the
+                        // user-provided radius, so our blocked-out rendering should match that
+                        // radius.
+                        if radius != CornerRadius::default() && has_border_shader {
+                            return BorderRenderElement::new(
+                                geo.size,
+                                Rectangle::from_size(geo.size),
+                                GradientInterpolation::default(),
+                                Color::from_color32f(elem.color()),
+                                Color::from_color32f(elem.color()),
+                                0.,
+                                Rectangle::from_size(geo.size),
+                                0.,
+                                radius,
+                                scale.x as f32,
+                                1.,
+                            )
+                            .with_location(geo.loc)
+                            .into();
+                        }
+
+                        // Otherwise, render the solid color as is.
+                        LayoutElementRenderElement::SolidColor(elem).into()
+                    }
+                    elem @ LayoutElementRenderElement::BackgroundEffect(_) => {
+                        // This is only used on popups for now. If subsurface blur is implemented, this
+                        // will need to be handled somehow.
+                        error!("background effect clipping is unimplemented");
+                        elem.into()
+                    }
+                };
+
+                if clip_to_geometry && clip_shader.is_some() {
+                    let damage = self.rounded_corner_damage.render(geo);
+                    push(damage.into());
+                }
+
+                self.window.render_normal(
+                    ctx.r(),
+                    window_render_loc,
+                    scale,
+                    win_alpha,
+                    &mut |elem| push(clip(elem)),
+                );
+            }
         }
 
         if fullscreen_progress > 0. {
