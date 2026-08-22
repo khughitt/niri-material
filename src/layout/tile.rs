@@ -1168,10 +1168,11 @@ impl<W: LayoutElement> Tile<W> {
                             if MaterialState::has_program(ctx.renderer)
                                 && bg.borrow_mut().prepare(ctx.renderer, false)
                             {
+                                let material_elem = elem.clone().with_alpha(1.);
                                 match material.offscreen.render(
                                     ctx.renderer,
                                     scale,
-                                    std::slice::from_ref(&elem),
+                                    std::slice::from_ref(&material_elem),
                                 ) {
                                     Ok((offscreen_elem, _sync, mat_data)) => {
                                         let offscreen_geo = offscreen_elem
@@ -1202,7 +1203,7 @@ impl<W: LayoutElement> Tile<W> {
                                         let mat_elem = material.element(
                                             area,
                                             self.scale,
-                                            1.,
+                                            win_alpha,
                                             clock_time,
                                             win_rect,
                                             win_src,

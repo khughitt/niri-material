@@ -27,6 +27,24 @@ pub fn bg_uv_rect(elem_geo: Rectangle<f64, Logical>, bg_size: Size<f64, Logical>
     ]
 }
 
+fn map_normalized_src(
+    src: Rectangle<f64, Buffer>,
+    texture_src: Rectangle<f64, Buffer>,
+) -> Rectangle<f64, Buffer> {
+    Rectangle::new(
+        (
+            texture_src.loc.x + src.loc.x * texture_src.size.w,
+            texture_src.loc.y + src.loc.y * texture_src.size.h,
+        )
+            .into(),
+        (
+            src.size.w * texture_src.size.w,
+            src.size.h * texture_src.size.h,
+        )
+            .into(),
+    )
+}
+
 #[derive(Debug)]
 pub struct MaterialState {
     pub offscreen: OffscreenBuffer,
@@ -144,7 +162,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         let Some(bg_texture) = bg_texture else {
             return frame.render_texture_from_to(
                 &self.win_texture,
-                self.win_src,
+                map_normalized_src(src, self.win_src),
                 dst,
                 damage,
                 opaque_regions,
@@ -225,5 +243,16 @@ mod tests {
         let geo = Rectangle::new(Point::new(500., 250.), Size::new(250., 125.));
         let bg = Size::new(1000., 500.);
         assert_eq!(bg_uv_rect(geo, bg), [0.5, 0.5, 0.25, 0.25]);
+    }
+
+    #[test]
+    fn normalized_src_maps_into_texture_subrectangle() {
+        let src = Rectangle::new(Point::new(0.25, 0.25), Size::new(0.5, 0.4));
+        let texture_src = Rectangle::new(Point::new(10., 20.), Size::new(200., 100.));
+
+        assert_eq!(
+            map_normalized_src(src, texture_src),
+            Rectangle::new(Point::new(60., 45.), Size::new(100., 40.))
+        );
     }
 }

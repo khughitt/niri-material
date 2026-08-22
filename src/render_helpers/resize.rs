@@ -16,7 +16,7 @@ use super::shader_element::ShaderRenderElement;
 use super::shaders::{mat3_uniform, ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ResizeRenderElement(ShaderRenderElement);
 
 impl ResizeRenderElement {
@@ -119,6 +119,11 @@ impl ResizeRenderElement {
         Shaders::get(renderer)
             .program(ProgramType::Resize)
             .is_some()
+    }
+
+    pub fn with_alpha(mut self, alpha: f32) -> Self {
+        self.0 = self.0.with_alpha(alpha);
+        self
     }
 }
 
