@@ -18,6 +18,7 @@ pub struct Shaders {
     pub resize: Option<ShaderProgram>,
     pub gradient_fade: Option<GlesTexProgram>,
     pub blur: Option<BlurProgram>,
+    pub material: Option<ShaderProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
     pub custom_close: RefCell<Option<ShaderProgram>>,
     pub custom_open: RefCell<Option<ShaderProgram>>,
@@ -28,6 +29,7 @@ pub enum ProgramType {
     Border,
     Shadow,
     Resize,
+    Material,
     Close,
     Open,
 }
@@ -148,6 +150,21 @@ impl Shaders {
             })
             .ok();
 
+        let material = ShaderProgram::compile(
+            renderer,
+            include_str!("material.frag"),
+            &[
+                UniformName::new("mat_win_rect", UniformType::_4f),
+                UniformName::new("mat_bg_rect", UniformType::_4f),
+                UniformName::new("mat_time", UniformType::_1f),
+            ],
+            &["niri_tex_win", "niri_tex_bg"],
+        )
+        .map_err(|err| {
+            warn!("error compiling material shader: {err:?}");
+        })
+        .ok();
+
         Self {
             border,
             shadow,
@@ -156,6 +173,7 @@ impl Shaders {
             resize,
             gradient_fade,
             blur,
+            material,
             custom_resize: RefCell::new(None),
             custom_close: RefCell::new(None),
             custom_open: RefCell::new(None),
@@ -205,6 +223,7 @@ impl Shaders {
                 .borrow()
                 .clone()
                 .or_else(|| self.resize.clone()),
+            ProgramType::Material => self.material.clone(),
             ProgramType::Close => self.custom_close.borrow().clone(),
             ProgramType::Open => self.custom_open.borrow().clone(),
         }
