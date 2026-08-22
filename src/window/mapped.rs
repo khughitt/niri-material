@@ -1314,6 +1314,12 @@ impl LayoutElement for Mapped {
         self.is_windowed_fullscreen
     }
 
+    fn material_slice0(&self) -> bool {
+        with_toplevel_role(self.toplevel(), |role| {
+            role.app_id.as_deref() == Some("glass-slice0")
+        })
+    }
+
     fn is_pending_windowed_fullscreen(&self) -> bool {
         self.is_pending_windowed_fullscreen
     }

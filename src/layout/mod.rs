@@ -293,6 +293,11 @@ pub trait LayoutElement {
     fn is_windowed_fullscreen(&self) -> bool {
         false
     }
+    /// Slice-0 hard-coded material marker; replaced by window-rule
+    /// assignment in slice 1.
+    fn material_slice0(&self) -> bool {
+        false
+    }
     fn is_pending_windowed_fullscreen(&self) -> bool {
         false
     }
