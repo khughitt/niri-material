@@ -20,9 +20,9 @@ cross-repository, source-preservation, build, test, and fixture gates pass.
 
 **Spec:** `docs/materials/2026-08-22-repository-split.md`
 
-**Status:** approved for execution 2026-08-22. During Tasks 1–4 the
-dispatcher tracks progress externally so `$MIGRATION_SOURCE` stays clean; the
-closing task records completion in both plan copies.
+**Status:** completed 2026-08-22. Execution evidence is the two target commit
+identities recorded by the closing task; checkboxes remain the immutable
+procedure rather than a second execution log.
 
 ## Global constraints
 
