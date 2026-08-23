@@ -308,7 +308,21 @@ void main() {
                        vec3(opticalDistance / mat_attenuation_distance));
         vec3 transmitted = sampled * att;
 
-        glassed = vec4(linearToSrgb(transmitted), 1.0) * coverage;
+        // Fresnel edge glint: Schlick from the configured IOR on the
+        // structural normal, lit from the top-left. Replaces the legacy
+        // environment-probe specular on the chamfer; additive per the §2
+        // slab terms. The strength constants are art-directed against the
+        // legacy look and validated visually, not physically derived.
+        float f0 = (mat_ior - 1.0) / (mat_ior + 1.0);
+        f0 = f0 * f0;
+        float fresnel = f0 + (1.0 - f0) * pow(1.0 - surfaceCosine, 5.0);
+        float facing = 0.0;
+        if (length(surfaceNormal.xy) > 0.001)
+            facing = max(dot(normalize(surfaceNormal.xy),
+                             normalize(vec2(-1.0, -1.0))), 0.0);
+        vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
+
+        glassed = vec4(linearToSrgb(transmitted + specular), 1.0) * coverage;
     }
 
     // §2 compositing contract: opaque window pixels pass through
