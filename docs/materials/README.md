@@ -32,7 +32,7 @@ commit `d155e90` in `docs/results/2026-08-22-slice1.md`.
 
 Slice 2 is implemented on `slice2-glass` through `66c42f5e`. Its accepted
 nested-winit verification, including the final Slice 1 per-render-target fix,
-is recorded at `niri-experiments` commit `98a01e7b` in
+is recorded at `niri-experiments` commit `ef6f552` in
 `docs/results/2026-08-23-slice2.md`; it closes the earlier texture-creation
 and matched GPU-time measurement debt.
 

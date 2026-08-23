@@ -2,9 +2,9 @@
 
 `material` definitions name a visual treatment. v1 provides one type,
 `glass`. Every parameter below is visually active in the built-in shader.
-`jelly-flex` and `jelly-ripple` respond to niri's own move, resize, open,
-close, and overview animations and return to their exact rest state when the
-animation settles.
+`jelly-flex` and `jelly-ripple` consume niri's native move/scrolling and resize
+animation residuals and return to their exact rest state when those springs
+settle.
 
 ```kdl
 material "frost" {
