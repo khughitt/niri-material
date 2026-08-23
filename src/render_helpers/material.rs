@@ -244,9 +244,26 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             );
         };
 
+        let g = &self.glass;
         let uniforms: Rc<[Uniform<'static>]> = Rc::new([
             Uniform::new("mat_win_rect", self.win_rect),
             Uniform::new("mat_bg_rect", self.bg_rect),
+            Uniform::new("mat_ior", g.ior as f32),
+            Uniform::new("mat_thickness", g.thickness as f32),
+            Uniform::new(
+                "mat_attenuation_color",
+                g.attenuation_color.to_array_unpremul(),
+            ),
+            Uniform::new("mat_attenuation_distance", g.attenuation_distance as f32),
+            Uniform::new("mat_chromatic_aberration", g.chromatic_aberration as f32),
+            Uniform::new("mat_distortion", g.distortion as f32),
+            Uniform::new("mat_distortion_scale", g.distortion_scale as f32),
+            Uniform::new("mat_samples", f32::from(g.samples)),
+            Uniform::new("mat_anisotropic_blur", g.anisotropic_blur as f32),
+            Uniform::new("mat_jelly_flex", g.jelly_flex as f32),
+            Uniform::new("mat_jelly_ripple", g.jelly_ripple as f32),
+            Uniform::new("mat_lip", g.lip as f32),
+            Uniform::new("mat_shift", [g.shift_x as f32, g.shift_y as f32]),
         ]);
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
