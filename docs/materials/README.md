@@ -23,5 +23,5 @@ Research, results, and source fixtures live in the sibling
 frozen Quickshell reference remain in the legacy `niri-glass` repository.
 
 Slice 1 is implemented at `2a55ab14`; its nested-winit verification is
-recorded at `niri-experiments` commit `8f9a071` in
+recorded at `niri-experiments` commit `d155e90` in
 `docs/results/2026-08-22-slice1.md`.
