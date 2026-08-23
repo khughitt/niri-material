@@ -156,7 +156,6 @@ impl Shaders {
             &[
                 UniformName::new("mat_win_rect", UniformType::_4f),
                 UniformName::new("mat_bg_rect", UniformType::_4f),
-                UniformName::new("mat_time", UniformType::_1f),
             ],
             &["niri_tex_win", "niri_tex_bg"],
         )

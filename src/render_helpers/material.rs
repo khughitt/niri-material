@@ -1,7 +1,8 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::Duration;
+
+use niri_config::{ResolvedGlass, ResolvedMaterial};
 
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
@@ -45,24 +46,65 @@ fn map_normalized_src(
     )
 }
 
+/// Everything the material element's pixels depend on that the damage
+/// tracker cannot see for itself.
+///
+/// Element geometry and alpha are deliberately absent: smithay's damage
+/// tracker already compares those between frames.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InputFingerprint {
+    /// Commit of the offscreen the window body rendered into.
+    pub window: CommitCounter,
+    /// Commit of the background buffer being sampled.
+    pub background: CommitCounter,
+}
+
 #[derive(Debug)]
 pub struct MaterialState {
     pub offscreen: OffscreenBuffer,
     id: Id,
     commit: Cell<CommitCounter>,
+    material: ResolvedMaterial,
+    last_inputs: Cell<Option<InputFingerprint>>,
 }
 
 impl MaterialState {
-    pub fn new() -> Self {
+    pub fn new(material: ResolvedMaterial) -> Self {
         Self {
             offscreen: OffscreenBuffer::default(),
             id: Id::new(),
             commit: Cell::new(CommitCounter::default()),
+            material,
+            last_inputs: Cell::new(None),
         }
+    }
+
+    pub fn id(&self) -> &Id {
+        &self.id
+    }
+
+    pub fn material(&self) -> &ResolvedMaterial {
+        &self.material
     }
 
     pub fn has_program(renderer: &mut GlesRenderer) -> bool {
         Shaders::get(renderer).material.is_some()
+    }
+
+    /// Advances the element commit counter if and only if a pixel input
+    /// changed, and returns the counter the next element should carry.
+    pub fn advance_commit(&self, inputs: InputFingerprint) -> CommitCounter {
+        if self.last_inputs.get() != Some(inputs) {
+            self.last_inputs.set(Some(inputs));
+            self.bump();
+        }
+        self.commit.get()
+    }
+
+    fn bump(&self) {
+        let mut commit = self.commit.get();
+        commit.increment();
+        self.commit.set(commit);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -71,28 +113,55 @@ impl MaterialState {
         area: Rectangle<f64, Logical>,
         scale: f64,
         alpha: f32,
-        time: Duration,
+        inputs: InputFingerprint,
         win_rect: [f32; 4],
         win_src: Rectangle<f64, Buffer>,
         bg_rect: [f32; 4],
         win_texture: GlesTexture,
         bg: Rc<RefCell<EffectBuffer>>,
     ) -> MaterialRenderElement {
-        let mut commit = self.commit.get();
-        commit.increment();
-        self.commit.set(commit);
         MaterialRenderElement {
             id: self.id.clone(),
-            commit,
+            commit: self.advance_commit(inputs),
             area,
             scale,
             alpha,
-            time,
+            glass: self.material.glass,
             win_rect,
             win_src,
             bg_rect,
             win_texture,
             bg,
+        }
+    }
+}
+
+/// Applies a newly resolved material to a tile's material slot.
+///
+/// Returns whether the slot's identity changed — that is, whether the
+/// `MaterialState` was created, replaced or dropped, as opposed to updated in
+/// place. A parameter-only edit keeps the offscreen buffer and element `Id`
+/// and registers as damage; only a change of definition name rebuilds.
+pub fn apply_resolved(
+    slot: &mut Option<MaterialState>,
+    resolved: Option<&ResolvedMaterial>,
+) -> bool {
+    match (slot.as_mut(), resolved) {
+        (None, None) => false,
+        (Some(_), None) => {
+            *slot = None;
+            true
+        }
+        (Some(state), Some(resolved)) if state.material.name == resolved.name => {
+            if state.material.glass != resolved.glass {
+                state.material.glass = resolved.glass;
+                state.bump();
+            }
+            false
+        }
+        (_, Some(resolved)) => {
+            *slot = Some(MaterialState::new(resolved.clone()));
+            true
         }
     }
 }
@@ -104,7 +173,9 @@ pub struct MaterialRenderElement {
     area: Rectangle<f64, Logical>,
     scale: f64,
     alpha: f32,
-    time: Duration,
+    /// Resolved parameters this element renders with.
+    #[allow(dead_code)] // Used by the material uniform block in the next slice.
+    glass: ResolvedGlass,
     /// Window sub-rect of the offscreen texture, normalized UV
     /// (`mat_win_rect`) — the buffer may be larger than the window.
     win_rect: [f32; 4],
@@ -174,7 +245,6 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         };
 
         let uniforms: Rc<[Uniform<'static>]> = Rc::new([
-            Uniform::new("mat_time", self.time.as_secs_f32()),
             Uniform::new("mat_win_rect", self.win_rect),
             Uniform::new("mat_bg_rect", self.bg_rect),
         ]);
@@ -226,7 +296,127 @@ impl<'render> RenderElement<TtyRenderer<'render>> for MaterialRenderElement {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use niri_config::{ResolvedGlass, ResolvedMaterial};
     use smithay::utils::Point;
+
+    fn material(name: &str) -> ResolvedMaterial {
+        ResolvedMaterial {
+            name: String::from(name),
+            glass: ResolvedGlass::default(),
+        }
+    }
+
+    fn commit_after(n: usize) -> CommitCounter {
+        let mut c = CommitCounter::default();
+        for _ in 0..n {
+            c.increment();
+        }
+        c
+    }
+
+    fn fingerprint(window: usize, background: usize) -> InputFingerprint {
+        InputFingerprint {
+            window: commit_after(window),
+            background: commit_after(background),
+        }
+    }
+
+    #[test]
+    fn unchanged_inputs_do_not_advance_the_commit() {
+        let state = MaterialState::new(material("frost"));
+
+        let first = state.advance_commit(fingerprint(1, 1));
+        let second = state.advance_commit(fingerprint(1, 1));
+        let third = state.advance_commit(fingerprint(1, 1));
+
+        // A glass window at rest must contribute no damage.
+        assert_eq!(first, second);
+        assert_eq!(second, third);
+    }
+
+    #[test]
+    fn window_damage_advances_the_commit() {
+        let state = MaterialState::new(material("frost"));
+
+        let first = state.advance_commit(fingerprint(1, 1));
+        let second = state.advance_commit(fingerprint(2, 1));
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn background_damage_advances_the_commit() {
+        let state = MaterialState::new(material("frost"));
+
+        let first = state.advance_commit(fingerprint(1, 1));
+        let second = state.advance_commit(fingerprint(1, 2));
+
+        assert_ne!(first, second);
+    }
+
+    #[test]
+    fn parameter_change_advances_the_commit_in_place() {
+        let mut slot = Some(MaterialState::new(material("frost")));
+        let id_before = slot.as_ref().unwrap().id().clone();
+        let commit_before = slot.as_ref().unwrap().advance_commit(fingerprint(1, 1));
+
+        let mut changed = material("frost");
+        changed.glass.ior = 1.6;
+        let rebuilt = apply_resolved(&mut slot, Some(&changed));
+
+        let state = slot.as_ref().unwrap();
+        assert!(!rebuilt);
+        assert_eq!(state.id(), &id_before);
+        assert_eq!(state.material().glass.ior, 1.6);
+        assert_ne!(state.advance_commit(fingerprint(1, 1)), commit_before);
+    }
+
+    #[test]
+    fn identical_parameters_are_not_damage() {
+        let mut slot = Some(MaterialState::new(material("frost")));
+        let commit_before = slot.as_ref().unwrap().advance_commit(fingerprint(1, 1));
+
+        let rebuilt = apply_resolved(&mut slot, Some(&material("frost")));
+
+        assert!(!rebuilt);
+        assert_eq!(
+            slot.as_ref().unwrap().advance_commit(fingerprint(1, 1)),
+            commit_before
+        );
+    }
+
+    #[test]
+    fn name_change_rebuilds_the_state() {
+        let mut slot = Some(MaterialState::new(material("frost")));
+        let id_before = slot.as_ref().unwrap().id().clone();
+
+        let rebuilt = apply_resolved(&mut slot, Some(&material("clear")));
+
+        let state = slot.as_ref().unwrap();
+        assert!(rebuilt);
+        assert_ne!(state.id(), &id_before);
+        assert_eq!(state.material().name, "clear");
+    }
+
+    #[test]
+    fn losing_the_material_clears_the_state() {
+        let mut slot = Some(MaterialState::new(material("frost")));
+
+        let rebuilt = apply_resolved(&mut slot, None);
+
+        assert!(rebuilt);
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn gaining_a_material_builds_the_state() {
+        let mut slot = None;
+
+        let rebuilt = apply_resolved(&mut slot, Some(&material("frost")));
+
+        assert!(rebuilt);
+        assert_eq!(slot.as_ref().unwrap().material().name, "frost");
+    }
 
     #[test]
     fn bg_uv_rect_identity() {

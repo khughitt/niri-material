@@ -23,7 +23,9 @@ use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
-use crate::render_helpers::material::{bg_uv_rect, MaterialRenderElement, MaterialState};
+use crate::render_helpers::material::{
+    apply_resolved, bg_uv_rect, InputFingerprint, MaterialRenderElement, MaterialState,
+};
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
@@ -193,7 +195,13 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
-        let material = (window.rules().material.is_some()).then(MaterialState::new);
+        let material = window
+            .rules()
+            .material
+            .as_deref()
+            .and_then(|name| options.materials.get(name))
+            .cloned()
+            .map(MaterialState::new);
 
         Self {
             window,
@@ -417,13 +425,13 @@ impl<W: LayoutElement> Tile<W> {
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
 
-        if self.window.rules().material.is_some() {
-            if self.material.is_none() {
-                self.material = Some(MaterialState::new());
-            }
-        } else {
-            self.material = None;
-        }
+        let material = self
+            .window
+            .rules()
+            .material
+            .as_deref()
+            .and_then(|name| self.options.materials.get(name));
+        apply_resolved(&mut self.material, material);
     }
 
     pub fn advance_animations(&mut self) {
@@ -1053,8 +1061,6 @@ impl<W: LayoutElement> Tile<W> {
         let fullscreen_progress = self.fullscreen_progress();
         let expanded_progress = self.expanded_progress();
         let material_ready = self.material.is_some() && ctx.xray.is_some();
-        let clock_time = self.clock.now();
-
         let win_alpha = if self.window.is_ignoring_opacity_window_rule() {
             1.
         } else {
@@ -1199,12 +1205,16 @@ impl<W: LayoutElement> Tile<W> {
                                             area.size.upscale(xray_pos.zoom),
                                         );
                                         let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+                                        let inputs = InputFingerprint {
+                                            window: offscreen_elem.current_commit(),
+                                            background: bg.borrow().commit(),
+                                        };
 
                                         let mat_elem = material.element(
                                             area,
                                             self.scale,
                                             win_alpha,
-                                            clock_time,
+                                            inputs,
                                             win_rect,
                                             win_src,
                                             bg_rect,
@@ -1305,12 +1315,16 @@ impl<W: LayoutElement> Tile<W> {
                                     area.size.upscale(xray_pos.zoom),
                                 );
                                 let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+                                let inputs = InputFingerprint {
+                                    window: offscreen_elem.current_commit(),
+                                    background: bg.borrow().commit(),
+                                };
 
                                 let elem = material.element(
                                     area,
                                     self.scale,
                                     win_alpha,
-                                    clock_time,
+                                    inputs,
                                     win_rect,
                                     win_src,
                                     bg_rect,
