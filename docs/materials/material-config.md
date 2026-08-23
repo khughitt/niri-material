@@ -3,6 +3,12 @@
 `material` definitions name a visual treatment. v1 provides one type,
 `glass`:
 
+The current Slice 1 renderer is the config-and-assignment seam, not the full
+glass effect. It parses, validates, resolves, and uploads every parameter
+below, but its placeholder shader visibly consumes only `attenuation-color`
+and `thickness`. The remaining parameters become visually active with the
+Slice 2 glass shader.
+
 ```kdl
 material "frost" {
     glass {
