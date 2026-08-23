@@ -67,6 +67,98 @@ vec3 linearToSrgb(vec3 c) {
     return mix(high, low, vec3(lessThanEqual(c, vec3(0.0031308))));
 }
 
+// ---- simplex noise (Ashima Arts / Stefan Gustavson, MIT) ----
+// Source: https://github.com/stegu/webgl-noise/blob/master/src/noise3D.glsl
+// License: https://raw.githubusercontent.com/stegu/webgl-noise/master/LICENSE
+// Copyright (C) 2011 by Ashima Arts (Simplex noise)
+// Copyright (C) 2011-2016 by Stefan Gustavson (Classic noise and others)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+vec4 permute(vec4 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
+vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+float snoise(vec3 v)
+{
+    const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
+    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+    vec3 i  = floor(v + dot(v, C.yyy));
+    vec3 x0 = v - i + dot(i, C.xxx);
+    vec3 g = step(x0.yzx, x0.xyz);
+    vec3 l = 1.0 - g;
+    vec3 i1 = min(g.xyz, l.zxy);
+    vec3 i2 = max(g.xyz, l.zxy);
+    vec3 x1 = x0 - i1 + 1.0 * C.xxx;
+    vec3 x2 = x0 - i2 + 2.0 * C.xxx;
+    vec3 x3 = x0 - 1.0 + 3.0 * C.xxx;
+    i = mod(i, 289.0);
+    vec4 p = permute(permute(permute(
+                 i.z + vec4(0.0, i1.z, i2.z, 1.0))
+               + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+               + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+    float n_ = 1.0 / 7.0;
+    vec3 ns = n_ * D.wyz - D.xzx;
+    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+    vec4 x_ = floor(j * ns.z);
+    vec4 y_ = floor(j - 7.0 * x_);
+    vec4 x = x_ * ns.x + ns.yyyy;
+    vec4 y = y_ * ns.x + ns.yyyy;
+    vec4 h = 1.0 - abs(x) - abs(y);
+    vec4 b0 = vec4(x.xy, y.xy);
+    vec4 b1 = vec4(x.zw, y.zw);
+    vec4 s0 = floor(b0) * 2.0 + 1.0;
+    vec4 s1 = floor(b1) * 2.0 + 1.0;
+    vec4 sh = -step(h, vec4(0.0));
+    vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+    vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+    vec3 p0 = vec3(a0.xy, h.x);
+    vec3 p1 = vec3(a0.zw, h.y);
+    vec3 p2 = vec3(a1.xy, h.z);
+    vec3 p3 = vec3(a1.zw, h.w);
+    vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1),
+                                   dot(p2, p2), dot(p3, p3)));
+    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+    vec4 m = max(0.6 - vec4(dot(x0, x0), dot(x1, x1),
+                            dot(x2, x2), dot(x3, x3)), 0.0);
+    m = m * m;
+    return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1),
+                                  dot(p2, x2), dot(p3, x3)));
+}
+// drei's 4-octave fractal (same weights)
+float snoiseFractal(vec3 m)
+{
+    return 0.5333333 * snoise(m) + 0.2666667 * snoise(2.0 * m)
+         + 0.1333333 * snoise(4.0 * m) + 0.0666667 * snoise(8.0 * m);
+}
+
+// Two octaves are sufficient for the short-lived jelly ripple and keep its
+// active-frame cost bounded across full-column panes.
+float snoiseJelly(vec3 m)
+{
+    return 0.6666667 * snoise(m) + 0.3333333 * snoise(2.0 * m);
+}
+
+float hash12(vec2 p)
+{
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
 // Slab constants, matching the legacy slab mesh (depth and corner radius
 // in logical px) so the implementations stay visually comparable.
 const float SLAB_DEPTH = 12.0;
@@ -134,6 +226,16 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal) {
     }
 }
 
+// One refraction tap: bend the orthographic ray at the surface normal and
+// sample the composed background where the displaced ray lands. Offsets
+// are logical px mapped through the element-UV frame; the element and the
+// background buffers share the y-down orientation, so no axis flip.
+vec3 tap(vec2 v, vec3 n, float ior, float thickness) {
+    vec3 refr = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
+    vec2 vv = v + (refr.xy * thickness) / mat_area_size;
+    return srgbToLinear(sampleBackground(vv));
+}
+
 void main() {
     vec2 v = niri_v_coords;
     vec2 p = v * mat_area_size;
@@ -153,7 +255,47 @@ void main() {
 
     vec4 glassed = vec4(0.0);
     if (coverage > 0.0) {
-        vec3 sampled = srgbToLinear(sampleBackground(v));
+        vec3 n = surfaceNormal;
+
+        // Distortion perturbs the normal before the ray is built (drei
+        // computes its distortion normal ahead of the sample loop too).
+        // Position is element-local; continuity across slabs is not
+        // needed since slabs are visually separate.
+        if (mat_distortion > 0.0) {
+            vec3 dp = vec3(p, 0.0) * (mat_distortion_scale * 0.01);
+            n = normalize(n + mat_distortion * vec3(
+                snoiseFractal(dp), snoiseFractal(dp.zxy), snoiseFractal(dp.yxz)));
+        }
+
+        // Neutral effects make every tap identical: skip the loop and
+        // jitter entirely. Config validation keeps both non-negative, so
+        // exact zero agrees with the gates.
+        vec3 sampled;
+        if (mat_anisotropic_blur == 0.0 && mat_chromatic_aberration == 0.0) {
+            sampled = tap(v, n, mat_ior, mat_thickness);
+        } else {
+            float smear = mat_thickness * mat_anisotropic_blur;
+            float count = clamp(mat_samples, 1.0, 8.0);
+            vec3 acc = vec3(0.0);
+            for (int i = 0; i < 8; ++i) {
+                float fi = float(i);
+                if (fi >= count)
+                    break;
+                float r1 = hash12(gl_FragCoord.xy + fi * 17.0);
+                float r2 = hash12(gl_FragCoord.xy + fi * 71.0 + 3.7);
+                float t = mat_thickness + smear * (fi + r1) / count;
+                if (mat_chromatic_aberration > 0.0) {
+                    // drei's per-sample per-channel ior spread
+                    float spread = mat_chromatic_aberration * (fi + r2) / count;
+                    acc.r += tap(v, n, mat_ior, t).r;
+                    acc.g += tap(v, n, mat_ior * (1.0 + spread), t).g;
+                    acc.b += tap(v, n, mat_ior * (1.0 + 2.0 * spread), t).b;
+                } else {
+                    acc += tap(v, n, mat_ior, t);
+                }
+            }
+            sampled = acc / count;
+        }
 
         // Beer-Lambert over the view-lengthened slab path: the
         // orthographic incident ray is (0, 0, -1); the structural normal's
