@@ -2957,9 +2957,17 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
 
                 let xray_pos = xray_pos.offset(tile_pos);
-                tile.render(ctx.r(), tile_pos, xray_pos, focus_ring, &mut |elem| {
-                    push(elem.into())
-                });
+                let motion_residual = Point::from((self.target_view_pos() - self.view_pos(), 0.))
+                    + col_render_off
+                    + tile.animation_residual();
+                tile.render(
+                    ctx.r(),
+                    tile_pos,
+                    xray_pos,
+                    focus_ring,
+                    motion_residual,
+                    &mut |elem| push(elem.into()),
+                );
             }
         }
     }

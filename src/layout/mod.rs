@@ -4842,15 +4842,20 @@ impl<W: LayoutElement> Layout<W> {
         let pos_in_backdrop = move_.tile_render_location(zoom);
         let xray_pos = XrayPos::new(pos_in_backdrop, zoom);
 
-        move_
-            .tile
-            .render(ctx, pos_in_backdrop, xray_pos, true, &mut |elem| {
+        move_.tile.render(
+            ctx,
+            pos_in_backdrop,
+            xray_pos,
+            true,
+            move_.tile.animation_residual(),
+            &mut |elem| {
                 push(RescaleRenderElement::from_element(
                     elem,
                     pos_in_backdrop.to_physical_precise_round(scale),
                     zoom,
                 ));
-            });
+            },
+        );
     }
 
     pub fn refresh(&mut self, is_active: bool) {

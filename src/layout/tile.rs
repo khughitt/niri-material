@@ -24,8 +24,8 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
-    apply_resolved, background_mapping, material_frame, InputFingerprint, MaterialRenderElement,
-    MaterialState,
+    apply_resolved, background_mapping, jelly_state, material_frame, InputFingerprint,
+    JellyFingerprint, JellyUniforms, MaterialRenderElement, MaterialState, SLAB_DEPTH,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -662,6 +662,20 @@ impl<W: LayoutElement> Tile<W> {
         offset
     }
 
+    /// Decaying move-animation residual: the tile's current render
+    /// position minus its target, excluding the non-decaying
+    /// interactive-move grab offset.
+    pub fn animation_residual(&self) -> Point<f64, Logical> {
+        let mut offset = Point::from((0., 0.));
+        if let Some(move_) = &self.move_x_animation {
+            offset.x += move_.from * move_.anim.value();
+        }
+        if let Some(move_) = &self.move_y_animation {
+            offset.y += move_.from * move_.anim.value();
+        }
+        offset
+    }
+
     pub fn start_open_animation(&mut self) {
         self.open_animation = Some(OpenAnimation::new(Animation::new(
             self.clock.clone(),
@@ -1131,6 +1145,7 @@ impl<W: LayoutElement> Tile<W> {
         location: Point<f64, Logical>,
         mut xray_pos: XrayPos,
         focus_ring: bool,
+        motion_residual: Point<f64, Logical>,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render_inner");
@@ -1164,6 +1179,10 @@ impl<W: LayoutElement> Tile<W> {
         let window_loc = self.window_loc();
         let window_size = self.window_size();
         let animated_window_size = self.animated_window_size();
+        let size_residual = (
+            animated_window_size.w - window_size.w,
+            animated_window_size.h - window_size.h,
+        );
         let window_render_loc = location + window_loc;
         let area = Rectangle::new(window_render_loc, animated_window_size);
         xray_pos = xray_pos.offset(window_loc);
@@ -1275,6 +1294,24 @@ impl<W: LayoutElement> Tile<W> {
                                             &material.material().glass,
                                             self.scale,
                                         );
+                                        let glass = &material.material().glass;
+                                        let max_flex =
+                                            0.25 * SLAB_DEPTH.min(f64::from(frame.chamfer));
+                                        let jelly = jelly_state(
+                                            motion_residual,
+                                            size_residual,
+                                            window_size,
+                                            glass.jelly_flex,
+                                            max_flex,
+                                        );
+                                        let time = self.clock.now().as_secs_f64();
+                                        let jelly_fp = JellyFingerprint::quantize(&jelly, time);
+                                        let jelly_uniforms = JellyUniforms {
+                                            move_: jelly.move_,
+                                            resize: jelly.resize,
+                                            activity: jelly.activity,
+                                            time: (time % 3600.) as f32,
+                                        };
 
                                         let win_texture = offscreen_elem.texture().clone();
                                         let win_src = offscreen_elem.src();
@@ -1314,11 +1351,13 @@ impl<W: LayoutElement> Tile<W> {
                                             backdrop: backdrop_commit,
                                             ws_color: mapping.ws_color,
                                             backdrop_color,
+                                            jelly: jelly_fp,
                                         };
 
                                         let mat_elem = material.element(
                                             frame,
                                             mapping,
+                                            jelly_uniforms,
                                             self.scale,
                                             win_alpha,
                                             ctx.target,
@@ -1433,6 +1472,23 @@ impl<W: LayoutElement> Tile<W> {
                                     &material.material().glass,
                                     self.scale,
                                 );
+                                let glass = &material.material().glass;
+                                let max_flex = 0.25 * SLAB_DEPTH.min(f64::from(frame.chamfer));
+                                let jelly = jelly_state(
+                                    motion_residual,
+                                    size_residual,
+                                    window_size,
+                                    glass.jelly_flex,
+                                    max_flex,
+                                );
+                                let time = self.clock.now().as_secs_f64();
+                                let jelly_fp = JellyFingerprint::quantize(&jelly, time);
+                                let jelly_uniforms = JellyUniforms {
+                                    move_: jelly.move_,
+                                    resize: jelly.resize,
+                                    activity: jelly.activity,
+                                    time: (time % 3600.) as f32,
+                                };
 
                                 let win_texture = offscreen_elem.texture().clone();
                                 let win_src = offscreen_elem.src();
@@ -1472,11 +1528,13 @@ impl<W: LayoutElement> Tile<W> {
                                     backdrop: backdrop_commit,
                                     ws_color: mapping.ws_color,
                                     backdrop_color,
+                                    jelly: jelly_fp,
                                 };
 
                                 let elem = material.element(
                                     frame,
                                     mapping,
+                                    jelly_uniforms,
                                     self.scale,
                                     win_alpha,
                                     ctx.target,
@@ -1617,6 +1675,7 @@ impl<W: LayoutElement> Tile<W> {
         location: Point<f64, Logical>,
         xray_pos: XrayPos,
         focus_ring: bool,
+        motion_residual: Point<f64, Logical>,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render");
@@ -1639,6 +1698,7 @@ impl<W: LayoutElement> Tile<W> {
                 Point::new(0., 0.),
                 xray_pos,
                 focus_ring,
+                motion_residual,
                 &mut |elem| elements.push(elem),
             );
             match open.render(
@@ -1666,6 +1726,7 @@ impl<W: LayoutElement> Tile<W> {
                 Point::new(0., 0.),
                 xray_pos,
                 focus_ring,
+                motion_residual,
                 &mut |elem| elements.push(elem),
             );
             match alpha.offscreen.render(ctx.renderer, scale, &elements) {
@@ -1684,7 +1745,14 @@ impl<W: LayoutElement> Tile<W> {
         }
 
         if !pushed {
-            self.render_inner(ctx, location, xray_pos, focus_ring, &mut |elem| push(elem));
+            self.render_inner(
+                ctx,
+                location,
+                xray_pos,
+                focus_ring,
+                motion_residual,
+                &mut |elem| push(elem),
+            );
         }
     }
 
@@ -1722,6 +1790,7 @@ impl<W: LayoutElement> Tile<W> {
             Point::from((0., 0.)),
             xray_pos,
             false,
+            self.animation_residual(),
             &mut |elem| contents.push(elem),
         );
 
@@ -1773,6 +1842,7 @@ impl<W: LayoutElement> Tile<W> {
                     Point::from((0., 0.)),
                     xray_pos,
                     false,
+                    self.animation_residual(),
                     &mut |elem| contents.push(elem),
                 );
                 contents_with_blocked_out_bg = Some(contents);
@@ -1793,6 +1863,7 @@ impl<W: LayoutElement> Tile<W> {
             Point::from((0., 0.)),
             xray_pos,
             false,
+            self.animation_residual(),
             &mut |elem| blocked_out_contents.push(elem),
         );
 

@@ -128,10 +128,16 @@ impl TestCase for Tile {
             xray: None,
         };
         let xray_pos = XrayPos::new(location, 1.);
-        self.tile
-            .render(ctx, location, xray_pos, true, &mut |elem| {
+        self.tile.render(
+            ctx,
+            location,
+            xray_pos,
+            true,
+            self.tile.animation_residual(),
+            &mut |elem| {
                 rv.push(Box::new(elem) as _)
-            });
+            },
+        );
         rv
     }
 }

@@ -13,6 +13,11 @@ uniform vec4 mat_geo_rect;
 uniform vec4 mat_slab_rect;
 uniform vec2 mat_area_size;
 uniform float mat_chamfer;
+uniform vec2 mat_jelly_move;
+uniform vec2 mat_jelly_resize;
+uniform float mat_jelly_activity;
+uniform float mat_jelly_time;
+uniform vec3 mat_jelly_seed;
 uniform vec4 mat_bg_rect;
 uniform vec4 mat_backdrop_rect;
 uniform vec4 mat_ws_rect;
@@ -205,14 +210,9 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal) {
     float aa = 1.0 / niri_scale;
     coverage = 1.0 - smoothstep(-aa, 0.0, d);
 
-    // Jelly shear placeholders; the jelly task replaces these locals with
-    // the mat_jelly_move / mat_jelly_resize uniforms.
-    vec2 jelly_move = vec2(0.0);
-    vec2 jelly_resize = vec2(0.0);
-
     vec2 inner_half = (half_ext - vec2(chamfer))
-        * (vec2(1.0) + jelly_resize / max(2.0 * half_ext, vec2(1.0)));
-    vec2 inner_center = center + jelly_move;
+        * (vec2(1.0) + mat_jelly_resize / max(2.0 * half_ext, vec2(1.0)));
+    vec2 inner_center = center + mat_jelly_move;
     float ri = max(r - chamfer, 1.0);
     float di = sdRoundedBox(p - inner_center, inner_half, ri);
 
@@ -265,6 +265,16 @@ void main() {
             vec3 dp = vec3(p, 0.0) * (mat_distortion_scale * 0.01);
             n = normalize(n + mat_distortion * vec3(
                 snoiseFractal(dp), snoiseFractal(dp.zxy), snoiseFractal(dp.yxz)));
+        }
+
+        if (mat_jelly_activity > 0.0 && mat_jelly_ripple > 0.0) {
+            vec3 rp = vec3(p, 0.0) * 0.005 + mat_jelly_seed;
+            vec3 phase = vec3(mat_jelly_time, -mat_jelly_time, -mat_jelly_time) * 0.5;
+            vec3 ripple = vec3(
+                snoiseJelly(rp + phase),
+                snoiseJelly(rp.zxy + phase),
+                0.0);
+            n = normalize(n + mat_jelly_activity * mat_jelly_ripple * ripple);
         }
 
         // Neutral effects make every tap identical: skip the loop and
