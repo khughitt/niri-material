@@ -193,7 +193,7 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
-        let material = window.material_slice0().then(MaterialState::new);
+        let material = (window.rules().material.is_some()).then(MaterialState::new);
 
         Self {
             window,
@@ -417,7 +417,7 @@ impl<W: LayoutElement> Tile<W> {
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
 
-        if self.window.material_slice0() {
+        if self.window.rules().material.is_some() {
             if self.material.is_none() {
                 self.material = Some(MaterialState::new());
             }

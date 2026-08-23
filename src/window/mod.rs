@@ -99,6 +99,9 @@ pub struct ResolvedWindowRules {
     /// Extra opacity to draw this window with.
     pub opacity: Option<f32>,
 
+    /// Name of the material to render this window with.
+    pub material: Option<String>,
+
     /// Corner radius to assume this window has.
     pub geometry_corner_radius: Option<CornerRadius>,
 
@@ -280,6 +283,10 @@ impl ResolvedWindowRules {
                 }
                 if let Some(x) = rule.opacity {
                     resolved.opacity = Some(x);
+                }
+
+                if let Some(x) = &rule.material {
+                    resolved.material = Some(x.0.clone());
                 }
                 if let Some(x) = rule.geometry_corner_radius {
                     resolved.geometry_corner_radius = Some(x);

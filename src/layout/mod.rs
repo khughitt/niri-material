@@ -39,7 +39,8 @@ use std::time::Duration;
 use monitor::{InsertHint, InsertPosition, InsertWorkspace, MonitorAddWindowTarget};
 use niri_config::utils::MergeWith as _;
 use niri_config::{
-    Config, CornerRadius, LayoutPart, PresetSize, Workspace as WorkspaceConfig, WorkspaceReference,
+    Config, CornerRadius, LayoutPart, PresetSize, ResolvedMaterial, Workspace as WorkspaceConfig,
+    WorkspaceReference,
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
@@ -293,11 +294,6 @@ pub trait LayoutElement {
     fn is_windowed_fullscreen(&self) -> bool {
         false
     }
-    /// Slice-0 hard-coded material marker; replaced by window-rule
-    /// assignment in slice 1.
-    fn material_slice0(&self) -> bool {
-        false
-    }
     fn is_pending_windowed_fullscreen(&self) -> bool {
         false
     }
@@ -394,6 +390,8 @@ enum MonitorSet<W: LayoutElement> {
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Options {
     pub layout: niri_config::Layout,
+    /// Material definitions by name, resolved from the config.
+    pub materials: Rc<HashMap<String, ResolvedMaterial>>,
     pub animations: niri_config::Animations,
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
@@ -655,6 +653,16 @@ impl Options {
     fn from_config(config: &Config) -> Self {
         Self {
             layout: config.layout.clone(),
+            materials: Rc::new(
+                config
+                    .materials
+                    .iter()
+                    .map(|m| {
+                        let resolved = m.resolve();
+                        (resolved.name.clone(), resolved)
+                    })
+                    .collect(),
+            ),
             animations: config.animations.clone(),
             gestures: config.gestures,
             overview: config.overview,
