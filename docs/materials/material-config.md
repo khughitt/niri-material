@@ -48,7 +48,7 @@ The whole configuration is rejected with these validation errors:
 
 - duplicate material names: `duplicate material: <name>`;
 - a definition without exactly one `glass` block: `missing node \`glass\`` or
-  `duplicate node 'glass', single node expected`;
+  `duplicate node \`glass\`, single node expected`;
 - a numeric value outside its parameter range: `value must be between <min> and
   <max>` (or, for `attenuation-distance`, `value must be greater than 0 and at
   most 65535`);
