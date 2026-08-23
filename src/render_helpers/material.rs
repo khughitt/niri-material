@@ -368,7 +368,10 @@ mod tests {
         assert!(!rebuilt);
         assert_eq!(state.id(), &id_before);
         assert_eq!(state.material().glass.ior, 1.6);
-        assert_ne!(state.advance_commit(fingerprint(1, 1)), commit_before);
+
+        let mut expected = commit_before;
+        expected.increment();
+        assert_eq!(state.advance_commit(fingerprint(1, 1)), expected);
     }
 
     #[test]
@@ -405,6 +408,16 @@ mod tests {
         let rebuilt = apply_resolved(&mut slot, None);
 
         assert!(rebuilt);
+        assert!(slot.is_none());
+    }
+
+    #[test]
+    fn no_material_keeps_empty_slot() {
+        let mut slot = None;
+
+        let rebuilt = apply_resolved(&mut slot, None);
+
+        assert!(!rebuilt);
         assert!(slot.is_none());
     }
 
