@@ -37,6 +37,7 @@ pub mod gestures;
 pub mod input;
 pub mod layer_rule;
 pub mod layout;
+pub mod material;
 pub mod misc;
 pub mod output;
 pub mod recent_windows;
@@ -53,6 +54,7 @@ pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
+pub use crate::material::{Glass, Material, Positive, ResolvedGlass, ResolvedMaterial};
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 use crate::recent_windows::RecentWindowsPart;
@@ -86,6 +88,7 @@ pub struct Config {
     pub environment: Environment,
     pub xwayland_satellite: XwaylandSatellite,
     pub window_rules: Vec<WindowRule>,
+    pub materials: Vec<Material>,
     pub layer_rules: Vec<LayerRule>,
     pub binds: Binds,
     pub switch_events: SwitchBinds,
@@ -165,6 +168,7 @@ where
                     | "window-rule"
                     | "layer-rule"
                     | "workspace"
+                    | "material"
                     | "include"
             ) && !seen.insert(name)
             {
@@ -212,6 +216,7 @@ where
                 "spawn-at-startup" => m_push!(spawn_at_startup),
                 "spawn-sh-at-startup" => m_push!(spawn_sh_at_startup),
                 "window-rule" => m_push!(window_rules),
+                "material" => m_push!(materials),
                 "layer-rule" => m_push!(layer_rules),
                 "workspace" => m_push!(workspaces),
 
@@ -653,6 +658,150 @@ mod tests {
         Config::parse_mem(text)
             .map_err(miette::Report::new)
             .unwrap()
+    }
+
+    #[track_caller]
+    fn do_parse_err(text: &str) -> String {
+        let err = Config::parse_mem(text).expect_err("config should have failed to parse");
+        format!("{:?}", miette::Report::new(err))
+    }
+
+    #[test]
+    fn material_parses_full_glass_block() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {
+                    ior 1.4
+                    thickness 32
+                    attenuation-color "#ff0000"
+                    attenuation-distance 80
+                    chromatic-aberration 0.25
+                    distortion 0.5
+                    distortion-scale 1.5
+                    samples 8
+                    anisotropic-blur 0.75
+                    jelly-flex 0.01
+                    jelly-ripple 0.2
+                    lip 12
+                    shift-x -8
+                    shift-y 4
+                }
+            }
+            "##,
+        );
+
+        assert_eq!(parsed.materials.len(), 1);
+        assert_eq!(parsed.materials[0].name, "frost");
+        assert_eq!(
+            parsed.materials[0].resolve().glass,
+            ResolvedGlass {
+                ior: 1.4,
+                thickness: 32.,
+                attenuation_color: Color::from_rgba8_unpremul(255, 0, 0, 255),
+                attenuation_distance: 80.,
+                chromatic_aberration: 0.25,
+                distortion: 0.5,
+                distortion_scale: 1.5,
+                samples: 8,
+                anisotropic_blur: 0.75,
+                jelly_flex: 0.01,
+                jelly_ripple: 0.2,
+                lip: 12.,
+                shift_x: -8.,
+                shift_y: 4.,
+            }
+        );
+    }
+
+    #[test]
+    fn material_omitted_parameters_take_design_defaults() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {}
+            }
+            "##,
+        );
+
+        // Every omitted parameter falls back to the v1 design §4 default.
+        assert_eq!(
+            parsed.materials[0].resolve().glass,
+            ResolvedGlass::default()
+        );
+    }
+
+    #[test]
+    fn material_rejects_out_of_range_parameter() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    ior 4.0
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("value must be between 1 and 3"), "{err}");
+    }
+
+    #[test]
+    fn material_rejects_out_of_range_fractional_parameter() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    jelly-flex 0.5
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("value must be between 0 and 0.02"), "{err}");
+    }
+
+    #[test]
+    fn material_rejects_zero_attenuation_distance() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    attenuation-distance 0
+                }
+            }
+            "##,
+        );
+        assert!(
+            err.contains("value must be greater than 0 and at most 65535"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn material_rejects_out_of_range_samples() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    samples 16
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("value must be between 1 and 8"), "{err}");
+    }
+
+    #[test]
+    fn material_rejects_non_integer_samples() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    samples 4.5
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("samples must be an integer"), "{err}");
     }
 
     #[test]
@@ -1890,6 +2039,7 @@ mod tests {
                     },
                 },
             ],
+            materials: [],
             layer_rules: [
                 LayerRule {
                     matches: [
