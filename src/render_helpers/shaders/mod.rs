@@ -155,6 +155,10 @@ impl Shaders {
             include_str!("material.frag"),
             &[
                 UniformName::new("mat_win_rect", UniformType::_4f),
+                UniformName::new("mat_geo_rect", UniformType::_4f),
+                UniformName::new("mat_slab_rect", UniformType::_4f),
+                UniformName::new("mat_area_size", UniformType::_2f),
+                UniformName::new("mat_chamfer", UniformType::_1f),
                 UniformName::new("mat_bg_rect", UniformType::_4f),
                 UniformName::new("mat_ior", UniformType::_1f),
                 UniformName::new("mat_thickness", UniformType::_1f),
@@ -165,10 +169,7 @@ impl Shaders {
                 UniformName::new("mat_distortion_scale", UniformType::_1f),
                 UniformName::new("mat_samples", UniformType::_1f),
                 UniformName::new("mat_anisotropic_blur", UniformType::_1f),
-                UniformName::new("mat_jelly_flex", UniformType::_1f),
                 UniformName::new("mat_jelly_ripple", UniformType::_1f),
-                UniformName::new("mat_lip", UniformType::_1f),
-                UniformName::new("mat_shift", UniformType::_2f),
             ],
             &["niri_tex_win", "niri_tex_bg"],
         )

@@ -5,7 +5,7 @@ use niri_config::utils::MergeWith as _;
 use niri_config::{Color, CornerRadius, GradientInterpolation, ResolvedMaterial};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
-use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram};
 use smithay::backend::renderer::Texture as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
@@ -24,7 +24,8 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
-    apply_resolved, bg_uv_rect, InputFingerprint, MaterialRenderElement, MaterialState,
+    apply_resolved, bg_uv_rect, material_frame, InputFingerprint, MaterialRenderElement,
+    MaterialState,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -157,6 +158,76 @@ fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMat
             .unwrap_or_else(|| panic!("resolved material must exist: {name}"))
             .clone(),
     )
+}
+
+/// Routes one window render element through the clip-to-geometry path:
+/// clipped Wayland surface, radius-rounded blocked-out solid color, or
+/// passthrough — the same behavior with and without a material.
+fn clip_window_element<R: NiriRenderer>(
+    elem: LayoutElementRenderElement<R>,
+    scale: Scale<f64>,
+    geo: Rectangle<f64, Logical>,
+    radius: CornerRadius,
+    clip_to_geometry: bool,
+    clip_shader: Option<&GlesTexProgram>,
+    has_border_shader: bool,
+) -> TileRenderElement<R> {
+    match elem {
+        LayoutElementRenderElement::Wayland(elem) => {
+            // If we should clip to geometry, render a clipped window.
+            if clip_to_geometry {
+                if let Some(shader) = clip_shader {
+                    if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
+                        return ClippedSurfaceRenderElement::new(
+                            elem,
+                            scale,
+                            geo,
+                            shader.clone(),
+                            radius,
+                        )
+                        .into();
+                    }
+                }
+            }
+
+            // Otherwise, render it normally.
+            LayoutElementRenderElement::Wayland(elem).into()
+        }
+        LayoutElementRenderElement::SolidColor(elem) => {
+            // In this branch we're rendering a blocked-out window with a solid
+            // color. We need to render it with a rounded corner shader even if
+            // clip_to_geometry is false, because in this case we're assuming that
+            // the unclipped window CSD already has corners rounded to the
+            // user-provided radius, so our blocked-out rendering should match that
+            // radius.
+            if radius != CornerRadius::default() && has_border_shader {
+                return BorderRenderElement::new(
+                    geo.size,
+                    Rectangle::from_size(geo.size),
+                    GradientInterpolation::default(),
+                    Color::from_color32f(elem.color()),
+                    Color::from_color32f(elem.color()),
+                    0.,
+                    Rectangle::from_size(geo.size),
+                    0.,
+                    radius,
+                    scale.x as f32,
+                    1.,
+                )
+                .with_location(geo.loc)
+                .into();
+            }
+
+            // Otherwise, render the solid color as is.
+            LayoutElementRenderElement::SolidColor(elem).into()
+        }
+        elem @ LayoutElementRenderElement::BackgroundEffect(_) => {
+            // This is only used on popups for now. If subsurface blur is implemented, this
+            // will need to be handled somehow.
+            error!("background effect clipping is unimplemented");
+            elem.into()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -1192,9 +1263,16 @@ impl<W: LayoutElement> Tile<W> {
                                             .geometry(scale)
                                             .to_f64()
                                             .to_logical(scale);
-                                        let rel = offscreen_geo.loc - window_render_loc;
-                                        let area =
+                                        let tex_geo =
                                             Rectangle::new(offscreen_geo.loc, offscreen_geo.size);
+                                        let win_geo =
+                                            Rectangle::new(window_render_loc, animated_window_size);
+                                        let frame = material_frame(
+                                            win_geo,
+                                            tex_geo,
+                                            &material.material().glass,
+                                            self.scale,
+                                        );
 
                                         let win_texture = offscreen_elem.texture().clone();
                                         let win_src = offscreen_elem.src();
@@ -1207,9 +1285,10 @@ impl<W: LayoutElement> Tile<W> {
                                         ];
 
                                         let bg_size = bg.borrow().logical_size();
+                                        let rel = frame.area.loc - window_render_loc;
                                         let geo_in_backdrop = Rectangle::new(
                                             (xray_pos.pos_in_backdrop + rel).upscale(xray_pos.zoom),
-                                            area.size.upscale(xray_pos.zoom),
+                                            frame.area.size.upscale(xray_pos.zoom),
                                         );
                                         let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
                                         let (background_id, background) = {
@@ -1223,7 +1302,7 @@ impl<W: LayoutElement> Tile<W> {
                                         };
 
                                         let mat_elem = material.element(
-                                            area,
+                                            frame,
                                             self.scale,
                                             win_alpha,
                                             ctx.target,
@@ -1287,14 +1366,30 @@ impl<W: LayoutElement> Tile<W> {
                 let mut ctx = ctx.as_gles();
 
                 if MaterialState::has_program(ctx.renderer) {
-                    let mut window_elements = Vec::new();
+                    let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
+                    let clip_geo = Rectangle::from_size(window_size);
+                    let clip_radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
+                    let mut window_elements: Vec<TileRenderElement<GlesRenderer>> = Vec::new();
                     self.window.render_normal(
                         ctx.r(),
                         Point::from((0., 0.)),
                         scale,
                         1.,
-                        &mut |elem| window_elements.push(elem),
+                        &mut |elem| {
+                            window_elements.push(clip_window_element(
+                                elem,
+                                scale,
+                                clip_geo,
+                                clip_radius,
+                                clip_to_geometry,
+                                clip_shader.as_ref(),
+                                has_border_shader,
+                            ))
+                        },
                     );
+                    if clip_to_geometry && clip_shader.is_some() {
+                        window_elements.push(self.rounded_corner_damage.render(clip_geo).into());
+                    }
 
                     let xray = ctx.xray.unwrap();
                     let bg = xray.background[ctx.target as usize].clone();
@@ -1306,9 +1401,17 @@ impl<W: LayoutElement> Tile<W> {
                             Ok((offscreen_elem, _sync, mut data)) => {
                                 let offscreen_geo =
                                     offscreen_elem.geometry(scale).to_f64().to_logical(scale);
-                                let area = Rectangle::new(
+                                let tex_geo = Rectangle::new(
                                     window_render_loc + offscreen_geo.loc,
                                     offscreen_geo.size,
+                                );
+                                let win_geo =
+                                    Rectangle::new(window_render_loc, animated_window_size);
+                                let frame = material_frame(
+                                    win_geo,
+                                    tex_geo,
+                                    &material.material().glass,
+                                    self.scale,
                                 );
 
                                 let win_texture = offscreen_elem.texture().clone();
@@ -1322,10 +1425,10 @@ impl<W: LayoutElement> Tile<W> {
                                 ];
 
                                 let bg_size = bg.borrow().logical_size();
+                                let rel = frame.area.loc - window_render_loc;
                                 let geo_in_backdrop = Rectangle::new(
-                                    (xray_pos.pos_in_backdrop + offscreen_geo.loc)
-                                        .upscale(xray_pos.zoom),
-                                    area.size.upscale(xray_pos.zoom),
+                                    (xray_pos.pos_in_backdrop + rel).upscale(xray_pos.zoom),
+                                    frame.area.size.upscale(xray_pos.zoom),
                                 );
                                 let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
                                 let (background_id, background) = {
@@ -1339,7 +1442,7 @@ impl<W: LayoutElement> Tile<W> {
                                 };
 
                                 let elem = material.element(
-                                    area,
+                                    frame,
                                     self.scale,
                                     win_alpha,
                                     ctx.target,
@@ -1369,63 +1472,6 @@ impl<W: LayoutElement> Tile<W> {
                 let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
 
                 let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
-                let clip = |elem| match elem {
-                    LayoutElementRenderElement::Wayland(elem) => {
-                        // If we should clip to geometry, render a clipped window.
-                        if clip_to_geometry {
-                            if let Some(shader) = clip_shader.clone() {
-                                if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius)
-                                {
-                                    return ClippedSurfaceRenderElement::new(
-                                        elem,
-                                        scale,
-                                        geo,
-                                        shader.clone(),
-                                        radius,
-                                    )
-                                    .into();
-                                }
-                            }
-                        }
-
-                        // Otherwise, render it normally.
-                        LayoutElementRenderElement::Wayland(elem).into()
-                    }
-                    LayoutElementRenderElement::SolidColor(elem) => {
-                        // In this branch we're rendering a blocked-out window with a solid
-                        // color. We need to render it with a rounded corner shader even if
-                        // clip_to_geometry is false, because in this case we're assuming that
-                        // the unclipped window CSD already has corners rounded to the
-                        // user-provided radius, so our blocked-out rendering should match that
-                        // radius.
-                        if radius != CornerRadius::default() && has_border_shader {
-                            return BorderRenderElement::new(
-                                geo.size,
-                                Rectangle::from_size(geo.size),
-                                GradientInterpolation::default(),
-                                Color::from_color32f(elem.color()),
-                                Color::from_color32f(elem.color()),
-                                0.,
-                                Rectangle::from_size(geo.size),
-                                0.,
-                                radius,
-                                scale.x as f32,
-                                1.,
-                            )
-                            .with_location(geo.loc)
-                            .into();
-                        }
-
-                        // Otherwise, render the solid color as is.
-                        LayoutElementRenderElement::SolidColor(elem).into()
-                    }
-                    elem @ LayoutElementRenderElement::BackgroundEffect(_) => {
-                        // This is only used on popups for now. If subsurface blur is implemented, this
-                        // will need to be handled somehow.
-                        error!("background effect clipping is unimplemented");
-                        elem.into()
-                    }
-                };
 
                 if clip_to_geometry && clip_shader.is_some() {
                     let damage = self.rounded_corner_damage.render(geo);
@@ -1437,7 +1483,19 @@ impl<W: LayoutElement> Tile<W> {
                     window_render_loc,
                     scale,
                     win_alpha,
-                    &mut |elem| push(clip(elem)),
+                    &mut |elem| {
+                        push(
+                            clip_window_element(
+                                elem,
+                                scale,
+                                geo,
+                                radius,
+                                clip_to_geometry,
+                                clip_shader.as_ref(),
+                                has_border_shader,
+                            ),
+                        )
+                    },
                 );
             }
         }

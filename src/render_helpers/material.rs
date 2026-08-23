@@ -8,7 +8,7 @@ use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, Unde
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::utils::user_data::UserDataMap;
-use smithay::utils::{Buffer, Logical, Physical, Rectangle, Scale, Size, Transform};
+use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use super::effect_buffer::EffectBuffer;
 use super::offscreen::OffscreenBuffer;
@@ -27,6 +27,69 @@ pub fn bg_uv_rect(elem_geo: Rectangle<f64, Logical>, bg_size: Size<f64, Logical>
         (elem_geo.size.w / bg_size.w) as f32,
         (elem_geo.size.h / bg_size.h) as f32,
     ]
+}
+
+/// Slab constants in logical px, matching the legacy slab mesh so the two
+/// implementations stay comparable during the parity pass.
+pub const SLAB_DEPTH: f64 = 12.;
+pub const SLAB_CORNER_RADIUS: f64 = 28.;
+
+/// The material element's coordinate frame: the inflated element area plus
+/// every rect the shader needs, expressed in element UV.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterialFrame {
+    /// Element area: union of the window-texture footprint and the slab.
+    pub area: Rectangle<f64, Logical>,
+    /// Window-texture footprint in element UV (where `niri_tex_win` maps).
+    pub geo_rect: [f32; 4],
+    /// Slab silhouette in element UV.
+    pub slab_rect: [f32; 4],
+    /// Element size in logical px.
+    pub area_size: [f32; 2],
+    /// Chamfer width in logical px: lip + max(|shift-x|, |shift-y|).
+    pub chamfer: f32,
+}
+
+/// Maps `inner` into `area`-relative UV space.
+fn uv_rect(inner: Rectangle<f64, Logical>, area: Rectangle<f64, Logical>) -> [f32; 4] {
+    [
+        ((inner.loc.x - area.loc.x) / area.size.w) as f32,
+        ((inner.loc.y - area.loc.y) / area.size.h) as f32,
+        (inner.size.w / area.size.w) as f32,
+        (inner.size.h / area.size.h) as f32,
+    ]
+}
+
+/// Computes the element frame for a window at `win_geo` whose rendered
+/// texture covers `tex_geo` (both absolute logical rects).
+///
+/// The slab is the window rect inflated by `lip` on every side, then slid
+/// by (`shift-x`, `shift-y`). The inflation is aligned to physical pixels
+/// the way Shadow's is, so the element geometry and damage stay exact.
+pub fn material_frame(
+    win_geo: Rectangle<f64, Logical>,
+    tex_geo: Rectangle<f64, Logical>,
+    glass: &ResolvedGlass,
+    scale: f64,
+) -> MaterialFrame {
+    let ceil = |v: f64| (v * scale).ceil() / scale;
+    let round = |v: f64| (v * scale).round() / scale;
+
+    let lip = ceil(glass.lip);
+    let shift = Point::<f64, Logical>::from((round(glass.shift_x), round(glass.shift_y)));
+    let slab = Rectangle::new(
+        win_geo.loc - Point::from((lip, lip)) + shift,
+        win_geo.size + Size::from((lip * 2., lip * 2.)),
+    );
+    let area = tex_geo.merge(slab);
+
+    MaterialFrame {
+        geo_rect: uv_rect(tex_geo, area),
+        slab_rect: uv_rect(slab, area),
+        area_size: [area.size.w as f32, area.size.h as f32],
+        chamfer: (lip + glass.shift_x.abs().max(glass.shift_y.abs())) as f32,
+        area,
+    }
 }
 
 fn map_normalized_src(
@@ -114,7 +177,7 @@ impl MaterialState {
     #[allow(clippy::too_many_arguments)]
     pub fn element(
         &self,
-        area: Rectangle<f64, Logical>,
+        frame: MaterialFrame,
         scale: f64,
         alpha: f32,
         target: RenderTarget,
@@ -128,7 +191,7 @@ impl MaterialState {
         MaterialRenderElement {
             id: self.id.clone(),
             commit: self.advance_commit(target, inputs),
-            area,
+            frame,
             scale,
             alpha,
             glass: self.material.glass,
@@ -175,7 +238,8 @@ pub fn apply_resolved(
 pub struct MaterialRenderElement {
     id: Id,
     commit: CommitCounter,
-    area: Rectangle<f64, Logical>,
+    /// The element's coordinate frame (area, UV rects, chamfer).
+    frame: MaterialFrame,
     scale: f64,
     alpha: f32,
     /// Resolved parameters this element renders with.
@@ -204,7 +268,7 @@ impl Element for MaterialRenderElement {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.area.to_physical_precise_round(scale)
+        self.frame.area.to_physical_precise_round(scale)
     }
 
     fn alpha(&self) -> f32 {
@@ -235,10 +299,21 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         };
 
         let Some(bg_texture) = bg_texture else {
+            let geo = self.frame.geo_rect;
+            let dst_geo = Rectangle::new(
+                Point::from((
+                    dst.loc.x + (geo[0] as f64 * f64::from(dst.size.w)).round() as i32,
+                    dst.loc.y + (geo[1] as f64 * f64::from(dst.size.h)).round() as i32,
+                )),
+                Size::from((
+                    (geo[2] as f64 * f64::from(dst.size.w)).round() as i32,
+                    (geo[3] as f64 * f64::from(dst.size.h)).round() as i32,
+                )),
+            );
             return frame.render_texture_from_to(
                 &self.win_texture,
                 map_normalized_src(src, self.win_src),
-                dst,
+                dst_geo,
                 damage,
                 opaque_regions,
                 Transform::Normal,
@@ -249,8 +324,13 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         };
 
         let g = &self.glass;
+        let f = &self.frame;
         let uniforms: Rc<[Uniform<'static>]> = Rc::new([
             Uniform::new("mat_win_rect", self.win_rect),
+            Uniform::new("mat_geo_rect", f.geo_rect),
+            Uniform::new("mat_slab_rect", f.slab_rect),
+            Uniform::new("mat_area_size", f.area_size),
+            Uniform::new("mat_chamfer", f.chamfer),
             Uniform::new("mat_bg_rect", self.bg_rect),
             Uniform::new("mat_ior", g.ior as f32),
             Uniform::new("mat_thickness", g.thickness as f32),
@@ -264,10 +344,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_distortion_scale", g.distortion_scale as f32),
             Uniform::new("mat_samples", f32::from(g.samples)),
             Uniform::new("mat_anisotropic_blur", g.anisotropic_blur as f32),
-            Uniform::new("mat_jelly_flex", g.jelly_flex as f32),
             Uniform::new("mat_jelly_ripple", g.jelly_ripple as f32),
-            Uniform::new("mat_lip", g.lip as f32),
-            Uniform::new("mat_shift", [g.shift_x as f32, g.shift_y as f32]),
         ]);
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
@@ -275,7 +352,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         ]);
         let inner = ShaderRenderElement::new(
             ProgramType::Material,
-            self.area.size,
+            self.frame.area.size,
             None,
             self.scale as f32,
             self.alpha,
@@ -524,6 +601,84 @@ mod tests {
         let geo = Rectangle::new(Point::new(500., 250.), Size::new(250., 125.));
         let bg = Size::new(1000., 500.);
         assert_eq!(bg_uv_rect(geo, bg), [0.5, 0.5, 0.25, 0.25]);
+    }
+
+    #[test]
+    fn material_frame_inflates_by_lip_and_shift() {
+        let mut glass = ResolvedGlass::default();
+        glass.lip = 10.;
+        glass.shift_x = 0.;
+        glass.shift_y = 0.;
+        let win = Rectangle::new(Point::new(0., 0.), Size::new(200., 100.));
+
+        let frame = material_frame(win, win, &glass, 1.);
+
+        // Slab = window + 10 on every side; area = union = the slab.
+        assert_eq!(
+            frame.area,
+            Rectangle::new(Point::new(-10., -10.), Size::new(220., 120.))
+        );
+        assert_eq!(frame.slab_rect, [0., 0., 1., 1.]);
+        assert_eq!(
+            frame.geo_rect,
+            [10. / 220., 10. / 120., 200. / 220., 100. / 120.]
+        );
+        assert_eq!(frame.area_size, [220., 120.]);
+        assert_eq!(frame.chamfer, 10.);
+    }
+
+    #[test]
+    fn material_frame_shift_slides_the_slab() {
+        let mut glass = ResolvedGlass::default();
+        glass.lip = 6.;
+        glass.shift_x = 6.;
+        glass.shift_y = 6.;
+        let win = Rectangle::new(Point::new(100., 50.), Size::new(200., 100.));
+
+        let frame = material_frame(win, win, &glass, 1.);
+
+        // lip 6 + shift 6: the slab's top-left lands on the window's
+        // top-left; the lip is fully on the right/bottom sides.
+        assert_eq!(
+            frame.area,
+            Rectangle::new(Point::new(100., 50.), Size::new(212., 112.))
+        );
+        // chamfer = lip + max(|sx|, |sy|) = 12
+        assert_eq!(frame.chamfer, 12.);
+    }
+
+    #[test]
+    fn material_frame_aligns_to_physical_pixels() {
+        let mut glass = ResolvedGlass::default();
+        glass.lip = 5.3;
+        glass.shift_x = 0.;
+        glass.shift_y = 0.;
+        let win = Rectangle::new(Point::new(0., 0.), Size::new(100., 100.));
+
+        let frame = material_frame(win, win, &glass, 2.);
+
+        // ceil(5.3 * 2) / 2 = 5.5
+        assert_eq!(frame.area.loc, Point::new(-5.5, -5.5));
+    }
+
+    #[test]
+    fn material_frame_merges_an_oversized_texture_footprint() {
+        let mut glass = ResolvedGlass::default();
+        glass.lip = 6.;
+        glass.shift_x = 0.;
+        glass.shift_y = 0.;
+        let win = Rectangle::new(Point::new(0., 0.), Size::new(200., 100.));
+        // CSD shadows: the texture extends 20 px past the window.
+        let tex = Rectangle::new(Point::new(-20., -20.), Size::new(240., 140.));
+
+        let frame = material_frame(win, tex, &glass, 1.);
+
+        assert_eq!(frame.area, tex);
+        // The slab is smaller than the area here.
+        assert_eq!(
+            frame.slab_rect,
+            [14. / 240., 14. / 140., 212. / 240., 112. / 140.]
+        );
     }
 
     #[test]
