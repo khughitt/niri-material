@@ -5,6 +5,7 @@ use crate::appearance::{
     TabIndicatorRule,
 };
 use crate::layout::DefaultPresetSize;
+use crate::material::MaterialRef;
 use crate::utils::{MergeWith, RegexEq};
 use crate::FloatOrInt;
 
@@ -57,6 +58,8 @@ pub struct WindowRule {
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
+    #[knuffel(child, unwrap(argument))]
+    pub material: Option<MaterialRef>,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
     #[knuffel(child, unwrap(argument))]

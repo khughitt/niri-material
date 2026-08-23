@@ -120,6 +120,9 @@ pub enum ConfigPath {
 struct BasePath(PathBuf);
 struct RootBase(PathBuf);
 struct Recursion(u8);
+// Name of the file currently being decoded, for error messages that cannot
+// carry a span across a file boundary.
+struct FileName(String);
 #[derive(Default)]
 struct Includes(Vec<PathBuf>);
 #[derive(Default)]
@@ -150,6 +153,10 @@ where
         let config = ctx.get::<Rc<RefCell<Config>>>().unwrap().clone();
         let includes = ctx.get::<Rc<RefCell<Includes>>>().unwrap().clone();
         let include_errors = ctx.get::<Rc<RefCell<IncludeErrors>>>().unwrap().clone();
+        let material_refs = ctx
+            .get::<Rc<RefCell<crate::material::MaterialRefs<S>>>>()
+            .expect("material refs must be set in the parse context")
+            .clone();
         let recursion = ctx.get::<Recursion>().unwrap().0;
         let saw_mru_binds = ctx.get::<SawMruBinds>().unwrap().0.clone();
 
@@ -440,8 +447,10 @@ where
                                 ctx.set(BasePath(base));
                                 ctx.set(RootBase(root_base.clone()));
                                 ctx.set(Recursion(recursion));
+                                ctx.set(FileName(filename.to_string()));
                                 ctx.set(includes.clone());
                                 ctx.set(include_errors.clone());
+                                ctx.set(material_refs.clone());
                                 ctx.set(IncludeStack(include_stack));
                                 ctx.set(SawMruBinds(saw_mru_binds.clone()));
                                 ctx.set(config.clone());
@@ -482,6 +491,17 @@ where
                     ));
                 }
             }
+        }
+
+        // Materials may be defined after the rules that reference them, or in
+        // an include, so this check waits until everything has merged.
+        if recursion == 0 {
+            let config = config.borrow();
+            crate::material::validate_material_refs(
+                &material_refs.borrow(),
+                &config.materials,
+                ctx,
+            );
         }
 
         Ok(Self)
@@ -531,6 +551,9 @@ impl Config {
         let config = Rc::new(RefCell::new(Config::default()));
         let includes = Rc::new(RefCell::new(Includes(Vec::new())));
         let include_errors = Rc::new(RefCell::new(IncludeErrors(Vec::new())));
+        let material_refs = Rc::new(RefCell::new(crate::material::MaterialRefs::<
+            knuffel::span::Span,
+        >::default()));
         let include_stack = HashSet::from([path.to_path_buf()]);
 
         let part = knuffel::parse_with_context::<ConfigPart, knuffel::span::Span, _>(
@@ -540,8 +563,10 @@ impl Config {
                 ctx.set(BasePath(base.clone()));
                 ctx.set(RootBase(base));
                 ctx.set(Recursion(0));
+                ctx.set(FileName(filename.to_string()));
                 ctx.set(includes.clone());
                 ctx.set(include_errors.clone());
+                ctx.set(material_refs.clone());
                 ctx.set(IncludeStack(include_stack));
                 ctx.set(SawMruBinds(Rc::new(Cell::new(false))));
                 ctx.set(config.clone());
@@ -688,6 +713,155 @@ mod tests {
     fn do_parse_err(text: &str) -> String {
         let err = Config::parse_mem(text).expect_err("config should have failed to parse");
         format!("{:?}", miette::Report::new(err))
+    }
+
+    /// Writes `files` into a fresh directory and parses the first one, so
+    /// `include` resolution runs against real paths. `parse_mem` cannot do
+    /// this: it has no directory to resolve includes against.
+    #[track_caller]
+    fn parse_files(files: &[(&str, &str)]) -> Result<Config, ConfigIncludeError> {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+        let dir = std::env::temp_dir().join(format!(
+            "niri-config-material-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+
+        for (name, text) in files {
+            fs::write(dir.join(name), text).unwrap();
+        }
+
+        let res = Config::parse(&dir.join(files[0].0), files[0].1).config;
+        let _ = fs::remove_dir_all(&dir);
+        res
+    }
+
+    #[track_caller]
+    fn parse_files_err(files: &[(&str, &str)]) -> String {
+        let err = parse_files(files).expect_err("config should have failed to parse");
+        format!("{:?}", miette::Report::new(err))
+    }
+
+    #[test]
+    fn window_rule_material_reference_resolves() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {}
+            }
+
+            window-rule {
+                match app-id="Alacritty"
+                material "frost"
+            }
+            "##,
+        );
+        assert_eq!(
+            parsed.window_rules[0]
+                .material
+                .as_ref()
+                .map(|m| m.0.as_str()),
+            Some("frost")
+        );
+    }
+
+    #[test]
+    fn window_rule_material_reference_may_precede_definition() {
+        // Definition order must not matter.
+        let parsed = do_parse(
+            r##"
+            window-rule {
+                material "frost"
+            }
+
+            material "frost" {
+                glass {}
+            }
+            "##,
+        );
+        assert_eq!(parsed.materials.len(), 1);
+        assert_eq!(
+            parsed.window_rules[0]
+                .material
+                .as_ref()
+                .map(|m| m.0.as_str()),
+            Some("frost")
+        );
+    }
+
+    #[test]
+    fn window_rule_rejects_unknown_material() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {}
+            }
+
+            window-rule {
+                material "smoke"
+            }
+            "##,
+        );
+        assert!(err.contains("unknown material: smoke"), "{err}");
+    }
+
+    #[test]
+    fn material_duplicate_across_include_is_rejected() {
+        // Task 2's arm exists for exactly this: a context-local name set
+        // would not see across the include boundary.
+        let err = parse_files_err(&[
+            (
+                "main.kdl",
+                "include \"other.kdl\"\nmaterial \"frost\" { glass {}; }\n",
+            ),
+            ("other.kdl", "material \"frost\" { glass {}; }\n"),
+        ]);
+        assert!(err.contains("duplicate material: frost"), "{err}");
+    }
+
+    #[test]
+    fn material_reference_in_include_resolves_to_later_root_definition() {
+        // The reference is inside the include; the definition comes after
+        // the include line in the root. Only a fully deferred check accepts
+        // this.
+        let parsed = parse_files(&[
+            (
+                "main.kdl",
+                "include \"other.kdl\"\nmaterial \"frost\" { glass {}; }\n",
+            ),
+            ("other.kdl", "window-rule { material \"frost\"; }\n"),
+        ])
+        .unwrap();
+        assert_eq!(parsed.materials.len(), 1);
+        assert_eq!(parsed.window_rules.len(), 1);
+    }
+
+    #[test]
+    fn unknown_material_in_include_names_its_file() {
+        // An included reference has no usable span in the root context, so
+        // the message must identify the file itself.
+        let err = parse_files_err(&[
+            ("main.kdl", "include \"other.kdl\"\n"),
+            ("other.kdl", "window-rule { material \"smoke\"; }\n"),
+        ]);
+        assert!(err.contains("unknown material: smoke"), "{err}");
+        assert!(err.contains("other.kdl"), "{err}");
+    }
+
+    #[test]
+    fn material_definition_in_include_satisfies_root_reference() {
+        let parsed = parse_files(&[
+            (
+                "main.kdl",
+                "window-rule { material \"frost\"; }\ninclude \"other.kdl\"\n",
+            ),
+            ("other.kdl", "material \"frost\" { glass {}; }\n"),
+        ])
+        .unwrap();
+        assert_eq!(parsed.materials.len(), 1);
     }
 
     #[test]
@@ -2081,6 +2255,7 @@ mod tests {
                     },
                     draw_border_with_background: None,
                     opacity: None,
+                    material: None,
                     geometry_corner_radius: None,
                     clip_to_geometry: None,
                     baba_is_float: None,

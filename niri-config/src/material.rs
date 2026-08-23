@@ -4,10 +4,130 @@
 //! table, its defaults and its ranges are specified in
 //! `docs/materials/2026-08-22-v1-design.md` §4.
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use knuffel::errors::DecodeError;
 
 use crate::appearance::Color;
 use crate::FloatOrInt;
+
+/// A window-rule reference to a material definition by name.
+///
+/// The referenced definition may appear later in the file or in an include,
+/// so the reference cannot be resolved here. Each one records itself into the
+/// shared parse context; `validate_material_refs` checks them all once every
+/// include has merged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterialRef(pub String);
+
+/// Window-rule material references collected during a parse.
+#[derive(Debug)]
+pub struct MaterialRefs<S> {
+    /// References from the root config file. Their spans are byte offsets
+    /// into the source the root context reports against, so these can carry
+    /// a proper caret.
+    pub root: Vec<knuffel::span::Spanned<knuffel::ast::Literal, S>>,
+    /// References from included files, as (material name, file name).
+    ///
+    /// A `knuffel::Span` is a bare byte range with no file identity, and each
+    /// include is parsed against its own `NamedSource`. Emitting an include's
+    /// span into the root context would underline the wrong file, so these
+    /// are reported without a snippet and name their file in the message.
+    pub included: Vec<(String, String)>,
+}
+
+impl<S> Default for MaterialRefs<S> {
+    fn default() -> Self {
+        Self {
+            root: Vec::new(),
+            included: Vec::new(),
+        }
+    }
+}
+
+impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for MaterialRef {
+    fn type_check(
+        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) {
+        if let Some(type_name) = &type_name {
+            ctx.emit_error(DecodeError::unexpected(
+                type_name,
+                "type name",
+                "no type name expected for this node",
+            ));
+        }
+    }
+
+    fn raw_decode(
+        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let knuffel::ast::Literal::String(ref s) = **val else {
+            ctx.emit_error(DecodeError::unsupported(
+                val,
+                "material references must be strings",
+            ));
+            return Ok(Self(String::new()));
+        };
+
+        let refs = ctx
+            .get::<Rc<RefCell<MaterialRefs<S>>>>()
+            .expect("material refs must be set in the parse context")
+            .clone();
+        let recursion = ctx
+            .get::<crate::Recursion>()
+            .expect("recursion must be set in the parse context")
+            .0;
+        let file = ctx
+            .get::<crate::FileName>()
+            .expect("file name must be set in the parse context")
+            .0
+            .clone();
+
+        if recursion == 0 {
+            refs.borrow_mut().root.push(val.clone());
+        } else {
+            refs.borrow_mut().included.push((s.to_string(), file));
+        }
+
+        Ok(Self(s.clone().into()))
+    }
+}
+
+/// Reports every window-rule material reference that names no definition.
+///
+/// Runs once, after all includes have merged into `materials`.
+pub fn validate_material_refs<S: knuffel::traits::ErrorSpan>(
+    refs: &MaterialRefs<S>,
+    materials: &[Material],
+    ctx: &mut knuffel::decode::Context<S>,
+) {
+    let known = |name: &str| materials.iter().any(|m| m.name == name);
+
+    for val in &refs.root {
+        let knuffel::ast::Literal::String(ref s) = **val else {
+            continue;
+        };
+
+        if !known(s) {
+            ctx.emit_error(DecodeError::unexpected(
+                val,
+                "material",
+                format!("unknown material: {s}"),
+            ));
+        }
+    }
+
+    for (name, file) in &refs.included {
+        if !known(name) {
+            ctx.emit_error(DecodeError::Custom(
+                format!("unknown material: {name} (referenced in {file})").into(),
+            ));
+        }
+    }
+}
 
 /// A `material "name" { ... }` definition block.
 ///
