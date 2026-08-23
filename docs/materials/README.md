@@ -14,9 +14,14 @@ All future production rebases and material commits happen in this repository.
 
 - `2026-08-22-repository-split.md`: repository ownership and provenance.
 - `2026-08-22-v1-design.md`: accepted v1 material architecture.
+- `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the
 frozen Quickshell reference remain in the legacy `niri-glass` repository.
+
+Slice 1 is implemented at `2a55ab14`; its nested-winit verification is
+recorded at `niri-experiments` commit `8f9a071` in
+`docs/results/2026-08-22-slice1.md`.
