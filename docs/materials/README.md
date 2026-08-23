@@ -18,6 +18,7 @@ All future production rebases and material commits happen in this repository.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
 - `plans/2026-08-22-slice1.md`: implemented config-and-assignment plan.
+- `plans/2026-08-23-slice2.md`: implemented glass shader and composition plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the
@@ -27,10 +28,13 @@ frozen Quickshell reference remain in the legacy `niri-glass` repository.
 
 Slice 1 is merged into `materials-26.04` at `ec0824c5`. Its nested-winit
 verification, run against `2a55ab14`, is recorded at `niri-experiments`
-commit `d155e90` in `docs/results/2026-08-22-slice1.md`. The later
-per-render-target damage fix at `59f68905` is unit-tested but has not been
-rerun live.
+commit `d155e90` in `docs/results/2026-08-22-slice1.md`.
 
-Slice 2 (full glass shading and composition) is next. Its verification must
-exercise the final Slice 1 code and close the inconclusive texture-creation
-and matched GPU-time measurements. Physical DRM remains a v1 acceptance gate.
+Slice 2 is implemented on `slice2-glass` through `66c42f5e`. Its accepted
+nested-winit verification, including the final Slice 1 per-render-target fix,
+is recorded at `niri-experiments` commit `98a01e7b` in
+`docs/results/2026-08-23-slice2.md`; it closes the earlier texture-creation
+and matched GPU-time measurement debt.
+
+Slice 3's overview correctness gate, including the known G9 vertical-lip
+clipping, is next. Physical DRM still gates v1 acceptance.

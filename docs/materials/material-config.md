@@ -1,13 +1,10 @@
 # Material configuration
 
 `material` definitions name a visual treatment. v1 provides one type,
-`glass`:
-
-The current Slice 1 renderer is the config-and-assignment seam, not the full
-glass effect. It parses, validates, resolves, and uploads every parameter
-below, but its placeholder shader visibly consumes only `attenuation-color`
-and `thickness`. The remaining parameters become visually active with the
-Slice 2 glass shader.
+`glass`. Every parameter below is visually active in the built-in shader.
+`jelly-flex` and `jelly-ripple` respond to niri's own move, resize, open,
+close, and overview animations and return to their exact rest state when the
+animation settles.
 
 ```kdl
 material "frost" {
@@ -44,6 +41,10 @@ lengths are logical pixels.
 
 `jelly-flex` and `jelly-ripple` use thousandths only in their internal
 representation; their configuration values and ranges above are unchanged.
+
+The v1 slab geometry uses fixed 12 px depth and 28 px corner radius. Its
+chamfer width is `lip + max(abs(shift-x), abs(shift-y))`; these constants are
+not configurable in v1.
 
 ## Window rules and validation
 
