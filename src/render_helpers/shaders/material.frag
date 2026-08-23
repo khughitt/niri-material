@@ -119,7 +119,7 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal) {
     vec2 jelly_resize = vec2(0.0);
 
     vec2 inner_half = (half_ext - vec2(chamfer))
-        * (vec2(1.0) + jelly_resize / (2.0 * half_ext));
+        * (vec2(1.0) + jelly_resize / max(2.0 * half_ext, vec2(1.0)));
     vec2 inner_center = center + jelly_move;
     float ri = max(r - chamfer, 1.0);
     float di = sdRoundedBox(p - inner_center, inner_half, ri);
