@@ -1679,6 +1679,21 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.render_above_top_layer()
     }
 
+    pub(super) fn unmap_snapshot_motion_residual(
+        &self,
+        window: &W::Id,
+    ) -> Option<Point<f64, Logical>> {
+        self.scrolling
+            .unmap_snapshot_motion_residual(window)
+            .or_else(|| {
+                self.floating
+                    .tiles_with_render_positions()
+                    .find_map(|(tile, _)| {
+                        (tile.window().id() == window).then(|| tile.animation_residual())
+                    })
+            })
+    }
+
     pub fn is_floating_visible(&self) -> bool {
         // If the focus is on a fullscreen scrolling window, hide the floating windows.
         matches!(
@@ -1695,6 +1710,9 @@ impl<W: LayoutElement> Workspace<W> {
         xray_pos: XrayPos,
         window: &W::Id,
     ) {
+        let Some(motion_residual) = self.unmap_snapshot_motion_residual(window) else {
+            return;
+        };
         let view_size = self.view_size();
         for (tile, tile_pos) in self.tiles_with_render_positions_mut(false) {
             if tile.window().id() == window {
@@ -1707,6 +1725,7 @@ impl<W: LayoutElement> Workspace<W> {
                     xray,
                     xray_has_blocked_out_layers,
                     xray_pos,
+                    motion_residual,
                 );
                 return;
             }

@@ -2299,6 +2299,25 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         self.column_x(self.active_column_idx) + self.view_offset.target()
     }
 
+    pub(super) fn unmap_snapshot_motion_residual(
+        &self,
+        window: &W::Id,
+    ) -> Option<Point<f64, Logical>> {
+        let view_residual = self.target_view_pos() - self.view_pos();
+        self.columns.iter().find_map(|col| {
+            col.tiles
+                .iter()
+                .find(|tile| tile.window().id() == window)
+                .map(|tile| {
+                    scene_motion_residual(
+                        view_residual,
+                        col.render_offset(),
+                        tile.animation_residual(),
+                    )
+                })
+        })
+    }
+
     // HACK: pass a self.data iterator in manually as a workaround for the lack of method partial
     // borrowing. Note that this method's return value does not borrow the entire &Self!
     fn column_xs(&self, data: impl Iterator<Item = ColumnData>) -> impl Iterator<Item = f64> {
@@ -2957,9 +2976,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 }
 
                 let xray_pos = xray_pos.offset(tile_pos);
-                let motion_residual = Point::from((self.target_view_pos() - self.view_pos(), 0.))
-                    + col_render_off
-                    + tile.animation_residual();
+                let motion_residual = scene_motion_residual(
+                    self.target_view_pos() - self.view_pos(),
+                    col_render_off,
+                    tile.animation_residual(),
+                );
                 tile.render(
                     ctx.r(),
                     tile_pos,
@@ -5460,6 +5481,14 @@ impl<W: LayoutElement> Column<W> {
             );
         }
     }
+}
+
+fn scene_motion_residual(
+    view_residual: f64,
+    column_residual: Point<f64, Logical>,
+    tile_residual: Point<f64, Logical>,
+) -> Point<f64, Logical> {
+    Point::from((view_residual, 0.)) + column_residual + tile_residual
 }
 
 fn compute_new_view_offset(

@@ -4689,6 +4689,7 @@ impl<W: LayoutElement> Layout<W> {
                     xray,
                     xray_has_blocked_out_layers,
                     XrayPos::new(pos_within_output, zoom),
+                    move_.tile.animation_residual(),
                 );
                 return;
             }

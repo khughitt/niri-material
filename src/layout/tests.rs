@@ -1974,6 +1974,42 @@ fn primary_active_workspace_idx_not_updated_on_output_add() {
 }
 
 #[test]
+fn scrolling_unmap_snapshot_keeps_view_animation_residual() {
+    let layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams {
+                bbox: Rectangle::from_size(Size::from((1000, 200))),
+                ..TestWindowParams::new(1)
+            },
+        },
+        Op::AddWindow {
+            params: TestWindowParams {
+                bbox: Rectangle::from_size(Size::from((1000, 200))),
+                ..TestWindowParams::new(2)
+            },
+        },
+        Op::CompleteAnimations,
+        Op::FocusColumnFirst,
+    ]);
+
+    let workspace = layout.active_workspace().unwrap();
+    let scrolling = workspace.scrolling();
+    let view_residual = scrolling.target_view_pos() - scrolling.view_pos();
+    let tile = scrolling
+        .tiles()
+        .find(|tile| tile.window().id() == &1)
+        .unwrap();
+
+    assert_ne!(view_residual, 0.);
+    assert_eq!(tile.animation_residual(), Point::from((0., 0.)));
+    assert_eq!(
+        workspace.unmap_snapshot_motion_residual(&1),
+        Some(Point::from((view_residual, 0.)))
+    );
+}
+
+#[test]
 fn window_closed_on_previous_workspace() {
     let ops = [
         Op::AddOutput(1),

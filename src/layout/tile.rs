@@ -1762,13 +1762,19 @@ impl<W: LayoutElement> Tile<W> {
         xray: Option<&mut Xray>,
         xray_has_blocked_out_layers: bool,
         xray_pos: XrayPos,
+        motion_residual: Point<f64, Logical>,
     ) {
         if self.unmap_snapshot.is_some() {
             return;
         }
 
-        self.unmap_snapshot =
-            Some(self.render_snapshot(renderer, xray, xray_has_blocked_out_layers, xray_pos));
+        self.unmap_snapshot = Some(self.render_snapshot(
+            renderer,
+            xray,
+            xray_has_blocked_out_layers,
+            xray_pos,
+            motion_residual,
+        ));
     }
 
     fn render_snapshot(
@@ -1777,6 +1783,7 @@ impl<W: LayoutElement> Tile<W> {
         mut xray: Option<&mut Xray>,
         xray_has_blocked_out_layers: bool,
         xray_pos: XrayPos,
+        motion_residual: Point<f64, Logical>,
     ) -> TileRenderSnapshot {
         let _span = tracy_client::span!("Tile::render_snapshot");
 
@@ -1790,7 +1797,7 @@ impl<W: LayoutElement> Tile<W> {
             Point::from((0., 0.)),
             xray_pos,
             false,
-            self.animation_residual(),
+            motion_residual,
             &mut |elem| contents.push(elem),
         );
 
@@ -1842,7 +1849,7 @@ impl<W: LayoutElement> Tile<W> {
                     Point::from((0., 0.)),
                     xray_pos,
                     false,
-                    self.animation_residual(),
+                    motion_residual,
                     &mut |elem| contents.push(elem),
                 );
                 contents_with_blocked_out_bg = Some(contents);
@@ -1863,7 +1870,7 @@ impl<W: LayoutElement> Tile<W> {
             Point::from((0., 0.)),
             xray_pos,
             false,
-            self.animation_residual(),
+            motion_residual,
             &mut |elem| blocked_out_contents.push(elem),
         );
 
