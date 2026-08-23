@@ -7,6 +7,7 @@ use niri_config::{ResolvedGlass, ResolvedMaterial};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::utils::CommitCounter;
+use smithay::backend::renderer::Color32F;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
@@ -18,15 +19,62 @@ use super::shaders::{ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::RenderTarget;
 
-/// Maps an element rectangle (already in backdrop/background coordinates)
-/// to a UV-space rect `[x, y, w, h]` of the background texture.
-pub fn bg_uv_rect(elem_geo: Rectangle<f64, Logical>, bg_size: Size<f64, Logical>) -> [f32; 4] {
-    [
-        (elem_geo.loc.x / bg_size.w) as f32,
-        (elem_geo.loc.y / bg_size.h) as f32,
-        (elem_geo.size.w / bg_size.w) as f32,
-        (elem_geo.size.h / bg_size.h) as f32,
-    ]
+/// Per-fragment background composition inputs, mirroring `XrayElement`'s
+/// two-layer stack for the one workspace the element belongs to.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BackgroundMapping {
+    /// Element rect in background-buffer UV, mapped through the workspace
+    /// rect (each workspace shows the full buffer).
+    pub bg_rect: [f32; 4],
+    /// Element rect in backdrop-buffer UV.
+    pub backdrop_rect: [f32; 4],
+    /// Workspace rect in element UV: inside it the shader samples the
+    /// background buffer over the workspace color, outside the backdrop
+    /// buffer over the backdrop color. Empty = backdrop everywhere.
+    pub ws_rect: [f32; 4],
+    /// Premultiplied workspace background color.
+    pub ws_color: [f32; 4],
+}
+
+/// Selects the workspace containing the element's center and derives the
+/// UV mappings. An element straddling a workspace boundary during a
+/// workspace switch resolves to its center's workspace; fragments outside
+/// that workspace's rect fall back to the backdrop layer.
+pub fn background_mapping(
+    geo_in_backdrop: Rectangle<f64, Logical>,
+    workspaces: &[(Rectangle<f64, Logical>, Color32F)],
+    backdrop_size: Size<f64, Logical>,
+) -> BackgroundMapping {
+    let center = Point::from((
+        geo_in_backdrop.loc.x + geo_in_backdrop.size.w / 2.,
+        geo_in_backdrop.loc.y + geo_in_backdrop.size.h / 2.,
+    ));
+    let (bg_rect, ws_rect, ws_color) = match workspaces.iter().find(|(geo, _)| geo.contains(center))
+    {
+        Some((ws_geo, color)) => (
+            [
+                ((geo_in_backdrop.loc.x - ws_geo.loc.x) / ws_geo.size.w) as f32,
+                ((geo_in_backdrop.loc.y - ws_geo.loc.y) / ws_geo.size.h) as f32,
+                (geo_in_backdrop.size.w / ws_geo.size.w) as f32,
+                (geo_in_backdrop.size.h / ws_geo.size.h) as f32,
+            ],
+            uv_rect(*ws_geo, geo_in_backdrop),
+            color.components(),
+        ),
+        None => ([0.; 4], [0.; 4], [0.; 4]),
+    };
+
+    BackgroundMapping {
+        bg_rect,
+        backdrop_rect: [
+            (geo_in_backdrop.loc.x / backdrop_size.w) as f32,
+            (geo_in_backdrop.loc.y / backdrop_size.h) as f32,
+            (geo_in_backdrop.size.w / backdrop_size.w) as f32,
+            (geo_in_backdrop.size.h / backdrop_size.h) as f32,
+        ],
+        ws_rect,
+        ws_color,
+    }
 }
 
 /// Slab constants in logical px, matching the legacy slab mesh so the two
@@ -123,6 +171,14 @@ pub struct InputFingerprint {
     pub background_id: Id,
     /// Commit of the background buffer being sampled.
     pub background: CommitCounter,
+    /// Identity of the backdrop buffer being sampled.
+    pub backdrop_id: Id,
+    /// Commit of the backdrop buffer being sampled.
+    pub backdrop: CommitCounter,
+    /// Workspace background color composed behind the background buffer.
+    pub ws_color: [f32; 4],
+    /// Backdrop color composed behind the backdrop buffer.
+    pub backdrop_color: [f32; 4],
 }
 
 #[derive(Debug)]
@@ -178,15 +234,17 @@ impl MaterialState {
     pub fn element(
         &self,
         frame: MaterialFrame,
+        mapping: BackgroundMapping,
         scale: f64,
         alpha: f32,
         target: RenderTarget,
         inputs: InputFingerprint,
         win_rect: [f32; 4],
         win_src: Rectangle<f64, Buffer>,
-        bg_rect: [f32; 4],
         win_texture: GlesTexture,
         bg: Rc<RefCell<EffectBuffer>>,
+        backdrop: Rc<RefCell<EffectBuffer>>,
+        backdrop_color: [f32; 4],
     ) -> MaterialRenderElement {
         MaterialRenderElement {
             id: self.id.clone(),
@@ -197,9 +255,11 @@ impl MaterialState {
             glass: self.material.glass,
             win_rect,
             win_src,
-            bg_rect,
+            mapping,
             win_texture,
             bg,
+            backdrop,
+            backdrop_color,
         }
     }
 }
@@ -249,9 +309,11 @@ pub struct MaterialRenderElement {
     win_rect: [f32; 4],
     /// The same sub-rect in buffer pixels, for the plain-draw fallback.
     win_src: Rectangle<f64, Buffer>,
-    bg_rect: [f32; 4],
+    mapping: BackgroundMapping,
     win_texture: GlesTexture,
     bg: Rc<RefCell<EffectBuffer>>,
+    backdrop: Rc<RefCell<EffectBuffer>>,
+    backdrop_color: [f32; 4],
 }
 
 impl Element for MaterialRenderElement {
@@ -290,15 +352,10 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        let bg_texture = match self.bg.borrow_mut().render(frame, false) {
-            Ok(tex) => Some(tex),
-            Err(err) => {
-                warn!("material: error rendering background buffer: {err:?}");
-                None
-            }
-        };
-
-        let Some(bg_texture) = bg_texture else {
+        let bg_texture = self.bg.borrow_mut().render(frame, false).ok();
+        let backdrop_texture = self.backdrop.borrow_mut().render(frame, false).ok();
+        let (Some(bg_texture), Some(backdrop_texture)) = (bg_texture, backdrop_texture) else {
+            warn!("material: error rendering background/backdrop buffer");
             let geo = self.frame.geo_rect;
             let dst_geo = Rectangle::new(
                 Point::from((
@@ -331,7 +388,11 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_slab_rect", f.slab_rect),
             Uniform::new("mat_area_size", f.area_size),
             Uniform::new("mat_chamfer", f.chamfer),
-            Uniform::new("mat_bg_rect", self.bg_rect),
+            Uniform::new("mat_bg_rect", self.mapping.bg_rect),
+            Uniform::new("mat_backdrop_rect", self.mapping.backdrop_rect),
+            Uniform::new("mat_ws_rect", self.mapping.ws_rect),
+            Uniform::new("mat_ws_color", self.mapping.ws_color),
+            Uniform::new("mat_backdrop_color", self.backdrop_color),
             Uniform::new("mat_ior", g.ior as f32),
             Uniform::new("mat_thickness", g.thickness as f32),
             Uniform::new(
@@ -349,6 +410,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
             (String::from("niri_tex_bg"), bg_texture),
+            (String::from("niri_tex_backdrop"), backdrop_texture),
         ]);
         let inner = ShaderRenderElement::new(
             ProgramType::Material,
@@ -395,6 +457,7 @@ impl<'render> RenderElement<TtyRenderer<'render>> for MaterialRenderElement {
 mod tests {
     use super::*;
     use niri_config::{ResolvedGlass, ResolvedMaterial};
+    use smithay::backend::renderer::Color32F;
     use smithay::utils::Point;
 
     use crate::render_helpers::RenderTarget;
@@ -414,11 +477,30 @@ mod tests {
         c
     }
 
-    fn fingerprint(window: usize, background: usize, background_id: &Id) -> InputFingerprint {
+    fn fingerprint(
+        window: usize,
+        background: usize,
+        background_id: &Id,
+        backdrop_id: &Id,
+    ) -> InputFingerprint {
+        fingerprint2(window, background, background_id, 1, backdrop_id)
+    }
+
+    fn fingerprint2(
+        window: usize,
+        background: usize,
+        background_id: &Id,
+        backdrop: usize,
+        backdrop_id: &Id,
+    ) -> InputFingerprint {
         InputFingerprint {
             window: commit_after(window),
             background: commit_after(background),
             background_id: background_id.clone(),
+            backdrop: commit_after(backdrop),
+            backdrop_id: backdrop_id.clone(),
+            ws_color: [0.; 4],
+            backdrop_color: [0.; 4],
         }
     }
 
@@ -426,10 +508,20 @@ mod tests {
     fn unchanged_inputs_do_not_advance_the_commit() {
         let state = MaterialState::new(material("frost"));
         let background_id = Id::new();
+        let backdrop_id = Id::new();
 
-        let first = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
-        let second = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
-        let third = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
+        let first = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &background_id, &backdrop_id),
+        );
+        let second = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &background_id, &backdrop_id),
+        );
+        let third = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &background_id, &backdrop_id),
+        );
 
         // A glass window at rest must contribute no damage.
         assert_eq!(first, second);
@@ -440,9 +532,16 @@ mod tests {
     fn window_damage_advances_the_commit() {
         let state = MaterialState::new(material("frost"));
         let background_id = Id::new();
+        let backdrop_id = Id::new();
 
-        let first = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
-        let second = state.advance_commit(RenderTarget::Output, fingerprint(2, 1, &background_id));
+        let first = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &background_id, &backdrop_id),
+        );
+        let second = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(2, 1, &background_id, &backdrop_id),
+        );
 
         assert_ne!(first, second);
     }
@@ -451,9 +550,16 @@ mod tests {
     fn background_damage_advances_the_commit() {
         let state = MaterialState::new(material("frost"));
         let background_id = Id::new();
+        let backdrop_id = Id::new();
 
-        let first = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
-        let second = state.advance_commit(RenderTarget::Output, fingerprint(1, 2, &background_id));
+        let first = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &background_id, &backdrop_id),
+        );
+        let second = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 2, &background_id, &backdrop_id),
+        );
 
         assert_ne!(first, second);
     }
@@ -463,12 +569,24 @@ mod tests {
         let state = MaterialState::new(material("frost"));
         let output_bg = Id::new();
         let screencast_bg = Id::new();
+        let backdrop_id = Id::new();
 
-        state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
-        state.advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg));
-        let output = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
-        let screencast =
-            state.advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg));
+        state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &output_bg, &backdrop_id),
+        );
+        state.advance_commit(
+            RenderTarget::Screencast,
+            fingerprint(1, 1, &screencast_bg, &backdrop_id),
+        );
+        let output = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &output_bg, &backdrop_id),
+        );
+        let screencast = state.advance_commit(
+            RenderTarget::Screencast,
+            fingerprint(1, 1, &screencast_bg, &backdrop_id),
+        );
 
         assert_eq!(output, screencast);
     }
@@ -478,9 +596,16 @@ mod tests {
         let state = MaterialState::new(material("frost"));
         let first_bg = Id::new();
         let replacement_bg = Id::new();
+        let backdrop_id = Id::new();
 
-        let before = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &first_bg));
-        let after = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &replacement_bg));
+        let before = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &first_bg, &backdrop_id),
+        );
+        let after = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &replacement_bg, &backdrop_id),
+        );
 
         assert_ne!(before, after);
     }
@@ -491,16 +616,19 @@ mod tests {
         let id_before = slot.as_ref().unwrap().id().clone();
         let output_bg = Id::new();
         let screencast_bg = Id::new();
-        slot.as_ref()
-            .unwrap()
-            .advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
-        slot.as_ref()
-            .unwrap()
-            .advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg));
-        let commit_before = slot
-            .as_ref()
-            .unwrap()
-            .advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
+        let backdrop_id = Id::new();
+        slot.as_ref().unwrap().advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &output_bg, &backdrop_id),
+        );
+        slot.as_ref().unwrap().advance_commit(
+            RenderTarget::Screencast,
+            fingerprint(1, 1, &screencast_bg, &backdrop_id),
+        );
+        let commit_before = slot.as_ref().unwrap().advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &output_bg, &backdrop_id),
+        );
 
         let mut changed = material("frost");
         changed.glass.ior = 1.6;
@@ -514,11 +642,17 @@ mod tests {
         let mut expected = commit_before;
         expected.increment();
         assert_eq!(
-            state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg)),
+            state.advance_commit(
+                RenderTarget::Output,
+                fingerprint(1, 1, &output_bg, &backdrop_id)
+            ),
             expected
         );
         assert_eq!(
-            state.advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg)),
+            state.advance_commit(
+                RenderTarget::Screencast,
+                fingerprint(1, 1, &screencast_bg, &backdrop_id)
+            ),
             expected
         );
     }
@@ -527,18 +661,20 @@ mod tests {
     fn identical_parameters_are_not_damage() {
         let mut slot = Some(MaterialState::new(material("frost")));
         let background_id = Id::new();
-        let commit_before = slot
-            .as_ref()
-            .unwrap()
-            .advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
+        let backdrop_id = Id::new();
+        let commit_before = slot.as_ref().unwrap().advance_commit(
+            RenderTarget::Output,
+            fingerprint(1, 1, &background_id, &backdrop_id),
+        );
 
         let rebuilt = apply_resolved(&mut slot, Some(&material("frost")));
 
         assert!(!rebuilt);
         assert_eq!(
-            slot.as_ref()
-                .unwrap()
-                .advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id)),
+            slot.as_ref().unwrap().advance_commit(
+                RenderTarget::Output,
+                fingerprint(1, 1, &background_id, &backdrop_id)
+            ),
             commit_before
         );
     }
@@ -587,20 +723,70 @@ mod tests {
     }
 
     #[test]
-    fn bg_uv_rect_identity() {
-        // Element covering the whole background maps to the full UV square.
-        let geo = Rectangle::new(Point::new(0., 0.), Size::new(1000., 500.));
-        let bg = Size::new(1000., 500.);
-        assert_eq!(bg_uv_rect(geo, bg), [0., 0., 1., 1.]);
+    fn background_mapping_at_rest_is_identity_like() {
+        let ws = Rectangle::new(Point::new(0., 0.), Size::new(1920., 1080.));
+        let color = Color32F::new(0.1, 0.2, 0.3, 1.);
+        let geo = Rectangle::new(Point::new(192., 108.), Size::new(384., 216.));
+
+        let m = background_mapping(geo, &[(ws, color)], Size::new(1920., 1080.));
+
+        assert_eq!(m.bg_rect, [0.1, 0.1, 0.2, 0.2]);
+        assert_eq!(m.backdrop_rect, [0.1, 0.1, 0.2, 0.2]);
+        assert_eq!(m.ws_rect, [-0.5, -0.5, 5., 5.]);
+        assert_eq!(m.ws_color, color.components());
     }
 
     #[test]
-    fn bg_uv_rect_offset_quarter() {
-        // A 250x125 element at (500, 250) on a 1000x500 background samples
-        // the lower-right quadrant's first quarter.
-        let geo = Rectangle::new(Point::new(500., 250.), Size::new(250., 125.));
-        let bg = Size::new(1000., 500.);
-        assert_eq!(bg_uv_rect(geo, bg), [0.5, 0.5, 0.25, 0.25]);
+    fn background_mapping_overview_scales_through_the_workspace() {
+        let ws = Rectangle::new(Point::new(480., 270.), Size::new(960., 540.));
+        let color = Color32F::new(0., 0., 0., 1.);
+        let geo = Rectangle::new(Point::new(720., 405.), Size::new(96., 54.));
+
+        let m = background_mapping(geo, &[(ws, color)], Size::new(1920., 1080.));
+
+        assert_eq!(m.bg_rect, [0.25, 0.25, 0.1, 0.1]);
+    }
+
+    #[test]
+    fn background_mapping_without_a_containing_workspace_is_backdrop_only() {
+        let geo = Rectangle::new(Point::new(0., 0.), Size::new(100., 100.));
+
+        let m = background_mapping(geo, &[], Size::new(1920., 1080.));
+
+        assert_eq!(m.ws_rect, [0.; 4]);
+        assert_eq!(m.ws_color, [0.; 4]);
+    }
+
+    #[test]
+    fn backdrop_commit_advances_the_commit() {
+        let state = MaterialState::new(material("frost"));
+        let background_id = Id::new();
+        let backdrop_id = Id::new();
+
+        let a = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint2(1, 1, &background_id, 1, &backdrop_id),
+        );
+        let b = state.advance_commit(
+            RenderTarget::Output,
+            fingerprint2(1, 1, &background_id, 2, &backdrop_id),
+        );
+
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn workspace_color_change_advances_the_commit() {
+        let state = MaterialState::new(material("frost"));
+        let background_id = Id::new();
+        let backdrop_id = Id::new();
+
+        let mut f = fingerprint2(1, 1, &background_id, 1, &backdrop_id);
+        let a = state.advance_commit(RenderTarget::Output, f.clone());
+        f.ws_color = [1., 0., 0., 1.];
+        let b = state.advance_commit(RenderTarget::Output, f);
+
+        assert_ne!(a, b);
     }
 
     #[test]

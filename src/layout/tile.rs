@@ -24,7 +24,7 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
-    apply_resolved, bg_uv_rect, material_frame, InputFingerprint, MaterialRenderElement,
+    apply_resolved, background_mapping, material_frame, InputFingerprint, MaterialRenderElement,
     MaterialState,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
@@ -1248,9 +1248,11 @@ impl<W: LayoutElement> Tile<W> {
                             let material = self.material.as_ref().unwrap();
                             let xray = ctx.xray.unwrap();
                             let bg = xray.background[ctx.target as usize].clone();
+                            let backdrop = xray.backdrop[ctx.target as usize].clone();
 
                             if MaterialState::has_program(ctx.renderer)
                                 && bg.borrow_mut().prepare(ctx.renderer, false)
+                                && backdrop.borrow_mut().prepare(ctx.renderer, false)
                             {
                                 let material_elem = elem.clone().with_alpha(1.);
                                 match material.offscreen.render(
@@ -1284,34 +1286,49 @@ impl<W: LayoutElement> Tile<W> {
                                             (win_src.size.h / tex_size.h) as f32,
                                         ];
 
-                                        let bg_size = bg.borrow().logical_size();
                                         let rel = frame.area.loc - window_render_loc;
                                         let geo_in_backdrop = Rectangle::new(
                                             (xray_pos.pos_in_backdrop + rel).upscale(xray_pos.zoom),
                                             frame.area.size.upscale(xray_pos.zoom),
                                         );
-                                        let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+                                        let backdrop_size = backdrop.borrow().logical_size();
+                                        let mapping = background_mapping(
+                                            geo_in_backdrop,
+                                            &xray.workspaces,
+                                            backdrop_size,
+                                        );
+                                        let backdrop_color = xray.backdrop_color.components();
                                         let (background_id, background) = {
                                             let bg = bg.borrow();
                                             (bg.id().clone(), bg.commit())
+                                        };
+                                        let (backdrop_id, backdrop_commit) = {
+                                            let backdrop = backdrop.borrow();
+                                            (backdrop.id().clone(), backdrop.commit())
                                         };
                                         let inputs = InputFingerprint {
                                             window: offscreen_elem.current_commit(),
                                             background_id,
                                             background,
+                                            backdrop_id,
+                                            backdrop: backdrop_commit,
+                                            ws_color: mapping.ws_color,
+                                            backdrop_color,
                                         };
 
                                         let mat_elem = material.element(
                                             frame,
+                                            mapping,
                                             self.scale,
                                             win_alpha,
                                             ctx.target,
                                             inputs,
                                             win_rect,
                                             win_src,
-                                            bg_rect,
                                             win_texture,
                                             bg,
+                                            backdrop,
+                                            backdrop_color,
                                         );
 
                                         let render_data = data.as_mut().unwrap();
@@ -1393,7 +1410,10 @@ impl<W: LayoutElement> Tile<W> {
 
                     let xray = ctx.xray.unwrap();
                     let bg = xray.background[ctx.target as usize].clone();
-                    if bg.borrow_mut().prepare(ctx.renderer, false) {
+                    let backdrop = xray.backdrop[ctx.target as usize].clone();
+                    if bg.borrow_mut().prepare(ctx.renderer, false)
+                        && backdrop.borrow_mut().prepare(ctx.renderer, false)
+                    {
                         match material
                             .offscreen
                             .render(ctx.renderer, scale, &window_elements)
@@ -1424,34 +1444,49 @@ impl<W: LayoutElement> Tile<W> {
                                     (win_src.size.h / tex_size.h) as f32,
                                 ];
 
-                                let bg_size = bg.borrow().logical_size();
                                 let rel = frame.area.loc - window_render_loc;
                                 let geo_in_backdrop = Rectangle::new(
                                     (xray_pos.pos_in_backdrop + rel).upscale(xray_pos.zoom),
                                     frame.area.size.upscale(xray_pos.zoom),
                                 );
-                                let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+                                let backdrop_size = backdrop.borrow().logical_size();
+                                let mapping = background_mapping(
+                                    geo_in_backdrop,
+                                    &xray.workspaces,
+                                    backdrop_size,
+                                );
+                                let backdrop_color = xray.backdrop_color.components();
                                 let (background_id, background) = {
                                     let bg = bg.borrow();
                                     (bg.id().clone(), bg.commit())
+                                };
+                                let (backdrop_id, backdrop_commit) = {
+                                    let backdrop = backdrop.borrow();
+                                    (backdrop.id().clone(), backdrop.commit())
                                 };
                                 let inputs = InputFingerprint {
                                     window: offscreen_elem.current_commit(),
                                     background_id,
                                     background,
+                                    backdrop_id,
+                                    backdrop: backdrop_commit,
+                                    ws_color: mapping.ws_color,
+                                    backdrop_color,
                                 };
 
                                 let elem = material.element(
                                     frame,
+                                    mapping,
                                     self.scale,
                                     win_alpha,
                                     ctx.target,
                                     inputs,
                                     win_rect,
                                     win_src,
-                                    bg_rect,
                                     win_texture,
                                     bg,
+                                    backdrop,
+                                    backdrop_color,
                                 );
 
                                 data.id = elem.id().clone();
