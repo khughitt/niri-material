@@ -135,3 +135,27 @@ fn focus_conditioned_rule_swaps_material() {
     assert_eq!(material_of(&mut f, "first").as_deref(), Some("clear"));
     assert_eq!(material_of(&mut f, "second").as_deref(), Some("frost"));
 }
+
+#[test]
+fn material_window_at_rest_does_not_animate() {
+    let mut f = Fixture::with_config(config(
+        r##"
+        material "frost" {
+            glass {}
+        }
+
+        window-rule {
+            material "frost"
+        }
+        "##,
+    ));
+    f.add_output(1, (1920, 1080));
+
+    let id = f.add_client();
+    open_window(&mut f, id, "target");
+    f.niri_complete_animations();
+
+    // Slice 0 forced a redraw loop for every material window. A material at
+    // rest must not claim an ongoing animation.
+    assert!(!f.niri().layout.are_animations_ongoing(None));
+}

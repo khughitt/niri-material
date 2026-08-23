@@ -2,7 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{Color, CornerRadius, GradientInterpolation};
+use niri_config::{Color, CornerRadius, GradientInterpolation, ResolvedMaterial};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -147,6 +147,16 @@ niri_render_elements! {
 pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
+/// The material a window resolves to under the current config, if any.
+fn resolve_material<W: LayoutElement>(window: &W, options: &Options) -> Option<ResolvedMaterial> {
+    window
+        .rules()
+        .material
+        .as_deref()
+        .and_then(|name| options.materials.get(name))
+        .cloned()
+}
+
 #[derive(Debug)]
 struct ResizeAnimation {
     anim: Animation,
@@ -195,13 +205,7 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
-        let material = window
-            .rules()
-            .material
-            .as_deref()
-            .and_then(|name| options.materials.get(name))
-            .cloned()
-            .map(MaterialState::new);
+        let material = resolve_material(&window, &options).map(MaterialState::new);
 
         Self {
             window,
@@ -269,12 +273,20 @@ impl<W: LayoutElement> Tile<W> {
         self.shadow.update_config(shadow_config);
 
         self.window.update_config(self.options.blur);
+        self.refresh_material();
     }
 
     pub fn update_shaders(&mut self) {
         self.border.update_shaders();
         self.focus_ring.update_shaders();
         self.shadow.update_shaders();
+    }
+
+    /// Re-resolves this tile's material from its window rules and the current config, keeping the
+    /// existing state when only parameters changed.
+    fn refresh_material(&mut self) {
+        let resolved = resolve_material(&self.window, &self.options);
+        apply_resolved(&mut self.material, resolved.as_ref());
     }
 
     pub fn update_window(&mut self) {
@@ -425,13 +437,7 @@ impl<W: LayoutElement> Tile<W> {
             .fit_to(window_size.w as f32, window_size.h as f32);
         self.rounded_corner_damage.set_corner_radius(radius);
 
-        let material = self
-            .window
-            .rules()
-            .material
-            .as_deref()
-            .and_then(|name| self.options.materials.get(name));
-        apply_resolved(&mut self.material, material);
+        self.refresh_material();
     }
 
     pub fn advance_animations(&mut self) {
@@ -466,9 +472,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
-        self.are_transitions_ongoing()
-            || self.window.rules().baba_is_float == Some(true)
-            || self.material.is_some()
+        self.are_transitions_ongoing() || self.window.rules().baba_is_float == Some(true)
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
