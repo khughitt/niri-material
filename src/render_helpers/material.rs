@@ -16,6 +16,7 @@ use super::renderer::AsGlesFrame;
 use super::shader_element::ShaderRenderElement;
 use super::shaders::{ProgramType, Shaders};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
+use crate::render_helpers::RenderTarget;
 
 /// Maps an element rectangle (already in backdrop/background coordinates)
 /// to a UV-space rect `[x, y, w, h]` of the background texture.
@@ -51,10 +52,12 @@ fn map_normalized_src(
 ///
 /// Element geometry and alpha are deliberately absent: smithay's damage
 /// tracker already compares those between frames.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InputFingerprint {
     /// Commit of the offscreen the window body rendered into.
     pub window: CommitCounter,
+    /// Identity of the background buffer being sampled.
+    pub background_id: Id,
     /// Commit of the background buffer being sampled.
     pub background: CommitCounter,
 }
@@ -65,7 +68,7 @@ pub struct MaterialState {
     id: Id,
     commit: Cell<CommitCounter>,
     material: ResolvedMaterial,
-    last_inputs: Cell<Option<InputFingerprint>>,
+    last_inputs: RefCell<[Option<InputFingerprint>; RenderTarget::COUNT]>,
 }
 
 impl MaterialState {
@@ -75,7 +78,7 @@ impl MaterialState {
             id: Id::new(),
             commit: Cell::new(CommitCounter::default()),
             material,
-            last_inputs: Cell::new(None),
+            last_inputs: RefCell::new(std::array::from_fn(|_| None)),
         }
     }
 
@@ -93,9 +96,10 @@ impl MaterialState {
 
     /// Advances the element commit counter if and only if a pixel input
     /// changed, and returns the counter the next element should carry.
-    pub fn advance_commit(&self, inputs: InputFingerprint) -> CommitCounter {
-        if self.last_inputs.get() != Some(inputs) {
-            self.last_inputs.set(Some(inputs));
+    pub fn advance_commit(&self, target: RenderTarget, inputs: InputFingerprint) -> CommitCounter {
+        let last_inputs = &mut self.last_inputs.borrow_mut()[target as usize];
+        if last_inputs.as_ref() != Some(&inputs) {
+            *last_inputs = Some(inputs);
             self.bump();
         }
         self.commit.get()
@@ -113,6 +117,7 @@ impl MaterialState {
         area: Rectangle<f64, Logical>,
         scale: f64,
         alpha: f32,
+        target: RenderTarget,
         inputs: InputFingerprint,
         win_rect: [f32; 4],
         win_src: Rectangle<f64, Buffer>,
@@ -122,7 +127,7 @@ impl MaterialState {
     ) -> MaterialRenderElement {
         MaterialRenderElement {
             id: self.id.clone(),
-            commit: self.advance_commit(inputs),
+            commit: self.advance_commit(target, inputs),
             area,
             scale,
             alpha,
@@ -174,7 +179,6 @@ pub struct MaterialRenderElement {
     scale: f64,
     alpha: f32,
     /// Resolved parameters this element renders with.
-    #[allow(dead_code)] // Used by the material uniform block in the next slice.
     glass: ResolvedGlass,
     /// Window sub-rect of the offscreen texture, normalized UV
     /// (`mat_win_rect`) — the buffer may be larger than the window.
@@ -316,6 +320,8 @@ mod tests {
     use niri_config::{ResolvedGlass, ResolvedMaterial};
     use smithay::utils::Point;
 
+    use crate::render_helpers::RenderTarget;
+
     fn material(name: &str) -> ResolvedMaterial {
         ResolvedMaterial {
             name: String::from(name),
@@ -331,20 +337,22 @@ mod tests {
         c
     }
 
-    fn fingerprint(window: usize, background: usize) -> InputFingerprint {
+    fn fingerprint(window: usize, background: usize, background_id: &Id) -> InputFingerprint {
         InputFingerprint {
             window: commit_after(window),
             background: commit_after(background),
+            background_id: background_id.clone(),
         }
     }
 
     #[test]
     fn unchanged_inputs_do_not_advance_the_commit() {
         let state = MaterialState::new(material("frost"));
+        let background_id = Id::new();
 
-        let first = state.advance_commit(fingerprint(1, 1));
-        let second = state.advance_commit(fingerprint(1, 1));
-        let third = state.advance_commit(fingerprint(1, 1));
+        let first = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
+        let second = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
+        let third = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
 
         // A glass window at rest must contribute no damage.
         assert_eq!(first, second);
@@ -354,9 +362,10 @@ mod tests {
     #[test]
     fn window_damage_advances_the_commit() {
         let state = MaterialState::new(material("frost"));
+        let background_id = Id::new();
 
-        let first = state.advance_commit(fingerprint(1, 1));
-        let second = state.advance_commit(fingerprint(2, 1));
+        let first = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
+        let second = state.advance_commit(RenderTarget::Output, fingerprint(2, 1, &background_id));
 
         assert_ne!(first, second);
     }
@@ -364,18 +373,57 @@ mod tests {
     #[test]
     fn background_damage_advances_the_commit() {
         let state = MaterialState::new(material("frost"));
+        let background_id = Id::new();
 
-        let first = state.advance_commit(fingerprint(1, 1));
-        let second = state.advance_commit(fingerprint(1, 2));
+        let first = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
+        let second = state.advance_commit(RenderTarget::Output, fingerprint(1, 2, &background_id));
 
         assert_ne!(first, second);
+    }
+
+    #[test]
+    fn stable_targets_converge_on_one_commit() {
+        let state = MaterialState::new(material("frost"));
+        let output_bg = Id::new();
+        let screencast_bg = Id::new();
+
+        state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
+        state.advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg));
+        let output = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
+        let screencast =
+            state.advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg));
+
+        assert_eq!(output, screencast);
+    }
+
+    #[test]
+    fn replacing_a_targets_background_buffer_is_damage() {
+        let state = MaterialState::new(material("frost"));
+        let first_bg = Id::new();
+        let replacement_bg = Id::new();
+
+        let before = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &first_bg));
+        let after = state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &replacement_bg));
+
+        assert_ne!(before, after);
     }
 
     #[test]
     fn parameter_change_advances_the_commit_in_place() {
         let mut slot = Some(MaterialState::new(material("frost")));
         let id_before = slot.as_ref().unwrap().id().clone();
-        let commit_before = slot.as_ref().unwrap().advance_commit(fingerprint(1, 1));
+        let output_bg = Id::new();
+        let screencast_bg = Id::new();
+        slot.as_ref()
+            .unwrap()
+            .advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
+        slot.as_ref()
+            .unwrap()
+            .advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg));
+        let commit_before = slot
+            .as_ref()
+            .unwrap()
+            .advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg));
 
         let mut changed = material("frost");
         changed.glass.ior = 1.6;
@@ -388,19 +436,32 @@ mod tests {
 
         let mut expected = commit_before;
         expected.increment();
-        assert_eq!(state.advance_commit(fingerprint(1, 1)), expected);
+        assert_eq!(
+            state.advance_commit(RenderTarget::Output, fingerprint(1, 1, &output_bg)),
+            expected
+        );
+        assert_eq!(
+            state.advance_commit(RenderTarget::Screencast, fingerprint(1, 1, &screencast_bg)),
+            expected
+        );
     }
 
     #[test]
     fn identical_parameters_are_not_damage() {
         let mut slot = Some(MaterialState::new(material("frost")));
-        let commit_before = slot.as_ref().unwrap().advance_commit(fingerprint(1, 1));
+        let background_id = Id::new();
+        let commit_before = slot
+            .as_ref()
+            .unwrap()
+            .advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id));
 
         let rebuilt = apply_resolved(&mut slot, Some(&material("frost")));
 
         assert!(!rebuilt);
         assert_eq!(
-            slot.as_ref().unwrap().advance_commit(fingerprint(1, 1)),
+            slot.as_ref()
+                .unwrap()
+                .advance_commit(RenderTarget::Output, fingerprint(1, 1, &background_id)),
             commit_before
         );
     }

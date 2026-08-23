@@ -148,13 +148,15 @@ pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
 /// The material a window resolves to under the current config, if any.
-fn resolve_material<W: LayoutElement>(window: &W, options: &Options) -> Option<ResolvedMaterial> {
-    window
-        .rules()
-        .material
-        .as_deref()
-        .and_then(|name| options.materials.get(name))
-        .cloned()
+fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMaterial> {
+    let name = name?;
+    Some(
+        options
+            .materials
+            .get(name)
+            .unwrap_or_else(|| panic!("resolved material must exist: {name}"))
+            .clone(),
+    )
 }
 
 #[derive(Debug)]
@@ -205,7 +207,8 @@ impl<W: LayoutElement> Tile<W> {
         let focus_ring_config = options.layout.focus_ring.merged_with(&rules.focus_ring);
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
-        let material = resolve_material(&window, &options).map(MaterialState::new);
+        let material =
+            resolve_material(window.rules().material.as_deref(), &options).map(MaterialState::new);
 
         Self {
             window,
@@ -285,7 +288,7 @@ impl<W: LayoutElement> Tile<W> {
     /// Re-resolves this tile's material from its window rules and the current config, keeping the
     /// existing state when only parameters changed.
     fn refresh_material(&mut self) {
-        let resolved = resolve_material(&self.window, &self.options);
+        let resolved = resolve_material(self.window.rules().material.as_deref(), &self.options);
         apply_resolved(&mut self.material, resolved.as_ref());
     }
 
@@ -1209,15 +1212,21 @@ impl<W: LayoutElement> Tile<W> {
                                             area.size.upscale(xray_pos.zoom),
                                         );
                                         let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+                                        let (background_id, background) = {
+                                            let bg = bg.borrow();
+                                            (bg.id().clone(), bg.commit())
+                                        };
                                         let inputs = InputFingerprint {
                                             window: offscreen_elem.current_commit(),
-                                            background: bg.borrow().commit(),
+                                            background_id,
+                                            background,
                                         };
 
                                         let mat_elem = material.element(
                                             area,
                                             self.scale,
                                             win_alpha,
+                                            ctx.target,
                                             inputs,
                                             win_rect,
                                             win_src,
@@ -1319,15 +1328,21 @@ impl<W: LayoutElement> Tile<W> {
                                     area.size.upscale(xray_pos.zoom),
                                 );
                                 let bg_rect = bg_uv_rect(geo_in_backdrop, bg_size);
+                                let (background_id, background) = {
+                                    let bg = bg.borrow();
+                                    (bg.id().clone(), bg.commit())
+                                };
                                 let inputs = InputFingerprint {
                                     window: offscreen_elem.current_commit(),
-                                    background: bg.borrow().commit(),
+                                    background_id,
+                                    background,
                                 };
 
                                 let elem = material.element(
                                     area,
                                     self.scale,
                                     win_alpha,
+                                    ctx.target,
                                     inputs,
                                     win_rect,
                                     win_src,
@@ -1743,5 +1758,16 @@ impl<W: LayoutElement> Tile<W> {
         let rounded = size.to_physical_precise_round(scale).to_logical(scale);
         assert_abs_diff_eq!(size.w, rounded.w, epsilon = 1e-5);
         assert_abs_diff_eq!(size.h, rounded.h, epsilon = 1e-5);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "resolved material must exist: frost")]
+    fn missing_resolved_material_fails_explicitly() {
+        resolve_material(Some("frost"), &Options::default());
     }
 }
