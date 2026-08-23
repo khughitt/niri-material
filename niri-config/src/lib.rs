@@ -216,7 +216,31 @@ where
                 "spawn-at-startup" => m_push!(spawn_at_startup),
                 "spawn-sh-at-startup" => m_push!(spawn_sh_at_startup),
                 "window-rule" => m_push!(window_rules),
-                "material" => m_push!(materials),
+                "material" => {
+                    let part = Material::decode_node(node, ctx)?;
+
+                    // `config` is shared across includes, unlike a value set
+                    // into this file's Context, so this also catches a
+                    // duplicate defined in another file.
+                    let mut config = config.borrow_mut();
+                    if config.materials.iter().any(|m| m.name == part.name) {
+                        let message = format!("duplicate material: {}", part.name);
+                        // Point at the name argument so the caret lands on
+                        // the name rather than the whole block.
+                        match node.arguments.first() {
+                            Some(arg) => ctx.emit_error(DecodeError::unexpected(
+                                &arg.literal,
+                                "material",
+                                message,
+                            )),
+                            None => {
+                                ctx.emit_error(DecodeError::unexpected(node, "material", message))
+                            }
+                        }
+                    } else {
+                        config.materials.push(part);
+                    }
+                }
                 "layer-rule" => m_push!(layer_rules),
                 "workspace" => m_push!(workspaces),
 
@@ -802,6 +826,63 @@ mod tests {
             "##,
         );
         assert!(err.contains("samples must be an integer"), "{err}");
+    }
+
+    #[test]
+    fn material_rejects_duplicate_name() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {}
+            }
+
+            material "frost" {
+                glass {
+                    ior 1.2
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("duplicate material: frost"), "{err}");
+    }
+
+    #[test]
+    fn material_allows_distinct_names() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {}
+            }
+
+            material "clear" {
+                glass {}
+            }
+            "##,
+        );
+        assert_eq!(parsed.materials.len(), 2);
+        assert_eq!(parsed.materials[1].name, "clear");
+    }
+
+    #[test]
+    fn material_rejects_missing_type_block() {
+        let err = do_parse_err(r##"material "frost" {}"##);
+        assert!(err.contains("glass"), "{err}");
+    }
+
+    #[test]
+    fn material_rejects_two_type_blocks() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {}
+                glass {}
+            }
+            "##,
+        );
+        assert!(
+            err.contains("duplicate node `glass`, single node expected"),
+            "{err}"
+        );
     }
 
     #[test]
