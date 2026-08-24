@@ -19,13 +19,23 @@ This design changes names, units, and which knobs exist. It does not change
 the optics: every shader path other than slab geometry and tap count is
 untouched.
 
-It does change the default appearance, in exactly one way. Making the corner
-radius follow the window means a default niri window — `geometry-corner-radius
-0` — gets inner radius 0 and outer radius `bevel`, where the deleted constants
-gave 16 and 28. That is the intended correction, not a regression: the glass
-now matches the window it sits under. Every other default is preserved,
-including the `thickness` unification, which is neutral for the reason given
-under “Appearance neutrality”.
+It does change default behaviour, in two ways, both corrections.
+
+Making the corner radius follow the window means a default niri window —
+`geometry-corner-radius 0` — gets inner radius 0 and outer radius `chamfer`,
+where the deleted constants gave 16 and 28. The glass now matches the window
+it sits under.
+
+Clamping the chamfer compositor-side changes jelly on windows too small to
+carry the configured band. The shader always drew such a band clamped; what
+was not clamped was the Rust-side copy feeding the jelly flex limit. On an
+8×8 window at the defaults the effective band is 9, not 12, so the flex limit
+becomes 2.25 rather than 3 — the amplitude now follows the band actually
+drawn. Static appearance there is unchanged, since the shader was already
+clamping.
+
+Every other default is preserved, including the `thickness` unification,
+which is neutral for the reason given under “Appearance neutrality”.
 
 ## Resolved surface
 
@@ -48,7 +58,9 @@ material "frost" {
 }
 ```
 
-Twelve parameters, from fourteen. Removed: `lip`, `shift-x`, `shift-y`,
+Twelve KDL nodes carrying thirteen configurable values, from fourteen of
+each — the counts differ now because `scale` is a property of `distortion`
+rather than a node of its own. Removed: `lip`, `shift-x`, `shift-y`,
 `samples`, `distortion-scale`. Added: `bevel`, `offset-x`, `offset-y`, and
 `distortion`'s `scale` property. The slab's corner radius follows the window's
 `geometry-corner-radius` and has no glass-side parameter at all.
@@ -103,7 +115,7 @@ uniform inflation is derived:
 ```
 inflate = bevel - max(abs(offset-x), abs(offset-y))
 slab    = window rect inflated by `inflate`, translated by (offset-x, offset-y)
-chamfer = min(bevel, half the smaller slab side - 1)
+chamfer = min(bevel, max(half the smaller slab side - 1, 0))
 ```
 
 The chamfer is the bevel wherever the bevel fits, which is every window big
@@ -119,8 +131,9 @@ one counterpart. Sub-pixel values are the one place the mapping is not
 value-identical: the old code snapped `lip` up to the physical grid and then
 reused that rounded number as the chamfer, so `lip 5.3` at scale 2 reported a
 5.5 band. The inflation is still snapped — element geometry and damage must
-land on pixels — but the chamfer is now the `bevel` exactly, since a band
-width has no reason to be pixel-aligned. `bevel`'s range is 0–128 rather than `lip`'s 0–64 precisely
+land on pixels — but the chamfer is now the `bevel` unrounded, since a band
+width has no reason to be pixel-aligned. (Unrounded, not unconditional: the
+tiny-slab clamp above still applies.) `bevel`'s range is 0–128 rather than `lip`'s 0–64 precisely
 so that it is: the widest band reachable today combines both maxima. The new
 domain is a strict superset — it also admits uniform bands wider than 64,
 which the old parameterization could not express.
@@ -175,11 +188,13 @@ normal and resize paths.
 
 The shader then fits again, because neither box it draws is the window: the
 inner face is the window narrowed by twice the offset, and jelly can scale it
-further. It refits to the inner face, then refits the outer ring — which is
-`inner + chamfer` — to the slab. The outer fit is not redundant: jelly scales
-the inner face while the slab stays fixed, so a positive resize can push
-`inner + 2 * chamfer` past the slab's edge. Repeated proportional fitting is
-safe in the only direction that matters, since no fit ever enlarges a radius.
+further. It fits the inner radius against whichever of the two boxes binds
+harder — the inner face, or the slab less one chamfer — which keeps
+`outer = inner + chamfer` exactly true. That exactness is load-bearing: the
+bevel normal builds its slope from `chamfer` as the horizontal run, so fitting
+the outer ring separately would tilt the normal at precisely the corners it
+narrowed. Repeated proportional fitting is safe in the only direction that
+matters, since no fit ever enlarges a radius.
 
 That radius is therefore a shader input that changes without any `glass`
 parameter changing: during an expand animation, and on a reload that edits
@@ -303,7 +318,9 @@ this is worth stating precisely because it is easy to assume otherwise.
 (`src/layout/tile.rs`). Both are the bevel depth. The default chamfer is
 `lip + max(abs(shift))` = 12, which equals the old constant, so both
 expressions evaluate to 12 before the change and to `min(12, 20)` = 12 after
-it. The 45-degree bevel and the jelly clamp are unchanged.
+it. The 45-degree bevel and the jelly clamp are unchanged **for any window
+large enough to carry the band** — see the clamp's effect on small windows
+above, which is a separate change and not this one.
 
 Away from the defaults the two disagree in both directions, because the old
 depth is `min(bevel, 12)` and the new one is `min(bevel, thickness)`. They

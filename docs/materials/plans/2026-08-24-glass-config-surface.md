@@ -3,8 +3,9 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the glass parameter set inherited from the Quickshell
-prototype with the twelve-parameter surface in the spec, before v1 acceptance
-makes it a released compatibility surface.
+prototype with the surface in the spec — twelve KDL nodes carrying thirteen
+configurable values, from fourteen of each — before v1 acceptance makes it a
+released compatibility surface.
 
 **Architecture:** Six sequential tasks, each ending green. Tasks 1–4 change
 the config surface one parameter group at a time, each rewriting its
@@ -305,7 +306,8 @@ Update the doc comment above `material_frame` to read:
 ```
 
 Update `MaterialFrame::chamfer`'s doc comment to `/// Chamfer width in
-logical px: the `bevel` parameter.`
+logical px: the `bevel` parameter.` Task 2 narrows this again once the field
+becomes the effective clamped value.
 
 - [ ] **Step 7: Rewrite the geometry tests**
 
@@ -510,6 +512,10 @@ a bevel depth the shader never uses.
 
 Apply the same clamp once, in `material_frame`, so the field means the
 chamfer that is actually drawn. Replace the `chamfer:` line with:
+
+Update the field's doc comment, which Task 1 left as “the `bevel`
+parameter”, to `/// Chamfer width in logical px: `bevel`, clamped to what the
+slab can carry — the band actually drawn.`
 
 ```rust
         // Mirrors the shader's tiny-slab guard: a window too small to carry
@@ -1115,14 +1121,22 @@ inner face takes the window's radius and the outer follows:
     // actually being drawn. The reduction is proportional across all four
     // corners, never per-corner clamping, which would shrink a large radius
     // whose neighbour is small.
-    vec4 inner_r = fitRadii(mat_corner_radius, inner_half);
-    // The outer box needs its own fit rather than inheriting one. Jelly
-    // scales `inner_half` while `half_ext` stays fixed, so a positive resize
-    // can leave the inner face wider than (outer - 2 * chamfer): at the
-    // 112/88 geometry a full-flex resize reaches an inner edge near 90.4,
-    // and 90.4 + 2 * 12 overflows the 112 px outer edge.
-    vec4 outer_r = fitRadii(inner_r + vec4(chamfer), half_ext);
+    // Fit against whichever box binds harder. Jelly scales `inner_half`
+    // while `half_ext` stays fixed, so a positive resize can leave the inner
+    // face wider than (outer - 2 * chamfer): at the 112/88 geometry a
+    // full-flex resize reaches an inner edge near 90.4, and 90.4 + 2 * 12
+    // overflows the 112 px outer edge. Constraining the *inner* radius by
+    // both keeps `outer = inner + chamfer` exactly true, which the bevel
+    // normal below depends on — it builds its slope from `chamfer` as the
+    // horizontal run, so a separately fitted outer ring would tilt the
+    // normal at exactly the corners it narrowed.
+    vec2 radius_half = min(inner_half, half_ext - vec2(chamfer));
+    vec4 inner_r = fitRadii(mat_corner_radius, radius_half);
+    vec4 outer_r = inner_r + vec4(chamfer);
 ```
+
+`half_ext - chamfer` is always positive: `chamfer` is clamped compositor-side
+to `min(half_ext) - 1` in Task 2, so the tighter axis leaves at least 1.
 
 Move those two lines below the existing `inner_half` computation, and update
 the three call sites to pass `outer_r` for the outer box and `inner_r` for
@@ -1148,14 +1162,15 @@ vec4 fitRadii(vec4 r, vec2 half_ext) {
 }
 ```
 
-Fitting more than once is not a conflict. Proportional reduction composes in
-one direction: when each successive box is smaller, the result equals fitting
-to the smallest alone. That is the usual case here, but not guaranteed —
-jelly can scale `inner_half` above the window's half-extent, and the
-inflation is snapped up to the physical grid — so a later fit is sometimes
-merely conservative rather than exact. It is never wrong in the direction
-that matters: no fit ever enlarges a radius. The Rust-side fit stays because
-the fingerprint must carry the radius the window renders with.
+Fitting twice — once to the window in Rust, once to `radius_half` here — is
+not a conflict. Proportional reduction composes in one direction: when the
+second box is smaller, the result equals fitting to it alone. That is the
+usual case but not guaranteed, since jelly can scale `inner_half` above the
+window's half-extent and the inflation is snapped up to the physical grid, so
+the second fit is sometimes merely conservative rather than exact. It is
+never wrong in the direction that matters: no fit ever enlarges a radius. The
+Rust-side fit stays because the fingerprint must carry the radius the window
+renders with.
 
 - [ ] **Step 7: Validate the shader as GLSL**
 
@@ -1274,11 +1289,14 @@ document explaining what the old names became — it alone accounts for over
 half the hits of a directory-wide sweep. `shadow.frag` is excluded because its
 own `samples` is unrelated.
 
-Read every hit that remains. Two are expected to survive and are correct: the
-`mat_samples` uniform keeps its name while losing its parameter, and
-`ResolvedGlass::distortion_scale` keeps its field while gaining a property
-syntax. Everything else on a current reference or status surface must use the
-new names.
+Read every hit that remains. `-w` means the retained Rust identifiers do
+*not* appear — `mat_samples` and `distortion_scale` have no word boundary
+before `samples` or after `distortion`, so neither matches. What does survive
+and is correct: the five rejection fixtures added by Tasks 1, 3 and 4, which
+must contain the removed spellings to assert that they are rejected, and
+ordinary English uses of “samples” such as prose about the shader sampling the
+backdrop. Everything else on a current reference or status surface must use
+the new names.
 
 - [ ] **Step 6: Final verification and commit**
 
