@@ -308,16 +308,22 @@ case for the radius, mirroring the existing background and jelly cases.
 **Tap count.** A unit test at strength 0, 0.125, 0.5, and 1.0, asserting 1, 2,
 4, and 8 taps.
 
-**Per-corner radii.** A `niri-visual-tests` case with an asymmetric
-`geometry-corner-radius`, since quadrant selection is only observable in a
-rendered frame. The existing suite stays green.
+**Rendered appearance is inspected, not gated.** `niri-visual-tests` is an
+interactive GTK viewer, not a snapshot suite: CI runs `cargo test --all
+--exclude niri-visual-tests` and its own job only runs `cargo build --package
+niri-visual-tests`. A case there compiles and can be looked at; it asserts
+nothing. Two cases are still worth adding — one with an asymmetric
+`geometry-corner-radius` for quadrant selection, one at the defaults over a
+default window recording the intended move from inner 16 / outer 28 to inner
+0 / outer `bevel` — but they are inspection aids, and the plan must say so
+rather than counting them as coverage.
 
-**Default appearance.** A `niri-visual-tests` case at the default parameters
-over a default window, recording the intended change from inner 16 / outer 28
-to inner 0 / outer `bevel`. The frame-geometry test cannot see this — the
-frame rect and chamfer are identical either way, and only the radii move — so
-without a rendered case the one deliberate appearance change in this design
-would go unobserved.
+What is automatically covered is the plumbing: that the uniform carries the
+tile's rendered radius, in `CornerRadius` order, scaled by
+`1 - expanded_progress`. The shader's quadrant selection and the rendered
+radii themselves have no automated check in this repository. Adding one would
+mean a headless capture harness in the style of the parity pass, which is out
+of scope here; until then this is a known and stated gap, not an oversight.
 
 ## Implementation surface
 
