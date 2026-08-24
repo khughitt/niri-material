@@ -109,7 +109,12 @@ chamfer = bevel
 The invariant is preserved by construction rather than by convention, and no
 look is lost: `(lip, shift)` maps to `(lip + max(abs(shift)), shift)` and back
 by the identity above, so every configuration expressible today has exactly
-one counterpart. `bevel`'s range is 0–128 rather than `lip`'s 0–64 precisely
+one counterpart. Sub-pixel values are the one place the mapping is not
+value-identical: the old code snapped `lip` up to the physical grid and then
+reused that rounded number as the chamfer, so `lip 5.3` at scale 2 reported a
+5.5 band. The inflation is still snapped — element geometry and damage must
+land on pixels — but the chamfer is now the `bevel` exactly, since a band
+width has no reason to be pixel-aligned. `bevel`'s range is 0–128 rather than `lip`'s 0–64 precisely
 so that it is: the widest band reachable today combines both maxima. The new
 domain is a strict superset — it also admits uniform bands wider than 64,
 which the old parameterization could not express.
@@ -136,8 +141,18 @@ inner = the tile's effective geometry-corner-radius, per corner
 outer = inner + bevel
 ```
 
-Each is clamped to its own half-extent. There is no glass-side `corner-radius`
-parameter: an override is a way to reintroduce the mismatch this removes.
+Each set is *fitted* to the box it is drawn on, by the same CSS
+corner-overlap rule the window itself uses — one proportional reduction across
+all four corners from the tightest adjacent-pair sum, never a per-corner
+clamp, which would shrink a large radius whose neighbour is small. This
+matters because neither box is the window: with the default offset a 100 px
+window yields a 112 px slab and an 88 px inner face. Fitting the inner face
+is enough, because the outer ring inherits non-overlap from it — adjacent
+outer radii sum to `inner_a + inner_b + 2 * bevel` against an outer edge of
+`inner_edge + 2 * bevel`.
+
+There is no glass-side `corner-radius` parameter: an override is a way to
+reintroduce the mismatch this removes.
 
 The value fed to the shader is the radius the window is actually rendered
 with, which is the rule value through two transforms, both already applied in
@@ -341,13 +356,11 @@ stated gap, not an oversight.
 | File | Change |
 | --- | --- |
 | `niri-config/src/material.rs` | `Glass` and `ResolvedGlass` fields, defaults, `resolve`, and `Material::validate` for the offset/bevel rule |
-| `niri-config/src/lib.rs` | Call `Material::validate` in the `"material"` arm, beside the duplicate-name check |
-| `src/render_helpers/material.rs` | Delete both slab constants; derive the tap count; carry the corner radius in the uniforms and in `InputFingerprint` |
-| `src/render_helpers/shaders/material.frag` | Per-corner `sdRoundedBox` and gradient; invert the radius derivation; `thickness` for the bevel depth |
+| `niri-config/src/lib.rs` | Call `Material::validate` in the `"material"` arm, beside the duplicate-name check; config tests |
+| `src/render_helpers/material.rs` | Delete both slab constants; derive the tap count; clamp the chamfer; carry the corner radius in the uniforms and in `InputFingerprint`; geometry, tap-count and damage tests inline |
+| `src/render_helpers/shaders/material.frag` | Per-corner `sdRoundedBox` and gradient; `fitRadii`; invert the radius derivation; `thickness` for the bevel depth |
 | `src/render_helpers/shaders/mod.rs` | `mat_corner_radius` uniform |
 | `src/layout/tile.rs` | Jelly clamp uses `thickness`; feed each branch's fitted radius (`geometry_corner_radius().scaled_by(1. - expanded_progress).fit_to(..)`) |
-| `niri-config/src/lib.rs` | Config tests, beside the existing material ones |
-| `src/render_helpers/material.rs` | Geometry, tap-count and damage tests, inline in `mod tests` |
 | `docs/materials/material-config.md` | Parameter table, radius inheritance, the offset rule; drop the provisional caveat |
 | `docs/materials/2026-08-22-v1-design.md` | §4 parameter table, which the config module cites as this surface's specification |
 | `docs/materials/2026-08-24-v1-parity-design.md` | Mark “Config surface review” resolved with the implementing commit |

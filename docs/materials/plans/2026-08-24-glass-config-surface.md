@@ -375,7 +375,17 @@ In `src/render_helpers/material.rs`'s `mod tests`, replace
 ```
 
 In `material_frame_aligns_to_physical_pixels`, replace the three assignments
-with `glass.bevel = 5.3; glass.offset_x = 0.; glass.offset_y = 0.;`. In
+with `glass.bevel = 5.3; glass.offset_x = 0.; glass.offset_y = 0.;` and add a
+chamfer assertion, because this is the one case where the new parameterization
+is deliberately not identical to the old one:
+
+```rust
+        // The inflation is still snapped up to the physical grid, but the
+        // chamfer is the bevel exactly. The old code reused its rounded lip
+        // for both, so `lip 5.3` at scale 2 reported a 5.5 chamfer; the band
+        // width has no reason to be pixel-aligned.
+        assert_eq!(frame.chamfer, 5.3);
+``` In
 `material_frame_merges_an_oversized_texture_footprint`, replace them with
 `glass.bevel = 6.; glass.offset_x = 0.; glass.offset_y = 0.;`.
 
@@ -482,12 +492,61 @@ constant now is safe and touches no shader line. In their place add:
 ///
 /// A bevel cannot be deeper than the glass it is cut into. This mirrors the
 /// shader's `min(mat_chamfer, mat_thickness)`; both must change together.
+/// Pass `MaterialFrame::chamfer`, which is already clamped to what the shader
+/// will draw — passing the configured bevel would disagree on small windows.
 pub(crate) fn bevel_depth(chamfer: f64, thickness: f64) -> f64 {
     chamfer.min(thickness)
 }
 ```
 
-- [ ] **Step 4: Point the jelly clamp at it**
+- [ ] **Step 4: Make `frame.chamfer` the effective chamfer**
+
+`bevel_depth` is only a mirror of the shader if both start from the same
+chamfer, and today they do not: the shader first clamps it to
+`max(min(half_ext.x, half_ext.y) - 1.0, 0.0)` for windows too small to carry a
+band (`src/render_helpers/shaders/material.frag:211`), while Rust hands it the
+configured value. On a small window the jelly clamp would then be derived from
+a bevel depth the shader never uses.
+
+Apply the same clamp once, in `material_frame`, so the field means the
+chamfer that is actually drawn. Replace the `chamfer:` line with:
+
+```rust
+        // Mirrors the shader's tiny-slab guard: a window too small to carry
+        // the configured band gets whatever fits, and the field is the
+        // chamfer actually drawn so `bevel_depth` and the shader agree.
+        chamfer: {
+            let max_chamfer = (slab.size.w.min(slab.size.h) / 2. - 1.).max(0.);
+            glass.bevel.min(max_chamfer) as f32
+        },
+```
+
+The shader's own clamp stays: it is now a no-op for every value Rust sends,
+but it still guards the uniform against being set from anywhere else.
+
+Add the case to `mod tests`:
+
+```rust
+    #[test]
+    fn material_frame_clamps_the_chamfer_on_a_tiny_window() {
+        let mut glass = ResolvedGlass::default();
+        glass.bevel = 12.;
+        glass.offset_x = 0.;
+        glass.offset_y = 0.;
+        // 8x8 window, inflated by the full bevel, is a 32x32 slab: half is
+        // 16, so the band the shader will draw is 15, not the configured 12.
+        // Larger windows are unaffected.
+        let tiny = Rectangle::new(Point::new(0., 0.), Size::new(8., 8.));
+        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 12.);
+
+        glass.bevel = 40.;
+        let frame = material_frame(tiny, tiny, &glass, 1.);
+        // slab 88x88, half 44, so the band is capped at 43.
+        assert_eq!(frame.chamfer, 43.);
+    }
+```
+
+- [ ] **Step 5: Point the jelly clamp at it**
 
 In `src/layout/tile.rs`, change the import on line 28 from `MaterialState,
 SLAB_DEPTH,` to `MaterialState,` and add `bevel_depth,` to the alphabetical
@@ -507,7 +566,7 @@ Both sites already bind `glass` on the line immediately above — `let glass =
 &material.material().glass;` at `src/layout/tile.rs:1298` and `:1475` — so no
 new binding is needed at either.
 
-- [ ] **Step 5: Point the shader at the uniform**
+- [ ] **Step 6: Point the shader at the uniform**
 
 In `src/render_helpers/shaders/material.frag`, delete **only** the
 `SLAB_DEPTH` line and narrow the comment above it:
@@ -529,12 +588,25 @@ Then change the bevel line to read from the thickness uniform:
         float bevel = min(chamfer, mat_thickness);
 ```
 
-- [ ] **Step 6: Run the suite**
+- [ ] **Step 7: Validate the shader as GLSL**
+
+`cargo test` and `cargo build` embed `material.frag` as a string; neither
+compiles it. Validate it explicitly, the way the slice 2 plan does:
+
+Run:
+```sh
+{ echo '#version 100'; cat src/render_helpers/shaders/material.frag; } \
+    > target/material_check.frag \
+    && glslangValidator -S frag target/material_check.frag
+```
+Expected: clean, no errors.
+
+- [ ] **Step 8: Run the suite**
 
 Run: `cargo test --workspace`
-Expected: PASS, including the new `bevel_depth` test.
+Expected: PASS, including the new `bevel_depth` and chamfer-clamp tests.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/render_helpers/material.rs \
@@ -955,11 +1027,13 @@ literal (near 1346):
                                                 .fit_to(area.size.w as f32, area.size.h as f32),
 ```
 
-In the **normal** branch's literal (near 1523):
+In the **normal** branch's literal (near 1523), reuse the binding the sibling
+element already computed — `clip_radius` is declared at
+`src/layout/tile.rs:1427` and is still in scope there, and sharing it makes
+drift between the two consumers impossible:
 
 ```rust
-                                    corner_radius: radius
-                                        .fit_to(window_size.w as f32, window_size.h as f32),
+                                    corner_radius: clip_radius,
 ```
 
 Two things make this the right value and both are load-bearing:
@@ -976,7 +1050,8 @@ all four corners derived from adjacent-pair sums — not a per-corner clamp. On
 a 100 px edge, radii 80 and 40 become 66.7 and 33.3, because
 `100 / (80 + 40)` scales both. The sibling elements already do exactly this:
 the normal branch computes `clip_radius = radius.fit_to(window_size.w as f32,
-window_size.h as f32)` at `src/layout/tile.rs:1427`, and
+window_size.h as f32)` at `src/layout/tile.rs:1427` — the binding reused
+above — and
 `ResizeRenderElement::new` fits against its `area` argument, which it holds as
 `curr_geo` (`src/render_helpers/resize.rs:37, 85`) — the same `area` passed at
 `src/layout/tile.rs:1251`. Passing the unfitted `radius` would round the glass
@@ -1033,14 +1108,17 @@ in place for this task. Then in `slabSurface` replace the
 inner face takes the window's radius and the outer follows:
 
 ```glsl
-    // `mat_corner_radius` arrives already fitted by the CSS corner-overlap
-    // rule on the Rust side, so it is used as-is: re-clamping it per corner
-    // here would shrink a legitimately large radius whose neighbour is small.
-    // The outer ring inherits the property for free — adjacent outer radii
+    // `mat_corner_radius` is fitted to the *window*, but neither SDF box is
+    // the window: the inner face is the window narrowed by twice the offset
+    // (defaults, 100 px window: slab 112, inner face 88). Refit to the box
+    // actually being drawn. The reduction is proportional across all four
+    // corners, never per-corner clamping, which would shrink a large radius
+    // whose neighbour is small.
+    vec4 inner_r = fitRadii(mat_corner_radius, inner_half);
+    // The outer ring then inherits non-overlap for free: adjacent outer radii
     // sum to (inner_a + inner_b + 2 * chamfer) against an outer edge of
-    // (inner_edge + 2 * chamfer), and the fit already gives
+    // (inner_edge + 2 * chamfer), and the fit above gives
     // inner_a + inner_b <= inner_edge.
-    vec4 inner_r = mat_corner_radius;
     vec4 outer_r = inner_r + vec4(chamfer);
 ```
 
@@ -1048,19 +1126,58 @@ Move those two lines below the existing `inner_half` computation, and update
 the three call sites to pass `outer_r` for the outer box and `inner_r` for
 the inner box and its gradient.
 
-- [ ] **Step 7: Run the suite**
+`fitRadii` is new. Add it beside `cornerRadius`, above `sdRoundedBox`. It is
+`CornerRadius::fit_to` (`niri-config/src/appearance.rs:174`) transcribed —
+the same four adjacent pairs in the same `CornerRadius` order, with guards so
+a zero pair cannot divide by zero:
+
+```glsl
+// CSS corner-overlap fitting, mirroring CornerRadius::fit_to: one
+// proportional reduction across all four corners, taken from the tightest
+// adjacent-pair sum. Radii are (top-left, top-right, bottom-right,
+// bottom-left); `half_ext` is half the box being fitted to.
+vec4 fitRadii(vec4 r, vec2 half_ext) {
+    vec2 edge = 2.0 * half_ext;
+    float k = min(min(edge.x / max(r.x + r.y, 1e-6),
+                      edge.x / max(r.w + r.z, 1e-6)),
+                  min(edge.y / max(r.x + r.w, 1e-6),
+                      edge.y / max(r.y + r.z, 1e-6)));
+    return r * min(1.0, k);
+}
+```
+
+Fitting twice — once to the window in Rust, once to the inner face here — is
+not a conflict. Proportional reduction composes: fitting to the window and
+then to the smaller inner face yields exactly what fitting to the inner face
+alone would. The Rust-side fit stays because the fingerprint must carry the
+radius the window renders with.
+
+- [ ] **Step 7: Validate the shader as GLSL**
+
+This task rewrites `sdRoundedBox`, its gradient, and the radius derivation,
+and adds `fitRadii` — none of which any Rust build checks.
+
+Run:
+```sh
+{ echo '#version 100'; cat src/render_helpers/shaders/material.frag; } \
+    > target/material_check.frag \
+    && glslangValidator -S frag target/material_check.frag
+```
+Expected: clean, no errors.
+
+- [ ] **Step 8: Run the suite**
 
 Run: `cargo test --workspace`
 Expected: PASS, including `corner_radius_change_advances_the_commit`.
 
-- [ ] **Step 8: Confirm the viewer still builds**
+- [ ] **Step 9: Confirm the viewer still builds**
 
 The shader and element changes must not break the excluded package.
 
 Run: `cargo build --package niri-visual-tests`
 Expected: builds clean.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add src/render_helpers/shaders/material.frag \
@@ -1122,13 +1239,19 @@ gap is recorded where the review is closed rather than only in the plan.
 - [ ] **Step 5: Grep for drift**
 
 ```sh
-rg -n 'lip|shift-x|shift-y|samples|distortion-scale|SLAB_DEPTH|SLAB_CORNER_RADIUS|28 px' docs/ src/ niri-config/
+rg -nw 'lip|shift-x|shift-y|samples|distortion-scale|SLAB_DEPTH|SLAB_CORNER_RADIUS' \
+    docs/materials niri-config/src src/render_helpers src/layout \
+    --glob '!docs/materials/plans/2026-08-23-slice2.md' \
+    --glob '!docs/materials/plans/2026-08-24-v1-parity.md' \
+    --glob '!docs/materials/2026-08-24-v1-parity-design.md'
 ```
 
-Read every hit. Historical records — the parity design, its plan, and
-`niri-experiments` results — describe the surface as it was when they were
-written and must keep the old names. Current reference and status surfaces
-must use the new ones.
+`-w` is load-bearing: without it a bare `lip` also matches `clip`,
+`clipboard`, and `clipPath` for more than 800 hits, and "read every result"
+becomes unfollowable. The excluded files are the parity pass's records, which
+describe the surface as it stood when they were written and must keep the old
+names. Read every remaining hit: current reference and status surfaces must
+use the new names.
 
 - [ ] **Step 6: Final verification and commit**
 
