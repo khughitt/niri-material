@@ -30,11 +30,12 @@ Slice 1 is merged into `materials-26.04` at `ec0824c5`. Its nested-winit
 verification, run against `2a55ab14`, is recorded at `niri-experiments`
 commit `d155e90` in `docs/results/2026-08-22-slice1.md`.
 
-Slice 2 is implemented on `slice2-glass` through `66c42f5e`. Its accepted
+Slice 2 is implemented on `slice2-glass` through `7e287517`. Its accepted
 nested-winit verification, including the final Slice 1 per-render-target fix,
-is recorded at `niri-experiments` commit `4e1a554` in
-`docs/results/2026-08-23-slice2.md`; it closes the earlier texture-creation
-and matched GPU-time measurement debt.
+the transparent-workspace regression, and the matched opaque final-fix pair is
+recorded at `niri-experiments` commit `a27eb8f` in
+`docs/results/2026-08-23-slice2.md`; it closes the earlier texture-creation and
+matched GPU-time measurement debt.
 
 Slice 3's overview correctness gate, including the known G9 vertical-lip
 clipping, is next. Physical DRM still gates v1 acceptance.

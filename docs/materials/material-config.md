@@ -6,6 +6,10 @@
 animation residuals and return to their exact rest state when those springs
 settle.
 
+Inside the selected workspace, glass composes the workspace background over
+the workspace color and retains the backdrop behind any remaining transparency.
+Outside it, glass samples the backdrop directly.
+
 ```kdl
 material "frost" {
     glass {
