@@ -1,6 +1,8 @@
 # Glass config surface: design
 
-**Status:** drafted 2026-08-24. Implementation planning pending.
+**Status:** drafted 2026-08-24; implementation plan drafted at
+`docs/materials/plans/2026-08-24-glass-config-surface.md`. Execution pending,
+and gated behind the v1 parity pass.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 **Gate recorded in:** `docs/materials/2026-08-24-v1-parity-design.md`,
 “Config surface review”
@@ -312,18 +314,22 @@ case for the radius, mirroring the existing background and jelly cases.
 interactive GTK viewer, not a snapshot suite: CI runs `cargo test --all
 --exclude niri-visual-tests` and its own job only runs `cargo build --package
 niri-visual-tests`. A case there compiles and can be looked at; it asserts
-nothing. Two cases are still worth adding — one with an asymmetric
-`geometry-corner-radius` for quadrant selection, one at the defaults over a
-default window recording the intended move from inner 16 / outer 28 to inner
-0 / outer `bevel` — but they are inspection aids, and the plan must say so
-rather than counting them as coverage.
+nothing.
 
-What is automatically covered is the plumbing: that the uniform carries the
-tile's rendered radius, in `CornerRadius` order, scaled by
-`1 - expanded_progress`. The shader's quadrant selection and the rendered
-radii themselves have no automated check in this repository. Adding one would
-mean a headless capture harness in the style of the parity pass, which is out
-of scope here; until then this is a known and stated gap, not an oversight.
+Worse, it cannot look at *this*. The viewer builds its `RenderCtx` with
+`xray: None`, and `Tile::render_inner` gates the material on
+`self.material.is_some() && ctx.xray.is_some()`, so a case added there renders
+a plain tile with no glass at all. Showing a material would mean constructing
+an `Xray` with background and backdrop buffers — more than inspection
+scaffolding earns. No visual cases are added.
+
+What is covered is the plumbing: that the uniform carries the tile's rendered
+radius, in `CornerRadius` order, scaled by `1 - expanded_progress`, and that
+changing it advances the element's commit. The shader's quadrant selection and
+the rendered radii themselves are checked by nothing and seen by no one in
+this repository. Closing that means a headless capture harness in the style of
+the parity pass, which is out of scope here; until then it is a known and
+stated gap, not an oversight.
 
 ## Implementation surface
 
