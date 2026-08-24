@@ -74,8 +74,10 @@ frame is identical to today's.
 
 **Interfaces:**
 - Produces: `ResolvedGlass { bevel: f64, offset_x: f64, offset_y: f64, .. }`
-  replacing `lip`, `shift_x`, `shift_y`. `pub fn Material::validate(&self)
-  -> Result<(), String>`. `material_frame`'s signature is unchanged.
+  replacing `lip`, `shift_x`, `shift_y`. `pub(crate) fn
+  Material::validate(&self) -> Result<(), String>` — its only caller is the
+  `"material"` arm in the same crate. `material_frame`'s signature is
+  unchanged.
 
 - [ ] **Step 1: Write the failing config tests**
 
@@ -230,7 +232,7 @@ Append to `impl Material` in `niri-config/src/material.rs`:
     /// `bevel - max(|offset-x|, |offset-y|)`. A negative inflation would put
     /// the slab inside the window on one side, which has no meaning, so the
     /// offsets are bounded by the bevel rather than clamped silently.
-    pub fn validate(&self) -> Result<(), String> {
+    pub(crate) fn validate(&self) -> Result<(), String> {
         let d = ResolvedGlass::default();
         let bevel = self.glass.bevel.map_or(d.bevel, |x| x.0);
         let offset_x = self.glass.offset_x.map_or(d.offset_x, |x| x.0);
@@ -405,9 +407,8 @@ shift_y: 4.,` with `bevel: 20., offset_x: -8., offset_y: 4.,`.
 - [ ] **Step 9: Run the whole suite**
 
 Run: `cargo test --workspace`
-Expected: PASS. If `src/tests/material.rs` or `src/layout/tile.rs` reference
-the removed field names, fix those references — the field rename is
-mechanical and no behaviour there changes.
+Expected: PASS. No other file reads `lip`, `shift_x`, or `shift_y` — the only
+readers are `material_frame` and the tests, both edited above.
 
 - [ ] **Step 10: Commit**
 
@@ -432,8 +433,9 @@ everywhere it is used, in one shared function.
 
 **Interfaces:**
 - Consumes: `ResolvedGlass::bevel` from Task 1.
-- Produces: `pub fn bevel_depth(chamfer: f64, thickness: f64) -> f64`, used by
-  the jelly clamp in `tile.rs` and mirrored by the shader.
+- Produces: `pub(crate) fn bevel_depth(chamfer: f64, thickness: f64) -> f64`,
+  used by the jelly clamp in `tile.rs` and mirrored by the shader. Crate-
+  visible, not `pub`: nothing outside `niri` calls it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -480,7 +482,7 @@ constant now is safe and touches no shader line. In their place add:
 ///
 /// A bevel cannot be deeper than the glass it is cut into. This mirrors the
 /// shader's `min(mat_chamfer, mat_thickness)`; both must change together.
-pub fn bevel_depth(chamfer: f64, thickness: f64) -> f64 {
+pub(crate) fn bevel_depth(chamfer: f64, thickness: f64) -> f64 {
     chamfer.min(thickness)
 }
 ```
@@ -501,10 +503,9 @@ with
 let max_flex = 0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
 ```
 
-At `src/layout/tile.rs:1299` the `glass` binding is declared on the preceding
-line. At `src/layout/tile.rs:1476` check whether `glass` is already bound
-above the `max_flex` line; if not, use
-`material.material().glass.thickness` in its place.
+Both sites already bind `glass` on the line immediately above — `let glass =
+&material.material().glass;` at `src/layout/tile.rs:1298` and `:1475` — so no
+new binding is needed at either.
 
 - [ ] **Step 5: Point the shader at the uniform**
 
@@ -552,9 +553,11 @@ git commit -m "feat(material): make thickness the slab depth"
 - Test: `src/render_helpers/material.rs` (inline `mod tests`)
 
 **Interfaces:**
-- Produces: `pub fn tap_count(anisotropic_blur: f64, chromatic_aberration:
-  f64) -> u8`. `ResolvedGlass::samples` is removed; the `mat_samples` uniform
-  stays and is fed from this function.
+- Produces: `fn tap_count(anisotropic_blur: f64, chromatic_aberration: f64)
+  -> u8`, private to `src/render_helpers/material.rs` — its only caller is the
+  uniform array in the same file, and its test is in the same module.
+  `ResolvedGlass::samples` is removed; the `mat_samples` uniform stays and is
+  fed from this function.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -624,7 +627,7 @@ In `src/render_helpers/material.rs`, beside `bevel_depth`:
 /// dialing an effect down lowers its cost without a second knob. Zero
 /// strength keeps the shader's single-tap fast path. Strength 0.5 yields 4,
 /// the count the Quickshell prototype shipped as its default.
-pub fn tap_count(anisotropic_blur: f64, chromatic_aberration: f64) -> u8 {
+fn tap_count(anisotropic_blur: f64, chromatic_aberration: f64) -> u8 {
     let strength = anisotropic_blur.max(chromatic_aberration);
     if strength <= 0. {
         return 1;
@@ -848,7 +851,6 @@ element's pixels go stale.
 - Modify: `src/render_helpers/shaders/mod.rs`
 - Modify: `src/render_helpers/material.rs`
 - Modify: `src/layout/tile.rs`
-- Create: `niri-visual-tests/src/cases/material_corner_radius.rs`
 - Test: `src/render_helpers/material.rs` (inline `mod tests`)
 
 **Interfaces:**
@@ -940,16 +942,46 @@ In `src/render_helpers/shaders/mod.rs`, after the `mat_chamfer` line:
 
 - [ ] **Step 5: Feed the rendered radius from the tile**
 
-In `src/layout/tile.rs`, add `corner_radius: radius,` to both
+In `src/layout/tile.rs`, add a `corner_radius` line to both
 `InputFingerprint` literals (near lines 1346 and 1523 before this task's
 edits). The `material.element(` calls are unchanged.
 
-`radius` is the binding already declared at `src/layout/tile.rs:1195` as
+The two branches fit the radius against different geometry, and the material
+must use whatever its own branch renders with. In the **resize** branch's
+literal (near 1346):
+
+```rust
+                                            corner_radius: radius
+                                                .fit_to(area.size.w as f32, area.size.h as f32),
+```
+
+In the **normal** branch's literal (near 1523):
+
+```rust
+                                    corner_radius: radius
+                                        .fit_to(window_size.w as f32, window_size.h as f32),
+```
+
+Two things make this the right value and both are load-bearing:
+
+`radius` is the binding declared at `src/layout/tile.rs:1195` as
 `self.window.geometry_corner_radius().scaled_by(1. - expanded_progress as
-f32)`. `render_inner` encloses all four sites and `CornerRadius` is `Copy`, so
-no new derivation is needed. Do **not** substitute
-`self.window.geometry_corner_radius()` — the unscaled value leaves glass
-rounded while the window squares off into fullscreen.
+f32)`. Do **not** substitute `self.window.geometry_corner_radius()` — the
+unscaled value leaves glass rounded while the window squares off into
+fullscreen.
+
+`fit_to` then applies the CSS corner-overlap rule
+(`niri-config/src/appearance.rs:174`), a single proportional reduction across
+all four corners derived from adjacent-pair sums — not a per-corner clamp. On
+a 100 px edge, radii 80 and 40 become 66.7 and 33.3, because
+`100 / (80 + 40)` scales both. The sibling elements already do exactly this:
+the normal branch computes `clip_radius = radius.fit_to(window_size.w as f32,
+window_size.h as f32)` at `src/layout/tile.rs:1427`, and
+`ResizeRenderElement::new` fits against its `area` argument, which it holds as
+`curr_geo` (`src/render_helpers/resize.rs:37, 85`) — the same `area` passed at
+`src/layout/tile.rs:1251`. Passing the unfitted `radius` would round the glass
+differently from the window it sits under, which is the whole defect this task
+exists to remove.
 
 - [ ] **Step 6: Make the shader per-corner**
 
@@ -1001,10 +1033,15 @@ in place for this task. Then in `slabSurface` replace the
 inner face takes the window's radius and the outer follows:
 
 ```glsl
-    vec4 inner_r = min(mat_corner_radius,
-                       vec4(min(inner_half.x, inner_half.y)));
-    vec4 outer_r = min(inner_r + vec4(chamfer),
-                       vec4(min(half_ext.x, half_ext.y)));
+    // `mat_corner_radius` arrives already fitted by the CSS corner-overlap
+    // rule on the Rust side, so it is used as-is: re-clamping it per corner
+    // here would shrink a legitimately large radius whose neighbour is small.
+    // The outer ring inherits the property for free — adjacent outer radii
+    // sum to (inner_a + inner_b + 2 * chamfer) against an outer edge of
+    // (inner_edge + 2 * chamfer), and the fit already gives
+    // inner_a + inner_b <= inner_edge.
+    vec4 inner_r = mat_corner_radius;
+    vec4 outer_r = inner_r + vec4(chamfer);
 ```
 
 Move those two lines below the existing `inner_half` computation, and update
@@ -1068,10 +1105,11 @@ the surface's specification, so the two must agree.
 
 - [ ] **Step 3: Update the spec's own status**
 
-`docs/materials/2026-08-24-glass-config-surface-design.md`'s header still
-reads “drafted 2026-08-24. Implementation planning pending.” Replace that with
-the implemented status and the literal commits from Tasks 1–5. A design doc's
-status is a claim about the past; the merge is the moment it goes stale.
+`docs/materials/2026-08-24-glass-config-surface-design.md`'s header records
+the plan as drafted and execution as pending, gated behind the v1 parity pass.
+Replace that with the implemented status and the literal commits from Tasks
+1–5. A design doc's status is a claim about the past; the merge is the moment
+it goes stale.
 
 - [ ] **Step 4: Mark the review resolved**
 

@@ -139,11 +139,16 @@ outer = inner + bevel
 Each is clamped to its own half-extent. There is no glass-side `corner-radius`
 parameter: an override is a way to reintroduce the mismatch this removes.
 
-The value fed to the shader is the tile's *rendered* radius —
-`geometry_corner_radius().scaled_by(1. - expanded_progress)`, already derived
-in `src/layout/tile.rs` — not the raw window-rule value. The tile squares the
-window's corners as it expands into maximize or fullscreen, so feeding the
-rule value would leave rounded glass around a window that has gone square.
+The value fed to the shader is the radius the window is actually rendered
+with, which is the rule value through two transforms, both already applied in
+`src/layout/tile.rs`. First `scaled_by(1. - expanded_progress)`: the tile
+squares the window's corners as it expands into maximize or fullscreen, so the
+rule value alone would leave rounded glass around a square window. Then
+`fit_to`, the CSS corner-overlap rule — one proportional reduction across all
+four corners from adjacent-pair sums, not a per-corner clamp — fitted against
+the geometry of the branch doing the rendering, which differs between the
+normal and resize paths. Because the radius arrives fitted, the shader uses it
+as-is; the outer ring inherits non-overlap from the inner by construction.
 
 That radius is therefore a shader input that changes without any `glass`
 parameter changing: during an expand animation, and on a reload that edits
@@ -310,18 +315,18 @@ case for the radius, mirroring the existing background and jelly cases.
 **Tap count.** A unit test at strength 0, 0.125, 0.5, and 1.0, asserting 1, 2,
 4, and 8 taps.
 
-**Rendered appearance is inspected, not gated.** `niri-visual-tests` is an
+**Rendered appearance is neither gated nor seen.** `niri-visual-tests` is an
 interactive GTK viewer, not a snapshot suite: CI runs `cargo test --all
 --exclude niri-visual-tests` and its own job only runs `cargo build --package
-niri-visual-tests`. A case there compiles and can be looked at; it asserts
-nothing.
+niri-visual-tests`, so a case there asserts nothing.
 
-Worse, it cannot look at *this*. The viewer builds its `RenderCtx` with
+It also cannot show *this*. The viewer builds its `RenderCtx` with
 `xray: None`, and `Tile::render_inner` gates the material on
 `self.material.is_some() && ctx.xray.is_some()`, so a case added there renders
-a plain tile with no glass at all. Showing a material would mean constructing
-an `Xray` with background and backdrop buffers — more than inspection
-scaffolding earns. No visual cases are added.
+a plain tile with no glass at all. Displaying a material would mean
+constructing an `Xray` with background and backdrop buffers — more than
+inspection scaffolding earns. **No visual cases are added**, and no step of
+this work looks at a rendered material.
 
 What is covered is the plumbing: that the uniform carries the tile's rendered
 radius, in `CornerRadius` order, scaled by `1 - expanded_progress`, and that
@@ -340,9 +345,9 @@ stated gap, not an oversight.
 | `src/render_helpers/material.rs` | Delete both slab constants; derive the tap count; carry the corner radius in the uniforms and in `InputFingerprint` |
 | `src/render_helpers/shaders/material.frag` | Per-corner `sdRoundedBox` and gradient; invert the radius derivation; `thickness` for the bevel depth |
 | `src/render_helpers/shaders/mod.rs` | `mat_corner_radius` uniform |
-| `src/layout/tile.rs` | Jelly clamp uses `thickness`; feed the tile's rendered radius (`geometry_corner_radius().scaled_by(1. - expanded_progress)`) |
-| `src/tests/material.rs` | Config and geometry tests above |
-| `niri-visual-tests/src/cases/` | Asymmetric corner-radius case |
+| `src/layout/tile.rs` | Jelly clamp uses `thickness`; feed each branch's fitted radius (`geometry_corner_radius().scaled_by(1. - expanded_progress).fit_to(..)`) |
+| `niri-config/src/lib.rs` | Config tests, beside the existing material ones |
+| `src/render_helpers/material.rs` | Geometry, tap-count and damage tests, inline in `mod tests` |
 | `docs/materials/material-config.md` | Parameter table, radius inheritance, the offset rule; drop the provisional caveat |
 | `docs/materials/2026-08-22-v1-design.md` | §4 parameter table, which the config module cites as this surface's specification |
 | `docs/materials/2026-08-24-v1-parity-design.md` | Mark “Config surface review” resolved with the implementing commit |
