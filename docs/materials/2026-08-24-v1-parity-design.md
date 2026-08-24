@@ -69,7 +69,9 @@ Two controlled scenes cover the parameter set:
   workspace over a generated 1280x720 backdrop made by tiling the pinned SVG
   at 200 px. Both swaybg and the reference wallpaper stub consume that exact
   PNG, so the frozen client's crop-fill mapping is identity rather than a
-  6.4x magnification. The generated PNG and raw RGB hashes are recorded.
+  6.4x magnification. The generated tile must retain its expected background
+  color and nonzero spatial variation; the generated PNG and raw RGB hashes
+  are recorded.
   Settled frames measure lip and shift. A deterministic column resize supplies
   capture bursts for jelly flex and ripple, exercising the native
   `window-resize` spring and the reference's matching replay without involving
@@ -153,16 +155,21 @@ seed.
 
 Each motion setting is run twice. The pinned critical spring has an analytical
 settle duration of about 326 ms (`-ln(0.0001) / sqrt(800)`), so every burst
-must contain an active sample and extend through at least 400 ms, followed by
-a settled capture at 500 ms or later. Actual capture offsets are recorded.
+must contain at least three actual captures before 326 ms, a capture at or
+after 400 ms, and a settled capture at or after 500 ms. Actual capture offsets
+are recorded. Before evidence capture, each implementation runs one default
+calibration burst through the same resize and screenshot path. Its first
+actual offset sets that implementation's evidence budget, rounded up to the
+next 10 ms plus 10 ms; the calibration must itself satisfy the actual-capture
+coverage gate.
 For each default/variant case, its four duplicate bursts are linearly
 interpolated onto a shared 10 ms grid over their common actual-offset range;
 only scalar deformation and ripple metrics are interpolated, never pixels.
-The grid must begin by 75 ms, contain at least three active samples before
-326 ms, and contain samples at or after 400 and 500 ms. Duplicate default and
-variant curves establish the motion noise floor from their aligned peak-metric
-spread. Missing coverage, non-monotonic offsets, or disagreement in response
-direction between duplicate curves rejects the motion evidence.
+The grid must begin within the measured first-offset budget and extend through
+400 and 500 ms. Duplicate default and variant curves establish the motion
+noise floor from their aligned peak-metric spread. Missing actual-capture
+coverage, non-monotonic offsets, or disagreement in response direction between
+duplicate curves rejects the motion evidence.
 
 ## Gates
 
@@ -173,6 +180,8 @@ The run fails early if any integrity condition holds:
 - either compositor mode reports invalid config, material fallback, shader
   failure, panic, or an unexpected warning/error;
 - Quickshell reports a QML, shader, IPC, or wallpaper-input failure;
+- the generated tile's pixel at `(20,20)` is not exactly `srgb(38,50,56)` or
+  its ImageMagick normalized standard deviation is below `0.02`;
 - duplicate static captures reach the 0.1% drift ceiling;
 - an analysis check cannot be shown to fail on a synthetic bad input.
 
