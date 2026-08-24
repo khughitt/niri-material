@@ -187,8 +187,9 @@ the geometry of the branch doing the rendering, which differs between the
 normal and resize paths.
 
 The shader then fits again, because neither box it draws is the window: the
-inner face is the window narrowed by twice the offset, and jelly can scale it
-further. It fits the inner radius against whichever of the two boxes binds
+inner face is the window narrowed on both axes by twice
+`max(abs(offset-x), abs(offset-y))` and then translated by the offset vector,
+and jelly can scale it further. It fits the inner radius against whichever of the two boxes binds
 harder — the inner face, or the slab less one chamfer — which keeps
 `outer = inner + chamfer` exactly true. That exactness is load-bearing: the
 bevel normal builds its slope from `chamfer` as the horizontal run, so fitting
@@ -322,14 +323,19 @@ it. The 45-degree bevel and the jelly clamp are unchanged **for any window
 large enough to carry the band** — see the clamp's effect on small windows
 above, which is a separate change and not this one.
 
-Away from the defaults the two disagree in both directions, because the old
-depth is `min(bevel, 12)` and the new one is `min(bevel, thickness)`. They
-agree only while `bevel <= min(12, thickness)`, or when `thickness` is exactly
-12. So `bevel 15` with the default `thickness 20` already differs — 12 before,
-15 after — well below the `bevel > 20` threshold an earlier draft of this
+Away from the defaults the two disagree in both directions. The old depth is
+`min(chamfer, 12)` and the new one is `min(chamfer, thickness)`, where
+`chamfer` is the effective band — the configured `bevel` on any window large
+enough to carry it, and the clamped value otherwise. Taking a window that is
+large enough, so that `chamfer` is `bevel`: they agree only while
+`bevel <= min(12, thickness)`, or when `thickness` is exactly 12. So
+`bevel 15` with the default `thickness 20` already differs — 12 before, 15
+after — well below the `bevel > 20` threshold an earlier draft of this
 document claimed; and `bevel 12` with `thickness 5` differs the other way, 12
-before and 5 after. Both directions are the correction: the bevel can now be
-as deep as the slab and no deeper, instead of being capped at a constant
+before and 5 after. On a smaller window both sides take the clamped chamfer
+instead, and the same comparison holds against that number. Both directions
+are the correction: the bevel can now be as deep as the slab and no deeper,
+instead of being capped at a constant
 unrelated to either.
 
 `SLAB_CORNER_RADIUS` in `src/render_helpers/material.rs` is unused outside its

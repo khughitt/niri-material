@@ -434,8 +434,11 @@ git commit -m "feat(material): set the glass bevel directly"
 
 ### Task 2: `thickness` becomes the slab depth
 
-`SLAB_DEPTH` disappears. The bevel depth becomes `min(bevel, thickness)`
-everywhere it is used, in one shared function.
+`SLAB_DEPTH` disappears. The bevel depth becomes
+`min(effective chamfer, thickness)` everywhere it is used, in one shared
+function. Effective, not configured: this task also clamps `frame.chamfer` to
+what the slab can carry, so the two are the same number on any window large
+enough to hold the band and differ on the ones that are not.
 
 **Files:**
 - Modify: `src/render_helpers/material.rs`
@@ -455,6 +458,25 @@ Add to `mod tests` in `src/render_helpers/material.rs`:
 
 ```rust
     #[test]
+    fn material_frame_clamps_the_chamfer_on_a_tiny_window() {
+        let tiny = Rectangle::new(Point::new(0., 0.), Size::new(8., 8.));
+        let mut glass = ResolvedGlass::default();
+        glass.bevel = 12.;
+
+        // Zero offset inflates by the whole bevel, so the slab always grows
+        // faster than the band: 8x8 becomes 32x32, half 16, cap 15. The clamp
+        // is unreachable this way no matter how large the bevel gets.
+        glass.offset_x = 0.;
+        glass.offset_y = 0.;
+        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 12.);
+
+        // Offsetting by the full bevel drops the inflation to zero, so the
+        // slab stays 8x8: half is 4 and the band the shader draws is 3.
+        glass.offset_x = 12.;
+        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 3.);
+    }
+
+    #[test]
     fn bevel_depth_is_the_shallower_of_bevel_and_thickness() {
         // Default: bevel 12, thickness 20 — the old constant was also 12, so
         // the shipped look is unchanged.
@@ -472,8 +494,10 @@ Add to `mod tests` in `src/render_helpers/material.rs`:
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cargo test -p niri bevel_depth_is_the_shallower -- --nocapture`
-Expected: FAIL — `bevel_depth` is not defined.
+Run: `cargo test -p niri 'material_frame_clamps_the_chamfer|bevel_depth_is_the_shallower' -- --nocapture`
+Expected: FAIL twice. `bevel_depth` is not defined, and the clamp case reports
+a chamfer of 12 where it asserts 3, because `material_frame` still hands back
+the configured bevel unclamped.
 
 - [ ] **Step 3: Replace the constant with the function**
 
@@ -514,8 +538,12 @@ Apply the same clamp once, in `material_frame`, so the field means the
 chamfer that is actually drawn. Replace the `chamfer:` line with:
 
 Update the field's doc comment, which Task 1 left as “the `bevel`
-parameter”, to `/// Chamfer width in logical px: `bevel`, clamped to what the
-slab can carry — the band actually drawn.`
+parameter”, to:
+
+```rust
+    /// Chamfer width in logical px: `bevel`, clamped to what the slab can
+    /// carry — the band actually drawn.
+```
 
 ```rust
         // Mirrors the shader's tiny-slab guard: a window too small to carry
@@ -529,29 +557,6 @@ slab can carry — the band actually drawn.`
 
 The shader's own clamp stays: it is now a no-op for every value Rust sends,
 but it still guards the uniform against being set from anywhere else.
-
-Add the case to `mod tests`:
-
-```rust
-    #[test]
-    fn material_frame_clamps_the_chamfer_on_a_tiny_window() {
-        let tiny = Rectangle::new(Point::new(0., 0.), Size::new(8., 8.));
-        let mut glass = ResolvedGlass::default();
-        glass.bevel = 12.;
-
-        // Zero offset inflates by the whole bevel, so the slab always grows
-        // faster than the band: 8x8 becomes 32x32, half 16, cap 15. The clamp
-        // is unreachable this way no matter how large the bevel gets.
-        glass.offset_x = 0.;
-        glass.offset_y = 0.;
-        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 12.);
-
-        // Offsetting by the full bevel drops the inflation to zero, so the
-        // slab stays 8x8: half is 4 and the band the shader draws is 3.
-        glass.offset_x = 12.;
-        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 3.);
-    }
-```
 
 - [ ] **Step 5: Point the jelly clamp at it**
 
@@ -1116,7 +1121,8 @@ inner face takes the window's radius and the outer follows:
 
 ```glsl
     // `mat_corner_radius` is fitted to the *window*, but neither SDF box is
-    // the window: the inner face is the window narrowed by twice the offset
+    // the window: the inner face is the window narrowed on both axes by
+    // 2 * max(|offset-x|, |offset-y|), then translated by the offset
     // (defaults, 100 px window: slab 112, inner face 88). Refit to the box
     // actually being drawn. The reduction is proportional across all four
     // corners, never per-corner clamping, which would shrink a large radius
@@ -1138,9 +1144,9 @@ inner face takes the window's radius and the outer follows:
 `half_ext - chamfer` is always positive: `chamfer` is clamped compositor-side
 to `min(half_ext) - 1` in Task 2, so the tighter axis leaves at least 1.
 
-Move those two lines below the existing `inner_half` computation, and update
-the three call sites to pass `outer_r` for the outer box and `inner_r` for
-the inner box and its gradient.
+Place those three declarations below the existing `inner_half` computation —
+`radius_half` reads it — and update the three call sites to pass `outer_r`
+for the outer box and `inner_r` for the inner box and its gradient.
 
 `fitRadii` is new. Add it beside `cornerRadius`, above `sdRoundedBox`. It is
 `CornerRadius::fit_to` (`niri-config/src/appearance.rs:174`) transcribed —
