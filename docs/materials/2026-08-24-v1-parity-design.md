@@ -1,7 +1,7 @@
 # Native materials v1 parity pass: design
 
 **Status:** approved 2026-08-24; amended after source review. Implementation
-planning pending.
+plan drafted; execution paused pending review.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -61,16 +61,21 @@ Two controlled scenes cover the parameter set:
   tiled at its 200 px period, plus a transparent, static probe.
   The reference side uses its isolated diagnostic preview. The native side
   uses the same diagnostic source behind a material window. Cursor blinking,
-  live terminal output, focus glint, and unrelated animation are absent.
+  live terminal output, focus glint, and unrelated animation are absent. The
+  preview cannot expose a separate slab-free frame, so reference registration
+  uses phase-equivalent, unmasked 200 px tiles from each preview capture. This
+  keeps the source in the same Qt rendering path as the deformed pixels.
 - **Geometry and motion:** one controlled pane/window on an otherwise quiet
-  workspace. Settled frames measure lip and shift. A deterministic column
-  resize supplies capture bursts for jelly flex and ripple, exercising the
-  native `window-resize` spring and the reference's matching replay without
-  involving `horizontal-view-movement` (which defaults to an easing curve,
-  not that spring). The probe uses app ID `v1-parity-probe`; the native
-  fixture assigns its material with a matching window rule. Peak response is
-  selected from each burst rather than assuming the two animation engines
-  reach their peaks at the same wall-clock offset.
+  workspace over a generated 1280x720 backdrop made by tiling the pinned SVG
+  at 200 px. Both swaybg and the reference wallpaper stub consume that exact
+  PNG, so the frozen client's crop-fill mapping is identity rather than a
+  6.4x magnification. The generated PNG and raw RGB hashes are recorded.
+  Settled frames measure lip and shift. A deterministic column resize supplies
+  capture bursts for jelly flex and ripple, exercising the native
+  `window-resize` spring and the reference's matching replay without involving
+  `horizontal-view-movement` (which defaults to an easing curve, not that
+  spring). The probe uses app ID `v1-parity-probe`; the native fixture assigns
+  its material with a matching window rule.
 
 Every default and variant static state is captured twice. Raw RGB drift within
 either state must affect less than 0.1% of pixels or the case is rejected
@@ -130,8 +135,13 @@ without adding prerequisite-only captures.
 
 The distortion-scale oracle registers the variant against the undeformed
 default grid and measures frequency on the resulting displacement field, not
-on the composed image's spectrum. The same pinned SVG and 200 px tiling period
-on both sides prevent the background itself from changing that estimate.
+on the composed image's spectrum. Registration accepts a block only when both
+its row-mean and column-mean luminance profiles clear the texture threshold;
+this prevents a one-axis grid edge from silently supplying a zero for the
+other axis. A best displacement on the search boundary rejects the row rather
+than capping the measured response. The same pinned SVG and 200 px tiling
+period on both sides prevent the background itself from changing that
+estimate.
 
 Native default/variant captures keep the same compositor process, window,
 material definition name, and material assignment. Parameter changes use an
@@ -145,9 +155,14 @@ Each motion setting is run twice. The pinned critical spring has an analytical
 settle duration of about 326 ms (`-ln(0.0001) / sqrt(800)`), so every burst
 must contain an active sample and extend through at least 400 ms, followed by
 a settled capture at 500 ms or later. Actual capture offsets are recorded.
-Duplicate default and variant bursts establish the motion noise floor from
-their peak-metric spread. A missing active or settled sample, or disagreement
-in response direction between duplicate bursts, rejects the motion evidence.
+For each default/variant case, its four duplicate bursts are linearly
+interpolated onto a shared 10 ms grid over their common actual-offset range;
+only scalar deformation and ripple metrics are interpolated, never pixels.
+The grid must begin by 75 ms, contain at least three active samples before
+326 ms, and contain samples at or after 400 and 500 ms. Duplicate default and
+variant curves establish the motion noise floor from their aligned peak-metric
+spread. Missing coverage, non-monotonic offsets, or disagreement in response
+direction between duplicate curves rejects the motion evidence.
 
 ## Gates
 
