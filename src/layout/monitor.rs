@@ -8,7 +8,7 @@ use smithay::backend::renderer::element::utils::{
     CropRenderElement, Relocate, RelocateRenderElement, RescaleRenderElement,
 };
 use smithay::output::Output;
-use smithay::utils::{Logical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 
 use super::insert_hint_element::{InsertHintElement, InsertHintRenderElement};
 use super::scrolling::{Column, ColumnWidth};
@@ -1680,27 +1680,13 @@ impl<W: LayoutElement> Monitor<W> {
         // Ceil the height in physical pixels.
         let height = (self.view_size.h * scale).ceil() as i32;
 
-        // Crop the elements to prevent them overflowing, currently visible during a workspace
-        // switch.
-        //
-        // HACK: crop to infinite bounds at least horizontally where we
-        // know there's no workspace joining or monitor bounds, otherwise
-        // it will cut pixel shaders and mess up the coordinate space.
-        // There's also a damage tracking bug which causes glitched
-        // rendering for maximized GTK windows.
-        //
-        // FIXME: use proper bounds after fixing the Crop element.
-        let crop_bounds = if self.workspace_switch.is_some() || self.overview_progress.is_some() {
-            Rectangle::new(
-                Point::from((-i32::MAX / 2, 0)),
-                Size::from((i32::MAX, height)),
-            )
-        } else {
-            Rectangle::new(
-                Point::from((-i32::MAX / 2, -i32::MAX / 2)),
-                Size::from((i32::MAX, i32::MAX)),
-            )
-        };
+        // Crop each workspace's elements so they don't overflow into a joining
+        // workspace during a workspace switch or in the overview; see
+        // workspace_crop_bounds. There's also a damage tracking bug which
+        // causes glitched rendering for maximized GTK windows.
+        let overview_active = self.overview_progress.is_some();
+        let switch_active = self.workspace_switch.is_some();
+        let ws_count = self.workspaces.len();
 
         let zoom = self.overview_zoom();
 
@@ -1720,7 +1706,9 @@ impl<W: LayoutElement> Monitor<W> {
             )
         };
 
-        for (ws, geo) in self.workspaces_with_render_geo() {
+        for ((ws_idx, ws), geo) in self.workspaces_with_render_geo_idx() {
+            let crop_bounds =
+                workspace_crop_bounds(height, overview_active, switch_active, ws_idx, ws_count);
             // Macro instead of closure because ws and insert hint have different elem types.
             macro_rules! push {
                 () => {{
@@ -2161,6 +2149,125 @@ impl<W: LayoutElement> Monitor<W> {
             // Workspace positions must be rounded to physical pixels.
             assert_abs_diff_eq!(pos.x, rounded_pos.x, epsilon = 1e-5);
             assert_abs_diff_eq!(pos.y, rounded_pos.y, epsilon = 1e-5);
+        }
+    }
+}
+
+/// Crop bounds for one workspace's render elements, in workspace-local
+/// physical coordinates.
+///
+/// Cropping exists to keep a workspace's elements from bleeding into the
+/// inter-workspace gap toward a neighboring workspace, so each side is
+/// cropped exactly when the workspace strip continues past it: in the
+/// overview every workspace is a card cropped on both sides; during a
+/// plain workspace switch the strip's first workspace keeps its top open
+/// and the last keeps its bottom open, which keeps decorations that extend
+/// past the strip's ends (shadows, decoration shaders) from being cut
+/// against the void during spring overshoot or rubber-banding. Bounds are
+/// keyed on the whole strip, not on which workspaces are currently
+/// rendered, so a workspace's bounds stay constant through the switch.
+/// With no switch or overview nothing can overflow into view, and the
+/// bounds are effectively infinite. Horizontal bounds are always
+/// unbounded: scrolling-layout content intentionally overhangs workspaces
+/// horizontally (visible in the overview), and the output edge clips
+/// everything else.
+fn workspace_crop_bounds(
+    height: i32,
+    overview_active: bool,
+    switch_active: bool,
+    ws_idx: usize,
+    ws_count: usize,
+) -> Rectangle<i32, Physical> {
+    let strip_above = ws_idx > 0;
+    let strip_below = ws_idx + 1 < ws_count;
+
+    let (top, bottom) = if overview_active {
+        (0, height)
+    } else if switch_active {
+        (
+            if strip_above { 0 } else { -i32::MAX / 2 },
+            if strip_below { height } else { i32::MAX / 2 },
+        )
+    } else {
+        (-i32::MAX / 2, i32::MAX / 2)
+    };
+
+    Rectangle::new(
+        Point::from((-i32::MAX / 2, top)),
+        Size::from((i32::MAX, bottom - top)),
+    )
+}
+
+#[cfg(test)]
+mod crop_bounds_tests {
+    use super::*;
+
+    const H: i32 = 1080;
+
+    fn top(b: Rectangle<i32, Physical>) -> i32 {
+        b.loc.y
+    }
+
+    fn bottom(b: Rectangle<i32, Physical>) -> i32 {
+        b.loc.y + b.size.h
+    }
+
+    #[test]
+    fn idle_bounds_are_unbounded() {
+        let b = workspace_crop_bounds(H, false, false, 0, 1);
+        assert_eq!(top(b), -i32::MAX / 2);
+        assert_eq!(bottom(b), i32::MAX / 2);
+    }
+
+    #[test]
+    fn overview_crops_to_band_on_both_sides() {
+        for pos in 0..3 {
+            let b = workspace_crop_bounds(H, true, false, pos, 3);
+            assert_eq!((top(b), bottom(b)), (0, H));
+        }
+    }
+
+    #[test]
+    fn switch_first_workspace_keeps_top_open() {
+        let b = workspace_crop_bounds(H, false, true, 0, 4);
+        assert_eq!(top(b), -i32::MAX / 2);
+        assert_eq!(bottom(b), H);
+    }
+
+    #[test]
+    fn switch_last_workspace_keeps_bottom_open() {
+        let b = workspace_crop_bounds(H, false, true, 3, 4);
+        assert_eq!(top(b), 0);
+        assert_eq!(bottom(b), i32::MAX / 2);
+    }
+
+    #[test]
+    fn switch_middle_workspaces_crop_both_sides() {
+        for idx in 1..3 {
+            let b = workspace_crop_bounds(H, false, true, idx, 4);
+            assert_eq!((top(b), bottom(b)), (0, H));
+        }
+    }
+
+    #[test]
+    fn switch_single_workspace_strip_is_unbounded() {
+        let b = workspace_crop_bounds(H, false, true, 0, 1);
+        assert_eq!(top(b), -i32::MAX / 2);
+        assert_eq!(bottom(b), i32::MAX / 2);
+    }
+
+    #[test]
+    fn overview_band_wins_over_switch() {
+        let b = workspace_crop_bounds(H, true, true, 0, 2);
+        assert_eq!((top(b), bottom(b)), (0, H));
+    }
+
+    #[test]
+    fn all_bounds_are_horizontally_unbounded() {
+        for (ov, sw) in [(false, false), (true, false), (false, true)] {
+            let b = workspace_crop_bounds(H, ov, sw, 0, 2);
+            assert_eq!(b.loc.x, -i32::MAX / 2);
+            assert_eq!(b.size.w, i32::MAX);
         }
     }
 }
