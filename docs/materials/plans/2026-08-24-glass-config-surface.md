@@ -529,20 +529,21 @@ Add the case to `mod tests`:
 ```rust
     #[test]
     fn material_frame_clamps_the_chamfer_on_a_tiny_window() {
+        let tiny = Rectangle::new(Point::new(0., 0.), Size::new(8., 8.));
         let mut glass = ResolvedGlass::default();
         glass.bevel = 12.;
+
+        // Zero offset inflates by the whole bevel, so the slab always grows
+        // faster than the band: 8x8 becomes 32x32, half 16, cap 15. The clamp
+        // is unreachable this way no matter how large the bevel gets.
         glass.offset_x = 0.;
         glass.offset_y = 0.;
-        // 8x8 window, inflated by the full bevel, is a 32x32 slab: half is
-        // 16, so the band the shader will draw is 15, not the configured 12.
-        // Larger windows are unaffected.
-        let tiny = Rectangle::new(Point::new(0., 0.), Size::new(8., 8.));
         assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 12.);
 
-        glass.bevel = 40.;
-        let frame = material_frame(tiny, tiny, &glass, 1.);
-        // slab 88x88, half 44, so the band is capped at 43.
-        assert_eq!(frame.chamfer, 43.);
+        // Offsetting by the full bevel drops the inflation to zero, so the
+        // slab stays 8x8: half is 4 and the band the shader draws is 3.
+        glass.offset_x = 12.;
+        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 3.);
     }
 ```
 
@@ -1115,11 +1116,12 @@ inner face takes the window's radius and the outer follows:
     // corners, never per-corner clamping, which would shrink a large radius
     // whose neighbour is small.
     vec4 inner_r = fitRadii(mat_corner_radius, inner_half);
-    // The outer ring then inherits non-overlap for free: adjacent outer radii
-    // sum to (inner_a + inner_b + 2 * chamfer) against an outer edge of
-    // (inner_edge + 2 * chamfer), and the fit above gives
-    // inner_a + inner_b <= inner_edge.
-    vec4 outer_r = inner_r + vec4(chamfer);
+    // The outer box needs its own fit rather than inheriting one. Jelly
+    // scales `inner_half` while `half_ext` stays fixed, so a positive resize
+    // can leave the inner face wider than (outer - 2 * chamfer): at the
+    // 112/88 geometry a full-flex resize reaches an inner edge near 90.4,
+    // and 90.4 + 2 * 12 overflows the 112 px outer edge.
+    vec4 outer_r = fitRadii(inner_r + vec4(chamfer), half_ext);
 ```
 
 Move those two lines below the existing `inner_half` computation, and update
@@ -1146,11 +1148,14 @@ vec4 fitRadii(vec4 r, vec2 half_ext) {
 }
 ```
 
-Fitting twice — once to the window in Rust, once to the inner face here — is
-not a conflict. Proportional reduction composes: fitting to the window and
-then to the smaller inner face yields exactly what fitting to the inner face
-alone would. The Rust-side fit stays because the fingerprint must carry the
-radius the window renders with.
+Fitting more than once is not a conflict. Proportional reduction composes in
+one direction: when each successive box is smaller, the result equals fitting
+to the smallest alone. That is the usual case here, but not guaranteed —
+jelly can scale `inner_half` above the window's half-extent, and the
+inflation is snapped up to the physical grid — so a later fit is sometimes
+merely conservative rather than exact. It is never wrong in the direction
+that matters: no fit ever enlarges a radius. The Rust-side fit stays because
+the fingerprint must carry the radius the window renders with.
 
 - [ ] **Step 7: Validate the shader as GLSL**
 
@@ -1238,20 +1243,42 @@ gap is recorded where the review is closed rather than only in the plan.
 
 - [ ] **Step 5: Grep for drift**
 
+Two commands. First the removed identifiers:
+
 ```sh
-rg -nw 'lip|shift-x|shift-y|samples|distortion-scale|SLAB_DEPTH|SLAB_CORNER_RADIUS' \
-    docs/materials niri-config/src src/render_helpers src/layout \
-    --glob '!docs/materials/plans/2026-08-23-slice2.md' \
-    --glob '!docs/materials/plans/2026-08-24-v1-parity.md' \
-    --glob '!docs/materials/2026-08-24-v1-parity-design.md'
+rg -nw 'lip|shift-x|shift-y|samples|distortion-scale|SLAB_DEPTH|SLAB_RADIUS|SLAB_CORNER_RADIUS' \
+    docs/materials/README.md docs/materials/material-config.md \
+    docs/materials/2026-08-22-v1-design.md \
+    niri-config/src/material.rs niri-config/src/lib.rs \
+    src/render_helpers/material.rs \
+    src/render_helpers/shaders/material.frag src/layout/tile.rs
 ```
 
-`-w` is load-bearing: without it a bare `lip` also matches `clip`,
-`clipboard`, and `clipPath` for more than 800 hits, and "read every result"
-becomes unfollowable. The excluded files are the parity pass's records, which
-describe the surface as it stood when they were written and must keep the old
-names. Read every remaining hit: current reference and status surfaces must
-use the new names.
+Then the fixed-geometry claim, which names no identifier and so survives the
+first command — `material-config.md` currently says “fixed 12 px depth and 28
+px corner radius”, the exact sentence this work invalidates:
+
+```sh
+rg -n '28 px|12 px depth|not configurable in v1' \
+    docs/materials/README.md docs/materials/material-config.md \
+    docs/materials/2026-08-22-v1-design.md
+```
+
+`-w` in the first is load-bearing: without it a bare `lip` also matches
+`clip`, `clipboard`, and `clipPath` for more than 800 hits, and "read every
+result" becomes unfollowable. Both commands name their files rather than
+sweeping a directory, for two reasons. The slice 0–3 plans and the parity
+pass's records describe the surface as it stood when they were written and
+must keep the old names. So must this work's own design doc, which is the
+document explaining what the old names became — it alone accounts for over
+half the hits of a directory-wide sweep. `shadow.frag` is excluded because its
+own `samples` is unrelated.
+
+Read every hit that remains. Two are expected to survive and are correct: the
+`mat_samples` uniform keeps its name while losing its parameter, and
+`ResolvedGlass::distortion_scale` keeps its field while gaining a property
+syntax. Everything else on a current reference or status surface must use the
+new names.
 
 - [ ] **Step 6: Final verification and commit**
 

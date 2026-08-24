@@ -103,8 +103,14 @@ uniform inflation is derived:
 ```
 inflate = bevel - max(abs(offset-x), abs(offset-y))
 slab    = window rect inflated by `inflate`, translated by (offset-x, offset-y)
-chamfer = bevel
+chamfer = min(bevel, half the smaller slab side - 1)
 ```
+
+The chamfer is the bevel wherever the bevel fits, which is every window big
+enough to carry the band. The clamp is the tiny-slab guard, and it is applied
+once, compositor-side, so the value handed to the shader is the band actually
+drawn — the jelly flex limit is derived from the same number and would
+otherwise disagree with it on small windows.
 
 The invariant is preserved by construction rather than by convention, and no
 look is lost: `(lip, shift)` maps to `(lip + max(abs(shift)), shift)` and back
@@ -138,8 +144,11 @@ the window's radius; the outer follows:
 
 ```
 inner = the tile's effective geometry-corner-radius, per corner
-outer = inner + bevel
+outer = inner + chamfer
 ```
+
+`chamfer`, not `bevel`: on a window too small to carry the configured band the
+two differ, and the outer ring follows the band that is drawn.
 
 Each set is *fitted* to the box it is drawn on, by the same CSS
 corner-overlap rule the window itself uses — one proportional reduction across
@@ -162,8 +171,15 @@ rule value alone would leave rounded glass around a square window. Then
 `fit_to`, the CSS corner-overlap rule — one proportional reduction across all
 four corners from adjacent-pair sums, not a per-corner clamp — fitted against
 the geometry of the branch doing the rendering, which differs between the
-normal and resize paths. Because the radius arrives fitted, the shader uses it
-as-is; the outer ring inherits non-overlap from the inner by construction.
+normal and resize paths.
+
+The shader then fits again, because neither box it draws is the window: the
+inner face is the window narrowed by twice the offset, and jelly can scale it
+further. It refits to the inner face, then refits the outer ring — which is
+`inner + chamfer` — to the slab. The outer fit is not redundant: jelly scales
+the inner face while the slab stays fixed, so a positive resize can push
+`inner + 2 * chamfer` past the slab's edge. Repeated proportional fitting is
+safe in the only direction that matters, since no fit ever enlarges a radius.
 
 That radius is therefore a shader input that changes without any `glass`
 parameter changing: during an expand animation, and on a reload that edits
