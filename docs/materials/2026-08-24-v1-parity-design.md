@@ -238,7 +238,9 @@ The Quickshell client was a prototype for the idea, not a proposal for the
 long-term API, and `material { glass { ... } }` becomes a released
 compatibility surface at v1. This pass deliberately changes no parameter, so
 the following are recorded as the required input to a separate config-surface
-design that must complete before v1 acceptance:
+design that must complete before v1 acceptance. That design is drafted in
+`docs/materials/2026-08-24-glass-config-surface-design.md`; it lands after this
+pass, so nothing below changes the surface the pass measures:
 
 - **`thickness` is not the slab's thickness.** `SLAB_DEPTH` is fixed at 12
   logical px while `thickness` defaults to 20 and ranges to 200. It is a
