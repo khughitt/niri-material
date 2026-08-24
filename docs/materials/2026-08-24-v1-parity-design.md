@@ -1,7 +1,8 @@
 # Native materials v1 parity pass: design
 
-**Status:** approved 2026-08-24; amended after source review. Implementation
-plan drafted; execution paused pending review.
+**Status:** approved 2026-08-24; amended after source review, then narrowed to
+the optics port with a config-surface review added as a separate v1 gate.
+Implementation plan drafted; execution paused pending review.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -11,6 +12,11 @@ Quickshell reference before physical DRM acceptance. The pass must show that
 every parameter shared by the two implementations produces the same semantic
 response, without requiring pixel identity between different rendering and
 composition pipelines.
+
+The pass verifies the **optics port** — that the native shader reproduces the
+reference's parameter responses. It does not evaluate whether the shared
+parameter set is the right long-term configuration surface. That question
+belongs to the separate config-surface review below, which also gates v1.
 
 ## Pinned starting state
 
@@ -42,6 +48,12 @@ The pass is one-time v1 evidence. It reuses the Slice 3 headless startup and
 capture pattern plus the raw-RGB analysis method in
 `niri-experiments/docs/research/legacy-visual-verification.md`. It does not
 create a generalized parity framework or CI job.
+
+A passing matrix therefore establishes port fidelity under the pinned
+controls, and nothing more. It is measured with reference `roughness` pinned
+to 0, so the frozen client's shipped 0.08 appearance is never compared; and it
+says nothing about whether a parameter should exist, be named as it is, or be
+user-facing at all.
 
 ## Environment and scenes
 
@@ -220,6 +232,49 @@ non-parity or instrument surface:
   compositor motion externally and are unnecessary for native jelly; and
 - Qt-only environment/specular behavior and focus glint.
 
+## Config surface review (out of scope here, gating v1)
+
+The Quickshell client was a prototype for the idea, not a proposal for the
+long-term API, and `material { glass { ... } }` becomes a released
+compatibility surface at v1. This pass deliberately changes no parameter, so
+the following are recorded as the required input to a separate config-surface
+design that must complete before v1 acceptance:
+
+- **`thickness` is not the slab's thickness.** `SLAB_DEPTH` is fixed at 12
+  logical px while `thickness` defaults to 20 and ranges to 200. It is a
+  strength knob wearing a length's name, and it drives three unrelated
+  quantities: screen-space refraction displacement, the Beer-Lambert optical
+  path, and the anisotropic smear width. Either make it the real depth and let
+  it drive the geometry, or rename it for what it does and let
+  `attenuation-distance` own absorption alone.
+- **The corner radius ignores the window's.** `SLAB_CORNER_RADIUS` is fixed at
+  28 logical px, while `geometry-corner-radius` is already a per-window rule
+  the tile resolves. The in-compositor implementation has the real geometry the
+  external client never had and should use it.
+- **`lip` plus `shift-x`/`shift-y` is prototype-shaped.** These exist because
+  the external client faked a pedestal by offsetting a same-size pane. What a
+  user sees is the chamfer band, which is derived as
+  `lip + max(abs(shift-x), abs(shift-y))`; and because the bevel depth is
+  `min(chamfer, depth)`, raising `lip` past the fixed 12 px depth changes the
+  bevel angle rather than only its width. The shader also clamps the chamfer to
+  `min(half_ext.x, half_ext.y) - 1`, so on small windows the configured values
+  silently stop taking effect. Expose the bevel directly.
+- **`samples` is a performance dial presented as an appearance knob.** It is
+  inert unless a multi-tap effect is active — the reason the capture matrix
+  needs a dependency edge for it. Derive it from a quality setting or from the
+  effect magnitudes. `distortion-scale` has the same inert-until-activated
+  shape and is a candidate to fold into `distortion`.
+
+`roughness` remains the highest-value missing parameter. It appears under
+Exclusions because native v1 cannot express it (deferred to G4 in the parent
+design), not because it is unwanted.
+
+Modelling should follow drei's `MeshTransmissionMaterial`, the original
+inspiration, for the optics rather than the prototype's exact API. Most of
+what the prototype did not port should stay unported: backside and resolution
+controls are Three.js mesh concerns, and temporal distortion is superseded by
+jelly riding real compositor animation residuals.
+
 ## Evidence and repository boundaries
 
 Generated PNGs, raw RGB dumps, and logs remain untracked in a unique temporary
@@ -233,8 +288,9 @@ The production implementation is also unchanged by this pass. If any oracle
 fails, the full independent matrix is still recorded, then production and DRM
 work stop and the discrepancies become separately designed bugfixes. A
 passing evidence commit permits `niri-material` to update the v1 design and
-materials status to “parity complete; physical DRM pending.” It does not
-itself satisfy the physical DRM gate or v1 acceptance.
+materials status to “optics port verified; config-surface review and physical
+DRM pending.” It does not itself satisfy the config-surface review, the
+physical DRM gate, or v1 acceptance.
 
 ## Alternatives rejected
 

@@ -46,5 +46,7 @@ coordinate-space half of the original G9 HACK premise did not reproduce on
 current shaders; the shipped fix instead opens the strip-end per-workspace
 crop bounds.
 
-Next: a parity pass against the frozen Quickshell client, a physical DRM
-smoke, and v1 acceptance.
+Next: a parity pass against the frozen Quickshell client, a config-surface
+review, a physical DRM smoke, and v1 acceptance. The parity pass checks that
+the native shader reproduces the prototype's parameter responses; it does not
+settle whether those parameters are the right long-term configuration.

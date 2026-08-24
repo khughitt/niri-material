@@ -2,6 +2,11 @@
 
 `material` definitions name a visual treatment. v1 provides one type,
 `glass`. Every parameter below is visually active in the built-in shader.
+
+This surface is provisional. The parameter set was inherited from the
+Quickshell prototype and is reviewed before v1 acceptance — names, units, and
+which knobs are user-facing may change. See “Config surface review” in
+`docs/materials/2026-08-24-v1-parity-design.md`.
 `jelly-flex` and `jelly-ripple` consume niri's native move/scrolling and resize
 animation residuals and return to their exact rest state when those springs
 settle.
