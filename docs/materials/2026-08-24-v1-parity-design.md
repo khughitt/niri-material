@@ -67,9 +67,10 @@ Two controlled scenes cover the parameter set:
   resize supplies capture bursts for jelly flex and ripple, exercising the
   native `window-resize` spring and the reference's matching replay without
   involving `horizontal-view-movement` (which defaults to an easing curve,
-  not that spring). Peak response is selected from each burst rather than
-  assuming the two animation engines reach their peaks at the same wall-clock
-  offset.
+  not that spring). The probe uses app ID `v1-parity-probe`; the native
+  fixture assigns its material with a matching window rule. Peak response is
+  selected from each burst rather than assuming the two animation engines
+  reach their peaks at the same wall-clock offset.
 
 Every default and variant static state is captured twice. Raw RGB drift within
 either state must affect less than 0.1% of pixels or the case is rejected
@@ -85,7 +86,7 @@ follows:
 | --- | --- | --- |
 | `enabled` | `true` | The live-pane geometry and motion scene must render. |
 | `layoutGaps` | `24` | Matches an explicit native `layout { gaps 24; }` so IPC-derived pane geometry stays aligned. |
-| `paneApps` | `["v1-parity-probe"]` | Selects only the controlled probe. |
+| `paneApps` | `["v1-parity-probe"]` | Selects the same controlled probe as the native window rule. |
 | `roughness` | `0` | Removes Qt mip-LOD blur, which native v1 does not implement and which would confound the blur/sample rows. |
 | `gridOverlay` | `false` | Removes the live-pane shader's screen-space grid overlay. |
 | `calibrate` | `false` | Removes the reference-only calibration overlay. |
@@ -134,10 +135,11 @@ on both sides prevent the background itself from changing that estimate.
 
 Native default/variant captures keep the same compositor process, window,
 material definition name, and material assignment. Parameter changes use an
-in-place config reload, which preserves `MaterialState` and its process-global
-`jelly_seed`; restarting the compositor or swapping the material name within
-a pair invalidates the pair. The reference likewise keeps the same window ID,
-which is its jelly-noise seed.
+in-place config reload, which preserves `MaterialState` and its per-state
+`jelly_seed` allocated from the process-global counter; restarting the
+compositor or swapping the material name within a pair invalidates the pair.
+The reference likewise keeps the same window ID, which is its jelly-noise
+seed.
 
 Each motion setting is run twice. The pinned critical spring has an analytical
 settle duration of about 326 ms (`-ln(0.0001) / sqrt(800)`), so every burst
