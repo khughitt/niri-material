@@ -1349,7 +1349,7 @@ impl<W: LayoutElement> Tile<W> {
                                             background,
                                             backdrop_id,
                                             backdrop: backdrop_commit,
-                                            ws_color: mapping.ws_color,
+                                            mapping: mapping.clone(),
                                             backdrop_color,
                                             jelly: jelly_fp,
                                         };
@@ -1526,7 +1526,7 @@ impl<W: LayoutElement> Tile<W> {
                                     background,
                                     backdrop_id,
                                     backdrop: backdrop_commit,
-                                    ws_color: mapping.ws_color,
+                                    mapping: mapping.clone(),
                                     backdrop_color,
                                     jelly: jelly_fp,
                                 };

@@ -257,6 +257,77 @@ fn map_normalized_src(
     )
 }
 
+struct PlainWindowSubdraw {
+    src: Rectangle<f64, Buffer>,
+    dst: Rectangle<i32, Physical>,
+    damage: Vec<Rectangle<i32, Physical>>,
+    opaque_regions: Vec<Rectangle<i32, Physical>>,
+}
+
+fn plain_window_subdraw(
+    src: Rectangle<f64, Buffer>,
+    dst: Rectangle<i32, Physical>,
+    geo_rect: [f32; 4],
+    win_src: Rectangle<f64, Buffer>,
+    damage: &[Rectangle<i32, Physical>],
+    opaque_regions: &[Rectangle<i32, Physical>],
+) -> Option<PlainWindowSubdraw> {
+    let geo_rect = Rectangle::new(
+        Point::from((f64::from(geo_rect[0]), f64::from(geo_rect[1]))),
+        Size::from((f64::from(geo_rect[2]), f64::from(geo_rect[3]))),
+    );
+    let intersection = src.intersection(geo_rect)?;
+    if intersection.is_empty() {
+        return None;
+    }
+
+    let normalized = Rectangle::new(
+        Point::from((
+            (intersection.loc.x - geo_rect.loc.x) / geo_rect.size.w,
+            (intersection.loc.y - geo_rect.loc.y) / geo_rect.size.h,
+        )),
+        Size::from((
+            intersection.size.w / geo_rect.size.w,
+            intersection.size.h / geo_rect.size.h,
+        )),
+    );
+
+    let end = intersection.loc + intersection.size.to_point();
+    let map_point = |point: Point<f64, Buffer>| {
+        Point::new(
+            dst.loc.x
+                + (((point.x - src.loc.x) / src.size.w) * f64::from(dst.size.w)).round() as i32,
+            dst.loc.y
+                + (((point.y - src.loc.y) / src.size.h) * f64::from(dst.size.h)).round() as i32,
+        )
+    };
+    let sub_dst = Rectangle::from_extremities(map_point(intersection.loc), map_point(end));
+    if sub_dst.is_empty() {
+        return None;
+    }
+
+    let mut sub_dst_relative = sub_dst;
+    sub_dst_relative.loc -= dst.loc;
+    let filter = |regions: &[Rectangle<i32, Physical>]| {
+        regions
+            .iter()
+            .filter_map(|region| {
+                region.intersection(sub_dst_relative).map(|mut region| {
+                    region.loc -= sub_dst_relative.loc;
+                    region
+                })
+            })
+            .collect()
+    };
+
+    Some(PlainWindowSubdraw {
+        src: map_normalized_src(normalized, win_src),
+        dst: sub_dst,
+        damage: filter(damage),
+        opaque_regions: filter(opaque_regions),
+    })
+}
+
 /// Everything the material element's pixels depend on that the damage
 /// tracker cannot see for itself.
 ///
@@ -274,8 +345,8 @@ pub struct InputFingerprint {
     pub backdrop_id: Id,
     /// Commit of the backdrop buffer being sampled.
     pub backdrop: CommitCounter,
-    /// Workspace background color composed behind the background buffer.
-    pub ws_color: [f32; 4],
+    /// Pixel mapping and workspace color used by the shader.
+    pub mapping: BackgroundMapping,
     /// Backdrop color composed behind the backdrop buffer.
     pub backdrop_color: [f32; 4],
     pub jelly: JellyFingerprint,
@@ -469,23 +540,22 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         let backdrop_texture = self.backdrop.borrow_mut().render(frame, false).ok();
         let (Some(bg_texture), Some(backdrop_texture)) = (bg_texture, backdrop_texture) else {
             warn!("material: error rendering background/backdrop buffer");
-            let geo = self.frame.geo_rect;
-            let dst_geo = Rectangle::new(
-                Point::from((
-                    dst.loc.x + (geo[0] as f64 * f64::from(dst.size.w)).round() as i32,
-                    dst.loc.y + (geo[1] as f64 * f64::from(dst.size.h)).round() as i32,
-                )),
-                Size::from((
-                    (geo[2] as f64 * f64::from(dst.size.w)).round() as i32,
-                    (geo[3] as f64 * f64::from(dst.size.h)).round() as i32,
-                )),
-            );
-            return frame.render_texture_from_to(
-                &self.win_texture,
-                map_normalized_src(src, self.win_src),
-                dst_geo,
+            let Some(subdraw) = plain_window_subdraw(
+                src,
+                dst,
+                self.frame.geo_rect,
+                self.win_src,
                 damage,
                 opaque_regions,
+            ) else {
+                return Ok(());
+            };
+            return frame.render_texture_from_to(
+                &self.win_texture,
+                subdraw.src,
+                subdraw.dst,
+                &subdraw.damage,
+                &subdraw.opaque_regions,
                 Transform::Normal,
                 self.alpha,
                 None,
@@ -617,7 +687,12 @@ mod tests {
             background_id: background_id.clone(),
             backdrop: commit_after(backdrop),
             backdrop_id: backdrop_id.clone(),
-            ws_color: [0.; 4],
+            mapping: BackgroundMapping {
+                bg_rect: [0.; 4],
+                backdrop_rect: [0.; 4],
+                ws_rect: [0.; 4],
+                ws_color: [0.; 4],
+            },
             backdrop_color: [0.; 4],
             jelly: JellyFingerprint::default(),
         }
@@ -992,7 +1067,21 @@ mod tests {
 
         let mut f = fingerprint2(1, 1, &background_id, 1, &backdrop_id);
         let a = state.advance_commit(RenderTarget::Output, f.clone());
-        f.ws_color = [1., 0., 0., 1.];
+        f.mapping.ws_color = [1., 0., 0., 1.];
+        let b = state.advance_commit(RenderTarget::Output, f);
+
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn background_mapping_change_advances_the_commit() {
+        let state = MaterialState::new(material("frost"));
+        let background_id = Id::new();
+        let backdrop_id = Id::new();
+
+        let mut f = fingerprint2(1, 1, &background_id, 1, &backdrop_id);
+        let a = state.advance_commit(RenderTarget::Output, f.clone());
+        f.mapping.bg_rect[0] = 0.25;
         let b = state.advance_commit(RenderTarget::Output, f);
 
         assert_ne!(a, b);
@@ -1085,5 +1174,50 @@ mod tests {
             map_normalized_src(src, texture_src),
             Rectangle::new(Point::new(60., 45.), Size::new(100., 40.))
         );
+    }
+
+    #[test]
+    fn cropped_plain_window_fallback_maps_source_destination_and_regions() {
+        let src = Rectangle::new(Point::new(0.5, 0.125), Size::new(0.375, 0.75));
+        let dst = Rectangle::new(Point::new(100, 200), Size::new(400, 600));
+        let win_src = Rectangle::new(Point::new(10., 20.), Size::new(800., 600.));
+        let damage = [Rectangle::new(Point::new(0, 0), Size::new(400, 200))];
+        let opaque = [Rectangle::new(Point::new(0, 0), Size::new(400, 600))];
+
+        let subdraw = plain_window_subdraw(
+            src,
+            dst,
+            [0.125, 0.25, 0.75, 0.5],
+            win_src,
+            &damage,
+            &opaque,
+        )
+        .unwrap();
+
+        assert_eq!(
+            subdraw.src,
+            Rectangle::new(Point::new(410., 20.), Size::new(400., 600.))
+        );
+        assert_eq!(
+            subdraw.dst,
+            Rectangle::new(Point::new(100, 300), Size::new(400, 400))
+        );
+        assert_eq!(
+            subdraw.damage,
+            [Rectangle::new(Point::new(0, 0), Size::new(400, 100))]
+        );
+        assert_eq!(
+            subdraw.opaque_regions,
+            [Rectangle::new(Point::new(0, 0), Size::new(400, 400))]
+        );
+    }
+
+    #[test]
+    fn cropped_plain_window_fallback_skips_when_window_is_outside_crop() {
+        let src = Rectangle::new(Point::new(0., 0.), Size::new(0.25, 1.));
+        let dst = Rectangle::new(Point::new(0, 0), Size::new(250, 1000));
+        let win_src = Rectangle::new(Point::new(0., 0.), Size::new(500., 500.));
+
+        assert!(plain_window_subdraw(src, dst, [0.5, 0., 0.5, 1.], win_src, &[], &[],).is_none());
     }
 }

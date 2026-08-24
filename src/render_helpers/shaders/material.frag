@@ -39,20 +39,25 @@ bool inRect(vec2 v, vec4 rect) {
         && all(lessThan(v, rect.xy + rect.zw));
 }
 
-// Composes the per-target background buffer over the workspace color inside
-// the workspace rect, and the backdrop buffer over the backdrop color outside it.
-// `v` is element UV. Returns sRGB-encoded rgb; layers are opaque after solid
-// colors compose behind them.
+vec4 sampleBackdrop(vec2 v) {
+    vec2 uv = mat_backdrop_rect.xy + v * mat_backdrop_rect.zw;
+    vec4 c = texture2D(niri_tex_backdrop, clamp(uv, 0.0, 1.0));
+    return c + mat_backdrop_color * (1.0 - c.a);
+}
+
+// Composes the per-target background buffer over the workspace color, then
+// over the backdrop when that result remains translucent. Outside the selected
+// workspace, samples the backdrop directly. `v` is element UV.
 vec3 sampleBackground(vec2 v) {
     vec4 c;
     if (inRect(v, mat_ws_rect)) {
         vec2 uv = mat_bg_rect.xy + v * mat_bg_rect.zw;
         c = texture2D(niri_tex_bg, clamp(uv, 0.0, 1.0));
         c = c + mat_ws_color * (1.0 - c.a);
+        if (c.a < 1.0)
+            c = c + sampleBackdrop(v) * (1.0 - c.a);
     } else {
-        vec2 uv = mat_backdrop_rect.xy + v * mat_backdrop_rect.zw;
-        c = texture2D(niri_tex_backdrop, clamp(uv, 0.0, 1.0));
-        c = c + mat_backdrop_color * (1.0 - c.a);
+        c = sampleBackdrop(v);
     }
     return c.rgb;
 }
@@ -247,6 +252,10 @@ void main() {
     if (inRect(v, mat_geo_rect)) {
         vec2 wv = (v - mat_geo_rect.xy) / mat_geo_rect.zw;
         win = texture2D(niri_tex_win, mat_win_rect.xy + wv * mat_win_rect.zw);
+    }
+    if (win.a == 1.0) {
+        gl_FragColor = win * niri_alpha;
+        return;
     }
 
     float coverage;
