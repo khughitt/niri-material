@@ -37,5 +37,14 @@ recorded at `niri-experiments` commit `a27eb8f` in
 `docs/results/2026-08-23-slice2.md`; it closes the earlier texture-creation and
 matched GPU-time measurement debt.
 
-Slice 3's overview correctness gate, including the known G9 vertical-lip
-clipping, is next. Physical DRM still gates v1 acceptance.
+Slice 3 is implemented on `slice3-crop` through `01a4259c`. Its nested-winit
+verification — characterization, live verification, performance record, and
+final write-up — is recorded at `niri-experiments` commit `3038246` in
+`docs/results/2026-08-24-slice3.md` (building on characterization at
+`c37c653` and live verification + Tracy record at `50fb0e8`). The
+coordinate-space half of the original G9 HACK premise did not reproduce on
+current shaders; the shipped fix instead opens the strip-end per-workspace
+crop bounds.
+
+Next: a parity pass against the frozen Quickshell client, a physical DRM
+smoke, and v1 acceptance.
