@@ -185,6 +185,10 @@ calibration burst through the same resize and screenshot path. Its first
 actual offset sets that implementation's evidence budget, rounded up to the
 next 10 ms plus 10 ms; the calibration must itself satisfy the actual-capture
 coverage gate.
+Within a burst, record each actual offset when its screenshot IPC returns, but
+do not wait for or rename any asynchronously encoded PNG until every scheduled
+screenshot IPC has been issued. PNG encoding latency is not part of the
+sampling schedule.
 For each default/variant case, its four duplicate bursts are linearly
 interpolated onto a shared 10 ms grid over their common actual-offset range;
 only scalar deformation and ripple metrics are interpolated, never pixels.
