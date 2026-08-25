@@ -186,8 +186,10 @@ after 400 ms, and a settled capture at or after 500 ms. Actual capture offsets
 are recorded. Before evidence capture, each implementation runs one default
 calibration burst through the same resize and screenshot path. Its first
 actual offset sets that implementation's evidence budget, rounded up to the
-next 10 ms plus 10 ms; the calibration must itself satisfy the actual-capture
-coverage gate.
+next 10 ms plus a 20 ms scheduling allowance; the calibration must itself
+satisfy the actual-capture coverage gate. The allowance covers the observed
+19 ms maximum calibration-to-evidence first-offset spread without changing
+the motion-duration or response thresholds.
 Within a burst, record each actual offset when its screenshot IPC returns, but
 do not wait for or rename any asynchronously encoded PNG until every scheduled
 screenshot IPC has been issued. PNG encoding latency is not part of the
