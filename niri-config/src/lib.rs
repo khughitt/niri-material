@@ -226,6 +226,24 @@ where
                 "material" => {
                     let part = Material::decode_node(node, ctx)?;
 
+                    // `resolve` is infallible and runs after the config is
+                    // already accepted, so a cross-parameter rule has to be
+                    // checked here, where a decode error can still be
+                    // emitted. Unlike `validate_material_refs` this needs no
+                    // post-include deferral: the rule is per-definition.
+                    if let Err(message) = part.validate() {
+                        match node.arguments.first() {
+                            Some(arg) => ctx.emit_error(DecodeError::unexpected(
+                                &arg.literal,
+                                "material",
+                                message,
+                            )),
+                            None => {
+                                ctx.emit_error(DecodeError::unexpected(node, "material", message))
+                            }
+                        }
+                    }
+
                     // `config` is shared across includes, unlike a value set
                     // into this file's Context, so this also catches a
                     // duplicate defined in another file.
@@ -881,9 +899,9 @@ mod tests {
                     anisotropic-blur 0.75
                     jelly-flex 0.01
                     jelly-ripple 0.2
-                    lip 12
-                    shift-x -8
-                    shift-y 4
+                    bevel 20
+                    offset-x -8
+                    offset-y 4
                 }
             }
             "##,
@@ -905,9 +923,9 @@ mod tests {
                 anisotropic_blur: 0.75,
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
-                lip: 12.,
-                shift_x: -8.,
-                shift_y: 4.,
+                bevel: 20.,
+                offset_x: -8.,
+                offset_y: 4.,
             }
         );
     }
@@ -941,6 +959,93 @@ mod tests {
             "##,
         );
         assert!(err.contains("value must be between 1 and 3"), "{err}");
+    }
+
+    #[test]
+    fn material_accepts_bevel_and_offset() {
+        let config = do_parse(
+            r##"
+            material "frost" {
+                glass {
+                    bevel 20
+                    offset-x -8
+                    offset-y 4
+                }
+            }
+            "##,
+        );
+        let g = config.materials[0].resolve().glass;
+        assert_eq!(g.bevel, 20.);
+        assert_eq!(g.offset_x, -8.);
+        assert_eq!(g.offset_y, 4.);
+    }
+
+    #[test]
+    fn material_defaults_bevel_and_offset() {
+        let config = do_parse(
+            r##"
+            material "frost" {
+                glass {}
+            }
+            "##,
+        );
+        let g = config.materials[0].resolve().glass;
+        assert_eq!(g.bevel, 12.);
+        assert_eq!(g.offset_x, 6.);
+        assert_eq!(g.offset_y, 6.);
+    }
+
+    #[test]
+    fn material_rejects_removed_lip_and_shift() {
+        for node in ["lip 6", "shift-x 6", "shift-y 6"] {
+            let err = do_parse_err(&format!(
+                "material \"frost\" {{\n    glass {{\n        {node}\n    }}\n}}\n"
+            ));
+            assert!(err.contains("unexpected node"), "{node}: {err}");
+        }
+    }
+
+    #[test]
+    fn material_rejects_out_of_range_bevel() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    bevel 200
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("value must be between 0 and 128"), "{err}");
+    }
+
+    #[test]
+    fn material_rejects_offset_exceeding_bevel() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    bevel 10
+                    offset-y -12
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("offset must not exceed bevel"), "{err}");
+    }
+
+    #[test]
+    fn material_offset_rule_applies_inside_an_include() {
+        // Includes decode through the same `"material"` arm, so the check
+        // must fire there rather than only on the root file.
+        let err = parse_files_err(&[
+            ("main.kdl", "include \"other.kdl\"\n"),
+            (
+                "other.kdl",
+                "material \"frost\" { glass { bevel 4; offset-x 9; }; }\n",
+            ),
+        ]);
+        assert!(err.contains("offset must not exceed bevel"), "{err}");
     }
 
     #[test]

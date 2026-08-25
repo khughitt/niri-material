@@ -172,11 +172,11 @@ pub struct Glass {
     #[knuffel(child, unwrap(argument))]
     pub jelly_ripple: Option<Milli<0, 500>>,
     #[knuffel(child, unwrap(argument))]
-    pub lip: Option<FloatOrInt<0, 64>>,
+    pub bevel: Option<FloatOrInt<0, 128>>,
     #[knuffel(child, unwrap(argument))]
-    pub shift_x: Option<FloatOrInt<-64, 64>>,
+    pub offset_x: Option<FloatOrInt<-64, 64>>,
     #[knuffel(child, unwrap(argument))]
-    pub shift_y: Option<FloatOrInt<-64, 64>>,
+    pub offset_y: Option<FloatOrInt<-64, 64>>,
 }
 
 /// A material definition with every parameter resolved to a final value.
@@ -200,9 +200,9 @@ pub struct ResolvedGlass {
     pub anisotropic_blur: f64,
     pub jelly_flex: f64,
     pub jelly_ripple: f64,
-    pub lip: f64,
-    pub shift_x: f64,
-    pub shift_y: f64,
+    pub bevel: f64,
+    pub offset_x: f64,
+    pub offset_y: f64,
 }
 
 impl Default for ResolvedGlass {
@@ -220,9 +220,9 @@ impl Default for ResolvedGlass {
             anisotropic_blur: 0.,
             jelly_flex: 0.004,
             jelly_ripple: 0.06,
-            lip: 6.,
-            shift_x: 6.,
-            shift_y: 6.,
+            bevel: 12.,
+            offset_x: 6.,
+            offset_y: 6.,
         }
     }
 }
@@ -252,11 +252,30 @@ impl Material {
                 anisotropic_blur: g.anisotropic_blur.map_or(d.anisotropic_blur, |x| x.0),
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
                 jelly_ripple: g.jelly_ripple.map_or(d.jelly_ripple, |x| x.0),
-                lip: g.lip.map_or(d.lip, |x| x.0),
-                shift_x: g.shift_x.map_or(d.shift_x, |x| x.0),
-                shift_y: g.shift_y.map_or(d.shift_y, |x| x.0),
+                bevel: g.bevel.map_or(d.bevel, |x| x.0),
+                offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
+                offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
             },
         }
+    }
+
+    /// Checks the one rule that spans two parameters.
+    ///
+    /// `material_frame` derives the uniform inflation as
+    /// `bevel - max(|offset-x|, |offset-y|)`. A negative inflation would put
+    /// the slab inside the window on one side, which has no meaning, so the
+    /// offsets are bounded by the bevel rather than clamped silently.
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        let d = ResolvedGlass::default();
+        let bevel = self.glass.bevel.map_or(d.bevel, |x| x.0);
+        let offset_x = self.glass.offset_x.map_or(d.offset_x, |x| x.0);
+        let offset_y = self.glass.offset_y.map_or(d.offset_y, |x| x.0);
+
+        if offset_x.abs().max(offset_y.abs()) > bevel {
+            return Err(String::from("offset must not exceed bevel"));
+        }
+
+        Ok(())
     }
 }
 

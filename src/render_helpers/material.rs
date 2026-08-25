@@ -97,7 +97,7 @@ pub struct MaterialFrame {
     pub slab_rect: [f32; 4],
     /// Element size in logical px.
     pub area_size: [f32; 2],
-    /// Chamfer width in logical px: lip + max(|shift-x|, |shift-y|).
+    /// Chamfer width in logical px: the `bevel` parameter.
     pub chamfer: f32,
 }
 
@@ -210,9 +210,11 @@ fn uv_rect(inner: Rectangle<f64, Logical>, area: Rectangle<f64, Logical>) -> [f3
 /// Computes the element frame for a window at `win_geo` whose rendered
 /// texture covers `tex_geo` (both absolute logical rects).
 ///
-/// The slab is the window rect inflated by `lip` on every side, then slid
-/// by (`shift-x`, `shift-y`). The inflation is aligned to physical pixels
-/// the way Shadow's is, so the element geometry and damage stay exact.
+/// The slab is the window rect inflated by `bevel - max(|offset-x|,
+/// |offset-y|)` on every side, then slid by (`offset-x`, `offset-y`), so the
+/// chamfer spans the whole widest visible band. The inflation is aligned to
+/// physical pixels the way Shadow's is, so the element geometry and damage
+/// stay exact.
 pub fn material_frame(
     win_geo: Rectangle<f64, Logical>,
     tex_geo: Rectangle<f64, Logical>,
@@ -222,11 +224,12 @@ pub fn material_frame(
     let ceil = |v: f64| (v * scale).ceil() / scale;
     let round = |v: f64| (v * scale).round() / scale;
 
-    let lip = ceil(glass.lip);
-    let shift = Point::<f64, Logical>::from((round(glass.shift_x), round(glass.shift_y)));
+    let offset_max = glass.offset_x.abs().max(glass.offset_y.abs());
+    let inflate = ceil(glass.bevel - offset_max);
+    let offset = Point::<f64, Logical>::from((round(glass.offset_x), round(glass.offset_y)));
     let slab = Rectangle::new(
-        win_geo.loc - Point::from((lip, lip)) + shift,
-        win_geo.size + Size::from((lip * 2., lip * 2.)),
+        win_geo.loc - Point::from((inflate, inflate)) + offset,
+        win_geo.size + Size::from((inflate * 2., inflate * 2.)),
     );
     let area = tex_geo.merge(slab);
 
@@ -234,7 +237,7 @@ pub fn material_frame(
         geo_rect: uv_rect(tex_geo, area),
         slab_rect: uv_rect(slab, area),
         area_size: [area.size.w as f32, area.size.h as f32],
-        chamfer: (lip + glass.shift_x.abs().max(glass.shift_y.abs())) as f32,
+        chamfer: glass.bevel as f32,
         area,
     }
 }
@@ -1088,16 +1091,16 @@ mod tests {
     }
 
     #[test]
-    fn material_frame_inflates_by_lip_and_shift() {
+    fn material_frame_inflates_by_bevel_less_offset() {
         let mut glass = ResolvedGlass::default();
-        glass.lip = 10.;
-        glass.shift_x = 0.;
-        glass.shift_y = 0.;
+        glass.bevel = 10.;
+        glass.offset_x = 0.;
+        glass.offset_y = 0.;
         let win = Rectangle::new(Point::new(0., 0.), Size::new(200., 100.));
 
         let frame = material_frame(win, win, &glass, 1.);
 
-        // Slab = window + 10 on every side; area = union = the slab.
+        // Zero offset: the whole bevel becomes uniform inflation.
         assert_eq!(
             frame.area,
             Rectangle::new(Point::new(-10., -10.), Size::new(220., 120.))
@@ -1112,45 +1115,65 @@ mod tests {
     }
 
     #[test]
-    fn material_frame_shift_slides_the_slab() {
+    fn material_frame_offset_slides_the_slab() {
         let mut glass = ResolvedGlass::default();
-        glass.lip = 6.;
-        glass.shift_x = 6.;
-        glass.shift_y = 6.;
+        glass.bevel = 12.;
+        glass.offset_x = 6.;
+        glass.offset_y = 6.;
         let win = Rectangle::new(Point::new(100., 50.), Size::new(200., 100.));
 
         let frame = material_frame(win, win, &glass, 1.);
 
-        // lip 6 + shift 6: the slab's top-left lands on the window's
-        // top-left; the lip is fully on the right/bottom sides.
+        // inflate = 12 - 6 = 6, then slid by 6: the slab's top-left lands on
+        // the window's top-left and the band is entirely right/bottom.
         assert_eq!(
             frame.area,
             Rectangle::new(Point::new(100., 50.), Size::new(212., 112.))
         );
-        // chamfer = lip + max(|sx|, |sy|) = 12
+        assert_eq!(frame.chamfer, 12.);
+    }
+
+    #[test]
+    fn material_frame_defaults_match_the_pre_change_geometry() {
+        // Pins the spec's re-parameterization claim: the shipped defaults
+        // produce exactly the frame the old lip 6 / shift 6 constants did.
+        let glass = ResolvedGlass::default();
+        let win = Rectangle::new(Point::new(100., 50.), Size::new(200., 100.));
+
+        let frame = material_frame(win, win, &glass, 1.);
+
+        assert_eq!(
+            frame.area,
+            Rectangle::new(Point::new(100., 50.), Size::new(212., 112.))
+        );
         assert_eq!(frame.chamfer, 12.);
     }
 
     #[test]
     fn material_frame_aligns_to_physical_pixels() {
         let mut glass = ResolvedGlass::default();
-        glass.lip = 5.3;
-        glass.shift_x = 0.;
-        glass.shift_y = 0.;
+        glass.bevel = 5.3;
+        glass.offset_x = 0.;
+        glass.offset_y = 0.;
         let win = Rectangle::new(Point::new(0., 0.), Size::new(100., 100.));
 
         let frame = material_frame(win, win, &glass, 2.);
 
         // ceil(5.3 * 2) / 2 = 5.5
         assert_eq!(frame.area.loc, Point::new(-5.5, -5.5));
+        // The inflation is still snapped up to the physical grid, but the
+        // chamfer is the bevel exactly. The old code reused its rounded lip
+        // for both, so `lip 5.3` at scale 2 reported a 5.5 chamfer; the band
+        // width has no reason to be pixel-aligned.
+        assert_eq!(frame.chamfer, 5.3);
     }
 
     #[test]
     fn material_frame_merges_an_oversized_texture_footprint() {
         let mut glass = ResolvedGlass::default();
-        glass.lip = 6.;
-        glass.shift_x = 0.;
-        glass.shift_y = 0.;
+        glass.bevel = 6.;
+        glass.offset_x = 0.;
+        glass.offset_y = 0.;
         let win = Rectangle::new(Point::new(0., 0.), Size::new(200., 100.));
         // CSD shadows: the texture extends 20 px past the window.
         let tex = Rectangle::new(Point::new(-20., -20.), Size::new(240., 140.));
