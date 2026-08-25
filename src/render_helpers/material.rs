@@ -78,10 +78,15 @@ pub fn background_mapping(
     }
 }
 
-/// Slab constants in logical px, matching the legacy slab mesh so the two
-/// implementations stay comparable during the parity pass.
-pub const SLAB_DEPTH: f64 = 12.;
-pub const SLAB_CORNER_RADIUS: f64 = 28.;
+/// The slab's bevel depth: the shallower of the chamfer and the slab.
+///
+/// A bevel cannot be deeper than the glass it is cut into. This mirrors the
+/// shader's `min(mat_chamfer, mat_thickness)`; both must change together.
+/// Pass `MaterialFrame::chamfer`, which is already clamped to what the shader
+/// will draw — passing the configured bevel would disagree on small windows.
+pub(crate) fn bevel_depth(chamfer: f64, thickness: f64) -> f64 {
+    chamfer.min(thickness)
+}
 
 static JELLY_SEED: AtomicUsize = AtomicUsize::new(0);
 
@@ -97,7 +102,8 @@ pub struct MaterialFrame {
     pub slab_rect: [f32; 4],
     /// Element size in logical px.
     pub area_size: [f32; 2],
-    /// Chamfer width in logical px: the `bevel` parameter.
+    /// Chamfer width in logical px: `bevel`, clamped to what the slab can
+    /// carry — the band actually drawn.
     pub chamfer: f32,
 }
 
@@ -237,7 +243,13 @@ pub fn material_frame(
         geo_rect: uv_rect(tex_geo, area),
         slab_rect: uv_rect(slab, area),
         area_size: [area.size.w as f32, area.size.h as f32],
-        chamfer: glass.bevel as f32,
+        // Mirrors the shader's tiny-slab guard: a window too small to carry
+        // the configured band gets whatever fits, and the field is the
+        // chamfer actually drawn so `bevel_depth` and the shader agree.
+        chamfer: {
+            let max_chamfer = (slab.size.w.min(slab.size.h) / 2. - 1.).max(0.);
+            glass.bevel.min(max_chamfer) as f32
+        },
         area,
     }
 }
@@ -1147,6 +1159,40 @@ mod tests {
             Rectangle::new(Point::new(100., 50.), Size::new(212., 112.))
         );
         assert_eq!(frame.chamfer, 12.);
+    }
+
+    #[test]
+    fn material_frame_clamps_the_chamfer_on_a_tiny_window() {
+        let tiny = Rectangle::new(Point::new(0., 0.), Size::new(8., 8.));
+        let mut glass = ResolvedGlass::default();
+        glass.bevel = 12.;
+
+        // Zero offset inflates by the whole bevel, so the slab always grows
+        // faster than the band: 8x8 becomes 32x32, half 16, cap 15. The clamp
+        // is unreachable this way no matter how large the bevel gets.
+        glass.offset_x = 0.;
+        glass.offset_y = 0.;
+        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 12.);
+
+        // Offsetting by the full bevel drops the inflation to zero, so the
+        // slab stays 8x8: half is 4 and the band the shader draws is 3.
+        glass.offset_x = 12.;
+        assert_eq!(material_frame(tiny, tiny, &glass, 1.).chamfer, 3.);
+    }
+
+    #[test]
+    fn bevel_depth_is_the_shallower_of_bevel_and_thickness() {
+        // Default: bevel 12, thickness 20 — the old constant was also 12, so
+        // the shipped look is unchanged.
+        assert_eq!(bevel_depth(12., 20.), 12.);
+        // A bevel deeper than the old constant but shallower than the slab
+        // is now honoured; the old code capped it at 12.
+        assert_eq!(bevel_depth(15., 20.), 15.);
+        // A slab shallower than the bevel now limits it; the old code
+        // returned 12 regardless of thickness.
+        assert_eq!(bevel_depth(12., 5.), 5.);
+        // Both directions collapse to the bevel when it is the shallower.
+        assert_eq!(bevel_depth(4., 20.), 4.);
     }
 
     #[test]

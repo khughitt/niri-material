@@ -24,8 +24,8 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
-    apply_resolved, background_mapping, jelly_state, material_frame, InputFingerprint,
-    JellyFingerprint, JellyUniforms, MaterialRenderElement, MaterialState, SLAB_DEPTH,
+    apply_resolved, background_mapping, bevel_depth, jelly_state, material_frame,
+    InputFingerprint, JellyFingerprint, JellyUniforms, MaterialRenderElement, MaterialState,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -1295,8 +1295,11 @@ impl<W: LayoutElement> Tile<W> {
                                             self.scale,
                                         );
                                         let glass = &material.material().glass;
-                                        let max_flex =
-                                            0.25 * SLAB_DEPTH.min(f64::from(frame.chamfer));
+                                        let max_flex = 0.25
+                                            * bevel_depth(
+                                                f64::from(frame.chamfer),
+                                                glass.thickness,
+                                            );
                                         let jelly = jelly_state(
                                             motion_residual,
                                             size_residual,
@@ -1473,7 +1476,8 @@ impl<W: LayoutElement> Tile<W> {
                                     self.scale,
                                 );
                                 let glass = &material.material().glass;
-                                let max_flex = 0.25 * SLAB_DEPTH.min(f64::from(frame.chamfer));
+                                let max_flex = 0.25
+                                    * bevel_depth(f64::from(frame.chamfer), glass.thickness);
                                 let jelly = jelly_state(
                                     motion_residual,
                                     size_residual,

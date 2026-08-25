@@ -169,9 +169,8 @@ float hash12(vec2 p)
     return fract((p3.x + p3.y) * p3.z);
 }
 
-// Slab constants, matching the legacy slab mesh (depth and corner radius
-// in logical px) so the implementations stay visually comparable.
-const float SLAB_DEPTH = 12.0;
+// Slab corner radius in logical px, matching the legacy slab mesh. Task 5
+// replaces this with the window's own radius.
 const float SLAB_RADIUS = 28.0;
 
 float sdRoundedBox(vec2 p, vec2 b, float r) {
@@ -223,7 +222,7 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal) {
 
     if (chamfer > 0.0 && di >= 0.0) {
         vec2 g = sdRoundedBoxGrad(p - inner_center, inner_half, ri);
-        float bevel = min(chamfer, SLAB_DEPTH);
+        float bevel = min(chamfer, mat_thickness);
         float slope = length(vec2(bevel, chamfer));
         normal = normalize(vec3(g * (bevel / slope), chamfer / slope));
     } else {
