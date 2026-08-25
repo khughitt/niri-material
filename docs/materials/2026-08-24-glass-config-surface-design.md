@@ -1,8 +1,7 @@
 # Glass config surface: design
 
-**Status:** drafted 2026-08-24; implementation plan drafted at
-`docs/materials/plans/2026-08-24-glass-config-surface.md`. Execution pending,
-and gated behind the v1 parity pass.
+**Status:** implemented 2026-08-24 in `e579dae5`, `0c5f809f`, `6cd06de2`,
+`73a733db`, and `b8fe7b84`.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 **Gate recorded in:** `docs/materials/2026-08-24-v1-parity-design.md`,
 “Config surface review”
@@ -410,14 +409,15 @@ bottom-right, bottom-left — reusing the existing `From<CornerRadius> for
 
 ## Sequencing
 
-This lands **after** the v1 parity pass, as a single change.
+This was originally sequenced after the v1 parity pass, but implementation
+was explicitly started before that pass. It landed as a five-commit
+implementation series.
 
 The parity pass compares native against the frozen prototype, whose surface is
-the current one. Landing this first would break the row mapping: `samples`
-would have no native counterpart, and the `lip`, `shift-x`, and `shift-y` rows
-would need remapping to `bevel` and `offset`. Running parity first keeps its
-evidence a clean statement about the optics port and leaves a calibrated
-instrument undisturbed.
+the old one. Its capture fixtures and row mapping therefore remain pinned to
+`samples`, `lip`, `shift-x`, and `shift-y`; they do not describe the released
+config surface. This keeps the evidence a statement about the optics port
+rather than silently remapping the frozen reference.
 
 Splitting this into two slices was also rejected. The four changes are
 entangled — `bevel` is what makes `thickness`-as-depth meaningful, and the

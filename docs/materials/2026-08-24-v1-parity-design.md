@@ -15,8 +15,8 @@ composition pipelines.
 
 The pass verifies the **optics port** — that the native shader reproduces the
 reference's parameter responses. It does not evaluate whether the shared
-parameter set is the right long-term configuration surface. That question
-belongs to the separate config-surface review below, which also gates v1.
+parameter set is the right long-term configuration surface. That question was
+settled by the separate config-surface review recorded below.
 
 ## Pinned starting state
 
@@ -232,15 +232,18 @@ non-parity or instrument surface:
   compositor motion externally and are unnecessary for native jelly; and
 - Qt-only environment/specular behavior and focus glint.
 
-## Config surface review (out of scope here, gating v1)
+## Config surface review (resolved)
 
 The Quickshell client was a prototype for the idea, not a proposal for the
 long-term API, and `material { glass { ... } }` becomes a released
 compatibility surface at v1. This pass deliberately changes no parameter, so
 the following are recorded as the required input to a separate config-surface
-design that must complete before v1 acceptance. That design is drafted in
-`docs/materials/2026-08-24-glass-config-surface-design.md`; it lands after this
-pass, so nothing below changes the surface the pass measures:
+design that must complete before v1 acceptance. That design is implemented in
+`e579dae5`, `0c5f809f`, `6cd06de2`, `73a733db`, and `b8fe7b84`; the historical
+findings below remain the input to that work and the parity pass remains
+pinned to the old surface. The shader's quadrant selection and rendered slab
+radii still have no automated or cheap manual check in this repository, so
+rendered appearance remains explicitly unverified:
 
 - **`thickness` is not the slab's thickness.** `SLAB_DEPTH` is fixed at 12
   logical px while `thickness` defaults to 20 and ranges to 200. It is a
@@ -290,9 +293,9 @@ The production implementation is also unchanged by this pass. If any oracle
 fails, the full independent matrix is still recorded, then production and DRM
 work stop and the discrepancies become separately designed bugfixes. A
 passing evidence commit permits `niri-material` to update the v1 design and
-materials status to “optics port verified; config-surface review and physical
-DRM pending.” It does not itself satisfy the config-surface review, the
-physical DRM gate, or v1 acceptance.
+materials status to “optics port verified; physical DRM pending.” The config-
+surface review is already implemented; the pass does not satisfy the physical
+DRM gate or v1 acceptance.
 
 ## Alternatives rejected
 
