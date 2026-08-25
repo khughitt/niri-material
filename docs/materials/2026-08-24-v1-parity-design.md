@@ -1,8 +1,9 @@
 # Native materials v1 parity pass: design
 
-**Status:** approved 2026-08-24; amended after source review, then narrowed to
-the optics port with a config-surface review added as a separate v1 gate.
-Implementation plan drafted; execution paused pending review.
+**Status:** approved/executing 2026-08-25; amended after source review, then
+narrowed to the optics port with a config-surface review added as a separate
+v1 gate. The approved split-host capture amendment replaces the disproven
+whole-replay fresh-host retry.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -44,6 +45,13 @@ that samples a duplicated wallpaper and includes Qt-specific environment
 lighting. Direct native-to-Qt RMSE would measure these architectural
 differences along with the parameter under test.
 
+Attempt 5 reproduced the same Weston 15 kiosk-shell SIGSEGV in two independent
+fresh PIDs at `kiosk_shell_output_set_active_surface_tree` when reference
+mapped after native completed. A whole-replay fresh-host retry is therefore
+disproven. Native and reference must instead be separate phases under separate
+fresh hosts; their only shared state is an explicitly verified artifact
+handoff. This changes capture isolation, not the per-renderer metric boundary.
+
 The pass is one-time v1 evidence. It reuses the Slice 3 headless startup and
 capture pattern plus the raw-RGB analysis method in
 `niri-experiments/docs/research/legacy-visual-verification.md`. It does not
@@ -57,10 +65,13 @@ user-facing at all.
 
 ## Environment and scenes
 
-Both sides run sequentially under the dedicated 1280x720 headless Weston GL
-host. They use the same release build of the pinned native compositor: native
-mode enables the material, while reference mode disables it and runs the
-frozen Quickshell client. The two retained #4147 IPC commits provide the
+Native and reference run sequentially under separate, identical dedicated
+1280x720 headless Weston GL/kiosk hosts, using the same socket name, Weston
+flags, and pinned release niri binary. Native mode enables the material;
+reference mode disables it and runs the frozen Quickshell client. They share
+one artifact tree only through a pinned phase handoff that verifies the binary,
+repository, config, JSON, SVG, replay, backdrop, and native-manifest hashes
+before reference capture. The two retained #4147 IPC commits provide the
 window and scrolling geometry required by that client. The live desktop is
 never used. A per-run `XDG_CONFIG_HOME` contains both
 `niri/config.kdl` and `niri/niri-glass.json`; neither program can read the
@@ -189,6 +200,8 @@ The run fails early if any integrity condition holds:
 
 - a repository commit, binary, config, fixture, output size, or capture hash
   cannot be recorded;
+- a phase handoff has a mismatched pin/hash, wrong phase, missing shared file,
+  partial reference directory, or pre-existing final manifest;
 - either compositor mode reports invalid config, material fallback, shader
   failure, panic, or an unexpected warning/error;
 - Quickshell reports a QML, shader, IPC, or wallpaper-input failure;
@@ -282,8 +295,9 @@ jelly riding real compositor animation residuals.
 
 ## Evidence and repository boundaries
 
-Generated PNGs, raw RGB dumps, and logs remain untracked in a unique temporary
-artifact directory. A `results/v1-parity` branch and worktree based on
+Generated PNGs, raw RGB dumps, phase state, and logs remain untracked in a
+unique temporary artifact directory. A failed phase rejects the entire attempt
+and cannot resume partially. A `results/v1-parity` branch and worktree based on
 `e597860` receive only the minimum replay and config fixtures needed to
 reproduce the run, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. The frozen `niri-glass` source is not
