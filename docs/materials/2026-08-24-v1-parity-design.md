@@ -105,6 +105,9 @@ Two controlled scenes cover the parameter set:
 Every default and variant static state is captured twice. Raw RGB drift within
 either state must affect less than 0.1% of pixels or the case is rejected
 before its parameter response is analyzed.
+Before the reference geometry source pair, hide the preview, stop its
+transparent anchor window, and wait one second for the compositor's close
+animation to finish. The source pair must not sample the retiring anchor.
 
 ## Pinned reference controls
 
