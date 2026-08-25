@@ -1354,6 +1354,8 @@ impl<W: LayoutElement> Tile<W> {
                                             backdrop: backdrop_commit,
                                             mapping: mapping.clone(),
                                             backdrop_color,
+                                            corner_radius: radius
+                                                .fit_to(area.size.w as f32, area.size.h as f32),
                                             jelly: jelly_fp,
                                         };
 
@@ -1532,6 +1534,7 @@ impl<W: LayoutElement> Tile<W> {
                                     backdrop: backdrop_commit,
                                     mapping: mapping.clone(),
                                     backdrop_color,
+                                    corner_radius: clip_radius,
                                     jelly: jelly_fp,
                                 };
 

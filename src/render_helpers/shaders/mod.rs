@@ -159,6 +159,7 @@ impl Shaders {
                 UniformName::new("mat_slab_rect", UniformType::_4f),
                 UniformName::new("mat_area_size", UniformType::_2f),
                 UniformName::new("mat_chamfer", UniformType::_1f),
+                UniformName::new("mat_corner_radius", UniformType::_4f),
                 UniformName::new("mat_jelly_move", UniformType::_2f),
                 UniformName::new("mat_jelly_resize", UniformType::_2f),
                 UniformName::new("mat_jelly_activity", UniformType::_1f),

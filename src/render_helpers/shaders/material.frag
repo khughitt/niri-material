@@ -13,6 +13,7 @@ uniform vec4 mat_geo_rect;
 uniform vec4 mat_slab_rect;
 uniform vec2 mat_area_size;
 uniform float mat_chamfer;
+uniform vec4 mat_corner_radius;
 uniform vec2 mat_jelly_move;
 uniform vec2 mat_jelly_resize;
 uniform float mat_jelly_activity;
@@ -169,17 +170,36 @@ float hash12(vec2 p)
     return fract((p3.x + p3.y) * p3.z);
 }
 
-// Slab corner radius in logical px, matching the legacy slab mesh. Task 5
-// replaces this with the window's own radius.
-const float SLAB_RADIUS = 28.0;
+// Selects this quadrant's radius from a CornerRadius-ordered vec4
+// (top-left, top-right, bottom-right, bottom-left).
+float cornerRadius(vec2 p, vec4 r) {
+    float top = p.x < 0.0 ? r.x : r.y;
+    float bottom = p.x < 0.0 ? r.w : r.z;
+    return p.y < 0.0 ? top : bottom;
+}
 
-float sdRoundedBox(vec2 p, vec2 b, float r) {
+// CSS corner-overlap fitting, mirroring CornerRadius::fit_to: one
+// proportional reduction across all four corners, taken from the tightest
+// adjacent-pair sum. Radii are (top-left, top-right, bottom-right,
+// bottom-left); `half_ext` is half the box being fitted to.
+vec4 fitRadii(vec4 r, vec2 half_ext) {
+    vec2 edge = 2.0 * half_ext;
+    float k = min(min(edge.x / max(r.x + r.y, 1e-6),
+                      edge.x / max(r.w + r.z, 1e-6)),
+                  min(edge.y / max(r.x + r.w, 1e-6),
+                      edge.y / max(r.y + r.z, 1e-6)));
+    return r * min(1.0, k);
+}
+
+float sdRoundedBox(vec2 p, vec2 b, vec4 radii) {
+    float r = cornerRadius(p, radii);
     vec2 q = abs(p) - b + vec2(r);
     return min(max(q.x, q.y), 0.0) + length(max(q, vec2(0.0))) - r;
 }
 
 // Outward gradient of sdRoundedBox — the silhouette's edge direction.
-vec2 sdRoundedBoxGrad(vec2 p, vec2 b, float r) {
+vec2 sdRoundedBoxGrad(vec2 p, vec2 b, vec4 radii) {
+    float r = cornerRadius(p, radii);
     vec2 q = abs(p) - b + vec2(r);
     vec2 g;
     if (q.x > 0.0 && q.y > 0.0)
@@ -203,25 +223,44 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal) {
     vec2 half_ext = slab_size * 0.5;
     vec2 center = slab_min + half_ext;
 
-    float r = min(SLAB_RADIUS, min(half_ext.x, half_ext.y));
     // Tiny-slab guard: for windows too small to carry a chamfer the upper
     // bound collapses to 0 (never below — reversed clamp bounds are
     // undefined in GLSL) and the whole slab renders as front face.
     float max_chamfer = max(min(half_ext.x, half_ext.y) - 1.0, 0.0);
     float chamfer = clamp(mat_chamfer, 0.0, max_chamfer);
 
-    float d = sdRoundedBox(p - center, half_ext, r);
-    float aa = 1.0 / niri_scale;
-    coverage = 1.0 - smoothstep(-aa, 0.0, d);
-
     vec2 inner_half = (half_ext - vec2(chamfer))
         * (vec2(1.0) + mat_jelly_resize / max(2.0 * half_ext, vec2(1.0)));
     vec2 inner_center = center + mat_jelly_move;
-    float ri = max(r - chamfer, 1.0);
-    float di = sdRoundedBox(p - inner_center, inner_half, ri);
+
+    // `mat_corner_radius` is fitted to the *window*, but neither SDF box is
+    // the window: the inner face is the window narrowed on both axes by
+    // 2 * max(|offset-x|, |offset-y|), then translated by the offset
+    // (defaults, 100 px window: slab 112, inner face 88). Refit to the box
+    // actually being drawn. The reduction is proportional across all four
+    // corners, never per-corner clamping, which would shrink a large radius
+    // whose neighbour is small.
+    // Fit against whichever box binds harder. Jelly scales `inner_half`
+    // while `half_ext` stays fixed, so a positive resize can leave the inner
+    // face wider than (outer - 2 * chamfer): at the 112/88 geometry a
+    // full-flex resize reaches an inner edge near 90.4, and 90.4 + 2 * 12
+    // overflows the 112 px outer edge. Constraining the *inner* radius by
+    // both keeps `outer = inner + chamfer` exactly true, which the bevel
+    // normal below depends on — it builds its slope from `chamfer` as the
+    // horizontal run, so a separately fitted outer ring would tilt the
+    // normal at exactly the corners it narrowed.
+    vec2 radius_half = min(inner_half, half_ext - vec2(chamfer));
+    vec4 inner_r = fitRadii(mat_corner_radius, radius_half);
+    vec4 outer_r = inner_r + vec4(chamfer);
+
+    float d = sdRoundedBox(p - center, half_ext, outer_r);
+    float aa = 1.0 / niri_scale;
+    coverage = 1.0 - smoothstep(-aa, 0.0, d);
+
+    float di = sdRoundedBox(p - inner_center, inner_half, inner_r);
 
     if (chamfer > 0.0 && di >= 0.0) {
-        vec2 g = sdRoundedBoxGrad(p - inner_center, inner_half, ri);
+        vec2 g = sdRoundedBoxGrad(p - inner_center, inner_half, inner_r);
         float bevel = min(chamfer, mat_thickness);
         float slope = length(vec2(bevel, chamfer));
         normal = normalize(vec3(g * (bevel / slope), chamfer / slope));

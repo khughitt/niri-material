@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use niri_config::{ResolvedGlass, ResolvedMaterial};
+use niri_config::{CornerRadius, ResolvedGlass, ResolvedMaterial};
 
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
@@ -379,6 +379,9 @@ pub struct InputFingerprint {
     pub mapping: BackgroundMapping,
     /// Backdrop color composed behind the backdrop buffer.
     pub backdrop_color: [f32; 4],
+    /// The window's rendered corner radius, which the shader rounds the slab
+    /// to. Animated by the tile, so it changes with no config change.
+    pub corner_radius: CornerRadius,
     pub jelly: JellyFingerprint,
 }
 
@@ -456,10 +459,12 @@ impl MaterialState {
         backdrop: Rc<RefCell<EffectBuffer>>,
         backdrop_color: [f32; 4],
     ) -> MaterialRenderElement {
+        let corner_radius = inputs.corner_radius;
         MaterialRenderElement {
             id: self.id.clone(),
             commit: self.advance_commit(target, inputs),
             frame,
+            corner_radius,
             jelly,
             jelly_seed: self.jelly_seed,
             scale,
@@ -512,6 +517,8 @@ pub struct MaterialRenderElement {
     commit: CommitCounter,
     /// The element's coordinate frame (area, UV rects, chamfer).
     frame: MaterialFrame,
+    /// The window's rendered corner radius, in `CornerRadius` order.
+    corner_radius: CornerRadius,
     jelly: JellyUniforms,
     jelly_seed: [f32; 3],
     scale: f64,
@@ -601,6 +608,10 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_slab_rect", f.slab_rect),
             Uniform::new("mat_area_size", f.area_size),
             Uniform::new("mat_chamfer", f.chamfer),
+            Uniform::new(
+                "mat_corner_radius",
+                <[f32; 4]>::from(self.corner_radius),
+            ),
             Uniform::new("mat_jelly_move", self.jelly.move_),
             Uniform::new("mat_jelly_resize", self.jelly.resize),
             Uniform::new("mat_jelly_activity", self.jelly.activity),
@@ -727,6 +738,7 @@ mod tests {
                 ws_color: [0.; 4],
             },
             backdrop_color: [0.; 4],
+            corner_radius: CornerRadius::default(),
             jelly: JellyFingerprint::default(),
         }
     }
@@ -1115,6 +1127,29 @@ mod tests {
         let mut f = fingerprint2(1, 1, &background_id, 1, &backdrop_id);
         let a = state.advance_commit(RenderTarget::Output, f.clone());
         f.mapping.bg_rect[0] = 0.25;
+        let b = state.advance_commit(RenderTarget::Output, f);
+
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn corner_radius_change_advances_the_commit() {
+        // The radius is a uniform: smithay's damage tracker cannot see it,
+        // and `apply_resolved` bumps only on a `glass` diff, so a config
+        // reload that edits `geometry-corner-radius` alone would otherwise
+        // leave the element's pixels stale.
+        let state = MaterialState::new(material("frost"));
+        let background_id = Id::new();
+        let backdrop_id = Id::new();
+
+        let mut f = fingerprint2(1, 1, &background_id, 1, &backdrop_id);
+        let a = state.advance_commit(RenderTarget::Output, f.clone());
+        f.corner_radius = CornerRadius {
+            top_left: 16.,
+            top_right: 16.,
+            bottom_right: 16.,
+            bottom_left: 16.,
+        };
         let b = state.advance_commit(RenderTarget::Output, f);
 
         assert_ne!(a, b);
