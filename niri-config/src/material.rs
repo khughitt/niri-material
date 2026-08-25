@@ -145,6 +145,22 @@ pub struct Material {
     pub glass: Glass,
 }
 
+/// `distortion <amount> scale=<scale>`.
+///
+/// The scale does nothing while the amplitude is zero, so it rides the node
+/// it depends on rather than standing alone. This matches niri's own idiom
+/// for the shape (`spring damping-ratio=1.0 stiffness=800`). It does not make
+/// inert state unrepresentable — `distortion 0 scale=1.5` is still valid and
+/// still does nothing — but a scale can no longer be written without naming
+/// the amplitude it belongs to.
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Distortion {
+    #[knuffel(argument)]
+    pub amount: FloatOrInt<0, 1>,
+    #[knuffel(property)]
+    pub scale: Option<FloatOrInt<0, 2>>,
+}
+
 /// Glass parameters as written in the config; every one is optional and an
 /// omitted parameter takes its `ResolvedGlass::default()` value.
 #[derive(knuffel::Decode, Debug, Clone, Default, PartialEq)]
@@ -159,10 +175,8 @@ pub struct Glass {
     pub attenuation_distance: Option<Positive<65535>>,
     #[knuffel(child, unwrap(argument))]
     pub chromatic_aberration: Option<FloatOrInt<0, 1>>,
-    #[knuffel(child, unwrap(argument))]
-    pub distortion: Option<FloatOrInt<0, 1>>,
-    #[knuffel(child, unwrap(argument))]
-    pub distortion_scale: Option<FloatOrInt<0, 2>>,
+    #[knuffel(child)]
+    pub distortion: Option<Distortion>,
     #[knuffel(child, unwrap(argument))]
     pub anisotropic_blur: Option<FloatOrInt<0, 1>>,
     #[knuffel(child, unwrap(argument))]
@@ -242,8 +256,11 @@ impl Material {
                 chromatic_aberration: g
                     .chromatic_aberration
                     .map_or(d.chromatic_aberration, |x| x.0),
-                distortion: g.distortion.map_or(d.distortion, |x| x.0),
-                distortion_scale: g.distortion_scale.map_or(d.distortion_scale, |x| x.0),
+                distortion: g.distortion.map_or(d.distortion, |x| x.amount.0),
+                distortion_scale: g
+                    .distortion
+                    .and_then(|x| x.scale)
+                    .map_or(d.distortion_scale, |x| x.0),
                 anisotropic_blur: g.anisotropic_blur.map_or(d.anisotropic_blur, |x| x.0),
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
                 jelly_ripple: g.jelly_ripple.map_or(d.jelly_ripple, |x| x.0),

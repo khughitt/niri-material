@@ -893,8 +893,7 @@ mod tests {
                     attenuation-color "#ff0000"
                     attenuation-distance 80
                     chromatic-aberration 0.25
-                    distortion 0.5
-                    distortion-scale 1.5
+                    distortion 0.5 scale=1.5
                     anisotropic-blur 0.75
                     jelly-flex 0.01
                     jelly-ripple 0.2
@@ -1089,6 +1088,67 @@ mod tests {
             "##,
         );
         assert!(err.contains("unexpected node"), "{err}");
+    }
+
+    #[test]
+    fn material_accepts_distortion_with_scale() {
+        let config = do_parse(
+            r##"
+            material "frost" {
+                glass {
+                    distortion 0.5 scale=1.5
+                }
+            }
+            "##,
+        );
+        let g = config.materials[0].resolve().glass;
+        assert_eq!(g.distortion, 0.5);
+        assert_eq!(g.distortion_scale, 1.5);
+    }
+
+    #[test]
+    fn material_distortion_scale_defaults_without_the_property() {
+        let config = do_parse(
+            r##"
+            material "frost" {
+                glass {
+                    distortion 0.5
+                }
+            }
+            "##,
+        );
+        let g = config.materials[0].resolve().glass;
+        assert_eq!(g.distortion_scale, 0.5);
+    }
+
+    #[test]
+    fn material_rejects_removed_distortion_scale_node() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    distortion-scale 1.5
+                }
+            }
+            "##,
+        );
+        assert!(err.contains("unexpected node"), "{err}");
+    }
+
+    #[test]
+    fn material_rejects_a_scale_without_an_amplitude() {
+        let err = do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    distortion scale=1.5
+                }
+            }
+            "##,
+        );
+        // The amplitude is a required argument, so an orphan scale is a
+        // parse error rather than an accepted no-op.
+        assert!(!err.is_empty(), "{err}");
     }
 
     #[test]
