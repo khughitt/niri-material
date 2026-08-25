@@ -164,8 +164,6 @@ pub struct Glass {
     #[knuffel(child, unwrap(argument))]
     pub distortion_scale: Option<FloatOrInt<0, 2>>,
     #[knuffel(child, unwrap(argument))]
-    pub samples: Option<Samples>,
-    #[knuffel(child, unwrap(argument))]
     pub anisotropic_blur: Option<FloatOrInt<0, 1>>,
     #[knuffel(child, unwrap(argument))]
     pub jelly_flex: Option<Milli<0, 20>>,
@@ -196,7 +194,6 @@ pub struct ResolvedGlass {
     pub chromatic_aberration: f64,
     pub distortion: f64,
     pub distortion_scale: f64,
-    pub samples: u8,
     pub anisotropic_blur: f64,
     pub jelly_flex: f64,
     pub jelly_ripple: f64,
@@ -216,7 +213,6 @@ impl Default for ResolvedGlass {
             chromatic_aberration: 0.,
             distortion: 0.,
             distortion_scale: 0.5,
-            samples: 4,
             anisotropic_blur: 0.,
             jelly_flex: 0.004,
             jelly_ripple: 0.06,
@@ -248,7 +244,6 @@ impl Material {
                     .map_or(d.chromatic_aberration, |x| x.0),
                 distortion: g.distortion.map_or(d.distortion, |x| x.0),
                 distortion_scale: g.distortion_scale.map_or(d.distortion_scale, |x| x.0),
-                samples: g.samples.map_or(d.samples, |x| x.0),
                 anisotropic_blur: g.anisotropic_blur.map_or(d.anisotropic_blur, |x| x.0),
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
                 jelly_ripple: g.jelly_ripple.map_or(d.jelly_ripple, |x| x.0),
@@ -371,52 +366,6 @@ impl<S: knuffel::traits::ErrorSpan, const MAX: i32> knuffel::DecodeScalar<S> for
                 ctx.emit_error(DecodeError::conversion(
                     val,
                     format!("value must be greater than 0 and at most {MAX}"),
-                ));
-                Ok(Self::default())
-            }
-        }
-    }
-}
-
-/// The `samples` parameter: an integer in 1–8.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Samples(pub u8);
-
-impl Default for Samples {
-    fn default() -> Self {
-        Self(ResolvedGlass::default().samples)
-    }
-}
-
-impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for Samples {
-    fn type_check(
-        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
-        ctx: &mut knuffel::decode::Context<S>,
-    ) {
-        if let Some(type_name) = &type_name {
-            ctx.emit_error(DecodeError::unexpected(
-                type_name,
-                "type name",
-                "no type name expected for this node",
-            ));
-        }
-    }
-
-    fn raw_decode(
-        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
-        ctx: &mut knuffel::decode::Context<S>,
-    ) -> Result<Self, DecodeError<S>> {
-        let knuffel::ast::Literal::Int(ref value) = **val else {
-            ctx.emit_error(DecodeError::unsupported(val, "samples must be an integer"));
-            return Ok(Self::default());
-        };
-
-        match i32::try_from(value) {
-            Ok(v) if (1..=8).contains(&v) => Ok(Self(v as u8)),
-            _ => {
-                ctx.emit_error(DecodeError::conversion(
-                    val,
-                    "value must be between 1 and 8",
                 ));
                 Ok(Self::default())
             }

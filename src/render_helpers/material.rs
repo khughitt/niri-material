@@ -88,6 +88,21 @@ pub(crate) fn bevel_depth(chamfer: f64, thickness: f64) -> f64 {
     chamfer.min(thickness)
 }
 
+/// Refraction taps for the shader's multi-tap loop.
+///
+/// This is a cost dial, not an appearance one, so it is derived rather than
+/// configured: a stronger effect needs more samples to stay smooth, and
+/// dialing an effect down lowers its cost without a second knob. Zero
+/// strength keeps the shader's single-tap fast path. Strength 0.5 yields 4,
+/// the count the Quickshell prototype shipped as its default.
+fn tap_count(anisotropic_blur: f64, chromatic_aberration: f64) -> u8 {
+    let strength = anisotropic_blur.max(chromatic_aberration);
+    if strength <= 0. {
+        return 1;
+    }
+    (8. * strength).ceil().clamp(2., 8.) as u8
+}
+
 static JELLY_SEED: AtomicUsize = AtomicUsize::new(0);
 
 /// The material element's coordinate frame: the inflated element area plus
@@ -606,7 +621,10 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_chromatic_aberration", g.chromatic_aberration as f32),
             Uniform::new("mat_distortion", g.distortion as f32),
             Uniform::new("mat_distortion_scale", g.distortion_scale as f32),
-            Uniform::new("mat_samples", f32::from(g.samples)),
+            Uniform::new(
+                "mat_samples",
+                f32::from(tap_count(g.anisotropic_blur, g.chromatic_aberration)),
+            ),
             Uniform::new("mat_anisotropic_blur", g.anisotropic_blur as f32),
             Uniform::new("mat_jelly_ripple", g.jelly_ripple as f32),
         ]);
@@ -1193,6 +1211,21 @@ mod tests {
         assert_eq!(bevel_depth(12., 5.), 5.);
         // Both directions collapse to the bevel when it is the shallower.
         assert_eq!(bevel_depth(4., 20.), 4.);
+    }
+
+    #[test]
+    fn tap_count_follows_the_strongest_multi_tap_effect() {
+        // Neutral: the shader's single-tap fast path.
+        assert_eq!(tap_count(0., 0.), 1);
+        // Below one tap's worth still gets a real average, not one sample.
+        assert_eq!(tap_count(0.125, 0.), 2);
+        // The prototype shipped `samples 4`; mid strength reproduces it.
+        assert_eq!(tap_count(0.5, 0.), 4);
+        assert_eq!(tap_count(0., 0.5), 4);
+        // Full strength is the old maximum.
+        assert_eq!(tap_count(1., 0.), 8);
+        // The stronger effect wins.
+        assert_eq!(tap_count(0.125, 1.), 8);
     }
 
     #[test]

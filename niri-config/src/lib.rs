@@ -895,7 +895,6 @@ mod tests {
                     chromatic-aberration 0.25
                     distortion 0.5
                     distortion-scale 1.5
-                    samples 8
                     anisotropic-blur 0.75
                     jelly-flex 0.01
                     jelly-ripple 0.2
@@ -919,7 +918,6 @@ mod tests {
                 chromatic_aberration: 0.25,
                 distortion: 0.5,
                 distortion_scale: 1.5,
-                samples: 8,
                 anisotropic_blur: 0.75,
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
@@ -1080,31 +1078,17 @@ mod tests {
     }
 
     #[test]
-    fn material_rejects_out_of_range_samples() {
+    fn material_rejects_removed_samples() {
         let err = do_parse_err(
             r##"
             material "frost" {
                 glass {
-                    samples 16
+                    samples 8
                 }
             }
             "##,
         );
-        assert!(err.contains("value must be between 1 and 8"), "{err}");
-    }
-
-    #[test]
-    fn material_rejects_non_integer_samples() {
-        let err = do_parse_err(
-            r##"
-            material "frost" {
-                glass {
-                    samples 4.5
-                }
-            }
-            "##,
-        );
-        assert!(err.contains("samples must be an integer"), "{err}");
+        assert!(err.contains("unexpected node"), "{err}");
     }
 
     #[test]
