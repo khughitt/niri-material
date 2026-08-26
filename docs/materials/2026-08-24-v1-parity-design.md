@@ -1,7 +1,7 @@
 # Native materials v1 parity pass: design
 
 **Status:** executed 2026-08-25 at `niri-experiments` evidence commit
-`d4116503d7a83ade3f88763f9eecfa6d4bf2f696`. Capture integrity passed, but
+`7729dfc151eae41c946d2495ef67010c1cd20635`. Capture integrity passed, but
 semantic acceptance failed: the optics port is unverified, with only `lip`
 passing in both implementations. Failed combined parameters: `ior`,
 `thickness`, `attenuation-color`, `attenuation-distance`,
@@ -318,7 +318,7 @@ reproduce the run, capture hashes, measured tables, and
 modified.
 
 The production implementation is unchanged by this pass. Evidence commit
-`d4116503d7a83ade3f88763f9eecfa6d4bf2f696` records the complete independent
+`7729dfc151eae41c946d2495ef67010c1cd20635` records the complete independent
 matrix and its semantic FAIL. The discrepancies require separately designed
 bugfixes before another parity attempt. The config-surface review is already
 implemented, but parity acceptance is not satisfied; production handoff,
