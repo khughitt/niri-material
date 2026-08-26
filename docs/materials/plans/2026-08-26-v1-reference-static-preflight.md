@@ -74,6 +74,7 @@ analyzer independently validate the accepted static contract.
 
 **Files:**
 - Create worktree: `niri-experiments/.worktrees/reference-static-preflight`
+- Verify: `niri-experiments/fixtures/diagnostic-grid.svg`
 - Create: `niri-experiments/fixtures/diagnostic-grid.png`
 - Modify: `niri-experiments/fixtures/v1-parity-analyze.mjs`
 - Modify: `niri-experiments/fixtures/v1-parity-analyze.test.mjs`
@@ -112,7 +113,8 @@ Expected: an empty status on `results/reference-static-preflight`.
 Use a host-local temporary script with the spike's fixed xorshift seed
 `0x6d2b79f5` to write a 40-by-40 grayscale PPM made of 2-by-2 cells in the
 range 32–223. Rasterize the existing SVG to 40-by-40, blend watermark and grid
-with ImageMagick `compose:args=15,85`, and commit the resulting PNG bytes.
+with ImageMagick `compose:args=15,85`, exclude wall-clock PNG chunks, and
+commit the resulting reproducible PNG bytes.
 
 ```js
 // $NIRI_MATERIAL_WORK_ROOT/diagnostic-watermark.mjs
@@ -143,15 +145,26 @@ magick -background none MSVG:fixtures/diagnostic-grid.svg -resize 40x40! \
 magick "$NIRI_MATERIAL_WORK_ROOT/diagnostic-base.png" \
   "$NIRI_MATERIAL_WORK_ROOT/diagnostic-watermark.ppm" \
   -define compose:args=15,85 -compose blend -composite \
+  -define png:exclude-chunk=date,time \
   PNG24:fixtures/diagnostic-grid.png
+sleep 1
+magick "$NIRI_MATERIAL_WORK_ROOT/diagnostic-base.png" \
+  "$NIRI_MATERIAL_WORK_ROOT/diagnostic-watermark.ppm" \
+  -define compose:args=15,85 -compose blend -composite \
+  -define png:exclude-chunk=date,time \
+  PNG24:"$NIRI_MATERIAL_WORK_ROOT/diagnostic-grid-repeat.png"
+cmp fixtures/diagnostic-grid.png \
+  "$NIRI_MATERIAL_WORK_ROOT/diagnostic-grid-repeat.png"
 magick fixtures/diagnostic-grid.png \
   -format '%wx%h\n%[pixel:p{20,20}]\n%[fx:standard_deviation]\n' info:
-sha256sum fixtures/diagnostic-grid.png
+sha256sum fixtures/diagnostic-grid.png \
+  "$NIRI_MATERIAL_WORK_ROOT/diagnostic-grid-repeat.png"
 ```
 
 Expected: `40x40`, sample `srgb(44,54,59)`, standard deviation `0.0355911`,
 and SHA-256
-`9a0b22b4b7392df84c96e198409efbfb280ace9ae777859a5ad09b57f2fcd837`.
+`6fafae8c6cf3e3815346128ffdb402d5c730ae3a8749cb060013821ba0fe0316`
+for both encodes.
 The analyzer obtains its expected hash from the committed adjacent asset with
 `createHash("sha256")`; the results document records the asset SHA as the
 human audit anchor.

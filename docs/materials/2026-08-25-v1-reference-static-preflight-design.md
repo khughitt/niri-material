@@ -103,11 +103,12 @@ runtime-random blend. The replay tiles those bytes directly, and
 design's pinned 200-pixel diagnostic SVG and period. The PNG is also the input
 to geometry and motion, so `lip` and native `shift-x`/`shift-y` are remeasured
 instead of inherited from the old run; the SVG remains as the reproducible
-rasterization source. The accepted derivation yields SHA-256
-`9a0b22b4b7392df84c96e198409efbfb280ace9ae777859a5ad09b57f2fcd837`,
-sample `p{20,20}` `srgb(44,54,59)`, and standard deviation `0.0355911`.
-The hash is the identity pin; the sample and minimum `0.02` deviation are
-cheap corruption gates.
+rasterization source. The accepted derivation excludes PNG `date` and `time`
+chunks, then yields reproducible SHA-256
+`6fafae8c6cf3e3815346128ffdb402d5c730ae3a8749cb060013821ba0fe0316`, sample
+`p{20,20}` `srgb(44,54,59)`, and standard deviation `0.0355911`. The hash is
+the identity pin; the sample and minimum `0.02` deviation are cheap corruption
+gates.
 
 The replay derives the optical pane rectangle from the live IPC geometry and
 the pinned `paneLip`, shifts, corner radius, output scale, and transform. It
