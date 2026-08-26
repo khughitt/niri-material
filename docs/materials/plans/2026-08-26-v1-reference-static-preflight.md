@@ -19,7 +19,12 @@ geometry and motion analysis.
 
 **Spec:** `docs/materials/2026-08-25-v1-reference-static-preflight-design.md`
 
-**Status:** ready 2026-08-26; not implemented
+**Status:** executed 2026-08-26. The final instrument is
+`niri-experiments` commit `c729dee35db2c96cc41568d9e1090fd1536386c2`;
+the frozen-reference preflight passed 9/9 rows and final evidence commit
+`34240fde4e7df0470a7ed965adcf82409c1beeb8` passed integrity with 9/14
+combined parameters. Raw capture and the dedicated old-surface Cargo target
+were deleted. Physical DRM and v1 acceptance remain blocked.
 
 ## Global Constraints
 
@@ -97,7 +102,7 @@ or throws on ties, saturation, or insufficient support. Update
 `fieldFrequency` and the internal variance metric to consume that exact field
 shape; do not retain the old static-field shape as a compatibility path.
 
-- [ ] **Step 1: Create the isolated evidence worktree**
+- [x] **Step 1: Create the isolated evidence worktree**
 
 ```bash
 git -C "$NIRI_EXPERIMENTS_ROOT" worktree add \
@@ -108,7 +113,7 @@ git -C "$NIRI_EXPERIMENTS_ROOT/.worktrees/reference-static-preflight" status --s
 
 Expected: an empty status on `results/reference-static-preflight`.
 
-- [ ] **Step 2: Materialize the accepted diagnostic tile**
+- [x] **Step 2: Materialize the accepted diagnostic tile**
 
 Use a host-local temporary script with the spike's fixed xorshift seed
 `0x6d2b79f5` to write a 40-by-40 grayscale PPM made of 2-by-2 cells in the
@@ -169,7 +174,7 @@ The analyzer obtains its expected hash from the committed adjacent asset with
 `createHash("sha256")`; the results document records the asset SHA as the
 human audit anchor.
 
-- [ ] **Step 3: Write failing geometry and profile tests**
+- [x] **Step 3: Write failing geometry and profile tests**
 
 Add these exports to the test import, then add the exact synthetic helpers and
 focused controls:
@@ -275,7 +280,7 @@ test("chromatic predicate keeps red at zero and orders separations", () => {
 The `bevelBandFixture` changes only a 12-pixel outer band; remove the former
 whole-pane `[2,2]` `ior` shift from `writePassingArtifact`.
 
-- [ ] **Step 4: Write failing local-field and schema tests**
+- [x] **Step 4: Write failing local-field and schema tests**
 
 Build the synthetic source from the same 40-pixel asymmetric tile with these
 helpers:
@@ -331,7 +336,7 @@ reference static keys. Test schema `1`, extra native pins, invalid ROI,
 duplicate edge disagreement, insufficient field support, and insufficient
 neighbor pairs as thrown integrity errors.
 
-- [ ] **Step 5: Run the tests to verify the new contract fails**
+- [x] **Step 5: Run the tests to verify the new contract fails**
 
 ```bash
 node --test fixtures/v1-parity-analyze.test.mjs
@@ -340,7 +345,7 @@ node --test fixtures/v1-parity-analyze.test.mjs
 Expected: FAIL because the new exports, schema, and physics-shaped controls do
 not exist yet.
 
-- [ ] **Step 6: Implement the minimum static helpers**
+- [x] **Step 6: Implement the minimum static helpers**
 
 Keep the functions in `v1-parity-analyze.mjs`:
 
@@ -409,7 +414,7 @@ first derivative, normalizing each candidate derivative by its Euclidean
 norm, and minimizing mean squared error over every integer offset from
 `-search` through `search`. Refine an interior integer winner with
 `winner + 0.5*(leftScore-rightScore)/(leftScore-2*winnerScore+rightScore)`.
-Reject a winner equal to either bound. Use bounds `4` for `ior` and `[1,3,5]`
+Reject a winner equal to either bound. Use bounds `4` for `ior` and `[1,4,5]`
 for chromatic RGB.
 
 Implement `localWarpField` with constants `radius=8`, `stride=8`, and
@@ -421,7 +426,7 @@ geometric candidates and all possible right/down pairs before filtering, then
 require accepted candidates and retained neighbor pairs each to reach half
 their possible counts.
 
-- [ ] **Step 7: Implement exact schemas and shared static evaluation**
+- [x] **Step 7: Implement exact schemas and shared static evaluation**
 
 Change `STATIC_STATES` to include `source`. Validate final implementation keys
 as exactly:
@@ -455,7 +460,7 @@ Make `runCli` accept `--reference-static`; it reads
 `reference-static-manifest.json`, writes `reference-static-analysis.json`, and
 emits nine rows. Keep final mode's `manifest.json`/`analysis.json` names.
 
-- [ ] **Step 8: Run analyzer verification and commit**
+- [x] **Step 8: Run analyzer verification and commit**
 
 ```bash
 node --test fixtures/v1-parity-analyze.test.mjs
@@ -486,7 +491,7 @@ storage, and delete passing preflight captures.
 - Produces: `--preflight-reference NIRI_GLASS_ROOT WESTON_SOCKET`; unchanged
   final capture modes with schema-2 manifests and `static_roi` for both sides.
 
-- [ ] **Step 1: Add failing replay self-checks**
+- [x] **Step 1: Add failing replay self-checks**
 
 Extend the existing trace-based `self_test` to assert:
 
@@ -519,7 +524,7 @@ source pair as geometry source, per-edge response bounds, and deletion of a
 passing preflight directory. Stub analyzer exits `1` and `2` separately and
 assert the failing directory remains and no native trace entry appears.
 
-- [ ] **Step 2: Run the replay tests to verify they fail**
+- [x] **Step 2: Run the replay tests to verify they fail**
 
 ```bash
 fixtures/v1-parity-replay.sh --self-test "$PREFLIGHT_NIRI" "$NIRI_GLASS_ROOT"
@@ -528,7 +533,7 @@ dash fixtures/v1-parity-replay.sh --self-test "$PREFLIGHT_NIRI" "$NIRI_GLASS_ROO
 
 Expected: FAIL on missing preflight mode, schema, and trace behavior.
 
-- [ ] **Step 3: Replace runtime rasterization with the committed tile**
+- [x] **Step 3: Replace runtime rasterization with the committed tile**
 
 Make `build_live_backdrop` and its mirrored self-check validate
 `diagnostic-grid.png` as exactly 40-by-40, sample `p{20,20}` as exactly
@@ -537,7 +542,7 @@ Make `build_live_backdrop` and its mirrored self-check validate
 only the replay's SVG/MSVG runtime rasterization; retain
 `diagnostic-grid.svg` as the committed PNG's derivation source.
 
-- [ ] **Step 4: Enforce the work root and preflight binary**
+- [x] **Step 4: Enforce the work root and preflight binary**
 
 Add `prepare_work_root` before any compositor process:
 
@@ -555,7 +560,7 @@ For preflight, require `PREFLIGHT_NIRI` to be absolute, regular, executable,
 and non-symlinked; hash it and record its `--version`. Require every requested
 artifact directory and old Cargo target to be a child of `work_root`.
 
-- [ ] **Step 5: Derive and cross-check `static_roi`**
+- [x] **Step 5: Derive and cross-check `static_roi`**
 
 After the probe stabilizes, save `windows`, `workspaces`, and `outputs` IPC
 JSON. Select exactly one `v1-parity-probe`. Compute its frame position from
@@ -574,7 +579,7 @@ The analyzer independently computes the source/default pixel bounding boxes
 and applies the 24/16/36/44 directional cross-check; the replay must not
 replace its IPC-derived ROI with that shadow-inclusive box.
 
-- [ ] **Step 6: Capture reference static optics through the live pane**
+- [x] **Step 6: Capture reference static optics through the live pane**
 
 Replace the preview static sequence with:
 
@@ -594,7 +599,7 @@ capture another geometry source or spawn a second probe. Remove
 and cleanup test, the separate reference geometry-source capture,
 `static_source`, and the phase-equivalent registration metadata completely.
 
-- [ ] **Step 7: Write the exact partial and final manifests**
+- [x] **Step 7: Write the exact partial and final manifests**
 
 `reference-static-manifest.json` uses schema `2`, one reference implementation,
 only `static` and `static_roi`, and the exact partial pins/tools from the spec.
@@ -602,7 +607,7 @@ The final manifest uses schema `2`, includes `source` for reference, and gives
 both implementations identical key sets. Update shell-side `jq` validators and
 phase-state diagnostic hashes at the same time.
 
-- [ ] **Step 8: Implement preflight lifecycle**
+- [x] **Step 8: Implement preflight lifecycle**
 
 `--preflight-reference NIRI_GLASS_ROOT WESTON_SOCKET` creates
 `$work_root/v1-reference-static.XXXXXX`, captures the partial manifest, and
@@ -617,7 +622,7 @@ directory immediately. On exit `1` or `2`, print the retained directory and
 return the analyzer status. Existing process cleanup still runs on every path.
 No native capture or build function is reachable from this mode.
 
-- [ ] **Step 9: Run replay and analyzer verification, then commit**
+- [x] **Step 9: Run replay and analyzer verification, then commit**
 
 ```bash
 fixtures/v1-parity-replay.sh --self-test "$PREFLIGHT_NIRI" "$NIRI_GLASS_ROOT"
@@ -647,7 +652,7 @@ old-surface build.
 - Produces: one recorded 9/9 preflight with feasibility-host version/hash and
   numeric signal, noise, and margin for every row.
 
-- [ ] **Step 1: Verify pins and environment before starting Weston**
+- [x] **Step 1: Verify pins and environment before starting Weston**
 
 ```bash
 test -d "$NIRI_MATERIAL_WORK_ROOT" && test -w "$NIRI_MATERIAL_WORK_ROOT"
@@ -662,7 +667,7 @@ sha256sum "$PREFLIGHT_NIRI" fixtures/diagnostic-grid.png \
 
 Expected: clean evidence branch and exact frozen reference commit.
 
-- [ ] **Step 2: Start the dedicated headless host and run preflight**
+- [x] **Step 2: Start the dedicated headless host and run preflight**
 
 ```bash
 weston_unit=niri-material-v1-reference-static-weston
@@ -693,7 +698,7 @@ Expected: analyzer exit `0`, exactly nine passing reference rows, no remaining
 If the status is nonzero, stop here: retain and print the failing artifact,
 diagnose it, and do not run Task 4.
 
-- [ ] **Step 3: Record the preflight without replacing the old full verdict**
+- [x] **Step 3: Record the preflight without replacing the old full verdict**
 
 Add a “Schema-2 reference static preflight” section to the result document.
 Record the evidence commit, preflight niri version/hash, fixture hashes, ROI,
@@ -702,7 +707,7 @@ the diagnostic asset SHA and deleted raw-artifact lifecycle. Correct the stale
 evidence branch from `results/v1-parity` to `results/slice3` for the old run
 and name the new branch for the new run.
 
-- [ ] **Step 4: Verify and commit the preflight record**
+- [x] **Step 4: Verify and commit the preflight record**
 
 ```bash
 rg -n '9/9|boundary|PREFLIGHT_NIRI|results/slice3|7729dfc' \
@@ -730,7 +735,7 @@ passes or fails semantically.
   14 combined verdicts, a committed distilled result, and no retained raw
   capture or old Cargo target.
 
-- [ ] **Step 1: Create the detached old-surface worktree and build host binary**
+- [x] **Step 1: Create the detached old-surface worktree and build host binary**
 
 ```bash
 git -C "$NIRI_MATERIAL_ROOT" worktree add --detach \
@@ -744,7 +749,7 @@ old_niri="$old_target/release/niri"
 sha256sum "$old_niri"
 ```
 
-- [ ] **Step 2: Re-run all fixture checks with the pinned host**
+- [x] **Step 2: Re-run all fixture checks with the pinned host**
 
 ```bash
 fixtures/v1-parity-replay.sh --self-test "$old_niri" "$NIRI_GLASS_ROOT"
@@ -754,7 +759,7 @@ node --test fixtures/v1-parity-analyze.test.mjs
 
 Expected: all checks pass before capture.
 
-- [ ] **Step 3: Capture native and reference on distinct sequential hosts**
+- [x] **Step 3: Capture native and reference on distinct sequential hosts**
 
 ```bash
 artifact_dir=$(mktemp -d "$NIRI_MATERIAL_WORK_ROOT/v1-parity-final.XXXXXX")
@@ -800,7 +805,7 @@ test "$reference_capture_status" -eq 0
 Expected: both hosts are reaped sequentially, final phase is `complete`, and
 all manifest-referenced files verify.
 
-- [ ] **Step 4: Analyze the full evidence and inspect the complete matrix**
+- [x] **Step 4: Analyze the full evidence and inspect the complete matrix**
 
 ```bash
 node fixtures/v1-parity-analyze.mjs "$artifact_dir"
@@ -816,14 +821,14 @@ Exit `0` means all rows passed; exit `1` is valid semantic failure and still
 continues to documentation. Exit `2` is invalid evidence: retain the artifact,
 diagnose, and repeat this task before documenting a verdict.
 
-- [ ] **Step 5: Replace the result with the new evidence**
+- [x] **Step 5: Replace the result with the new evidence**
 
 Update every pin, host/tool version, ROI/support/boundary count, duplicate
 floor, parameter signal, noise, direction, margin, combined verdict, caveat,
 and lifecycle statement from the new manifest and analysis. Explicitly print
 the small `samples` margin. Do not carry forward an old row or old branch name.
 
-- [ ] **Step 6: Verify and commit the distilled result**
+- [x] **Step 6: Verify and commit the distilled result**
 
 ```bash
 sha256sum fixtures/diagnostic-grid.png fixtures/v1-parity-replay.sh \
@@ -835,7 +840,7 @@ git add docs/results/2026-08-24-v1-parity.md
 git commit -m "docs(results): record corrected v1 parity evidence"
 ```
 
-- [ ] **Step 7: Delete raw capture and old build data**
+- [x] **Step 7: Delete raw capture and old build data**
 
 After the result commit exists, delete the exact `artifact_dir`, run Cargo
 clean against the dedicated target, and remove the detached worktree:
@@ -870,7 +875,7 @@ wording follows the measured verdict; it does not assume acceptance.
 - Produces: one internally consistent status story in design, plan, and
   user-facing progress docs.
 
-- [ ] **Step 1: Verify the evidence commit and result before editing claims**
+- [x] **Step 1: Verify the evidence commit and result before editing claims**
 
 ```bash
 evidence_commit=$(git -C "$NIRI_EXPERIMENTS_WORKTREE" rev-parse HEAD)
@@ -879,7 +884,7 @@ git -C "$NIRI_EXPERIMENTS_WORKTREE" merge-base --is-ancestor \
 test -f "$NIRI_EXPERIMENTS_WORKTREE/docs/results/2026-08-24-v1-parity.md"
 ```
 
-- [ ] **Step 2: Update design and plan status from measured evidence**
+- [x] **Step 2: Update design and plan status from measured evidence**
 
 Mark the preflight design implemented at the exact evidence commit. Replace
 the old parity outcome in the parent design and v1 design. In the parent
@@ -889,7 +894,7 @@ measurement. Mark this plan executed with the preflight and final evidence
 commits, final integrity and semantic verdict, and whether physical DRM
 remains blocked.
 
-- [ ] **Step 3: Update the user-facing README and grep for propagated drift**
+- [x] **Step 3: Update the user-facing README and grep for propagated drift**
 
 Add the preflight design and plan to the documentation list, replace the old
 `7729dfc` outcome paragraph with the new evidence, then run:
@@ -902,7 +907,7 @@ rg -n '7729dfc|results/v1-parity|only `lip`|optics port is unverified|/tmp/niri-
 Every surviving match must be explicitly historical and correctly qualified;
 otherwise update it in this same change.
 
-- [ ] **Step 4: Verify and commit niri-material status**
+- [x] **Step 4: Verify and commit niri-material status**
 
 ```bash
 git diff --check
@@ -914,7 +919,7 @@ git add docs/materials/2026-08-25-v1-reference-static-preflight-design.md \
 git commit -m "docs(material): record corrected v1 parity outcome"
 ```
 
-- [ ] **Step 5: Final verification**
+- [x] **Step 5: Final verification**
 
 ```bash
 git status --short

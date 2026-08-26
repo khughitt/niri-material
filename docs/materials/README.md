@@ -14,11 +14,14 @@ All future production rebases and material commits happen in this repository.
 
 - `2026-08-22-repository-split.md`: repository ownership and provenance.
 - `2026-08-22-v1-design.md`: accepted v1 material architecture.
+- `2026-08-24-v1-parity-design.md`: executed frozen-reference parity design.
+- `2026-08-25-v1-reference-static-preflight-design.md`: implemented static-instrument correction.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
 - `plans/2026-08-22-slice1.md`: implemented config-and-assignment plan.
 - `plans/2026-08-23-slice2.md`: implemented glass shader and composition plan.
+- `plans/2026-08-26-v1-reference-static-preflight.md`: executed parity preflight and recapture plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the
@@ -47,13 +50,10 @@ current shaders; the shipped fix instead opens the strip-end per-workspace
 crop bounds.
 
 The glass config surface is implemented in `e579dae5`, `0c5f809f`,
-`6cd06de2`, `73a733db`, and `b8fe7b84`. The frozen-reference parity pass at
-`niri-experiments` evidence commit
-`7729dfc151eae41c946d2495ef67010c1cd20635` passed capture integrity but
-failed semantic acceptance. The optics port is unverified; only `lip` passed
-in both implementations. Failed combined parameters: `ior`, `thickness`,
-`attenuation-color`, `attenuation-distance`, `chromatic-aberration`,
-`distortion`, `distortion-scale`, `anisotropic-blur`, `samples`, `jelly-flex`,
-`jelly-ripple`, `shift-x`, and `shift-y`. The config-surface review is
-implemented, but the parity acceptance gate is not satisfied; physical DRM
-and v1 acceptance are blocked.
+`6cd06de2`, `73a733db`, and `b8fe7b84`. The corrected frozen-reference parity
+pass at `niri-experiments` evidence commit
+`34240fde4e7df0470a7ed965adcf82409c1beeb8` passed capture integrity, 21/28
+implementation rows, and 9/14 combined parameters. Native `ior`, both motion
+parameters, and reference `shift-x`/`shift-y` fail. The config-surface review
+is implemented, but the parity acceptance gate is not satisfied; physical
+DRM and v1 acceptance remain blocked.

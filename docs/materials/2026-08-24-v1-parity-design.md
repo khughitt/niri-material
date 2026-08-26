@@ -1,14 +1,13 @@
 # Native materials v1 parity pass: design
 
-**Status:** executed 2026-08-25 at `niri-experiments` evidence commit
-`7729dfc151eae41c946d2495ef67010c1cd20635`. Capture integrity passed, but
-semantic acceptance failed: the optics port is unverified, with only `lip`
-passing in both implementations. Failed combined parameters: `ior`,
-`thickness`, `attenuation-color`, `attenuation-distance`,
-`chromatic-aberration`, `distortion`, `distortion-scale`,
-`anisotropic-blur`, `samples`, `jelly-flex`, `jelly-ripple`, `shift-x`, and
-`shift-y`. The config-surface review is implemented, but the parity acceptance
-gate is not satisfied; physical DRM and v1 acceptance are blocked.
+**Status:** re-executed 2026-08-26 at `niri-experiments` evidence commit
+`34240fde4e7df0470a7ed965adcf82409c1beeb8`. Capture integrity passed; 21/28
+implementation rows and 9/14 combined parameters passed. Combined failures
+are `ior`, `jelly-flex`, `jelly-ripple`, `shift-x`, and `shift-y`; the failing
+implementation rows are native `ior`, both implementations' motion rows, and
+reference `shift-x`/`shift-y`. The config-surface review is implemented,
+but the parity acceptance gate is not satisfied; physical DRM and v1
+acceptance remain blocked.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -75,7 +74,8 @@ Native and reference run sequentially under separate, identical dedicated
 flags, and pinned release niri binary. Native mode enables the material;
 reference mode disables it and runs the frozen Quickshell client. They share
 one artifact tree only through a pinned phase handoff that verifies the binary,
-repository, config, JSON, SVG, replay, backdrop, and native-manifest hashes
+repository, config, JSON, diagnostic asset, replay, backdrop, and
+native-manifest hashes
 before reference capture. The two retained #4147 IPC commits provide the
 window and scrolling geometry required by that client. The live desktop is
 never used. A per-run `XDG_CONFIG_HOME` contains both
@@ -84,22 +84,17 @@ live-desktop configuration.
 
 Two controlled scenes cover the parameter set:
 
-- **Static optics:** the pinned diagnostic SVG (SHA-256
-  `ac7c503e96fbfde40ce3a9cb3b1b069814f381f410d169e56f03bcf4db3308db`)
-  tiled at its 200 px period, plus a transparent, static probe.
-  The reference side uses its isolated diagnostic preview. The native side
-  uses the same diagnostic source behind a material window. Cursor blinking,
-  live terminal output, focus glint, and unrelated animation are absent. The
-  preview cannot expose a separate slab-free frame, so reference registration
-  uses phase-equivalent, unmasked 200 px tiles from each preview capture. This
-  keeps the source in the same Qt rendering path as the deformed pixels.
-- **Geometry and motion:** one controlled pane/window on an otherwise quiet
-  workspace over a generated 1280x720 backdrop made by tiling the pinned SVG
-  at 200 px. Both swaybg and the reference wallpaper stub consume that exact
-  PNG, so the frozen client's crop-fill mapping is identity rather than a
-  6.4x magnification. The generated tile must retain its expected background
-  color and nonzero spatial variation; the generated PNG and raw RGB hashes
-  are recorded.
+- **Static optics:** the committed 40-by-40 diagnostic PNG (SHA-256
+  `6fafae8c6cf3e3815346128ffdb402d5c730ae3a8749cb060013821ba0fe0316`)
+  tiled across the live backdrop. Both implementations first capture a
+  slab-free source, then map the same static probe to render the material
+  pane. The pane ROI comes from IPC geometry and a bounded pixel-response
+  cross-check; no preview or phase-equivalent source participates.
+- **Geometry and motion:** the same controlled pane/window and committed
+  diagnostic PNG on an otherwise quiet workspace. The static source pair is
+  reused as the geometry source. Swaybg and the reference wallpaper stub
+  consume the same generated backdrop, whose PNG and raw RGB hashes are
+  recorded.
   Settled frames measure lip and shift. A deterministic column resize supplies
   capture bursts for jelly flex and ripple, exercising the native
   `window-resize` spring and the reference's matching replay without involving
@@ -110,9 +105,8 @@ Two controlled scenes cover the parameter set:
 Every default and variant static state is captured twice. Raw RGB drift within
 either state must affect less than 0.1% of pixels or the case is rejected
 before its parameter response is analyzed.
-Before the reference geometry source pair, hide the preview, stop its
-transparent anchor window, and wait one second for the compositor's close
-animation to finish. The source pair must not sample the retiring anchor.
+The geometry default continues from the static probe; no preview or
+transparent anchor participates in the corrected capture path.
 
 ## Pinned reference controls
 
@@ -133,7 +127,7 @@ follows:
 | `springStiffness` | `800` | Matches native `window-resize`. |
 | `springEpsilon` | `0.0001` | Matches native `window-resize`. |
 
-The diagnostic SVG is the controlled optical input; it is distinct from the
+The committed diagnostic PNG is the controlled optical input; it is distinct from the
 `gridOverlay` knob. `PreviewSurface` does not pass `gridOverlay` and therefore
 uses `GlassMaterial`'s `false` default, while the explicit fixture value keeps
 the live-pane scene equally free of the procedural overlay.
@@ -166,15 +160,12 @@ when both multi-tap effects are zero, so its reference is the already-required
 `anisotropic-blur=0.5` variant. These dependency edges preserve isolation
 without adding prerequisite-only captures.
 
-The distortion-scale oracle registers the variant against the undeformed
-default grid and measures frequency on the resulting displacement field, not
-on the composed image's spectrum. Registration accepts a block only when both
-its row-mean and column-mean luminance profiles clear the texture threshold;
-this prevents a one-axis grid edge from silently supplying a zero for the
-other axis. A best displacement on the search boundary rejects the row rather
-than capping the measured response. The same pinned SVG and 200 px tiling
-period on both sides prevent the background itself from changing that
-estimate.
+The distortion-scale oracle measures normalized neighbouring-vector delta on
+the recovered local displacement field, not the composed image's spectrum.
+The asymmetric watermark breaks sub-period ambiguity, while the plus-or-minus
+15-pixel search remains inside the diagnostic tile's 20-pixel half-period. A
+best displacement on the search boundary rejects the evidence rather than
+capping the response.
 
 Native default/variant captures keep the same compositor process, window,
 material definition name, and material assignment. Parameter changes use an
@@ -219,7 +210,7 @@ The run fails early if any integrity condition holds:
 - either compositor mode reports invalid config, material fallback, shader
   failure, panic, or an unexpected warning/error;
 - Quickshell reports a QML, shader, IPC, or wallpaper-input failure;
-- the generated tile's pixel at `(20,20)` is not exactly `srgb(38,50,56)` or
+- the committed tile's pixel at `(20,20)` is not exactly `srgb(44,54,59)` or
   its ImageMagick normalized standard deviation is below `0.02`;
 - duplicate static captures reach the 0.1% drift ceiling;
 - an analysis check cannot be shown to fail on a synthetic bad input.
@@ -310,19 +301,21 @@ jelly riding real compositor animation residuals.
 ## Evidence and repository boundaries
 
 Generated PNGs, raw RGB dumps, phase state, and logs remain untracked in a
-unique temporary artifact directory. A failed phase rejects the entire attempt
-and cannot resume partially. A `results/v1-parity` branch and worktree based on
-`e597860` receive only the minimum replay and config fixtures needed to
-reproduce the run, capture hashes, measured tables, and
+unique directory under `NIRI_MATERIAL_WORK_ROOT`. A failed phase rejects the
+entire attempt and cannot resume partially. Branch
+`results/reference-static-preflight`, based on `results/slice3` at
+`7729dfc151eae41c946d2495ef67010c1cd20635`, contains the minimum replay and
+config fixtures, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. The frozen `niri-glass` source is not
 modified.
 
 The production implementation is unchanged by this pass. Evidence commit
-`7729dfc151eae41c946d2495ef67010c1cd20635` records the complete independent
-matrix and its semantic FAIL. The discrepancies require separately designed
-bugfixes before another parity attempt. The config-surface review is already
-implemented, but parity acceptance is not satisfied; production handoff,
-physical DRM, and v1 acceptance remain blocked.
+`34240fde4e7df0470a7ed965adcf82409c1beeb8` records the corrected complete
+matrix and its semantic FAIL: 9/14 combined parameters pass. Native `ior`,
+both motion parameters, and reference `shift-x`/`shift-y` require separately
+designed fixes before another parity attempt. The config-surface review is
+already implemented, but production handoff, physical DRM, and v1 acceptance
+remain blocked.
 
 ## Alternatives rejected
 

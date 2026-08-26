@@ -1,6 +1,10 @@
 # Frozen-reference static preflight: design
 
-**Status:** accepted 2026-08-26; not implemented
+**Status:** implemented 2026-08-26 at `niri-experiments` instrument commit
+`c729dee35db2c96cc41568d9e1090fd1536386c2`; the frozen-reference preflight
+passed 9/9 rows. Final evidence commit
+`34240fde4e7df0470a7ed965adcf82409c1beeb8` passed integrity and 9/14 combined
+parameters, so v1 acceptance and physical DRM remain blocked.
 **Parent design:** `docs/materials/2026-08-24-v1-parity-design.md`
 
 ## Goal
@@ -204,7 +208,9 @@ compare normal positions 3 through 11, use the normalized first derivative to
 remove level changes, and fit the SSD minimum parabolically for a signed
 sub-pixel shift. Positive means the variant matches samples farther inward
 than the default. The `ior` search is plus-or-minus 4 pixels. Chromatic red,
-green, and blue use shader-derived bounds of plus-or-minus 1, 3, and 5 pixels.
+green, and blue use bounds of plus-or-minus 1, 4, and 5 pixels. The green
+bound includes one pixel of port-response margin beyond the shader-derived
+reference bound; the first full native capture measured up to 2.61 pixels.
 A best integer offset on any boundary is saturated evidence and exits `2`.
 
 For `ior`, top and left must both move in the pinned positive direction, clear
@@ -263,12 +269,12 @@ small observed margin, rather than recording only a verdict.
 
 ## Preflight procedure and artifact lifecycle
 
-Implementation lands in a fresh niri-experiments branch from
-`results/slice3` at evidence commit `7729dfc`, in the existing replay,
-analyzer, and analyzer self-check files. The new committed analyzer and replay
-hashes replace the old evidence pins. The parity result's stale
-`results/v1-parity` branch claim is corrected to the branch and commit that
-actually contain the evidence.
+Implementation landed on `results/reference-static-preflight`, branched from
+`results/slice3` at historical evidence commit `7729dfc`, in the existing
+replay, analyzer, and analyzer self-check files. Final instrument commit
+`c729dee35db2c96cc41568d9e1090fd1536386c2` supplies the replacement hashes.
+The parity result's stale historical `results/v1-parity` branch claim was
+corrected to the branch and commit that actually contain that evidence.
 
 Preflight artifacts, final capture artifacts, and the dedicated old-surface
 Cargo target must be children of `NIRI_MATERIAL_WORK_ROOT`. Project code and
