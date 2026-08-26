@@ -47,9 +47,13 @@ current shaders; the shipped fix instead opens the strip-end per-workspace
 crop bounds.
 
 The glass config surface is implemented in `e579dae5`, `0c5f809f`,
-`6cd06de2`, `73a733db`, and `b8fe7b84`.
-
-Next: a parity pass against the frozen Quickshell client, a physical DRM
-smoke, and v1 acceptance. The parity pass checks that the native shader
-reproduces the prototype's parameter responses against its frozen old-surface
-capture matrix.
+`6cd06de2`, `73a733db`, and `b8fe7b84`. The frozen-reference parity pass at
+`niri-experiments` evidence commit
+`d4116503d7a83ade3f88763f9eecfa6d4bf2f696` passed capture integrity but
+failed semantic acceptance. The optics port is unverified; only `lip` passed
+in both implementations. Failed combined parameters: `ior`, `thickness`,
+`attenuation-color`, `attenuation-distance`, `chromatic-aberration`,
+`distortion`, `distortion-scale`, `anisotropic-blur`, `samples`, `jelly-flex`,
+`jelly-ripple`, `shift-x`, and `shift-y`. The config-surface review is
+implemented, but the parity acceptance gate is not satisfied; physical DRM
+and v1 acceptance are blocked.

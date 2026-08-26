@@ -1,9 +1,14 @@
 # Native materials v1 parity pass: design
 
-**Status:** approved/executing 2026-08-25; amended after source review, then
-narrowed to the optics port with a config-surface review added as a separate
-v1 gate. The approved split-host capture amendment replaces the disproven
-whole-replay fresh-host retry.
+**Status:** executed 2026-08-25 at `niri-experiments` evidence commit
+`d4116503d7a83ade3f88763f9eecfa6d4bf2f696`. Capture integrity passed, but
+semantic acceptance failed: the optics port is unverified, with only `lip`
+passing in both implementations. Failed combined parameters: `ior`,
+`thickness`, `attenuation-color`, `attenuation-distance`,
+`chromatic-aberration`, `distortion`, `distortion-scale`,
+`anisotropic-blur`, `samples`, `jelly-flex`, `jelly-ripple`, `shift-x`, and
+`shift-y`. The config-surface review is implemented, but the parity acceptance
+gate is not satisfied; physical DRM and v1 acceptance are blocked.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -312,13 +317,12 @@ reproduce the run, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. The frozen `niri-glass` source is not
 modified.
 
-The production implementation is also unchanged by this pass. If any oracle
-fails, the full independent matrix is still recorded, then production and DRM
-work stop and the discrepancies become separately designed bugfixes. A
-passing evidence commit permits `niri-material` to update the v1 design and
-materials status to “optics port verified; physical DRM pending.” The config-
-surface review is already implemented; the pass does not satisfy the physical
-DRM gate or v1 acceptance.
+The production implementation is unchanged by this pass. Evidence commit
+`d4116503d7a83ade3f88763f9eecfa6d4bf2f696` records the complete independent
+matrix and its semantic FAIL. The discrepancies require separately designed
+bugfixes before another parity attempt. The config-surface review is already
+implemented, but parity acceptance is not satisfied; production handoff,
+physical DRM, and v1 acceptance remain blocked.
 
 ## Alternatives rejected
 
