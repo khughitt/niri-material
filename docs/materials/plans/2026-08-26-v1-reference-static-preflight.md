@@ -54,7 +54,7 @@ geometry and motion analysis.
 | File | Responsibility | Task |
 | --- | --- | --- |
 | `niri-experiments/fixtures/diagnostic-grid.png` | Committed 40-by-40 dense grid with deterministic asymmetric watermark | 1 |
-| `niri-experiments/fixtures/diagnostic-grid.svg` | Deleted after the PNG consumer lands | 2 |
+| `niri-experiments/fixtures/diagnostic-grid.svg` | Retained reproducible source for the committed PNG | 1 |
 | `niri-experiments/fixtures/v1-parity-analyze.mjs` | Schema-2 validation, ROI checks, signed bevel profiles, flat-face residual, local warp field, and both CLI modes | 1 |
 | `niri-experiments/fixtures/v1-parity-analyze.test.mjs` | Physics-shaped synthetic controls and exit-contract tests | 1 |
 | `niri-experiments/fixtures/v1-parity-replay.sh` | Required work root, live-pane static capture, IPC ROI, partial manifest, preflight lifecycle, and final manifest | 2 |
@@ -144,13 +144,17 @@ magick "$NIRI_MATERIAL_WORK_ROOT/diagnostic-base.png" \
   "$NIRI_MATERIAL_WORK_ROOT/diagnostic-watermark.ppm" \
   -define compose:args=15,85 -compose blend -composite \
   PNG24:fixtures/diagnostic-grid.png
-magick fixtures/diagnostic-grid.png -format '%wx%h %[fx:standard_deviation]\n' info:
+magick fixtures/diagnostic-grid.png \
+  -format '%wx%h\n%[pixel:p{20,20}]\n%[fx:standard_deviation]\n' info:
 sha256sum fixtures/diagnostic-grid.png
 ```
 
-Expected: `40x40`, nonzero standard deviation, and one stable SHA-256. The
-analyzer obtains its expected hash from the committed adjacent asset with
-`createHash("sha256")`; do not paste a second unrelated source-of-truth hash.
+Expected: `40x40`, sample `srgb(44,54,59)`, standard deviation `0.0355911`,
+and SHA-256
+`9a0b22b4b7392df84c96e198409efbfb280ace9ae777859a5ad09b57f2fcd837`.
+The analyzer obtains its expected hash from the committed adjacent asset with
+`createHash("sha256")`; the results document records the asset SHA as the
+human audit anchor.
 
 - [ ] **Step 3: Write failing geometry and profile tests**
 
@@ -429,7 +433,8 @@ For the rows:
 - chromatic aberration: red within noise, `green - red > noise`, and
   `blue - green > noise` on both edges;
 - distortion: recovered field variance increases;
-- distortion scale: neighboring-vector delta increases;
+- distortion scale: `fieldFrequency`, defined as mean neighboring-vector
+  delta divided by mean displacement magnitude, increases;
 - attenuation, anisotropic blur, and samples: existing signed predicates on
   the new masks.
 
@@ -458,7 +463,7 @@ Make the replay produce the analyzer's exact inputs, enforce host-local
 storage, and delete passing preflight captures.
 
 **Files:**
-- Delete: `niri-experiments/fixtures/diagnostic-grid.svg`
+- Verify: `niri-experiments/fixtures/diagnostic-grid.svg`
 - Modify: `niri-experiments/fixtures/v1-parity-replay.sh`
 
 **Interfaces:**
@@ -484,9 +489,8 @@ if prepare_artifact_dir "$requested_artifact_dir"; then exit 1; fi
 Add a reference-static trace whose required order is:
 
 ```text
-preview-hide
-reference-anchor-stop
 capture reference static source
+copy reference static source to geometry source
 probe
 capture reference static default
 capture reference static ior, thickness, attenuation-color,
@@ -497,7 +501,8 @@ analyze-reference-static
 ```
 
 Assert the partial manifest exact keys, final schema `2`, identical native and
-reference implementation keys, per-edge response bounds, and deletion of a
+reference implementation keys, accepted cross-section reuse of the static
+source pair as geometry source, per-edge response bounds, and deletion of a
 passing preflight directory. Stub analyzer exits `1` and `2` separately and
 assert the failing directory remains and no native trace entry appears.
 
@@ -512,9 +517,12 @@ Expected: FAIL on missing preflight mode, schema, and trace behavior.
 
 - [ ] **Step 3: Replace runtime rasterization with the committed tile**
 
-Make `build_live_backdrop` validate `diagnostic-grid.png` as exactly 40-by-40,
-copy it to `grid-tile.png`, tile it to 1280-by-720, and hash the committed PNG.
-Delete all SVG/MSVG assumptions and then delete `diagnostic-grid.svg`.
+Make `build_live_backdrop` and its mirrored self-check validate
+`diagnostic-grid.png` as exactly 40-by-40, sample `p{20,20}` as exactly
+`srgb(44,54,59)`, and require standard deviation at least `0.02`. Copy it to
+`grid-tile.png`, tile it to 1280-by-720, and hash the committed PNG. Delete
+only the replay's SVG/MSVG runtime rasterization; retain
+`diagnostic-grid.svg` as the committed PNG's derivation source.
 
 - [ ] **Step 4: Enforce the work root and preflight binary**
 
@@ -558,17 +566,20 @@ replace its IPC-derived ROI with that shadow-inclusive box.
 Replace the preview static sequence with:
 
 ```sh
-hide_reference_preview || return
-stop_reference_anchor || return
 capture_pair reference static source || return
+copy_reference_source_to_geometry || return
 spawn_probe || return
 capture_pair reference static default || return
 ```
 
 Capture the same nine variants and return gates as today. Native already has a
 slab-free static source; route both modes through the same manifest/static
-state shape. Remove `static_source` and the phase-equivalent registration
-metadata completely.
+state shape. After the final static return to default, capture reference
+geometry `default` with the existing probe and continue its variants; do not
+capture another geometry source or spawn a second probe. Remove
+`show_reference_preview`, the static-anchor helpers, their PID cleanup state
+and cleanup test, the separate reference geometry-source capture,
+`static_source`, and the phase-equivalent registration metadata completely.
 
 - [ ] **Step 7: Write the exact partial and final manifests**
 
@@ -600,12 +611,13 @@ fixtures/v1-parity-replay.sh --self-test "$PREFLIGHT_NIRI" "$NIRI_GLASS_ROOT"
 dash fixtures/v1-parity-replay.sh --self-test "$PREFLIGHT_NIRI" "$NIRI_GLASS_ROOT"
 node --test fixtures/v1-parity-analyze.test.mjs
 git diff --check
-git add fixtures/diagnostic-grid.svg fixtures/v1-parity-replay.sh
+git add fixtures/v1-parity-replay.sh
 git commit -m "feat(parity): gate native capture on reference static preflight"
 ```
 
-Expected: both replay suites and the analyzer suite pass. The staged SVG path
-records its deletion; the committed PNG remains from Task 1.
+Expected: both replay suites and the analyzer suite pass. The committed SVG
+and PNG both remain: the SVG is derivation input, while the PNG is the sole
+runtime diagnostic asset.
 
 ---
 
@@ -640,14 +652,26 @@ Expected: clean evidence branch and exact frozen reference commit.
 - [ ] **Step 2: Start the dedicated headless host and run preflight**
 
 ```bash
-weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
-  --width=1280 --height=720 --socket=v1-reference-static \
-  >"$NIRI_MATERIAL_WORK_ROOT/v1-reference-static-weston.log" 2>&1 &
-weston_pid=$!
+weston_unit=niri-material-v1-reference-static-weston
+systemd-run --user --unit="$weston_unit" --collect \
+  --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
+  --width=1280 --height=720 --socket=v1-reference-static
+trap 'systemctl --user stop niri-material-v1-reference-static-weston.service >/dev/null 2>&1 || true' EXIT HUP INT TERM
+attempt=0
+while test "$attempt" -lt 100 \
+  && test ! -S "$XDG_RUNTIME_DIR/v1-reference-static"; do
+  sleep 0.1
+  attempt=$((attempt + 1))
+done
+test -S "$XDG_RUNTIME_DIR/v1-reference-static"
 fixtures/v1-parity-replay.sh --preflight-reference \
   "$NIRI_GLASS_ROOT" v1-reference-static
 preflight_status=$?
-kill -TERM "$weston_pid"; wait "$weston_pid"
+systemctl --user stop "$weston_unit.service"
+journalctl --user -u "$weston_unit.service" \
+  >"$NIRI_MATERIAL_WORK_ROOT/v1-reference-static-weston.log"
+trap - EXIT HUP INT TERM
 test "$preflight_status" -eq 0
 ```
 
@@ -661,9 +685,9 @@ diagnose it, and do not run Task 4.
 Add a “Schema-2 reference static preflight” section to the result document.
 Record the evidence commit, preflight niri version/hash, fixture hashes, ROI,
 support/neighbor counts, boundary count, all nine signals/noise/margins, and
-the deleted raw-artifact lifecycle. Correct the stale evidence branch from
-`results/v1-parity` to `results/slice3` for the old run and name the new branch
-for the new run.
+the diagnostic asset SHA and deleted raw-artifact lifecycle. Correct the stale
+evidence branch from `results/v1-parity` to `results/slice3` for the old run
+and name the new branch for the new run.
 
 - [ ] **Step 4: Verify and commit the preflight record**
 
@@ -721,21 +745,43 @@ Expected: all checks pass before capture.
 
 ```bash
 artifact_dir=$(mktemp -d "$NIRI_MATERIAL_WORK_ROOT/v1-parity-final.XXXXXX")
-weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
-  --width=1280 --height=720 --socket=v1-parity-headless \
-  >"$artifact_dir/weston-native.log" 2>&1 &
-native_host=$!
+weston_unit=niri-material-v1-parity-weston
+start_weston_host() {
+  systemd-run --user --unit="$weston_unit" --collect \
+    --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+    weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
+    --width=1280 --height=720 --socket=v1-parity-headless || return
+  attempt=0
+  while test "$attempt" -lt 100 \
+    && test ! -S "$XDG_RUNTIME_DIR/v1-parity-headless"; do
+    sleep 0.1
+    attempt=$((attempt + 1))
+  done
+  test -S "$XDG_RUNTIME_DIR/v1-parity-headless"
+}
+stop_weston_host() {
+  host_label=$1
+  systemctl --user stop "$weston_unit.service" || return
+  journalctl --user -u "$weston_unit.service" \
+    >"$artifact_dir/weston-$host_label.log" || return
+  test ! -S "$XDG_RUNTIME_DIR/v1-parity-headless"
+}
+trap 'systemctl --user stop niri-material-v1-parity-weston.service >/dev/null 2>&1 || true' EXIT HUP INT TERM
+
+start_weston_host
 fixtures/v1-parity-replay.sh --capture-native \
   "$old_niri" "$NIRI_GLASS_ROOT" "$artifact_dir" v1-parity-headless
-kill -TERM "$native_host"; wait "$native_host"
+native_capture_status=$?
+stop_weston_host native
+test "$native_capture_status" -eq 0
 
-weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
-  --width=1280 --height=720 --socket=v1-parity-headless \
-  >"$artifact_dir/weston-reference.log" 2>&1 &
-reference_host=$!
+start_weston_host
 fixtures/v1-parity-replay.sh --capture-reference \
   "$old_niri" "$NIRI_GLASS_ROOT" "$artifact_dir" v1-parity-headless
-kill -TERM "$reference_host"; wait "$reference_host"
+reference_capture_status=$?
+stop_weston_host reference
+trap - EXIT HUP INT TERM
+test "$reference_capture_status" -eq 0
 ```
 
 Expected: both hosts are reaped sequentially, final phase is `complete`, and
@@ -769,7 +815,7 @@ the small `samples` margin. Do not carry forward an old row or old branch name.
 ```bash
 sha256sum fixtures/diagnostic-grid.png fixtures/v1-parity-replay.sh \
   fixtures/v1-parity-analyze.mjs fixtures/v1-parity-analyze.test.mjs
-if rg -n 'results/v1-parity|/tmp/niri-material|static_source|schema: 1' \
+if rg -n 'results/v1-parity|/tmp/niri-material|static_source|schema: 1|ac7c503e|Diagnostic SVG|200 px|200-pixel|38,50,56' \
   docs/results/2026-08-24-v1-parity.md; then exit 1; fi
 git diff --check
 git add docs/results/2026-08-24-v1-parity.md
@@ -823,9 +869,12 @@ test -f "$NIRI_EXPERIMENTS_WORKTREE/docs/results/2026-08-24-v1-parity.md"
 - [ ] **Step 2: Update design and plan status from measured evidence**
 
 Mark the preflight design implemented at the exact evidence commit. Replace
-the old parity outcome in the parent design and v1 design. Mark this plan
-executed with the preflight and final evidence commits, final integrity and
-semantic verdict, and whether physical DRM remains blocked.
+the old parity outcome in the parent design and v1 design. In the parent
+design, also replace the superseded SVG hash, 200-pixel period, crop-fill
+rationale, and sample-pixel gate with the committed PNG contract and new
+measurement. Mark this plan executed with the preflight and final evidence
+commits, final integrity and semantic verdict, and whether physical DRM
+remains blocked.
 
 - [ ] **Step 3: Update the user-facing README and grep for propagated drift**
 
@@ -833,7 +882,7 @@ Add the preflight design and plan to the documentation list, replace the old
 `7729dfc` outcome paragraph with the new evidence, then run:
 
 ```bash
-rg -n '7729dfc|results/v1-parity|only `lip`|optics port is unverified|/tmp/niri-material' \
+rg -n '7729dfc|results/v1-parity|only `lip`|optics port is unverified|/tmp/niri-material|ac7c503e|200 px|200-pixel|diagnostic SVG|38,50,56' \
   docs/materials docs/wiki README.md
 ```
 

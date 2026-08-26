@@ -50,9 +50,9 @@ increasing green and blue shifts on both edges.
 For the inner face, local two-dimensional correlation reconstructed all 4,212
 undistorted samples as zero displacement. Both distortion fields retained all
 4,212 samples and 8,292 neighboring pairs with no search-boundary hits. Their
-neighboring-vector delta rose from 0.275 to 0.508 when distortion scale changed
-from 0.5 to 1.5. This operates on recovered offsets, not the composed image's
-spectrum.
+normalized neighboring-vector frequency rose from 0.275 to 0.508 when
+distortion scale changed from 0.5 to 1.5. This operates on recovered offsets,
+not the composed image's spectrum.
 
 ## Decision
 
@@ -89,16 +89,25 @@ both phases of the final capture and supplies the final manifest's niri pins.
 
 Static capture uses the same sequence for native and reference:
 
-1. On reference, hide the preview and stop any static anchor. Capture
-   slab-free `source` duplicates with the live diagnostic backdrop visible and
-   no selected pane window.
+1. Capture slab-free `source` duplicates with the live diagnostic backdrop
+   visible and no selected pane window. Reuse that exact pair as the geometry
+   source; the two sections intentionally share the same scene.
 2. Spawn the probe with app ID `v1-parity-probe`; that selected probe produces
    the live material pane for the `default` duplicates.
-3. Capture the nine existing static variants and their return gates.
+3. Capture the nine existing static variants and their return gates, then
+   continue directly to the geometry default with the same probe.
 
 The final 40-by-40 watermarked tile is a committed diagnostic asset, not a
 runtime-random blend. The replay tiles those bytes directly, and
-`diagnostic_sha256` hashes that final asset.
+`diagnostic_sha256` hashes that final asset. This supersedes the parent
+design's pinned 200-pixel diagnostic SVG and period. The PNG is also the input
+to geometry and motion, so `lip` and native `shift-x`/`shift-y` are remeasured
+instead of inherited from the old run; the SVG remains as the reproducible
+rasterization source. The accepted derivation yields SHA-256
+`9a0b22b4b7392df84c96e198409efbfb280ace9ae777859a5ad09b57f2fcd837`,
+sample `p{20,20}` `srgb(44,54,59)`, and standard deviation `0.0355911`.
+The hash is the identity pin; the sample and minimum `0.02` deviation are
+cheap corruption gates.
 
 The replay derives the optical pane rectangle from the live IPC geometry and
 the pinned `paneLip`, shifts, corner radius, output scale, and transform. It
@@ -112,7 +121,8 @@ Those values show the shape, not fixed coordinates. For both duplicates, a
 source-to-default response profile across each derived edge must begin within
 the frozen reference shadow's directional reach: 16 pixels above, 24 to the
 left, 36 to the right, and 44 below. These bounds follow directly from its
-30-pixel spread and model offset of 6 pixels right and 14 pixels up. This
+30-pixel spread and model offset of 6 pixels right and 14 pixels down in screen
+space. This
 catches a bad IPC-to-frame mapping without turning the shadow's larger pixel
 bounding box into the optical rectangle. The two pixel cross-checks must
 agree.
@@ -120,8 +130,7 @@ agree.
 The source and default may differ outside the optical rectangle only within
 those pinned per-edge shadow reaches. Default-to-variant responses must remain
 confined to the optical rectangle. Native focus ring, border, and shadow stay
-disabled. If a non-material anchor is used while settling either source
-duplicate, it must remain unchanged and must not carry the probe app ID.
+disabled. No reference preview or static anchor participates in this path.
 
 ## Manifest contract
 
@@ -134,7 +143,10 @@ static, static_roi, geometry, motion, calibration, first_offset_budget_ms
 
 Both `static` objects contain `source` and the same static state keys. The
 reference-only `static_source` phase-equivalence object and its registration
-path are deleted rather than retained as compatibility behavior.
+path are deleted rather than retained as compatibility behavior. Reusing the
+same source duplicate pair across `static.source` and `geometry.source` is
+intentional; physical-reuse rejection still applies within each duplicate
+pair and across motion bursts.
 
 `reference-static-manifest.json` is a separate exact partial schema, also
 version `2`. Its root contains only `schema`, frame dimensions,
@@ -223,15 +235,17 @@ Distortion and distortion scale retain registration, but only on the
 32-pixel inset. At an 8-pixel lattice, each rendered 17-by-17
 linear-luminance patch is matched to the captured source with local
 two-dimensional zero-mean correlation and a plus-or-minus 15-pixel search.
-Tied minima are rejected. The asymmetric watermark makes offsets unique while
-the bound remains inside the adjacent 40-pixel repeat. Any best match on the
-boundary is saturated evidence and exits `2`.
+Tied minima are rejected. The asymmetric watermark breaks sub-period symmetry
+inside each tile. The plus-or-minus 15-pixel bound stays below the 20-pixel
+half-period and therefore prevents matches from reaching an adjacent
+40-pixel repeat. Any best match on the boundary is saturated evidence and
+exits `2`.
 
 The undistorted default field must remain at its duplicate noise floor.
 `distortion` must increase displacement-field variance and stay confined to
-the pane. `distortion-scale` compares the two recovered fields and must
-increase the mean neighboring-vector delta; no composed-image spectrum enters
-the oracle.
+the pane. `distortion-scale` compares the two recovered fields with
+`fieldFrequency`: mean neighboring-vector delta divided by mean displacement
+magnitude must increase. No composed-image spectrum enters the oracle.
 
 ### Remaining static rows
 
