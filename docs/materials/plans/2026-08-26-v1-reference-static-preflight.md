@@ -19,12 +19,13 @@ geometry and motion analysis.
 
 **Spec:** `docs/materials/2026-08-25-v1-reference-static-preflight-design.md`
 
-**Status:** executed 2026-08-26. The final instrument is
-`niri-experiments` commit `c729dee35db2c96cc41568d9e1090fd1536386c2`;
+**Status:** executed and re-run 2026-08-26. The final instrument is
+`niri-experiments` commit `d00f81c32cb8e6ee60881eeee4e65493e39ec6bf`;
 the frozen-reference preflight passed 9/9 rows and final evidence commit
-`34240fde4e7df0470a7ed965adcf82409c1beeb8` passed integrity with 9/14
-combined parameters. Raw capture and the dedicated old-surface Cargo target
-were deleted. Physical DRM and v1 acceptance remain blocked.
+`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` passed integrity with 23/28
+implementation rows and 10/14 combined parameters. Raw capture and the
+dedicated old-surface Cargo target were deleted. Physical DRM and v1
+acceptance remain blocked.
 
 ## Global Constraints
 
@@ -211,23 +212,30 @@ const bevelBandFixture = () => {
   return { baseline, inward: shiftBevel(baseline, roi, width, 2),
     outward: shiftBevel(baseline, roi, width, -2), roi, width, height };
 };
+const linearToSrgb8 = value => Math.round(255 * (value <= 0.0031308
+  ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055));
 const flatFaceFixture = () => {
   const width = 64, height = 64;
-  return { baseline: new Uint8Array(width * height * 3).fill(80),
+  const baseline = new Uint8Array(width * height * 3);
+  const latent = new Float64Array(baseline.length);
+  for (let pixel = 0; pixel < width * height; pixel++) {
+    for (let channel = 0; channel < 3; channel++) {
+      const index = pixel * 3 + channel;
+      const code = 32 + channel * 16 + pixel * (channel * 2 + 1) % 128;
+      latent[index] = srgb8ToLinear(code + (pixel % 2 ? 0.4 : -0.4));
+      baseline[index] = linearToSrgb8(latent[index]);
+    }
+  }
+  return { baseline, latent,
     mask: rectMask(width, height, 16, 16, 47, 47) };
 };
-const addLinearConstant = (baseline, mask) => {
-  const output = baseline.slice();
-  for (let pixel = 0; pixel < mask.length; pixel++) if (mask[pixel])
-    for (let channel = 0; channel < 3; channel++) output[pixel * 3 + channel] += 10;
-  return output;
-};
-const addCheckerDelta = (baseline, mask) => {
+const addLinearConstant = (baseline, latent, mask, checker = 0) => {
   const output = baseline.slice();
   for (let pixel = 0; pixel < mask.length; pixel++) if (mask[pixel]) {
-    const delta = pixel % 2 ? 10 : -10;
     for (let channel = 0; channel < 3; channel++)
-      output[pixel * 3 + channel] += delta;
+      output[pixel * 3 + channel] = linearToSrgb8(
+        latent[pixel * 3 + channel] + 0.010666666666666666
+          + (pixel % 2 ? checker : -checker));
   }
   return output;
 };
@@ -264,9 +272,11 @@ test("signed bevel shift rejects reversal and search saturation", () => {
 });
 
 test("flat face permits a constant but rejects spatial restructuring", () => {
-  const { baseline, mask } = flatFaceFixture();
-  assert.equal(flatFaceVariation(baseline, addLinearConstant(baseline, mask), mask), 0);
-  assert.ok(flatFaceVariation(baseline, addCheckerDelta(baseline, mask), mask) > 0);
+  const { baseline, latent, mask } = flatFaceFixture();
+  assert.equal(flatFaceVariation(
+    baseline, addLinearConstant(baseline, latent, mask), mask), 0);
+  assert.ok(flatFaceVariation(baseline,
+    addLinearConstant(baseline, latent, mask, 0.002), mask) > 0);
 });
 
 test("chromatic predicate keeps red at zero and orders separations", () => {
@@ -384,20 +394,26 @@ export function staticMasks(roi, width, height) {
 }
 
 export function flatFaceVariation(baseline, variant, mask) {
-  const deltas = [[], [], []];
+  if (baseline.length !== variant.length || baseline.length !== mask.length * 3)
+    throw new RangeError("flat-face inputs have inconsistent dimensions");
+  const intervals = Array.from({ length: 3 }, () => [-Infinity, Infinity]);
+  let count = 0;
   for (let pixel = 0; pixel < mask.length; pixel++) if (mask[pixel]) {
+    count++;
     for (let channel = 0; channel < 3; channel++) {
       const index = pixel * 3 + channel;
-      deltas[channel].push(srgb8ToLinear(variant[index])
-        - srgb8ToLinear(baseline[index]));
+      const baselineLow = srgb8ToLinear(Math.max(0, baseline[index] - 0.5));
+      const baselineHigh = srgb8ToLinear(Math.min(255, baseline[index] + 0.5));
+      const variantLow = srgb8ToLinear(Math.max(0, variant[index] - 0.5));
+      const variantHigh = srgb8ToLinear(Math.min(255, variant[index] + 0.5));
+      intervals[channel][0] = Math.max(
+        intervals[channel][0], variantLow - baselineHigh);
+      intervals[channel][1] = Math.min(
+        intervals[channel][1], variantHigh - baselineLow);
     }
   }
-  if (!deltas[0].length) throw new RangeError("flat-face mask is empty");
-  return Math.max(...deltas.map(values => {
-    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-    return Math.sqrt(values.reduce((sum, value) =>
-      sum + (value - mean) ** 2, 0) / values.length);
-  }));
+  if (!count) throw new RangeError("flat-face mask is empty");
+  return Math.max(...intervals.map(([lower, upper]) => Math.max(0, lower - upper)));
 }
 ```
 

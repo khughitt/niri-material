@@ -1,13 +1,13 @@
 # Native materials v1 parity pass: design
 
 **Status:** re-executed 2026-08-26 at `niri-experiments` evidence commit
-`34240fde4e7df0470a7ed965adcf82409c1beeb8`. Capture integrity passed; 21/28
-implementation rows and 9/14 combined parameters passed. Combined failures
-are `ior`, `jelly-flex`, `jelly-ripple`, `shift-x`, and `shift-y`; the failing
-implementation rows are native `ior`, both implementations' motion rows, and
-reference `shift-x`/`shift-y`. The config-surface review is implemented,
-but the parity acceptance gate is not satisfied; physical DRM and v1
-acceptance remain blocked.
+`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d`. Capture integrity passed; 23/28
+implementation rows and 10/14 combined parameters passed. Combined failures
+are `jelly-flex`, `jelly-ripple`, `shift-x`, and `shift-y`; the failing
+implementation rows are native `jelly-ripple`, reference `jelly-flex` and
+`jelly-ripple`, and reference `shift-x`/`shift-y`. The config-surface review
+is implemented, but the parity acceptance gate is not satisfied; physical
+DRM and v1 acceptance remain blocked.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -302,20 +302,21 @@ jelly riding real compositor animation residuals.
 
 Generated PNGs, raw RGB dumps, phase state, and logs remain untracked in a
 unique directory under `NIRI_MATERIAL_WORK_ROOT`. A failed phase rejects the
-entire attempt and cannot resume partially. Branch
-`results/reference-static-preflight`, based on `results/slice3` at
-`7729dfc151eae41c946d2495ef67010c1cd20635`, contains the minimum replay and
+entire attempt and cannot resume partially. Historical implementation branch
+`results/reference-static-preflight` was based on `results/slice3` at
+`7729dfc151eae41c946d2495ef67010c1cd20635`; current evidence commit
+`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` contains the minimum replay and
 config fixtures, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. The frozen `niri-glass` source is not
 modified.
 
 The production implementation is unchanged by this pass. Evidence commit
-`34240fde4e7df0470a7ed965adcf82409c1beeb8` records the corrected complete
-matrix and its semantic FAIL: 9/14 combined parameters pass. Native `ior`,
-both motion parameters, and reference `shift-x`/`shift-y` require separately
-designed fixes before another parity attempt. The config-surface review is
-already implemented, but production handoff, physical DRM, and v1 acceptance
-remain blocked.
+`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` records the corrected complete
+matrix and its semantic FAIL: 10/14 combined parameters pass. Both motion
+parameters and reference `shift-x`/`shift-y` require separately designed
+fixes before another parity attempt. The config-surface review is already
+implemented, but production handoff, physical DRM, and v1 acceptance remain
+blocked.
 
 ## Alternatives rejected
 

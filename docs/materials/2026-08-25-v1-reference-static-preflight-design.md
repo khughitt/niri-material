@@ -1,10 +1,11 @@
 # Frozen-reference static preflight: design
 
-**Status:** implemented 2026-08-26 at `niri-experiments` instrument commit
-`c729dee35db2c96cc41568d9e1090fd1536386c2`; the frozen-reference preflight
-passed 9/9 rows. Final evidence commit
-`34240fde4e7df0470a7ed965adcf82409c1beeb8` passed integrity and 9/14 combined
-parameters, so v1 acceptance and physical DRM remain blocked.
+**Status:** implemented and re-executed 2026-08-26 at `niri-experiments`
+instrument commit `d00f81c32cb8e6ee60881eeee4e65493e39ec6bf`; the
+frozen-reference preflight passed 9/9 rows. Final evidence commit
+`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` passed integrity, 23/28
+implementation rows, and 10/14 combined parameters. V1 acceptance and
+physical DRM remain blocked.
 **Parent design:** `docs/materials/2026-08-24-v1-parity-design.md`
 
 ## Goal
@@ -215,11 +216,12 @@ A best integer offset on any boundary is saturated evidence and exits `2`.
 
 For `ior`, top and left must both move in the pinned positive direction, clear
 their duplicate noise floors, and agree in sign. An undirected RMS difference
-is not sufficient. The 32-pixel inset supplies a separate geometry check: fit
-and subtract a constant per-channel default-to-variant level shift, then
-require the residual spatial variation to remain at the duplicate noise
-floor. This permits native's deliberate uniform ior Fresnel change while
-rejecting spatial restructuring of the flat face.
+is not sufficient. The 32-pixel inset supplies a separate geometry check. For
+each channel and pixel, decode the half-code boundaries around both 8-bit sRGB
+captures and intersect their possible linear-light delta intervals. A common
+intersection permits native's uniform ior Fresnel change and its independent
+quantization in both captures; a gap beyond the duplicate floor rejects
+spatial restructuring of the flat face.
 
 For chromatic aberration, red must remain at its duplicate shift noise floor.
 On both edges, `green - red` and `blue - green` must each be positive and clear
@@ -272,7 +274,11 @@ small observed margin, rather than recording only a verdict.
 Implementation landed on `results/reference-static-preflight`, branched from
 `results/slice3` at historical evidence commit `7729dfc`, in the existing
 replay, analyzer, and analyzer self-check files. Final instrument commit
-`c729dee35db2c96cc41568d9e1090fd1536386c2` supplies the replacement hashes.
+`c729dee35db2c96cc41568d9e1090fd1536386c2` supplied the initial replacement;
+quantization-aware follow-up commit
+`d00f81c32cb8e6ee60881eeee4e65493e39ec6bf` supplies the current analyzer and
+self-check hashes. Final evidence commit
+`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` records the current 10/14 verdict.
 The parity result's stale historical `results/v1-parity` branch claim was
 corrected to the branch and commit that actually contain that evidence.
 
@@ -301,7 +307,8 @@ than adding another test framework. The checks cover:
 - empty, out-of-bounds, disagreeing, and shadow-swallowed rectangles;
 - a signed 12-pixel-band displacement control and its wrong-direction twin;
 - saturated bevel and warp searches as exit `2`;
-- allowed uniform flat-face level shift and rejected spatial restructuring;
+- independently quantized a varied flat-face backdrop and allowed its known
+  uniform linear-light shift while rejecting a checker perturbation;
 - channel-ordered chromatic displacement confined to the bevel;
 - zero default warp, nonuniform distortion, and increased frequency in the
   recovered displacement field rather than the image spectrum;

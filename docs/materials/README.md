@@ -52,8 +52,8 @@ crop bounds.
 The glass config surface is implemented in `e579dae5`, `0c5f809f`,
 `6cd06de2`, `73a733db`, and `b8fe7b84`. The corrected frozen-reference parity
 pass at `niri-experiments` evidence commit
-`34240fde4e7df0470a7ed965adcf82409c1beeb8` passed capture integrity, 21/28
-implementation rows, and 9/14 combined parameters. Native `ior`, both motion
-parameters, and reference `shift-x`/`shift-y` fail. The config-surface review
-is implemented, but the parity acceptance gate is not satisfied; physical
-DRM and v1 acceptance remain blocked.
+`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` passed capture integrity, 23/28
+implementation rows, and 10/14 combined parameters. Both motion parameters
+and reference `shift-x`/`shift-y` fail. The config-surface review is
+implemented, but the parity acceptance gate is not satisfied; physical DRM
+and v1 acceptance remain blocked.
