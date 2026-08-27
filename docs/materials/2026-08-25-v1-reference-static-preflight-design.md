@@ -3,7 +3,7 @@
 **Status:** implemented and re-executed 2026-08-26 at `niri-experiments`
 instrument commit `d00f81c32cb8e6ee60881eeee4e65493e39ec6bf`; the
 frozen-reference preflight passed 9/9 rows. Final evidence commit
-`981998bad277064f1331865939dae26731f1e4ed` passed integrity, all 28
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f` passed integrity, all 28
 implementation rows, and all 14 combined parameters in two independent
 captures. The parity gate is complete; physical DRM remains before v1
 acceptance.
@@ -286,7 +286,7 @@ replay, analyzer, and analyzer self-check files. Final instrument commit
 quantization-aware follow-up commit
 `d00f81c32cb8e6ee60881eeee4e65493e39ec6bf` supplies the static-preflight
 analyzer and self-check hashes. Final evidence commit
-`981998bad277064f1331865939dae26731f1e4ed` records the current 14/14 verdict.
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f` records the current 14/14 verdict.
 Additive geometry-preflight commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` derives an 80-pixel geometry
 scene and records a passing 3/3 feasibility gate; result commit

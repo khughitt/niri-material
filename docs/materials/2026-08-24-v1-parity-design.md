@@ -1,7 +1,7 @@
 # Native materials v1 parity pass: design
 
 **Status:** re-executed twice 2026-08-27 at `niri-experiments` evidence commit
-`981998bad277064f1331865939dae26731f1e4ed`. Both captures passed integrity,
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f`. Both captures passed integrity,
 all 28 implementation rows, and all 14 combined parameters. The
 config-surface review and frozen-reference parity gate are complete; physical
 DRM smoke remains before v1 acceptance. The corrected full capture uses the
@@ -193,16 +193,19 @@ Within a burst, record each actual offset when its screenshot IPC returns, but
 do not wait for or rename any asynchronously encoded PNG until every scheduled
 screenshot IPC has been issued. PNG encoding latency is not part of the
 sampling schedule.
-Each frame recovers pane translation from its source-to-frame response box.
+Each frame recovers pane translation and an independent progress coordinate
+from its source-to-frame response box before bevel registration correction.
 For flex, long left/right edge strips measure normalized directional bevel
 shear; for ripple, whole-pane translation is removed before measuring the
-high-frequency residual inside the independent 32-pixel face inset. The four
+high-frequency residual inside the independent 32-pixel face inset, with
+every inset pixel—including zero residuals—counted in the denominator. The four
 bursts are linearly interpolated over their common pane-progress range; pixels
 are never interpolated. Each duplicate variant burst is paired with its
 default duplicate. Signal is the mean of the two paired deltas, noise is their
 full separation, and both deltas must be positive. Missing capture support,
-non-monotonic pane progress, search saturation, or a wrong-direction pair
-rejects the motion evidence.
+non-monotonic pane progress, or search saturation rejects artifact integrity
+with analyzer exit `2`; a valid wrong-direction pair is a semantic failure
+with exit `1`.
 
 ## Gates
 
@@ -310,14 +313,14 @@ unique directory under `NIRI_MATERIAL_WORK_ROOT`. A failed phase rejects the
 entire attempt and cannot resume partially. Historical implementation branch
 `results/reference-static-preflight` was based on `results/slice3` at
 `7729dfc151eae41c946d2495ef67010c1cd20635`; final evidence commit
-`981998bad277064f1331865939dae26731f1e4ed` contains the final replay and
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f` contains the final replay and
 config fixtures, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. Additive result commit
 `af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records the geometry preflight.
 The frozen `niri-glass` source is not modified.
 
 The production implementation is unchanged by this pass. Evidence commit
-`981998bad277064f1331865939dae26731f1e4ed` records two corrected complete
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f` records two corrected complete
 captures and their semantic PASS: 14/14 combined parameters pass. The
 config-surface review is already implemented; physical DRM smoke remains
 before production handoff and v1 acceptance.
