@@ -27,6 +27,13 @@ implementation rows and 10/14 combined parameters. Raw capture and the
 dedicated old-surface Cargo target were deleted. Physical DRM and v1
 acceptance remain blocked.
 
+**Post-execution amendment:** `niri-experiments` commit
+`5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` adds an exact reference-geometry
+partial schema and 3/3 preflight. Geometry now derives both implementations to
+80-pixel gaps, while static optics and motion stay at 24. The replay verifies
+the restoration before motion. This passed feasibility gate does not replace
+the last complete 10/14 evidence; full recapture is pending.
+
 ## Global Constraints
 
 - Implement evidence tooling in a fresh `niri-experiments` worktree and branch
@@ -61,9 +68,9 @@ acceptance remain blocked.
 | --- | --- | --- |
 | `niri-experiments/fixtures/diagnostic-grid.png` | Committed 40-by-40 dense grid with deterministic asymmetric watermark | 1 |
 | `niri-experiments/fixtures/diagnostic-grid.svg` | Retained reproducible source for the committed PNG | 1 |
-| `niri-experiments/fixtures/v1-parity-analyze.mjs` | Schema-2 validation, ROI checks, signed bevel profiles, flat-face residual, local warp field, and both CLI modes | 1 |
+| `niri-experiments/fixtures/v1-parity-analyze.mjs` | Schema-2 validation, ROI checks, signed bevel profiles, flat-face residual, local warp field, and final/static/geometry CLI modes | 1, amendment |
 | `niri-experiments/fixtures/v1-parity-analyze.test.mjs` | Physics-shaped synthetic controls and exit-contract tests | 1 |
-| `niri-experiments/fixtures/v1-parity-replay.sh` | Required work root, live-pane static capture, IPC ROI, partial manifest, preflight lifecycle, and final manifest | 2 |
+| `niri-experiments/fixtures/v1-parity-replay.sh` | Required work root, phase-specific scenes, exact partial manifests, preflight lifecycles, and final manifest | 2, amendment |
 | `niri-experiments/docs/results/2026-08-24-v1-parity.md` | Corrected branch/pins, preflight result, full matrix, margins, and verdict | 3, 4 |
 | `docs/materials/2026-08-25-v1-reference-static-preflight-design.md` | Implemented status and evidence commit | 5 |
 | `docs/materials/2026-08-24-v1-parity-design.md` | Replacement evidence verdict | 5 |
@@ -92,8 +99,9 @@ analyzer independently validate the accepted static contract.
 - Produces: `staticMasks`, `validateStaticRoiResponse`, `signedBevelShift`,
   `flatFaceVariation`, and `localWarpField` exports for the self-check;
   `evaluateManifest` for 28 final rows; `evaluateReferenceStaticManifest` for
-  nine reference rows; CLI form
-  `v1-parity-analyze.mjs [--reference-static] ARTIFACT_DIR`.
+  nine reference rows; the amendment adds the exact geometry-only form
+  `v1-parity-analyze.mjs --reference-geometry ARTIFACT_DIR` beside the final
+  and `--reference-static` modes.
 
 `signedBevelShift` returns
 `Array<{side:"top"|"left",shift:number,score:number}>` or throws on a boundary
@@ -608,9 +616,11 @@ capture_pair reference static default || return
 
 Capture the same nine variants and return gates as today. Native already has a
 slab-free static source; route both modes through the same manifest/static
-state shape. After the final static return to default, capture reference
-geometry `default` with the existing probe and continue its variants; do not
-capture another geometry source or spawn a second probe. Remove
+state shape. Historically, after the final static return to default, this step
+captured reference geometry `default` immediately with the existing probe.
+The post-execution amendment now transitions that same probe to the
+geometry-only 80-pixel scene first, then restores 24 pixels before motion. Do
+not capture another geometry source or spawn a second probe. Remove
 `show_reference_preview`, the static-anchor helpers, their PID cleanup state
 and cleanup test, the separate reference geometry-source capture,
 `static_source`, and the phase-equivalent registration metadata completely.

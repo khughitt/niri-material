@@ -6,6 +6,11 @@ frozen-reference preflight passed 9/9 rows. Final evidence commit
 `22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` passed integrity, 23/28
 implementation rows, and 10/14 combined parameters. V1 acceptance and
 physical DRM remain blocked.
+The later additive geometry preflight at `niri-experiments` commit
+`5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` passed 3/3 frozen-reference
+geometry rows with a geometry-only 80-pixel layout. It supersedes this
+document's assumption that geometry can continue in the 24-pixel static
+layout; static optics and motion still use 24 pixels.
 **Parent design:** `docs/materials/2026-08-24-v1-parity-design.md`
 
 ## Goal
@@ -96,11 +101,13 @@ Static capture uses the same sequence for native and reference:
 
 1. Capture slab-free `source` duplicates with the live diagnostic backdrop
    visible and no selected pane window. Reuse that exact pair as the geometry
-   source; the two sections intentionally share the same scene.
+   source; without a pane, the backdrop-only pixels remain valid across the
+   later layout transition.
 2. Spawn the probe with app ID `v1-parity-probe`; that selected probe produces
    the live material pane for the `default` duplicates.
 3. Capture the nine existing static variants and their return gates, then
-   continue directly to the geometry default with the same probe.
+   transition the same probe to the geometry-only 80-pixel layout before its
+   default. Restore 24 pixels and verify the static default before motion.
 
 The final 40-by-40 watermarked tile is a committed diagnostic asset, not a
 runtime-random blend. The replay tiles those bytes directly, and
@@ -276,9 +283,14 @@ Implementation landed on `results/reference-static-preflight`, branched from
 replay, analyzer, and analyzer self-check files. Final instrument commit
 `c729dee35db2c96cc41568d9e1090fd1536386c2` supplied the initial replacement;
 quantization-aware follow-up commit
-`d00f81c32cb8e6ee60881eeee4e65493e39ec6bf` supplies the current analyzer and
-self-check hashes. Final evidence commit
+`d00f81c32cb8e6ee60881eeee4e65493e39ec6bf` supplies the static-preflight
+analyzer and self-check hashes. Final evidence commit
 `22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` records the current 10/14 verdict.
+Additive geometry-preflight commit
+`5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` derives an 80-pixel geometry
+scene, restores 24 pixels before motion, and records a passing 3/3 feasibility
+gate; result commit `af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records it.
+The last complete verdict remains unchanged until recapture.
 The parity result's stale historical `results/v1-parity` branch claim was
 corrected to the branch and commit that actually contain that evidence.
 

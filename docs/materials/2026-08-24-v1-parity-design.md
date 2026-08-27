@@ -8,6 +8,13 @@ implementation rows are native `jelly-ripple`, reference `jelly-flex` and
 `jelly-ripple`, and reference `shift-x`/`shift-y`. The config-surface review
 is implemented, but the parity acceptance gate is not satisfied; physical
 DRM and v1 acceptance remain blocked.
+An additive frozen-reference geometry preflight at `niri-experiments` commit
+`5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 with a
+geometry-only 80-pixel layout. It identifies the recorded reference
+`shift-x`/`shift-y` failures as output-clipping artifacts, but does not replace
+the complete 28-row evidence. Result commit
+`af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records the preflight; a fresh
+full capture remains required.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -82,7 +89,7 @@ never used. A per-run `XDG_CONFIG_HOME` contains both
 `niri/config.kdl` and `niri/niri-glass.json`; neither program can read the
 live-desktop configuration.
 
-Two controlled scenes cover the parameter set:
+Three phase-specific scene states cover the parameter set:
 
 - **Static optics:** the committed 40-by-40 diagnostic PNG (SHA-256
   `6fafae8c6cf3e3815346128ffdb402d5c730ae3a8749cb060013821ba0fe0316`)
@@ -90,13 +97,16 @@ Two controlled scenes cover the parameter set:
   slab-free source, then map the same static probe to render the material
   pane. The pane ROI comes from IPC geometry and a bounded pixel-response
   cross-check; no preview or phase-equivalent source participates.
-- **Geometry and motion:** the same controlled pane/window and committed
-  diagnostic PNG on an otherwise quiet workspace. The static source pair is
-  reused as the geometry source. Swaybg and the reference wallpaper stub
-  consume the same generated backdrop, whose PNG and raw RGB hashes are
-  recorded.
-  Settled frames measure lip and shift. A deterministic column resize supplies
-  capture bursts for jelly flex and ripple, exercising the native
+- **Geometry:** the same controlled pane/window and committed diagnostic PNG
+  with both niri configs and reference `layoutGaps` derived from 24 to 80. The
+  static source pair remains a valid slab-free geometry source. The larger
+  inset keeps the frozen reference's 24/16/36/44 directional shadow reaches
+  inside the output, so settled frames can measure lip and shift without
+  clipping.
+- **Motion:** restore both implementations to the committed 24-pixel static
+  layout and verify the return frame before calibration. A deterministic
+  column resize then supplies capture bursts for jelly flex and ripple,
+  exercising the native
   `window-resize` spring and the reference's matching replay without involving
   `horizontal-view-movement` (which defaults to an easing curve, not that
   spring). The probe uses app ID `v1-parity-probe`; the native fixture assigns
@@ -105,8 +115,10 @@ Two controlled scenes cover the parameter set:
 Every default and variant static state is captured twice. Raw RGB drift within
 either state must affect less than 0.1% of pixels or the case is rejected
 before its parameter response is analyzed.
-The geometry default continues from the static probe; no preview or
-transparent anchor participates in the corrected capture path.
+The geometry default continues from the static probe after the bounded layout
+transition; no preview or transparent anchor participates. The same probe,
+compositor, and reference-client process survive both the transition and the
+verified restoration before motion.
 
 ## Pinned reference controls
 
@@ -117,7 +129,7 @@ follows:
 | Reference property | Pinned value | Reason |
 | --- | --- | --- |
 | `enabled` | `true` | The live-pane geometry and motion scene must render. |
-| `layoutGaps` | `24` | Matches an explicit native `layout { gaps 24; }` so IPC-derived pane geometry stays aligned. |
+| `layoutGaps` | `24` base; `80` during geometry only | Matches native gaps in each phase. The 80-pixel geometry derivation prevents directional-shadow clipping; static and motion restore 24. |
 | `paneApps` | `["v1-parity-probe"]` | Selects the same controlled probe as the native window rule. |
 | `roughness` | `0` | Removes Qt mip-LOD blur, which native v1 does not implement and which would confound the blur/sample rows. |
 | `gridOverlay` | `false` | Removes the live-pane shader's screen-space grid overlay. |
@@ -304,19 +316,20 @@ Generated PNGs, raw RGB dumps, phase state, and logs remain untracked in a
 unique directory under `NIRI_MATERIAL_WORK_ROOT`. A failed phase rejects the
 entire attempt and cannot resume partially. Historical implementation branch
 `results/reference-static-preflight` was based on `results/slice3` at
-`7729dfc151eae41c946d2495ef67010c1cd20635`; current evidence commit
+`7729dfc151eae41c946d2495ef67010c1cd20635`; the last complete evidence commit
 `22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` contains the minimum replay and
 config fixtures, capture hashes, measured tables, and
-`docs/results/2026-08-24-v1-parity.md`. The frozen `niri-glass` source is not
-modified.
+`docs/results/2026-08-24-v1-parity.md`. Additive result commit
+`af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records the geometry preflight.
+The frozen `niri-glass` source is not modified.
 
 The production implementation is unchanged by this pass. Evidence commit
 `22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` records the corrected complete
 matrix and its semantic FAIL: 10/14 combined parameters pass. Both motion
-parameters and reference `shift-x`/`shift-y` require separately designed
-fixes before another parity attempt. The config-surface review is already
-implemented, but production handoff, physical DRM, and v1 acceptance remain
-blocked.
+parameters require separate remediation. Reference `shift-x`/`shift-y` now
+require a full recapture with the corrected geometry scene, not a separately
+designed implementation fix. The config-surface review is already implemented,
+but production handoff, physical DRM, and v1 acceptance remain blocked.
 
 ## Alternatives rejected
 
