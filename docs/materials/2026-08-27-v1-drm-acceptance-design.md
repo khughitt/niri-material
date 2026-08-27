@@ -113,12 +113,20 @@ targets are not modified.
 
 ## Scene and actions
 
-The scene uses the committed 40×40 diagnostic tile as a tiled wallpaper, one
-translucent kitty probe selected for the `frost` material, and one opaque
-control without a material. The material uses the reviewed v1 names and a
+The scene uses the committed 40×40
+`niri-experiments/fixtures/diagnostic-grid.png` tile as its tiled wallpaper.
+That PNG is reproducibly derived from the retained 200×200
+`diagnostic-grid.svg`; the runtime copy is named `grid-tile.png`. One
+translucent kitty probe is selected for the `frost` material, and one opaque
+control has no material. The material uses the reviewed v1 names and a
 representative visible combination of refraction, attenuation, distortion,
 anisotropic blur, jelly, bevel, and offset. There is no frozen-reference
 client in this run.
+
+Both kitty clients disable cursor blinking, hide the cursor, and run a static
+sleep payload. They render no clock, status, changing title, or other
+time-varying content. This suppression is a prerequisite for the settled-frame
+identity gate, matching the earlier slice-2 fixture.
 
 The launcher waits for the compositor, output, wallpaper, and exact expected
 window set before beginning. It records each IPC action and its completion
@@ -157,6 +165,9 @@ exited and cleanup has completed. It passes only when:
   decodable at 3440×1440;
 - the same-name valid reload and rejected invalid reload retain the original
   probe window ID;
+- close removes the original probe ID, remap produces exactly one new probe ID
+  distinct from the original, and its settled capture shows the material
+  treatment again;
 - the valid reload changes the probe region while the invalid reload retains
   the last valid appearance;
 - motion and resize captures differ from their settled frames;
@@ -174,6 +185,11 @@ warning allowlist.
 
 These gates establish that the controlled scene and capture path behaved
 correctly. They do not substitute for observing the monitor.
+
+The byte-identical settled-frame gate is deliberately a new test of the
+physical DRM/NVIDIA path. Once the static-client prerequisite and evidence
+integrity checks pass, a settled-frame mismatch is an acceptance failure, not
+an integrity failure.
 
 ## Physical observation gate
 
