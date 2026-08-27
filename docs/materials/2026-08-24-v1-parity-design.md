@@ -1,7 +1,8 @@
 # Native materials v1 parity pass: design
 
-**Status:** re-executed twice 2026-08-27 at `niri-experiments` evidence commit
-`b851e5208b54cc466d99bf3ae664cc5a52c2317f`. Both captures passed integrity,
+**Status:** re-executed twice 2026-08-27 at `niri-experiments` capture base
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f` and graded at result commit
+`c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f`. Both captures passed integrity,
 all 28 implementation rows, and all 14 combined parameters. The
 config-surface review and frozen-reference parity gate are complete; physical
 DRM smoke remains before v1 acceptance. The corrected full capture uses the
@@ -96,12 +97,12 @@ Three phase-specific scene states cover the parameter set:
   inside the output, so settled frames can measure lip and shift without
   clipping.
 - **Motion:** continue from static optics in the committed 24-pixel layout.
-  A deterministic column resize then supplies capture bursts for jelly flex and ripple,
-  exercising the native
-  `window-resize` spring and the reference's matching replay without involving
-  `horizontal-view-movement` (which defaults to an easing curve, not that
-  spring). The probe uses app ID `v1-parity-probe`; the native fixture assigns
-  its material with a matching window rule.
+  A deterministic `move-column-right` then `move-column-left` reorder supplies
+  capture bursts for jelly flex and ripple, exercising the native
+  `window-movement` spring and the reference's matching replay without
+  involving `horizontal-view-movement` (which defaults to an easing curve,
+  not that spring). The probe uses app ID `v1-parity-probe`; the native fixture
+  assigns its material with a matching window rule.
 
 Every default and variant static state is captured twice. Raw RGB drift within
 either state must affect less than 0.1% of pixels or the case is rejected
@@ -127,9 +128,9 @@ follows:
 | `gridOverlay` | `false` | Removes the live-pane shader's screen-space grid overlay. |
 | `calibrate` | `false` | Removes the reference-only calibration overlay. |
 | `probeExposure` | `0` | Removes Qt-only environment specular from the differential. |
-| `springDampingRatio` | `1.0` | Matches native `window-resize`. |
-| `springStiffness` | `100` | Matches the slowed native `window-resize` instrument. |
-| `springEpsilon` | `0.0001` | Matches native `window-resize`. |
+| `springDampingRatio` | `1.0` | Matches native `window-movement`. |
+| `springStiffness` | `100` | Matches the slowed native `window-movement` instrument. |
+| `springEpsilon` | `0.0001` | Matches native `window-movement`. |
 
 The committed diagnostic PNG is the controlled optical input; it is distinct from the
 `gridOverlay` knob. `PreviewSurface` does not pass `gridOverlay` and therefore
@@ -185,7 +186,7 @@ Each motion setting is run twice. The pinned critical spring uses stiffness
 captures before 326 ms, a capture at or after 400 ms, and a settled capture at
 or after 500 ms. Actual capture offsets are recorded. Before evidence capture,
 each implementation runs one default calibration burst through the same
-resize and screenshot path. Its first actual offset sets that implementation's
+column-reorder and screenshot path. Its first actual offset sets that implementation's
 evidence budget, rounded up to the next 10 ms plus a 20 ms scheduling
 allowance; the calibration must itself satisfy the actual-capture coverage
 gate.
@@ -196,7 +197,10 @@ sampling schedule.
 Each frame recovers pane translation and an independent progress coordinate
 from its source-to-frame response box before bevel registration correction.
 For flex, long left/right edge strips measure normalized directional bevel
-shear; for ripple, whole-pane translation is removed before measuring the
+shear. A plus-or-minus 96-pixel bevel-location search covers the observed
+72–76-pixel frozen-reference travel and an 80-pixel synthetic control; a
+winner at 96 rejects integrity. This location bound is independent of the
+tile-period-limited displacement search. For ripple, whole-pane translation is removed before measuring the
 high-frequency residual inside the independent 32-pixel face inset, with
 every inset pixel—including zero residuals—counted in the denominator. The four
 bursts are linearly interpolated over their common pane-progress range; pixels
@@ -312,15 +316,17 @@ Generated PNGs, raw RGB dumps, phase state, and logs remain untracked in a
 unique directory under `NIRI_MATERIAL_WORK_ROOT`. A failed phase rejects the
 entire attempt and cannot resume partially. Historical implementation branch
 `results/reference-static-preflight` was based on `results/slice3` at
-`7729dfc151eae41c946d2495ef67010c1cd20635`; final evidence commit
+`7729dfc151eae41c946d2495ef67010c1cd20635`. Capture base
 `b851e5208b54cc466d99bf3ae664cc5a52c2317f` contains the final replay and
-config fixtures, capture hashes, measured tables, and
+config fixtures used for both captures. Result commit
+`c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f` contains the final analyzer,
+self-checks, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. Additive result commit
 `af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records the geometry preflight.
 The frozen `niri-glass` source is not modified.
 
-The production implementation is unchanged by this pass. Evidence commit
-`b851e5208b54cc466d99bf3ae664cc5a52c2317f` records two corrected complete
+The production implementation is unchanged by this pass. Result commit
+`c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f` records two corrected complete
 captures and their semantic PASS: 14/14 combined parameters pass. The
 config-surface review is already implemented; physical DRM smoke remains
 before production handoff and v1 acceptance.

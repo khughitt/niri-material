@@ -51,8 +51,9 @@ crop bounds.
 
 The glass config surface is implemented in `e579dae5`, `0c5f809f`,
 `6cd06de2`, `73a733db`, and `b8fe7b84`. Two independent corrected
-frozen-reference captures at `niri-experiments` evidence commit
-`b851e5208b54cc466d99bf3ae664cc5a52c2317f` passed integrity, all 28
+frozen-reference captures pinned to `niri-experiments` capture base
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f`, then graded at result commit
+`c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f`, passed integrity, all 28
 implementation rows, and all 14 combined parameters. The config-surface
 review and parity gate are complete; physical DRM smoke is the remaining v1
 acceptance step.

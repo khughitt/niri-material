@@ -21,8 +21,9 @@ geometry and motion analysis.
 
 **Status:** executed and re-run 2026-08-26. The final instrument is
 `niri-experiments` commit `d00f81c32cb8e6ee60881eeee4e65493e39ec6bf`;
-the frozen-reference preflight passed 9/9 rows and final evidence commit
-`b851e5208b54cc466d99bf3ae664cc5a52c2317f` passed integrity with all 28
+the frozen-reference preflight passed 9/9 rows. Final capture base
+`b851e5208b54cc466d99bf3ae664cc5a52c2317f` and result commit
+`c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f` passed integrity with all 28
 implementation rows and all 14 combined parameters in two independent
 captures. The parity gate is complete; physical DRM remains before v1
 acceptance.
@@ -35,12 +36,13 @@ partial schema and 3/3 preflight. Geometry now derives both implementations to
 the geometry transition one-way because the frozen native surface does not
 reproduce its initial optical pixels after an 80-to-24 resize round trip.
 
-**Final motion amendment:** `niri-experiments` evidence commit
+**Final motion amendment:** `niri-experiments` capture base
 `b851e5208b54cc466d99bf3ae664cc5a52c2317f` uses a stiffness-100 spring, 12
 requested offsets through 1100 ms, pane-progress alignment, directional bevel
 shear, fixed-face-denominator translation-removed face ripple, and paired-delta
-noise. Structural motion failures exit `2`; valid wrong-direction rows exit
-`1`. It also loads
+noise. Result commit `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f`
+adds a plus-or-minus 96-pixel bevel-location search with boundary rejection.
+Structural motion failures exit `2`; valid wrong-direction rows exit `1`. It also loads
 native variants exactly once and updates the frozen reference's watched JSON
 in place. Two independent captures pass 28/28 rows and 14/14 parameters.
 
