@@ -50,13 +50,12 @@ current shaders; the shipped fix instead opens the strip-end per-workspace
 crop bounds.
 
 The glass config surface is implemented in `e579dae5`, `0c5f809f`,
-`6cd06de2`, `73a733db`, and `b8fe7b84`. The corrected frozen-reference parity
-pass at `niri-experiments` evidence commit
-`6b3d93f3a917fbe3c1fddb63124349ad21fda688` passed capture integrity, 24/28
-implementation rows, and 12/14 combined parameters. Every static and geometry
-row passes; both motion parameters fail. The config-surface review is
-implemented, but the parity acceptance gate is not satisfied; physical DRM
-and v1 acceptance remain blocked.
+`6cd06de2`, `73a733db`, and `b8fe7b84`. Two independent corrected
+frozen-reference captures at `niri-experiments` evidence commit
+`981998bad277064f1331865939dae26731f1e4ed` passed integrity, all 28
+implementation rows, and all 14 combined parameters. The config-surface
+review and parity gate are complete; physical DRM smoke is the remaining v1
+acceptance step.
 A frozen-reference geometry-only preflight at `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 at
 80-pixel gaps, identifying the recorded shift failures as output clipping.

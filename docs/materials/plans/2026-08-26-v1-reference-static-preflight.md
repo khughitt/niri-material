@@ -22,10 +22,10 @@ geometry and motion analysis.
 **Status:** executed and re-run 2026-08-26. The final instrument is
 `niri-experiments` commit `d00f81c32cb8e6ee60881eeee4e65493e39ec6bf`;
 the frozen-reference preflight passed 9/9 rows and final evidence commit
-`6b3d93f3a917fbe3c1fddb63124349ad21fda688` passed integrity with 24/28
-implementation rows and 12/14 combined parameters. Raw capture and the
-dedicated old-surface Cargo target were deleted. Physical DRM and v1
-acceptance remain blocked.
+`981998bad277064f1331865939dae26731f1e4ed` passed integrity with all 28
+implementation rows and all 14 combined parameters in two independent
+captures. The parity gate is complete; physical DRM remains before v1
+acceptance.
 
 **Post-execution amendment:** `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` adds an exact reference-geometry
@@ -34,6 +34,13 @@ partial schema and 3/3 preflight. Geometry now derives both implementations to
 `705718d410232badb9ddd7e27d2da2e40ca3eb24` captures motion first and makes
 the geometry transition one-way because the frozen native surface does not
 reproduce its initial optical pixels after an 80-to-24 resize round trip.
+
+**Final motion amendment:** `niri-experiments` evidence commit
+`981998bad277064f1331865939dae26731f1e4ed` uses a stiffness-100 spring, 12
+requested offsets through 1100 ms, pane-progress alignment, directional bevel
+shear, translation-removed face ripple, and paired-delta noise. It also loads
+native variants exactly once and updates the frozen reference's watched JSON
+in place. Two independent captures pass 28/28 rows and 14/14 parameters.
 
 ## Global Constraints
 

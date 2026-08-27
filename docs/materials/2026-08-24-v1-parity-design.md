@@ -1,13 +1,12 @@
 # Native materials v1 parity pass: design
 
-**Status:** re-executed 2026-08-26 at `niri-experiments` evidence commit
-`6b3d93f3a917fbe3c1fddb63124349ad21fda688`. Capture integrity passed; 24/28
-implementation rows and 12/14 combined parameters passed. All static and
-geometry rows pass; both implementations fail `jelly-flex` and
-`jelly-ripple`. The config-surface review is implemented, but the parity
-acceptance gate is not satisfied; physical DRM and v1 acceptance remain
-blocked. The corrected full capture uses the 80-pixel geometry scene proven
-by the earlier 3/3 preflight at `af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
+**Status:** re-executed twice 2026-08-27 at `niri-experiments` evidence commit
+`981998bad277064f1331865939dae26731f1e4ed`. Both captures passed integrity,
+all 28 implementation rows, and all 14 combined parameters. The
+config-surface review and frozen-reference parity gate are complete; physical
+DRM smoke remains before v1 acceptance. The corrected full capture uses the
+80-pixel geometry scene proven by the earlier 3/3 preflight at
+`af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -129,7 +128,7 @@ follows:
 | `calibrate` | `false` | Removes the reference-only calibration overlay. |
 | `probeExposure` | `0` | Removes Qt-only environment specular from the differential. |
 | `springDampingRatio` | `1.0` | Matches native `window-resize`. |
-| `springStiffness` | `800` | Matches native `window-resize`. |
+| `springStiffness` | `100` | Matches the slowed native `window-resize` instrument. |
 | `springEpsilon` | `0.0001` | Matches native `window-resize`. |
 
 The committed diagnostic PNG is the controlled optical input; it is distinct from the
@@ -153,8 +152,8 @@ high-signal variant per shared v1 parameter:
 | `distortion-scale` | Static optics | `0.5 -> 1.5` | The reconstructed warp field's spatial frequency increases relative to the `distortion=0.5` capture. |
 | `anisotropic-blur` | Static optics | `0 -> 0.5` | Directional sampling spread widens. |
 | `samples` | Static optics | `4 -> 8` | Sampling roughness decreases relative to the `anisotropic-blur=0.5` capture. |
-| `jelly-flex` | Geometry and motion | `0.004 -> 0.02` | Peak movement deformation increases. |
-| `jelly-ripple` | Geometry and motion | `0.06 -> 0.5` | Transient optical ripple increases; the settled-frame drift remains below 0.1%. |
+| `jelly-flex` | Geometry and motion | `0.004 -> 0.02` | Mean positive directional bevel shear increases. |
+| `jelly-ripple` | Geometry and motion | `0.06 -> 0.5` | Peak translation-removed inner-face ripple increases; the settled-frame drift remains below 0.1%. |
 | `lip` | Geometry and motion | `6 -> 24` | The data-derived slab extent grows. |
 | `shift-x` | Geometry and motion | `6 -> -6` | The slab relocates in the expected horizontal direction without changing extent. |
 | `shift-y` | Geometry and motion | `6 -> -6` | The slab relocates in the expected vertical direction without changing extent. |
@@ -180,29 +179,30 @@ compositor or swapping the material name within a pair invalidates the pair.
 The reference likewise keeps the same window ID, which is its jelly-noise
 seed.
 
-Each motion setting is run twice. The pinned critical spring has an analytical
-settle duration of about 326 ms (`-ln(0.0001) / sqrt(800)`), so every burst
-must contain at least three actual captures before 326 ms, a capture at or
-after 400 ms, and a settled capture at or after 500 ms. Actual capture offsets
-are recorded. Before evidence capture, each implementation runs one default
-calibration burst through the same resize and screenshot path. Its first
-actual offset sets that implementation's evidence budget, rounded up to the
-next 10 ms plus a 20 ms scheduling allowance; the calibration must itself
-satisfy the actual-capture coverage gate. The allowance covers the observed
-19 ms maximum calibration-to-evidence first-offset spread without changing
-the motion-duration or response thresholds.
+Each motion setting is run twice. The pinned critical spring uses stiffness
+100 and every burst requests captures at 0, 25, 50, 75, 100, 150, 200, 300,
+400, 600, 800, and 1100 ms. Every burst must retain at least three actual
+captures before 326 ms, a capture at or after 400 ms, and a settled capture at
+or after 500 ms. Actual capture offsets are recorded. Before evidence capture,
+each implementation runs one default calibration burst through the same
+resize and screenshot path. Its first actual offset sets that implementation's
+evidence budget, rounded up to the next 10 ms plus a 20 ms scheduling
+allowance; the calibration must itself satisfy the actual-capture coverage
+gate.
 Within a burst, record each actual offset when its screenshot IPC returns, but
 do not wait for or rename any asynchronously encoded PNG until every scheduled
 screenshot IPC has been issued. PNG encoding latency is not part of the
 sampling schedule.
-For each default/variant case, its four duplicate bursts are linearly
-interpolated onto a shared 10 ms grid over their common actual-offset range;
-only scalar deformation and ripple metrics are interpolated, never pixels.
-The grid must begin within the measured first-offset budget and extend through
-400 and 500 ms. Duplicate default and variant curves establish the motion
-noise floor from their aligned peak-metric spread. Missing actual-capture
-coverage, non-monotonic offsets, or disagreement in response direction between
-duplicate curves rejects the motion evidence.
+Each frame recovers pane translation from its source-to-frame response box.
+For flex, long left/right edge strips measure normalized directional bevel
+shear; for ripple, whole-pane translation is removed before measuring the
+high-frequency residual inside the independent 32-pixel face inset. The four
+bursts are linearly interpolated over their common pane-progress range; pixels
+are never interpolated. Each duplicate variant burst is paired with its
+default duplicate. Signal is the mean of the two paired deltas, noise is their
+full separation, and both deltas must be positive. Missing capture support,
+non-monotonic pane progress, search saturation, or a wrong-direction pair
+rejects the motion evidence.
 
 ## Gates
 
@@ -230,7 +230,7 @@ Every row uses its own oracle metric for both signal and noise. For static
 rows, the minimum default-to-variant response across the duplicate captures
 must be strictly greater than the maximum within-default or within-variant
 duplicate drift measured with that metric. Motion variants must similarly
-exceed the maximum within-setting duplicate-burst peak spread. A nonzero
+exceed their paired-delta separation. A nonzero
 response that does not clear its case's measured floor fails. A response that
 escapes its data-derived material extent also fails its row.
 
@@ -310,18 +310,17 @@ unique directory under `NIRI_MATERIAL_WORK_ROOT`. A failed phase rejects the
 entire attempt and cannot resume partially. Historical implementation branch
 `results/reference-static-preflight` was based on `results/slice3` at
 `7729dfc151eae41c946d2495ef67010c1cd20635`; final evidence commit
-`6b3d93f3a917fbe3c1fddb63124349ad21fda688` contains the minimum replay and
+`981998bad277064f1331865939dae26731f1e4ed` contains the final replay and
 config fixtures, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. Additive result commit
 `af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records the geometry preflight.
 The frozen `niri-glass` source is not modified.
 
 The production implementation is unchanged by this pass. Evidence commit
-`6b3d93f3a917fbe3c1fddb63124349ad21fda688` records the corrected complete
-matrix and its semantic FAIL: 12/14 combined parameters pass. Every static
-and geometry parameter passes; both motion parameters require separate
-remediation. The config-surface review is already implemented, but production
-handoff, physical DRM, and v1 acceptance remain blocked.
+`981998bad277064f1331865939dae26731f1e4ed` records two corrected complete
+captures and their semantic PASS: 14/14 combined parameters pass. The
+config-surface review is already implemented; physical DRM smoke remains
+before production handoff and v1 acceptance.
 
 ## Alternatives rejected
 
