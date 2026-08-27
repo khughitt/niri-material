@@ -122,7 +122,7 @@ follows:
 | Reference property | Pinned value | Reason |
 | --- | --- | --- |
 | `enabled` | `true` | The live-pane geometry and motion scene must render. |
-| `layoutGaps` | `24` base; `80` during geometry only | Matches native gaps in each phase. The 80-pixel geometry derivation prevents directional-shadow clipping; static and motion restore 24. |
+| `layoutGaps` | `24` base; `80` during geometry only | Matches native gaps in each phase. The 80-pixel geometry derivation prevents directional-shadow clipping; static and motion remain at 24 before geometry. |
 | `paneApps` | `["v1-parity-probe"]` | Selects the same controlled probe as the native window rule. |
 | `roughness` | `0` | Removes Qt mip-LOD blur, which native v1 does not implement and which would confound the blur/sample rows. |
 | `gridOverlay` | `false` | Removes the live-pane shader's screen-space grid overlay. |
