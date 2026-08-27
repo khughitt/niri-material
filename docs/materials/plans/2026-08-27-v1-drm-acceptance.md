@@ -191,7 +191,7 @@ Run with any binary built from the accepted production tree:
 ```sh
 candidate_debug=/mnt/ssd3/niri-material/target/debug/niri
 "$candidate_debug" validate --config fixtures/v1-drm-smoke.kdl
-identify -format '%wx%h\n' fixtures/diagnostic-grid.png
+magick identify -format '%wx%h\n' fixtures/diagnostic-grid.png
 sha256sum fixtures/diagnostic-grid.png
 ```
 
@@ -315,10 +315,15 @@ path as absolute. Accept artifact directories only under
 
 - [ ] **Step 3: Implement exact-schema handoff preparation and validation**
 
-`--prepare` must refuse a nonempty artifact directory, validate the committed
-config, and write schema 1 from values computed in the same process:
+`--prepare` must refuse a dirty fixture worktree or nonempty artifact
+directory, validate the committed config, and write schema 1 from values
+computed in the same process:
 
 ```sh
+test -z "$(git -C "$repository_root" status --short)" || {
+    echo "fixture worktree must be clean" >&2
+    return 2
+}
 fixture_commit=$(git -C "$repository_root" rev-parse HEAD)
 candidate_version=$("$binary" --version)
 [ "$candidate_version" = 'niri 26.04 (v26.04-95-g138697be)' ] || return 2
@@ -435,16 +440,17 @@ directory and child process are gone.
 
 - [ ] **Step 1: Add failing analyzer controls to `--self-test`**
 
-Create a synthetic 320×180 artifact set with ImageMagick. Use a static tiled
-background for `initial-a`, copy it to every return-state file, create a
-changed rectangle for `reload-valid`, copy that to `reload-invalid`, and draw
-distinct motion/resize/overview/workspace frames. Write state JSON with probe
-ID 10 initially, zero probes after close, and probe ID 20 after remap.
+Create a synthetic 320×180 artifact set with ImageMagick and record those
+dimensions in its `environment.json`. Use a static tiled background for
+`initial-a`, copy it to every return-state file, create a changed rectangle
+for `reload-valid`, copy that to `reload-invalid`, and draw distinct
+motion/resize/overview/workspace frames. Write state JSON with probe ID 10
+initially, zero probes after close, and probe ID 20 after remap.
 
 Then require:
 
 ```sh
-analyze_artifacts "$st_dir/pass-handoff.json"
+analyze_artifacts "$st_dir/pass-handoff.json" 320 180
 [ "$(jq -r .verdict "$st_dir/pass/machine-summary.json")" = pass ]
 
 cp "$st_dir/pass/captures/remap-settled.png" \
@@ -453,7 +459,7 @@ magick "$st_dir/pass/captures/remap-settled.png" \
     -fill red -draw 'rectangle 1,1 8,8' \
     "$st_dir/pass/captures/remap-settled.png"
 write_test_inventory "$st_dir/pass"
-! analyze_artifacts "$st_dir/pass-handoff.json"
+! analyze_artifacts "$st_dir/pass-handoff.json" 320 180
 [ "$(jq -r '.gates[] | select(.name == "remap-return") | .status' \
     "$st_dir/pass/machine-summary.json")" = fail ]
 mv "$st_dir/remap-settled.saved.png" \
@@ -461,7 +467,7 @@ mv "$st_dir/remap-settled.saved.png" \
 write_test_inventory "$st_dir/pass"
 
 printf '%s\n' 'ERROR renderer failed' >>"$st_dir/pass/niri.log"
-! analyze_artifacts "$st_dir/pass-handoff.json"
+! analyze_artifacts "$st_dir/pass-handoff.json" 320 180
 ```
 
 Expected before implementation: FAIL because `analyze_artifacts` is missing.
@@ -510,11 +516,13 @@ connector status, and niri's exact output JSON. The analyzer rejects missing
 fields rather than filling defaults.
 
 Spawn the control first and probe second so closing/remapping the right-hand
-probe restores the original layout. Both kitty commands must include
-`-o cursor_blink_interval=0`, hide the cursor with `\033[?25l`, render only a
-fixed opaque color marker plus otherwise static content, and end in
-`exec sleep 3600`. Poll IPC until exactly one window of each app ID exists;
-focus the probe by ID.
+probe restores the original layout. Give both clients
+`-o background='#101820'`; give the control `-o background_opacity=1` and the
+probe `-o background_opacity=0.10`, matching the proven slice-2 physical
+fixture. Both kitty commands must include `-o cursor_blink_interval=0`, hide
+the cursor with `\033[?25l`, render only a fixed opaque color marker plus
+otherwise static content, and end in `exec sleep 3600`. Poll IPC until exactly
+one window of each app ID exists; focus the probe by ID.
 
 - [ ] **Step 3: Implement capture, reload, motion, and return helpers**
 
@@ -538,9 +546,9 @@ env NIRI_SOCKET="$niri_socket" "$binary" msg action screenshot-screen \
     --write-to-disk true --show-pointer false --path "$capture_path"
 ```
 
-Poll until the PNG is nonempty and `identify` reports 3440×1440. Append its
-relative path and SHA-256 to `captures.sha256`; refuse duplicate physical
-paths.
+Poll until the PNG is nonempty and `magick identify` reports 3440×1440.
+Append its relative path and SHA-256 to `captures.sha256`; refuse duplicate
+physical paths.
 
 Implement the approved order exactly:
 
@@ -559,8 +567,8 @@ Implement the approved order exactly:
 6. record the original probe ID, issue `close-window`, require zero probe
    windows, spawn a new probe, require exactly one distinct ID, settle, and
    capture `remap-settled`;
-7. `toggle-overview`, capture `overview-open`, toggle closed, and capture
-   `overview-return`;
+7. `capture_burst overview-opening toggle-overview`, settle and capture
+   `overview-open`, toggle closed, and capture `overview-return`;
 8. `focus-workspace-down`, capture a timed burst, settle, then
    `focus-workspace-up`, capture the return burst and `workspace-return`;
 9. capture `final-output` and `final-settled`;
@@ -574,10 +582,13 @@ operator exit is integrity failure exit 2.
 
 - [ ] **Step 4: Implement exact machine gates**
 
-`analyze_artifacts` must validate all paths and hashes before interpreting
-images. It then writes every gate result, continuing after ordinary gate
-failures so the summary is complete. Integrity errors exit 2; a complete
-failed machine matrix exits 1; all machine gates exit 0.
+`analyze_artifacts HANDOFF EXPECTED_WIDTH EXPECTED_HEIGHT` must validate all
+paths and hashes before interpreting images. Production `--run` and
+`--analyze` always pass `3440 1440` and reject an `environment.json` that
+disagrees; only the synthetic self-test passes `320 180`. It then writes every
+gate result, continuing after ordinary gate failures so the summary is
+complete. Integrity errors exit 2; a complete failed machine matrix exits 1;
+all machine gates exit 0.
 
 Use byte comparison for all exact return gates:
 
@@ -599,9 +610,10 @@ probe must have a new ID, and the whole settled scene must be byte-identical
 to step 1. No color heuristic is used.
 
 Require `reload-valid` to differ from `initial-a`; every motion/resize burst
-must contain at least one frame different from rest; overview and workspace
-transition frames must contain both the fixed opaque probe marker and the
-expected `#503050` backdrop color. Record ImageMagick AE values for all
+must contain at least one frame different from rest. At least one frame in the
+overview-opening burst and in each workspace-switch burst must contain both
+the fixed opaque probe marker and the expected `#503050` backdrop color; the
+0 ms and settled frames need not. Record ImageMagick AE values for all
 nonidentity comparisons without inventing a magnitude threshold.
 
 Exclude only the bounded log byte range produced by the deliberate invalid
@@ -789,7 +801,8 @@ test -f "$artifact_dir/machine-summary.json"
 jq . "$artifact_dir/machine-summary.json"
 test ! -e /mnt/ssd3/niri-material/v1-drm-acceptance.lock
 test -z "$(find /mnt/ssd3/niri-material -maxdepth 1 \
-    -type d -name 'v1-drm-runtime.*' -print -quit)"+sha256sum --check "$artifact_dir/captures.sha256"
+    -type d -name 'v1-drm-runtime.*' -print -quit)"
+(cd "$artifact_dir" && sha256sum --check captures.sha256)
 ```
 
 If integrity is incomplete or analyzer exit is 2, stop without interpreting
@@ -871,7 +884,7 @@ does not infer visual correctness.
 sha256sum "$artifact_dir/captures.sha256" \
     "$artifact_dir/machine-summary.json" \
     "$artifact_dir/niri.log"
-sha256sum --check "$artifact_dir/captures.sha256"
+(cd "$artifact_dir" && sha256sum --check captures.sha256)
 git diff --check
 git add docs/results/2026-08-27-v1-drm-acceptance.md
 git diff --cached --check
@@ -933,7 +946,7 @@ git commit -m "docs(materials): record v1 DRM acceptance"
 - [ ] **Step 1: Run final independent checks before deleting evidence**
 
 ```sh
-sha256sum --check "$artifact_dir/captures.sha256"
+(cd "$artifact_dir" && sha256sum --check captures.sha256)
 env NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material \
     sh fixtures/v1-drm-smoke.sh --analyze "$handoff"
 git status --short
