@@ -1,20 +1,13 @@
 # Native materials v1 parity pass: design
 
 **Status:** re-executed 2026-08-26 at `niri-experiments` evidence commit
-`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d`. Capture integrity passed; 23/28
-implementation rows and 10/14 combined parameters passed. Combined failures
-are `jelly-flex`, `jelly-ripple`, `shift-x`, and `shift-y`; the failing
-implementation rows are native `jelly-ripple`, reference `jelly-flex` and
-`jelly-ripple`, and reference `shift-x`/`shift-y`. The config-surface review
-is implemented, but the parity acceptance gate is not satisfied; physical
-DRM and v1 acceptance remain blocked.
-An additive frozen-reference geometry preflight at `niri-experiments` commit
-`5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 with a
-geometry-only 80-pixel layout. It identifies the recorded reference
-`shift-x`/`shift-y` failures as output-clipping artifacts, but does not replace
-the complete 28-row evidence. Result commit
-`af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records the preflight; a fresh
-full capture remains required.
+`6b3d93f3a917fbe3c1fddb63124349ad21fda688`. Capture integrity passed; 24/28
+implementation rows and 12/14 combined parameters passed. All static and
+geometry rows pass; both implementations fail `jelly-flex` and
+`jelly-ripple`. The config-surface review is implemented, but the parity
+acceptance gate is not satisfied; physical DRM and v1 acceptance remain
+blocked. The corrected full capture uses the 80-pixel geometry scene proven
+by the earlier 3/3 preflight at `af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -103,9 +96,8 @@ Three phase-specific scene states cover the parameter set:
   inset keeps the frozen reference's 24/16/36/44 directional shadow reaches
   inside the output, so settled frames can measure lip and shift without
   clipping.
-- **Motion:** restore both implementations to the committed 24-pixel static
-  layout and verify the return frame before calibration. A deterministic
-  column resize then supplies capture bursts for jelly flex and ripple,
+- **Motion:** continue from static optics in the committed 24-pixel layout.
+  A deterministic column resize then supplies capture bursts for jelly flex and ripple,
   exercising the native
   `window-resize` spring and the reference's matching replay without involving
   `horizontal-view-movement` (which defaults to an easing curve, not that
@@ -115,10 +107,11 @@ Three phase-specific scene states cover the parameter set:
 Every default and variant static state is captured twice. Raw RGB drift within
 either state must affect less than 0.1% of pixels or the case is rejected
 before its parameter response is analyzed.
-The geometry default continues from the static probe after the bounded layout
-transition; no preview or transparent anchor participates. The same probe,
-compositor, and reference-client process survive both the transition and the
-verified restoration before motion.
+After motion, the geometry default continues from the same static probe through
+a one-way bounded layout transition; no preview or transparent anchor
+participates. A return to 24 pixels is intentionally not part of the evidence:
+the frozen native surface restores IPC window geometry after an 80-to-24
+round trip but does not reproduce its initial optical pixels.
 
 ## Pinned reference controls
 
@@ -316,20 +309,19 @@ Generated PNGs, raw RGB dumps, phase state, and logs remain untracked in a
 unique directory under `NIRI_MATERIAL_WORK_ROOT`. A failed phase rejects the
 entire attempt and cannot resume partially. Historical implementation branch
 `results/reference-static-preflight` was based on `results/slice3` at
-`7729dfc151eae41c946d2495ef67010c1cd20635`; the last complete evidence commit
-`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` contains the minimum replay and
+`7729dfc151eae41c946d2495ef67010c1cd20635`; final evidence commit
+`6b3d93f3a917fbe3c1fddb63124349ad21fda688` contains the minimum replay and
 config fixtures, capture hashes, measured tables, and
 `docs/results/2026-08-24-v1-parity.md`. Additive result commit
 `af99babfdeed1f64e3bf52817b62a22c9d1c9d72` records the geometry preflight.
 The frozen `niri-glass` source is not modified.
 
 The production implementation is unchanged by this pass. Evidence commit
-`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` records the corrected complete
-matrix and its semantic FAIL: 10/14 combined parameters pass. Both motion
-parameters require separate remediation. Reference `shift-x`/`shift-y` now
-require a full recapture with the corrected geometry scene, not a separately
-designed implementation fix. The config-surface review is already implemented,
-but production handoff, physical DRM, and v1 acceptance remain blocked.
+`6b3d93f3a917fbe3c1fddb63124349ad21fda688` records the corrected complete
+matrix and its semantic FAIL: 12/14 combined parameters pass. Every static
+and geometry parameter passes; both motion parameters require separate
+remediation. The config-surface review is already implemented, but production
+handoff, physical DRM, and v1 acceptance remain blocked.
 
 ## Alternatives rejected
 

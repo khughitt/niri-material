@@ -52,12 +52,12 @@ crop bounds.
 The glass config surface is implemented in `e579dae5`, `0c5f809f`,
 `6cd06de2`, `73a733db`, and `b8fe7b84`. The corrected frozen-reference parity
 pass at `niri-experiments` evidence commit
-`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` passed capture integrity, 23/28
-implementation rows, and 10/14 combined parameters. Both motion parameters
-and reference `shift-x`/`shift-y` fail. The config-surface review is
+`6b3d93f3a917fbe3c1fddb63124349ad21fda688` passed capture integrity, 24/28
+implementation rows, and 12/14 combined parameters. Every static and geometry
+row passes; both motion parameters fail. The config-surface review is
 implemented, but the parity acceptance gate is not satisfied; physical DRM
 and v1 acceptance remain blocked.
 A frozen-reference geometry-only preflight at `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 at
 80-pixel gaps, identifying the recorded shift failures as output clipping.
-The last complete verdict remains in force until the full matrix is recaptured.
+The corrected complete capture incorporates that geometry scene.

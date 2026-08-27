@@ -22,17 +22,18 @@ geometry and motion analysis.
 **Status:** executed and re-run 2026-08-26. The final instrument is
 `niri-experiments` commit `d00f81c32cb8e6ee60881eeee4e65493e39ec6bf`;
 the frozen-reference preflight passed 9/9 rows and final evidence commit
-`22b7ea6e8e365cb967e10ad5d0cfaeff6e4af76d` passed integrity with 23/28
-implementation rows and 10/14 combined parameters. Raw capture and the
+`6b3d93f3a917fbe3c1fddb63124349ad21fda688` passed integrity with 24/28
+implementation rows and 12/14 combined parameters. Raw capture and the
 dedicated old-surface Cargo target were deleted. Physical DRM and v1
 acceptance remain blocked.
 
 **Post-execution amendment:** `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` adds an exact reference-geometry
 partial schema and 3/3 preflight. Geometry now derives both implementations to
-80-pixel gaps, while static optics and motion stay at 24. The replay verifies
-the restoration before motion. This passed feasibility gate does not replace
-the last complete 10/14 evidence; full recapture is pending.
+80-pixel gaps, while static optics and motion stay at 24. Replay correction
+`705718d410232badb9ddd7e27d2da2e40ca3eb24` captures motion first and makes
+the geometry transition one-way because the frozen native surface does not
+reproduce its initial optical pixels after an 80-to-24 resize round trip.
 
 ## Global Constraints
 
@@ -618,9 +619,10 @@ Capture the same nine variants and return gates as today. Native already has a
 slab-free static source; route both modes through the same manifest/static
 state shape. Historically, after the final static return to default, this step
 captured reference geometry `default` immediately with the existing probe.
-The post-execution amendment now transitions that same probe to the
-geometry-only 80-pixel scene first, then restores 24 pixels before motion. Do
-not capture another geometry source or spawn a second probe. Remove
+The post-execution amendment captures motion first in the 24-pixel scene,
+then transitions that same probe once to the geometry-only 80-pixel scene. Do
+not capture another geometry source, spawn a second probe, or round-trip the
+scene back to 24 pixels. Remove
 `show_reference_preview`, the static-anchor helpers, their PID cleanup state
 and cleanup test, the separate reference geometry-source capture,
 `static_source`, and the phase-equivalent registration metadata completely.
