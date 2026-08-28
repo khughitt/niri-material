@@ -3,7 +3,7 @@
 **Status:** implemented and passed 2026-08-28. The corrected physical DRM run
 passed all 19 machine gates and all nine physical observations at
 `niri-experiments` result commit
-`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native materials v1 is
+`c0caa944db2edc5dc4844e6720951d7f32652b76`. Native materials v1 is
 accepted. Corrective fixture commit `901b5a4` isolated every kitty client with
 `--config NONE`; the candidate binary was unchanged.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`

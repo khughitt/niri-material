@@ -3,7 +3,7 @@
 **Status:** implemented 2026-08-24 in `e579dae5`, `0c5f809f`, `6cd06de2`,
 `73a733db`, and `b8fe7b84`. The corrected physical DRM run passed all 19
 machine gates and all nine physical observations at `niri-experiments`
-result commit `16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native
+result commit `c0caa944db2edc5dc4844e6720951d7f32652b76`. Native
 materials v1 is accepted.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 **Gate recorded in:** `docs/materials/2026-08-24-v1-parity-design.md`,
@@ -429,5 +429,5 @@ radius derivation needs `bevel` for the outer edge — so a split touches
 
 This design and the parity pass are complete. The corrected physical DRM run
 passed at `niri-experiments` result commit
-`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`; native materials v1 is
+`c0caa944db2edc5dc4844e6720951d7f32652b76`; native materials v1 is
 accepted.

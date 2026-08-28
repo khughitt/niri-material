@@ -7,7 +7,7 @@ all 28 implementation rows, and all 14 combined parameters. The
 config-surface review and frozen-reference parity gate are complete. The
 corrected physical DRM run passed all 19 machine gates and all nine physical
 observations at `niri-experiments` result commit
-`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native materials v1 is
+`c0caa944db2edc5dc4844e6720951d7f32652b76`. Native materials v1 is
 accepted. The corrected full capture uses the 80-pixel geometry scene proven
 by the earlier 3/3 preflight at `af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
@@ -332,7 +332,7 @@ The production implementation is unchanged by this pass. Result commit
 captures and their semantic PASS: 14/14 combined parameters pass. The
 config-surface review is already implemented. The corrected physical DRM run
 passed at `niri-experiments` result commit
-`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`; native materials v1 is
+`c0caa944db2edc5dc4844e6720951d7f32652b76`; native materials v1 is
 accepted.
 
 ## Alternatives rejected

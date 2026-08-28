@@ -59,7 +59,7 @@ frozen-reference captures pinned to `niri-experiments` capture base
 implementation rows, and all 14 combined parameters. The config-surface
 review and parity gate are complete. The corrected physical DRM run passed all
 19 machine gates and all nine physical observations at `niri-experiments`
-result commit `16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native
+result commit `c0caa944db2edc5dc4844e6720951d7f32652b76`. Native
 materials v1 is accepted.
 A frozen-reference geometry-only preflight at `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 at

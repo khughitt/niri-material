@@ -21,7 +21,7 @@ shaders, `cargo test`.
 **Status:** executed 2026-08-24 in `e579dae5`, `0c5f809f`, `6cd06de2`,
 `73a733db`, and `b8fe7b84`. The corrected physical DRM run passed all 19
 machine gates and all nine physical observations at `niri-experiments`
-result commit `16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`; native
+result commit `c0caa944db2edc5dc4844e6720951d7f32652b76`; native
 materials v1 is accepted.
 
 ## Global Constraints
