@@ -9,8 +9,8 @@
 corrected physical DRM run passed all 19 machine gates and all nine physical
 observations at `niri-experiments` result commit
 `c0caa944db2edc5dc4844e6720951d7f32652b76`. Native materials v1 is
-accepted. Corrective result/status branch review, integration, and recoverable
-external-artifact cleanup remain pending.
+accepted. Corrective result/status branch review is complete; integration and
+recoverable external-artifact cleanup remain pending.
 
 **Goal:** Produce a controlled, auditable physical-DRM smoke result for the
 frozen native-materials v1 candidate and reconcile the v1 acceptance status
