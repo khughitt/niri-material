@@ -25,8 +25,10 @@ the frozen-reference preflight passed 9/9 rows. Final capture base
 `b851e5208b54cc466d99bf3ae664cc5a52c2317f` and result commit
 `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f` passed integrity with all 28
 implementation rows and all 14 combined parameters in two independent
-captures. The parity gate is complete; physical DRM remains before v1
-acceptance.
+captures. The parity gate is complete. Physical DRM acceptance later produced
+a valid FAIL at `niri-experiments` result commit
+`dbb277557f454b803af15e7dcd933a97aeea2e7b`: four exact-rest machine gates
+and physical observation 8 failed, so native materials v1 remains blocked.
 
 **Post-execution amendment:** `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` adds an exact reference-geometry

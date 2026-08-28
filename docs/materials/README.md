@@ -16,12 +16,14 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-22-v1-design.md`: accepted v1 material architecture.
 - `2026-08-24-v1-parity-design.md`: executed frozen-reference parity design.
 - `2026-08-25-v1-reference-static-preflight-design.md`: implemented static-instrument correction.
+- `2026-08-27-v1-drm-acceptance-design.md`: implemented physical DRM acceptance design; valid FAIL.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
 - `plans/2026-08-22-slice1.md`: implemented config-and-assignment plan.
 - `plans/2026-08-23-slice2.md`: implemented glass shader and composition plan.
 - `plans/2026-08-26-v1-reference-static-preflight.md`: executed parity preflight and recapture plan.
+- `plans/2026-08-27-v1-drm-acceptance.md`: executed physical DRM acceptance plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the
@@ -55,8 +57,12 @@ frozen-reference captures pinned to `niri-experiments` capture base
 `b851e5208b54cc466d99bf3ae664cc5a52c2317f`, then graded at result commit
 `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f`, passed integrity, all 28
 implementation rows, and all 14 combined parameters. The config-surface
-review and parity gate are complete; physical DRM smoke is the remaining v1
-acceptance step.
+review and parity gate are complete. Physical DRM acceptance produced a valid
+FAIL at `niri-experiments` result commit
+`dbb277557f454b803af15e7dcd933a97aeea2e7b`: machine gates
+`remap-return`, `overview-return`, `workspace-return`, and `final-return`
+failed, physical observation 8 found a clipped left-edge strip-end overhang,
+and native materials v1 remains blocked.
 A frozen-reference geometry-only preflight at `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 at
 80-pixel gaps, identifying the recorded shift failures as output clipping.

@@ -1,7 +1,12 @@
 # Glass config surface: design
 
 **Status:** implemented 2026-08-24 in `e579dae5`, `0c5f809f`, `6cd06de2`,
-`73a733db`, and `b8fe7b84`.
+`73a733db`, and `b8fe7b84`. Physical DRM acceptance later produced a valid
+FAIL at `niri-experiments` result commit
+`dbb277557f454b803af15e7dcd933a97aeea2e7b`: machine gates
+`remap-return`, `overview-return`, `workspace-return`, and `final-return`
+failed, physical observation 8 found a clipped left-edge strip-end overhang,
+and native materials v1 remains blocked.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 **Gate recorded in:** `docs/materials/2026-08-24-v1-parity-design.md`,
 “Config surface review”
@@ -424,5 +429,7 @@ entangled — `bevel` is what makes `thickness`-as-depth meaningful, and the
 radius derivation needs `bevel` for the outer edge — so a split touches
 `slabSurface` twice.
 
-Neither this design nor the parity pass satisfies the physical DRM gate or v1
-acceptance.
+This design and the parity pass are complete. The later physical DRM gate
+produced the valid FAIL recorded at `niri-experiments` commit
+`dbb277557f454b803af15e7dcd933a97aeea2e7b`; native materials v1 remains
+blocked.

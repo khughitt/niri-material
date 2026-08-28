@@ -1,6 +1,11 @@
 # Native materials v1 physical DRM acceptance: design
 
-**Status:** accepted 2026-08-27; not implemented.
+**Status:** implemented 2026-08-28. The physical run produced a valid FAIL at
+`niri-experiments` result commit
+`dbb277557f454b803af15e7dcd933a97aeea2e7b`: machine gates
+`remap-return`, `overview-return`, `workspace-return`, and `final-return`
+failed with AE `68343.5`, physical observation 8 found a clipped left-edge
+strip-end overhang, and native materials v1 remains blocked.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal

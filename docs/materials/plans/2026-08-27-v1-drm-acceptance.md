@@ -5,7 +5,14 @@
 > superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** draft 2026-08-27; not implemented.
+**Status:** executed through verdict recording 2026-08-28. Evidence fixture
+commit `322c842ae362c05c6f6dbb23ce07b167276e158e` produced a valid physical DRM
+FAIL recorded at `niri-experiments` result commit
+`dbb277557f454b803af15e7dcd933a97aeea2e7b`: machine gates
+`remap-return`, `overview-return`, `workspace-return`, and `final-return`
+failed with AE `68343.5`, physical observation 8 found a clipped left-edge
+strip-end overhang, and native materials v1 remains blocked. Task 7 review,
+external-artifact cleanup, and branch integration remain pending.
 
 **Goal:** Produce a controlled, auditable physical-DRM smoke result for the
 frozen native-materials v1 candidate and reconcile the v1 acceptance status
@@ -81,7 +88,7 @@ format would add an interface with no second consumer.
 - Produces: a KDL file accepted by the candidate binary; app IDs
   `v1-drm-probe` and `v1-drm-control`; exit bind `Mod+Shift+E`.
 
-- [ ] **Step 1: Verify both source trees and create the evidence worktree**
+- [x] **Step 1: Verify both source trees and create the evidence worktree**
 
 Run from the material design worktree:
 
@@ -103,7 +110,7 @@ git -C "$experiments_repo" worktree add \
 
 Expected: both pin checks pass; the new worktree is clean at `c4b71a4`.
 
-- [ ] **Step 2: Write the exact physical scene**
+- [x] **Step 2: Write the exact physical scene**
 
 Create `fixtures/v1-drm-smoke.kdl` in the evidence worktree with:
 
@@ -184,7 +191,7 @@ The failed-config overlay is disabled so the invalid-reload screenshot can
 measure retained appearance rather than the expected notification.
 Omitting `variable-refresh-rate` keeps VRR off.
 
-- [ ] **Step 3: Validate the scene and its retained diagnostic input**
+- [x] **Step 3: Validate the scene and its retained diagnostic input**
 
 Run with any binary built from the accepted production tree:
 
@@ -198,7 +205,7 @@ sha256sum fixtures/diagnostic-grid.png
 Expected: config valid; dimensions `40x40`; SHA-256
 `6fafae8c6cf3e3815346128ffdb402d5c730ae3a8749cb060013821ba0fe0316`.
 
-- [ ] **Step 4: Commit the scene**
+- [x] **Step 4: Commit the scene**
 
 ```sh
 git add fixtures/v1-drm-smoke.kdl
@@ -225,7 +232,7 @@ git commit -m "test(fixtures): define physical DRM scene"
 - Produces from `--run`: owned runtime state, captures, logs, state JSON, and
   an eventual machine summary through the Task 3 analyzer.
 
-- [ ] **Step 1: Write the failing integrated self-test first**
+- [x] **Step 1: Write the failing integrated self-test first**
 
 Start `fixtures/v1-drm-smoke.sh` with `set -eu`, the four-mode `usage`, and a
 `self_test` function that calls not-yet-defined pure helpers. The first test
@@ -268,7 +275,7 @@ env NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material \
 Expected: FAIL because `validate_session_facts`, `make_test_handoff`,
 `validate_handoff`, and `stop_owned_children` do not exist yet.
 
-- [ ] **Step 2: Implement exact root, path, session, and hardware guards**
+- [x] **Step 2: Implement exact root, path, session, and hardware guards**
 
 Add helpers with these contracts:
 
@@ -313,7 +320,7 @@ Also require `jq`, `magick`, `kitty`, `swaybg`, `sha256sum`, `loginctl`,
 path as absolute. Accept artifact directories only under
 `$work_root/v1-drm-acceptance.*` and the handoff only under `$work_root`.
 
-- [ ] **Step 3: Implement exact-schema handoff preparation and validation**
+- [x] **Step 3: Implement exact-schema handoff preparation and validation**
 
 `--prepare` must refuse a dirty fixture worktree or nonempty artifact
 directory, validate the committed config, and write schema 1 from values
@@ -376,7 +383,7 @@ tile, handoff, and wrapper so Task 4 can recheck the whole handoff before VT2.
 The script hash is computed before writing the handoff; the fixture worktree
 must be clean so the recorded evidence commit identifies those bytes.
 
-- [ ] **Step 4: Implement owned cleanup and atomic run locking**
+- [x] **Step 4: Implement owned cleanup and atomic run locking**
 
 Use an atomic directory lock at
 `$work_root/v1-drm-acceptance.lock`, storing the runner PID inside it. Cleanup
@@ -404,7 +411,7 @@ Initialize every PID variable, including `old_probe_pid`, to empty before
 installing the trap. After close, retain the old PID for cleanup and wait for
 its normal exit; cleanup still handles it if kitty remains alive.
 
-- [ ] **Step 5: Make the preflight self-test pass**
+- [x] **Step 5: Make the preflight self-test pass**
 
 Complete `make_test_handoff` using a regular copy of the supplied binary in
 the self-test directory, so symlink rejection is exercised independently of
@@ -438,7 +445,7 @@ directory and child process are gone.
 - Remap gate: new probe ID plus byte identity between
   `captures/remap-settled.png` and `captures/initial-a.png`.
 
-- [ ] **Step 1: Add failing analyzer controls to `--self-test`**
+- [x] **Step 1: Add failing analyzer controls to `--self-test`**
 
 Create a synthetic 320×180 artifact set with ImageMagick and record those
 dimensions in its `environment.json`. Use a static tiled background for
@@ -472,7 +479,7 @@ printf '%s\n' 'ERROR renderer failed' >>"$st_dir/pass/niri.log"
 
 Expected before implementation: FAIL because `analyze_artifacts` is missing.
 
-- [ ] **Step 2: Implement compositor startup, output validation, and clients**
+- [x] **Step 2: Implement compositor startup, output validation, and clients**
 
 Create fresh mode-700 runtime/config/cache directories. Copy the committed KDL
 to `runtime-default.kdl` and `runtime-active.kdl`. Start plain niri with an
@@ -524,7 +531,7 @@ the cursor with `\033[?25l`, render only a fixed opaque color marker plus
 otherwise static content, and end in `exec sleep 3600`. Poll IPC until exactly
 one window of each app ID exists; focus the probe by ID.
 
-- [ ] **Step 3: Implement capture, reload, motion, and return helpers**
+- [x] **Step 3: Implement capture, reload, motion, and return helpers**
 
 Add these helpers:
 
@@ -580,7 +587,7 @@ Record requested and actual offsets in `action-trace.tsv`. A failed action,
 missing capture, changed same-name reload ID, unchanged remap ID, or early
 operator exit is integrity failure exit 2.
 
-- [ ] **Step 4: Implement exact machine gates**
+- [x] **Step 4: Implement exact machine gates**
 
 `analyze_artifacts HANDOFF EXPECTED_WIDTH EXPECTED_HEIGHT` must validate all
 paths and hashes before interpreting images. Production `--run` and
@@ -627,7 +634,7 @@ Write `machine-summary.json` with exact keys `schema`, `verdict`, `pins`,
 `environment`, `inventory`, and `gates`. Every gate has exact keys `name`,
 `status`, and `evidence`.
 
-- [ ] **Step 5: Make analyzer controls and the full self-test pass**
+- [x] **Step 5: Make analyzer controls and the full self-test pass**
 
 Run:
 
@@ -642,7 +649,7 @@ Expected: the passing synthetic artifact returns 0; the mutated remap returns
 1 with only `remap-return` failed; the injected renderer error returns 1;
 tampered handoffs return 2; all self-test work and child processes are gone.
 
-- [ ] **Step 6: Commit the fixture**
+- [x] **Step 6: Commit the fixture**
 
 ```sh
 git add fixtures/v1-drm-smoke.sh
@@ -665,7 +672,7 @@ git commit -m "test(fixtures): add physical DRM smoke"
 - Produces: validated release binary, immutable handoff JSON, and a one-command
   VT2 wrapper.
 
-- [ ] **Step 1: Create the detached candidate worktree and dedicated target**
+- [x] **Step 1: Create the detached candidate worktree and dedicated target**
 
 From the main material checkout:
 
@@ -683,7 +690,7 @@ env CARGO_TARGET_DIR="$candidate_target" \
 Expected binary:
 `/mnt/ssd3/niri-material/targets/v1-drm-acceptance/release/niri`.
 
-- [ ] **Step 2: Verify the binary and rerun the complete source tests**
+- [x] **Step 2: Verify the binary and rerun the complete source tests**
 
 ```sh
 candidate_binary=/mnt/ssd3/niri-material/targets/v1-drm-acceptance/release/niri
@@ -697,7 +704,7 @@ env CARGO_TARGET_DIR="$candidate_target" \
 
 Expected: the same 293-test baseline is green; record the actual binary hash.
 
-- [ ] **Step 3: Run fixture self-tests against the release candidate**
+- [x] **Step 3: Run fixture self-tests against the release candidate**
 
 From the evidence worktree:
 
@@ -708,7 +715,7 @@ env NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material \
 
 Expected: all self-tests pass and leave no `v1-drm-self-test.*` directory.
 
-- [ ] **Step 4: Prepare one unique run and prove non-VT refusal**
+- [x] **Step 4: Prepare one unique run and prove non-VT refusal**
 
 ```sh
 export NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material
@@ -729,7 +736,7 @@ test ! -e "$NIRI_MATERIAL_WORK_ROOT/v1-drm-acceptance.lock"
 Expected refusal explains that the current session is not active VT2 and
 creates no runtime directory, socket, client, or compositor.
 
-- [ ] **Step 5: Inspect the generated VT2 wrapper and handoff**
+- [x] **Step 5: Inspect the generated VT2 wrapper and handoff**
 
 `--prepare` has already written the wrapper from resolved paths. Verify that
 it contains only the shebang, `set -eu`, exact work-root export, and one
@@ -757,7 +764,7 @@ hash, clean trees, and successful self-test.
 - Produces: raw machine evidence plus nine explicit physical observations
   reported after returning to VT1.
 
-- [ ] **Step 1: Record the pre-switch state and give the recovery procedure**
+- [x] **Step 1: Record the pre-switch state and give the recovery procedure**
 
 Before asking the operator to switch, record current VT1/session/output facts
 and confirm the existing niri session is healthy. State the recovery steps
@@ -775,7 +782,7 @@ verbatim:
 If the candidate display is unusable, skip directly to step 6. Do not kill
 the VT1 compositor.
 
-- [ ] **Step 2: Run on VT2 and watch every physical gate**
+- [x] **Step 2: Run on VT2 and watch every physical gate**
 
 The operator watches specifically for:
 
@@ -792,7 +799,7 @@ The operator watches specifically for:
 
 No blanket observation substitutes for these rows.
 
-- [ ] **Step 3: Return to VT1 and verify machine completion before asking for observations**
+- [x] **Step 3: Return to VT1 and verify machine completion before asking for observations**
 
 ```sh
 handoff=/mnt/ssd3/niri-material/v1-drm-acceptance-handoff.json
@@ -809,7 +816,7 @@ If integrity is incomplete or analyzer exit is 2, stop without interpreting
 the physical observations. If evidence is valid, ask the operator to report
 PASS or FAIL for each numbered row and record their wording verbatim.
 
-- [ ] **Step 4: Regrade independently**
+- [x] **Step 4: Regrade independently**
 
 From the evidence worktree:
 
@@ -847,7 +854,7 @@ is a valid machine failure; retain and report it. Exit 2 is invalid evidence.
 - Produces: the sole auditable v1 acceptance verdict and consistent current
   status claims in both repositories.
 
-- [ ] **Step 1: Write the result from actual evidence only**
+- [x] **Step 1: Write the result from actual evidence only**
 
 Set the result header to exactly one of `PASS`, `FAIL`, or `INVALID` using the
 rules below. The document must contain these sections in order:
@@ -878,7 +885,7 @@ PASS requires machine PASS plus nine physical PASS rows. A valid failure names
 each failed row and keeps v1 blocked. INVALID records the integrity defect but
 does not infer visual correctness.
 
-- [ ] **Step 2: Verify and commit the evidence result**
+- [x] **Step 2: Verify and commit the evidence result**
 
 ```sh
 sha256sum "$artifact_dir/captures.sha256" \
@@ -893,7 +900,7 @@ git commit -m "docs(results): record v1 physical DRM acceptance"
 
 The result commit hash becomes the evidence pin used in the material docs.
 
-- [ ] **Step 3: Update current material status claims from the verdict**
+- [x] **Step 3: Update current material status claims from the verdict**
 
 For PASS, state that physical DRM passed on the pinned RTX 3070/DP-1 system
 and native materials v1 is accepted, citing the literal evidence result
@@ -905,7 +912,7 @@ this plan status to executed, and check only steps evidenced by the tree and
 run artifacts. Do not rewrite historical procedure prose as though it had
 always been complete.
 
-- [ ] **Step 4: Grep both repositories for propagated drift**
+- [x] **Step 4: Grep both repositories for propagated drift**
 
 ```sh
 rg -n 'physical DRM|DRM smoke|v1 acceptance|v1 accepted|remains|pending|blocked|incomplete' \
@@ -918,7 +925,7 @@ Read every hit. Current status surfaces must agree with the actual verdict;
 historical instructions may remain when their status header makes chronology
 unambiguous.
 
-- [ ] **Step 5: Verify and commit the material status change**
+- [x] **Step 5: Verify and commit the material status change**
 
 ```sh
 git diff --check
