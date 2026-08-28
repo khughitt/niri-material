@@ -1,13 +1,11 @@
 # Native materials v1 physical DRM acceptance: design
 
-**Status:** implemented 2026-08-28. The physical run recorded at
-`niri-experiments` commit `dbb277557f454b803af15e7dcd933a97aeea2e7b`
-was invalidated by audit commit
-`f10432f876c37576d8f27b1dad0fba624f6d445f`: kitty clients inherited the
-operator configuration, violating the opaque-control precondition after probe
-remap. Physical observations 1–9 passed. Native materials v1 remains
-unaccepted pending an isolated rerun with corrective fixture commit
-`901b5a41e7e18f2a3fe73d5d630342fa21e6a45e`.
+**Status:** implemented and passed 2026-08-28. The corrected physical DRM run
+passed all 19 machine gates and all nine physical observations at
+`niri-experiments` result commit
+`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native materials v1 is
+accepted. Corrective fixture commit `901b5a4` isolated every kitty client with
+`--config NONE`; the candidate binary was unchanged.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal

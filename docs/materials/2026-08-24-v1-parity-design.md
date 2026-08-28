@@ -5,13 +5,11 @@
 `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f`. Both captures passed integrity,
 all 28 implementation rows, and all 14 combined parameters. The
 config-surface review and frozen-reference parity gate are complete. The
-physical DRM run at `niri-experiments` commit
-`dbb277557f454b803af15e7dcd933a97aeea2e7b` was invalidated by audit commit
-`f10432f876c37576d8f27b1dad0fba624f6d445f`: kitty clients inherited
-operator configuration. Physical observations 1–9 passed. Native materials
-v1 remains unaccepted pending an isolated rerun with corrective fixture
-commit `901b5a4`. The corrected full capture uses the 80-pixel geometry scene
-proven by the earlier 3/3 preflight at `af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
+corrected physical DRM run passed all 19 machine gates and all nine physical
+observations at `niri-experiments` result commit
+`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native materials v1 is
+accepted. The corrected full capture uses the 80-pixel geometry scene proven
+by the earlier 3/3 preflight at `af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -332,10 +330,10 @@ The frozen `niri-glass` source is not modified.
 The production implementation is unchanged by this pass. Result commit
 `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f` records two corrected complete
 captures and their semantic PASS: 14/14 combined parameters pass. The
-config-surface review is already implemented. The later physical DRM run was
-invalidated at `niri-experiments` commit
-`f10432f876c37576d8f27b1dad0fba624f6d445f`; v1 remains unaccepted pending
-an isolated rerun.
+config-surface review is already implemented. The corrected physical DRM run
+passed at `niri-experiments` result commit
+`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`; native materials v1 is
+accepted.
 
 ## Alternatives rejected
 

@@ -5,15 +5,12 @@
 > superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** executed and integrated 2026-08-28. The run recorded at
-`niri-experiments` commit `dbb277557f454b803af15e7dcd933a97aeea2e7b`
-was invalidated by audit commit
-`f10432f876c37576d8f27b1dad0fba624f6d445f`: kitty clients inherited
-operator configuration, violating the opaque-control precondition. Physical
-observations 1–9 passed. Native materials v1 remains unaccepted pending an
-isolated rerun with corrective fixture commit
-`901b5a41e7e18f2a3fe73d5d630342fa21e6a45e`. Task 7 review, recoverable
-external-artifact cleanup, and branch integration are complete.
+**Status:** executed; the original branches were integrated 2026-08-28. The
+corrected physical DRM run passed all 19 machine gates and all nine physical
+observations at `niri-experiments` result commit
+`16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native materials v1 is
+accepted. Corrective result/status branch review, integration, and recoverable
+external-artifact cleanup remain pending.
 
 **Goal:** Produce a controlled, auditable physical-DRM smoke result for the
 frozen native-materials v1 candidate and reconcile the v1 acceptance status

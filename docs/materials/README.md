@@ -16,7 +16,7 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-22-v1-design.md`: accepted v1 material architecture.
 - `2026-08-24-v1-parity-design.md`: executed frozen-reference parity design.
 - `2026-08-25-v1-reference-static-preflight-design.md`: implemented static-instrument correction.
-- `2026-08-27-v1-drm-acceptance-design.md`: implemented physical DRM acceptance design; isolated rerun pending.
+- `2026-08-27-v1-drm-acceptance-design.md`: implemented and passed physical DRM acceptance design.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
@@ -57,13 +57,10 @@ frozen-reference captures pinned to `niri-experiments` capture base
 `b851e5208b54cc466d99bf3ae664cc5a52c2317f`, then graded at result commit
 `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f`, passed integrity, all 28
 implementation rows, and all 14 combined parameters. The config-surface
-review and parity gate are complete. The physical DRM run at
-`niri-experiments` commit `dbb277557f454b803af15e7dcd933a97aeea2e7b`
-was invalidated by audit commit
-`f10432f876c37576d8f27b1dad0fba624f6d445f`: kitty clients inherited
-operator configuration. Physical observations 1–9 passed. Native materials
-v1 remains unaccepted pending an isolated rerun with corrective fixture
-commit `901b5a4`.
+review and parity gate are complete. The corrected physical DRM run passed all
+19 machine gates and all nine physical observations at `niri-experiments`
+result commit `16d2b4aa957637fa9339fc4bc0c4f7bd7b4aca34`. Native
+materials v1 is accepted.
 A frozen-reference geometry-only preflight at `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 at
 80-pixel gaps, identifying the recorded shift failures as output clipping.
