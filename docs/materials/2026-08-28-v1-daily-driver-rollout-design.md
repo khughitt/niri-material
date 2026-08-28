@@ -1,6 +1,6 @@
 # Native materials v1 daily-driver rollout: design
 
-**Status:** approved 2026-08-28; not implemented.
+**Status:** proposed 2026-08-28; revised after review; not implemented.
 
 ## Context
 
@@ -13,7 +13,8 @@ The accepted compositor is not yet the daily-driver installation. Arch's
 `niri` package owns `/usr/bin/niri`, while an unmanaged
 `/usr/local/bin/niri` at patched source `5e53b949` wins through `PATH`. The
 normal niri config still launches the frozen Quickshell `niri-glass` client
-for Kitty and Ghostty.
+with an allowlist intended for Kitty and Ghostty, although its exact `ghostty`
+entry does not match Ghostty's live app ID.
 
 This rollout turns the accepted implementation into a package-owned daily
 driver without changing production material code. It also curates current
@@ -27,9 +28,10 @@ material surface as undeployed.
 | Package manager | Arch `PKGBUILD` built with `makepkg`, installed with pacman |
 | Package identity | `niri-material`, providing and conflicting with `niri` |
 | Production source | Remote commit `138697be4cbb779c80425fe2a366ceca3610f38e` |
-| Installed paths | The same paths and resources as Arch's `niri` package |
+| Installed paths | The same literal paths and resources as Arch's `niri` package |
 | Build storage | Required `$NIRI_MATERIAL_WORK_ROOT`; no in-repository or `/tmp` fallback |
-| Initial material scope | Kitty and Ghostty, matching the existing legacy allowlist |
+| Initial material scope | Kitty and Ghostty, using their live exact app IDs |
+| Native sampling | Accept six derived taps at chromatic aberration `0.68`, versus the legacy client's configured three samples |
 | Legacy runtime | Quickshell glass no longer starts normally; its frozen source and inputs remain available for evidence work |
 | Restart | Manual graphical-session restart after package and config preflight |
 | Completion | One normal-use session and one cold start without a rollout defect |
@@ -38,15 +40,27 @@ material surface as undeployed.
 
 `packaging/arch/PKGBUILD` is a narrow adaptation of Arch's niri package. It
 keeps Arch's runtime dependencies, optional dependencies, release build,
-tests, installed resources, session integration, portal configuration, and
-shell completions. The intentional differences are:
+installed resources, session integration, portal configuration, and shell
+completions. Its complete recipe-level differences are:
 
 - `pkgname=niri-material`;
+- `pkgver=26.04.r95.g138697be` and `pkgrel=1`, with no `pkgver()` function;
 - `provides=("niri=$pkgver" wayland-compositor)`;
 - conflicts with `niri`, `niri-git`, and `niri-bin`;
-- source is the project remote pinned with
-  `#commit=138697be4cbb779c80425fe2a366ceca3610f38e`; and
-- the package version identifies the accepted commit.
+- source is the named VCS checkout
+  `niri::git+https://github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e`,
+  with `sha256sums=('SKIP')` because the immutable commit is the source pin;
+- `prepare()`, `build()`, `check()`, and `package()` enter
+  `"$srcdir/niri"` instead of a release-tarball directory;
+- `build()` exports `NIRI_BUILD_COMMIT=138697be` directly instead of deriving
+  it from a tar archive; and
+- `check()` runs the accepted baseline command exactly:
+  `cargo test --workspace --all-targets --locked`.
+
+The fixed version is pacman-comparable with upstream `26.04` and identifies
+both the 95 commits after `upstream/main` and the accepted source commit. A
+dynamic `pkgver()` would add no information to a checkout that is deliberately
+pinned to one commit.
 
 Pinning the accepted production commit avoids a self-reference between a
 committed `PKGBUILD` and the commit literal inside it. It is also stronger
@@ -54,14 +68,19 @@ than tagging the later documentation head: `git diff` confirms that every
 change after `138697be` and before this design is under `docs/`, so the
 production tree is identical to the candidate exercised on physical DRM.
 
-The package installs `/usr/bin/niri`, `niri-session`, the systemd user units,
-Wayland session entry, portal configuration, default config and README, and
-the three shell completions. Pacman owns every deployed file; the package does
-not modify `/usr/local` from an install hook.
+The package recipe does not derive installed filenames from `$pkgname`.
+`package()` reads `target/release/niri` and the literal `resources/niri*`
+inputs, then installs `/usr/bin/niri`, `/usr/bin/niri-session`, the
+`niri.service` and `niri-shutdown.target` user units, `niri.desktop`,
+`niri-portals.conf`, the default config and README under
+`/usr/share/doc/niri/`, and the three `niri` shell completions. Thus the
+metadata name changes without moving any path in Arch's 27-file inventory.
+Pacman owns every deployed file; the package does not modify `/usr/local` from
+an install hook.
 
-The package `check()` runs the existing workspace test suite. The accepted
-baseline is 293 tests: 244 `niri`, 45 `niri-config`, one wiki parse, and three
-`niri-ipc` tests.
+The pinned `check()` command runs the existing workspace test suite without
+`--all-features`. Its accepted baseline is 293 tests: 244 `niri`, 45
+`niri-config`, one wiki parse, and three `niri-ipc` tests.
 
 ## Build and artifact lifecycle
 
@@ -143,14 +162,39 @@ These are the active legacy values where v1 has a corresponding public
 control. `bevel 9` is the reviewed inverse mapping from legacy `paneLip 5`
 and four-pixel shifts: `5 + max(abs(4), abs(4))`. Roughness is absent because
 v1 does not expose it. Sample count is derived from the strongest multi-tap
-effect; chromatic aberration `0.68` yields six taps.
+effect; chromatic aberration `0.68` yields six taps. This is an accepted
+divergence from the legacy JSON's `samples: 3`: native v1 deliberately removed
+the user-facing GPU-cost dial and derives the count from effect strength. It
+doubles this effect's loop count, not necessarily total frame cost, and the
+normal-use burn-in is responsible for rejecting observable stutter.
 
-One rule assigns `terminal-glass` to exact Kitty and Ghostty app IDs. Because
-it follows generated Prism rules, it also disables their redundant background
-effect while retaining Prism's focus-conditioned opacity. The material owns
-the transmitted background; leaving a separate blur/noise effect beneath its
-non-opaque render element would spend another pass without contributing the
-intended native result.
+One rule assigns `terminal-glass` to the live exact app IDs and clears both
+rendering controls that keep Prism's background effect visible:
+
+```kdl
+window-rule {
+    match app-id=r#"^(kitty|com\.mitchellh\.ghostty)$"#
+    material "terminal-glass"
+    background-effect {
+        blur false
+        noise 0
+    }
+}
+```
+
+Ghostty's live app ID is `com.mitchellh.ghostty`. The legacy client's exact
+string allowlist contained `ghostty`, so it did not actually treat Ghostty;
+generated Prism's unanchored matcher does. Including Ghostty here follows the
+intended two-terminal scope and is an explicit rollout expansion, not a claim
+of identical legacy matching.
+
+Because this rule follows generated Prism rules, it retains Prism's
+focus-conditioned opacity. `blur false` alone is insufficient: Prism's
+nonzero `noise` keeps the background-effect render element visible, so
+`noise 0` is also required. Prism's `saturation 1` is already inert. The
+material owns the transmitted background; leaving a separate blur/noise
+effect beneath its non-opaque render element would spend another pass without
+contributing the intended native result.
 
 The main config includes `materials.kdl` and removes
 `spawn-at-startup "qs" "-c" "niri-glass"`. The frozen niri-glass checkout,
@@ -163,7 +207,8 @@ contract.
 The rollout updates only current-state claims:
 
 - `docs/materials/README.md` gains the accepted status, package/rollout entry
-  point, and concise build/use guidance;
+  point, concise build/use guidance, and its missing config-surface design,
+  Slice 3, config-surface, and parity plan index entries;
 - the v1 design status becomes a concise accepted result with authoritative
   evidence pins;
 - Slice 2 and Slice 3 plan headers and README prose record that their
@@ -177,9 +222,9 @@ Historical command blocks, conditional failure paths, result templates, and
 the frozen niri-glass documentation are not rewritten. They describe their
 original procedures rather than current project status.
 
-After each stale status correction, grep user-facing material docs for the
-same claim. Commit ancestry, not checked boxes or prose alone, is the evidence
-for merged status.
+After each stale status correction, grep user-facing material docs, including
+`docs/materials/material-config.md`, for the same claim. Commit ancestry, not
+checked boxes or prose alone, is the evidence for merged status.
 
 ## Verification and verdict
 
@@ -196,7 +241,8 @@ Post-restart gates:
 
 - the live compositor executable is package-owned `/usr/bin/niri` and its
   version names `138697be`;
-- no `niri-glass` Quickshell process or `glasspanes` layer is present;
+- no `niri-glass` Quickshell process or layer namespace beginning with
+  `glasspanes` is present;
 - Kitty and Ghostty show native material treatment through focus changes,
   movement, overview, workspace switching, close/remap, and valid config
   reload;
@@ -224,7 +270,7 @@ but weakens the direct connection to the physically accepted source and
 creates a commit-pin self-reference for the in-tree PKGBUILD.
 
 **Apply a patch series over Arch's source tarball.** This mirrors distro
-packaging at the cost of maintaining a second representation of the 103-commit
+packaging at the cost of maintaining a second representation of the 95-commit
 fork. The fork commit is already the reviewed source of truth.
 
 **Build directly with Cargo and copy to `/usr/local`.** This repeats the
