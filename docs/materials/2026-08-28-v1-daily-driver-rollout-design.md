@@ -1,6 +1,6 @@
 # Native materials v1 daily-driver rollout: design
 
-**Status:** proposed 2026-08-28; revised after review; not implemented.
+**Status:** approved 2026-08-28; not implemented.
 
 ## Context
 
@@ -74,7 +74,8 @@ inputs, then installs `/usr/bin/niri`, `/usr/bin/niri-session`, the
 `niri.service` and `niri-shutdown.target` user units, `niri.desktop`,
 `niri-portals.conf`, the default config and README under
 `/usr/share/doc/niri/`, and the three `niri` shell completions. Thus the
-metadata name changes without moving any path in Arch's 27-file inventory.
+metadata name changes without moving any path in Arch's 27 pacman entries (11
+regular files and 16 directories).
 Pacman owns every deployed file; the package does not modify `/usr/local` from
 an install hook.
 
@@ -178,6 +179,7 @@ window-rule {
     background-effect {
         blur false
         noise 0
+        saturation 1
     }
 }
 ```
@@ -191,7 +193,9 @@ of identical legacy matching.
 Because this rule follows generated Prism rules, it retains Prism's
 focus-conditioned opacity. `blur false` alone is insufficient: Prism's
 nonzero `noise` keeps the background-effect render element visible, so
-`noise 0` is also required. Prism's `saturation 1` is already inert. The
+`noise 0` is also required. Explicit `saturation 1` keeps suppression
+self-contained if Prism's generated saturation changes later. With blur,
+noise, and saturation inert, automatic xray selection is unreachable. The
 material owns the transmitted background; leaving a separate blur/noise
 effect beneath its non-opaque render element would spend another pass without
 contributing the intended native result.
