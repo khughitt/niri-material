@@ -1,11 +1,13 @@
 # Native materials v1 physical DRM acceptance: design
 
-**Status:** implemented 2026-08-28. The physical run produced a valid FAIL at
-`niri-experiments` result commit
-`dbb277557f454b803af15e7dcd933a97aeea2e7b`: machine gates
-`remap-return`, `overview-return`, `workspace-return`, and `final-return`
-failed with AE `68343.5`, physical observation 8 found a clipped left-edge
-strip-end overhang, and native materials v1 remains blocked.
+**Status:** implemented 2026-08-28. The physical run recorded at
+`niri-experiments` commit `dbb277557f454b803af15e7dcd933a97aeea2e7b`
+was invalidated by audit commit
+`f10432f876c37576d8f27b1dad0fba624f6d445f`: kitty clients inherited the
+operator configuration, violating the opaque-control precondition after probe
+remap. Physical observations 1–9 passed. Native materials v1 remains
+unaccepted pending an isolated rerun with corrective fixture commit
+`901b5a41e7e18f2a3fe73d5d630342fa21e6a45e`.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -128,10 +130,11 @@ representative visible combination of refraction, attenuation, distortion,
 anisotropic blur, jelly, bevel, and offset. There is no frozen-reference
 client in this run.
 
-Both kitty clients disable cursor blinking, hide the cursor, and run a static
-sleep payload. They render no clock, status, changing title, or other
-time-varying content. This suppression is a prerequisite for the settled-frame
-identity gate, matching the earlier slice-2 fixture.
+Both kitty clients use `--config NONE`, disable cursor blinking, hide the
+cursor, and run a static sleep payload. They render no clock, status, changing
+title, watcher, or other time-varying content. This isolation and suppression
+is a prerequisite for the settled-frame identity gate, matching the earlier
+slice-2 fixture.
 
 The launcher waits for the compositor, output, wallpaper, and exact expected
 window set before beginning. It records each IPC action and its completion

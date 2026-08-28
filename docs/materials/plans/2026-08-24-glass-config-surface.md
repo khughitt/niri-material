@@ -19,10 +19,11 @@ shaders, `cargo test`.
 **Spec:** `docs/materials/2026-08-24-glass-config-surface-design.md`
 
 **Status:** executed 2026-08-24 in `e579dae5`, `0c5f809f`, `6cd06de2`,
-`73a733db`, and `b8fe7b84`. Physical DRM acceptance later produced a valid
-FAIL at `niri-experiments` result commit
-`dbb277557f454b803af15e7dcd933a97aeea2e7b`: four exact-rest machine gates
-and physical observation 8 failed, so native materials v1 remains blocked.
+`73a733db`, and `b8fe7b84`. The later physical DRM run at
+`niri-experiments` commit `dbb277557f454b803af15e7dcd933a97aeea2e7b`
+was invalidated by audit commit
+`f10432f876c37576d8f27b1dad0fba624f6d445f`; native materials v1 remains
+unaccepted pending an isolated rerun with corrective fixture commit `901b5a4`.
 
 ## Global Constraints
 

@@ -5,14 +5,15 @@
 > superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** executed through verdict recording 2026-08-28. Evidence fixture
-commit `322c842ae362c05c6f6dbb23ce07b167276e158e` produced a valid physical DRM
-FAIL recorded at `niri-experiments` result commit
-`dbb277557f454b803af15e7dcd933a97aeea2e7b`: machine gates
-`remap-return`, `overview-return`, `workspace-return`, and `final-return`
-failed with AE `68343.5`, physical observation 8 found a clipped left-edge
-strip-end overhang, and native materials v1 remains blocked. Task 7 review,
-external-artifact cleanup, and branch integration remain pending.
+**Status:** executed and integrated 2026-08-28. The run recorded at
+`niri-experiments` commit `dbb277557f454b803af15e7dcd933a97aeea2e7b`
+was invalidated by audit commit
+`f10432f876c37576d8f27b1dad0fba624f6d445f`: kitty clients inherited
+operator configuration, violating the opaque-control precondition. Physical
+observations 1–9 passed. Native materials v1 remains unaccepted pending an
+isolated rerun with corrective fixture commit
+`901b5a41e7e18f2a3fe73d5d630342fa21e6a45e`. Task 7 review, recoverable
+external-artifact cleanup, and branch integration are complete.
 
 **Goal:** Produce a controlled, auditable physical-DRM smoke result for the
 frozen native-materials v1 candidate and reconcile the v1 acceptance status
@@ -523,7 +524,8 @@ connector status, and niri's exact output JSON. The analyzer rejects missing
 fields rather than filling defaults.
 
 Spawn the control first and probe second so closing/remapping the right-hand
-probe restores the original layout. Give both clients
+probe restores the original layout. Start both kitty clients with
+`--config NONE`, then give both clients
 `-o background='#101820'`; give the control `-o background_opacity=1` and the
 probe `-o background_opacity=0.10`, matching the proven slice-2 physical
 fixture. Both kitty commands must include `-o cursor_blink_interval=0`, hide
@@ -836,7 +838,7 @@ is a valid machine failure; retain and report it. Exit 2 is invalid evidence.
 
 **Files:**
 - Create: `niri-experiments/docs/results/2026-08-27-v1-drm-acceptance.md`
-- Modify on PASS or valid FAIL:
+- Modify on PASS, valid FAIL, or INVALID:
   - `docs/materials/2026-08-22-v1-design.md`
   - `docs/materials/2026-08-24-v1-parity-design.md`
   - `docs/materials/2026-08-25-v1-reference-static-preflight-design.md`
@@ -950,7 +952,7 @@ git commit -m "docs(materials): record v1 DRM acceptance"
 - Produces: review-ready branches, no running acceptance state, and no stale
   large artifacts outside Dropbox.
 
-- [ ] **Step 1: Run final independent checks before deleting evidence**
+- [x] **Step 1: Run final independent checks before deleting evidence**
 
 ```sh
 (cd "$artifact_dir" && sha256sum --check captures.sha256)
@@ -964,7 +966,7 @@ Review the machine summary against the result table, all nine operator rows,
 the exact log classifications, both repository pins, and every propagated
 status claim. Do not clean artifacts until this review is accepted.
 
-- [ ] **Step 2: Move exact external artifacts to trash**
+- [x] **Step 2: Move exact external artifacts to trash**
 
 After review approval, resolve and print the targets first:
 
@@ -979,7 +981,7 @@ those four targets. Report their total size and that recovery remains possible
 until trash is emptied. Verify no `v1-drm-runtime.*`, lock, niri process,
 client, or socket remains.
 
-- [ ] **Step 3: Remove the detached candidate worktree**
+- [x] **Step 3: Remove the detached candidate worktree**
 
 Run from the main material checkout:
 
@@ -994,7 +996,7 @@ git -C "$material_repo" worktree prune
 Expected: the detached candidate worktree is clean and removed without
 `--force`.
 
-- [ ] **Step 4: Present branch integration choices**
+- [x] **Step 4: Present branch integration choices**
 
 Keep both feature worktrees until the human chooses integration. Use the
 finishing-a-development-branch workflow separately for:

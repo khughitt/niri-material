@@ -4,14 +4,14 @@
 `b851e5208b54cc466d99bf3ae664cc5a52c2317f` and graded at result commit
 `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f`. Both captures passed integrity,
 all 28 implementation rows, and all 14 combined parameters. The
-config-surface review and frozen-reference parity gate are complete. Physical
-DRM acceptance produced a valid FAIL at `niri-experiments` result commit
-`dbb277557f454b803af15e7dcd933a97aeea2e7b`: machine gates
-`remap-return`, `overview-return`, `workspace-return`, and `final-return`
-failed, physical observation 8 found a clipped left-edge strip-end overhang,
-and native materials v1 remains blocked. The corrected full capture uses the
-80-pixel geometry scene proven by the earlier 3/3 preflight at
-`af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
+config-surface review and frozen-reference parity gate are complete. The
+physical DRM run at `niri-experiments` commit
+`dbb277557f454b803af15e7dcd933a97aeea2e7b` was invalidated by audit commit
+`f10432f876c37576d8f27b1dad0fba624f6d445f`: kitty clients inherited
+operator configuration. Physical observations 1–9 passed. Native materials
+v1 remains unaccepted pending an isolated rerun with corrective fixture
+commit `901b5a4`. The corrected full capture uses the 80-pixel geometry scene
+proven by the earlier 3/3 preflight at `af99babfdeed1f64e3bf52817b62a22c9d1c9d72`.
 **Parent design:** `docs/materials/2026-08-22-v1-design.md`
 
 ## Goal
@@ -332,10 +332,10 @@ The frozen `niri-glass` source is not modified.
 The production implementation is unchanged by this pass. Result commit
 `c4b71a4ebfbe3c82c56f964bfc24d4f7de1bde4f` records two corrected complete
 captures and their semantic PASS: 14/14 combined parameters pass. The
-config-surface review is already implemented. The later physical DRM gate is
-a valid FAIL at `niri-experiments` result commit
-`dbb277557f454b803af15e7dcd933a97aeea2e7b`; v1 remains blocked by its four
-failed exact-rest machine gates and physical observation 8.
+config-surface review is already implemented. The later physical DRM run was
+invalidated at `niri-experiments` commit
+`f10432f876c37576d8f27b1dad0fba624f6d445f`; v1 remains unaccepted pending
+an isolated rerun.
 
 ## Alternatives rejected
 
