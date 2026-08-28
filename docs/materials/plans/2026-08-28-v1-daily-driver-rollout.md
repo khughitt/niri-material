@@ -125,6 +125,8 @@ depends=(
 makedepends=(
   clang
   git
+  gtk4
+  libadwaita
   rust
 )
 optdepends=(
@@ -142,6 +144,7 @@ optdepends=(
 )
 provides=("niri=$pkgver" wayland-compositor)
 conflicts=(niri niri-git niri-bin)
+options=(!debug)
 source=("niri::git+https://github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e")
 sha256sums=('SKIP')
 
@@ -153,7 +156,7 @@ prepare() {
 build() {
   cd "$srcdir/niri"
   export NIRI_BUILD_COMMIT=138697be
-  CFLAGS+=(' -ffat-lto-objects')
+  CFLAGS+=" -ffat-lto-objects"
   cargo build --frozen --release --features default
 
   for shell in bash fish zsh; do
@@ -164,7 +167,7 @@ build() {
 
 check() {
   cd "$srcdir/niri"
-  export XDG_RUNTIME_DIR="$BUILDDIR/xdg-runtime"
+  export XDG_RUNTIME_DIR="$srcdir/xdg-runtime"
   install -dm 700 "$XDG_RUNTIME_DIR"
   export RAYON_NUM_THREADS=1
   cargo test --workspace --all-targets --locked
@@ -201,11 +204,18 @@ grep -Fx $'pkgbase = niri-material' <<<"$srcinfo"
 grep -Fx $'\tpkgver = 26.04.r95.g138697be' <<<"$srcinfo"
 grep -Fx $'\tprovides = niri=26.04.r95.g138697be' <<<"$srcinfo"
 grep -Fx $'\tconflicts = niri' <<<"$srcinfo"
+grep -Fx $'\toptions = !debug' <<<"$srcinfo"
 grep -F '138697be4cbb779c80425fe2a366ceca3610f38e' <<<"$srcinfo"
 ```
 
 Expected: syntax passes and every metadata assertion prints its exact line.
 Do not create or commit `.SRCINFO`; this is not an AUR repository.
+
+`prepare()` fetches the locked dependency graph, so `build()` uses `--frozen`
+to forbid either lockfile changes or network access. `check()` deliberately
+uses `--locked` instead: that is the exact command that established the
+293-test baseline, and the preceding fetch/build has already populated its
+dependencies.
 
 - [ ] **Step 4: Commit the package recipe**
 
@@ -656,6 +666,7 @@ install -d "$config_stage"
 cp "$dotfiles_wt/niri/config.kdl" "$dotfiles_wt/niri/materials.kdl" \
   "$dotfiles_wt/niri/host-titan.kdl" "$config_stage/"
 cp "$HOME/.local/state/prism/generated/prism.kdl" "$config_stage/prism.kdl"
+cp "$HOME/.config/niri/noctalia.kdl" "$config_stage/noctalia.kdl"
 ln -s host-titan.kdl "$config_stage/host.kdl"
 "$stagedir/usr/bin/niri" validate -c "$config_stage/config.kdl"
 sha256sum "$archive" "$logdest"/* | tee "$rollout_root/artifacts.sha256"
@@ -956,7 +967,7 @@ the rollback and leave all artifacts intact for diagnosis.
 
 ---
 
-### Task 7: Record deployment, integrate, and clean retained artifacts
+### Task 7: Record deployment, integrate, publish, and clean retained artifacts
 
 **Files:**
 - Modify: `docs/materials/2026-08-28-v1-daily-driver-rollout-design.md`
@@ -968,9 +979,9 @@ the rollback and leave all artifacts intact for diagnosis.
 
 **Interfaces:**
 - Consumes: explicit burn-in PASS and artifact hashes.
-- Produces: truthful deployed status on `materials-26.04`, merged dotfiles and
-  niri-material branches, retained package archive, and no stale heavy build
-  artifacts.
+- Produces: truthful deployed status on `materials-26.04`, merged and
+  published dotfiles/niri-material branches, retained package archive, and no
+  stale heavy build artifacts.
 
 - [ ] **Step 1: Record the concrete deployment evidence**
 
@@ -1009,12 +1020,10 @@ Update the README rollout paragraph from “accepted but undeployed” to the sa
 concise deployed result. Mark only actually executed checkboxes in this plan
 and change its status to `executed; deployed`.
 
-- [ ] **Step 2: Run final source, dotfiles, package, and drift checks**
+- [ ] **Step 2: Run final dotfiles, package, and drift checks**
 
 ```bash
 cd "$HOME/d/niri-material/.worktrees/v1-post-acceptance-planning"
-CARGO_TARGET_DIR=/mnt/ssd3/niri-material/target \
-  cargo test --workspace --all-targets --locked
 git diff --check
 git -C "$dotfiles_repo" status --short
 zsh "$dotfiles_repo/tests/setup_and_health.zsh"
@@ -1032,9 +1041,11 @@ test "$(readlink -f /proc/$(systemctl --user show niri.service -p MainPID --valu
   docs/materials/plans/2026-08-24-slice3.md
 ```
 
-Expected: 293 source tests pass; dotfiles tests/config pass; live package
-identity holds; no current-state drift remains. Existing unrelated dirty
-dotfiles paths are listed but unchanged.
+Expected: dotfiles tests/config pass; live package identity holds; no
+current-state drift remains. Existing unrelated dirty dotfiles paths are
+listed but unchanged. Task 4's package `check()` is the authoritative
+293-test run against the exact packaged source; rerunning it on this
+PKGBUILD-and-docs branch would add no production coverage.
 
 - [ ] **Step 3: Commit the truthful deployment result**
 
@@ -1063,7 +1074,35 @@ git -C "$material_repo" merge-base --is-ancestor \
 Expected: fast-forward only; the deployed design status lands in the same
 merge as the package and curated docs.
 
-- [ ] **Step 5: Pause for cleanup approval and validate exact targets**
+- [ ] **Step 5: Review and explicitly approve the two remote updates**
+
+```bash
+git -C "$dotfiles_repo" fetch origin main
+git -C "$material_repo" fetch origin materials-26.04
+git -C "$dotfiles_repo" merge-base --is-ancestor origin/main main
+git -C "$material_repo" merge-base --is-ancestor \
+  origin/materials-26.04 materials-26.04
+git -C "$dotfiles_repo" log --oneline origin/main..main
+git -C "$material_repo" log --oneline origin/materials-26.04..materials-26.04
+```
+
+Show both pending commit lists to the operator. Stop if either contains a
+commit outside the intended local history. After explicit approval, publish
+both fast-forward updates:
+
+```bash
+git -C "$dotfiles_repo" push origin main:main
+git -C "$material_repo" push origin materials-26.04:materials-26.04
+test "$(git -C "$dotfiles_repo" rev-parse main)" = \
+  "$(git -C "$dotfiles_repo" rev-parse origin/main)"
+test "$(git -C "$material_repo" rev-parse materials-26.04)" = \
+  "$(git -C "$material_repo" rev-parse origin/materials-26.04)"
+```
+
+Expected: the deployed config and deployment-status documentation are both
+durable on their existing remote branches.
+
+- [ ] **Step 6: Pause for cleanup approval and validate exact targets**
 
 ```bash
 rollback_binary=/usr/local/bin/niri-v26.04-2-g5e53b949.rollback
@@ -1089,7 +1128,7 @@ Show the operator these resolved paths before deletion:
 The package archive under `packages/`, `package-info.txt`, payload inventories,
 hash manifest, rollback metadata, and burn-in record remain retained.
 
-- [ ] **Step 6: After explicit approval, delete only the validated heavy/rollback targets**
+- [ ] **Step 7: After explicit approval, delete only the validated heavy/rollback targets**
 
 ```bash
 rm -rf -- \
@@ -1106,7 +1145,7 @@ test ! -e /usr/local/bin/niri-v26.04-2-g5e53b949.rollback
 These deletions are intentional and non-recoverable; the retained package
 archive remains the reinstall artifact until superseded.
 
-- [ ] **Step 7: Remove merged worktrees and branches**
+- [ ] **Step 8: Remove merged worktrees and branches**
 
 Run from the two main worktrees:
 

@@ -47,6 +47,10 @@ completions. Its complete recipe-level differences are:
 - `pkgver=26.04.r95.g138697be` and `pkgrel=1`, with no `pkgver()` function;
 - `provides=("niri=$pkgver" wayland-compositor)`;
 - conflicts with `niri`, `niri-git`, and `niri-bin`;
+- `options=(!debug)` produces one stripped package even when the host enables
+  makepkg debug packages globally;
+- `makedepends` adds `gtk4` and `libadwaita` because the pinned all-targets
+  check builds `niri-visual-tests`;
 - source is the named VCS checkout
   `niri::git+https://github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e`,
   with `sha256sums=('SKIP')` because the immutable commit is the source pin;
