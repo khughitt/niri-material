@@ -57,7 +57,7 @@ KDL, zsh, systemd user services, niri IPC, and Git worktrees.
 | `packaging/arch/PKGBUILD` | Reproducible Arch package for the accepted source commit | 1 |
 | dotfiles `niri/materials.kdl` | Native daily terminal material and exact app-ID rule | 2 |
 | dotfiles `niri/config.kdl` | Include native materials after Prism and stop legacy autostart | 2 |
-| dotfiles `shell/local/titan.env.zsh` | Required external build root | 2 |
+| host-local `$HOME/d/dotfiles/shell/local/titan.env.zsh` (ignored) | Required external build root; intentionally outside the dotfiles commit | 2 |
 | dotfiles `tests/setup_and_health.zsh` | Static rollout/config contract and retained evidence links | 2 |
 | `docs/materials/README.md` | Current accepted/package entry point and complete index | 3, 7 |
 | `docs/materials/2026-08-22-v1-design.md` | Concise accepted v1 status | 3 |
@@ -231,15 +231,16 @@ git commit -m "build(arch): package accepted material compositor"
 **Files:**
 - Create: dotfiles `niri/materials.kdl`
 - Modify: dotfiles `niri/config.kdl`
-- Modify: dotfiles `shell/local/titan.env.zsh`
 - Modify: dotfiles `tests/setup_and_health.zsh`
+- Modify outside Git: host-local `$HOME/d/dotfiles/shell/local/titan.env.zsh`
 
 **Interfaces:**
 - Consumes: Prism-generated terminal opacity/background-effect rules and the
   accepted v1 material config surface.
 - Produces: dotfiles commit `feat(niri): deploy native terminal material` on
-  `feat/niri-material-daily-driver`, plus a clean worktree suitable for
-  packaged-binary validation.
+  `feat/niri-material-daily-driver`, a clean worktree suitable for
+  packaged-binary validation, and the required variable in the intentionally
+  ignored host-local environment file.
 
 - [ ] **Step 1: Create an isolated dotfiles worktree after checking owned paths**
 
@@ -248,11 +249,9 @@ dotfiles_repo="$HOME/d/dotfiles"
 dotfiles_wt="$dotfiles_repo/.worktrees/niri-material-daily-driver"
 test ! -e "$dotfiles_wt"
 git -C "$dotfiles_repo" diff --quiet -- \
-  niri/config.kdl niri/materials.kdl shell/local/titan.env.zsh \
-  tests/setup_and_health.zsh
+  niri/config.kdl niri/materials.kdl tests/setup_and_health.zsh
 git -C "$dotfiles_repo" diff --cached --quiet -- \
-  niri/config.kdl niri/materials.kdl shell/local/titan.env.zsh \
-  tests/setup_and_health.zsh
+  niri/config.kdl niri/materials.kdl tests/setup_and_health.zsh
 git -C "$dotfiles_repo" worktree add -b feat/niri-material-daily-driver \
   "$dotfiles_wt" main
 git -C "$dotfiles_wt" status --short
@@ -366,9 +365,10 @@ spawn-at-startup "qs" "-c" "niri-glass"
 Do not remove the setup links, JSON symlink, frozen checkout, or health checks
 for those retained evidence inputs.
 
-- [ ] **Step 5: Add the external work root to the host zshenv file**
+- [ ] **Step 5: Add the external work root to the ignored host-local file**
 
-Append to `shell/local/titan.env.zsh` after the `TMPDIR` block:
+Verify that `$HOME/d/dotfiles/shell/local/titan.env.zsh` is ignored, then
+append after its `TMPDIR` block:
 
 ```zsh
 
@@ -382,7 +382,7 @@ export NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material
 zsh tests/setup_and_health.zsh
 test "$(grep -c -F 'include "./materials.kdl"' niri/config.kdl)" = 1
 ! rg -n -F 'spawn-at-startup "qs" "-c" "niri-glass"' niri/config.kdl
-zsh -c 'source shell/local/titan.env.zsh; test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material'
+zsh -c 'source "$HOME/d/dotfiles/shell/local/titan.env.zsh"; test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material'
 git diff --check
 ```
 
@@ -392,8 +392,7 @@ checks exit zero.
 - [ ] **Step 7: Commit the dotfiles rollout**
 
 ```bash
-git add niri/config.kdl niri/materials.kdl shell/local/titan.env.zsh \
-  tests/setup_and_health.zsh
+git add niri/config.kdl niri/materials.kdl tests/setup_and_health.zsh
 git commit -m "feat(niri): deploy native terminal material"
 git status --short
 ```
@@ -523,9 +522,10 @@ git diff --check
   docs/materials/README.md \
   docs/materials/2026-08-22-v1-design.md \
   docs/materials/2026-08-24-glass-config-surface-design.md \
-  docs/materials/material-config.md \
-  docs/materials/plans/2026-08-23-slice2.md \
-  docs/materials/plans/2026-08-24-slice3.md
+  docs/materials/material-config.md
+! sed -n '1,12p' docs/materials/plans/2026-08-23-slice2.md \
+  docs/materials/plans/2026-08-24-slice3.md | \
+  rg -n 'implemented on `slice2-glass`|implemented on `slice3-crop`'
 rg -n '138697be|c4b71a4e|c0caa944|daily-driver' \
   docs/materials/README.md docs/materials/2026-08-22-v1-design.md
 ```
@@ -563,7 +563,7 @@ git commit -m "docs(materials): curate accepted v1 status"
 
 ```bash
 dotfiles_wt="$HOME/d/dotfiles/.worktrees/niri-material-daily-driver"
-source "$dotfiles_wt/shell/local/titan.env.zsh"
+source "$HOME/d/dotfiles/shell/local/titan.env.zsh"
 : "${NIRI_MATERIAL_WORK_ROOT:?NIRI_MATERIAL_WORK_ROOT must be set}"
 test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material
 
@@ -693,7 +693,7 @@ plus log hashes. No host package or running process has changed yet.
 - [ ] **Step 1: Record rollback identities before any host mutation**
 
 ```bash
-source "$HOME/d/dotfiles/.worktrees/niri-material-daily-driver/shell/local/titan.env.zsh"
+source "$HOME/d/dotfiles/shell/local/titan.env.zsh"
 : "${NIRI_MATERIAL_WORK_ROOT:?NIRI_MATERIAL_WORK_ROOT must be set}"
 test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material
 rollout_root="$NIRI_MATERIAL_WORK_ROOT/v1-daily-driver-138697be"
@@ -757,11 +757,9 @@ The running compositor still resolves to the old inode.
 ```bash
 test "$(git -C "$dotfiles_repo" branch --show-current)" = main
 git -C "$dotfiles_repo" diff --quiet -- \
-  niri/config.kdl niri/materials.kdl shell/local/titan.env.zsh \
-  tests/setup_and_health.zsh
+  niri/config.kdl niri/materials.kdl tests/setup_and_health.zsh
 git -C "$dotfiles_repo" diff --cached --quiet -- \
-  niri/config.kdl niri/materials.kdl shell/local/titan.env.zsh \
-  tests/setup_and_health.zsh
+  niri/config.kdl niri/materials.kdl tests/setup_and_health.zsh
 git -C "$dotfiles_repo" merge --ff-only feat/niri-material-daily-driver
 test "$(git -C "$dotfiles_repo" rev-parse HEAD)" = "$dotfiles_rollout_commit"
 test "$(readlink -f "$HOME/.config/niri/config.kdl")" = \
@@ -1036,9 +1034,10 @@ test "$(readlink -f /proc/$(systemctl --user show niri.service -p MainPID --valu
   docs/materials/README.md \
   docs/materials/2026-08-22-v1-design.md \
   docs/materials/2026-08-24-glass-config-surface-design.md \
-  docs/materials/material-config.md \
-  docs/materials/plans/2026-08-23-slice2.md \
-  docs/materials/plans/2026-08-24-slice3.md
+  docs/materials/material-config.md
+! sed -n '1,12p' docs/materials/plans/2026-08-23-slice2.md \
+  docs/materials/plans/2026-08-24-slice3.md | \
+  rg -n 'implemented on `slice2-glass`|implemented on `slice3-crop`'
 ```
 
 Expected: dotfiles tests/config pass; live package identity holds; no
