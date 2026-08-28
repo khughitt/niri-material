@@ -44,7 +44,7 @@ optdepends=(
 provides=("niri=$pkgver" wayland-compositor)
 conflicts=(niri niri-git niri-bin)
 options=(!debug)
-source=("niri::git+https://github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e")
+source=("niri::git+ssh://git@github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e")
 sha256sums=('SKIP')
 
 prepare() {

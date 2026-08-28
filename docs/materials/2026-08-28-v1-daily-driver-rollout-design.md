@@ -52,7 +52,8 @@ completions. Its complete recipe-level differences are:
 - `makedepends` adds `gtk4` and `libadwaita` because the pinned all-targets
   check builds `niri-visual-tests`;
 - source is the named VCS checkout
-  `niri::git+https://github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e`,
+  `niri::git+ssh://git@github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e`,
+  using the private repository's existing SSH access,
   with `sha256sums=('SKIP')` because the immutable commit is the source pin;
 - `prepare()`, `build()`, `check()`, and `package()` enter
   `"$srcdir/niri"` instead of a release-tarball directory;

@@ -145,7 +145,7 @@ optdepends=(
 provides=("niri=$pkgver" wayland-compositor)
 conflicts=(niri niri-git niri-bin)
 options=(!debug)
-source=("niri::git+https://github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e")
+source=("niri::git+ssh://git@github.com/khughitt/niri-material.git#commit=138697be4cbb779c80425fe2a366ceca3610f38e")
 sha256sums=('SKIP')
 
 prepare() {
@@ -585,7 +585,8 @@ SSD root. If it already exists, stop and inspect it; do not overwrite it.
 
 ```bash
 cd "$HOME/d/niri-material/.worktrees/v1-post-acceptance-planning"
-remote_tip=$(git ls-remote https://github.com/khughitt/niri-material.git \
+set -e
+remote_tip=$(git ls-remote ssh://git@github.com/khughitt/niri-material.git \
   refs/heads/materials-26.04 | awk '{print $1}')
 test -n "$remote_tip"
 git fetch origin materials-26.04
