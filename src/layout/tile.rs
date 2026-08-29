@@ -149,15 +149,17 @@ pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
 /// The material a window resolves to under the current config, if any.
+///
+/// A name the current config does not define is not an error. `reload_config`
+/// updates the layout before it recomputes window rules, so a tile is
+/// re-resolved against the new config while its window still carries the name
+/// resolved against the old one — the case a rename or a removal produces.
+/// Config parsing rejects genuinely dangling references, so the only reachable
+/// miss is that transient one; dropping the material lets `apply_resolved`
+/// clear the state, and the rule recompute that follows re-resolves the tile
+/// through `Tile::update_window`.
 fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMaterial> {
-    let name = name?;
-    Some(
-        options
-            .materials
-            .get(name)
-            .unwrap_or_else(|| panic!("resolved material must exist: {name}"))
-            .clone(),
-    )
+    options.materials.get(name?).cloned()
 }
 
 /// Routes one window render element through the clip-to-geometry path:
@@ -1944,8 +1946,10 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "resolved material must exist: frost")]
-    fn missing_resolved_material_fails_explicitly() {
-        resolve_material(Some("frost"), &Options::default());
+    fn a_name_the_config_does_not_define_resolves_to_nothing() {
+        // Reachable only between a reload's layout update and its rule
+        // recompute. Panicking here took the whole compositor down when a
+        // live material was renamed or removed.
+        assert!(resolve_material(Some("frost"), &Options::default()).is_none());
     }
 }
