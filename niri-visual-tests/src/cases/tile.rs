@@ -134,9 +134,7 @@ impl TestCase for Tile {
             xray_pos,
             true,
             self.tile.animation_residual(),
-            &mut |elem| {
-                rv.push(Box::new(elem) as _)
-            },
+            &mut |elem| rv.push(Box::new(elem) as _),
         );
         rv
     }
