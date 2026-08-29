@@ -180,6 +180,8 @@ pub struct Glass {
     #[knuffel(child, unwrap(argument))]
     pub anisotropic_blur: Option<FloatOrInt<0, 1>>,
     #[knuffel(child, unwrap(argument))]
+    pub backdrop_blur: Option<bool>,
+    #[knuffel(child, unwrap(argument))]
     pub jelly_flex: Option<Milli<0, 20>>,
     #[knuffel(child, unwrap(argument))]
     pub jelly_ripple: Option<Milli<0, 500>>,
@@ -209,6 +211,9 @@ pub struct ResolvedGlass {
     pub distortion: f64,
     pub distortion_scale: f64,
     pub anisotropic_blur: f64,
+    /// Whether the material samples the blurred backdrop. Strength comes from
+    /// the global `blur` block; `blur { off }` overrides this.
+    pub backdrop_blur: bool,
     pub jelly_flex: f64,
     pub jelly_ripple: f64,
     pub bevel: f64,
@@ -228,6 +233,7 @@ impl Default for ResolvedGlass {
             distortion: 0.,
             distortion_scale: 0.5,
             anisotropic_blur: 0.,
+            backdrop_blur: false,
             jelly_flex: 0.004,
             jelly_ripple: 0.06,
             bevel: 12.,
@@ -262,6 +268,7 @@ impl Material {
                     .and_then(|x| x.scale)
                     .map_or(d.distortion_scale, |x| x.0),
                 anisotropic_blur: g.anisotropic_blur.map_or(d.anisotropic_blur, |x| x.0),
+                backdrop_blur: g.backdrop_blur.unwrap_or(d.backdrop_blur),
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
                 jelly_ripple: g.jelly_ripple.map_or(d.jelly_ripple, |x| x.0),
                 bevel: g.bevel.map_or(d.bevel, |x| x.0),

@@ -918,6 +918,7 @@ mod tests {
                 distortion: 0.5,
                 distortion_scale: 1.5,
                 anisotropic_blur: 0.75,
+                backdrop_blur: false,
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
                 bevel: 20.,
@@ -941,6 +942,50 @@ mod tests {
         assert_eq!(
             parsed.materials[0].resolve().glass,
             ResolvedGlass::default()
+        );
+    }
+
+    #[test]
+    fn backdrop_blur_defaults_to_off() {
+        assert!(!ResolvedGlass::default().backdrop_blur);
+    }
+
+    #[test]
+    fn backdrop_blur_parses_and_resolves() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {
+                    backdrop-blur true
+                }
+            }
+            "##,
+        );
+        assert!(parsed.materials[0].resolve().glass.backdrop_blur);
+    }
+
+    #[test]
+    fn an_omitted_backdrop_blur_resolves_to_the_default() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {}
+            }
+            "##,
+        );
+        assert!(!parsed.materials[0].resolve().glass.backdrop_blur);
+    }
+
+    #[test]
+    fn backdrop_blur_rejects_a_non_boolean() {
+        do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    backdrop-blur 0.5
+                }
+            }
+            "##,
         );
     }
 
