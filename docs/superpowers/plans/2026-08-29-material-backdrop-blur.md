@@ -15,7 +15,7 @@
 - The parameter is `backdrop-blur`, a bool, default `false`. An existing material with no `backdrop-blur` key must render exactly as it does today.
 - Strength is not per-material. It comes from the global `blur { passes; offset }` block.
 - `blur { off }` disables blur globally and overrides the material. The effective value is `glass.backdrop_blur && !blur.off`.
-- Preparation and drawing must read the same value. After Task 2, no call to `EffectBuffer::prepare` or `EffectBuffer::render` on a material path may pass a bool literal.
+- Preparation and drawing must read the same value. After Task 3, no call to `EffectBuffer::prepare` or `EffectBuffer::render` on a material path may pass a bool literal.
 - Both the `background` and the `backdrop` buffer follow the one flag; they must never disagree.
 - Do not remove or alter `anisotropic-blur`.
 
@@ -29,70 +29,67 @@
 - Modify: `niri-config/src/material.rs:219-238` (`ResolvedGlass::default`)
 - Modify: `niri-config/src/material.rs:243-272` (`Material::resolve`)
 - Modify: `niri-config/src/lib.rs:912-923` (an exhaustive `ResolvedGlass` literal in an existing test)
-- Test: `niri-config/src/material.rs` (its `mod tests`)
+- Test: `niri-config/src/lib.rs`, its `mod tests` — `material.rs` has no test module, and the existing material parsing tests (`material_parameters_resolve`, `material_omitted_parameters_take_design_defaults`) already live there.
 
 **Interfaces:**
 - Produces: `Glass::backdrop_blur: Option<bool>` and `ResolvedGlass::backdrop_blur: bool` (default `false`). Task 2 reads `ResolvedGlass::backdrop_blur`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to the `mod tests` block in `niri-config/src/material.rs`:
+Add to `mod tests` in `niri-config/src/lib.rs`, beside the existing material tests. They use the module's existing `do_parse` and `do_parse_err` helpers (`niri-config/src/lib.rs:724` and `:731`):
 
 ```rust
-#[test]
-fn backdrop_blur_defaults_to_off() {
-    assert!(!ResolvedGlass::default().backdrop_blur);
-}
+    #[test]
+    fn backdrop_blur_defaults_to_off() {
+        assert!(!ResolvedGlass::default().backdrop_blur);
+    }
 
-#[test]
-fn backdrop_blur_parses_and_resolves() {
-    let config = Config::parse_mem(
-        r#"
-        material "frost" {
-            glass {
-                backdrop-blur true
+    #[test]
+    fn backdrop_blur_parses_and_resolves() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {
+                    backdrop-blur true
+                }
             }
-        }
-        "#,
-    )
-    .unwrap();
-    assert!(config.materials[0].resolve().glass.backdrop_blur);
-}
+            "##,
+        );
+        assert!(parsed.materials[0].resolve().glass.backdrop_blur);
+    }
 
-#[test]
-fn an_omitted_backdrop_blur_resolves_to_the_default() {
-    let config = Config::parse_mem(
-        r#"
-        material "frost" {
-            glass {}
-        }
-        "#,
-    )
-    .unwrap();
-    assert!(!config.materials[0].resolve().glass.backdrop_blur);
-}
-
-#[test]
-fn backdrop_blur_rejects_a_non_boolean() {
-    assert!(Config::parse_mem(
-        r#"
-        material "frost" {
-            glass {
-                backdrop-blur 0.5
+    #[test]
+    fn an_omitted_backdrop_blur_resolves_to_the_default() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {}
             }
-        }
-        "#,
-    )
-    .is_err());
-}
+            "##,
+        );
+        assert!(!parsed.materials[0].resolve().glass.backdrop_blur);
+    }
+
+    #[test]
+    fn backdrop_blur_rejects_a_non_boolean() {
+        do_parse_err(
+            r##"
+            material "frost" {
+                glass {
+                    backdrop-blur 0.5
+                }
+            }
+            "##,
+        );
+    }
 ```
 
-If `Config` is not already in scope in that test module, add `use crate::Config;` at the top of `mod tests`.
+`ResolvedGlass` is already in scope in that module — it is used by the existing literal at line 912.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p niri-config backdrop_blur`
-Expected: FAIL — `no field 'backdrop_blur' on type 'ResolvedGlass'` (a compile error is the expected failure here).
+Expected: FAIL — `no field 'backdrop_blur' on type 'ResolvedGlass'`. A compile error is the expected failure here.
 
 - [ ] **Step 3: Add the parse field**
 
@@ -127,31 +124,34 @@ In `Material::resolve`, after the `anisotropic_blur` line:
                 backdrop_blur: g.backdrop_blur.unwrap_or(d.backdrop_blur),
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
-
-Run: `cargo test -p niri-config backdrop_blur`
-Expected: PASS, 4 tests.
-
-- [ ] **Step 7: Fix the known struct literal and run the whole config suite**
+- [ ] **Step 6: Fix the exhaustive literal the new field breaks**
 
 `ResolvedGlass` gained a field, which breaks the exhaustive struct literal in
-`niri-config/src/lib.rs:912-923` (`material_parameters_resolve`). Add the field
-to it, after `anisotropic_blur: 0.75,`:
+`material_parameters_resolve` at `niri-config/src/lib.rs:912-923`. This must be
+done before the tests can compile, not after. Add, after `anisotropic_blur: 0.75,`:
 
 ```rust
                 backdrop_blur: false,
 ```
 
-That test asserts a fully-specified material resolves exactly, so `false` is
-correct: its KDL does not set `backdrop-blur`.
+`false` is correct there: that test's KDL does not set `backdrop-blur`.
+`material_omitted_parameters_take_design_defaults` compares against
+`ResolvedGlass::default()` and needs no edit.
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+Run: `cargo test -p niri-config backdrop_blur`
+Expected: PASS, 4 tests.
+
+- [ ] **Step 8: Run the whole config suite**
 
 Run: `cargo test -p niri-config`
-Expected: PASS, including `material_omitted_parameters_take_design_defaults`, which compares against `ResolvedGlass::default()` and needs no edit.
+Expected: PASS, including the two pre-existing material tests.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add niri-config/src/material.rs
+git add niri-config/src/material.rs niri-config/src/lib.rs
 git commit -m "feat(materials): add backdrop-blur to the glass config"
 ```
 
@@ -165,7 +165,7 @@ git commit -m "feat(materials): add backdrop-blur to the glass config"
 
 **Interfaces:**
 - Consumes: `ResolvedGlass::backdrop_blur` from Task 1; `Options::blur` (`niri_config::Blur`, field `off: bool`) and `Options::materials` from `src/layout/mod.rs:394-398`.
-- Produces: `resolve_material` returns a `ResolvedMaterial` whose `glass.backdrop_blur` is already gated against global blur. Task 3 reads it and must not re-gate.
+- Produces: `backdrop_blur_enabled(&ResolvedGlass, &niri_config::Blur) -> bool`, and a `resolve_material` whose returned `glass.backdrop_blur` is already gated against global blur. Task 3 reads that value and must not re-gate or re-derive it.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -227,16 +227,32 @@ Expected: FAIL — `backdrop_blur_survives_resolution_when_global_blur_is_on` pa
 Replace the body of `resolve_material` at `src/layout/tile.rs:161-163`. Keep the existing doc comment above it unchanged and append the second paragraph:
 
 ```rust
-/// The global `blur { off }` switch is applied here, so every consumer reads
-/// one already-gated value. `BlurOptions` carries only `passes` and `offset`
-/// and drops `off`, so a consumer that re-derived this would silently ignore
-/// it — the same reason the background effect gates separately.
+/// Whether a material's backdrop blur is actually on, given the global switch.
+///
+/// `BlurOptions` carries only `passes` and `offset` and drops `off`, so any
+/// consumer that re-derived this would silently ignore `blur { off }` — the
+/// same reason the background effect gates separately at
+/// `src/render_helpers/background_effect.rs:172`.
+fn backdrop_blur_enabled(glass: &ResolvedGlass, blur: &niri_config::Blur) -> bool {
+    glass.backdrop_blur && !blur.off
+}
+```
+
+Then apply it in `resolve_material`, keeping its existing doc comment and
+appending a second paragraph:
+
+```rust
+/// The global `blur { off }` switch is applied here, so every consumer
+/// downstream reads one already-gated value rather than re-deriving it.
 fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMaterial> {
     let mut material = options.materials.get(name?).cloned()?;
-    material.glass.backdrop_blur &= !options.blur.off;
+    material.glass.backdrop_blur = backdrop_blur_enabled(&material.glass, &options.blur);
     Some(material)
 }
 ```
+
+`ResolvedGlass` is not imported in `tile.rs`; add it to the existing
+`niri_config` import at `src/layout/tile.rs:5`.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -257,54 +273,45 @@ git commit -m "feat(materials): gate backdrop blur against the global blur switc
 **Files:**
 - Modify: `src/layout/tile.rs:1275-1276` (first `prepare` pair)
 - Modify: `src/layout/tile.rs:1460-1461` (second `prepare` pair)
-- Modify: `src/render_helpers/material.rs:450-461` (element constructor parameters)
-- Modify: `src/render_helpers/material.rs:528-538` (`MaterialRenderElement` fields)
 - Modify: `src/render_helpers/material.rs:576-577` (the two `render` calls)
 
 **Interfaces:**
-- Consumes: the gated `ResolvedGlass::backdrop_blur` from Task 2, reachable at both tile sites as `material.material().glass.backdrop_blur` (`material` is bound at `src/layout/tile.rs:1269` and `:1428`).
-- Produces: a `MaterialRenderElement` that samples the blurred textures when the flag is set.
+- Consumes: the gated `ResolvedGlass::backdrop_blur` from Task 2. In `tile.rs` it is reachable as `material.material().glass.backdrop_blur` (`material` is bound at `src/layout/tile.rs:1269` and `:1428`). In `draw()` it is reachable as `self.glass.backdrop_blur`.
+- Produces: a material that samples the blurred textures when the flag is set. No new struct field, constructor parameter, or call-site argument.
 
-**Why both sites:** `EffectBuffer::prepare(renderer, blur)` allocates the blur textures only when its flag is set (`src/render_helpers/effect_buffer.rs:148`). If `prepare` gets `false` while `render` gets `true`, `render` returns `Err`, the existing `.ok()` swallows it, and the window falls through to `plain_window_subdraw` — the glass disappears entirely, with only a `warn!`. Changing `render` without `prepare` produces that bug.
+**Why no new field:** `MaterialRenderElement` already owns the resolved
+parameters as `glass: ResolvedGlass` (`src/render_helpers/material.rs:526`),
+populated directly from the same `MaterialState` the preparation sites read
+(`glass: self.material.glass`, `material.rs:472`). Adding a separate
+`backdrop_blur` bool would create a second copy of one value that could drift
+from the first — exactly the divergence this design exists to prevent.
 
-- [ ] **Step 1: Add the field to the render element**
+**Why both prepare sites:** `EffectBuffer::prepare(renderer, blur)` allocates
+the blur textures only when its flag is set
+(`src/render_helpers/effect_buffer.rs:148`). If `prepare` gets `false` while
+`render` gets `true`, `render` returns `Err`, the existing `.ok()` swallows it,
+and the window falls through to `plain_window_subdraw` — the glass disappears
+entirely, with only a `warn!`. Changing `render` without `prepare` produces
+that bug.
 
-In the `MaterialRenderElement` struct at `src/render_helpers/material.rs:535-537`, after `backdrop: Rc<RefCell<EffectBuffer>>,`:
-
-```rust
-    /// Whether to sample the blurred backdrop. Already gated against global
-    /// `blur { off }` by `resolve_material`; never re-derive it here.
-    backdrop_blur: bool,
-```
-
-- [ ] **Step 2: Thread it through the constructor**
-
-In the constructor parameter list at `src/render_helpers/material.rs:458-460`, after `backdrop: Rc<RefCell<EffectBuffer>>,`:
-
-```rust
-        backdrop_blur: bool,
-```
-
-And in the `MaterialRenderElement { .. }` literal it returns, alongside the other fields:
-
-```rust
-            backdrop_blur,
-```
-
-- [ ] **Step 3: Use it at the two draw calls**
+- [ ] **Step 1: Use the existing glass field at the two draw calls**
 
 Replace `src/render_helpers/material.rs:576-577`:
 
 ```rust
-        let bg_texture = self.bg.borrow_mut().render(frame, self.backdrop_blur).ok();
+        let bg_texture = self
+            .bg
+            .borrow_mut()
+            .render(frame, self.glass.backdrop_blur)
+            .ok();
         let backdrop_texture = self
             .backdrop
             .borrow_mut()
-            .render(frame, self.backdrop_blur)
+            .render(frame, self.glass.backdrop_blur)
             .ok();
 ```
 
-- [ ] **Step 4: Use it at the two prepare calls**
+- [ ] **Step 2: Use the same value at the two prepare sites**
 
 At `src/layout/tile.rs:1275-1276`, replace the two `false` literals:
 
@@ -323,9 +330,9 @@ At `src/layout/tile.rs:1460-1461`, the same:
                         && backdrop.borrow_mut().prepare(ctx.renderer, backdrop_blur)
 ```
 
-Then pass `backdrop_blur` as the new constructor argument at each of the two element-construction call sites that follow these blocks.
+No other call site changes: the element constructor already carries the glass.
 
-- [ ] **Step 5: Verify no literals remain on the material path**
+- [ ] **Step 3: Verify no literals remain on the material path**
 
 Run:
 
@@ -333,14 +340,31 @@ Run:
 rg -n 'prepare\(ctx\.renderer, (true|false)\)|render\(frame, (true|false)\)' src/
 ```
 
-Expected: no matches in `src/layout/tile.rs` or `src/render_helpers/material.rs`. A match in either is the Task 3 bug reappearing. `src/render_helpers/xray.rs:310` passes `self.blur`, which is correct and not a literal.
+Expected: no matches in `src/layout/tile.rs` or `src/render_helpers/material.rs`.
+A match in either is the preparation/draw mismatch reappearing.
+`src/render_helpers/xray.rs:310` passes `self.blur`, which is correct and not a
+literal.
 
-- [ ] **Step 6: Build and run the full suite**
+- [ ] **Step 4: Run the test suite as CI does**
 
-Run: `cargo test`
-Expected: PASS. No behavior changes for existing materials, because Task 1 defaults the flag to `false`.
+Run: `cargo test --all --exclude niri-visual-tests`
+Expected: PASS. No behavior changes for existing materials, because Task 1
+defaults the flag to `false`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Run the lint gates CI enforces**
+
+Run:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all --all-targets
+```
+
+Expected: both clean. These are separate CI jobs
+(`.github/workflows/ci.yml:229` and `:214`); a red either one blocks the merge,
+so fix formatting and lints before committing rather than after.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/layout/tile.rs src/render_helpers/material.rs
@@ -414,18 +438,34 @@ Add `backdrop-blur true` to the `terminal-glass` material and reload. Confirm ea
 - removing `backdrop-blur` restores the current appearance exactly;
 - the overview shows the same treatment, confirming both textures agree.
 
-- [ ] **Step 3: Record the outcome**
+- [ ] **Step 3: Update both documents**
 
-Update the design doc's status header to implemented with the commit range and the visual result, or record what failed. Commit:
+Three edits, all before any commit:
 
-```bash
-git commit -m "docs(materials): record backdrop blur implementation"
-```
+1. In `docs/materials/2026-08-29-material-backdrop-blur-design.md:3`, replace
+   the status header with the outcome — implemented with the commit range and
+   the visual result, or what failed. State explicitly that the DRM acceptance
+   run described in Step 4 remains outstanding, so the doc does not claim
+   pixel-level verification it has not had.
+2. In this plan, tick the checkboxes for every step actually completed. A plan
+   left with stale boxes is the drift the project's own convention warns about.
+3. Confirm the design's Goals section no longer claims "one blur per output per
+   frame"; it must match the two-buffers-per-render-target analysis in
+   Interactions. (Corrected 2026-08-29; verify it stayed corrected.)
 
 - [ ] **Step 4: Note the deferred pixel check**
 
 Default-preserves-v1 is verified by the DRM acceptance harness
 (`docs/materials/2026-08-27-v1-drm-acceptance-design.md`), which gates on
 byte-identical paired settled frames, by running its existing scenarios against
-a build carrying this parameter. That run is not part of this plan; record in
-the status header that it remains outstanding.
+a build carrying this parameter. That run is not part of this plan. It must be
+named as outstanding in the status header written in Step 3 — not recorded
+afterwards, since nothing commits after this point.
+
+- [ ] **Step 5: Stage both documents and commit**
+
+```bash
+git add docs/materials/2026-08-29-material-backdrop-blur-design.md \
+        docs/superpowers/plans/2026-08-29-material-backdrop-blur.md
+git commit -m "docs(materials): record backdrop blur implementation"
+```
