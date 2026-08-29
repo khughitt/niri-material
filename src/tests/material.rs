@@ -159,3 +159,69 @@ fn material_window_at_rest_does_not_animate() {
     // rest must not claim an ongoing animation.
     assert!(!f.niri().layout.are_animations_ongoing(None));
 }
+
+#[test]
+fn reload_renaming_a_live_material_swaps_it_without_panicking() {
+    // A rename is a supported edit: material-config.md promises "Changing the
+    // resolved name swaps that state." But the reload order re-resolves each
+    // tile's material against the new config while the window still carries
+    // rules resolved against the old one, so the old name is looked up in a
+    // map that no longer holds it.
+    let mut f = Fixture::with_config(config(
+        r##"
+        material "frost" {
+            glass {}
+        }
+
+        window-rule {
+            material "frost"
+        }
+        "##,
+    ));
+    f.add_output(1, (1920, 1080));
+
+    let id = f.add_client();
+    open_window(&mut f, id, "target");
+    assert_eq!(material_of(&mut f, "target").as_deref(), Some("frost"));
+
+    f.niri_state().reload_config(Ok(config(
+        r##"
+        material "clear" {
+            glass {}
+        }
+
+        window-rule {
+            material "clear"
+        }
+        "##,
+    )));
+
+    assert_eq!(material_of(&mut f, "target").as_deref(), Some("clear"));
+}
+
+#[test]
+fn reload_removing_a_live_material_drops_it_without_panicking() {
+    // The same stale-name lookup is reachable without a rename: deleting a
+    // material that open windows resolve is an ordinary config edit, and
+    // `niri validate` accepts the result because the file is self-consistent.
+    let mut f = Fixture::with_config(config(
+        r##"
+        material "frost" {
+            glass {}
+        }
+
+        window-rule {
+            material "frost"
+        }
+        "##,
+    ));
+    f.add_output(1, (1920, 1080));
+
+    let id = f.add_client();
+    open_window(&mut f, id, "target");
+    assert_eq!(material_of(&mut f, "target").as_deref(), Some("frost"));
+
+    f.niri_state().reload_config(Ok(config("")));
+
+    assert_eq!(material_of(&mut f, "target"), None);
+}
