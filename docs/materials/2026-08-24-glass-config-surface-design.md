@@ -307,8 +307,8 @@ knuffel already rejects, so an old configuration fails validation with a
 pointed error and niri keeps running its previous configuration. That is the
 existing fail-early behaviour for any unknown key and needs no new code.
 
-The material system has not shipped in a release, so no deployed
-configuration is affected.
+At the time of this pre-acceptance design, the material system had not shipped
+in a release, so no deployed configuration was affected.
 
 ## Appearance neutrality
 
