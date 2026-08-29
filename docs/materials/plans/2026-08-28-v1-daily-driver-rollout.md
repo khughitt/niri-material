@@ -1,6 +1,9 @@
 # Native Materials v1 Daily-Driver Rollout Implementation Plan
 
-**Status:** ready for implementation 2026-08-28; not implemented.
+**Status:** implemented 2026-08-29. The accepted compositor is the daily-driver
+installation (`26.04.r106.g7f6e69c3-1`, source `7f6e69c3`), and Prism now owns
+the material definition. Burn-in is in progress; the normal-session scan, cold
+start, and operator PASS remain.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

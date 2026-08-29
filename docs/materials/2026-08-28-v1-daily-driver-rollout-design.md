@@ -1,6 +1,12 @@
 # Native materials v1 daily-driver rollout: design
 
-**Status:** approved 2026-08-28; not implemented.
+**Status:** approved 2026-08-28; implemented 2026-08-29 and in daily-driver
+use. Arch's `niri 26.04-1` was removed and `niri-material
+26.04.r95.g138697be-1` installed 2026-08-28T20:20:00, then upgraded to
+`26.04.r106.g7f6e69c3-1` on 2026-08-29T07:11:08 to pick up the reload fix in
+`7f6e69c3`. Prism took ownership of the material definition on 2026-08-29.
+Burn-in is in progress: the journal boundary was reset 2026-08-29 and the
+normal-session scan, one cold start, and the operator PASS remain outstanding.
 
 ## Context
 
