@@ -213,8 +213,13 @@ What the GPU-free suite can actually prove, and nothing beyond it:
   `blur { off }` is set regardless of the material, and true only when the
   material opts in and global blur is on. This is the whole `off` interaction,
   as a pure function;
-- a material resolved with `backdrop-blur true` yields a render element carrying
-  the enabled flag, pinning that the value reaches the draw path.
+That is the whole of it. An earlier draft also claimed a test pinning that the
+flag reaches the render element; that claim is withdrawn. `MaterialRenderElement`
+carries the resolved parameters as `glass: ResolvedGlass`, copied wholesale from
+the same `MaterialState` the preparation sites read
+(`glass: self.material.glass`, `material.rs:472`), so there is no separate value
+to drift and nothing a test could pin that the compiler does not already
+guarantee.
 
 What it cannot prove: which texture `draw()` ultimately samples. That decision
 runs inside the concrete `GlesFrame` path, which the unit suite does not

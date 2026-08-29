@@ -193,7 +193,7 @@ Add to `mod tests` in `src/layout/tile.rs`:
     }
 
     #[test]
-    fn global_blur_off_overrides_the_material() {
+    fn backdrop_blur_is_off_when_the_global_switch_is_off() {
         // `blur { off }` means off. BlurOptions carries only passes and offset,
         // so nothing downstream would honor `off` if it were not applied here.
         let options = options_with("frost", true, true);
@@ -202,7 +202,7 @@ Add to `mod tests` in `src/layout/tile.rs`:
     }
 
     #[test]
-    fn a_material_that_opts_out_stays_out_with_global_blur_on() {
+    fn backdrop_blur_stays_off_when_the_material_opts_out() {
         let options = options_with("frost", false, false);
         let resolved = resolve_material(Some("frost"), &options).unwrap();
         assert!(!resolved.glass.backdrop_blur);
@@ -219,8 +219,17 @@ The module's `use super::*` already brings in `Rc` (imported at `src/layout/tile
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p niri backdrop_blur`
-Expected: FAIL — `backdrop_blur_survives_resolution_when_global_blur_is_on` passes trivially, but `global_blur_off_overrides_the_material` FAILS with `assertion failed: !resolved.glass.backdrop_blur`. That one failing test is the point of this task.
+Run: `cargo test -p niri backdrop_blur_`
+
+All three names begin with `backdrop_blur_` so this filter runs all three; a
+name that does not share the prefix would be silently skipped and the red step
+would pass for the wrong reason.
+
+Expected: 3 tests run. `backdrop_blur_survives_resolution_when_global_blur_is_on`
+and `backdrop_blur_stays_off_when_the_material_opts_out` pass trivially, and
+`backdrop_blur_is_off_when_the_global_switch_is_off` FAILS with
+`assertion failed: !resolved.glass.backdrop_blur`. That one failing test is the
+point of this task.
 
 - [ ] **Step 3: Apply the gate**
 
@@ -256,7 +265,7 @@ fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMat
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cargo test -p niri backdrop_blur`
+Run: `cargo test -p niri backdrop_blur_`
 Expected: PASS, 3 tests. Also run `cargo test -p niri a_name_the_config_does_not_define` and expect PASS — the early return on an unknown name must still work.
 
 - [ ] **Step 5: Commit**
@@ -418,49 +427,107 @@ git commit -m "docs(materials): document backdrop-blur"
 
 **Files:**
 - Modify: `docs/materials/2026-08-29-material-backdrop-blur-design.md:3` (status header)
+- Modify: `docs/superpowers/plans/2026-08-29-material-backdrop-blur.md` (this plan's checkboxes)
 
 **Interfaces:**
-- Consumes: a built compositor carrying Tasks 1-4.
+- Consumes: a build carrying Tasks 1-4.
 
-This task is manual and needs the operator. The unit suite cannot prove which texture `draw()` samples — that decision runs inside the concrete `GlesFrame` path — so the visual checks below are the only evidence that the feature works at all.
+This task is manual and needs the operator. The unit suite cannot prove which
+texture `draw()` samples — that decision runs inside the concrete `GlesFrame`
+path — so these checks are the only evidence the feature works at all.
 
-- [ ] **Step 1: Build and install, then enable the Prism debug backdrop**
+**Packaging note:** `packaging/arch/PKGBUILD` does not exist on this branch. It
+lives on `v1-post-acceptance-planning` and pins
+`#commit=7f6e69c303ab2e72970679b8068763cb42b1f375`, so a package built from it
+would **not** contain this work. Installing this to the daily driver is a
+separate rollout decision requiring a PKGBUILD pin update and explicit operator
+approval; it is out of scope here. Verify from a local build instead.
 
-The checkerboard makes softening legible in a way a photograph cannot. Enable it with `prism set debug.backdrop true`.
+- [ ] **Step 1: Pin and record what is being tested**
 
-- [ ] **Step 2: Run the visual checks**
+```bash
+git rev-parse HEAD
+cargo build --release --features default
+sha256sum target/release/niri
+```
 
-Add `backdrop-blur true` to the `terminal-glass` material and reload. Confirm each:
+Record all three in the status header written in Step 4. A visual result that
+does not name the binary it came from cannot authorize an implemented status.
 
-- the checkerboard seen through a terminal softens, and raising `blur { passes }` deepens it;
-- **the terminal still renders with glass at all.** A `prepare`/`render` mismatch shows up precisely as the glass disappearing, so this check is what catches the Task 3 bug;
-- `blur { off }` removes the softening while leaving the material otherwise intact;
+- [ ] **Step 2: Run the checks**
+
+Use a nested niri on the dedicated headless host, per this project's convention
+that live nested runs never touch the desktop session:
+
+```bash
+weston_unit=niri-material-backdrop-blur-weston
+systemd-run --user --unit="$weston_unit" --collect \
+  --setenv=XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \
+  weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
+  --width=1280 --height=720 --socket=backdrop-blur
+trap 'systemctl --user stop "$weston_unit.service" >/dev/null 2>&1 || true' EXIT HUP INT TERM
+```
+
+Run `target/release/niri` against that socket with a config defining a material
+that sets `backdrop-blur true`, a Background-layer surface carrying
+high-contrast content, and a terminal using the material.
+
+Confirm each:
+
+- the backdrop seen through the terminal softens, and raising `blur { passes }`
+  deepens it;
+- **the terminal still renders with glass at all.** A `prepare`/`render`
+  mismatch shows up precisely as the glass disappearing into the plain-window
+  fallback, so this check is what catches that bug;
+- `blur { off }` removes the softening while leaving the material otherwise
+  intact;
 - removing `backdrop-blur` restores the current appearance exactly;
 - the overview shows the same treatment, confirming both textures agree.
 
-- [ ] **Step 3: Update both documents**
+Capture a frame for each state so the result is evidence rather than
+recollection.
 
-Three edits, all before any commit:
+- [ ] **Step 3: Restore the operator's environment**
 
-1. In `docs/materials/2026-08-29-material-backdrop-blur-design.md:3`, replace
-   the status header with the outcome — implemented with the commit range and
-   the visual result, or what failed. State explicitly that the DRM acceptance
-   run described in Step 4 remains outstanding, so the doc does not claim
-   pixel-level verification it has not had.
-2. In this plan, tick the checkboxes for every step actually completed. A plan
-   left with stale boxes is the drift the project's own convention warns about.
-3. Confirm the design's Goals section no longer claims "one blur per output per
-   frame"; it must match the two-buffers-per-render-target analysis in
-   Interactions. (Corrected 2026-08-29; verify it stayed corrected.)
+Required whether the checks passed or failed, and before recording anything:
 
-- [ ] **Step 4: Note the deferred pixel check**
+```bash
+systemctl --user stop "$weston_unit.service"
+```
 
-Default-preserves-v1 is verified by the DRM acceptance harness
-(`docs/materials/2026-08-27-v1-drm-acceptance-design.md`), which gates on
-byte-identical paired settled frames, by running its existing scenarios against
-a build carrying this parameter. That run is not part of this plan. It must be
-named as outstanding in the status header written in Step 3 — not recorded
-afterwards, since nothing commits after this point.
+If any check was instead performed on the daily-driver session, undo it there
+too — `backdrop-blur` is not a Prism parameter, so it can only have been
+hand-added to the generated fragment:
+
+```bash
+prism set debug.backdrop false
+prism apply niri          # regenerates prism.kdl, dropping any hand edit
+git -C ~/d/dotfiles diff --quiet -- niri/config.kdl   # any blur{} edits reverted
+```
+
+Expected: the last command exits zero, `niri msg layers` shows no
+`prism-debug-backdrop`, and `prism doctor` reports ok.
+
+- [ ] **Step 4: Update both documents**
+
+All edits happen here, before anything is staged:
+
+1. In `docs/materials/2026-08-29-material-backdrop-blur-design.md:3`, replace the
+   status header with the outcome — implemented, naming the commit, the binary
+   sha256 from Step 1, and the visual result; or what failed. State explicitly
+   that the DRM acceptance run below remains outstanding, so the doc does not
+   claim pixel verification it has not had.
+2. Record the deferred pixel check in that same header: default-preserves-v1 is
+   verified by the DRM acceptance harness
+   (`docs/materials/2026-08-27-v1-drm-acceptance-design.md`), which gates on
+   byte-identical paired settled frames, by running its existing scenarios
+   against a build carrying this parameter. That run is not part of this plan.
+3. Confirm the design's Goals section still says at most two blur computations
+   per changed source per render target, matching Interactions — not "one blur
+   per output per frame". (Corrected 2026-08-29; verify it stayed corrected.)
+4. In this plan, tick every completed checkbox **including this step and Step 5**,
+   which are about to be completed by the act of committing. Leaving them
+   unchecked commits a plan that understates its own execution.
 
 - [ ] **Step 5: Stage both documents and commit**
 
@@ -469,3 +536,6 @@ git add docs/materials/2026-08-29-material-backdrop-blur-design.md \
         docs/superpowers/plans/2026-08-29-material-backdrop-blur.md
 git commit -m "docs(materials): record backdrop blur implementation"
 ```
+
+If a box was missed, fix it and `git commit --amend` rather than leaving the
+recorded plan inconsistent with what was done.
