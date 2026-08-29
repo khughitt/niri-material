@@ -91,6 +91,10 @@ fn backdrop_blur_enabled(glass: &ResolvedGlass, blur: &niri_config::Blur) -> boo
 }
 ```
 
+`resolve_material` calls it and stores the answer back onto the resolved clone
+it returns, so the gate is both a pure unit-testable function and a value that
+exists in exactly one place downstream.
+
 `blur { off }` means what it says: it disables blur globally. `BlurOptions`
 carries only `passes` and `offset` and drops `off` entirely, which is why the
 background effect gates separately on `self.options.blur && !self.blur_config.off`
@@ -121,7 +125,9 @@ one global setting proves too coarse.
   rather than fighting it.
 - Reuse niri's existing, tuned blur implementation; add no second blur.
 - Keep `background-effect` unchanged for windows without a material.
-- Cost one blur per output per frame at most, shared by every material window.
+- Keep the cost bounded and shared: at most two blur computations per changed
+  source per render target, shared by every material window on that target.
+  See Interactions for why it is two rather than one.
 
 ## Non-goals
 
