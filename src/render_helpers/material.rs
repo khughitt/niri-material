@@ -4,7 +4,6 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use niri_config::{CornerRadius, ResolvedGlass, ResolvedMaterial};
-
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
 use smithay::backend::renderer::utils::CommitCounter;
@@ -573,8 +572,16 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        let bg_texture = self.bg.borrow_mut().render(frame, false).ok();
-        let backdrop_texture = self.backdrop.borrow_mut().render(frame, false).ok();
+        let bg_texture = self
+            .bg
+            .borrow_mut()
+            .render(frame, self.glass.backdrop_blur)
+            .ok();
+        let backdrop_texture = self
+            .backdrop
+            .borrow_mut()
+            .render(frame, self.glass.backdrop_blur)
+            .ok();
         let (Some(bg_texture), Some(backdrop_texture)) = (bg_texture, backdrop_texture) else {
             warn!("material: error rendering background/backdrop buffer");
             let Some(subdraw) = plain_window_subdraw(
@@ -608,10 +615,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_slab_rect", f.slab_rect),
             Uniform::new("mat_area_size", f.area_size),
             Uniform::new("mat_chamfer", f.chamfer),
-            Uniform::new(
-                "mat_corner_radius",
-                <[f32; 4]>::from(self.corner_radius),
-            ),
+            Uniform::new("mat_corner_radius", <[f32; 4]>::from(self.corner_radius)),
             Uniform::new("mat_jelly_move", self.jelly.move_),
             Uniform::new("mat_jelly_resize", self.jelly.resize),
             Uniform::new("mat_jelly_activity", self.jelly.activity),
@@ -687,11 +691,11 @@ impl<'render> RenderElement<TtyRenderer<'render>> for MaterialRenderElement {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use niri_config::{ResolvedGlass, ResolvedMaterial};
     use smithay::backend::renderer::Color32F;
     use smithay::utils::Point;
 
+    use super::*;
     use crate::render_helpers::RenderTarget;
 
     fn material(name: &str) -> ResolvedMaterial {

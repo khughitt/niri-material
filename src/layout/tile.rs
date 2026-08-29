@@ -24,8 +24,8 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
-    apply_resolved, background_mapping, bevel_depth, jelly_state, material_frame,
-    InputFingerprint, JellyFingerprint, JellyUniforms, MaterialRenderElement, MaterialState,
+    apply_resolved, background_mapping, bevel_depth, jelly_state, material_frame, InputFingerprint,
+    JellyFingerprint, JellyUniforms, MaterialRenderElement, MaterialState,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -1286,9 +1286,10 @@ impl<W: LayoutElement> Tile<W> {
                             let bg = xray.background[ctx.target as usize].clone();
                             let backdrop = xray.backdrop[ctx.target as usize].clone();
 
+                            let backdrop_blur = material.material().glass.backdrop_blur;
                             if MaterialState::has_program(ctx.renderer)
-                                && bg.borrow_mut().prepare(ctx.renderer, false)
-                                && backdrop.borrow_mut().prepare(ctx.renderer, false)
+                                && bg.borrow_mut().prepare(ctx.renderer, backdrop_blur)
+                                && backdrop.borrow_mut().prepare(ctx.renderer, backdrop_blur)
                             {
                                 let material_elem = elem.clone().with_alpha(1.);
                                 match material.offscreen.render(
@@ -1412,8 +1413,9 @@ impl<W: LayoutElement> Tile<W> {
                             // We're drawing the resize shader, not the offscreen directly.
                             data.id = elem.id().clone();
 
-                            // This is not a problem for split popups as the code will look for them by
-                            // original id when it doesn't find them on the offscreen.
+                            // This is not a problem for split popups as the code will look for them
+                            // by original id when it doesn't find them
+                            // on the offscreen.
                             self.window.set_offscreen_data(Some(data));
                             push(elem.into());
                             pushed_resize = true;
@@ -1472,8 +1474,9 @@ impl<W: LayoutElement> Tile<W> {
                     let xray = ctx.xray.unwrap();
                     let bg = xray.background[ctx.target as usize].clone();
                     let backdrop = xray.backdrop[ctx.target as usize].clone();
-                    if bg.borrow_mut().prepare(ctx.renderer, false)
-                        && backdrop.borrow_mut().prepare(ctx.renderer, false)
+                    let backdrop_blur = material.material().glass.backdrop_blur;
+                    if bg.borrow_mut().prepare(ctx.renderer, backdrop_blur)
+                        && backdrop.borrow_mut().prepare(ctx.renderer, backdrop_blur)
                     {
                         match material
                             .offscreen
@@ -1495,8 +1498,8 @@ impl<W: LayoutElement> Tile<W> {
                                     self.scale,
                                 );
                                 let glass = &material.material().glass;
-                                let max_flex = 0.25
-                                    * bevel_depth(f64::from(frame.chamfer), glass.thickness);
+                                let max_flex =
+                                    0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
                                 let jelly = jelly_state(
                                     motion_residual,
                                     size_residual,
@@ -1601,17 +1604,15 @@ impl<W: LayoutElement> Tile<W> {
                     scale,
                     win_alpha,
                     &mut |elem| {
-                        push(
-                            clip_window_element(
-                                elem,
-                                scale,
-                                geo,
-                                radius,
-                                clip_to_geometry,
-                                clip_shader.as_ref(),
-                                has_border_shader,
-                            ),
-                        )
+                        push(clip_window_element(
+                            elem,
+                            scale,
+                            geo,
+                            radius,
+                            clip_to_geometry,
+                            clip_shader.as_ref(),
+                            has_border_shader,
+                        ))
                     },
                 );
             }
@@ -1963,16 +1964,22 @@ mod tests {
     use super::*;
 
     fn options_with(name: &str, backdrop_blur: bool, blur_off: bool) -> Options {
-        let mut glass = niri_config::ResolvedGlass::default();
-        glass.backdrop_blur = backdrop_blur;
+        let glass = niri_config::ResolvedGlass {
+            backdrop_blur,
+            ..Default::default()
+        };
         let material = ResolvedMaterial {
             name: String::from(name),
             glass,
         };
-        let mut options = Options::default();
-        options.materials = Rc::new(HashMap::from([(String::from(name), material)]));
-        options.blur.off = blur_off;
-        options
+        Options {
+            materials: Rc::new(HashMap::from([(String::from(name), material)])),
+            blur: niri_config::Blur {
+                off: blur_off,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
     }
 
     #[test]
