@@ -2,7 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{Color, CornerRadius, GradientInterpolation, ResolvedMaterial};
+use niri_config::{Color, CornerRadius, GradientInterpolation, ResolvedGlass, ResolvedMaterial};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram};
@@ -148,6 +148,16 @@ niri_render_elements! {
 pub type TileRenderSnapshot =
     RenderSnapshot<TileRenderElement<GlesRenderer>, TileRenderElement<GlesRenderer>>;
 
+/// Whether a material's backdrop blur is actually on, given the global switch.
+///
+/// `BlurOptions` carries only `passes` and `offset` and drops `off`, so any
+/// consumer that re-derived this would silently ignore `blur { off }` — the
+/// same reason the background effect gates separately at
+/// `src/render_helpers/background_effect.rs:172`.
+fn backdrop_blur_enabled(glass: &ResolvedGlass, blur: &niri_config::Blur) -> bool {
+    glass.backdrop_blur && !blur.off
+}
+
 /// The material a window resolves to under the current config, if any.
 ///
 /// A name the current config does not define is not an error. `reload_config`
@@ -158,8 +168,13 @@ pub type TileRenderSnapshot =
 /// miss is that transient one; dropping the material lets `apply_resolved`
 /// clear the state, and the rule recompute that follows re-resolves the tile
 /// through `Tile::update_window`.
+///
+/// The global `blur { off }` switch is applied here, so every consumer
+/// downstream reads one already-gated value rather than re-deriving it.
 fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMaterial> {
-    options.materials.get(name?).cloned()
+    let mut material = options.materials.get(name?).cloned()?;
+    material.glass.backdrop_blur = backdrop_blur_enabled(&material.glass, &options.blur);
+    Some(material)
 }
 
 /// Routes one window render element through the clip-to-geometry path:
@@ -1943,7 +1958,45 @@ impl<W: LayoutElement> Tile<W> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
+
+    fn options_with(name: &str, backdrop_blur: bool, blur_off: bool) -> Options {
+        let mut glass = niri_config::ResolvedGlass::default();
+        glass.backdrop_blur = backdrop_blur;
+        let material = ResolvedMaterial {
+            name: String::from(name),
+            glass,
+        };
+        let mut options = Options::default();
+        options.materials = Rc::new(HashMap::from([(String::from(name), material)]));
+        options.blur.off = blur_off;
+        options
+    }
+
+    #[test]
+    fn backdrop_blur_survives_resolution_when_global_blur_is_on() {
+        let options = options_with("frost", true, false);
+        let resolved = resolve_material(Some("frost"), &options).unwrap();
+        assert!(resolved.glass.backdrop_blur);
+    }
+
+    #[test]
+    fn backdrop_blur_is_off_when_the_global_switch_is_off() {
+        // `blur { off }` means off. BlurOptions carries only passes and offset,
+        // so nothing downstream would honor `off` if it were not applied here.
+        let options = options_with("frost", true, true);
+        let resolved = resolve_material(Some("frost"), &options).unwrap();
+        assert!(!resolved.glass.backdrop_blur);
+    }
+
+    #[test]
+    fn backdrop_blur_stays_off_when_the_material_opts_out() {
+        let options = options_with("frost", false, false);
+        let resolved = resolve_material(Some("frost"), &options).unwrap();
+        assert!(!resolved.glass.backdrop_blur);
+    }
 
     #[test]
     fn a_name_the_config_does_not_define_resolves_to_nothing() {
