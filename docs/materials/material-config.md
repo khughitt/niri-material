@@ -42,6 +42,7 @@ lengths are logical pixels.
 | `distortion` | float | 0 | 0–1 | — |
 | `distortion` `scale=` | float | 0.5 | 0–2 | — |
 | `anisotropic-blur` | float | 0 | 0–1 | — |
+| `backdrop-blur` | bool | false | true / false | — |
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
 | `bevel` | float | 12 | 0–128 | logical px |
@@ -49,6 +50,16 @@ lengths are logical pixels.
 
 `jelly-flex` and `jelly-ripple` use thousandths only in their internal
 representation; their configuration values and ranges above are unchanged.
+
+`backdrop-blur` makes the glass refract the blurred backdrop rather than the
+sharp one, which is what produces a frosted appearance: blur and refraction
+compose into one image instead of being drawn as two. It is a switch, not a
+strength — the amount of blur comes from the global `blur` block's `passes` and
+`offset`, shared with every other blur consumer. Setting `blur { off }`
+disables it along with all other blur, regardless of this parameter.
+
+It is unrelated to `anisotropic-blur`, which smears the refraction itself along
+one axis and does not soften the backdrop.
 
 The slab uses `thickness` as its depth. Its frame is the window rectangle
 inflated by `bevel - max(abs(offset-x), abs(offset-y))`, then translated by
