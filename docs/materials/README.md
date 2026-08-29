@@ -19,6 +19,8 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-25-v1-reference-static-preflight-design.md`: implemented static-instrument correction.
 - `2026-08-27-v1-drm-acceptance-design.md`: implemented and passed physical DRM acceptance design.
 - `2026-08-28-v1-daily-driver-rollout-design.md`: approved package, transition, rollback, and burn-in design.
+- `2026-08-29-material-backdrop-blur-design.md`: implemented backdrop blur design.
+- `2026-08-29-material-backdrop-blur-evidence.md`: retained backdrop blur verification evidence.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
@@ -30,6 +32,7 @@ All future production rebases and material commits happen in this repository.
 - `plans/2026-08-26-v1-reference-static-preflight.md`: executed parity preflight and recapture plan.
 - `plans/2026-08-27-v1-drm-acceptance.md`: executed physical DRM acceptance plan.
 - `plans/2026-08-28-v1-daily-driver-rollout.md`: package and daily-driver rollout procedure.
+- `plans/2026-08-29-material-backdrop-blur.md`: executed backdrop blur plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the
@@ -71,6 +74,12 @@ A frozen-reference geometry-only preflight at `niri-experiments` commit
 `5d3dfd26c4d4a4ef2c464c1d649dba533ccb27c5` subsequently passed 3/3 at
 80-pixel gaps, identifying the recorded shift failures as output clipping.
 The corrected complete capture incorporates that geometry scene.
+
+The `backdrop-blur` glass parameter is implemented and nested-verified at
+`eb4f1bd6`; the material refracts the blurred backdrop rather than the sharp
+one, gated by the global `blur` block. Its evidence is recorded in
+`2026-08-29-material-backdrop-blur-evidence.md`. The default-preserves-v1 DRM
+acceptance regression remains outstanding.
 
 Daily-driver deployment remains incomplete until the approved package and
 two-stage burn-in pass. Build from
