@@ -145,15 +145,20 @@ time, then performs this sequence at normal animation speed:
 3. Write an invalid offset wider than the bevel, request reload, prove that
    niri rejects it and preserves the last valid config and mapped window, then
    restore the committed config.
-4. Move the probe's column right and left repeatedly, capturing a motion burst
+4. Rename the material the probe resolves, reload, and confirm the compositor
+   survives, the probe window ID is unchanged, and the probe renders untreated.
+   Restore the committed name and reload.
+5. Remove the material definition entirely while the probe is mapped, reload,
+   and confirm the same survival and untreated rendering. Restore and reload.
+6. Move the probe's column right and left repeatedly, capturing a motion burst
    and two settled frames.
-5. Resize the column wider and back, capturing the transition and settled
+7. Resize the column wider and back, capturing the transition and settled
    state.
-6. Close and remap a probe with the same app ID.
-7. Enter and leave overview.
-8. Switch one workspace down and back up, including the strip end.
-9. Capture the final physical output through niri's screenshot action.
-10. Leave the session running for the operator's final visual check, then exit
+8. Close and remap a probe with the same app ID.
+9. Enter and leave overview.
+10. Switch one workspace down and back up, including the strip end.
+11. Capture the final physical output through niri's screenshot action.
+12. Leave the session running for the operator's final visual check, then exit
     through the dedicated binding.
 
 Repeating the short motion operations makes physical artifacts observable
@@ -171,6 +176,16 @@ exited and cleanup has completed. It passes only when:
   decodable at 3440×1440;
 - the same-name valid reload and rejected invalid reload retain the original
   probe window ID;
+- the rename and removal reloads leave the compositor running and retain the
+  original probe window ID, and their settled captures show the probe
+  untreated;
+
+  A reload that renames or removes a material a mapped window resolves panicked
+  the compositor in the deployed build on 2026-08-29, fixed in `7f6e69c3`.
+  `niri validate` cannot reach this class: the stale name lives in live window
+  state, not in the config being validated. These two scenarios exist so the
+  class is exercised against real hardware rather than only in unit tests.
+
 - close removes the original probe ID, remap produces exactly one new probe ID
   distinct from the original, and its settled capture shows the material
   treatment again;
