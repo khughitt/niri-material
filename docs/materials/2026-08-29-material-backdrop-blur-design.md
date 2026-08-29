@@ -11,6 +11,10 @@ blurred treatment. The default-preserves-v1 DRM acceptance run remains
 outstanding: its existing byte-identical paired settled-frame scenarios must
 still run against a build carrying this parameter.
 
+The retained capture hashes, exact reproduction inputs, ROI procedure, and
+cleanup proof are recorded in
+[`2026-08-29-material-backdrop-blur-evidence.md`](2026-08-29-material-backdrop-blur-evidence.md).
+
 ## Context
 
 Glass currently refracts a sharp backdrop. Asking niri's own

@@ -429,6 +429,7 @@ git commit -m "docs(materials): document backdrop-blur"
 
 **Files:**
 - Modify: `docs/materials/2026-08-29-material-backdrop-blur-design.md:3` (status header)
+- Create: `docs/materials/2026-08-29-material-backdrop-blur-evidence.md` (retained evidence manifest and reproduction record)
 - Modify: `docs/superpowers/plans/2026-08-29-material-backdrop-blur.md` (this plan's checkboxes)
 
 **Interfaces:**
@@ -514,7 +515,7 @@ git -C ~/d/dotfiles diff --quiet -- niri/config.kdl   # any blur{} edits reverte
 Expected: the last command exits zero, `niri msg layers` shows no
 `prism-debug-backdrop`, and `prism doctor` reports ok.
 
-- [x] **Step 4: Update both documents**
+- [x] **Step 4: Update the records**
 
 All edits happen here, before anything is staged:
 
@@ -534,11 +535,14 @@ All edits happen here, before anything is staged:
 4. In this plan, tick every completed checkbox **including this step and Step 5**,
    which are about to be completed by the act of committing. Leaving them
    unchecked commits a plan that understates its own execution.
+5. Record the retained capture and input manifests, measurement procedure, and
+   cleanup proof in `docs/materials/2026-08-29-material-backdrop-blur-evidence.md`.
 
-- [x] **Step 5: Stage both documents and commit**
+- [x] **Step 5: Stage the records and commit**
 
 ```bash
 git add docs/materials/2026-08-29-material-backdrop-blur-design.md \
+        docs/materials/2026-08-29-material-backdrop-blur-evidence.md \
         docs/superpowers/plans/2026-08-29-material-backdrop-blur.md
 git commit -m "docs(materials): record backdrop blur implementation"
 ```
