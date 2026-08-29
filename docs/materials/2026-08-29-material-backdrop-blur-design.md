@@ -1,6 +1,15 @@
 # Material backdrop blur: design
 
-**Status:** proposed 2026-08-29; not implemented.
+**Status:** implemented and nested-verified 2026-08-29 from source commit
+`eb4f1bd65f6573610aeb9af1a64260c07fba63e3`, with release binary SHA-256
+`bcb08742699b642f8f194d4db96738dcceb12dabd370b62faab9d919999d0bee`.
+On a 1280×720 headless Weston GL host, the glass remained active; checkerboard
+contrast in a text-free window ROI fell from standard deviation `0.0401255`
+sharp to `0.00144691` at 3 passes and `0` at 6 passes; `blur { off }` and
+material opt-out captures were byte-identical; and overview retained the
+blurred treatment. The default-preserves-v1 DRM acceptance run remains
+outstanding: its existing byte-identical paired settled-frame scenarios must
+still run against a build carrying this parameter.
 
 ## Context
 

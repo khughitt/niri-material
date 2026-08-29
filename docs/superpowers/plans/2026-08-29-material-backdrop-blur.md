@@ -34,7 +34,7 @@
 **Interfaces:**
 - Produces: `Glass::backdrop_blur: Option<bool>` and `ResolvedGlass::backdrop_blur: bool` (default `false`). Task 2 reads `ResolvedGlass::backdrop_blur`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `mod tests` in `niri-config/src/lib.rs`, beside the existing material tests. They use the module's existing `do_parse` and `do_parse_err` helpers (`niri-config/src/lib.rs:724` and `:731`):
 
@@ -86,12 +86,12 @@ Add to `mod tests` in `niri-config/src/lib.rs`, beside the existing material tes
 
 `ResolvedGlass` is already in scope in that module — it is used by the existing literal at line 912.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p niri-config backdrop_blur`
 Expected: FAIL — `no field 'backdrop_blur' on type 'ResolvedGlass'`. A compile error is the expected failure here.
 
-- [ ] **Step 3: Add the parse field**
+- [x] **Step 3: Add the parse field**
 
 In the `Glass` struct, after the `anisotropic_blur` field at `niri-config/src/material.rs:181`:
 
@@ -100,7 +100,7 @@ In the `Glass` struct, after the `anisotropic_blur` field at `niri-config/src/ma
     pub backdrop_blur: Option<bool>,
 ```
 
-- [ ] **Step 4: Add the resolved field and its default**
+- [x] **Step 4: Add the resolved field and its default**
 
 In `ResolvedGlass`, after `anisotropic_blur: f64,`:
 
@@ -116,7 +116,7 @@ In `impl Default for ResolvedGlass`, after `anisotropic_blur: 0.,`:
             backdrop_blur: false,
 ```
 
-- [ ] **Step 5: Resolve it**
+- [x] **Step 5: Resolve it**
 
 In `Material::resolve`, after the `anisotropic_blur` line:
 
@@ -124,7 +124,7 @@ In `Material::resolve`, after the `anisotropic_blur` line:
                 backdrop_blur: g.backdrop_blur.unwrap_or(d.backdrop_blur),
 ```
 
-- [ ] **Step 6: Fix the exhaustive literal the new field breaks**
+- [x] **Step 6: Fix the exhaustive literal the new field breaks**
 
 `ResolvedGlass` gained a field, which breaks the exhaustive struct literal in
 `material_parameters_resolve` at `niri-config/src/lib.rs:912-923`. This must be
@@ -138,17 +138,17 @@ done before the tests can compile, not after. Add, after `anisotropic_blur: 0.75
 `material_omitted_parameters_take_design_defaults` compares against
 `ResolvedGlass::default()` and needs no edit.
 
-- [ ] **Step 7: Run the tests to verify they pass**
+- [x] **Step 7: Run the tests to verify they pass**
 
 Run: `cargo test -p niri-config backdrop_blur`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 8: Run the whole config suite**
+- [x] **Step 8: Run the whole config suite**
 
 Run: `cargo test -p niri-config`
 Expected: PASS, including the two pre-existing material tests.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add niri-config/src/material.rs niri-config/src/lib.rs
@@ -167,7 +167,7 @@ git commit -m "feat(materials): add backdrop-blur to the glass config"
 - Consumes: `ResolvedGlass::backdrop_blur` from Task 1; `Options::blur` (`niri_config::Blur`, field `off: bool`) and `Options::materials` from `src/layout/mod.rs:394-398`.
 - Produces: `backdrop_blur_enabled(&ResolvedGlass, &niri_config::Blur) -> bool`, and a `resolve_material` whose returned `glass.backdrop_blur` is already gated against global blur. Task 3 reads that value and must not re-gate or re-derive it.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `mod tests` in `src/layout/tile.rs`:
 
@@ -217,7 +217,7 @@ The module's `use super::*` already brings in `Rc` (imported at `src/layout/tile
 
 `ResolvedGlass` is not imported in `tile.rs`, which is why the helper above names it as `niri_config::ResolvedGlass`. It is re-exported from the crate root (`niri-config/src/lib.rs:57`).
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p niri backdrop_blur_`
 
@@ -231,7 +231,7 @@ and `backdrop_blur_stays_off_when_the_material_opts_out` pass trivially, and
 `assertion failed: !resolved.glass.backdrop_blur`. That one failing test is the
 point of this task.
 
-- [ ] **Step 3: Apply the gate**
+- [x] **Step 3: Apply the gate**
 
 Replace the body of `resolve_material` at `src/layout/tile.rs:161-163`. Keep the existing doc comment above it unchanged and append the second paragraph:
 
@@ -263,12 +263,12 @@ fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMat
 `ResolvedGlass` is not imported in `tile.rs`; add it to the existing
 `niri_config` import at `src/layout/tile.rs:5`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `cargo test -p niri backdrop_blur_`
 Expected: PASS, 3 tests. Also run `cargo test -p niri a_name_the_config_does_not_define` and expect PASS — the early return on an unknown name must still work.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/layout/tile.rs
@@ -303,7 +303,7 @@ and the window falls through to `plain_window_subdraw` — the glass disappears
 entirely, with only a `warn!`. Changing `render` without `prepare` produces
 that bug.
 
-- [ ] **Step 1: Use the existing glass field at the two draw calls**
+- [x] **Step 1: Use the existing glass field at the two draw calls**
 
 Replace `src/render_helpers/material.rs:576-577`:
 
@@ -320,7 +320,7 @@ Replace `src/render_helpers/material.rs:576-577`:
             .ok();
 ```
 
-- [ ] **Step 2: Use the same value at the two prepare sites**
+- [x] **Step 2: Use the same value at the two prepare sites**
 
 At `src/layout/tile.rs:1275-1276`, replace the two `false` literals:
 
@@ -341,7 +341,7 @@ At `src/layout/tile.rs:1460-1461`, the same:
 
 No other call site changes: the element constructor already carries the glass.
 
-- [ ] **Step 3: Verify no literals remain on the material path**
+- [x] **Step 3: Verify no literals remain on the material path**
 
 Run:
 
@@ -354,13 +354,13 @@ A match in either is the preparation/draw mismatch reappearing.
 `src/render_helpers/xray.rs:310` passes `self.blur`, which is correct and not a
 literal.
 
-- [ ] **Step 4: Run the test suite as CI does**
+- [x] **Step 4: Run the test suite as CI does**
 
 Run: `cargo test --all --exclude niri-visual-tests`
 Expected: PASS. No behavior changes for existing materials, because Task 1
 defaults the flag to `false`.
 
-- [ ] **Step 5: Run the lint gates CI enforces**
+- [x] **Step 5: Run the lint gates CI enforces**
 
 Run:
 
@@ -369,11 +369,13 @@ cargo fmt --all -- --check
 cargo clippy --all --all-targets
 ```
 
-Expected: both clean. These are separate CI jobs
-(`.github/workflows/ci.yml:229` and `:214`); a red either one blocks the merge,
-so fix formatting and lints before committing rather than after.
+Expected: both exit zero and this change introduces no warnings. These are
+separate CI jobs (`.github/workflows/ci.yml:229` and `:214`); a red either one
+blocks the merge, so fix formatting and lints before committing rather than
+after. Warnings already present with a newer local toolchain are not part of
+this feature.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/layout/tile.rs src/render_helpers/material.rs
@@ -390,7 +392,7 @@ git commit -m "feat(materials): sample the blurred backdrop when backdrop-blur i
 **Interfaces:**
 - Consumes: the final parameter name and semantics from Tasks 1-3.
 
-- [ ] **Step 1: Add the table row**
+- [x] **Step 1: Add the table row**
 
 In the parameter table, after the `anisotropic-blur` row at `docs/materials/material-config.md:44`:
 
@@ -398,7 +400,7 @@ In the parameter table, after the `anisotropic-blur` row at `docs/materials/mate
 | `backdrop-blur` | bool | false | true / false | — |
 ```
 
-- [ ] **Step 2: Explain the parameter**
+- [x] **Step 2: Explain the parameter**
 
 After the `jelly-flex` / `jelly-ripple` paragraph that follows the table, add:
 
@@ -414,7 +416,7 @@ It is unrelated to `anisotropic-blur`, which smears the refraction itself along
 one axis and does not soften the backdrop.
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add docs/materials/material-config.md
@@ -443,18 +445,22 @@ would **not** contain this work. Installing this to the daily driver is a
 separate rollout decision requiring a PKGBUILD pin update and explicit operator
 approval; it is out of scope here. Verify from a local build instead.
 
-- [ ] **Step 1: Pin and record what is being tested**
+- [x] **Step 1: Pin and record what is being tested**
 
 ```bash
 git rev-parse HEAD
 cargo build --release --features default
-sha256sum target/release/niri
+target_dir=$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)
+sha256sum "$target_dir/release/niri"
 ```
 
-Record all three in the status header written in Step 4. A visual result that
-does not name the binary it came from cannot authorize an implemented status.
+This checkout may use a shared Cargo target directory, so resolve it through
+Cargo rather than assuming it lives under the worktree. Record the source
+commit, successful build, and binary hash in the status header written in Step
+4. A visual result that does not name the binary it came from cannot authorize
+an implemented status.
 
-- [ ] **Step 2: Run the checks**
+- [x] **Step 2: Run the checks**
 
 Use a nested niri on the dedicated headless host, per this project's convention
 that live nested runs never touch the desktop session:
@@ -468,8 +474,8 @@ systemd-run --user --unit="$weston_unit" --collect \
 trap 'systemctl --user stop "$weston_unit.service" >/dev/null 2>&1 || true' EXIT HUP INT TERM
 ```
 
-Run `target/release/niri` against that socket with a config defining a material
-that sets `backdrop-blur true`, a Background-layer surface carrying
+Run `"$target_dir/release/niri"` against that socket with a config defining a
+material that sets `backdrop-blur true`, a Background-layer surface carrying
 high-contrast content, and a terminal using the material.
 
 Confirm each:
@@ -487,7 +493,7 @@ Confirm each:
 Capture a frame for each state so the result is evidence rather than
 recollection.
 
-- [ ] **Step 3: Restore the operator's environment**
+- [x] **Step 3: Restore the operator's environment**
 
 Required whether the checks passed or failed, and before recording anything:
 
@@ -508,7 +514,7 @@ git -C ~/d/dotfiles diff --quiet -- niri/config.kdl   # any blur{} edits reverte
 Expected: the last command exits zero, `niri msg layers` shows no
 `prism-debug-backdrop`, and `prism doctor` reports ok.
 
-- [ ] **Step 4: Update both documents**
+- [x] **Step 4: Update both documents**
 
 All edits happen here, before anything is staged:
 
@@ -529,7 +535,7 @@ All edits happen here, before anything is staged:
    which are about to be completed by the act of committing. Leaving them
    unchecked commits a plan that understates its own execution.
 
-- [ ] **Step 5: Stage both documents and commit**
+- [x] **Step 5: Stage both documents and commit**
 
 ```bash
 git add docs/materials/2026-08-29-material-backdrop-blur-design.md \
