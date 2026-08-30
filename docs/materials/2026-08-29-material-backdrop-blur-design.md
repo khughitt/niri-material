@@ -11,6 +11,10 @@ blurred treatment. The default-preserves-v1 DRM acceptance run remains
 outstanding: its existing byte-identical paired settled-frame scenarios must
 still run against a build carrying this parameter.
 
+Deployed to the daily driver 2026-08-29T17:14:52 as `niri-material
+26.04.r133.g52f74f10-1`. Prism exposes the switch as `glass.backdropBlur`, and
+the compositor validated and reloaded the generated `backdrop-blur` node.
+
 The retained capture hashes, exact reproduction inputs, ROI procedure, and
 cleanup proof are recorded in
 [`2026-08-29-material-backdrop-blur-evidence.md`](2026-08-29-material-backdrop-blur-evidence.md).
