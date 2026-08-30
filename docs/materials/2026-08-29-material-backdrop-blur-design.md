@@ -15,6 +15,18 @@ Deployed to the daily driver 2026-08-29T17:14:52 as `niri-material
 26.04.r133.g52f74f10-1`. Prism exposes the switch as `glass.backdropBlur`, and
 the compositor validated and reloaded the generated `backdrop-blur` node.
 
+**Known defect, found in burn-in 2026-08-30 and open.** Dragging a window
+between workspaces in overview drops the frost from the moment the insert hint
+appears; it returns when the drag ends. It is attributed to this work: with
+`backdrop-blur` off the glass survives the same drag intact. The
+interactive-move path shares `Tile::render`, and `Niri::render` fills the xray
+buffers and sets `ctx.xray` for the whole frame, so the buffers are present;
+the only change on that path is `prepare()`/`render()` receiving the glass flag
+instead of a `false` literal. Whether the material falls back to plain drawing
+or keeps drawing glass against the sharp backdrop is not yet established. The
+defect is cosmetic and transient, and the daily-driver burn-in passed with it
+recorded as acceptable.
+
 The retained capture hashes, exact reproduction inputs, ROI procedure, and
 cleanup proof are recorded in
 [`2026-08-29-material-backdrop-blur-evidence.md`](2026-08-29-material-backdrop-blur-evidence.md).
