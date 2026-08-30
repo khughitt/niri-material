@@ -6,9 +6,15 @@ use. Arch's `niri 26.04-1` was removed and `niri-material
 `26.04.r106.g7f6e69c3-1` on 2026-08-29T07:11:08 to pick up the reload fix in
 `7f6e69c3`, then to `26.04.r133.g52f74f10-1` on 2026-08-29T17:14:52 to carry
 backdrop blur. Prism took ownership of the material definition on 2026-08-29.
-Burn-in is outstanding and now soaks `52f74f10`: the earlier boundary covered a
-superseded build, so the normal-session scan, one full cold start, and the
-operator PASS all restart against the running package.
+Burn-in passed 2026-08-30 against `52f74f10`. The soak window was set
+retroactively over every session that ran it — roughly 13 hours across three
+sessions and two full cold starts — and found no unexplained material, shader,
+render, or config journal entry beyond the established pre-existing
+`GL_INVALID_VALUE` signature. The operator recorded an explicit PASS. One
+appearance change while dragging a terminal between workspaces in overview is
+recorded in `burn-in.txt` as an observation, with occlusion by the terminal's
+own activated background opacity as the leading explanation rather than loss of
+the material.
 
 ## Context
 
