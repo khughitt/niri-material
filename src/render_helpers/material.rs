@@ -40,6 +40,15 @@ pub struct BackgroundMapping {
 /// UV mappings. An element straddling a workspace boundary during a
 /// workspace switch resolves to its center's workspace; fragments outside
 /// that workspace's rect fall back to the backdrop layer.
+///
+/// Known limitation: a window being interactively dragged loses its frosted
+/// appearance while `backdrop-blur` is on, in both overview and the normal
+/// view, returning when the drag ends. Instrumented runs proved the dragged
+/// and stationary elements bind the same buffers and the same blurred texture
+/// in the same frame, so the divergence is in the sampling geometry derived
+/// here rather than in blur production or texture selection. Tracked as
+/// `material-e88df7`; see
+/// `docs/materials/2026-08-29-material-backdrop-blur-design.md`.
 pub fn background_mapping(
     geo_in_backdrop: Rectangle<f64, Logical>,
     workspaces: &[(Rectangle<f64, Logical>, Color32F)],
