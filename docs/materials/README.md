@@ -18,7 +18,7 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-24-v1-parity-design.md`: executed frozen-reference parity design.
 - `2026-08-25-v1-reference-static-preflight-design.md`: implemented static-instrument correction.
 - `2026-08-27-v1-drm-acceptance-design.md`: implemented and passed physical DRM acceptance design.
-- `2026-08-28-v1-daily-driver-rollout-design.md`: approved package, transition, rollback, and burn-in design.
+- `2026-08-28-v1-daily-driver-rollout-design.md`: implemented deployment and passed burn-in design.
 - `2026-08-29-material-backdrop-blur-design.md`: implemented backdrop blur design.
 - `2026-08-29-material-backdrop-blur-evidence.md`: retained backdrop blur verification evidence.
 - `material-config.md`: material and glass configuration reference.
@@ -31,7 +31,7 @@ All future production rebases and material commits happen in this repository.
 - `plans/2026-08-24-v1-parity.md`: executed frozen-reference parity plan.
 - `plans/2026-08-26-v1-reference-static-preflight.md`: executed parity preflight and recapture plan.
 - `plans/2026-08-27-v1-drm-acceptance.md`: executed physical DRM acceptance plan.
-- `plans/2026-08-28-v1-daily-driver-rollout.md`: package and daily-driver rollout procedure.
+- `plans/2026-08-28-v1-daily-driver-rollout.md`: executed package and daily-driver rollout procedure.
 - `plans/2026-08-29-material-backdrop-blur.md`: executed backdrop blur plan.
 
 Research, results, and source fixtures live in the sibling
@@ -81,8 +81,10 @@ one, gated by the global `blur` block. Its evidence is recorded in
 `2026-08-29-material-backdrop-blur-evidence.md`. The default-preserves-v1 DRM
 acceptance regression remains outstanding.
 
-Daily-driver deployment remains incomplete until the approved package and
-two-stage burn-in pass. Build from
-[`packaging/arch/PKGBUILD`](../../packaging/arch/PKGBUILD); follow
-`plans/2026-08-28-v1-daily-driver-rollout.md` for package inspection,
-installation, rollback, and burn-in.
+Daily-driver deployment and burn-in passed 2026-08-30 against `52f74f10`, with
+the package, Prism ownership handoff, two cold starts, journal review, and
+operator PASS recorded in `2026-08-28-v1-daily-driver-rollout-design.md`.
+The accepted burn-in also exposed an open cosmetic defect: an interactively
+dragged window loses frost while stationary windows reading the same texture do
+not. The investigation is narrowed to sampling geometry and remains active in
+`2026-08-29-material-backdrop-blur-design.md`.

@@ -12,9 +12,10 @@ sessions and two full cold starts — and found no unexplained material, shader,
 render, or config journal entry beyond the established pre-existing
 `GL_INVALID_VALUE` signature. The operator recorded an explicit PASS. One
 appearance change while dragging a terminal between workspaces in overview is
-recorded in `burn-in.txt` as an observation, with occlusion by the terminal's
-own activated background opacity as the leading explanation rather than loss of
-the material.
+recorded in `burn-in.txt` as an observation. Later instrumented investigation
+ruled out opacity and narrowed the open cosmetic defect to the sampling
+geometry passed to two elements reading the same blurred texture; see
+`2026-08-29-material-backdrop-blur-design.md`.
 
 ## Context
 
@@ -274,12 +275,13 @@ Post-restart gates:
 - the journal contains no unexpected material, shader, renderer, or config
   error.
 
-The rollout remains **in burn-in** until one normal-use session and one cold
-start pass. It becomes **deployed** only after those gates and the operator's
-visual confirmation are recorded. A crash, corruption, failed reload, missing
-material, legacy/native double rendering, or unexpected material warning is a
-rollout failure and triggers rollback. The deployment procedure does not fix
-production code in place.
+The rollout became **deployed** after the normal-use session, two cold starts,
+clean journal review, and operator visual confirmation passed on 2026-08-30.
+The recorded overview-drag frost defect is cosmetic, transient, and accepted
+for this burn-in; it remains open as separate backdrop-blur work. A crash,
+corruption, failed reload, missing material, legacy/native double rendering, or
+unexpected material warning would have been a rollout failure and triggered
+rollback. The deployment procedure did not fix production code in place.
 
 ## Alternatives rejected
 

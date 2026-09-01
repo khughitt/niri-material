@@ -84,13 +84,12 @@ quantity that differs between two elements provably reading the same texture.
 between workspaces in overview drops the frost from the moment the insert hint
 appears; it returns when the drag ends. It is attributed to this work: with
 `backdrop-blur` off the glass survives the same drag intact. The
-interactive-move path shares `Tile::render`, and `Niri::render` fills the xray
-buffers and sets `ctx.xray` for the whole frame, so the buffers are present;
-the only change on that path is `prepare()`/`render()` receiving the glass flag
-instead of a `false` literal. Whether the material falls back to plain drawing
-or keeps drawing glass against the sharp backdrop is not yet established. The
-defect is cosmetic and transient, and the daily-driver burn-in passed with it
-recorded as acceptable.
+interactive-move path keeps drawing the material from the same blurred buffers
+and GL textures as a stationary window in the same frame. Instrumentation has
+ruled out plain fallback, sharp-texture selection, buffer identity, blur
+strength, and overview scaling; the remaining divergence is the sampling
+geometry passed to the shader. The defect is cosmetic and transient, and the
+daily-driver burn-in passed with it recorded as acceptable.
 
 The retained capture hashes, exact reproduction inputs, ROI procedure, and
 cleanup proof are recorded in
