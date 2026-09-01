@@ -2,15 +2,18 @@
 
 **Status:** complete 2026-09-01; historical/superseded. The reviewed migration
 commits were fast-forwarded into stable Material, the canonical registry maps
-`material` to that checkout, and there are no deferred foreign dependencies.
+`material` to that checkout, and there are no deferred foreign dependencies. The
+implemented migration sequence runs through `8047b6ca14ec1e2a0760a79f5d9d4883a9fc2519`;
+the central portfolio record owns the resulting SHA of this ledger-only traceability
+correction.
 
 ## Scope and evidence
 
 | Field | Value |
 | --- | --- |
 | Initial stable source | `materials-26.04` at `7e94d71af195d5f5062d9b51ec80bca513af8ae3` |
-| First integrated stable head | `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849` |
-| Integrated commits | `b559a4c32d2e022107fd6048ced1f658429bbbcb`, `d064120f43fe15d8021f2dbdb4b469eba5da4710`, and review fix `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849` |
+| First integrated stable head (historical snapshot) | `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849` |
+| Migration implementation range | `b559a4c32d2e022107fd6048ced1f658429bbbcb` through `8047b6ca14ec1e2a0760a79f5d9d4883a9fc2519`: `b559a4c32d2e022107fd6048ced1f658429bbbcb`, `d064120f43fe15d8021f2dbdb4b469eba5da4710`, review fix `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`, integration record `02caf4dbbb129a0baf8160ac27c584e18f24c235`, portability fix `28423687fdcc627ed8f6bb501742650478e0318e`, and late evidence fix `8047b6ca14ec1e2a0760a79f5d9d4883a9fc2519` |
 | Tasks source | `b943419c0e37b947a0ca1814f416ff61259f4d8a` |
 | Audit date | 2026-09-01 |
 | Project prefix | `material` |
@@ -25,10 +28,13 @@ surface without turning them into Material task authority.
 
 ## Git state inspected
 
+The stable and migration-worktree rows below are historical snapshots captured during
+integration; the complete implementation range is recorded above.
+
 | Checkout or branch | Inspected state | Decision |
 | --- | --- | --- |
-| `~/d/niri-material`, `materials-26.04` | Clean at first integrated head `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`, six commits ahead of `origin/materials-26.04` | Stable authority after the reviewed first fast-forward from `7e94d71af195d5f5062d9b51ec80bca513af8ae3`. |
-| `chore/tasks-migration-material` | Isolated worktree at `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849` before this ledger-only closeout | Retained for the independent ledger review and second fast-forward. |
+| `~/d/niri-material`, `materials-26.04` (historical first-integration snapshot) | Clean at first integrated head `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`, six commits ahead of `origin/materials-26.04` | Stable authority after the reviewed first fast-forward from `7e94d71af195d5f5062d9b51ec80bca513af8ae3`. |
+| `chore/tasks-migration-material` (historical ledger-closeout snapshot) | Isolated worktree at `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849` before the ledger-only closeout | Retained for the independent ledger review and second fast-forward. |
 | `debug/overview-drag-frost` | `048814893b9bc4924927468ce1f539b7764d942b`; only the five expected tracked files are dirty; no staged or untracked files | Preserve byte-for-byte; active task owner is `debug/overview-drag-frost`. |
 | `patched-26.04` | `5e53b949`, tracking `origin/patched-26.04` | Historical production base; no task outcome. |
 
@@ -165,13 +171,13 @@ Material outcome.
 | `cargo clippy --all --all-targets` | PASS with pre-existing warnings and no denial/error. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
 | `cargo fmt --all -- --check` | Environmental baseline exception: stable rustfmt 1.9.0 from Rust 1.98 exits 1 on untouched `src/protocols/foreign_toplevel.rs`; the repository and CI require nightly rustfmt, which is unavailable on this host. The stable checkout fails identically and both copies hash to `41891c1ce0b3e4e5c59f51db9f82009ab2a677b12f50a8a2d9b60e443652ce50`; no source-format change is included. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
 | `(cd docs && uv sync --locked --all-extras --dev && uv run mkdocs build)` | PASS; strict documentation build completed. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
-| NUL-safe exact document coverage comparison | PASS after task creation: 114 actual paths equal 114 classified paths (111 tracked docs, this ledger, root README, and `.agents/AGENTS.md`). | Tasks-store commit (this commit). |
-| `tasks check`, `tasks prime`, and `tasks ready` under the temporary seven-project registry | PASS: zero errors or warnings; counts are 1 idea, 2 todo, 1 doing; ready contains the two todo outcomes. | Tasks-store commit (this commit). |
-| First stable fast-forward | PASS from `7e94d71af195d5f5062d9b51ec80bca513af8ae3` to `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`, integrating exactly `b559a4c32d2e022107fd6048ced1f658429bbbcb`, `d064120f43fe15d8021f2dbdb4b469eba5da4710`, and `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`. | Integration closeout (this commit). |
-| Stable `cargo test --all --exclude niri-visual-tests -- --nocapture` | PASS: 249 niri, 49 niri-config, 1 wiki parse, 3 niri-ipc, and 1 doctest; zero failures. | Integration closeout (this commit). |
-| Stable `cargo clippy --all --all-targets` | PASS with the same pre-existing non-denied warnings. | Integration closeout (this commit). |
-| Stable `cargo fmt --all -- --check` | Unchanged environmental baseline exception: stable rustfmt 1.9.0 exits 1 only on untouched `src/protocols/foreign_toplevel.rs`; output and stderr are byte-identical to the pre-integration stable baseline and the source still hashes to `41891c1ce0b3e4e5c59f51db9f82009ab2a677b12f50a8a2d9b60e443652ce50`. | Integration closeout (this commit). |
-| Stable strict MkDocs build | PASS under the required shared docs environment. | Integration closeout (this commit). |
-| Canonical `tasks init --prefix material`, run twice | PASS twice with identical JSON: prefix `material`, root set to the stable Material checkout, and no warnings. | Integration closeout (this commit). |
-| Canonical `tasks check`, `tasks prime`, and `tasks ready` | PASS: zero errors or warnings; prefix `material`; counts are 1 idea, 2 todo, 1 doing; ready contains `material-ce3315` and `material-c854bd`. | Integration closeout (this commit). |
-| Post-integration active-work fingerprint and Git-state gate | PASS for all five preserved checksums and exactly the five expected dirty paths, with no staged or untracked files. | Integration closeout (this commit). |
+| NUL-safe exact document coverage comparison | PASS after task creation: 114 actual paths equal 114 classified paths (111 tracked docs, this ledger, root README, and `.agents/AGENTS.md`). | Tasks-store commit `d064120f43fe15d8021f2dbdb4b469eba5da4710` |
+| `tasks check`, `tasks prime`, and `tasks ready` under the temporary seven-project registry | PASS: zero errors or warnings; counts are 1 idea, 2 todo, 1 doing; ready contains the two todo outcomes. | Tasks-store commit `d064120f43fe15d8021f2dbdb4b469eba5da4710` |
+| First stable fast-forward | PASS from `7e94d71af195d5f5062d9b51ec80bca513af8ae3` to `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`, integrating exactly `b559a4c32d2e022107fd6048ced1f658429bbbcb`, `d064120f43fe15d8021f2dbdb4b469eba5da4710`, and `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
+| Stable `cargo test --all --exclude niri-visual-tests -- --nocapture` | PASS: 249 niri, 49 niri-config, 1 wiki parse, 3 niri-ipc, and 1 doctest; zero failures. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
+| Stable `cargo clippy --all --all-targets` | PASS with the same pre-existing non-denied warnings. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
+| Stable `cargo fmt --all -- --check` | Unchanged environmental baseline exception: stable rustfmt 1.9.0 exits 1 only on untouched `src/protocols/foreign_toplevel.rs`; output and stderr are byte-identical to the pre-integration stable baseline and the source still hashes to `41891c1ce0b3e4e5c59f51db9f82009ab2a677b12f50a8a2d9b60e443652ce50`. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
+| Stable strict MkDocs build | PASS under the required shared docs environment. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
+| Canonical `tasks init --prefix material`, run twice | PASS twice with identical JSON: prefix `material`, root set to the stable Material checkout, and no warnings. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
+| Canonical `tasks check`, `tasks prime`, and `tasks ready` | PASS: zero errors or warnings; prefix `material`; counts are 1 idea, 2 todo, 1 doing; ready contains `material-ce3315` and `material-c854bd`. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
+| Post-integration active-work fingerprint and Git-state gate | PASS for all five preserved checksums and exactly the five expected dirty paths, with no staged or untracked files. | Integration closeout `02caf4dbbb129a0baf8160ac27c584e18f24c235` |
