@@ -1,7 +1,8 @@
 # Material Tasks migration ledger
 
-**Status:** active delivery. Documentation reconciliation is complete; task
-creation and migration verification remain in progress.
+**Status:** active delivery. Phase A documentation reconciliation, task
+creation, and migration verification are complete; independent review and
+integration remain.
 
 ## Scope and evidence
 
@@ -69,6 +70,7 @@ The preserved active-work fingerprint is:
 | `docs/superpowers/plans/2026-08-29-material-backdrop-blur.md` | `historical/superseded` | Fully checked implementation/nested-verification plan; its separately deferred DRM run remains a candidate. |
 | `docs/plans/2026-08-31-material-tasks-migration.md` | `active delivery` | This audit and migration ledger. |
 | `README.md` | `authority/current` | Upstream project entry point; contains no Material-specific delivery claim. |
+| `.agents/AGENTS.md` | `authority/current` | Current repository Tasks workflow guidance. |
 
 There are no changed or Material-authored wiki exceptions. Material-relevant
 `docs/wiki/Window-Effects.md`, `docs/wiki/Configuration:-Miscellaneous.md`, and
@@ -90,10 +92,10 @@ background-effect surface, not the fork-only material surface.
 
 | Outcome | Evidence | Sources | Active state | Size | Proposed status | Blockers | Disposition | Task ID |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Fix frost loss while interactively dragging a material window | Four live probe rounds narrowed the defect to sampling geometry; active five-file instrumentation is preserved. | `docs/materials/2026-08-29-material-backdrop-blur-design.md`; `debug/overview-drag-frost` diff | Branch and worktree active; owner `debug/overview-drag-frost` | `m` | `doing` | None | `create` | pending |
-| Verify backdrop blur preserves v1 defaults on physical DRM | Nested verification passed, but the design and evidence explicitly defer byte-identical paired settled frames to the existing DRM harness. | `docs/materials/2026-08-29-material-backdrop-blur-design.md`; `docs/materials/2026-08-29-material-backdrop-blur-evidence.md`; `docs/materials/2026-08-27-v1-drm-acceptance-design.md` | Unstarted | `m` | `todo` | None | `create` | pending |
-| Add damage-aware mipmapped backdrop storage and glass roughness | Accepted v1 design and DRM design call this the first post-v1 follow-up; parity design calls roughness the highest-value missing parameter. Current code has no mip/prefiltered storage or roughness field. | `docs/materials/2026-08-22-v1-design.md`; `docs/materials/2026-08-24-v1-parity-design.md`; `docs/materials/2026-08-27-v1-drm-acceptance-design.md`; `src/render_helpers/effect_buffer.rs` | Unstarted | `l` | `todo` | None | `create` | pending |
-| Decide how noise and saturation compose with glass | The blur design identifies a real unresolved control-surface question and two measurements that require confirmation before implementation. | `docs/materials/2026-08-29-material-backdrop-blur-design.md`; `src/render_helpers/background_effect.rs`; `src/render_helpers/shaders/postprocess.frag` | Unscoped design question | `s` | `idea` | None | `create` | pending |
+| Fix frost loss while interactively dragging a material window | Four live probe rounds narrowed the defect to sampling geometry; active five-file instrumentation is preserved. | `docs/materials/2026-08-29-material-backdrop-blur-design.md`; `debug/overview-drag-frost` diff | Branch and worktree active; owner `debug/overview-drag-frost` | `m` | `doing` | None | `create` | `material-e88df7` |
+| Verify backdrop blur preserves v1 defaults on physical DRM | Nested verification passed, but the design and evidence explicitly defer byte-identical paired settled frames to the existing DRM harness. | `docs/materials/2026-08-29-material-backdrop-blur-design.md`; `docs/materials/2026-08-29-material-backdrop-blur-evidence.md`; `docs/materials/2026-08-27-v1-drm-acceptance-design.md` | Unstarted | `m` | `todo` | None | `create` | `material-ce3315` |
+| Add damage-aware mipmapped backdrop storage and glass roughness | Accepted v1 design and DRM design call this the first post-v1 follow-up; parity design calls roughness the highest-value missing parameter. Current code has no mip/prefiltered storage or roughness field. | `docs/materials/2026-08-22-v1-design.md`; `docs/materials/2026-08-24-v1-parity-design.md`; `docs/materials/2026-08-27-v1-drm-acceptance-design.md`; `src/render_helpers/effect_buffer.rs` | Unstarted | `l` | `todo` | None | `create` | `material-c854bd` |
+| Decide how noise and saturation compose with glass | The blur design identifies a real unresolved control-surface question and two measurements that require confirmation before implementation. | `docs/materials/2026-08-29-material-backdrop-blur-design.md`; `src/render_helpers/background_effect.rs`; `src/render_helpers/shaders/postprocess.frag` | Unscoped design question | `s` | `idea` | None | `create` | `material-cad932` |
 | Daily-driver package deployment and burn-in | `52f74f10` is an ancestor; `7020776e` records deployment, two cold starts, journal review, and operator PASS. | `docs/materials/2026-08-28-v1-daily-driver-rollout-design.md` | Complete | — | — | — | `no task` | — |
 | Prism owns and emits the native material definition | Prism `main` at `d20111c2` contains the renderer, manifest, definition, and tests; Material records the 2026-08-29 ownership handoff. | `~/d/prism/integrations/niri/**`; `~/d/prism/defs/glass.yaml`; rollout design | Complete; externally owned | — | — | — | `no task` | — |
 | Correct Prism's stale burn-in prose | Material's completed burn-in evidence supersedes the foreign prose, but Prism documentation is outside this repository's migration write scope. | `~/d/prism/docs/superpowers/**`; Material `7020776e` | Pending Prism audit, externally owned | — | — | — | `no Material task`; Task 3 migration concern | — |
@@ -109,6 +111,7 @@ The literal task controls and CLI-created records use these reviewed values.
 - Title: `Fix frost loss during interactive material-window drag`
 - Status: `doing`
 - Owner: `debug/overview-drag-frost`
+- Priority: `2`
 - Size: `m`
 - Tags: `migration`, `bug`
 - Body: `Outcome: frosted backdrop sampling remains visually stable while a material window is interactively dragged between workspaces in overview and normal scrolling. Acceptance evidence: remove temporary FROSTDBG instrumentation; add the smallest runnable regression check for the corrected sampling geometry; pass the source-neutral Rust gates; and record a focused live verification showing the dragged and stationary elements retain equivalent frost without fallback, sharp-texture selection, or sampling-coordinate divergence. Sources: docs/materials/2026-08-29-material-backdrop-blur-design.md and the preserved debug/overview-drag-frost five-file diff. Uncertainty: four probe rounds isolate the fault to sampling geometry passed to two elements reading identical blurred textures, but the exact bad coordinate or scale is not yet identified.`
@@ -118,6 +121,7 @@ The literal task controls and CLI-created records use these reviewed values.
 - Title: `Verify backdrop blur preserves v1 defaults on physical DRM`
 - Status: `todo`
 - Owner: none
+- Priority: `2`
 - Size: `m`
 - Tags: `migration`, `acceptance`, `hardware`
 - Body: `Outcome: a build carrying backdrop-blur proves that the default-off material path preserves the accepted v1 appearance on the real DRM/NVIDIA path. Acceptance evidence: run the existing physical DRM harness scenarios unchanged; require byte-identical paired settled frames and all applicable machine and operator gates; record the pinned source, binary, environment, capture hashes, observations, cleanup, and reconciled verdict. Sources: docs/materials/2026-08-29-material-backdrop-blur-design.md, docs/materials/2026-08-29-material-backdrop-blur-evidence.md, and docs/materials/2026-08-27-v1-drm-acceptance-design.md. Uncertainty: nested verification proves opt-out equivalence on Weston but cannot establish physical scanout or the existing paired-frame contract.`
@@ -127,6 +131,7 @@ The literal task controls and CLI-created records use these reviewed values.
 - Title: `Add mipmapped backdrop storage and glass roughness`
 - Status: `todo`
 - Owner: none
+- Priority: `2`
 - Size: `l`
 - Tags: `migration`, `feature`, `rendering`
 - Body: `Outcome: glass exposes a meaningful roughness control backed by damage-aware, buffer-owned mipmapped or prefiltered background and backdrop storage rather than an inert shader knob. Acceptance evidence: define and review the config and renderer contract; verify damage, cache invalidation, per-target isolation, default appearance, and bounded allocation/performance behavior with runnable tests and focused visual evidence; update the material reference. Sources: docs/materials/2026-08-22-v1-design.md, docs/materials/2026-08-24-v1-parity-design.md, and docs/materials/2026-08-27-v1-drm-acceptance-design.md. Uncertainty: the accepted designs establish this as the first post-v1 follow-up and roughness as the highest-value missing parameter, but do not choose mip generation, filtering, or cache policy.`
@@ -136,6 +141,7 @@ The literal task controls and CLI-created records use these reviewed values.
 - Title: `Decide how noise and saturation compose with glass`
 - Status: `idea`
 - Owner: none
+- Priority: `2`
 - Size: `s`
 - Tags: `migration`, `design`, `rendering`
 - Body: `Outcome: settle whether and where global blur noise and saturation should apply to glass transmission, with enough evidence to scope implementation or reject it. Acceptance evidence: confirm on a current build whether blur.offset at one pass is observable and whether saturation 0 reaches grayscale; trace the existing background-effect postprocess and material shader paths; record the chosen control surface, compositing order, defaults, and compatibility impact before code changes. Sources: docs/materials/2026-08-29-material-backdrop-blur-design.md, src/render_helpers/background_effect.rs, and src/render_helpers/shaders/postprocess.frag. Uncertainty: the follow-up is real, but current evidence does not establish whether the observations are material integration gaps, independent blur bugs, or intended behavior.`
@@ -152,10 +158,10 @@ Material outcome.
 
 | Command | Result | Commit containing record |
 | --- | --- | --- |
-| `sha256sum --check /tmp/tasks-material-active-worktree.sha256` | PASS for all five preserved paths before audit and after worktree creation. | Documentation reconciliation commit pending. |
-| `cargo test --all --exclude niri-visual-tests -- --nocapture` | PASS: 249 niri, 49 niri-config, 1 wiki parse, 3 niri-ipc, and 1 doctest; zero failures. | Documentation reconciliation commit pending. |
-| `cargo clippy --all --all-targets` | PASS with pre-existing warnings and no denial/error. | Documentation reconciliation commit pending. |
-| `cargo fmt --all -- --check` | Environmental baseline exception: stable rustfmt 1.9.0 from Rust 1.98 exits 1 on untouched `src/protocols/foreign_toplevel.rs`; the repository and CI require nightly rustfmt, which is unavailable on this host. The stable checkout fails identically and both copies hash to `41891c1ce0b3e4e5c59f51db9f82009ab2a677b12f50a8a2d9b60e443652ce50`; no source-format change is included. | Documentation reconciliation commit pending. |
-| `(cd docs && uv sync --locked --all-extras --dev && uv run mkdocs build)` | PASS; strict documentation build completed. | Documentation reconciliation commit pending. |
-| NUL-safe exact document coverage comparison | PASS: 113 actual paths equal 113 classified paths (111 tracked docs, this ledger, and root README). | Documentation reconciliation commit pending. |
-| `tasks check`, `tasks prime`, and `tasks ready` under the temporary seven-project registry | Pending task creation. | Tasks-store commit pending. |
+| `sha256sum --check /tmp/tasks-material-active-worktree.sha256` | PASS for all five preserved paths before audit and after worktree creation. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
+| `cargo test --all --exclude niri-visual-tests -- --nocapture` | PASS: 249 niri, 49 niri-config, 1 wiki parse, 3 niri-ipc, and 1 doctest; zero failures. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
+| `cargo clippy --all --all-targets` | PASS with pre-existing warnings and no denial/error. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
+| `cargo fmt --all -- --check` | Environmental baseline exception: stable rustfmt 1.9.0 from Rust 1.98 exits 1 on untouched `src/protocols/foreign_toplevel.rs`; the repository and CI require nightly rustfmt, which is unavailable on this host. The stable checkout fails identically and both copies hash to `41891c1ce0b3e4e5c59f51db9f82009ab2a677b12f50a8a2d9b60e443652ce50`; no source-format change is included. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
+| `(cd docs && uv sync --locked --all-extras --dev && uv run mkdocs build)` | PASS; strict documentation build completed. | `b559a4c32d2e022107fd6048ced1f658429bbbcb` |
+| NUL-safe exact document coverage comparison | PASS after task creation: 114 actual paths equal 114 classified paths (111 tracked docs, this ledger, root README, and `.agents/AGENTS.md`). | Tasks-store commit (this commit). |
+| `tasks check`, `tasks prime`, and `tasks ready` under the temporary seven-project registry | PASS: zero errors or warnings; counts are 1 idea, 2 todo, 1 doing; ready contains the two todo outcomes. | Tasks-store commit (this commit). |
