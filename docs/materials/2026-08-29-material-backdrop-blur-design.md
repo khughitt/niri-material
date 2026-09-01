@@ -54,11 +54,31 @@ Established facts worth keeping:
 - The backdrop buffer's element list alternates `new:1` / `unchanged:0` every
   frame; the meaning of the empty `Unchanged` state is not yet established.
 
-Remaining suspects, in order: what differs between two elements sampling the
-same blurred texture in the same frame with comparable rects, and whether the
-`unchanged:0` state lets a stale or empty offscreen texture reach one consumer.
-The next probe should log the resolved sample coordinates and the texture id
-each element binds, per element.
+A fourth probe settled the buffer question. In a two-window drag, the dragged
+element and the stationary one bind **the same buffers and the same textures**:
+
+    id=156 (dragged)    bg_buf=0x…4b20 bg0  bd_buf=0x…6770 bd0  bd_tex=(20, 3440, 1440)
+    id=47  (stationary) bg_buf=0x…4b20 bg0  bd_buf=0x…6770 bd0  bd_tex=(20, 3440, 1440)
+
+Identical `Rc` addresses, identical GL texture ids, identical dimensions and
+commit counter, in the same frame — one shows frost, the other does not. No
+buffer, blur, texture-selection, or configuration explanation can survive that.
+The divergence is entirely in the sampling geometry the shader is handed.
+
+The `unchanged:0` alternation on the backdrop buffer is therefore a red herring
+for this defect: both consumers read the same texture out of it.
+
+Minification was the natural next hypothesis — a fixed-radius blur averaged away
+when the element is drawn smaller than the region it samples — but it does not
+survive either: the defect reproduces in the normal scrolling view, where
+`InteractiveMoveData::tile_render_location` applies `upscale(zoom)` with
+`zoom == 1`, so the dragged tile is not scaled down.
+
+The next probe should log, per element and per frame, the destination rect
+alongside `backdrop_rect` and the `XrayPos` the element was built with, so the
+ratio between sampled texels and destination pixels can be computed directly
+for the dragged and stationary elements and compared. That ratio is the last
+quantity that differs between two elements provably reading the same texture.
 
 **Known defect, found in burn-in 2026-08-30 and open.** Dragging a window
 between workspaces in overview drops the frost from the moment the insert hint
