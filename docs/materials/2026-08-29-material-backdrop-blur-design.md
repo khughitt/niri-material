@@ -17,7 +17,7 @@ the compositor validated and reloaded the generated `backdrop-blur` node.
 
 ### Investigation state, 2026-09-01
 
-Instrumented builds (branch `debug/overview-drag-frost`, three probe rounds on
+Instrumented builds (branch `debug/overview-drag-frost`, four probe rounds on
 the live session) established the following, each by measurement rather than
 inference. Eight hypotheses were falsified; none of these need re-deriving.
 
