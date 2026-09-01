@@ -172,6 +172,6 @@ Material outcome.
 | Stable `cargo clippy --all --all-targets` | PASS with the same pre-existing non-denied warnings. | Integration closeout (this commit). |
 | Stable `cargo fmt --all -- --check` | Unchanged environmental baseline exception: stable rustfmt 1.9.0 exits 1 only on untouched `src/protocols/foreign_toplevel.rs`; output and stderr are byte-identical to the pre-integration stable baseline and the source still hashes to `41891c1ce0b3e4e5c59f51db9f82009ab2a677b12f50a8a2d9b60e443652ce50`. | Integration closeout (this commit). |
 | Stable strict MkDocs build | PASS under the required shared docs environment. | Integration closeout (this commit). |
-| Canonical `tasks init --prefix material`, run twice | PASS twice with identical JSON: prefix `material`, root `~/d/niri-material`, and no warnings. | Integration closeout (this commit). |
+| Canonical `tasks init --prefix material`, run twice | PASS twice with identical JSON: prefix `material`, root set to the stable Material checkout, and no warnings. | Integration closeout (this commit). |
 | Canonical `tasks check`, `tasks prime`, and `tasks ready` | PASS: zero errors or warnings; prefix `material`; counts are 1 idea, 2 todo, 1 doing; ready contains `material-ce3315` and `material-c854bd`. | Integration closeout (this commit). |
 | Post-integration active-work fingerprint and Git-state gate | PASS for all five preserved checksums and exactly the five expected dirty paths, with no staged or untracked files. | Integration closeout (this commit). |
