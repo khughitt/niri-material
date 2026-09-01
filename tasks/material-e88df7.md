@@ -6,7 +6,7 @@ priority: 3
 size: m
 owner: debug/overview-drag-frost
 created: 2026-09-01T14:35:48Z
-updated: 2026-09-01T23:35:58Z
+updated: 2026-09-01T23:39:15Z
 depends: []
 tags: [migration, bug]
 ---
@@ -16,3 +16,4 @@ Outcome: frosted backdrop sampling remains visually stable while a material wind
 ## Notes
 
 - 2026-09-01T23:35:58Z (materials-26.04): Deferred by owner: cosmetic, transient, judged acceptable in burn-in. Four probe rounds eliminated by measurement: the flag (blur=true on all 173 draws), the silent material_ready gate (true for both windows, both prepare calls true), blur production (both buffers cached-blur, never SHARP), buffer/texture identity (dragged and stationary elements bind the SAME Rc addresses and the SAME GL texture id 20 at 3440x1440 in one frame), the workspace/backdrop selector (ws_rect non-empty in 921 of 927 draws), blur strength (absent at 6 passes as at 1), overview-specificity (reproduces at zoom 1 in the normal view) and minification (tile_render_location upscales by zoom=1 there). Also established: the background xray buffer is empty at all times on this host because the wallpaper is place-within-backdrop, so all frost arrives via the backdrop path. Next probe: log the destination rect and XrayPos per element beside backdrop_rect and compare texels-sampled to pixels-drawn for the two elements.
+- 2026-09-01T23:39:15Z (materials-26.04): Instrumentation preserved as niri-experiments fixtures/frost-drag-probe.patch (commit 96033b7, branch results/slice3, pushed). Verified to apply cleanly against materials-26.04 aa0a66be with git apply. The debug/overview-drag-frost worktree and branch are retired; resume by applying that patch.
