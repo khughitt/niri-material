@@ -15,6 +15,51 @@ Deployed to the daily driver 2026-08-29T17:14:52 as `niri-material
 26.04.r133.g52f74f10-1`. Prism exposes the switch as `glass.backdropBlur`, and
 the compositor validated and reloaded the generated `backdrop-blur` node.
 
+### Investigation state, 2026-09-01
+
+Instrumented builds (branch `debug/overview-drag-frost`, three probe rounds on
+the live session) established the following, each by measurement rather than
+inference. Eight hypotheses were falsified; none of these need re-deriving.
+
+Ruled out:
+
+- Occlusion by the terminal's own activated background opacity — equalising
+  `terminal.background.opacity.{active,inactive}` did not change the effect.
+- The material falling back to plain drawing — `material_ready` is `true` for
+  the dragged window, and both `EffectBuffer::prepare` calls return `true`.
+- A stale or wrong flag — every draw logs `backdrop_blur=true`; all four
+  `prepare`/`render` sites take the glass value and no bool literal remains.
+- Blur not being produced — both buffers report `cached-blur`, never `SHARP`,
+  for the whole drag.
+- The workspace-vs-backdrop selector — `ws_rect` is non-empty in 921 of 927
+  draws, so the mapping does not switch when the frost dies.
+- Blur strength — the effect is absent at 6 passes as at 1.
+- Overview specifically — it reproduces in the normal scrolling view too
+  (`bg_rect ≈ backdrop_rect`, so zoom ≈ 1).
+- UV edge clamping as the general cause — only 11 of 119 dragged-element
+  frames run past the right edge of the backdrop buffer.
+
+Established facts worth keeping:
+
+- The background xray buffer is **empty at all times** on this host: the
+  wallpaper is `place-within-backdrop true`, so it lives only in the backdrop
+  buffer (`bg0 elements=0`, `bd0 elements=1`). With `ws_color` transparent,
+  every fragment falls through `sampleBackground` to `sampleBackdrop`, at rest
+  and during a drag alike. All frost therefore comes from the backdrop layer.
+- A two-window drag isolates it cleanly: the dragged element loses frost while
+  the stationary element, sampling the same buffer in the same frame, keeps it.
+  So the fault is per-element, not per-buffer or per-frame.
+- The dragged element's first frames are backdrop-only (`ws_rect` all zeros)
+  with `backdrop_rect.x = 0.994`, far past the buffer edge.
+- The backdrop buffer's element list alternates `new:1` / `unchanged:0` every
+  frame; the meaning of the empty `Unchanged` state is not yet established.
+
+Remaining suspects, in order: what differs between two elements sampling the
+same blurred texture in the same frame with comparable rects, and whether the
+`unchanged:0` state lets a stale or empty offscreen texture reach one consumer.
+The next probe should log the resolved sample coordinates and the texture id
+each element binds, per element.
+
 **Known defect, found in burn-in 2026-08-30 and open.** Dragging a window
 between workspaces in overview drops the frost from the moment the insert hint
 appears; it returns when the drag ends. It is attributed to this work: with
