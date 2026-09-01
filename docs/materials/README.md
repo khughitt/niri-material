@@ -79,7 +79,8 @@ The `backdrop-blur` glass parameter is implemented and nested-verified at
 `eb4f1bd6`; the material refracts the blurred backdrop rather than the sharp
 one, gated by the global `blur` block. Its evidence is recorded in
 `2026-08-29-material-backdrop-blur-evidence.md`. The default-preserves-v1 DRM
-acceptance regression remains outstanding.
+acceptance regression passed 2026-09-01 on all 19 machine gates and all nine
+physical observations, reproducing every accepted steady-state metric exactly.
 
 Daily-driver deployment and burn-in passed 2026-08-30 against `52f74f10`, with
 the package, Prism ownership handoff, two cold starts, journal review, and

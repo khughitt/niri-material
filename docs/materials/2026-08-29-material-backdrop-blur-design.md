@@ -7,9 +7,13 @@ On a 1280×720 headless Weston GL host, the glass remained active; checkerboard
 contrast in a text-free window ROI fell from standard deviation `0.0401255`
 sharp to `0.00144691` at 3 passes and `0` at 6 passes; `blur { off }` and
 material opt-out captures were byte-identical; and overview retained the
-blurred treatment. The default-preserves-v1 DRM acceptance run remains
-outstanding: its existing byte-identical paired settled-frame scenarios must
-still run against a build carrying this parameter.
+blurred treatment. The default-preserves-v1 DRM acceptance regression passed
+2026-09-01 against this build: all 19 machine gates, all 44 captures, and all
+nine physical observations. Every steady-state metric reproduced the accepted
+run exactly, including `diagnostic-tile` and the settled motion figures; only
+frames captured mid-animation differ, by scheduling. Recorded at
+`niri-experiments` `13d6dda` in
+`docs/results/2026-09-01-backdrop-blur-drm-regression.md`.
 
 Deployed to the daily driver 2026-08-29T17:14:52 as `niri-material
 26.04.r133.g52f74f10-1`. Prism exposes the switch as `glass.backdropBlur`, and
