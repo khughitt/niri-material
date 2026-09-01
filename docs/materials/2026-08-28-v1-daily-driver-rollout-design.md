@@ -24,16 +24,16 @@ production source `138697be4cbb779c80425fe2a366ceca3610f38e` passed all 19
 machine gates and all nine physical observations at `niri-experiments` result
 commit `c0caa944db2edc5dc4844e6720951d7f32652b76`.
 
-The accepted compositor is not yet the daily-driver installation. Arch's
-`niri` package owns `/usr/bin/niri`, while an unmanaged
-`/usr/local/bin/niri` at patched source `5e53b949` wins through `PATH`. The
-normal niri config still launches the frozen Quickshell `niri-glass` client
+At approval, the accepted compositor was not yet the daily-driver installation.
+Arch's `niri` package owned `/usr/bin/niri`, while an unmanaged
+`/usr/local/bin/niri` at patched source `5e53b949` won through `PATH`. The
+normal niri config still launched the frozen Quickshell `niri-glass` client
 with an allowlist intended for Kitty and Ghostty, although its exact `ghostty`
-entry does not match Ghostty's live app ID.
+entry did not match Ghostty's live app ID.
 
-This rollout turns the accepted implementation into a package-owned daily
-driver without changing production material code. It also curates current
-documentation claims that still describe already-merged slice branches or the
+The completed rollout turned the accepted implementation into a package-owned
+daily driver without changing production material code. It also curated
+documentation claims that described already-merged slice branches or the
 material surface as undeployed.
 
 ## Decisions
