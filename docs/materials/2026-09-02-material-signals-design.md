@@ -76,7 +76,7 @@ Slot {
     level:       Quiet | Active | Notice | Demand
     motion:      Static | Breathe | Pulse | Flash
     tag:         Option<String>    // free-form, for config matching
-    expires:     Option<{ at: Instant, after: (Level, Motion) }>
+    expires:     Option<{ at: Duration, after: (Level, Motion) }>
     until_focus: bool              // focus demotes the slot to `after`,
                                    // or to (Quiet, Static) when unset
     written_at:  Duration
@@ -93,7 +93,9 @@ Impulse {
 unadjusted monotonic clock, `Clock::now_unadjusted`, stored as `Duration`
 exactly like `focus_timestamp`. calloop deadlines are unadjusted, so slot
 expiry, impulse expiry, and bucket timers agree with the values the solver
-computes regardless of the animation slowdown. Only the baseline crossfade
+computes regardless of the animation slowdown. A timer is armed with
+`Timer::from_duration(deadline.saturating_sub(now_unadjusted))`, so a
+deadline already in the past fires immediately. Only the baseline crossfade
 uses the adjusted `Clock::now`, because it is a niri `Animation` and is
 meant to obey slowdown.
 
@@ -265,7 +267,7 @@ Breathe. niri's global `signal { motion }` then applies on top, so the more
 restrictive of the two wins and a familiar intent marked `off` never
 animates. Several sessions in one window are aggregated by the bridge
 before writing a single `familiar` slot. That mapping is out of scope here;
-the schema is chosen so it is one-to-one.
+the schema is chosen so the resulting aggregate needs no lossy translation.
 
 ## 3. Envelope solver and `SignalFrame`
 
@@ -287,16 +289,28 @@ SignalFrame {
   `animations { off }` disables it. Default `duration-ms 400`,
   `curve ease-out-cubic`. Accent crossfades in linear RGB.
 - **Motion oscillator.** Breathe is a 4 s sine, Pulse a 1.2 s sine, Flash a
-  0.5 s square with 50 ms soft edges. Phase is clock time plus the tile's
-  existing per-window jelly seed, so windows never pulse in lockstep.
+  0.5 s square with 50 ms soft edges. Breathe and Pulse phase is clock time
+  plus the tile's existing per-window jelly seed, so windows never breathe
+  in lockstep. Flash phase is clock time alone: it is an alarm, lockstep is
+  acceptable, and a shared phase is what keeps its wakeup bound per output
+  rather than per window.
 - **Impulse envelope.** 80 ms linear attack, then exponential decay with a
   350 ms time constant, dropped at 1.5 s. Kind selects only the response,
   not the shape; per-kind shape constants are a follow-up if a response
   needs them.
 - **Reduced motion.** A top-level `signal { motion "full" | "reduced" |
-  "off" }` block. `reduced` maps Flash to Pulse and Pulse to Breathe. `off`
-  pins `breath` to zero and discards impulses, leaving the static accent
-  and the level crossfade.
+  "off" }` block. `reduced` maps the sustained motion Flash to Pulse and
+  Pulse to Breathe, and maps the impulse response `flash` to `sweep`, so
+  no chromatic jolt or strobe reaches the screen; `sweep` and `ripple` are
+  single-pass and stay. `off` pins `breath` to zero and drops every
+  impulse, leaving the static accent and the level crossfade.
+- **Effective impulses.** The solver first applies the motion policy and
+  then resolves each stored impulse's kind through the window's response
+  block. Impulses that the policy drops or that resolve to `none` are not
+  part of the frame. The transitions term and the fingerprint in section 4
+  are computed from these effective impulses only, so a stored impulse
+  that draws nothing costs nothing. The stored queue and its expiry timer
+  are unaffected, because the event stream reports stored impulses.
 
 The solver is pure: `solve(signal, clock_now, seed, animation_state) ->
 SignalFrame`, with no renderer dependency, following the `PrefilterState`
@@ -312,7 +326,7 @@ signal motion are therefore driven differently.
 
 - **Transient motion rides the animation loop.** `Tile::are_transitions_ongoing`
   gains a signal term that is true while the baseline crossfade runs or any
-  impulse is live. Impulses last at most 1.5 s; the crossfade lasts its
+  effective impulse, as defined in section 3, is live. Impulses last at most 1.5 s; the crossfade lasts its
   configured duration times the global animation slowdown, like every
   other niri animation. Refresh-rate wakeups for those spans match how
   open, move, and resize animations already behave.
@@ -321,9 +335,10 @@ signal motion are therefore driven differently.
   are aligned to the unadjusted clock at `period / 32`; the per-window seed
   offsets the value inside a bucket, not the boundary, so every Breathe
   window on an output shares the same boundaries and ten windows cost the
-  same wakeups as one. Flash is a square wave, so its boundaries are only
-  its edges: each 50 ms edge is sampled at four points, giving eight
-  wakeups per 0.5 s period and none during the plateaus. Every oscillator
+  same wakeups as one. Flash is a square wave with a global phase, so its
+  boundaries are only its edges and every Flash window shares them: each
+  50 ms edge is sampled at four points, giving eight wakeups per 0.5 s
+  period per output and none during the plateaus. Every oscillator
   exposes `next_boundary(now) -> Duration` from the pure solver.
 - **Candidates come from the render pass, not the layout walk.**
   `update_render_elements` visits every tile in a visible workspace,
@@ -504,7 +519,7 @@ without touching sections 1 through 5.
 | CLI subcommands and flag parsing | `src/cli.rs`, `src/ipc/client.rs` |
 | Request handling with result channel, `WindowSignalChanged` diffing | `src/ipc/server.rs` next to `PickColor` and `WindowUrgencyChanged`; mutation entry points on `Niri` in `src/niri.rs` returning `Result` |
 | Slot expiry and impulse expiry timers | `src/niri.rs`, registration tokens stored on the slot and the window store |
-| Per-output oscillator bucket timer | armed from `Layout::update_render_elements` over visible tiles; token stored per output in `src/niri.rs` |
+| Per-output oscillator bucket timer | `RenderCtx` in `src/render_helpers/mod.rs` gains a next-boundary accumulator and `Tile::render` gains the view rect it needs for the intersection test; `Tile::render` reports into the accumulator; the output render path in `src/niri.rs` arms or removes the timer after the pass, token stored per output |
 | Solver, `SignalFrame`, `SignalFingerprint`, oscillator constants | new `src/render_helpers/signal.rs`; pure, no GL |
 | Per-frame wiring, crossfade `Animation`, transitions term, impulse kind to selector resolution | `src/layout/tile.rs`, both `render_inner` material sites and `are_transitions_ongoing` |
 | Response config, validation, resolved response | `niri-config/src/material.rs` (`Response`, `ResolvedResponse`), `niri-config/src/window_rule.rs` (`Match`, `MaterialRef`), `niri-config/src/lib.rs` (`validate_material_refs`) |
@@ -555,8 +570,11 @@ boundary, so there is one conversion, in the server, and it is tested.
   and stops on focus; the same window on an inactive workspace, as a
   hidden tab, or in a column scrolled out of view produces no wakeups; ten
   seeded Breathe windows on one output wake at the same rate as one; a
-  sustained Flash window wakes only at its edges; wakeup rates are
-  unchanged under a non-unit animation slowdown; a `done` pulse ends and damage stops; `flash` is
+  sustained Flash window wakes only at its edges and ten Flash windows on
+  one output wake at the same rate as one; a window with live impulses
+  under `signal { motion "off" }` or with every impulse response set to
+  `none` produces no wakeups; wakeup rates are unchanged under a non-unit
+  animation slowdown; a `done` pulse ends and damage stops; `flash` is
   visible on default glass; `signal { motion "off" }` leaves only the
   crossfade. Wakeups are measured from the Tracy redraw frames, and
   per-frame cost of ring plus rim orbit is captured against the roughness
