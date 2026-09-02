@@ -1,11 +1,12 @@
 ---
 id: material-c854bd
 title: Add mipmapped backdrop storage and glass roughness
-status: todo
+status: doing
 priority: 2
 size: l
+owner: feat/material-c854bd
 created: 2026-09-01T14:36:13Z
-updated: 2026-09-02T03:15:15Z
+updated: 2026-09-02T03:15:41Z
 depends: [material-ef9eec]
 tags: [migration, feature, rendering]
 ---

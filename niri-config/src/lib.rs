@@ -895,6 +895,7 @@ mod tests {
                     chromatic-aberration 0.25
                     distortion 0.5 scale=1.5
                     anisotropic-blur 0.75
+                    roughness 0.08
                     jelly-flex 0.01
                     jelly-ripple 0.2
                     bevel 20
@@ -918,6 +919,7 @@ mod tests {
                 distortion: 0.5,
                 distortion_scale: 1.5,
                 anisotropic_blur: 0.75,
+                roughness: 0.08,
                 backdrop_blur: false,
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
@@ -948,6 +950,21 @@ mod tests {
     #[test]
     fn backdrop_blur_defaults_to_off() {
         assert!(!ResolvedGlass::default().backdrop_blur);
+    }
+
+    #[test]
+    fn roughness_defaults_to_zero() {
+        assert_eq!(ResolvedGlass::default().roughness, 0.);
+    }
+
+    #[test]
+    fn roughness_rejects_values_outside_zero_and_one() {
+        for value in ["-0.01", "1.01"] {
+            let err = do_parse_err(&format!(
+                "material \"frost\" {{ glass {{ roughness {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 0 and 1"), "{err}");
+        }
     }
 
     #[test]
