@@ -347,18 +347,19 @@ legible in a way a photograph cannot:
 
 ## Follow-up: noise and saturation
 
-The operator's `blur { noise; saturation }` values reach windows through the
-background effect, not the effect buffer — `background_effect.rs:202` passes
-them alongside the blur options — so they do not follow the backdrop into the
-material. Applying them after transmission in `material.frag` is a handful of
-lines and gives the glass block one coherent control surface.
+Before native commit `7c702e58`, the operator's
+`blur { noise; saturation }` values reached windows only through the
+background effect, not the effect buffer. They now also compose after
+transmission in `material.frag`, giving the glass block one coherent control
+surface without restoring the redundant background-effect pass.
 
 Those earlier observations were retested on current source commit `d9c912d1`
 and did not reproduce. With one pass, changing `blur.offset` from 1 to 8
 changed the text-free probe ROI by normalized RMSE `0.113418`, and
 `saturation 0` produced grayscale samples over both red and green wallpaper.
-They are not independent blur defects; the remaining work is only to compose
-the already-working global postprocess values into the material.
+They are not independent blur defects. Native composition and nested GLES
+acceptance are complete; only the verified Prism description commit remains
+to be fast-forwarded into its requested checkout.
 
 ## Alternatives rejected
 

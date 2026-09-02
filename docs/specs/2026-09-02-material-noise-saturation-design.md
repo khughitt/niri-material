@@ -1,17 +1,20 @@
 # Glass noise and saturation composition: design
 
-**Status:** approved 2026-09-02; review amendments incorporated;
-implementation not started.
+**Status:** native implementation committed as `7c702e58`; nested GLES
+acceptance passed; Prism contract verified as `bcedf4cd` but its requested
+checkout was read-only, so fast-forward delivery remains pending. See
+[`2026-09-02-material-noise-saturation-evidence.md`](../materials/2026-09-02-material-noise-saturation-evidence.md).
 
 **Task:** `material-cad932`
 
 ## Context
 
-Glass can select the globally blurred xray source with `backdrop-blur`, but it
-does not inherit the same global `blur { noise; saturation }` postprocess.
-Those values currently reach windows only through the separate background
-effect. Prism disables that superseded pass for material windows with
-per-window `noise 0` and `saturation 1`, so its glass receives neither effect.
+Before native commit `7c702e58`, glass could select the globally blurred xray
+source with `backdrop-blur`, but did not inherit the same global
+`blur { noise; saturation }` postprocess. Those values reached windows only
+through the separate background effect. Prism disables that superseded pass
+for material windows with per-window `noise 0` and `saturation 1`, so its
+glass previously received neither effect.
 
 The two paths have different ownership:
 

@@ -60,6 +60,12 @@ strength — the amount of blur comes from the global `blur` block's `passes` an
 `offset`, shared with every other blur consumer. Setting `blur { off }`
 disables it along with all other blur, regardless of this parameter.
 
+When `backdrop-blur` is effective, glass also inherits `noise` and
+`saturation` from the global `blur` block. The material applies saturation
+then screen-space noise after its glass optics. `blur { off }` or material
+opt-out makes both values neutral. Per-window `background-effect` overrides
+remain independent and do not alter the material.
+
 It is unrelated to `anisotropic-blur`, which smears the refraction itself along
 one axis and does not soften the backdrop.
 

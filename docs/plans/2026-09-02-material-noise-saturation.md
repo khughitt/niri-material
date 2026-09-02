@@ -83,7 +83,7 @@ YAML, Weston headless GL, ImageMagick.
 - Produces shader uniforms `mat_noise: float` and
   `mat_saturation: float`.
 
-- [ ] **Step 1: Write the failing policy and commit tests**
+- [x] **Step 1: Write the failing policy and commit tests**
 
 Start the plan-step task before editing:
 
@@ -157,7 +157,7 @@ In the existing `parameter_change_advances_the_commit_in_place` test, mutate
 `state.material().glass.roughness`; keep all identity and per-target commit
 assertions.
 
-- [ ] **Step 2: Run the focused tests and verify they fail for the missing interface**
+- [x] **Step 2: Run the focused tests and verify they fail for the missing interface**
 
 Run:
 
@@ -172,7 +172,7 @@ Expected: compilation fails because `resolve_material` still returns
 `ResolvedMaterial` and `MaterialRenderConfig` does not exist. A pre-existing
 unrelated failure is not an acceptable red phase.
 
-- [ ] **Step 3: Add the render wrapper and resolve the effective pair once**
+- [x] **Step 3: Add the render wrapper and resolve the effective pair once**
 
 In `material.rs`, add immediately before `MaterialState`:
 
@@ -248,7 +248,7 @@ fn resolve_material(name: Option<&str>, options: &Options) -> Option<MaterialRen
 }
 ```
 
-- [ ] **Step 4: Bind and apply the two shader values**
+- [x] **Step 4: Bind and apply the two shader values**
 
 Add the two uniforms to `MaterialRenderElement::draw` immediately after the
 prefilter mix uniforms:
@@ -278,7 +278,7 @@ single `glassed = ...` assignment with:
 Do not move the final `win + (1.0 - win.a) * glassed` composition and do not
 touch `postprocess.frag`.
 
-- [ ] **Step 5: Run focused, shader, formatting, and workspace checks**
+- [x] **Step 5: Run focused, shader, formatting, and workspace checks**
 
 Run:
 
@@ -301,7 +301,7 @@ change introduces no warning. Inspect the diff to confirm there are still
 five material samplers and no changed file under `niri-config`,
 `effect_buffer`, `blur`, or `postprocess.frag`.
 
-- [ ] **Step 6: Commit the native implementation**
+- [x] **Step 6: Commit the native implementation**
 
 ```bash
 tasks done material-0b6d06 \
@@ -334,7 +334,7 @@ git commit -m "feat(material): compose global glass postprocess"
 - Does not change Prism's render function, manifest, generated KDL fixtures,
   or public control surface.
 
-- [ ] **Step 1: Add the failing Prism description assertion**
+- [x] **Step 1: Add the failing Prism description assertion**
 
 From the native worktree, start the final delivery task:
 
@@ -401,7 +401,7 @@ git -C ~/d/prism status --short --branch
 Expected: the first status reports clean `main`, the merge fast-forwards, and
 the final status remains clean. Do not cherry-pick or create a merge commit.
 
-- [ ] **Step 3: Run the nested GLES acceptance matrix**
+- [x] **Step 3: Run the nested GLES acceptance matrix**
 
 First build a fresh implementation binary without overwriting the recorded
 pre-change binary:
