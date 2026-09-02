@@ -170,6 +170,8 @@ impl Shaders {
                 UniformName::new("mat_ws_rect", UniformType::_4f),
                 UniformName::new("mat_ws_color", UniformType::_4f),
                 UniformName::new("mat_backdrop_color", UniformType::_4f),
+                UniformName::new("mat_bg_prefilter_mix", UniformType::_1f),
+                UniformName::new("mat_backdrop_prefilter_mix", UniformType::_1f),
                 UniformName::new("mat_ior", UniformType::_1f),
                 UniformName::new("mat_thickness", UniformType::_1f),
                 UniformName::new("mat_attenuation_color", UniformType::_4f),
@@ -181,7 +183,13 @@ impl Shaders {
                 UniformName::new("mat_anisotropic_blur", UniformType::_1f),
                 UniformName::new("mat_jelly_ripple", UniformType::_1f),
             ],
-            &["niri_tex_win", "niri_tex_bg", "niri_tex_backdrop"],
+            &[
+                "niri_tex_win",
+                "niri_tex_bg",
+                "niri_tex_bg_high",
+                "niri_tex_backdrop",
+                "niri_tex_backdrop_high",
+            ],
         )
         .map_err(|err| {
             warn!("error compiling material shader: {err:?}");

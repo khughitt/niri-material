@@ -7,7 +7,9 @@ uniform float niri_alpha;
 
 uniform sampler2D niri_tex_win;
 uniform sampler2D niri_tex_bg;
+uniform sampler2D niri_tex_bg_high;
 uniform sampler2D niri_tex_backdrop;
+uniform sampler2D niri_tex_backdrop_high;
 uniform vec4 mat_win_rect;
 uniform vec4 mat_geo_rect;
 uniform vec4 mat_slab_rect;
@@ -24,6 +26,8 @@ uniform vec4 mat_backdrop_rect;
 uniform vec4 mat_ws_rect;
 uniform vec4 mat_ws_color;
 uniform vec4 mat_backdrop_color;
+uniform float mat_bg_prefilter_mix;
+uniform float mat_backdrop_prefilter_mix;
 uniform float mat_ior;
 uniform float mat_thickness;
 uniform vec4 mat_attenuation_color;
@@ -40,9 +44,26 @@ bool inRect(vec2 v, vec4 rect) {
         && all(lessThan(v, rect.xy + rect.zw));
 }
 
+vec4 samplePrefilter(
+    sampler2D low_tex,
+    sampler2D high_tex,
+    float amount,
+    vec2 uv
+) {
+    vec4 low = texture2D(low_tex, clamp(uv, 0.0, 1.0));
+    if (amount == 0.0)
+        return low;
+    return mix(low, texture2D(high_tex, clamp(uv, 0.0, 1.0)), amount);
+}
+
 vec4 sampleBackdrop(vec2 v) {
     vec2 uv = mat_backdrop_rect.xy + v * mat_backdrop_rect.zw;
-    vec4 c = texture2D(niri_tex_backdrop, clamp(uv, 0.0, 1.0));
+    vec4 c = samplePrefilter(
+        niri_tex_backdrop,
+        niri_tex_backdrop_high,
+        mat_backdrop_prefilter_mix,
+        uv
+    );
     return c + mat_backdrop_color * (1.0 - c.a);
 }
 
@@ -53,7 +74,12 @@ vec3 sampleBackground(vec2 v) {
     vec4 c;
     if (inRect(v, mat_ws_rect)) {
         vec2 uv = mat_bg_rect.xy + v * mat_bg_rect.zw;
-        c = texture2D(niri_tex_bg, clamp(uv, 0.0, 1.0));
+        c = samplePrefilter(
+            niri_tex_bg,
+            niri_tex_bg_high,
+            mat_bg_prefilter_mix,
+            uv
+        );
         c = c + mat_ws_color * (1.0 - c.a);
         if (c.a < 1.0)
             c = c + sampleBackdrop(v) * (1.0 - c.a);

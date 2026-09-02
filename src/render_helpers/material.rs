@@ -581,18 +581,19 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         opaque_regions: &[Rectangle<i32, Physical>],
         cache: Option<&UserDataMap>,
     ) -> Result<(), GlesError> {
-        let bg_texture = self
-            .bg
-            .borrow_mut()
-            .render(frame, self.glass.backdrop_blur)
-            .ok();
-        let backdrop_texture = self
-            .backdrop
-            .borrow_mut()
-            .render(frame, self.glass.backdrop_blur)
-            .ok();
+        let bg_texture = self.bg.borrow_mut().render_prefiltered(
+            frame,
+            self.glass.backdrop_blur,
+            self.glass.roughness,
+            self.glass.ior,
+        );
+        let backdrop_texture = self.backdrop.borrow_mut().render_prefiltered(
+            frame,
+            self.glass.backdrop_blur,
+            self.glass.roughness,
+            self.glass.ior,
+        );
         let (Some(bg_texture), Some(backdrop_texture)) = (bg_texture, backdrop_texture) else {
-            warn!("material: error rendering background/backdrop buffer");
             let Some(subdraw) = plain_window_subdraw(
                 src,
                 dst,
@@ -635,6 +636,8 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_ws_rect", self.mapping.ws_rect),
             Uniform::new("mat_ws_color", self.mapping.ws_color),
             Uniform::new("mat_backdrop_color", self.backdrop_color),
+            Uniform::new("mat_bg_prefilter_mix", bg_texture.mix),
+            Uniform::new("mat_backdrop_prefilter_mix", backdrop_texture.mix),
             Uniform::new("mat_ior", g.ior as f32),
             Uniform::new("mat_thickness", g.thickness as f32),
             Uniform::new(
@@ -654,8 +657,13 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         ]);
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
-            (String::from("niri_tex_bg"), bg_texture),
-            (String::from("niri_tex_backdrop"), backdrop_texture),
+            (String::from("niri_tex_bg"), bg_texture.low),
+            (String::from("niri_tex_bg_high"), bg_texture.high),
+            (String::from("niri_tex_backdrop"), backdrop_texture.low),
+            (
+                String::from("niri_tex_backdrop_high"),
+                backdrop_texture.high,
+            ),
         ]);
         let inner = ShaderRenderElement::new(
             ProgramType::Material,
@@ -973,13 +981,13 @@ mod tests {
         );
 
         let mut changed = material("frost");
-        changed.glass.ior = 1.6;
+        changed.glass.roughness = 0.08;
         let rebuilt = apply_resolved(&mut slot, Some(&changed));
 
         let state = slot.as_ref().unwrap();
         assert!(!rebuilt);
         assert_eq!(state.id(), &id_before);
-        assert_eq!(state.material().glass.ior, 1.6);
+        assert_eq!(state.material().glass.roughness, 0.08);
 
         let mut expected = commit_before;
         expected.increment();
