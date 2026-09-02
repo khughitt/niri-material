@@ -21,6 +21,7 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-28-v1-daily-driver-rollout-design.md`: implemented deployment and passed burn-in design.
 - `2026-08-29-material-backdrop-blur-design.md`: implemented backdrop blur design.
 - `2026-08-29-material-backdrop-blur-evidence.md`: retained backdrop blur verification evidence.
+- `2026-09-01-material-roughness-design.md`: accepted prefiltered-storage and roughness design.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
