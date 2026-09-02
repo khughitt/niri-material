@@ -80,22 +80,37 @@ Slot {
                                    // or to (Quiet, Static) when unset
     written_at:  Instant
 }
-Impulse { kind: Ping | Done | Error, accent: Option<Color>, at: Instant }
+Impulse {
+    source: String                 // the slot it belongs to
+    kind:   Ping | Done | Error
+    accent: Option<Color>
+    at:     Instant                // expires at `at + 1.5 s`
+}
 ```
+
+An impulse always belongs to an existing slot. `pulse-window-signal` for a
+source with no slot is an error; a source states its baseline with `set`
+first, even if that baseline is `quiet`/`static`. Clearing a slot drops its
+impulses. This keeps one lifecycle: `Window.signal` is `None` exactly when
+the window has no slots, and `sources` always accounts for every impulse.
+
+**Ordering.** Slots are ordered by ascending `written_at`, ties broken by
+source name. "Earliest" below means first in that order.
 
 **Fold** produces one `Signal` per window:
 
 - `level` is the maximum across slots.
-- `motion` comes from the slot that won on level; ties go to the most
-  recently written slot.
+- `motion` comes from the slot that won on level; ties go to the latest
+  written of the tied slots.
 - `accent` comes from the winning slot if it has one, otherwise from the
-  first slot in write order that has one. A familiar window keeps its hue
-  while a native bell is ringing.
-- `tag` follows the same rule as `accent`.
-- Impulses are the union of all sources, capped at four live entries; the
+  earliest slot that has one. A familiar window keeps its hue while a
+  native bell is ringing.
+- `tag` uses the same rule independently: the winning slot's tag if it has
+  one, otherwise the earliest slot that has a tag. Accent and tag may
+  therefore come from different slots.
+- Impulses are the union across slots, at most four live entries; the
   oldest is evicted first.
-- `sources` lists every contributing slot name, native slot included, in
-  write order, for window-rule matching and for IPC consumers.
+- `sources` lists every slot name, native slot included, in slot order.
 
 **Decay.** A slot with `expires` set is replaced by its `after` pair at
 `expires.at`, keeping `accent` and `tag`. Decay is pre-resolved by the
@@ -117,12 +132,20 @@ demotion to every slot that asked for it. A source that wants to clear its
 contribution sends the clear request; the compositor never garbage-collects
 a live source's slot on its own.
 
+**Impulse expiry.** Each window with live impulses holds one timer set to
+the earliest impulse expiry. On fire it prunes expired impulses, re-arms
+for the next one if any, and emits the event, so event-stream consumers
+never see a stale impulse. Rendering does not depend on this timer; the
+solver drops expired impulses from the frame on its own.
+
 **Bounds.** Signal state is written by unprivileged local clients, so it is
 bounded: at most 16 external slots per window, source names at most 64
 bytes, tags at most 256 bytes, at most four live impulses. A write past a
 bound is rejected with an error and changes nothing. Each slot owns at most
 one expiry timer; a rewrite removes the previous timer's registration token
 before scheduling a new one, and a clear or window close removes it.
+`--ttl-ms` is at most 86 400 000 (24 hours); larger values are rejected so
+the deadline is always a valid `Instant`.
 
 ## 2. IPC contract
 
@@ -161,22 +184,65 @@ Rules:
   Nothing is silently ignored.
 - Colors are `#rrggbb` or `#rrggbbaa`; alpha is accepted and ignored so
   the familiar ramp can be forwarded verbatim.
+- `pulse-window-signal` requires an existing slot for `--source`;
+  otherwise it is an error.
+
+**Wire schema.** Defined in `niri-ipc`, serialized like the rest of the
+protocol (kebab-case enums, JSON via `niri msg -j`):
+
+```text
+enum Level       { quiet, active, notice, demand }
+enum Motion      { static, breathe, pulse, flash }
+enum ImpulseKind { ping, done, error }
+
+struct Signal {
+    level:    Level,
+    motion:   Motion,
+    accent:   Option<String>,      // normalized "#rrggbb", alpha stripped
+    tag:      Option<String>,
+    sources:  Vec<String>,         // slot order, see section 1
+    impulses: Vec<Impulse>,        // live only, oldest first
+}
+struct Impulse {
+    source:     String,
+    kind:       ImpulseKind,
+    accent:     Option<String>,
+    at:         Timestamp,         // existing niri-ipc Timestamp, monotonic
+    expires_at: Timestamp,
+}
+```
+
+Request payloads mirror the flags above: `SetWindowSignal { id: u64,
+source: String, accent: Option<String>, level: Level, motion: Motion,
+tag: Option<String>, ttl_ms: Option<u32>, after_level: Option<Level>,
+after_motion: Option<Motion>, until_focus: bool }`,
+`PulseWindowSignal { id, source, kind, accent }`, and
+`ClearWindowSignal { id, source }`.
+
+The three enums are shared between `niri-ipc` and the compositor. The
+compositor's internal fold and slot types use `Instant` and the config
+`Color` type and are converted to the wire `Signal` at the IPC boundary,
+the same way `focus_timestamp` is converted today.
 
 The `Event` stream gains `WindowSignalChanged { id, signal: Option<Signal> }`
 carrying the folded `Signal`, emitted whenever the fold result changes,
-including on decay, focus demotion, and the clear that removes the last
-slot, which sends `None`. The `Window` struct gains the same
-`signal: Option<Signal>` field so `niri msg windows` shows it. Both are
-additive and serialize as `null` when no slot exists.
+including on decay, focus demotion, impulse expiry, and the clear that
+removes the last slot, which sends `None`. The `Window` struct gains the
+same `signal: Option<Signal>` field so `niri msg windows` shows it. Both
+are additive and serialize as `null` when no slot exists.
 
 The familiar bridge, when it lands in familiar's repo, maps `intent.json`
 per session as: `color.base` to `--accent`; `urgency` `none` to `quiet`
 (or `active` for `working`), `notice` to `notice`, `demand` to `demand`;
 `motion` verbatim; `expiresAt`/`after` to `--ttl-ms` and the `after` flags;
-transitions into `done` and `error` to a pulse of the same kind. Several
-sessions in one window are aggregated by the bridge before writing a single
-`familiar` slot. That mapping is out of scope here; the schema is chosen so
-it is one-to-one.
+transitions into `done` and `error` to a pulse of the same kind. Familiar's
+per-intent `motionPolicy` is applied by the bridge before sending: `off`
+sends `static` and no pulses, `reduced` maps Flash to Pulse and Pulse to
+Breathe. niri's global `signal { motion }` then applies on top, so the more
+restrictive of the two wins and a familiar intent marked `off` never
+animates. Several sessions in one window are aggregated by the bridge
+before writing a single `familiar` slot. That mapping is out of scope here;
+the schema is chosen so it is one-to-one.
 
 ## 3. Envelope solver and `SignalFrame`
 
@@ -223,17 +289,26 @@ signal motion are therefore driven differently.
 
 - **Transient motion rides the animation loop.** `Tile::are_transitions_ongoing`
   gains a signal term that is true while the baseline crossfade runs or any
-  impulse is live. Both are bounded, at most 1.5 s, so refresh-rate
-  wakeups for that span are acceptable and match how open, move, and resize
-  animations already behave.
-- **Sustained motion uses bucket timers.** Breathe, Pulse, and Flash do
-  not set the transitions term. Instead the tile schedules a calloop
-  `Timer` for the next quantization boundary of the oscillator, and the
-  timer callback queues a redraw for the window's output. The compositor
-  wakes only when the uniform will actually change: about 8 times per
-  second for Breathe, about 27 for Pulse, and at the edges for Flash. The
-  timer is replaced on every fold change and removed when motion returns to
-  `Static` or the window closes.
+  impulse is live. Impulses last at most 1.5 s; the crossfade lasts its
+  configured duration times the global animation slowdown, like every
+  other niri animation. Refresh-rate wakeups for those spans match how
+  open, move, and resize animations already behave.
+- **Sustained motion uses one bucket timer per output.** Breathe, Pulse,
+  and Flash do not set the transitions term. Oscillator buckets are aligned
+  to the absolute clock at `period / 32`; the per-window seed offsets the
+  value inside a bucket, not the bucket boundary, so every Breathe window
+  on an output shares the same boundaries and ten windows cost the same
+  wakeups as one. During `Layout::update_render_elements`, which runs only
+  for the tiles that are about to be rendered, each output computes the
+  earliest next boundary over its visible tiles with sustained motion and
+  arms a single calloop `Timer` for it, replacing the previous one. The
+  callback queues a redraw for that output; the render pass re-arms the
+  timer. Tiles on inactive workspaces are not visited, so a hidden
+  `Demand` window schedules nothing until a workspace switch or the
+  overview renders it, and an output with no visible sustained motion has
+  no timer. Wakeups per output are therefore bounded by the union of the
+  bucket grids in use: about 8 per second for Breathe alone, about 27 for
+  Pulse, and at the edges for Flash.
 - `InputFingerprint` gains a `SignalFingerprint`: `level` and each accent
   channel quantized to 1/256, `breath` quantized to 1/32 of its period, each
   impulse envelope quantized to 1/128, and oscillator time pinned to a
@@ -319,10 +394,8 @@ Rules:
   to `is-urgent`. `signal-source` matches when any slot on the window,
   including the native `niri` slot, has a source name matching the regex;
   a window is a familiar window whether or not familiar's slot won the
-  fold. `signal-tag` matches against the folded `tag`, which follows the
-  accent provider. A window with no slot matches neither. The fold gains a
-  `sources: Vec<String>` listing contributing slot names, which the event
-  stream and `Window.signal` also expose. A signal write, decay, or focus
+  fold. `signal-tag` matches against the folded `tag` from section 1. A
+  window with no slot matches neither. A signal write, decay, or focus
   demotion sets
   `need_to_recompute_rules` the way `set_urgent` does, so `refresh_material`
   re-resolves the material and response without new plumbing. Matching on
@@ -344,7 +417,7 @@ mat_sig_impulse_env  vec4    // envelope per impulse slot
 mat_sig_impulse_rgb  vec3[4]
 mat_sig_impulse_resp ivec4   // response selector per impulse slot
 mat_sig_response     ivec2   // accent, attention selectors
-mat_sig_ring         vec2    // inset, width (physical pixels)
+mat_sig_ring         vec2    // inset, width (logical px, like mat_area_size)
 ```
 
 Impulse kinds never reach the shader. The CPU resolves each live impulse's
@@ -373,8 +446,10 @@ permutation compile is needed.
   would be inert on default glass: chromatic aberration becomes
   `min(1, base + 0.5 * envelope)` and distortion `min(1, base + 0.25 *
   envelope)`, with `distortion-scale` unchanged, then back.
-- **`ripple`.** The impulse envelope is added into the existing jelly
-  `activity` input, so an event ripples the slab exactly as a resize does.
+- **`ripple`.** Ripple impulse envelopes are summed with the native jelly
+  `activity` and clamped to the existing `[0, 1)` contract, so an event
+  ripples the slab exactly as a resize does and simultaneous ripples
+  saturate rather than overflow.
 
 Fireflies, frost-on-idle, accent tint of attenuation color, and inactive
 desaturation are not in this slice. They slot in as new response names
@@ -387,7 +462,8 @@ without touching sections 1 through 5.
 | `WindowSignals`, `Slot`, `Impulse`, fold, decay, focus demotion | new `src/window/signal.rs`, stored on `MappedWindow` beside `is_urgent` |
 | IPC types (`Level`, `Motion`, `ImpulseKind`, `Signal`, requests, event) | `niri-ipc/src/lib.rs` |
 | Request handling with result channel, `WindowSignalChanged` diffing | `src/ipc/server.rs` next to `PickColor` and `WindowUrgencyChanged`; mutation entry points on `Niri` in `src/niri.rs` returning `Result` |
-| Expiry and oscillator bucket timers | `src/niri.rs`, registration tokens stored on the slot and tile |
+| Slot expiry and impulse expiry timers | `src/niri.rs`, registration tokens stored on the slot and the window store |
+| Per-output oscillator bucket timer | armed from `Layout::update_render_elements` over visible tiles; token stored per output in `src/niri.rs` |
 | Solver, `SignalFrame`, `SignalFingerprint`, oscillator constants | new `src/render_helpers/signal.rs`; pure, no GL |
 | Per-frame wiring, crossfade `Animation`, transitions term, impulse kind to selector resolution | `src/layout/tile.rs`, both `render_inner` material sites and `are_transitions_ongoing` |
 | Response config, validation, resolved response | `niri-config/src/material.rs` (`Response`, `ResolvedResponse`), `niri-config/src/window_rule.rs` (`Match`, `MaterialRef`), `niri-config/src/lib.rs` (`validate_material_refs`) |
@@ -413,21 +489,26 @@ so the event stream and the internal fold cannot drift.
 ## 9. Verification
 
 - Unit tests, `src/tests/material.rs` and a new `src/tests/signal.rs`:
-  fold precedence, accent inheritance, and the `sources` list; decay,
-  `until_focus` demotion, and timer replacement on rewrite; every bound in
-  section 1; oscillator and envelope shapes at fixed clock values; impulse
+  fold precedence, slot ordering, independent accent and tag selection,
+  and the `sources` list; decay, `until_focus` demotion, timer replacement
+  on rewrite, and impulse expiry pruning; every bound in section 1
+  including the TTL cap; simultaneous ripple clamping; bucket alignment
+  across differently seeded windows; oscillator and envelope shapes at fixed clock values; impulse
   kind to selector resolution; fingerprint pinned to a constant at rest and
   changing under motion; config parse and validation for every error in
   section 5, including `response=` reference checking and the ring rule.
 - IPC round trip on a nested instance: set, pulse, clear through
   `niri msg`, asserting the `WindowSignalChanged` events including the
-  `null` on final clear and the `signal` field in `niri msg windows`, plus
-  every rejection case returning an error reply with state unchanged.
+  `null` on final clear, the impulse-expiry event, and the `signal` field
+  in `niri msg windows`, plus every rejection case returning an error reply
+  with state unchanged, including pulse before set.
 - Nested GLES smoke on the headless verification unit, mirroring
   `2026-09-02-material-roughness-smoke.md`: a quiet window with an accent
   ring produces zero material redraws and zero redraw wakeups; a
   `Demand + Pulse` window wakes at the bucket rate, not the refresh rate,
-  and stops on focus; a `done` pulse ends and damage stops; `flash` is
+  and stops on focus; the same window on an inactive workspace produces no
+  wakeups; ten seeded Breathe windows on one output wake at the same rate
+  as one; a `done` pulse ends and damage stops; `flash` is
   visible on default glass; `signal { motion "off" }` leaves only the
   crossfade. Wakeups are measured from the Tracy redraw frames, and
   per-frame cost of ring plus rim orbit is captured against the roughness
