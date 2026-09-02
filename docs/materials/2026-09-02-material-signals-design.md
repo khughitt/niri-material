@@ -126,14 +126,23 @@ source name. "Earliest" below means first in that order.
 - `sources` lists every slot name, native slot included, in slot order.
 
 **Decay.** A slot with `expires` set is replaced by its `after` pair at
-`expires.at`, keeping `accent` and `tag`. Decay is pre-resolved by the
-source so the compositor never has to know why a state ends. Each write
-with an expiry registers a calloop `Timer` on the event loop, following the
-focus-timestamp debounce precedent in `src/niri.rs`; on fire it applies the
-decay, marks rules for recomputation, queues a redraw, and emits the event.
-A quiet window therefore notices its own expiry without redrawing while it
-waits. The fold also compares the clock, so a stale timer or a slot
-rewritten before it fired is harmless.
+`expires.at`, keeping `accent` and `tag` and clearing `until_focus`, so a
+slot is never demoted twice. Decay is pre-resolved by the source so the
+compositor never has to know why a state ends.
+
+**Deadline timer.** Each window owns at most one calloop `Timer`, armed
+for the earliest of its slot expiries and impulse expiries, following the
+focus-timestamp debounce precedent in `src/niri.rs`. On fire it applies
+elapsed decay, prunes expired impulses, marks the window for rule
+recomputation, queues a redraw, and emits the event, so a quiet window
+notices its own expiry without redrawing while it waits and event-stream
+consumers never see a stale impulse. Rendering does not depend on this
+timer: the fold is time-aware, so a read at `now` already sees elapsed
+decay and omits expired impulses, and a stale or early timer is harmless.
+Timers are reconciled from `State::refresh` through a per-window dirty
+flag that every mutation sets, so IPC writes, urgency, focus demotion, and
+timer-driven decay share one re-arm path; a window's timer is cancelled
+when it unmaps.
 
 **Native slot.** The `niri` slot exists if and only if `is_urgent` is
 set. A transition into urgent creates it as `Demand + Pulse` and enqueues a
@@ -150,19 +159,13 @@ until their source clears them. A source that wants to clear its
 contribution sends the clear request; the compositor never garbage-collects
 an external slot on its own.
 
-**Impulse expiry.** Each window with live impulses holds one timer set to
-the earliest impulse expiry. On fire it prunes expired impulses, re-arms
-for the next one if any, and emits the event, so event-stream consumers
-never see a stale impulse. Rendering does not depend on this timer; the
-solver drops expired impulses from the frame on its own.
-
 **Bounds.** Signal state is written by unprivileged local clients, so it is
 bounded: at most 16 external slots per window, source names at most 64
 bytes, tags at most 256 bytes. A write past one of those bounds is rejected
 with an error and changes nothing. The four-impulse cap is the exception
-and evicts, as stated under the fold. Each slot owns at most
-one expiry timer; a rewrite removes the previous timer's registration token
-before scheduling a new one, and a clear or window close removes it.
+and evicts, as stated under the fold. Each window owns at most one
+deadline timer; a rewrite replaces it, and a clear or window close removes
+it.
 `--ttl-ms` is at most 86 400 000 (24 hours); larger values are rejected so
 the deadline is always a valid `Instant`.
 
@@ -367,10 +370,15 @@ signal motion are therefore driven differently.
   `update_render_elements` visits every tile in a visible workspace,
   including hidden tabs and columns scrolled out of view, so it cannot be
   the visibility source. Instead, when `Tile::render` runs for a tile whose
-  effective motion is sustained and whose slab rect intersects the view
-  rect it was given, the tile reports its next boundary into a per-output
-  accumulator on the render context. Hidden tabs never reach `Tile::render`
-  and offscreen columns fail the intersection, so neither contributes.
+  effective motion is sustained and whose slab band intersects the output's
+  view rect, the tile reports its next boundary into a per-output
+  accumulator on the render context. The band test uses the tile rect
+  inflated by `bevel` on every side, a superset of the exact slab, so a
+  visible band never freezes when the tile rect alone leaves view. The
+  view rect is set once per output pass, before the interactively moved
+  tile renders, so every render path sees it. Hidden tabs never reach
+  `Tile::render` and offscreen columns fail the intersection, so neither
+  contributes.
   After the pass, the output arms a single calloop `Timer` for the earliest
   reported boundary, replacing the previous one, or removes it when nothing
   reported. The callback queues a redraw for that output; the next render
@@ -515,10 +523,12 @@ every combination and no permutation compile is needed.
   `ring-width` wide, added as an emissive term in the accent. Baseline
   brightness is `0.15 + 0.35 * level`; with no accent the band is skipped.
 - **`rim-orbit`.** The Fresnel glint currently uses a fixed top-left light
-  direction. This response rotates `mat_sig_light.xy` around the perimeter
-  at a rate that follows `level` and an excursion that follows `breath`,
-  and mixes the specular toward the accent by the tint weight. At `Quiet`
-  the light parks top-left and the output is bit-identical to today.
+  direction. This response sways `mat_sig_light.xy` around top-left by up
+  to `level * π/2`, driven by `breath`, so its cost is covered entirely by
+  the breath buckets, and mixes the specular toward the accent by a weight
+  equal to `level`. Only `rim-orbit` moves or tints the light; `ring-pulse`
+  and `none` keep today's fixed direction. At `Quiet` the light parks
+  top-left and the output is bit-identical to today.
 - **`ring-pulse`.** The ring's emissive term is multiplied by
   `1 + breath * level`.
 - **`sweep`.** A specular band crossing the slab once along the top-left
@@ -556,8 +566,8 @@ without touching sections 1 through 5.
 | Event-stream state reduction for `WindowSignalChanged` | `niri-ipc/src/state.rs` (`WindowsState::apply`) |
 | CLI subcommands and flag parsing | `src/cli.rs`, `src/ipc/client.rs` |
 | Request handling with result channel, `WindowSignalChanged` diffing | `src/ipc/server.rs` next to `PickColor` and `WindowUrgencyChanged`; mutation entry points on `Niri` in `src/niri.rs` returning `Result` |
-| Slot expiry and impulse expiry timers | `src/niri.rs`, registration tokens stored on the slot and the window store |
-| Per-output oscillator bucket timer | `RenderCtx` in `src/render_helpers/mod.rs` gains a next-boundary accumulator and `Tile::render` gains the view rect it needs for the intersection test; `Tile::render` reports into the accumulator; the output render path in `src/niri.rs` arms or removes the timer after the pass, token stored per output |
+| Per-window deadline timer, dirty-flag reconciliation, unmap cancellation | `src/niri.rs` (`refresh_signal_deadlines` from `State::refresh`), tokens keyed by window id; cancel called from the unmap paths in `src/handlers/compositor.rs` and `src/handlers/xdg_shell.rs` |
+| Per-output oscillator bucket timer | `RenderCtx` in `src/render_helpers/mod.rs` gains a shared next-boundary accumulator with the output view rect; `Niri::render` injects and resets it for output targets; `Tile::render` reports into it; `Niri::redraw` arms or removes the timer after a completed pass, token stored per output |
 | Solver, `SignalFrame`, `SignalFingerprint`, oscillator constants | new `src/render_helpers/signal.rs`; pure, no GL |
 | Stage 1 effective signal (motion policy, response selection), crossfade `Animation`, transitions term, per-frame wiring | `src/layout/tile.rs`, both `render_inner` material sites and `are_transitions_ongoing` |
 | `ResolvedResponse::attention_is_none` and `impulse_selector` | `niri-config/src/material.rs`, per material type |
