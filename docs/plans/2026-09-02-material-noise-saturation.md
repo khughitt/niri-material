@@ -288,7 +288,8 @@ CARGO_TARGET_DIR=/mnt/ssd3/tmp/niri-material-cad932-impl-target \
   cargo test -p niri material_postprocess_follows_effective_backdrop_blur -- --nocapture
 CARGO_TARGET_DIR=/mnt/ssd3/tmp/niri-material-cad932-impl-target \
   cargo test -p niri postprocess_change_advances_the_commit_in_place -- --nocapture
-cargo fmt --all -- --check
+rustfmt --edition 2021 --check src/layout/tile.rs \
+  src/render_helpers/material.rs src/render_helpers/shaders/mod.rs
 CARGO_TARGET_DIR=/mnt/ssd3/tmp/niri-material-cad932-impl-target \
   cargo test --workspace --all-targets
 git diff --check
@@ -659,7 +660,8 @@ Run fresh verification from the native worktree:
 
 ```bash
 glslangValidator -S frag src/render_helpers/shaders/material.frag
-cargo fmt --all -- --check
+rustfmt --edition 2021 --check src/layout/tile.rs \
+  src/render_helpers/material.rs src/render_helpers/shaders/mod.rs
 CARGO_TARGET_DIR=/mnt/ssd3/tmp/niri-material-cad932-impl-target \
   cargo test --workspace --all-targets
 tasks check

@@ -2,7 +2,7 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{Color, CornerRadius, GradientInterpolation, ResolvedGlass, ResolvedMaterial};
+use niri_config::{Color, CornerRadius, GradientInterpolation, ResolvedGlass};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram};
@@ -25,7 +25,7 @@ use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, Rounde
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
     apply_resolved, background_mapping, bevel_depth, jelly_state, material_frame, InputFingerprint,
-    JellyFingerprint, JellyUniforms, MaterialRenderElement, MaterialState,
+    JellyFingerprint, JellyUniforms, MaterialRenderConfig, MaterialRenderElement, MaterialState,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -171,10 +171,20 @@ fn backdrop_blur_enabled(glass: &ResolvedGlass, blur: &niri_config::Blur) -> boo
 ///
 /// The global `blur { off }` switch is applied here, so every consumer
 /// downstream reads one already-gated value rather than re-deriving it.
-fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMaterial> {
+fn resolve_material(name: Option<&str>, options: &Options) -> Option<MaterialRenderConfig> {
     let mut material = options.materials.get(name?).cloned()?;
-    material.glass.backdrop_blur = backdrop_blur_enabled(&material.glass, &options.blur);
-    Some(material)
+    let backdrop_blur = backdrop_blur_enabled(&material.glass, &options.blur);
+    material.glass.backdrop_blur = backdrop_blur;
+    let (noise, saturation) = if backdrop_blur {
+        (options.blur.noise as f32, options.blur.saturation as f32)
+    } else {
+        (0., 1.)
+    };
+    Some(MaterialRenderConfig {
+        material,
+        noise,
+        saturation,
+    })
 }
 
 /// Routes one window render element through the clip-to-geometry path:
@@ -1968,7 +1978,7 @@ mod tests {
             backdrop_blur,
             ..Default::default()
         };
-        let material = ResolvedMaterial {
+        let material = niri_config::ResolvedMaterial {
             name: String::from(name),
             glass,
         };
@@ -1986,7 +1996,7 @@ mod tests {
     fn backdrop_blur_survives_resolution_when_global_blur_is_on() {
         let options = options_with("frost", true, false);
         let resolved = resolve_material(Some("frost"), &options).unwrap();
-        assert!(resolved.glass.backdrop_blur);
+        assert!(resolved.material.glass.backdrop_blur);
     }
 
     #[test]
@@ -1995,14 +2005,30 @@ mod tests {
         // so nothing downstream would honor `off` if it were not applied here.
         let options = options_with("frost", true, true);
         let resolved = resolve_material(Some("frost"), &options).unwrap();
-        assert!(!resolved.glass.backdrop_blur);
+        assert!(!resolved.material.glass.backdrop_blur);
     }
 
     #[test]
     fn backdrop_blur_stays_off_when_the_material_opts_out() {
         let options = options_with("frost", false, false);
         let resolved = resolve_material(Some("frost"), &options).unwrap();
-        assert!(!resolved.glass.backdrop_blur);
+        assert!(!resolved.material.glass.backdrop_blur);
+    }
+
+    #[test]
+    fn material_postprocess_follows_effective_backdrop_blur() {
+        for (material_blur, global_off, expected) in [
+            (true, false, (0.07, 0.8)),
+            (false, false, (0.0, 1.0)),
+            (true, true, (0.0, 1.0)),
+        ] {
+            let mut options = options_with("frost", material_blur, global_off);
+            options.blur.noise = 0.07;
+            options.blur.saturation = 0.8;
+
+            let resolved = resolve_material(Some("frost"), &options).unwrap();
+            assert_eq!((resolved.noise, resolved.saturation), expected);
+        }
     }
 
     #[test]

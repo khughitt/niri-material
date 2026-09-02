@@ -28,6 +28,8 @@ uniform vec4 mat_ws_color;
 uniform vec4 mat_backdrop_color;
 uniform float mat_bg_prefilter_mix;
 uniform float mat_backdrop_prefilter_mix;
+uniform float mat_noise;
+uniform float mat_saturation;
 uniform float mat_ior;
 uniform float mat_thickness;
 uniform vec4 mat_attenuation_color;
@@ -405,7 +407,16 @@ void main() {
                              normalize(vec2(-1.0, -1.0))), 0.0);
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
 
-        glassed = vec4(linearToSrgb(transmitted + specular), 1.0) * coverage;
+        vec3 glassColor = linearToSrgb(transmitted + specular);
+        if (mat_saturation != 1.0) {
+            const vec3 luma = vec3(0.2126, 0.7152, 0.0722);
+            glassColor = mix(vec3(dot(glassColor, luma)), glassColor, mat_saturation);
+        }
+        if (mat_noise > 0.0) {
+            vec2 noiseSeed = gl_FragCoord.xy + vec2(47.0, 113.0);
+            glassColor += (hash12(noiseSeed) - 0.5) * mat_noise;
+        }
+        glassed = vec4(glassColor, 1.0) * coverage;
     }
 
     // §2 compositing contract: opaque window pixels pass through

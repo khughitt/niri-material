@@ -393,18 +393,25 @@ pub struct InputFingerprint {
     pub jelly: JellyFingerprint,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaterialRenderConfig {
+    pub material: ResolvedMaterial,
+    pub noise: f32,
+    pub saturation: f32,
+}
+
 #[derive(Debug)]
 pub struct MaterialState {
     pub offscreen: OffscreenBuffer,
     id: Id,
     commit: Cell<CommitCounter>,
-    material: ResolvedMaterial,
+    config: MaterialRenderConfig,
     jelly_seed: [f32; 3],
     last_inputs: RefCell<[Option<InputFingerprint>; RenderTarget::COUNT]>,
 }
 
 impl MaterialState {
-    pub fn new(material: ResolvedMaterial) -> Self {
+    pub fn new(config: MaterialRenderConfig) -> Self {
         let s = (JELLY_SEED.fetch_add(1, Ordering::Relaxed) % 4096) as f64;
         let jelly_seed = [
             ((s * 0.754_877_66).fract() * 17.) as f32,
@@ -415,7 +422,7 @@ impl MaterialState {
             offscreen: OffscreenBuffer::default(),
             id: Id::new(),
             commit: Cell::new(CommitCounter::default()),
-            material,
+            config,
             jelly_seed,
             last_inputs: RefCell::new(std::array::from_fn(|_| None)),
         }
@@ -426,7 +433,7 @@ impl MaterialState {
     }
 
     pub fn material(&self) -> &ResolvedMaterial {
-        &self.material
+        &self.config.material
     }
 
     pub fn has_program(renderer: &mut GlesRenderer) -> bool {
@@ -477,7 +484,9 @@ impl MaterialState {
             jelly_seed: self.jelly_seed,
             scale,
             alpha,
-            glass: self.material.glass,
+            glass: self.config.material.glass,
+            noise: self.config.noise,
+            saturation: self.config.saturation,
             win_rect,
             win_src,
             mapping,
@@ -497,7 +506,7 @@ impl MaterialState {
 /// and registers as damage; only a change of definition name rebuilds.
 pub fn apply_resolved(
     slot: &mut Option<MaterialState>,
-    resolved: Option<&ResolvedMaterial>,
+    resolved: Option<&MaterialRenderConfig>,
 ) -> bool {
     match (slot.as_mut(), resolved) {
         (None, None) => false,
@@ -505,9 +514,9 @@ pub fn apply_resolved(
             *slot = None;
             true
         }
-        (Some(state), Some(resolved)) if state.material.name == resolved.name => {
-            if state.material.glass != resolved.glass {
-                state.material.glass = resolved.glass;
+        (Some(state), Some(resolved)) if state.config.material.name == resolved.material.name => {
+            if &state.config != resolved {
+                state.config = resolved.clone();
                 state.bump();
             }
             false
@@ -533,6 +542,8 @@ pub struct MaterialRenderElement {
     alpha: f32,
     /// Resolved parameters this element renders with.
     glass: ResolvedGlass,
+    noise: f32,
+    saturation: f32,
     /// Window sub-rect of the offscreen texture, normalized UV
     /// (`mat_win_rect`) — the buffer may be larger than the window.
     win_rect: [f32; 4],
@@ -638,6 +649,8 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_backdrop_color", self.backdrop_color),
             Uniform::new("mat_bg_prefilter_mix", bg_texture.mix),
             Uniform::new("mat_backdrop_prefilter_mix", backdrop_texture.mix),
+            Uniform::new("mat_noise", self.noise),
+            Uniform::new("mat_saturation", self.saturation),
             Uniform::new("mat_ior", g.ior as f32),
             Uniform::new("mat_thickness", g.thickness as f32),
             Uniform::new(
@@ -715,10 +728,14 @@ mod tests {
     use super::*;
     use crate::render_helpers::RenderTarget;
 
-    fn material(name: &str) -> ResolvedMaterial {
-        ResolvedMaterial {
-            name: String::from(name),
-            glass: ResolvedGlass::default(),
+    fn render_config(name: &str) -> MaterialRenderConfig {
+        MaterialRenderConfig {
+            material: ResolvedMaterial {
+                name: String::from(name),
+                glass: ResolvedGlass::default(),
+            },
+            noise: 0.,
+            saturation: 1.,
         }
     }
 
@@ -856,7 +873,7 @@ mod tests {
 
     #[test]
     fn unchanged_inputs_do_not_advance_the_commit() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let background_id = Id::new();
         let backdrop_id = Id::new();
 
@@ -880,7 +897,7 @@ mod tests {
 
     #[test]
     fn window_damage_advances_the_commit() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let background_id = Id::new();
         let backdrop_id = Id::new();
 
@@ -898,7 +915,7 @@ mod tests {
 
     #[test]
     fn background_damage_advances_the_commit() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let background_id = Id::new();
         let backdrop_id = Id::new();
 
@@ -916,7 +933,7 @@ mod tests {
 
     #[test]
     fn stable_targets_converge_on_one_commit() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let output_bg = Id::new();
         let screencast_bg = Id::new();
         let backdrop_id = Id::new();
@@ -943,7 +960,7 @@ mod tests {
 
     #[test]
     fn replacing_a_targets_background_buffer_is_damage() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let first_bg = Id::new();
         let replacement_bg = Id::new();
         let backdrop_id = Id::new();
@@ -962,7 +979,7 @@ mod tests {
 
     #[test]
     fn parameter_change_advances_the_commit_in_place() {
-        let mut slot = Some(MaterialState::new(material("frost")));
+        let mut slot = Some(MaterialState::new(render_config("frost")));
         let id_before = slot.as_ref().unwrap().id().clone();
         let output_bg = Id::new();
         let screencast_bg = Id::new();
@@ -980,8 +997,8 @@ mod tests {
             fingerprint(1, 1, &output_bg, &backdrop_id),
         );
 
-        let mut changed = material("frost");
-        changed.glass.roughness = 0.08;
+        let mut changed = render_config("frost");
+        changed.material.glass.roughness = 0.08;
         let rebuilt = apply_resolved(&mut slot, Some(&changed));
 
         let state = slot.as_ref().unwrap();
@@ -1008,8 +1025,27 @@ mod tests {
     }
 
     #[test]
+    fn postprocess_change_advances_the_commit_in_place() {
+        let mut slot = Some(MaterialState::new(render_config("frost")));
+        let id_before = slot.as_ref().unwrap().id().clone();
+        let initial_commit = slot.as_ref().unwrap().commit.get();
+
+        let mut changed = render_config("frost");
+        changed.noise = 0.04;
+        assert!(!apply_resolved(&mut slot, Some(&changed)));
+        assert_eq!(slot.as_ref().unwrap().id(), &id_before);
+        let noise_commit = slot.as_ref().unwrap().commit.get();
+        assert_ne!(noise_commit, initial_commit);
+
+        changed.saturation = 0.8;
+        assert!(!apply_resolved(&mut slot, Some(&changed)));
+        assert_eq!(slot.as_ref().unwrap().id(), &id_before);
+        assert_ne!(slot.as_ref().unwrap().commit.get(), noise_commit);
+    }
+
+    #[test]
     fn identical_parameters_are_not_damage() {
-        let mut slot = Some(MaterialState::new(material("frost")));
+        let mut slot = Some(MaterialState::new(render_config("frost")));
         let background_id = Id::new();
         let backdrop_id = Id::new();
         let commit_before = slot.as_ref().unwrap().advance_commit(
@@ -1017,7 +1053,7 @@ mod tests {
             fingerprint(1, 1, &background_id, &backdrop_id),
         );
 
-        let rebuilt = apply_resolved(&mut slot, Some(&material("frost")));
+        let rebuilt = apply_resolved(&mut slot, Some(&render_config("frost")));
 
         assert!(!rebuilt);
         assert_eq!(
@@ -1031,10 +1067,10 @@ mod tests {
 
     #[test]
     fn name_change_rebuilds_the_state() {
-        let mut slot = Some(MaterialState::new(material("frost")));
+        let mut slot = Some(MaterialState::new(render_config("frost")));
         let id_before = slot.as_ref().unwrap().id().clone();
 
-        let rebuilt = apply_resolved(&mut slot, Some(&material("clear")));
+        let rebuilt = apply_resolved(&mut slot, Some(&render_config("clear")));
 
         let state = slot.as_ref().unwrap();
         assert!(rebuilt);
@@ -1044,7 +1080,7 @@ mod tests {
 
     #[test]
     fn losing_the_material_clears_the_state() {
-        let mut slot = Some(MaterialState::new(material("frost")));
+        let mut slot = Some(MaterialState::new(render_config("frost")));
 
         let rebuilt = apply_resolved(&mut slot, None);
 
@@ -1066,7 +1102,7 @@ mod tests {
     fn gaining_a_material_builds_the_state() {
         let mut slot = None;
 
-        let rebuilt = apply_resolved(&mut slot, Some(&material("frost")));
+        let rebuilt = apply_resolved(&mut slot, Some(&render_config("frost")));
 
         assert!(rebuilt);
         assert_eq!(slot.as_ref().unwrap().material().name, "frost");
@@ -1109,7 +1145,7 @@ mod tests {
 
     #[test]
     fn backdrop_commit_advances_the_commit() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let background_id = Id::new();
         let backdrop_id = Id::new();
 
@@ -1127,7 +1163,7 @@ mod tests {
 
     #[test]
     fn workspace_color_change_advances_the_commit() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let background_id = Id::new();
         let backdrop_id = Id::new();
 
@@ -1141,7 +1177,7 @@ mod tests {
 
     #[test]
     fn background_mapping_change_advances_the_commit() {
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let background_id = Id::new();
         let backdrop_id = Id::new();
 
@@ -1159,7 +1195,7 @@ mod tests {
         // and `apply_resolved` bumps only on a `glass` diff, so a config
         // reload that edits `geometry-corner-radius` alone would otherwise
         // leave the element's pixels stale.
-        let state = MaterialState::new(material("frost"));
+        let state = MaterialState::new(render_config("frost"));
         let background_id = Id::new();
         let backdrop_id = Id::new();
 
