@@ -14,6 +14,109 @@ use smithay::utils::{Buffer, Logical, Physical, Scale, Size, Transform};
 use crate::niri::OutputRenderElements;
 use crate::render_helpers::blur::{Blur, BlurOptions};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PrefilterStatus {
+    Empty,
+    Dirty,
+    Clean,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PrefilterSelection {
+    low: usize,
+    high: usize,
+    mix: f32,
+}
+
+impl PrefilterSelection {
+    const fn level_zero() -> Self {
+        Self {
+            low: 0,
+            high: 0,
+            mix: 0.,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PrefilterState {
+    level_sizes: Vec<Size<i32, Buffer>>,
+    status: PrefilterStatus,
+    highest_prepared_level: usize,
+}
+
+impl PrefilterState {
+    fn new(size: Size<i32, Buffer>) -> Self {
+        let mut level_sizes = Vec::new();
+        let (mut w, mut h) = (size.w, size.h);
+        while w > 1 || h > 1 {
+            w = (w / 2).max(1);
+            h = (h / 2).max(1);
+            level_sizes.push(Size::from((w, h)));
+        }
+
+        let status = if level_sizes.is_empty() {
+            PrefilterStatus::Empty
+        } else {
+            PrefilterStatus::Dirty
+        };
+        Self {
+            level_sizes,
+            status,
+            highest_prepared_level: 0,
+        }
+    }
+
+    fn level_sizes(&self) -> &[Size<i32, Buffer>] {
+        &self.level_sizes
+    }
+
+    fn needs_prepare(&self) -> bool {
+        self.status == PrefilterStatus::Dirty
+            && self.highest_prepared_level < self.level_sizes.len()
+    }
+
+    fn invalidate(&mut self) {
+        self.status = if self.level_sizes.is_empty() {
+            PrefilterStatus::Empty
+        } else {
+            PrefilterStatus::Dirty
+        };
+        self.highest_prepared_level = 0;
+    }
+
+    fn mark_failed(&mut self) {
+        self.status = PrefilterStatus::Failed;
+        self.highest_prepared_level = 0;
+    }
+
+    fn mark_clean(&mut self) {
+        self.status = if self.level_sizes.is_empty() {
+            PrefilterStatus::Empty
+        } else {
+            PrefilterStatus::Clean
+        };
+        self.highest_prepared_level = self.level_sizes.len();
+    }
+
+    fn selection(&self, roughness: f64, ior: f64) -> PrefilterSelection {
+        let max = self.level_sizes.len();
+        if max == 0 || roughness == 0. {
+            return PrefilterSelection::level_zero();
+        }
+
+        let lod = max as f64 * roughness * (ior * 2. - 2.).clamp(0., 1.);
+        let low = lod.floor() as usize;
+        let high = (low + 1).min(max);
+        PrefilterSelection {
+            low,
+            high,
+            mix: (lod - low as f64) as f32,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct EffectBuffer {
     /// Id to be used for this effect buffer's elements.
@@ -321,5 +424,55 @@ impl EffectBuffer {
         };
 
         Ok(texture)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prefilter_levels_reach_one_by_one_and_stay_below_the_source() {
+        for w in 1..=64 {
+            for h in 1..=64 {
+                let state = PrefilterState::new(Size::from((w, h)));
+                let pixels: i32 = state.level_sizes().iter().map(|s| s.w * s.h).sum();
+                assert!(pixels < w * h || w * h == 1, "{w} x {h}: {pixels}");
+                if w * h == 1 {
+                    assert!(state.level_sizes().is_empty());
+                } else {
+                    assert_eq!(state.level_sizes().last(), Some(&Size::from((1, 1))));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn prefilter_selection_matches_reference_formula() {
+        let state = PrefilterState::new(Size::from((1920, 1080)));
+        assert_eq!(state.selection(0., 1.5), PrefilterSelection::level_zero());
+        let selected = state.selection(0.08, 1.5);
+        assert_eq!((selected.low, selected.high), (0, 1));
+        assert!((selected.mix - 0.8).abs() < f32::EPSILON);
+        assert_eq!(
+            state.selection(1., 1.),
+            PrefilterSelection {
+                low: 0,
+                high: 1,
+                mix: 0.,
+            }
+        );
+    }
+
+    #[test]
+    fn prefilter_failure_retries_only_after_invalidation() {
+        let mut state = PrefilterState::new(Size::from((1920, 1080)));
+        assert!(state.needs_prepare());
+        state.mark_failed();
+        assert!(!state.needs_prepare());
+        state.invalidate();
+        assert!(state.needs_prepare());
+        state.mark_clean();
+        assert!(!state.needs_prepare());
     }
 }
