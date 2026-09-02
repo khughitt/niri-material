@@ -1,12 +1,12 @@
 ---
 id: material-cad932
 title: Compose global noise and saturation with glass
-status: blocked
+status: done
 priority: 2
 size: s
 owner: feat/material-cad932
 created: 2026-09-01T14:36:13Z
-updated: 2026-09-02T12:27:26Z
+updated: 2026-09-02T12:42:55Z
 depends: [material-7b9ddb]
 tags: [migration, design, rendering]
 spec: docs/specs/2026-09-02-material-noise-saturation-design.md
@@ -28,3 +28,4 @@ Outcome: glass with effective backdrop-blur inherits the global blur block's noi
 - 2026-09-02T11:21:02Z (feat/material-cad932): Implementation plan split into material-0b6d06 for native render composition and material-7b9ddb for Prism, documentation, nested GLES acceptance, and final closure.
 - 2026-09-02T11:36:08Z (feat/material-cad932): Plan review replaced the background-effect-only diagnostic fixture with validated material KDL, a pinned blank transparent/opaque kitty, exact RGB wallpaper and fixture matrix, ROI-only noise metrics, fail-closed log discovery, and a Prism fast-forward landing step.
 - 2026-09-02T12:27:26Z (feat/material-cad932): Waiting for the verified Prism commit bcedf4cd to be fast-forwarded into the requested checkout.
+- 2026-09-02T12:42:55Z (feat/material-cad932): Glass now inherits global noise and saturation under effective backdrop blur; native commit 7c702e58 and Prism commit bcedf4cd are landed and acceptance is recorded.

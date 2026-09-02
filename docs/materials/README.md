@@ -23,8 +23,8 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-29-material-backdrop-blur-evidence.md`: retained backdrop blur verification evidence.
 - `2026-09-01-material-roughness-design.md`: implemented and verified native and Prism roughness design.
 - `2026-09-02-material-roughness-smoke.md`: passing nested GLES, Tracy, damage-reuse, and calibrated overview evidence.
-- `../specs/2026-09-02-material-noise-saturation-design.md`: native composition design; Prism delivery remains pending.
-- `2026-09-02-material-noise-saturation-evidence.md`: passing native automated and nested GLES composition evidence; Prism delivery remains pending.
+- `../specs/2026-09-02-material-noise-saturation-design.md`: implemented native and Prism noise/saturation composition design.
+- `2026-09-02-material-noise-saturation-evidence.md`: passing native automated, nested GLES, and Prism composition evidence.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
@@ -38,7 +38,7 @@ All future production rebases and material commits happen in this repository.
 - `plans/2026-08-28-v1-daily-driver-rollout.md`: executed package and daily-driver rollout procedure.
 - `plans/2026-08-29-material-backdrop-blur.md`: executed backdrop blur plan.
 - `../plans/2026-09-01-material-roughness.md`: executed roughness implementation and verification plan.
-- `../plans/2026-09-02-material-noise-saturation.md`: native implementation and acceptance complete; Prism fast-forward pending.
+- `../plans/2026-09-02-material-noise-saturation.md`: executed noise and saturation composition plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the
@@ -98,5 +98,5 @@ not. The investigation is narrowed to sampling geometry and remains active in
 
 Global blur noise and saturation compose in native glass at `7c702e58` when
 backdrop blur is effective. Nested GLES acceptance is recorded in
-`2026-09-02-material-noise-saturation-evidence.md`; the verified Prism
-description commit is pending delivery to its read-only checkout.
+`2026-09-02-material-noise-saturation-evidence.md`; Prism description commit
+`bcedf4cd` is on its requested `main` checkout.

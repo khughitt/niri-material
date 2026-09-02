@@ -358,8 +358,8 @@ and did not reproduce. With one pass, changing `blur.offset` from 1 to 8
 changed the text-free probe ROI by normalized RMSE `0.113418`, and
 `saturation 0` produced grayscale samples over both red and green wallpaper.
 They are not independent blur defects. Native composition and nested GLES
-acceptance are complete; only the verified Prism description commit remains
-to be fast-forwarded into its requested checkout.
+acceptance are complete, and Prism description commit `bcedf4cd` is on its
+requested `main` checkout.
 
 ## Alternatives rejected
 

@@ -1,9 +1,8 @@
 # Glass noise and saturation: verification evidence
 
 **Result:** native implementation passed automated and nested Weston GLES
-acceptance on 2026-09-02. The Prism contract commit passed its full suite but
-still needs fast-forwarding into the requested checkout, which was read-only in
-the verification workspace.
+acceptance on 2026-09-02. Prism contract commit `bcedf4cd` was fast-forwarded
+to its requested `main` checkout and passed its full suite.
 
 ## Pinned revisions and tools
 
@@ -173,12 +172,11 @@ wallpaper, position, and three-second settle interval. Cleanup proved every
 recorded Weston, niri, swaybg, and kitty PID was absent and the private host
 socket and lock file no longer existed.
 
-## Pending Prism landing
+## Prism delivery
 
-The requested Prism checkout was clean at
-`c3c459d7ece853730a1380410539a1ed26924d16`, but its filesystem was mounted
-read-only. Importing the verified commit failed before changing it with
-`cannot open '.git/FETCH_HEAD': Read-only file system`. Fetch branch
-`docs/material-cad932` from the retained bundle, then fast-forward `main` to
-commit `bcedf4cdbfe5b92e5e9d40ea69be4fdc57446254`; no merge commit or
-cherry-pick is needed. The patch is retained for inspection only.
+The requested Prism checkout fast-forwarded from
+`c3c459d7ece853730a1380410539a1ed26924d16` to
+`bcedf4cdbfe5b92e5e9d40ea69be4fdc57446254`. Its final status was clean,
+the commit was an ancestor of `main`, and the focused 11-test contract suite
+and full 142-test suite both passed. The retained bundle and patch remain
+inspection artifacts only.

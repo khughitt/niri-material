@@ -1,8 +1,7 @@
 # Glass noise and saturation composition: design
 
-**Status:** native implementation committed as `7c702e58`; nested GLES
-acceptance passed; Prism contract verified as `bcedf4cd` but its requested
-checkout was read-only, so fast-forward delivery remains pending. See
+**Status:** implemented as native commit `7c702e58` and Prism commit
+`bcedf4cd`; automated and nested GLES acceptance passed. See
 [`2026-09-02-material-noise-saturation-evidence.md`](../materials/2026-09-02-material-noise-saturation-evidence.md).
 
 **Task:** `material-cad932`

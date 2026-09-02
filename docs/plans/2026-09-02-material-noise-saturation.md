@@ -362,7 +362,7 @@ node --test test/glass-defs.test.js
 
 Expected: FAIL because the current description mentions only blur strength.
 
-- [ ] **Step 2: Clarify Prism without changing generated KDL**
+- [x] **Step 2: Clarify Prism without changing generated KDL**
 
 Set the `glass.backdropBlur` description in `defs/glass.yaml` to:
 
@@ -628,7 +628,7 @@ and the final log gate finds nothing. Record the
 Weston renderer/version, GLES version, source commit, binary hash, exact KDL,
 capture hashes, ROI statistics, commands, and cleanup proof.
 
-- [ ] **Step 4: Update native documentation and landed status**
+- [x] **Step 4: Update native documentation and landed status**
 
 After the existing `backdrop-blur` paragraph in
 `docs/materials/material-config.md`, add:
@@ -654,7 +654,7 @@ Correct only current user-facing claims made stale by delivery. Preserve
 historical measurements as history, including the already-corrected follow-up
 in `docs/materials/2026-08-29-material-backdrop-blur-design.md`.
 
-- [ ] **Step 5: Re-run final checks, close tasks, and commit acceptance**
+- [x] **Step 5: Re-run final checks, close tasks, and commit acceptance**
 
 Run fresh verification from the native worktree:
 
