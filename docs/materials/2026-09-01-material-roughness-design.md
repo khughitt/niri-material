@@ -41,7 +41,7 @@ up pass overwrites every intermediate level except the smallest, and its level
 count and filter offset follow the global blur configuration. Roughness needs a
 stable, complete downsample chain independent of those settings.
 
-Each pyramid separates policy from GL execution. A plain `PrefilterPolicy`
+Each pyramid separates policy from GL execution. A plain `PrefilterState`
 contains the source size, level count, dirty state, highest prepared level, and
 level-selection math, with no renderer or `GlesTexture` dependency. The GL
 owner holds the actual texture vector and only executes allocation and
@@ -129,11 +129,13 @@ offscreen storage.
 
 `src/render_helpers/blur.rs` gains the minimum reusable prefilter storage and a
 downsample-only path extracted from the existing blur program. Its GL layer
-owns textures and executes `PrefilterPolicy` decisions; it owns no policy about
+owns textures and executes `PrefilterState` decisions; it owns no policy about
 materials, targets, damage, or optics.
 
 `src/render_helpers/effect_buffer.rs` owns the two pyramids and their dirty
-state. Its render path:
+state. Each `EffectBuffer` owns one `PrefilterState` for its sharp cache and one
+for its blurred cache, and hands their decisions to the GL executor in
+`blur.rs`. Its render path:
 
 1. selects the sharp or globally blurred full-size source using
    `backdrop-blur`;
@@ -190,7 +192,7 @@ and a roughness parameter edit already advances the material element commit.
 Invalid roughness is a configuration error and never reaches the renderer.
 
 Texture allocation, downsample, missing-program, or renderer-context errors
-remain renderer failures. `PrefilterPolicy` records `Failed` for that dirty
+remain renderer failures. `PrefilterState` records `Failed` for that dirty
 period. The transition emits one warning naming the prefilter operation; later
 material windows skip the same allocation/downsample attempt and take the
 existing plain-window fallback without repeating the warning. Source damage,
@@ -259,7 +261,7 @@ regression is removed.
 GPU-free Rust tests cover:
 
 - parsing, resolving, defaulting, and rejecting `roughness`;
-- `PrefilterPolicy` transitions among empty, dirty, clean, and failed periods
+- `PrefilterState` transitions among empty, dirty, clean, and failed periods
   without constructing a renderer or texture;
 - pyramid dimensions through `1 x 1`, exact pixel totals for representative
   output sizes, and the less-than-one-source bound for every positive size;
@@ -277,10 +279,11 @@ Nested visual evidence uses the existing isolated Weston GL host and records:
 - sharp-source captures at roughness `0`, `0.08`, and `1`;
 - the same roughness values with `backdrop-blur` enabled;
 - a level-zero capture compared with the current accepted output;
-- an overview capture whose checkerboard-edge 10%-to-90% transition width is
-  converted back to source-buffer pixels using the recorded overview zoom; it
-  must match the settled width within one source pixel, while its on-screen
-  width scales with the overview zoom;
+- a settled/overview pair at roughness `0.5`, so the checkerboard-edge
+  10%-to-90% transition spans several captured pixels; each width is converted
+  back to source-buffer pixels using the recorded zoom, and the difference must
+  be no more than one captured screen pixel converted through that zoom
+  (`1 / zoom` source pixels), while the on-screen width scales with the zoom;
 - ROI statistics showing detail softening as roughness increases;
 - logs free of prefilter or material fallback warnings.
 
