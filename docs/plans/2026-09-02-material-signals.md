@@ -2907,6 +2907,16 @@ In `draw`, upload `mat_chromatic_aberration` from `self.glass_signal.chromatic_a
 
 with `let r = self.signal.impulse_resp;` and `use smithay::backend::renderer::gles::UniformValue;`. Also add `mat_jelly_activity` as `(jelly.activity + activity_add).min(0.999)`; the tile does that sum before building `JellyUniforms` (Task 9), so `draw` needs no change for it.
 
+Wrap the material draw in its own GPU zone so profiling can separate it from the border, shadow, and resize shaders that share the generic `draw shader` zone. In `MaterialRenderElement`'s `RenderElement<GlesRenderer>::draw`, following `src/render_helpers/border.rs:292`:
+
+```rust
+        frame.with_gpu_span(gpu_span_location!("MaterialRenderElement::draw"), |frame| {
+            RenderElement::<GlesRenderer>::draw(&inner, frame, src, dst, damage, opaque_regions, cache)
+        })
+```
+
+with `use smithay::gpu_span_location;`. The Task 12 GPU measurement selects this zone by name.
+
 Register every new uniform in `src/render_helpers/shaders/mod.rs` next to `mat_jelly_ripple`:
 
 ```rust
@@ -3455,7 +3465,8 @@ Live nested runs never target the desktop session: the nested winit window throt
 #   visual  build, drive one window through set/pulse/clear, screenshot the error flash
 #   ipc     event-stream round trip and every rejection case
 #   cases   Tracy redraw counts for every steady-state case
-#   gpu     Tracy GPU cost of ring plus rim orbit against the retained roughness baseline
+#   gpu     Tracy GPU cost of the material draw: this build's default path against
+#           the branch base commit on the identical fixture, plus ring and rim orbit
 #
 # Every resource name is unique per run, every wait is bounded, and a
 # leftover nested socket fails the run. Requires: jq, weston, kitty, swaybg,
@@ -3484,7 +3495,9 @@ cleanup() {
         echo "FAIL: nested niri socket left behind in $RT" >&2
         rc=1
     fi
-    [ -d "$WORK/ref-src" ] && git worktree remove --force "$WORK/ref-src" 2>/dev/null
+    if [ -d "$WORK/ref-src" ]; then
+        git worktree remove --force "$WORK/ref-src" || { echo "FAIL: could not remove reference worktree $WORK/ref-src" >&2; rc=1; }
+    fi
     rm -rf "$RT"
     exit "$rc"
 }
@@ -3493,11 +3506,15 @@ cleanup() {
 TRACY_PORT=$((20000 + $$ % 20000)); export TRACY_PORT
 trap cleanup EXIT
 
+# Cargo's target directory is configured outside the tree here, so resolve
+# it rather than assuming ./target; the reference build gets its own.
+TARGET=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
 case $MODE in
     cases|gpu) cargo build --release --features profile-with-tracy ;;
     *)         cargo build --release ;;
 esac
-NIRI=$ROOT/target/release/niri
+NIRI=$TARGET/release/niri
+[ -x "$NIRI" ] || { echo "FAIL: built binary not found at $NIRI" >&2; exit 1; }
 
 # --- config variants -------------------------------------------------------
 # The backdrop is a checkerboard so refraction, distortion, and chromatic
@@ -3660,9 +3677,11 @@ count_steady() {   # $1 = case; the final 20 s; appends to rates.txt and prints 
     printf '%s: %d zones in 20 s = %.1f/s\n' "$1" "$n" "$(awk -v n="$n" 'BEGIN { printf "%.1f", n/20 }')" | tee -a "$WORK/rates.txt" >&2
     echo "$n"
 }
-# Median exec time of the first 14 `draw shader` GPU zones between 20 s and
-# 28 s of a trace: the roughness smoke's steady-state sample rule. GPU zones
-# need the --gpu export; a missing column or a short sample set fails.
+# Median exec time of the first 14 `MaterialRenderElement::draw` GPU zones
+# between 20 s and 28 s of a trace: the roughness smoke's steady-state
+# sample rule applied to the material-specific zone (the generic
+# `draw shader` zone also covers border, shadow, and resize shaders). GPU
+# zones need the --gpu export; a missing column or a short sample set fails.
 gpu_median_ns() {   # $1 = trace path; prints the median in ns. Derived files stay under $WORK.
     local csv=$WORK/$(basename "$1").gpu.csv
     "$TOOLS/tracy-csvexport" --gpu "$1" > "$csv"
@@ -3670,8 +3689,8 @@ gpu_median_ns() {   # $1 = trace path; prints the median in ns. Derived files st
     # program" and "GPU execution time"; `col` fails with the real header if
     # a different tool version disagrees.
     local ct ce; ct=$(col "$csv" "Time from start of program"); ce=$(col "$csv" "GPU execution time")
-    awk -F, -v ct="$ct" -v ce="$ce" 'NR>1 && $1=="draw shader" && $ct+0>=20e9 && $ct+0<28e9 { print $ce+0 }' "$csv" \
-        | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR!=14) { print "FAIL: " NR " draw shader samples in 20-28 s, need 14" > "/dev/stderr"; exit 1 }
+    awk -F, -v ct="$ct" -v ce="$ce" 'NR>1 && $1=="MaterialRenderElement::draw" && $ct+0>=20e9 && $ct+0<28e9 { print $ce+0 }' "$csv" \
+        | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR!=14) { print "FAIL: " NR " MaterialRenderElement::draw samples in 20-28 s, need 14" > "/dev/stderr"; exit 1 }
               printf "%d", (a[7]+a[8])/2 }'
 }
 # Acceptance helpers. Rates are compared with explicit tolerances.
@@ -3701,7 +3720,7 @@ mode_visual() {
     sleep 0.5; shot sweep-mid
     sleep 1.2
     msg pulse-window-signal --id "$WID" --source demo --kind error
-    sleep 0.1; shot error-flash                 # the impulse's 80 ms peak
+    sleep 0.05; shot error-flash                # requested just before the 80 ms peak; the shot lands near it
     sleep 1.6
     msg clear-window-signal --id "$WID" --source demo
     sleep 0.5; shot cleared
@@ -3887,26 +3906,33 @@ gpu_case_ns() {   # $1 = name, $2 = cfg, $3 = setup; prints the median ns over t
 # commit, built with the same features: GPU time is workload dependent, so
 # the retained roughness trace (different backdrop, geometry, and damage
 # driver) is not comparable and is not used as a gate.
-build_reference() {   # sets REF_NIRI
+build_reference() {   # sets REF_NIRI; its own target dir so it never overwrites this build
     local base; base=$(git merge-base HEAD materials-26.04)
     git worktree add --detach "$WORK/ref-src" "$base" >/dev/null
-    (cd "$WORK/ref-src" && cargo build --release --features profile-with-tracy)
-    REF_NIRI=$WORK/ref-src/target/release/niri
+    (cd "$WORK/ref-src" && CARGO_TARGET_DIR=$WORK/ref-target cargo build --release --features profile-with-tracy)
+    REF_NIRI=$WORK/ref-target/release/niri
+    [ -x "$REF_NIRI" ] || { echo "FAIL: reference binary not built at $REF_NIRI" >&2; exit 1; }
     echo "reference binary: $base" | tee -a "$WORK/gpu.txt"
 }
+# All three GPU runs share one topology: a single focused ticking kitty and
+# no signal-driven redraws. Demand at Static motion exercises the ring and
+# the rim-orbit shading (the light is parked, the shader path is the same)
+# without adding bucket redraws, so the only difference between runs is
+# what the material shader computes per damaged frame.
+setup_gpu_ring() { set_demand "$WID" static; assert_eq "$(win "$WID" .signal.level)" Demand "gpu ring"; }
 mode_gpu() {
     tools_ready
     build_reference
     local ref_ns default_ns ring_ns
     NIRI=$REF_NIRI
     ref_ns=$(gpu_case_ns gpu-reference "$WORK/gpu.kdl" true)
-    NIRI=$ROOT/target/release/niri
-    default_ns=$(gpu_case_ns gpu-default  "$WORK/gpu.kdl" true)                   # no signal: the default path
-    ring_ns=$(gpu_case_ns   gpu-ring-rim  "$WORK/gpu.kdl" "setup_demand pulse")   # ring + rim orbit
+    NIRI=$TARGET/release/niri
+    default_ns=$(gpu_case_ns gpu-default  "$WORK/gpu.kdl" true)             # no signal: the default path
+    ring_ns=$(gpu_case_ns   gpu-ring-rim  "$WORK/gpu.kdl" setup_gpu_ring)   # ring + rim orbit at Demand, Static
     {
         printf 'base-commit build, default path (median of 3): %.3f ms\n' "$(awk -v n="$ref_ns" 'BEGIN { print n/1e6 }')"
         printf 'this build, default path, no signal (median of 3): %.3f ms\n' "$(awk -v n="$default_ns" 'BEGIN { print n/1e6 }')"
-        printf 'this build, ring + rim orbit, demand pulse (median of 3): %.3f ms\n' "$(awk -v n="$ring_ns" 'BEGIN { print n/1e6 }')"
+        printf 'this build, ring + rim orbit, demand static (median of 3): %.3f ms\n' "$(awk -v n="$ring_ns" 'BEGIN { print n/1e6 }')"
         printf 'ring + rim orbit delta vs default: %+.1f%%\n' "$(awk -v a="$default_ns" -v b="$ring_ns" 'BEGIN { print (b-a)/a*100 }')"
     } | tee -a "$WORK/gpu.txt"
     # Gate: the default path must not regress against the base commit on the identical fixture.
@@ -3919,7 +3945,7 @@ mode_gpu() {
 ```
 
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh visual`
-Expected: exit 0 and five uniquely named screenshots under the run's work directory, each listed in `SHA256SUMS`. The fixture places a translucent kitty over a checkerboard backdrop, so the slab is visible through the window body and refraction has detail to act on: `rim-a` and `rim-b`, taken half a Breathe period apart, show the amber ring and the rim glint swayed to opposite sides; `sweep-mid` shows the diagonal band a third of the way across; `error-flash` shows the chromatic fringing and distortion of the checkerboard at the impulse peak; `cleared` shows the default look again.
+Expected: exit 0 and five uniquely named screenshots under the run's work directory, each listed in `SHA256SUMS`. The fixture places a translucent kitty over a checkerboard backdrop, so the slab is visible through the window body and refraction has detail to act on: `rim-a` and `rim-b`, taken half a Breathe period apart, show the amber ring and the rim glint swayed to opposite sides; `sweep-mid` shows the diagonal band a third of the way across; `error-flash`, requested 50 ms after the pulse so it lands near the 80 ms peak, shows the chromatic fringing and distortion of the checkerboard; `cleared` shows the default look again.
 
 - [ ] **Step 6: Commit**
 
@@ -4004,7 +4030,7 @@ Expected `Niri::redraw` zones, read from `rates.txt`:
 
 Then run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh gpu`
 
-The `gpu` mode uses a dedicated fixture in which kitty repaints ten times a second, so every GPU case has identical controlled damage and material draws throughout the 20 s to 28 s sample window. GPU zones are exported with `--gpu` and columns are located by their Tracy 0.13.1 header names. Because GPU time is workload dependent, the retained roughness trace (different backdrop, geometry, and damage driver) is not a comparable reference; instead the script builds the branch's base commit in a temporary worktree with the same features and runs the identical fixture on it. For the base-commit default path, this build's default path (no signal), and this build's ring plus rim-orbit Demand + Pulse case, it captures three times and takes the median of the three per-capture medians, each being the median of exactly 14 `draw shader` GPU zones between 20 s and 28 s. It enforces one gate: this build's default path must be within 10% of the base-commit build, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record all three medians and the delta in the evidence document.
+The `gpu` mode uses a dedicated fixture in which a single focused kitty repaints ten times a second, so every GPU case has identical topology, focus, and damage cadence and material draws throughout the 20 s to 28 s sample window. GPU zones are exported with `--gpu`, columns are located by their Tracy 0.13.1 header names, and only the material-specific `MaterialRenderElement::draw` zone from Task 8 is sampled, never the generic `draw shader` zone that border, shadow, and resize shaders share. Because GPU time is workload dependent, the retained roughness trace (different backdrop, geometry, and damage driver) is not a comparable reference; instead the script builds the branch's base commit in a temporary worktree with its own target directory and runs the identical fixture on it. The ring case sets Demand at Static motion on the same single window, which exercises the ring and rim-orbit shading without adding signal-driven redraws. For the base-commit default path, this build's default path (no signal), and this build's ring plus rim-orbit case, it captures three times and takes the median of the three per-capture medians, each being the median of exactly 14 material zones between 20 s and 28 s. It enforces one gate: this build's default path must be within 10% of the base-commit build, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record all three medians and the delta in the evidence document.
 
 - [ ] **Step 4: Physical DRM check**
 

@@ -638,9 +638,11 @@ boundary, so there is one conversion, in the server, and it is tested.
   whose response has `attention none` arms no timer; wakeup rates are
   unchanged under a non-unit animation slowdown; a `done` pulse ends and damage stops; `flash` is
   visible on default glass; `signal { motion "off" }` leaves only the
-  crossfade. Wakeups are measured from the Tracy redraw frames, and
-  per-frame cost of ring plus rim orbit is captured against the roughness
-  baseline.
+  crossfade. Wakeups are measured from the Tracy redraw frames. Per-draw
+  GPU cost is measured on a material-specific GPU zone with an identical
+  fixture on this build and on the branch's base commit: the unsignaled
+  default path must stay within 10% of the base commit, and the ring plus
+  rim-orbit cost is reported against the default path without a threshold.
 - Physical DRM check on the daily-driver build before acceptance, because
   this is the first material effect that runs on unfocused windows for long
   stretches.
