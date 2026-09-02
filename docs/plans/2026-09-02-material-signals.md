@@ -3475,7 +3475,7 @@ NIRI_PID=; EVENTS_PID=; CAP_PID=
 
 cleanup() {
     local rc=$?
-    stop_nested || true
+    stop_nested || rc=1
     [ -n "$EVENTS_PID" ] && { kill "$EVENTS_PID" 2>/dev/null || true; }
     [ -n "$CAP_PID" ] && { kill "$CAP_PID" 2>/dev/null || true; }
     systemctl --user stop "$UNIT" 2>/dev/null || true
@@ -3486,6 +3486,9 @@ cleanup() {
     rm -rf "$RT"
     exit "$rc"
 }
+# Unique Tracy port so concurrent runs never share the default 8086; the
+# client reads TRACY_PORT, the capture tool takes -p.
+TRACY_PORT=$((20000 + $$ % 20000)); export TRACY_PORT
 trap cleanup EXIT
 
 case $MODE in
@@ -3546,9 +3549,9 @@ stop_nested() {
     kill "$NIRI_PID" 2>/dev/null || true
     wait "$NIRI_PID" 2>/dev/null || true
     NIRI_PID=
-    # niri removes its socket on a clean exit; a leftover one is a failure
-    # the EXIT trap reports rather than something to delete quietly.
-    if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; exit 1; fi
+    # niri removes its socket on a clean exit; a leftover one is a failure.
+    # Return rather than exit so the EXIT trap still finishes cleanup.
+    if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; return 1; fi
 }
 wait_kitty() {   # $1 = count
     for _ in $(seq 100); do [ "$(kitty_count)" -ge "$1" ] && return; sleep 0.1; done
@@ -3586,91 +3589,154 @@ EOF
     "$TOOLS/tracy-csvexport" --help >/dev/null
     sha256sum "$TOOLS"/* | tee -a "$WORK/SHA256SUMS"
 }
-capture_bg() { "$TOOLS/tracy-capture" -o "$WORK/$1.tracy" -a 127.0.0.1 -s 30 & CAP_PID=$!; }
-capture_wait() { wait "$CAP_PID"; CAP_PID=; }
+# tracy-capture's -s timer starts only once a client connects and its connect
+# loop is unbounded, so the whole capture is wrapped in a timeout.
+capture_bg() { timeout 90 "$TOOLS/tracy-capture" -o "$WORK/$1.tracy" -a 127.0.0.1 -p "$TRACY_PORT" -s 30 & CAP_PID=$!; }
+capture_wait() {
+    local rc=0; wait "$CAP_PID" || rc=$?; CAP_PID=
+    [ "$rc" -eq 0 ] || { echo "FAIL: tracy-capture exited $rc (no client connected, or timed out)" >&2; exit 1; }
+}
+# Column lookup by header name, never by position: the CPU (--unwrap) and
+# GPU (--gpu) exports lay their columns out differently.
+col() {   # $1 = csv, $2 = header name; prints the 1-based column index
+    local idx; idx=$(head -1 "$1" | tr ',' '\n' | grep -nx "$2" | cut -d: -f1)
+    [ -n "$idx" ] || { echo "FAIL: column '$2' not in $(head -1 "$1")" >&2; exit 1; }
+    echo "$idx"
+}
+export_cpu() { [ -s "$WORK/$1.csv" ] || "$TOOLS/tracy-csvexport" --unwrap "$WORK/$1.tracy" > "$WORK/$1.csv"; }
+trace_end() {   # latest timestamp of ANY zone, in ns
+    local c; c=$(col "$WORK/$1.csv" ns_since_start)
+    awk -F, -v c="$c" 'NR>1 { t=$c+0; if (t>end) end=t } END { printf "%d", end }' "$WORK/$1.csv"
+}
 # Zones named exactly `Niri::redraw` (a substring filter would also match
-# `Niri::redraw_queued_outputs`) in the final 20 s of the trace, where the
-# trace end is the latest timestamp of ANY zone, not of the last redraw.
-count_steady() {   # $1 = case; appends "case: N zones in 20 s = R/s" to rates.txt
-    "$TOOLS/tracy-csvexport" --unwrap "$WORK/$1.tracy" > "$WORK/$1.csv"
-    awk -F, -v case="$1" 'NR>1 { t=$4+0; if (t>end) end=t; if ($1=="Niri::redraw") { n++; ts[n]=t } }
-        END { lo=end-20e9; c=0; for (i=1;i<=n;i++) if (ts[i]>=lo) c++;
-              printf "%s: %d zones in 20 s = %.1f/s\n", case, c, c/20 }' "$WORK/$1.csv" | tee -a "$WORK/rates.txt"
+# `Niri::redraw_queued_outputs`) with timestamps in [end - $2 s, end - $3 s).
+count_window() {   # $1 = case, $2 = seconds-before-end start, $3 = seconds-before-end stop
+    export_cpu "$1"
+    local end c; end=$(trace_end "$1"); c=$(col "$WORK/$1.csv" ns_since_start)
+    awk -F, -v c="$c" -v end="$end" -v a="$2" -v b="$3" \
+        'NR>1 && $1=="Niri::redraw" { t=$c+0; if (t>=end-a*1e9 && t<end-b*1e9) n++ } END { printf "%d", n+0 }' "$WORK/$1.csv"
+}
+count_steady() {   # $1 = case; the final 20 s; appends to rates.txt and prints the count
+    local n; n=$(count_window "$1" 20 0)
+    printf '%s: %d zones in 20 s = %.1f/s\n' "$1" "$n" "$(awk -v n="$n" 'BEGIN { printf "%.1f", n/20 }')" | tee -a "$WORK/rates.txt" >&2
+    echo "$n"
 }
 # Median exec time of the first 14 `draw shader` GPU zones between 20 s and
-# 28 s of a trace: the roughness smoke's steady-state sample rule.
-gpu_median() {   # $1 = trace path
-    "$TOOLS/tracy-csvexport" --unwrap "$1" \
-        | awk -F, 'NR>1 && $1=="draw shader" && $4>=20e9 && $4<28e9 { print $5+0 }' \
-        | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR==0) { print "no samples"; exit 1 }
-              m = (NR%2) ? a[(NR+1)/2] : (a[NR/2]+a[NR/2+1])/2; printf "%.3f ms (%d samples)\n", m/1e6, NR }'
+# 28 s of a trace: the roughness smoke's steady-state sample rule. GPU zones
+# need the --gpu export; a missing column or a short sample set fails.
+gpu_median_ns() {   # $1 = trace path; prints the median in ns
+    local csv=$1.gpu.csv
+    "$TOOLS/tracy-csvexport" --gpu "$1" > "$csv"
+    local ct ce; ct=$(col "$csv" ns_since_start); ce=$(col "$csv" exec_time_ns)
+    awk -F, -v ct="$ct" -v ce="$ce" 'NR>1 && $1=="draw shader" && $ct+0>=20e9 && $ct+0<28e9 { print $ce+0 }' "$csv" \
+        | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR<7) { print "FAIL: only " NR " draw shader samples" > "/dev/stderr"; exit 1 }
+              m = (NR%2) ? a[(NR+1)/2] : (a[NR/2]+a[NR/2+1])/2; printf "%d", m }'
+}
+# Acceptance helpers. Rates are compared with explicit tolerances.
+expect_zero() { [ "$2" -eq 0 ] || { echo "FAIL: $1: expected 0 redraws in window, got $2" >&2; exit 1; }; }
+expect_about() {   # $1 label, $2 got, $3 want, $4 tolerance fraction
+    awk -v g="$2" -v w="$3" -v t="$4" 'BEGIN { exit !(g >= w*(1-t) && g <= w*(1+t)) }' \
+        || { echo "FAIL: $1: got $2, want $3 within $(awk -v t="$4" 'BEGIN { printf "%d%%", t*100 }')" >&2; exit 1; }
 }
 
 # --- modes -----------------------------------------------------------------
+shot() {   # $1 = label; writes a uniquely named screenshot and waits for it
+    local f=$WORK/$1-$(date +%s%N).png
+    msg action screenshot-screen --write-to-disk true --show-pointer false --path "$f"
+    for _ in $(seq 50); do [ -s "$f" ] && break; sleep 0.1; done
+    [ -s "$f" ] || { echo "FAIL: screenshot $1 not written" >&2; exit 1; }
+    sha256sum "$f" | tee -a "$WORK/SHA256SUMS"
+}
 mode_visual() {
     start_nested "$WORK/base.kdl"
-    set_demand "$WID" pulse
+    # Breathe (4 s period): two shots half a period apart show the rim glint
+    # swayed to opposite sides.
+    set_demand "$WID" breathe
+    sleep 1.0; shot rim-a
+    sleep 2.0; shot rim-b
+    # Sweep: progress is age / 1.5 s, so 0.5 s in the band is a third of the way.
     msg pulse-window-signal --id "$WID" --source demo --kind done
-    sleep 1.6
+    sleep 0.5; shot sweep-mid
+    sleep 1.2
     msg pulse-window-signal --id "$WID" --source demo --kind error
-    sleep 0.1                                   # the impulse's 80 ms peak
-    local shot=$WORK/error-flash-$(date +%s%N).png
-    msg action screenshot-screen --write-to-disk true --show-pointer false --path "$shot"
-    for _ in $(seq 50); do [ -s "$shot" ] && break; sleep 0.1; done
-    [ -s "$shot" ] || { echo "FAIL: screenshot not written" >&2; exit 1; }
+    sleep 0.1; shot error-flash                 # the impulse's 80 ms peak
     sleep 1.6
     msg clear-window-signal --id "$WID" --source demo
-    sha256sum "$shot" | tee -a "$WORK/SHA256SUMS"
+    sleep 0.5; shot cleared
 }
 
+signal_json() { win "$1" .signal; }
+# Runs a batch of requests that must all be rejected: no event may be
+# appended and the window's folded signal must be byte-identical afterwards.
+rejected_batch() {   # $1 = label; commands on stdin, one per line
+    local before_events before_state after_events after_state line
+    before_events=$(wc -l < "$WORK/events.jsonl"); before_state=$(signal_json "$WID")
+    while IFS= read -r line; do [ -n "$line" ] && eval "expect_fail $line"; done
+    sleep 0.3
+    after_events=$(wc -l < "$WORK/events.jsonl"); after_state=$(signal_json "$WID")
+    assert_eq "$after_events" "$before_events" "$1: rejections emitted no event"
+    assert_eq "$after_state" "$before_state" "$1: rejections left the signal unchanged"
+}
 mode_ipc() {
     start_nested "$WORK/base.kdl"
     msg -j event-stream > "$WORK/events.jsonl" & EVENTS_PID=$!
     sleep 0.5
     set_demand "$WID" pulse
     msg pulse-window-signal --id "$WID" --source demo --kind done
-    sleep 1.7                                   # done impulse expires -> event
+    sleep 1.7                                   # done impulse expires -> event with an empty list
     msg clear-window-signal --id "$WID" --source demo   # -> "signal": null
     # Decay must change the fold: Demand -> Quiet.
     msg set-window-signal --id "$WID" --source demo --level demand --ttl-ms 2000 --after-level quiet
     sleep 2.5
-    # Rejections, all while the stream is still recording; none may emit an event.
-    local before; before=$(wc -l < "$WORK/events.jsonl")
-    expect_fail msg set-window-signal --id 999999 --source x
-    expect_fail msg set-window-signal --id "$WID" --source niri
-    expect_fail msg pulse-window-signal --id "$WID" --source niri --kind done
-    expect_fail msg clear-window-signal --id "$WID" --source niri
-    expect_fail msg pulse-window-signal --id "$WID" --source fresh --kind done
-    expect_fail msg set-window-signal --id "$WID" --source demo --accent zzz
-    expect_fail msg set-window-signal --id "$WID" --source demo --ttl-ms 90000000 --after-level quiet
-    expect_fail msg set-window-signal --id "$WID" --source demo --after-level quiet
-    local i; for i in $(seq 15); do msg set-window-signal --id "$WID" --source "s$i"; done   # demo + s1..s15 = 16
-    before=$(wc -l < "$WORK/events.jsonl")   # the 15 accepted writes emitted events; re-baseline
-    expect_fail msg set-window-signal --id "$WID" --source s16
+    # Rejection batch 1, checked on its own for events and state.
+    rejected_batch "batch 1" <<EOF
+msg set-window-signal --id 999999 --source x
+msg set-window-signal --id "$WID" --source niri
+msg pulse-window-signal --id "$WID" --source niri --kind done
+msg clear-window-signal --id "$WID" --source niri
+msg pulse-window-signal --id "$WID" --source fresh --kind done
+msg set-window-signal --id "$WID" --source demo --accent zzz
+msg set-window-signal --id "$WID" --source demo --ttl-ms 90000000 --after-level quiet
+msg set-window-signal --id "$WID" --source demo --after-level quiet
+EOF
+    # Fill the bound: demo + s1..s15 = 16 external slots; then s16 must fail.
+    local i; for i in $(seq 15); do msg set-window-signal --id "$WID" --source "s$i"; done
     sleep 0.3
-    assert_eq "$(wc -l < "$WORK/events.jsonl")" "$before" "rejections emit no event"
+    rejected_batch "slot bound" <<EOF
+msg set-window-signal --id "$WID" --source s16
+EOF
     kill "$EVENTS_PID"; EVENTS_PID=
-    local signals; signals=$(jq -c 'select(.WindowSignalChanged) | .WindowSignalChanged.signal' "$WORK/events.jsonl")
-    echo "$signals" | grep -q '"level":"Demand"'          || { echo "FAIL: no Demand event" >&2; exit 1; }
-    echo "$signals" | grep -q '"impulses":\[\]'           || { echo "FAIL: no impulse-expiry event" >&2; exit 1; }
-    echo "$signals" | grep -qx 'null'                     || { echo "FAIL: no null on final clear" >&2; exit 1; }
-    echo "$signals" | grep -q '"level":"Quiet"'           || { echo "FAIL: no decay event" >&2; exit 1; }
+    # Ordered assertions on the folded signals, in event order.
+    jq -c 'select(.WindowSignalChanged) | .WindowSignalChanged.signal' "$WORK/events.jsonl" > "$WORK/signals.jsonl"
+    awk '
+        /"level":"Demand"/ && !demand { demand=NR }
+        /"kind":"Done"/ && demand && !live { live=NR }
+        /"impulses":\[\]/ && live && !expired && NR>live { expired=NR }
+        /^null$/ && expired && !cleared { cleared=NR }
+        /"level":"Quiet"/ && cleared && !decayed { decayed=NR }
+        END {
+            if (!demand)  { print "FAIL: no Demand event" > "/dev/stderr"; exit 1 }
+            if (!live)    { print "FAIL: no event carrying the live Done impulse" > "/dev/stderr"; exit 1 }
+            if (!expired) { print "FAIL: no empty-impulse event after the live one" > "/dev/stderr"; exit 1 }
+            if (!cleared) { print "FAIL: no null after the clear" > "/dev/stderr"; exit 1 }
+            if (!decayed) { print "FAIL: no Quiet decay event after the TTL set" > "/dev/stderr"; exit 1 }
+        }' "$WORK/signals.jsonl"
     echo "ipc: OK ($(wc -l < "$WORK/events.jsonl") events recorded)"
 }
 
 # run_case NAME CONFIG SETUP [DURING]: fresh nested instance per case so no
-# state leaks. SETUP runs before the capture; DURING runs after the capture
-# starts and must finish inside the first 10 s (the steady window is the
-# final 20 s).
+# state leaks. SETUP runs before the capture. DURING runs 12 s after the
+# capture starts, INSIDE the steady window (the final 20 s), so what it
+# causes is measured rather than discarded. Sub-windows are counted relative
+# to the trace end: burst [end-18.3 s, end-16.3 s), after [end-15 s, end).
 run_case() {
     local name=$1 cfg=$2 setup=$3 during=${4:-true}
     start_nested "$cfg"
     $setup
     capture_bg "$name"
-    sleep 0.5
+    sleep 12
     $during
     capture_wait
-    count_steady "$name"
     stop_nested
 }
 other_kitty() { kitty_ids | grep -vx "$WID" | head -1; }
@@ -3725,43 +3791,78 @@ setup_motion_off() { set_demand "$WID" pulse; assert_eq "$(win "$WID" .signal.mo
 during_pulses() { local k; for k in 1 2 3; do msg pulse-window-signal --id "$WID" --source demo --kind done; sleep 0.3; done; }
 during_one_done() { msg pulse-window-signal --id "$WID" --source demo --kind done; }
 
+# Steady cases: the final 20 s must match the expectation.
+steady_zero()  { run_case "$1" "$2" "$3"; expect_zero "$1" "$(count_steady "$1")"; }
+steady_about() { run_case "$1" "$2" "$3"; local n; n=$(count_steady "$1"); expect_about "$1" "$n" "$4" 0.15; echo "$n"; }
+# Impulse cases with `none` responses: the pulses fire inside the window and
+# may cost at most the coalescible request per pulse and per deadline firing
+# (two per pulse), with nothing after them.
+impulse_none_case() {   # $1 name, $2 cfg, $3 setup
+    run_case "$1" "$2" "$3" during_pulses
+    local total after; total=$(count_steady "$1"); after=$(count_window "$1" 15 0)
+    [ "$total" -le 6 ] || { echo "FAIL: $1: $total redraws for three none-impulses (max 6)" >&2; exit 1; }
+    expect_zero "$1 after" "$after"
+}
 mode_cases() {
     tools_ready
-    run_case quiet-ring          "$WORK/base.kdl"           setup_quiet_ring
-    run_case demand-pulse        "$WORK/base.kdl"           "setup_demand pulse"
-    run_case demand-pulse-focused "$WORK/base.kdl"          setup_demand_focused
-    run_case demand-breathe      "$WORK/base.kdl"           "setup_demand breathe"
-    run_case demand-flash        "$WORK/base.kdl"           "setup_demand flash"
-    run_case ten-breathe         "$WORK/narrow.kdl"         "setup_ten breathe Breathe"
-    run_case ten-flash           "$WORK/narrow.kdl"         "setup_ten flash Flash"
-    run_case inactive-workspace  "$WORK/base.kdl"           setup_inactive_workspace
-    run_case hidden-tab          "$WORK/base.kdl"           setup_hidden_tab
-    run_case offscreen-column    "$WORK/base.kdl"           setup_offscreen_column
-    run_case motion-off          "$WORK/motion-off.kdl"     setup_motion_off during_pulses
-    run_case reduced-flash       "$WORK/reduced.kdl"        "setup_demand flash"
-    run_case attention-none      "$WORK/attention-none.kdl" "setup_demand pulse"
-    run_case impulse-none        "$WORK/impulse-none.kdl"   setup_quiet_ring during_pulses
-    run_case done-pulse          "$WORK/base.kdl"           setup_quiet_ring during_one_done
-    run_case slowdown            "$WORK/slowdown.kdl"       "setup_demand pulse"
+    steady_zero  quiet-ring           "$WORK/base.kdl" setup_quiet_ring
+    local pulse_n breathe_n flash_n n
+    pulse_n=$(steady_about   demand-pulse   "$WORK/base.kdl" "setup_demand pulse"   540)
+    steady_zero  demand-pulse-focused "$WORK/base.kdl" setup_demand_focused
+    breathe_n=$(steady_about demand-breathe "$WORK/base.kdl" "setup_demand breathe" 160)
+    flash_n=$(steady_about   demand-flash   "$WORK/base.kdl" "setup_demand flash"   320)
+    n=$(steady_about ten-breathe "$WORK/narrow.kdl" "setup_ten breathe Breathe" "$breathe_n"); expect_about "ten-breathe vs one" "$n" "$breathe_n" 0.10
+    n=$(steady_about ten-flash   "$WORK/narrow.kdl" "setup_ten flash Flash"     "$flash_n");   expect_about "ten-flash vs one"   "$n" "$flash_n"   0.10
+    steady_zero  inactive-workspace "$WORK/base.kdl" setup_inactive_workspace
+    steady_zero  hidden-tab         "$WORK/base.kdl" setup_hidden_tab
+    steady_zero  offscreen-column   "$WORK/base.kdl" setup_offscreen_column
+    impulse_none_case motion-off   "$WORK/motion-off.kdl"   setup_motion_off
+    n=$(steady_about reduced-flash "$WORK/reduced.kdl" "setup_demand flash" "$pulse_n"); expect_about "reduced-flash vs pulse" "$n" "$pulse_n" 0.15
+    steady_zero  attention-none "$WORK/attention-none.kdl" "setup_demand pulse"
+    impulse_none_case impulse-none "$WORK/impulse-none.kdl" setup_quiet_ring
+    # A drawn `done` impulse: a refresh-rate burst for 1.5 s, then nothing.
+    run_case done-pulse "$WORK/base.kdl" setup_quiet_ring during_one_done
+    local burst after; burst=$(count_window done-pulse 18.3 16.3); after=$(count_window done-pulse 15 0)
+    [ "$burst" -ge 30 ] || { echo "FAIL: done-pulse: only $burst redraws in the 2 s burst window (min 30)" >&2; exit 1; }
+    expect_zero "done-pulse after" "$after"
+    echo "done-pulse: burst $burst, after $after" | tee -a "$WORK/rates.txt" >&2
+    n=$(steady_about slowdown "$WORK/slowdown.kdl" "setup_demand pulse" "$pulse_n"); expect_about "slowdown vs pulse" "$n" "$pulse_n" 0.10
     echo "cases: OK, rates in $WORK/rates.txt"
 }
 
+# Three captures per case; the reported figure is the median of the three
+# per-capture medians, which is what run-to-run noise is judged against.
+gpu_case_ns() {   # $1 = name, $2 = cfg, $3 = setup; prints the median ns over three runs
+    local k m; for k in 1 2 3; do
+        run_case "$1-$k" "$2" "$3"
+        m=$(gpu_median_ns "$WORK/$1-$k.tracy"); echo "$m" >> "$WORK/$1.medians"
+    done
+    sort -n "$WORK/$1.medians" | sed -n 2p
+}
 mode_gpu() {
     tools_ready
     local base; base=$(sha256sum "$EVIDENCE"/material-roughness-b220152d/*.tracy | awk '$1=="2559901a945a65cdcd0d37dbf5af5f41b07d37c9ee3743633e2d8823026405a9" { print $2 }')
     [ -n "$base" ] || { echo "FAIL: retained roughness-0 GPU trace not found by hash" >&2; exit 1; }
-    run_case gpu-ring-rim "$WORK/base.kdl" "setup_demand pulse"
+    local base_ns default_ns ring_ns
+    base_ns=$(gpu_median_ns "$base")
+    default_ns=$(gpu_case_ns gpu-default  "$WORK/base.kdl" true)                   # no signal: the default path
+    ring_ns=$(gpu_case_ns   gpu-ring-rim  "$WORK/base.kdl" "setup_demand pulse")   # ring + rim orbit
     {
-        echo "roughness-0 baseline ($base): $(gpu_median "$base")"
-        echo "ring + rim orbit, demand pulse: $(gpu_median "$WORK/gpu-ring-rim.tracy")"
+        printf 'roughness-0 retained baseline: %.3f ms\n' "$(awk -v n="$base_ns" 'BEGIN { print n/1e6 }')"
+        printf 'default path, no signal (median of 3): %.3f ms\n' "$(awk -v n="$default_ns" 'BEGIN { print n/1e6 }')"
+        printf 'ring + rim orbit, demand pulse (median of 3): %.3f ms\n' "$(awk -v n="$ring_ns" 'BEGIN { print n/1e6 }')"
+        printf 'ring + rim orbit delta vs default: %+.1f%%\n' "$(awk -v a="$default_ns" -v b="$ring_ns" 'BEGIN { print (b-a)/a*100 }')"
     } | tee "$WORK/gpu.txt"
+    # Gate: the default path must not regress against the retained baseline.
+    expect_about "default path vs roughness-0 baseline" "$default_ns" "$base_ns" 0.10
+    echo "gpu: OK"
 }
 
 "mode_$MODE"
 ```
 
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh visual`
-Expected: exit 0, and `error-flash-<ns>.png` under the run's work directory shows an amber ring on the visible slab band, the rim glint swayed, and the chromatic jolt. Take further screenshots for the sweep by adding `screenshot-screen` calls with new `--path` values in `mode_visual` while iterating; the retained copy keeps the error-flash shot only.
+Expected: exit 0 and five uniquely named screenshots under the run's work directory, each listed in `SHA256SUMS`: `rim-a` and `rim-b`, taken half a Breathe period apart, show the amber ring and the rim glint swayed to opposite sides; `sweep-mid` shows the diagonal band a third of the way across; `error-flash` shows the chromatic jolt at its peak; `cleared` shows the default look again.
 
 - [ ] **Step 6: Commit**
 
@@ -3822,31 +3923,31 @@ The `ipc` mode records `niri msg -j event-stream` for the whole sequence and ass
 
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh cases`
 
-The `cases` mode builds the `profile-with-tracy` binary, then for each case starts a fresh nested instance from the named config variant, applies the setup, asserts the state through `niri msg -j windows`, captures 30 s with the protocol-matched Tracy 0.13.1 tools (verified by `sha256sum -c` against the roughness smoke's table, or rebuilt from the `v0.13.1` tag), and counts zones named exactly `Niri::redraw` in the final 20 s of the trace, where the trace end is the latest timestamp of any zone. Cases that raise impulses do so inside the first 10 s, concurrently with the capture. Kitty runs with cursor blinking disabled and no shell (`--hold true`), so the only client damage during a capture is what the case causes.
+The `cases` mode builds the `profile-with-tracy` binary, then for each case starts a fresh nested instance from the named config variant, applies the setup, asserts the state through `niri msg -j windows`, captures 30 s on a per-run Tracy port with the protocol-matched Tracy 0.13.1 tools (verified by `sha256sum -c` against the roughness smoke's table, or rebuilt from the `v0.13.1` tag; the capture is bounded by a timeout), and counts zones named exactly `Niri::redraw`, located by header name in the export, in the final 20 s of the trace, where the trace end is the latest timestamp of any zone. Cases that raise impulses do so 12 s into the capture, inside that window, and are judged on two sub-windows: the 2 s burst window starting at the pulse and the final 15 s after it. Kitty runs with cursor blinking disabled and no shell (`--hold true`), so the only client damage during a capture is what the case causes. Every expectation below is enforced by the script with the stated tolerance; `cases: OK` is printed only when all pass.
 
-Expected `Niri::redraw` zones in the final 20 s, read from `rates.txt`:
+Expected `Niri::redraw` zones, read from `rates.txt`:
 
-| Case | Setup (asserted in the script) | Expected |
+| Case | Setup (asserted in the script) | Enforced expectation |
 |---|---|---|
-| quiet-ring | accent only, level Quiet | 0 |
-| demand-pulse | Demand + Pulse, another window focused | about 540 (27/s) |
+| quiet-ring | accent only, level Quiet | 0 in the final 20 s |
+| demand-pulse | Demand + Pulse, another window focused | 540 ±15% (27/s) |
 | demand-pulse-focused | set with `--until-focus`, then focused: level Quiet | 0 |
-| demand-breathe | Demand + Breathe, unfocused | about 160 (8/s) |
-| demand-flash | Demand + Flash, unfocused | about 320 (16/s) |
-| ten-breathe, ten-flash | ten windows in 0.1-proportion columns, all asserted in view | within 10% of the single-window case |
+| demand-breathe | Demand + Breathe, unfocused | 160 ±15% (8/s) |
+| demand-flash | Demand + Flash, unfocused | 320 ±15% (16/s) |
+| ten-breathe, ten-flash | ten windows in 0.1-proportion columns, all asserted in view | within 10% of the single-window count |
 | inactive-workspace | Demand + Pulse without until-focus, moved down with `--focus false`, level asserted still Demand | 0 |
 | hidden-tab | shares a tabbed column with the shown window | 0 |
 | offscreen-column | leftmost of four half-width columns, `focus-column-last`, asserted `x + w <= 0` | 0 |
-| motion-off | `signal { motion "off" }`, Pulse stored, three `done` pulses in the first 10 s | 0 |
-| reduced-flash | `signal { motion "reduced" }`, Flash requested | about 540 (the Pulse rate) |
+| motion-off | `signal { motion "off" }`, Pulse stored, three `done` pulses at 12 s | at most 6 in the final 20 s (the coalescible requests), 0 in the final 15 s |
+| reduced-flash | `signal { motion "reduced" }`, Flash requested | within 15% of demand-pulse |
 | attention-none | response `attention "none"`, Demand + Pulse | 0 |
-| impulse-none | every impulse response `none`, three pulses in the first 10 s | 0 |
-| done-pulse | one `done` pulse in the first 10 s | 0 (the burst it causes lies inside the first 10 s) |
-| slowdown | `animations { slowdown 3 }`, Demand + Pulse | equal to demand-pulse |
+| impulse-none | every impulse response `none`, three pulses at 12 s | at most 6 in the final 20 s, 0 in the final 15 s |
+| done-pulse | one `done` pulse at 12 s | at least 30 in the 2 s burst window, 0 in the final 15 s |
+| slowdown | `animations { slowdown 3 }`, Demand + Pulse | within 10% of demand-pulse |
 
 Then run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh gpu`
 
-The `gpu` mode locates the retained roughness-0 GPU trace by its SHA-256 from the roughness smoke table, captures the ring plus rim-orbit Demand + Pulse case, and reports for both traces the median execution time of the first 14 `draw shader` GPU zones between 20 s and 28 s, the roughness smoke's steady-state sample rule. Record both medians and the delta in the evidence document; the design sets no threshold for this delta, so report it without inventing one, and stop before changing status only if the quiet-ring case regresses the default path beyond run-to-run noise.
+The `gpu` mode locates the retained roughness-0 GPU trace by its SHA-256 from the roughness smoke table and exports GPU zones with `--gpu`, locating columns by header name. For the default path (no signal) and for the ring plus rim-orbit Demand + Pulse case it captures three times and takes the median of the three per-capture medians, each being the median execution time of the first 14 `draw shader` GPU zones between 20 s and 28 s, the roughness smoke's steady-state sample rule. It enforces one gate: the default path must be within 10% of the retained roughness-0 baseline, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record both medians and the delta in the evidence document.
 
 - [ ] **Step 4: Physical DRM check**
 
