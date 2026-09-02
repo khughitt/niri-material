@@ -3458,11 +3458,12 @@ Live nested runs never target the desktop session: the nested winit window throt
 #   gpu     Tracy GPU cost of ring plus rim orbit against the retained roughness baseline
 #
 # Every resource name is unique per run, every wait is bounded, and a
-# leftover nested socket fails the run. Requires: jq, weston, kitty, cmake
+# leftover nested socket fails the run. Requires: jq, weston, kitty, swaybg,
+# ImageMagick (`magick` or `convert`) for the checkerboard backdrop, cmake
 # (only if the 0.13.1 Tracy tools must be rebuilt), NIRI_MATERIAL_WORK_ROOT.
 set -euo pipefail
 
-MODE=${1:?usage: $0 {visual|ipc|cases|gpu}}
+MODE=${1:?"usage: $0 visual|ipc|cases|gpu"}
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 RUN=signals-$$-$(date +%s)
@@ -3483,6 +3484,7 @@ cleanup() {
         echo "FAIL: nested niri socket left behind in $RT" >&2
         rc=1
     fi
+    [ -d "$WORK/ref-src" ] && git worktree remove --force "$WORK/ref-src" 2>/dev/null
     rm -rf "$RT"
     exit "$rc"
 }
@@ -3498,20 +3500,42 @@ esac
 NIRI=$ROOT/target/release/niri
 
 # --- config variants -------------------------------------------------------
-# kitty runs with cursor blinking off and no shell, so the only client
-# damage is what the test causes.
+# The backdrop is a checkerboard so refraction, distortion, and chromatic
+# aberration have detail to act on, and kitty is translucent so the slab is
+# visible through the window body (opaque pixels bypass the shader). kitty
+# runs with cursor blinking off and no shell, so the only client damage is
+# what a case causes.
+CHECKER=$WORK/checker.png
+if command -v magick >/dev/null; then magick -size 160x90 pattern:checkerboard -scale 800% "$CHECKER"
+else convert -size 160x90 pattern:checkerboard -scale 800% "$CHECKER"; fi
+KITTY_OPTS='"-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "-o" "background_opacity=0.6"'
 write_config() {   # $1 = path, remaining args = extra KDL lines
     local f=$1; shift
     {
-        cat <<'EOF'
+        cat <<EOF
 material "tg" { glass {} }
 window-rule { match app-id="^kitty$"; material "tg" }
-spawn-at-startup "kitty" "-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "--hold" "true"
+spawn-at-startup "swaybg" "-i" "$CHECKER"
+spawn-at-startup "kitty" $KITTY_OPTS "--hold" "true"
 EOF
         printf '%s\n' "$@"
     } > "$f"
 }
+# GPU fixtures replace the static kitty with one that repaints ten times a
+# second, so both GPU cases measure the same controlled damage and always
+# have material draws in the 20 s to 28 s sample window.
+write_gpu_config() {   # $1 = path
+    {
+        cat <<EOF
+material "tg" { glass {} }
+window-rule { match app-id="^kitty$"; material "tg" }
+spawn-at-startup "swaybg" "-i" "$CHECKER"
+spawn-at-startup "kitty" $KITTY_OPTS "sh" "-c" "while :; do date +%s%N; sleep 0.1; done"
+EOF
+    } > "$1"
+}
 write_config "$WORK/base.kdl"
+write_gpu_config "$WORK/gpu.kdl"
 write_config "$WORK/motion-off.kdl"     'signal { motion "off" }'
 write_config "$WORK/reduced.kdl"        'signal { motion "reduced" }'
 write_config "$WORK/slowdown.kdl"       'animations { slowdown 3 }'
@@ -3560,7 +3584,7 @@ wait_kitty() {   # $1 = count
 spawn_kitty_to() {   # $1 = total count wanted
     while [ "$(kitty_count)" -lt "$1" ]; do
         local before; before=$(kitty_count)
-        msg action spawn -- kitty -o cursor_blink_interval=0 -o cursor_stop_blinking_after=0 --hold true
+        msg action spawn -- kitty -o cursor_blink_interval=0 -o cursor_stop_blinking_after=0 -o background_opacity=0.6 --hold true
         wait_kitty $((before + 1))
     done
 }
@@ -3591,7 +3615,22 @@ EOF
 }
 # tracy-capture's -s timer starts only once a client connects and its connect
 # loop is unbounded, so the whole capture is wrapped in a timeout.
-capture_bg() { timeout 90 "$TOOLS/tracy-capture" -o "$WORK/$1.tracy" -a 127.0.0.1 -p "$TRACY_PORT" -s 30 & CAP_PID=$!; }
+capture_bg() {   # stdout and stderr go to a per-capture log so numeric substitutions stay clean
+    : > "$WORK/$1.capture.log"
+    timeout 90 "$TOOLS/tracy-capture" -o "$WORK/$1.tracy" -a 127.0.0.1 -p "$TRACY_PORT" -s 30 \
+        > "$WORK/$1.capture.log" 2>&1 & CAP_PID=$!
+}
+# The -s timer starts when the client connects. Wait until the capture log
+# has grown past its initial connecting line before starting any timed
+# action, bounded at 30 s.
+capture_ready() {   # $1 = case
+    local _; for _ in $(seq 300); do
+        [ "$(wc -l < "$WORK/$1.capture.log")" -ge 2 ] && return
+        kill -0 "$CAP_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    echo "FAIL: tracy-capture never reported a connection (see $WORK/$1.capture.log)" >&2; exit 1
+}
 capture_wait() {
     local rc=0; wait "$CAP_PID" || rc=$?; CAP_PID=
     [ "$rc" -eq 0 ] || { echo "FAIL: tracy-capture exited $rc (no client connected, or timed out)" >&2; exit 1; }
@@ -3624,13 +3663,16 @@ count_steady() {   # $1 = case; the final 20 s; appends to rates.txt and prints 
 # Median exec time of the first 14 `draw shader` GPU zones between 20 s and
 # 28 s of a trace: the roughness smoke's steady-state sample rule. GPU zones
 # need the --gpu export; a missing column or a short sample set fails.
-gpu_median_ns() {   # $1 = trace path; prints the median in ns
-    local csv=$1.gpu.csv
+gpu_median_ns() {   # $1 = trace path; prints the median in ns. Derived files stay under $WORK.
+    local csv=$WORK/$(basename "$1").gpu.csv
     "$TOOLS/tracy-csvexport" --gpu "$1" > "$csv"
-    local ct ce; ct=$(col "$csv" ns_since_start); ce=$(col "$csv" exec_time_ns)
+    # Tracy 0.13.1's GPU export names these columns "Time from start of
+    # program" and "GPU execution time"; `col` fails with the real header if
+    # a different tool version disagrees.
+    local ct ce; ct=$(col "$csv" "Time from start of program"); ce=$(col "$csv" "GPU execution time")
     awk -F, -v ct="$ct" -v ce="$ce" 'NR>1 && $1=="draw shader" && $ct+0>=20e9 && $ct+0<28e9 { print $ce+0 }' "$csv" \
-        | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR<7) { print "FAIL: only " NR " draw shader samples" > "/dev/stderr"; exit 1 }
-              m = (NR%2) ? a[(NR+1)/2] : (a[NR/2]+a[NR/2+1])/2; printf "%d", m }'
+        | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR!=14) { print "FAIL: " NR " draw shader samples in 20-28 s, need 14" > "/dev/stderr"; exit 1 }
+              printf "%d", (a[7]+a[8])/2 }'
 }
 # Acceptance helpers. Rates are compared with explicit tolerances.
 expect_zero() { [ "$2" -eq 0 ] || { echo "FAIL: $1: expected 0 redraws in window, got $2" >&2; exit 1; }; }
@@ -3726,14 +3768,16 @@ EOF
 
 # run_case NAME CONFIG SETUP [DURING]: fresh nested instance per case so no
 # state leaks. SETUP runs before the capture. DURING runs 12 s after the
-# capture starts, INSIDE the steady window (the final 20 s), so what it
-# causes is measured rather than discarded. Sub-windows are counted relative
-# to the trace end: burst [end-18.3 s, end-16.3 s), after [end-15 s, end).
+# capture reports its connection, INSIDE the steady window (the final
+# 20 s), so what it causes is measured rather than discarded. Sub-windows
+# are counted relative to the trace end with a second of slack for
+# readiness detection: burst [end-18.5 s, end-15.5 s), after [end-14 s, end).
 run_case() {
     local name=$1 cfg=$2 setup=$3 during=${4:-true}
     start_nested "$cfg"
     $setup
     capture_bg "$name"
+    capture_ready "$name"
     sleep 12
     $during
     capture_wait
@@ -3799,7 +3843,7 @@ steady_about() { run_case "$1" "$2" "$3"; local n; n=$(count_steady "$1"); expec
 # (two per pulse), with nothing after them.
 impulse_none_case() {   # $1 name, $2 cfg, $3 setup
     run_case "$1" "$2" "$3" during_pulses
-    local total after; total=$(count_steady "$1"); after=$(count_window "$1" 15 0)
+    local total after; total=$(count_steady "$1"); after=$(count_window "$1" 14 0)
     [ "$total" -le 6 ] || { echo "FAIL: $1: $total redraws for three none-impulses (max 6)" >&2; exit 1; }
     expect_zero "$1 after" "$after"
 }
@@ -3822,8 +3866,8 @@ mode_cases() {
     impulse_none_case impulse-none "$WORK/impulse-none.kdl" setup_quiet_ring
     # A drawn `done` impulse: a refresh-rate burst for 1.5 s, then nothing.
     run_case done-pulse "$WORK/base.kdl" setup_quiet_ring during_one_done
-    local burst after; burst=$(count_window done-pulse 18.3 16.3); after=$(count_window done-pulse 15 0)
-    [ "$burst" -ge 30 ] || { echo "FAIL: done-pulse: only $burst redraws in the 2 s burst window (min 30)" >&2; exit 1; }
+    local burst after; burst=$(count_window done-pulse 18.5 15.5); after=$(count_window done-pulse 14 0)
+    [ "$burst" -ge 30 ] || { echo "FAIL: done-pulse: only $burst redraws in the 3 s burst window (min 30)" >&2; exit 1; }
     expect_zero "done-pulse after" "$after"
     echo "done-pulse: burst $burst, after $after" | tee -a "$WORK/rates.txt" >&2
     n=$(steady_about slowdown "$WORK/slowdown.kdl" "setup_demand pulse" "$pulse_n"); expect_about "slowdown vs pulse" "$n" "$pulse_n" 0.10
@@ -3839,22 +3883,35 @@ gpu_case_ns() {   # $1 = name, $2 = cfg, $3 = setup; prints the median ns over t
     done
     sort -n "$WORK/$1.medians" | sed -n 2p
 }
+# The regression reference is this same fixture run on the branch's base
+# commit, built with the same features: GPU time is workload dependent, so
+# the retained roughness trace (different backdrop, geometry, and damage
+# driver) is not comparable and is not used as a gate.
+build_reference() {   # sets REF_NIRI
+    local base; base=$(git merge-base HEAD materials-26.04)
+    git worktree add --detach "$WORK/ref-src" "$base" >/dev/null
+    (cd "$WORK/ref-src" && cargo build --release --features profile-with-tracy)
+    REF_NIRI=$WORK/ref-src/target/release/niri
+    echo "reference binary: $base" | tee -a "$WORK/gpu.txt"
+}
 mode_gpu() {
     tools_ready
-    local base; base=$(sha256sum "$EVIDENCE"/material-roughness-b220152d/*.tracy | awk '$1=="2559901a945a65cdcd0d37dbf5af5f41b07d37c9ee3743633e2d8823026405a9" { print $2 }')
-    [ -n "$base" ] || { echo "FAIL: retained roughness-0 GPU trace not found by hash" >&2; exit 1; }
-    local base_ns default_ns ring_ns
-    base_ns=$(gpu_median_ns "$base")
-    default_ns=$(gpu_case_ns gpu-default  "$WORK/base.kdl" true)                   # no signal: the default path
-    ring_ns=$(gpu_case_ns   gpu-ring-rim  "$WORK/base.kdl" "setup_demand pulse")   # ring + rim orbit
+    build_reference
+    local ref_ns default_ns ring_ns
+    NIRI=$REF_NIRI
+    ref_ns=$(gpu_case_ns gpu-reference "$WORK/gpu.kdl" true)
+    NIRI=$ROOT/target/release/niri
+    default_ns=$(gpu_case_ns gpu-default  "$WORK/gpu.kdl" true)                   # no signal: the default path
+    ring_ns=$(gpu_case_ns   gpu-ring-rim  "$WORK/gpu.kdl" "setup_demand pulse")   # ring + rim orbit
     {
-        printf 'roughness-0 retained baseline: %.3f ms\n' "$(awk -v n="$base_ns" 'BEGIN { print n/1e6 }')"
-        printf 'default path, no signal (median of 3): %.3f ms\n' "$(awk -v n="$default_ns" 'BEGIN { print n/1e6 }')"
-        printf 'ring + rim orbit, demand pulse (median of 3): %.3f ms\n' "$(awk -v n="$ring_ns" 'BEGIN { print n/1e6 }')"
+        printf 'base-commit build, default path (median of 3): %.3f ms\n' "$(awk -v n="$ref_ns" 'BEGIN { print n/1e6 }')"
+        printf 'this build, default path, no signal (median of 3): %.3f ms\n' "$(awk -v n="$default_ns" 'BEGIN { print n/1e6 }')"
+        printf 'this build, ring + rim orbit, demand pulse (median of 3): %.3f ms\n' "$(awk -v n="$ring_ns" 'BEGIN { print n/1e6 }')"
         printf 'ring + rim orbit delta vs default: %+.1f%%\n' "$(awk -v a="$default_ns" -v b="$ring_ns" 'BEGIN { print (b-a)/a*100 }')"
-    } | tee "$WORK/gpu.txt"
-    # Gate: the default path must not regress against the retained baseline.
-    expect_about "default path vs roughness-0 baseline" "$default_ns" "$base_ns" 0.10
+    } | tee -a "$WORK/gpu.txt"
+    # Gate: the default path must not regress against the base commit on the identical fixture.
+    expect_about "default path vs base-commit build" "$default_ns" "$ref_ns" 0.10
+    git worktree remove --force "$WORK/ref-src"
     echo "gpu: OK"
 }
 
@@ -3862,7 +3919,7 @@ mode_gpu() {
 ```
 
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh visual`
-Expected: exit 0 and five uniquely named screenshots under the run's work directory, each listed in `SHA256SUMS`: `rim-a` and `rim-b`, taken half a Breathe period apart, show the amber ring and the rim glint swayed to opposite sides; `sweep-mid` shows the diagonal band a third of the way across; `error-flash` shows the chromatic jolt at its peak; `cleared` shows the default look again.
+Expected: exit 0 and five uniquely named screenshots under the run's work directory, each listed in `SHA256SUMS`. The fixture places a translucent kitty over a checkerboard backdrop, so the slab is visible through the window body and refraction has detail to act on: `rim-a` and `rim-b`, taken half a Breathe period apart, show the amber ring and the rim glint swayed to opposite sides; `sweep-mid` shows the diagonal band a third of the way across; `error-flash` shows the chromatic fringing and distortion of the checkerboard at the impulse peak; `cleared` shows the default look again.
 
 - [ ] **Step 6: Commit**
 
@@ -3923,7 +3980,7 @@ The `ipc` mode records `niri msg -j event-stream` for the whole sequence and ass
 
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh cases`
 
-The `cases` mode builds the `profile-with-tracy` binary, then for each case starts a fresh nested instance from the named config variant, applies the setup, asserts the state through `niri msg -j windows`, captures 30 s on a per-run Tracy port with the protocol-matched Tracy 0.13.1 tools (verified by `sha256sum -c` against the roughness smoke's table, or rebuilt from the `v0.13.1` tag; the capture is bounded by a timeout), and counts zones named exactly `Niri::redraw`, located by header name in the export, in the final 20 s of the trace, where the trace end is the latest timestamp of any zone. Cases that raise impulses do so 12 s into the capture, inside that window, and are judged on two sub-windows: the 2 s burst window starting at the pulse and the final 15 s after it. Kitty runs with cursor blinking disabled and no shell (`--hold true`), so the only client damage during a capture is what the case causes. Every expectation below is enforced by the script with the stated tolerance; `cases: OK` is printed only when all pass.
+The `cases` mode builds the `profile-with-tracy` binary, then for each case starts a fresh nested instance from the named config variant, applies the setup, asserts the state through `niri msg -j windows`, captures 30 s on a per-run Tracy port with the protocol-matched Tracy 0.13.1 tools (verified by `sha256sum -c` against the roughness smoke's table, or rebuilt from the `v0.13.1` tag; the capture is bounded by a timeout), and counts zones named exactly `Niri::redraw`, located by header name in the export, in the final 20 s of the trace, where the trace end is the latest timestamp of any zone. Cases that raise impulses do so 12 s after the capture reports its connection (Tracy's timer starts at connection, so the script waits for it), inside that window, and are judged on two sub-windows: a 3 s burst window around the pulse and the final 14 s after it. Every capture's console output goes to its own log so numeric results stay clean. Kitty runs with cursor blinking disabled and no shell (`--hold true`), so the only client damage during a capture is what the case causes. Every expectation below is enforced by the script with the stated tolerance; `cases: OK` is printed only when all pass.
 
 Expected `Niri::redraw` zones, read from `rates.txt`:
 
@@ -3938,16 +3995,16 @@ Expected `Niri::redraw` zones, read from `rates.txt`:
 | inactive-workspace | Demand + Pulse without until-focus, moved down with `--focus false`, level asserted still Demand | 0 |
 | hidden-tab | shares a tabbed column with the shown window | 0 |
 | offscreen-column | leftmost of four half-width columns, `focus-column-last`, asserted `x + w <= 0` | 0 |
-| motion-off | `signal { motion "off" }`, Pulse stored, three `done` pulses at 12 s | at most 6 in the final 20 s (the coalescible requests), 0 in the final 15 s |
+| motion-off | `signal { motion "off" }`, Pulse stored, three `done` pulses at 12 s | at most 6 in the final 20 s (the coalescible requests), 0 in the final 14 s |
 | reduced-flash | `signal { motion "reduced" }`, Flash requested | within 15% of demand-pulse |
 | attention-none | response `attention "none"`, Demand + Pulse | 0 |
-| impulse-none | every impulse response `none`, three pulses at 12 s | at most 6 in the final 20 s, 0 in the final 15 s |
-| done-pulse | one `done` pulse at 12 s | at least 30 in the 2 s burst window, 0 in the final 15 s |
+| impulse-none | every impulse response `none`, three pulses at 12 s | at most 6 in the final 20 s, 0 in the final 14 s |
+| done-pulse | one `done` pulse at 12 s | at least 30 in the 3 s burst window, 0 in the final 14 s |
 | slowdown | `animations { slowdown 3 }`, Demand + Pulse | within 10% of demand-pulse |
 
 Then run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh gpu`
 
-The `gpu` mode locates the retained roughness-0 GPU trace by its SHA-256 from the roughness smoke table and exports GPU zones with `--gpu`, locating columns by header name. For the default path (no signal) and for the ring plus rim-orbit Demand + Pulse case it captures three times and takes the median of the three per-capture medians, each being the median execution time of the first 14 `draw shader` GPU zones between 20 s and 28 s, the roughness smoke's steady-state sample rule. It enforces one gate: the default path must be within 10% of the retained roughness-0 baseline, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record both medians and the delta in the evidence document.
+The `gpu` mode uses a dedicated fixture in which kitty repaints ten times a second, so every GPU case has identical controlled damage and material draws throughout the 20 s to 28 s sample window. GPU zones are exported with `--gpu` and columns are located by their Tracy 0.13.1 header names. Because GPU time is workload dependent, the retained roughness trace (different backdrop, geometry, and damage driver) is not a comparable reference; instead the script builds the branch's base commit in a temporary worktree with the same features and runs the identical fixture on it. For the base-commit default path, this build's default path (no signal), and this build's ring plus rim-orbit Demand + Pulse case, it captures three times and takes the median of the three per-capture medians, each being the median of exactly 14 `draw shader` GPU zones between 20 s and 28 s. It enforces one gate: this build's default path must be within 10% of the base-commit build, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record all three medians and the delta in the evidence document.
 
 - [ ] **Step 4: Physical DRM check**
 
