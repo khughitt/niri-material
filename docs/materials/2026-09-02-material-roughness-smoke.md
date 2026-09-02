@@ -7,6 +7,12 @@ This is not final acceptance: the 60-second idle/allocation trace, matched GPU
 timing, damage-regeneration count, and numeric overview transition-width gate
 remain open in `material-ef9eec`.
 
+The first trace attempt found a tool-protocol mismatch before recording data:
+the tree's `tracy-client-sys 0.28.0` embeds Tracy 0.13.1 (protocol 76), while
+the installed `tracy-capture` and `tracy-csvexport` are 0.14.0. A bounded build
+of matching upstream v0.13.1 tools was stopped when its analysis dependencies
+did not finish; no incompatible trace was accepted.
+
 ## Retained artifacts
 
 Raw inputs, captures, the Weston log, and apply-ready Prism patches are outside
