@@ -548,7 +548,7 @@ git commit -m "feat(material): render glass roughness"
 Run:
 
 ```bash
-cargo fmt --all -- --check
+rustfmt --edition 2021 --check niri-config/src/material.rs niri-config/src/lib.rs src/render_helpers/blur.rs src/render_helpers/effect_buffer.rs src/render_helpers/material.rs src/render_helpers/shaders/mod.rs
 cargo test --workspace --all-targets
 cargo build --workspace --all-targets
 tasks check
@@ -618,6 +618,8 @@ task and plan, then make one test-driven conventional commit touching only:
 - `test/glass-defs.test.js`: remove roughness from the retired set and assert
   the public definition;
 - `test/niri-render.test.js` and `test/niri-apply.test.js`: assert exact KDL;
+- `test/plugin-presentation.test.js`: retain the exact Quick-group ordering
+  and visible-control count;
 - `docs/superpowers/specs/2026-08-28-niri-native-material-sink-design.md` and
   `docs/plans/2026-08-31-prism-tasks-migration.md`: correct the now-stale
   statements that Prism does not expose roughness.

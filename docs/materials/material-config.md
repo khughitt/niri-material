@@ -19,6 +19,7 @@ material "frost" {
         offset-x 6
         offset-y 6
         attenuation-color "#dfe8ff"
+        roughness 0.08
     }
 }
 
@@ -42,6 +43,7 @@ lengths are logical pixels.
 | `distortion` | float | 0 | 0–1 | — |
 | `distortion` `scale=` | float | 0.5 | 0–2 | — |
 | `anisotropic-blur` | float | 0 | 0–1 | — |
+| `roughness` | float | 0 | 0–1 | — |
 | `backdrop-blur` | bool | false | true / false | — |
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
@@ -60,6 +62,15 @@ disables it along with all other blur, regardless of this parameter.
 
 It is unrelated to `anisotropic-blur`, which smears the refraction itself along
 one axis and does not soften the backdrop.
+
+`roughness` progressively softens detail refracted through the glass. It first
+uses `backdrop-blur` to choose the sharp or globally blurred source, then
+filters that source; setting `blur { off }` disables the blurred-source switch
+but does not disable roughness on the sharp source. The native default is `0`,
+which preserves the v1 appearance and performs no prefilter allocation or
+downsample work. Non-zero roughness lazily builds a damage-aware texture
+pyramid for the selected per-target source and reuses it until that source
+changes.
 
 The slab uses `thickness` as its depth. Its frame is the window rectangle
 inflated by `bevel - max(abs(offset-x), abs(offset-y))`, then translated by

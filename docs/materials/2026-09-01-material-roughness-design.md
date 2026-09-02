@@ -1,8 +1,10 @@
 # Material roughness and prefiltered backdrop storage: design
 
-**Status:** accepted 2026-09-01; review amendments incorporated 2026-09-01;
-implementation has not started. Tracked by `material-c854bd`. The delivery
-includes the matching Prism parameter and niri sink wiring.
+**Status:** accepted 2026-09-01; review amendments incorporated 2026-09-01.
+Native implementation is complete on `feat/material-c854bd` through
+`26c14954`; Prism definition and sink wiring are complete in handoff commit
+`f1a65dd`. Focused GPU evidence and final merge are pending. Tracked by
+`material-c854bd`.
 
 ## Context
 
