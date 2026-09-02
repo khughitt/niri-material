@@ -1,8 +1,8 @@
 # Material roughness and prefiltered backdrop storage: design
 
-**Status:** accepted 2026-09-01; implementation has not started. Tracked by
-`material-c854bd`. The delivery includes the matching Prism parameter and niri
-sink wiring.
+**Status:** accepted 2026-09-01; review amendments incorporated 2026-09-01;
+implementation has not started. Tracked by `material-c854bd`. The delivery
+includes the matching Prism parameter and niri sink wiring.
 
 ## Context
 
@@ -36,13 +36,33 @@ sharp texture and another for its globally blurred texture. The pyramid uses
 the existing blur downsample program with a fixed offset of `1`; it does not
 inherit the global blur offset or add a second shader.
 
+The blur's existing intermediate textures cannot double as this storage. Its
+up pass overwrites every intermediate level except the smallest, and its level
+count and filter offset follow the global blur configuration. Roughness needs a
+stable, complete downsample chain independent of those settings.
+
+Each pyramid separates policy from GL execution. A plain `PrefilterPolicy`
+contains the source size, level count, dirty state, highest prepared level, and
+level-selection math, with no renderer or `GlesTexture` dependency. The GL
+owner holds the actual texture vector and only executes allocation and
+downsample decisions returned by that policy. This follows the existing
+`MaterialState` pattern: state transitions and commit decisions remain runnable
+without a GPU, while the concrete renderer performs their effects.
+
 Each level halves both dimensions, clamped to one, until `1 x 1`. Levels exclude
-the full-size source, so their combined pixel count is at most one-third of the
-source:
+the full-size source. Ignoring integer rounding and the one-pixel clamp, their
+pixel count is the geometric series:
 
 ```text
 (w/2 * h/2) + (w/4 * h/4) + ... <= w*h/3
 ```
+
+The discrete sum can sit slightly above one-third for some aspect ratios; a
+`4 x 8` source, for example, derives 11 pixels rather than the idealized 10.67.
+The exact universal invariant for every positive source size is that derived
+storage remains below one additional source. Normal output sizes remain very
+close to one-third, and the exact sum is computed before allocation rather than
+assumed from the approximation.
 
 The pyramid is allocated only when a material requests non-zero roughness from
 that exact sharp or blurred source. Its textures survive content damage and are
@@ -61,7 +81,8 @@ Level zero is the existing full-size source. The material binds the two selected
 background levels and two selected backdrop levels alongside the window
 texture: five texture units, within GLES2's minimum of eight. The shader samples
 only `low` when `mix == 0`; native `roughness 0` therefore takes the existing
-level-zero path without a second texture lookup.
+level-zero path without a second texture lookup. Its unused `high` sampler is
+still bound to level zero, so no incomplete texture is ever attached.
 
 The background and backdrop keep separate level pairs and blend factors even
 though current targets size them alike. Their interface remains explicit and
@@ -69,7 +90,8 @@ does not rely on that incidental equality.
 
 ## Configuration contract
 
-Native niri adds one optional `glass` child:
+Native niri adds one optional `glass` child, parsed with the existing
+`FloatOrInt<0, 1>` boundary type used by other fractional glass controls:
 
 | name | type | default | range |
 | --- | --- | --- | --- |
@@ -106,8 +128,9 @@ reuse the existing `MaterialState`, bump its commit, and preserve its window
 offscreen storage.
 
 `src/render_helpers/blur.rs` gains the minimum reusable prefilter storage and a
-downsample-only path extracted from the existing blur program. It owns no
-policy about materials, targets, damage, or optics.
+downsample-only path extracted from the existing blur program. Its GL layer
+owns textures and executes `PrefilterPolicy` decisions; it owns no policy about
+materials, targets, damage, or optics.
 
 `src/render_helpers/effect_buffer.rs` owns the two pyramids and their dirty
 state. Its render path:
@@ -144,18 +167,19 @@ damage-triggered caching, not region-incremental mip propagation:
 
 ```rust
 // ponytail: regenerate the full pyramid after any source damage; propagate
-// per-level damage only if profiling shows this pass dominates changed frames.
+// only through the highest level requested this frame if profiling shows the
+// full chain dominates changed frames; add per-level damage regions after that.
 ```
 
-The ceiling is deliberate. A full regeneration touches fewer than one-third as
-many pixels as the source, is shared by every material window sampling that
-source and target, and avoids a second damage-coordinate implementation before
-measurement demonstrates a need.
+The ceiling is deliberate. A full regeneration touches roughly one-third as
+many pixels as a normal output-sized source, is shared by every material window
+sampling that source and target, and avoids a second damage-coordinate
+implementation before measurement demonstrates a need.
 
-The maximum additional storage per `EffectBuffer` is one-third of a sharp
-source plus one-third of a blurred source. Both are lazy. A session that uses
-only sharp roughness never allocates the blurred pyramid; roughness zero
-allocates neither.
+The universal maximum additional storage per `EffectBuffer` is less than one
+sharp source plus one blurred source; for normal outputs it is approximately
+one-third of each. Both are lazy. A session that uses only sharp roughness never
+allocates the blurred pyramid; roughness zero allocates neither.
 
 Generating or selecting derived levels does not increment the effect-buffer
 commit. The level-zero commit already records content and blur-option changes,
@@ -166,11 +190,14 @@ and a roughness parameter edit already advances the material element commit.
 Invalid roughness is a configuration error and never reaches the renderer.
 
 Texture allocation, downsample, missing-program, or renderer-context errors
-remain renderer failures. They return `Err`, emit a warning naming the
-prefilter operation, and take the material's existing plain-window fallback for
-that draw. The cache remains dirty so a later frame can retry. There is no
-silent level-zero substitution, because that would make a valid roughness
-value appear accepted while leaving it inert.
+remain renderer failures. `PrefilterPolicy` records `Failed` for that dirty
+period. The transition emits one warning naming the prefilter operation; later
+material windows skip the same allocation/downsample attempt and take the
+existing plain-window fallback without repeating the warning. Source damage,
+blur-option change, size change, or context replacement starts a new dirty
+period and permits one new attempt. There is no silent level-zero substitution,
+because that would make a valid roughness value appear accepted while leaving
+it inert.
 
 ## Prism integration
 
@@ -210,6 +237,11 @@ Performance is measured rather than inferred:
 
 - record a before-change trace from the same nested scene and binary profile;
 - record candidate traces at native roughness `0` and Prism roughness `0.08`;
+- record a large-window worst case with a fractional LOD (Prism roughness
+  `0.08` at the fixture size), anisotropic blur `1`, and chromatic aberration
+  `1`: eight samples and three channel-separated taps make 24 background taps,
+  whose worst-case fetch count rises from 48 at level zero to 96 with two-level
+  prefilter blending;
 - require zero pyramid allocations and zero downsample spans during a 60-second
   unchanged interval after warm-up;
 - induce one background change and confirm one regeneration for each selected
@@ -227,11 +259,13 @@ regression is removed.
 GPU-free Rust tests cover:
 
 - parsing, resolving, defaulting, and rejecting `roughness`;
-- pyramid dimensions through `1 x 1` and the one-third allocation bound;
+- `PrefilterPolicy` transitions among empty, dirty, clean, and failed periods
+  without constructing a renderer or texture;
+- pyramid dimensions through `1 x 1`, exact pixel totals for representative
+  output sizes, and the less-than-one-source bound for every positive size;
 - level selection at zero, adjacent fractional levels, maximum roughness, and
   the IOR gate;
-- private cache dirty/clean transitions for source damage, blur-option change,
-  and parameter-only selection;
+- source damage and blur-option invalidation versus parameter-only selection;
 - roughness parameter edits advancing material damage while target fingerprints
   remain isolated.
 
@@ -243,7 +277,10 @@ Nested visual evidence uses the existing isolated Weston GL host and records:
 - sharp-source captures at roughness `0`, `0.08`, and `1`;
 - the same roughness values with `backdrop-blur` enabled;
 - a level-zero capture compared with the current accepted output;
-- an overview capture proving transform-stable softness;
+- an overview capture whose checkerboard-edge 10%-to-90% transition width is
+  converted back to source-buffer pixels using the recorded overview zoom; it
+  must match the settled width within one source pixel, while its on-screen
+  width scales with the overview zoom;
 - ROI statistics showing detail softening as roughness increases;
 - logs free of prefilter or material fallback warnings.
 
