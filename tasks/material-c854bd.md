@@ -5,8 +5,8 @@ status: todo
 priority: 2
 size: l
 created: 2026-09-01T14:36:13Z
-updated: 2026-09-02T03:06:24Z
-depends: []
+updated: 2026-09-02T03:15:15Z
+depends: [material-ef9eec]
 tags: [migration, feature, rendering]
 ---
 
@@ -18,3 +18,4 @@ Outcome: glass exposes a meaningful roughness control backed by damage-aware, bu
 - 2026-09-02T00:23:42Z (feat/material-c854bd): Design direction: EffectBuffer-owned lazy prefilter pyramids using the existing blur downsample shader; reject GL mipmaps for GLES2/NPOT and transform-dependent LOD concerns, and reject per-roughness full-size caches as unbounded duplication.
 - 2026-09-02T02:54:05Z (feat/material-c854bd): Design review adds a GL-free PrefilterPolicy, once-per-dirty-period failure suppression, realistic and degenerate allocation bounds, worst-case 96-fetch profiling, requested-level optimization path, and a measured overview softness criterion.
 - 2026-09-02T03:06:24Z (feat/material-c854bd): Final design review renames the GL-free policy holder to PrefilterState, makes EffectBuffer ownership explicit, and scales the overview tolerance to one captured screen pixel at roughness 0.5.
+- 2026-09-02T03:15:15Z (feat/material-c854bd): Implementation plan split into material-26a496, material-2793ca, material-768b40, material-46f6b7, and material-ef9eec; the final acceptance step remains open until the dependent Prism commit lands.
