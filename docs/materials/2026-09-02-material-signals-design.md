@@ -297,7 +297,9 @@ stage 1 and to the solver, which only carry them; the material-specific
 helper in section 6 is the one place that interprets them. Everything
 downstream, including the transitions term,
 timer candidates, and the fingerprint, is computed from the effective
-signal, so state that draws nothing costs nothing. The stored slots,
+signal, so state that draws nothing costs no recurring redraws. Each
+accepted mutation and each expiry still queues exactly one redraw so the
+tile can re-evaluate; that single frame is the whole cost. The stored slots,
 impulse queue, and expiry timers are unaffected, because the event stream
 reports stored state.
 
@@ -622,12 +624,14 @@ boundary, so there is one conversion, in the server, and it is tested.
   ring produces zero material redraws and zero redraw wakeups; a
   `Demand + Pulse` window wakes at the bucket rate, not the refresh rate,
   and stops on focus; the same window on an inactive workspace, as a
-  hidden tab, or in a column scrolled out of view produces no wakeups; ten
+  hidden tab, or in a column scrolled out of view produces no recurring
+  redraws; ten
   seeded Breathe windows on one output wake at the same rate as one; a
   sustained Flash window wakes only at its edges and ten Flash windows on
   one output wake at the same rate as one; a window with live impulses
   under `signal { motion "off" }` or with every impulse response set to
-  `none` produces no wakeups; a `Demand + Pulse` window under `signal {
+  `none` produces no redraws beyond the one each pulse and each expiry
+  queues; a `Demand + Pulse` window under `signal {
   motion "off" }` arms no timer; a `Demand + Flash` window under
   `reduced` wakes at Pulse bucket boundaries, not Flash edges; a window
   whose response has `attention none` arms no timer; wakeup rates are

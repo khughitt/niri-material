@@ -51,7 +51,8 @@
 | `src/window/mapped.rs` | Owns `WindowSignals`; native slot from urgency; focus demotion; rule recompute |
 | `src/window/mod.rs` | `ResolvedRules.material` becomes `Option<MaterialRef>`; `window_matches` evaluates signal matches |
 | `src/layout/mod.rs` | `LayoutElement::signal()`, `Options.signal` |
-| `src/niri.rs` | Mutation entry points returning `Result`, per-window deadline timer, per-output bucket timer, `SignalTicks` on `OutputState` |
+| `src/niri.rs` | Mutation entry points returning `Result`, per-window deadline timer reconciled from `State::refresh`, unmap cancellation helper, per-output bucket timer, `SignalTicks` injection and view rect in `Niri::render` |
+| `src/handlers/compositor.rs`, `src/handlers/xdg_shell.rs` | Call the cancellation helper on unmap |
 | `src/ipc/server.rs` | Request handling with result channel, `to_ipc_signal`, diff emitting `WindowSignalChanged` |
 | `src/cli.rs`, `src/ipc/client.rs` | `niri msg set-window-signal`, `pulse-window-signal`, `clear-window-signal` |
 | `src/render_helpers/signal.rs` (new) | `EffectiveSignal`, `effective()`, `solve()`, `next_boundary()`, `SignalFrame`, `SignalFingerprint`. Pure. |
@@ -60,7 +61,6 @@
 | `src/render_helpers/shaders/material.frag` | Ring, rim orbit, ring pulse, sweep |
 | `src/render_helpers/mod.rs` | `RenderCtx.signal_ticks` |
 | `src/layout/tile.rs` | Crossfade animation, effective signal, solve, fingerprint, transitions term, tick reporting |
-| `src/layout/scrolling.rs`, `src/layout/floating.rs` | Set the view rect on `SignalTicks` before rendering tiles |
 | `src/tests/signal.rs` (new) | Fixture tests for urgency, matching, IPC entry points |
 | `docs/materials/material-config.md`, `docs/materials/README.md`, design doc | Documentation updates (§10) |
 
@@ -71,6 +71,8 @@
 **Files:**
 - Modify: `niri-ipc/src/lib.rs` (`Event` at 1588, `Window` at ~1300, types after `PickedColor` at 181; the `Request` variants are added in Task 6 together with their server arms, because `process()` in `src/ipc/server.rs:271` matches `Request` exhaustively)
 - Modify: `niri-ipc/src/state.rs` (`WindowsState::apply` at line 175)
+- Modify: `src/ipc/server.rs` (`make_ipc_window` at 513: `signal: None` until Task 6)
+- Modify: `src/ipc/client.rs` (the exhaustive non-JSON `Event` match at ~430)
 - Test: `niri-ipc/src/state.rs` (`#[cfg(test)]` module at the bottom; create it if absent)
 
 **Interfaces:**
@@ -260,13 +262,20 @@ Fix every other construction of `Window` in the crate (there may be none besides
 - [ ] **Step 5: Run the test and the crate**
 
 Run: `cargo test -p niri-ipc`
-Expected: PASS. Then `cargo build` from the workspace root: the only compositor site that constructs `niri_ipc::Window` is `make_ipc_window` in `src/ipc/server.rs:513`; add `signal: None` there for now so the workspace compiles, and add a `Event::WindowSignalChanged { .. } => {}` arm to any exhaustive `Event` match the build reports (grep `Event::WindowUrgencyChanged` to find them). Task 6 fills both in.
+Expected: PASS. Then `cargo build` from the workspace root. Two compositor sites break and are fixed in this task: `make_ipc_window` in `src/ipc/server.rs:513` gets `signal: None` (Task 6 replaces it with the real fold), and the exhaustive non-JSON event printer in `src/ipc/client.rs:430` gets its final arm now, next to `WindowUrgencyChanged`:
+
+```rust
+                    Event::WindowSignalChanged { id, signal } => match signal {
+                        Some(signal) => println!("Window {id}: signal changed to {signal:?}"),
+                        None => println!("Window {id}: signal cleared"),
+                    },
+```
 
 - [ ] **Step 6: Commit**
 
 ```bash
 tasks done material-b0e938 "feat(ipc): add window signal types and event"
-git add niri-ipc/src/lib.rs niri-ipc/src/state.rs src/ipc/server.rs tasks
+git add niri-ipc/src/lib.rs niri-ipc/src/state.rs src/ipc/server.rs src/ipc/client.rs tasks
 git commit -m "feat(ipc): add window signal types and event"
 ```
 
@@ -567,6 +576,8 @@ git commit -m "feat(config): add signal matches, motion policy, and material-sig
             (r#"material "tg" "extra""#, "unexpected argument"),
             (r#"material "tg" { glass {} }"#, "unexpected node"),
             (r#"(typed)material "tg""#, "no type name expected"),
+            (r#"material (typed)"tg""#, "type name"),
+            (r#"material "tg" response=(typed)"default""#, "type name"),
             (r#"material "tg" bogus="x""#, "unexpected property"),
         ] {
             let err = parse_files_err(&[(
@@ -805,6 +816,9 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for MaterialRef {
         let Some(arg) = node.arguments.first() else {
             return Err(DecodeError::missing(node, "material name argument"));
         };
+        // `DecodeScalar::decode` runs `type_check`, which rejects a typed
+        // scalar such as `(typed)"tg"`, before decoding the string.
+        let name: String = knuffel::traits::DecodeScalar::decode(arg, ctx)?;
         if let Some(extra) = node.arguments.get(1) {
             ctx.emit_error(DecodeError::unexpected(&extra.literal, "argument", "unexpected argument"));
         }
@@ -815,17 +829,11 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for MaterialRef {
                 format!("unexpected node `{}`", child.node_name.escape_default()),
             ));
         }
-        let knuffel::ast::Literal::String(ref name) = *arg.literal else {
-            return Err(DecodeError::unsupported(&arg.literal, "material references must be strings"));
-        };
-        let mut response = None;
+        let mut response: Option<String> = None;
         for (key, val) in &node.properties {
             match &***key {
                 "response" => {
-                    let knuffel::ast::Literal::String(ref s) = *val.literal else {
-                        return Err(DecodeError::unsupported(&val.literal, "response must be a string"));
-                    };
-                    response = Some(s.to_string());
+                    response = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
                 other => {
                     return Err(DecodeError::unexpected(key, "property", format!("unexpected property `{other}`")));
@@ -839,9 +847,9 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for MaterialRef {
         if recursion == 0 {
             refs.borrow_mut().root.push((arg.literal.clone(), response.clone()));
         } else {
-            refs.borrow_mut().included.push((name.to_string(), response.clone(), file));
+            refs.borrow_mut().included.push((name.clone(), response.clone(), file));
         }
-        Ok(Self { name: name.to_string(), response })
+        Ok(Self { name, response })
     }
 }
 ```
@@ -906,7 +914,7 @@ fn response_only_reload_updates_retained_material() {
     let id = f.add_client();
     open_window(&mut f, id, "a");
 
-    f.niri_state().reload_config(base("ring-pulse"));
+    f.niri_state().reload_config(Ok(base("ring-pulse")));
     f.niri_state().refresh_and_flush_clients();
 
     let response = f
@@ -920,7 +928,7 @@ fn response_only_reload_updates_retained_material() {
 }
 ```
 
-Use the fixture's actual reload entry point (grep `reload_config` in `src/tests/material.rs`) and add a `Tile::material(&self) -> Option<&MaterialState>` accessor if one does not exist.
+`State::reload_config(&mut self, config: Result<Config, ()>)` is at `src/niri.rs:1421`. Add a `Tile::material(&self) -> Option<&MaterialState>` accessor if one does not exist.
 
 - [ ] **Step 7: Run the tests**
 
@@ -1593,7 +1601,7 @@ fn urgency_creates_native_slot_and_matches_signal_source() {
 }
 ```
 
-`refresh_and_flush_clients` is the name used by other fixture tests to run rule recomputation; grep `src/tests/material.rs` for the call that follows `set_urgent`-like mutations and use that exact method.
+`State::refresh_and_flush_clients` (`src/niri.rs:754`) runs `State::refresh`, which calls `refresh_window_rules`, so the rule with the signal match re-resolves.
 
 - [ ] **Step 2: Run it to verify it fails**
 
@@ -1733,7 +1741,9 @@ git commit -m "feat(render): attach signals to windows and match on source and t
 ### Task 6: Mutation entry points, deadline timers, IPC server, and CLI
 
 **Files:**
-- Modify: `src/niri.rs` (`Niri` struct fields, new `impl Niri` methods; timer precedent at line 1285)
+- Modify: `niri-ipc/src/lib.rs` (the three `Request` variants after `PickColor`)
+- Modify: `src/niri.rs` (`Niri` struct fields, new `impl Niri` methods, `State::refresh` at 793; timer precedent at line 1285)
+- Modify: `src/handlers/compositor.rs` (~297) and `src/handlers/xdg_shell.rs` (~862): unmap cancellation calls
 - Modify: `src/ipc/server.rs` (`Request::PickColor` arm at ~372, `make_ipc_window` at 513, window diff at ~760)
 - Modify: `src/cli.rs` (`Msg` at 63), `src/ipc/client.rs` (request mapping at ~38, response handling at ~300)
 - Test: `src/tests/signal.rs`
@@ -1833,13 +1843,14 @@ fn refresh_reconciles_deadline_timer_after_focus() {
     assert!(f.niri().signal_deadlines.contains_key(&mapped_id), "ttl armed a deadline");
 
     // Focusing "a" demotes the until-focus slot and cancels its expiry.
-    f.niri().layout.activate_window(&f.niri().layout.windows().find(|(_, m)| m.id().get() == wid).unwrap().1.window.clone());
+    // `Mapped::is_focused` is written only by `State::update_keyboard_focus`
+    // (see the idiom in src/tests/material.rs), so move focus, update it,
+    // then refresh so `refresh_signal_deadlines` runs.
+    f.niri().layout.focus_left();
+    f.niri_state().update_keyboard_focus();
     f.niri_state().refresh_and_flush_clients();
     assert!(!f.niri().signal_deadlines.contains_key(&mapped_id), "focus reconciled the timer away");
 }
-```
-
-Use the fixture's real focus helper if `activate_window` is not the right call (grep `focus_window` in `src/tests/`).
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -1881,7 +1892,10 @@ impl Niri {
             .ok_or_else(|| format!("no window with id {id}"))
     }
 
-    /// Mutations only mark the window; the next `State::refresh` reconciles timers.
+    /// Mutations only mark the window; the next `State::refresh` reconciles
+    /// timers. One redraw is queued so the tile re-evaluates its effective
+    /// signal; whether anything then animates is decided by the tile, so a
+    /// mutation costs exactly one redraw, never a recurring one.
     fn after_signal_mutation(&mut self) {
         self.queue_redraw_all();
     }
@@ -2024,14 +2038,15 @@ fn rewrite_replaces_the_deadline_and_close_cancels_it() {
     f.niri_state().refresh_and_flush_clients();
     assert_eq!(f.niri().signal_deadlines.len(), 1, "rewrite replaced, not duplicated");
 
-    f.client(id).window(&surface).destroy(); // or the fixture's close helper
-    f.roundtrip(id);
+    // Unmap by committing a null buffer, the idiom used in src/tests/floating.rs.
+    let window = f.client(id).window(&surface);
+    window.attach_null();
+    window.commit();
+    f.double_roundtrip(id);
     f.niri_state().refresh_and_flush_clients();
-    assert!(f.niri().signal_deadlines.is_empty(), "close cancelled the timer");
+    assert!(f.niri().signal_deadlines.is_empty(), "unmap cancelled the timer");
 }
 ```
-
-Use the fixture's real close helper if `destroy()` is not it (grep `fn close` in `src/tests/client.rs`).
 
 - [ ] **Step 4: IPC requests, server conversion, request handling, event diff**
 
@@ -2208,7 +2223,7 @@ Run: `cargo test --bin niri signal` (PASS) and `cargo run --bin niri -- msg set-
 
 ```bash
 tasks done material-844eea "feat(ipc): add window signal requests, event, timers, and CLI"
-git add src/niri.rs src/ipc src/cli.rs src/handlers/mod.rs src/input/mod.rs src/tests/signal.rs tasks
+git add niri-ipc/src/lib.rs src/niri.rs src/ipc src/cli.rs src/handlers/compositor.rs src/handlers/xdg_shell.rs src/tests/signal.rs tasks
 git commit -m "feat(ipc): add window signal requests, event, timers, and CLI"
 ```
 
@@ -3038,6 +3053,8 @@ fn arm_signal_timer_follows_the_accumulator() {
 }
 ```
 
+The redraw contract these tests and the Task 12 smoke measure: each accepted mutation and each expiry queues exactly one redraw, and everything else is decided by the tile. "No recurring redraws" for a case therefore means no bucket timer and no transitions term, so `Niri::redraw` runs only for those single event-driven frames.
+
 The headless fixture never runs a real render pass, so tick *reporting* is covered by pure helpers in `src/render_helpers/signal.rs` (the tile only composes them) and timer *arming* by the test above; the end-to-end rate is measured in the Task 12 smoke. There is no tile test constructor with a material in `src/layout/tile.rs` tests, which is why the logic lives in the pure module.
 
 Add to `src/render_helpers/signal.rs`:
@@ -3177,11 +3194,16 @@ Add a method the render sites call:
             .map(|f| effective(f, self.options.signal.motion, response))
             .unwrap_or(EffectiveSignal { accent: None, level: niri_ipc::SignalLevel::Quiet, motion: niri_ipc::SignalMotion::Static, impulses: vec![] });
         let target = (level_value(eff.level), eff.accent.map(color_linear));
+        // `signal_target` starts as Some((0., None)), so a quiet window never
+        // starts a zero-to-zero crossfade.
         if self.signal_target != Some(target) {
+            // A finished crossfade is removed by `advance_animations`, so
+            // "current" is either the running crossfade or the last target.
             let (from_level, from_accent) = self
                 .signal_crossfade
                 .as_ref()
                 .map(SignalCrossfade::current)
+                .or(self.signal_target)
                 .unwrap_or((0., None));
             let config = self.options.animations.material_signal.0;
             self.signal_crossfade = Some(SignalCrossfade {
@@ -3193,13 +3215,25 @@ Add a method the render sites call:
             });
             self.signal_target = Some(target);
         }
-        let (level, accent) = self.signal_crossfade.as_ref().map_or(target, SignalCrossfade::current);
-        if folded.is_none() && self.signal_crossfade.as_ref().is_some_and(|c| c.anim.is_done()) {
+        if folded.is_none() && self.signal_crossfade.is_none() {
             return None;
         }
+        let (level, accent) = self.signal_crossfade.as_ref().map_or(target, SignalCrossfade::current);
         Some((eff, level, accent))
     }
 ```
+
+Add the crossfade to `Tile::advance_animations` (`src/layout/tile.rs:534`), following the other animations there, so a completed crossfade is dropped instead of reported as ongoing forever:
+
+```rust
+        if let Some(crossfade) = &self.signal_crossfade {
+            if crossfade.anim.is_done() {
+                self.signal_crossfade = None;
+            }
+        }
+```
+
+The fixture's `niri_complete_animations` sets the clock to complete instantly only for the duration of one `advance_animations` call, which is exactly when this removal runs.
 
 Because `render_inner` takes `&self`, `Tile::update_render_elements` (which is `&mut self` and already runs before every render) calls `signal_for_frame` and stores the result in `signal_frame_cache`.
 
@@ -3391,16 +3425,45 @@ GLES2 requires constant loop bounds and no dynamic vector indexing, which is why
 
 - [ ] **Step 5: Verify compile and visuals on the nested instance**
 
-Run: `cargo build` then start the nested instance on the headless verification unit (see the memory note `headless-verification-host`), with a config that assigns a material to kitty. Run:
+Live nested runs never target the desktop session: the nested winit window throttles frame callbacks when unfocused, so a headless Weston host is used. The procedure below is the one Task 12 reuses; every command is run from the worktree root.
 
 ```bash
-niri msg set-window-signal --id <id> --source demo --accent '#e5a33c' --level demand --motion pulse
-niri msg pulse-window-signal --id <id> --source demo --kind done
-niri msg pulse-window-signal --id <id> --source demo --kind error
-niri msg clear-window-signal --id <id> --source demo
+# 1. Build and a throwaway config with a glass material on kitty.
+cargo build --release
+mkdir -p /tmp/sig && cat > /tmp/sig/config.kdl <<'EOF'
+material "tg" { glass {} }
+window-rule { match app-id="^kitty$"; material "tg" }
+spawn-at-startup "kitty"
+EOF
+
+# 2. Headless host (1280x720, kiosk shell) and a short runtime dir for the
+#    nested compositor (long paths panic on SUN_LEN).
+systemd-run --user --unit=signals-headless-weston --collect \
+  weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
+  --width=1280 --height=720 --socket=signals-headless
+RT=$XDG_RUNTIME_DIR/sig; mkdir -p "$RT"
+ln -sf "$XDG_RUNTIME_DIR/signals-headless" "$RT/signals-headless"
+
+# 3. Nested niri, then the socket it created (the newest niri.*.sock in $RT).
+XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=signals-headless \
+  ./target/release/niri -c /tmp/sig/config.kdl > /tmp/sig/niri.log 2>&1 &
+sleep 2
+export NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1)   # every niri msg below targets this instance
+WID=$(./target/release/niri msg -j windows | jq '.[] | select(.app_id=="kitty") | .id')
+
+# 4. Drive the signal.
+./target/release/niri msg set-window-signal --id "$WID" --source demo --accent '#e5a33c' --level demand --motion pulse
+./target/release/niri msg pulse-window-signal --id "$WID" --source demo --kind done
+./target/release/niri msg pulse-window-signal --id "$WID" --source demo --kind error
+./target/release/niri msg action screenshot-screen --write-to-disk   # async; poll for the file
+./target/release/niri msg clear-window-signal --id "$WID" --source demo
+
+# 5. Cleanup: no evidence-run socket may remain listening.
+kill %1; systemctl --user stop signals-headless-weston
+ls "$RT"/niri.*.sock 2>/dev/null && echo "socket left behind" || true
 ```
 
-Expected: an amber ring on the visible slab band, the rim glint swaying, one diagonal sweep, one chromatic jolt, then the default look again. Capture screenshots into `niri-experiments` per the existing evidence convention.
+Expected: an amber ring on the visible slab band, the rim glint swaying, one diagonal sweep, one chromatic jolt, then the default look again. Keep the screenshots under `$NIRI_MATERIAL_WORK_ROOT/material-signals-<commit>/`, the location the roughness smoke used, and record their SHA-256 in the Task 12 evidence.
 
 - [ ] **Step 6: Commit**
 
@@ -3452,30 +3515,39 @@ Expected: all PASS. Record the counts.
 
 - [ ] **Step 2: Nested IPC round trip**
 
-On the headless unit, with `niri msg -j event-stream` running in a second shell: set, pulse, clear as in Task 10 Step 5, then `niri msg set-window-signal` with `--ttl-ms 2000 --after-level quiet`. Expected events: `WindowSignalChanged` on every write, on impulse expiry about 1.5 s after each pulse, on decay at 2 s, and `signal: null` after the final clear. Also run each rejection: unknown id, `--source niri`, pulse before set, `--accent zzz`, `--ttl-ms 90000000`, `--after-level quiet` without `--ttl-ms`, a 17th source. Expected: a non-zero exit with the error text and no event.
+Start the nested instance exactly as in Task 10 Step 5 (steps 1 to 3, same `NIRI_SOCKET` export in every shell). With `./target/release/niri msg -j event-stream > /tmp/sig/events.jsonl` running in a second shell: set, pulse, clear as in Task 10 Step 5, then `set-window-signal` with `--ttl-ms 2000 --after-level quiet`. Expected in `events.jsonl`: `WindowSignalChanged` on every write, on impulse expiry about 1.5 s after each pulse, on decay at 2 s, and `"signal":null` after the final clear. Also run each rejection: unknown id, `--source niri` on set, pulse, and clear, pulse before set, `--accent zzz`, `--ttl-ms 90000000`, `--after-level quiet` without `--ttl-ms`, a 17th source. Expected: a non-zero exit with the error text and no event. Stop the instance as in step 5 of the procedure.
 
-- [ ] **Step 3: GLES smoke with wakeup counts**
+- [ ] **Step 3: GLES smoke with redraw counts**
 
-Mirror `2026-09-02-material-roughness-smoke.md` with a Tracy capture and count `Niri::redraw` frames per second in each state:
+Build the profiling binary with `cargo build --release --features profile-with-tracy`, run the nested procedure from Task 10 Step 5 with that binary, and for each case below capture 30 s after the state is set up and count `Niri::redraw` zones:
 
-| Case | Expected |
+```bash
+tracy-capture -o /tmp/sig/<case>.tracy -a 127.0.0.1 -s 30      # the capture tool the roughness smoke retained
+tracy-csvexport -f "Niri::redraw" /tmp/sig/<case>.tracy | tail -n +2 | wc -l   # zones in 30 s; divide by 30
+```
+
+Set up the cases with `niri msg` against `$NIRI_SOCKET`; "focused elsewhere" means a second kitty window focused with `niri msg action focus-window --id <other>`, and "stops on focus" means the signal was set with `--until-focus` and the window is then focused with `focus-window`. Hidden tab: `niri msg action toggle-column-tabbed-display` on a two-window column with the signaled window not the active tab. Inactive workspace: `niri msg action move-window-to-workspace-down` on the signaled window. Offscreen column: enough default-width columns that the signaled one is scrolled out of view.
+
+The contract from Task 9: each mutation and each expiry queues exactly one redraw. "None" below means no redraws other than those single event-driven frames, so the 30 s count equals the number of mutations and expiries in the capture.
+
+| Case | Expected `Niri::redraw` rate |
 |---|---|
-| Quiet window with accent ring | 0 redraws after the crossfade |
-| `Demand + Pulse`, focused elsewhere | about 27 per second, stops on focus |
+| Quiet window with accent ring | none after the crossfade |
+| `Demand + Pulse --until-focus`, focused elsewhere | about 27 per second, then none after `focus-window` |
 | `Demand + Breathe` | about 8 per second |
 | `Demand + Flash` | about 16 per second |
 | Ten seeded Breathe windows | same as one |
 | Ten Flash windows | same as one |
-| `Demand + Pulse` on an inactive workspace, as a hidden tab, in an offscreen column | 0 |
-| `signal { motion "off" }` with a Pulse window and live impulses | 0 after the crossfade |
+| `Demand + Pulse` on an inactive workspace, as a hidden tab, in an offscreen column | none |
+| `signal { motion "off" }` with a Pulse window and live impulses | none after the crossfade |
 | `signal { motion "reduced" }` with Flash | Pulse rate |
-| response `attention none` with Pulse | 0 |
-| every impulse response `none` with pulses arriving | 0 |
-| `done` pulse | redraws for 1.5 s then 0 |
-| `flash` on default glass | visibly jolts |
+| response `attention none` with Pulse | none |
+| every impulse response `none` with pulses arriving | none beyond the one redraw per pulse and per expiry |
+| `done` pulse | redraws for 1.5 s then none |
+| `flash` on default glass | visibly jolts in the screenshot |
 | `animations { slowdown 3 }` | rates unchanged |
 
-Record per-frame GPU cost of ring plus rim orbit against the roughness baseline.
+Record per-frame GPU `draw shader` cost of ring plus rim orbit against the roughness baseline the same way the roughness smoke did (matched steady-state samples, median, delta). Stop the instance and the Weston unit after the last case.
 
 - [ ] **Step 4: Physical DRM check**
 
