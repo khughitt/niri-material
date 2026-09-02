@@ -3506,15 +3506,19 @@ cleanup() {
 TRACY_PORT=$((20000 + $$ % 20000)); export TRACY_PORT
 trap cleanup EXIT
 
-# Cargo's target directory is configured outside the tree here, so resolve
-# it rather than assuming ./target; the reference build gets its own.
+# Cargo's target directory is configured outside the tree here and is
+# shared by every worktree, so resolve it rather than assuming ./target, and
+# run a snapshot copied into $WORK so a concurrent build cannot replace the
+# executable mid-capture. The reference build gets its own target directory.
 TARGET=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
 case $MODE in
     cases|gpu) cargo build --release --features profile-with-tracy ;;
     *)         cargo build --release ;;
 esac
-NIRI=$TARGET/release/niri
-[ -x "$NIRI" ] || { echo "FAIL: built binary not found at $NIRI" >&2; exit 1; }
+[ -x "$TARGET/release/niri" ] || { echo "FAIL: built binary not found at $TARGET/release/niri" >&2; exit 1; }
+cp "$TARGET/release/niri" "$WORK/niri"
+NIRI=$WORK/niri
+sha256sum "$NIRI" | tee -a "$WORK/SHA256SUMS"
 
 # --- config variants -------------------------------------------------------
 # The backdrop is a checkerboard so refraction, distortion, and chromatic
@@ -3906,13 +3910,27 @@ gpu_case_ns() {   # $1 = name, $2 = cfg, $3 = setup; prints the median ns over t
 # commit, built with the same features: GPU time is workload dependent, so
 # the retained roughness trace (different backdrop, geometry, and damage
 # driver) is not comparable and is not used as a gate.
-build_reference() {   # sets REF_NIRI; its own target dir so it never overwrites this build
+# The base commit has only the generic `draw shader` GPU zone, so the
+# reference checkout gets the same profiling-only wrapper Task 8 adds
+# (`MaterialRenderElement::draw`) before it is built. The wrapper changes no
+# rendering; it only names the zone. Exactly one call site must match.
+patch_reference_gpu_zone() {   # $1 = worktree path
+    local f=$1/src/render_helpers/material.rs
+    local n; n=$(grep -c 'RenderElement::<GlesRenderer>::draw(&inner, frame, src, dst, damage, opaque_regions, cache)' "$f")
+    [ "$n" -eq 1 ] || { echo "FAIL: expected one material draw call site in the reference, found $n" >&2; exit 1; }
+    perl -0pi -e 's/RenderElement::<GlesRenderer>::draw\(&inner, frame, src, dst, damage, opaque_regions, cache\)/frame.with_gpu_span(smithay::gpu_span_location!("MaterialRenderElement::draw"), |frame| {\n            RenderElement::<GlesRenderer>::draw(&inner, frame, src, dst, damage, opaque_regions, cache)\n        })/' "$f"
+    grep -q 'gpu_span_location!("MaterialRenderElement::draw")' "$f" || { echo "FAIL: reference GPU zone patch did not apply" >&2; exit 1; }
+}
+build_reference() {   # sets REF_NIRI; its own target dir and a snapshot copy
     local base; base=$(git merge-base HEAD materials-26.04)
     git worktree add --detach "$WORK/ref-src" "$base" >/dev/null
+    patch_reference_gpu_zone "$WORK/ref-src"
     (cd "$WORK/ref-src" && CARGO_TARGET_DIR=$WORK/ref-target cargo build --release --features profile-with-tracy)
-    REF_NIRI=$WORK/ref-target/release/niri
-    [ -x "$REF_NIRI" ] || { echo "FAIL: reference binary not built at $REF_NIRI" >&2; exit 1; }
-    echo "reference binary: $base" | tee -a "$WORK/gpu.txt"
+    [ -x "$WORK/ref-target/release/niri" ] || { echo "FAIL: reference binary not built" >&2; exit 1; }
+    cp "$WORK/ref-target/release/niri" "$WORK/niri-ref"
+    REF_NIRI=$WORK/niri-ref
+    sha256sum "$REF_NIRI" | tee -a "$WORK/SHA256SUMS"
+    echo "reference binary: $base plus the MaterialRenderElement::draw GPU zone wrapper" | tee -a "$WORK/gpu.txt"
 }
 # All three GPU runs share one topology: a single focused ticking kitty and
 # no signal-driven redraws. Demand at Static motion exercises the ring and
@@ -3926,7 +3944,7 @@ mode_gpu() {
     local ref_ns default_ns ring_ns
     NIRI=$REF_NIRI
     ref_ns=$(gpu_case_ns gpu-reference "$WORK/gpu.kdl" true)
-    NIRI=$TARGET/release/niri
+    NIRI=$WORK/niri
     default_ns=$(gpu_case_ns gpu-default  "$WORK/gpu.kdl" true)             # no signal: the default path
     ring_ns=$(gpu_case_ns   gpu-ring-rim  "$WORK/gpu.kdl" setup_gpu_ring)   # ring + rim orbit at Demand, Static
     {
@@ -4030,7 +4048,7 @@ Expected `Niri::redraw` zones, read from `rates.txt`:
 
 Then run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh gpu`
 
-The `gpu` mode uses a dedicated fixture in which a single focused kitty repaints ten times a second, so every GPU case has identical topology, focus, and damage cadence and material draws throughout the 20 s to 28 s sample window. GPU zones are exported with `--gpu`, columns are located by their Tracy 0.13.1 header names, and only the material-specific `MaterialRenderElement::draw` zone from Task 8 is sampled, never the generic `draw shader` zone that border, shadow, and resize shaders share. Because GPU time is workload dependent, the retained roughness trace (different backdrop, geometry, and damage driver) is not a comparable reference; instead the script builds the branch's base commit in a temporary worktree with its own target directory and runs the identical fixture on it. The ring case sets Demand at Static motion on the same single window, which exercises the ring and rim-orbit shading without adding signal-driven redraws. For the base-commit default path, this build's default path (no signal), and this build's ring plus rim-orbit case, it captures three times and takes the median of the three per-capture medians, each being the median of exactly 14 material zones between 20 s and 28 s. It enforces one gate: this build's default path must be within 10% of the base-commit build, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record all three medians and the delta in the evidence document.
+The `gpu` mode uses a dedicated fixture in which a single focused kitty repaints ten times a second, so every GPU case has identical topology, focus, and damage cadence and material draws throughout the 20 s to 28 s sample window. GPU zones are exported with `--gpu`, columns are located by their Tracy 0.13.1 header names, and only the material-specific `MaterialRenderElement::draw` zone from Task 8 is sampled, never the generic `draw shader` zone that border, shadow, and resize shaders share. Because GPU time is workload dependent, the retained roughness trace (different backdrop, geometry, and damage driver) is not a comparable reference; instead the script checks out the branch's base commit in a temporary worktree, applies the same profiling-only `MaterialRenderElement::draw` zone wrapper that Task 8 adds (the base commit has only the generic zone), builds it with its own target directory, and runs the identical fixture on it. Both binaries are snapshot copies under the work directory, hashed into `SHA256SUMS`, so a concurrent build in the shared Cargo target directory cannot replace an executable mid-capture. The ring case sets Demand at Static motion on the same single window, which exercises the ring and rim-orbit shading without adding signal-driven redraws. For the base-commit default path, this build's default path (no signal), and this build's ring plus rim-orbit case, it captures three times and takes the median of the three per-capture medians, each being the median of exactly 14 material zones between 20 s and 28 s. It enforces one gate: this build's default path must be within 10% of the base-commit build, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record all three medians and the delta in the evidence document.
 
 - [ ] **Step 4: Physical DRM check**
 
