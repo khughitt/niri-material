@@ -5,8 +5,8 @@ status: todo
 priority: 1
 size: l
 created: 2026-09-02T12:08:58Z
-updated: 2026-09-02T12:48:26Z
-depends: []
+updated: 2026-09-02T14:26:51Z
+depends: [material-b43616]
 tags: [signals, rendering, ipc]
 ---
 
