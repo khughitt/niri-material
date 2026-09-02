@@ -1893,9 +1893,11 @@ impl Niri {
     }
 
     /// Mutations only mark the window; the next `State::refresh` reconciles
-    /// timers. One redraw is queued so the tile re-evaluates its effective
-    /// signal; whether anything then animates is decided by the tile, so a
-    /// mutation costs exactly one redraw, never a recurring one.
+    /// timers. One coalescible redraw request is queued per output so the
+    /// tile re-evaluates its effective signal (`RedrawState::queue_redraw`
+    /// folds it into an already queued frame). Whether anything then
+    /// animates is decided by the tile, so a mutation never causes
+    /// recurring redraws.
     fn after_signal_mutation(&mut self) {
         self.queue_redraw_all();
     }
@@ -2985,15 +2987,21 @@ Append to `src/tests/signal.rs`:
 
 ```rust
 #[test]
-fn demand_window_reports_transition_only_while_impulse_lives_then_sustains() {
+fn crossfade_and_live_impulses_are_transitions_but_sustained_motion_is_not() {
     use crate::niri::SetWindowSignalArgs;
-    use niri_ipc::{SignalLevel, SignalMotion};
+    use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
+    use std::time::Duration;
 
     let mut f = Fixture::with_config(config(r#"material "tg" { glass {} }  window-rule { material "tg" }"#));
     f.add_output(1, (1920, 1080));
     let id = f.add_client();
     open_window(&mut f, id, "a");
     let wid = window_id(&mut f, "a");
+
+    // Baseline: settle the open animation first, or it masks every assertion below.
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    assert!(!f.niri().layout.are_animations_ongoing(None), "settled window has no transition");
 
     f.niri()
         .set_window_signal(SetWindowSignalArgs {
@@ -3009,17 +3017,27 @@ fn demand_window_reports_transition_only_while_impulse_lives_then_sustains() {
             until_focus: false,
         })
         .unwrap();
-
     // The crossfade is created by update_render_elements, which the headless
     // fixture does not run on its own.
     f.niri_state().refresh_and_flush_clients();
     f.niri().layout.update_render_elements(None);
-    // The crossfade from Quiet to Demand is a transition.
-    assert!(f.niri().layout.are_animations_ongoing(None));
-    f.niri_complete_animations();
+    assert!(f.niri().layout.are_animations_ongoing(None), "crossfade is a transition");
+
+    f.niri_complete_animations(); // drops the finished crossfade in Tile::advance_animations
     f.niri().layout.update_render_elements(None);
-    // After the crossfade, sustained Pulse is NOT a transition (it uses bucket timers).
-    assert!(!f.niri().layout.are_animations_ongoing(None));
+    assert!(!f.niri().layout.are_animations_ongoing(None), "sustained Pulse is not a transition");
+
+    f.niri().pulse_window_signal(wid, "t", ImpulseKind::Done, None).unwrap();
+    f.niri_state().refresh_and_flush_clients();
+    f.niri().layout.update_render_elements(None);
+    assert!(f.niri().layout.are_animations_ongoing(None), "live impulse is a transition");
+
+    // Expire the impulse by advancing the frozen unadjusted clock past 1.5 s.
+    let later = f.niri().clock.now_unadjusted() + Duration::from_secs(2);
+    f.niri().clock.set_unadjusted(later);
+    f.niri().layout.update_render_elements(None);
+    assert!(!f.niri().layout.are_animations_ongoing(None), "expired impulse is not a transition");
+    f.niri().clock.clear();
 }
 
 #[test]
@@ -3053,7 +3071,7 @@ fn arm_signal_timer_follows_the_accumulator() {
 }
 ```
 
-The redraw contract these tests and the Task 12 smoke measure: each accepted mutation and each expiry queues exactly one redraw, and everything else is decided by the tile. "No recurring redraws" for a case therefore means no bucket timer and no transitions term, so `Niri::redraw` runs only for those single event-driven frames.
+The redraw contract these tests and the Task 12 smoke measure: each accepted mutation and each deadline-timer firing queues one coalescible redraw request per output (an already queued frame absorbs it, and one firing may prune several expiries at once), and everything else is decided by the tile. "No recurring redraws" for a case therefore means no bucket timer and no transitions term, which the smoke measures as zero `Niri::redraw` zones in a steady-state window that starts after the last event.
 
 The headless fixture never runs a real render pass, so tick *reporting* is covered by pure helpers in `src/render_helpers/signal.rs` (the tile only composes them) and timer *arming* by the test above; the end-to-end rate is measured in the Task 12 smoke. There is no tile test constructor with a material in `src/layout/tile.rs` tests, which is why the logic lives in the pure module.
 
@@ -3428,42 +3446,67 @@ GLES2 requires constant loop bounds and no dynamic vector indexing, which is why
 Live nested runs never target the desktop session: the nested winit window throttles frame callbacks when unfocused, so a headless Weston host is used. The procedure below is the one Task 12 reuses; every command is run from the worktree root.
 
 ```bash
-# 1. Build and a throwaway config with a glass material on kitty.
+#!/usr/bin/env bash
+# Nested signals fixture. Run from the worktree root. Every step polls with a
+# bound; nothing sleeps for a fixed guess, and failures are not masked.
+set -euo pipefail
 cargo build --release
-mkdir -p /tmp/sig && cat > /tmp/sig/config.kdl <<'EOF'
+NIRI=$PWD/target/release/niri
+WORK=${NIRI_MATERIAL_WORK_ROOT:?set to the evidence root the roughness smoke used}/material-signals-$(git rev-parse --short HEAD)
+mkdir -p "$WORK"
+cat > "$WORK/config.kdl" <<'EOF'
 material "tg" { glass {} }
 window-rule { match app-id="^kitty$"; material "tg" }
 spawn-at-startup "kitty"
 EOF
 
-# 2. Headless host (1280x720, kiosk shell) and a short runtime dir for the
-#    nested compositor (long paths panic on SUN_LEN).
+# Headless host (1280x720, kiosk shell); wait for its socket.
 systemd-run --user --unit=signals-headless-weston --collect \
   weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
   --width=1280 --height=720 --socket=signals-headless
-RT=$XDG_RUNTIME_DIR/sig; mkdir -p "$RT"
-ln -sf "$XDG_RUNTIME_DIR/signals-headless" "$RT/signals-headless"
+for _ in $(seq 50); do [ -S "$XDG_RUNTIME_DIR/signals-headless" ] && break; sleep 0.1; done
+[ -S "$XDG_RUNTIME_DIR/signals-headless" ] || { echo "weston socket never appeared" >&2; exit 1; }
 
-# 3. Nested niri, then the socket it created (the newest niri.*.sock in $RT).
+# Fresh short runtime dir for the nested compositor (long paths panic on SUN_LEN).
+RT=$XDG_RUNTIME_DIR/sig; rm -rf "$RT"; mkdir -p "$RT"
+ln -s "$XDG_RUNTIME_DIR/signals-headless" "$RT/signals-headless"
+
+cleanup() {
+  kill "${NIRI_PID:-}" 2>/dev/null || true
+  wait "${NIRI_PID:-}" 2>/dev/null || true
+  systemctl --user stop signals-headless-weston || true
+  if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "niri socket left behind in $RT" >&2; exit 1; fi
+}
+trap cleanup EXIT
+
 XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=signals-headless \
-  ./target/release/niri -c /tmp/sig/config.kdl > /tmp/sig/niri.log 2>&1 &
-sleep 2
+  "$NIRI" -c "$WORK/config.kdl" > "$WORK/niri.log" 2>&1 &
+NIRI_PID=$!
+for _ in $(seq 100); do ls "$RT"/niri.*.sock >/dev/null 2>&1 && break; sleep 0.1; done
 export NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1)   # every niri msg below targets this instance
-WID=$(./target/release/niri msg -j windows | jq '.[] | select(.app_id=="kitty") | .id')
+msg() { "$NIRI" msg "$@"; }
+for _ in $(seq 100); do
+  WID=$(msg -j windows | jq -r '.[] | select(.app_id=="kitty") | .id' | head -1)
+  [ -n "$WID" ] && break; sleep 0.1
+done
+[ -n "${WID:-}" ] || { echo "kitty window never mapped" >&2; exit 1; }
 
-# 4. Drive the signal.
-./target/release/niri msg set-window-signal --id "$WID" --source demo --accent '#e5a33c' --level demand --motion pulse
-./target/release/niri msg pulse-window-signal --id "$WID" --source demo --kind done
-./target/release/niri msg pulse-window-signal --id "$WID" --source demo --kind error
-./target/release/niri msg action screenshot-screen --write-to-disk   # async; poll for the file
-./target/release/niri msg clear-window-signal --id "$WID" --source demo
-
-# 5. Cleanup: no evidence-run socket may remain listening.
-kill %1; systemctl --user stop signals-headless-weston
-ls "$RT"/niri.*.sock 2>/dev/null && echo "socket left behind" || true
+# Drive the signal; the screenshot is taken 100 ms after the error pulse, at
+# the impulse's 80 ms peak.
+msg set-window-signal --id "$WID" --source demo --accent '#e5a33c' --level demand --motion pulse
+msg pulse-window-signal --id "$WID" --source demo --kind done
+sleep 1.6
+msg pulse-window-signal --id "$WID" --source demo --kind error
+sleep 0.1
+SHOT=$WORK/error-flash.png
+msg action screenshot-screen --write-to-disk true --show-pointer false --path "$SHOT"
+for _ in $(seq 50); do [ -s "$SHOT" ] && break; sleep 0.1; done   # write is asynchronous
+[ -s "$SHOT" ] || { echo "screenshot not written" >&2; exit 1; }
+msg clear-window-signal --id "$WID" --source demo
+sha256sum "$SHOT" | tee -a "$WORK/SHA256SUMS"
 ```
 
-Expected: an amber ring on the visible slab band, the rim glint swaying, one diagonal sweep, one chromatic jolt, then the default look again. Keep the screenshots under `$NIRI_MATERIAL_WORK_ROOT/material-signals-<commit>/`, the location the roughness smoke used, and record their SHA-256 in the Task 12 evidence.
+Expected: an amber ring on the visible slab band, the rim glint swaying, one diagonal sweep, one chromatic jolt captured in `error-flash.png`, then the default look again. Take further screenshots by repeating the `screenshot-screen` line with a new `--path` at each state. The evidence directory and `SHA256SUMS` feed the Task 12 record.
 
 - [ ] **Step 6: Commit**
 
@@ -3515,37 +3558,76 @@ Expected: all PASS. Record the counts.
 
 - [ ] **Step 2: Nested IPC round trip**
 
-Start the nested instance exactly as in Task 10 Step 5 (steps 1 to 3, same `NIRI_SOCKET` export in every shell). With `./target/release/niri msg -j event-stream > /tmp/sig/events.jsonl` running in a second shell: set, pulse, clear as in Task 10 Step 5, then `set-window-signal` with `--ttl-ms 2000 --after-level quiet`. Expected in `events.jsonl`: `WindowSignalChanged` on every write, on impulse expiry about 1.5 s after each pulse, on decay at 2 s, and `"signal":null` after the final clear. Also run each rejection: unknown id, `--source niri` on set, pulse, and clear, pulse before set, `--accent zzz`, `--ttl-ms 90000000`, `--after-level quiet` without `--ttl-ms`, a 17th source. Expected: a non-zero exit with the error text and no event. Stop the instance as in step 5 of the procedure.
+Start the nested instance with the Task 10 Step 5 script up to the `msg()` definition (put the driving commands below in place of its signal section; the `trap` cleanup still applies). Record the event stream in the background: `msg -j event-stream > "$WORK/events.jsonl" & EVENTS_PID=$!`. Then set, pulse, clear as in Task 10 Step 5, then `msg set-window-signal --id "$WID" --source demo --ttl-ms 2000 --after-level quiet`, `sleep 2.5`, and `kill "$EVENTS_PID"`. Expected in `events.jsonl`: `WindowSignalChanged` on every write, on impulse expiry about 1.5 s after each pulse, on decay at 2 s, and `"signal":null` after the final clear; verify with `jq -c 'select(.WindowSignalChanged) | .WindowSignalChanged.signal' "$WORK/events.jsonl"`. Also run each rejection and assert a non-zero exit plus no new line in `events.jsonl`: unknown id (`--id 999999`), `--source niri` on set, pulse, and clear, pulse before set (`--source fresh`), `--accent zzz`, `--ttl-ms 90000000 --after-level quiet`, `--after-level quiet` without `--ttl-ms`, and a 17th source (`for i in $(seq 17); do msg set-window-signal --id "$WID" --source "s$i"; done`, expecting the last to fail).
 
 - [ ] **Step 3: GLES smoke with redraw counts**
 
-Build the profiling binary with `cargo build --release --features profile-with-tracy`, run the nested procedure from Task 10 Step 5 with that binary, and for each case below capture 30 s after the state is set up and count `Niri::redraw` zones:
+**Tracy tooling.** This tree's `tracy-client-sys 0.28.0` embeds Tracy 0.13.1 (protocol 76); the installed 0.14 tools cannot read its traces, as the roughness smoke records. Use the protocol-matched tools the roughness run built, verifying them against that record's SHA-256 table:
 
 ```bash
-tracy-capture -o /tmp/sig/<case>.tracy -a 127.0.0.1 -s 30      # the capture tool the roughness smoke retained
-tracy-csvexport -f "Niri::redraw" /tmp/sig/<case>.tracy | tail -n +2 | wc -l   # zones in 30 s; divide by 30
+TOOLS=${NIRI_MATERIAL_WORK_ROOT:?}/material-roughness-b220152d/tools
+sha256sum "$TOOLS/tracy-capture" "$TOOLS/tracy-csvexport"   # must match the roughness smoke table
 ```
 
-Set up the cases with `niri msg` against `$NIRI_SOCKET`; "focused elsewhere" means a second kitty window focused with `niri msg action focus-window --id <other>`, and "stops on focus" means the signal was set with `--until-focus` and the window is then focused with `focus-window`. Hidden tab: `niri msg action toggle-column-tabbed-display` on a two-window column with the signaled window not the active tab. Inactive workspace: `niri msg action move-window-to-workspace-down` on the signaled window. Offscreen column: enough default-width columns that the signaled one is scrolled out of view.
+If they are absent, rebuild them from the pinned release before continuing:
 
-The contract from Task 9: each mutation and each expiry queues exactly one redraw. "None" below means no redraws other than those single event-driven frames, so the 30 s count equals the number of mutations and expiries in the capture.
+```bash
+git clone --depth 1 --branch v0.13.1 https://github.com/wolfpld/tracy "$WORK/tracy-src"
+cmake -S "$WORK/tracy-src/capture"   -B "$WORK/tracy-capture-build"   -DCMAKE_BUILD_TYPE=Release && cmake --build "$WORK/tracy-capture-build"
+cmake -S "$WORK/tracy-src/csvexport" -B "$WORK/tracy-csvexport-build" -DCMAKE_BUILD_TYPE=Release && cmake --build "$WORK/tracy-csvexport-build"
+TOOLS=$WORK/tools; mkdir -p "$TOOLS"; cp "$WORK"/tracy-capture-build/tracy-capture "$WORK"/tracy-csvexport-build/tracy-csvexport "$TOOLS"/
+```
 
-| Case | Expected `Niri::redraw` rate |
+Build the profiling binary with `cargo build --release --features profile-with-tracy` and run the Task 10 Step 5 script with `NIRI=$PWD/target/release/niri` from that build. For each case: apply the case setup, start a 30 s capture, and count `Niri::redraw` zones in the steady-state window, defined as the final 20 s of the trace, so the first 10 s absorb setup events and the trace's retained earlier history is excluded by construction:
+
+```bash
+count_steady() {  # $1 = case name; prints Niri::redraw zones in the last 20 s and the rate per second
+  local CASE=$1 CAP="$WORK/$1.tracy"
+  "$TOOLS/tracy-capture" -o "$CAP" -a 127.0.0.1 -s 30
+  "$TOOLS/tracy-csvexport" --unwrap -f "Niri::redraw" "$CAP" > "$WORK/$CASE.csv"
+  # --unwrap emits one row per zone with ns_since_start in column 4; without it the rows are aggregates.
+  awk -F, 'NR>1 { t=$4+0; if (t>max) max=t; ts[NR]=t }
+           END { lo=max-20e9; n=0; for (k in ts) if (ts[k]>=lo) n++; printf "%s: %d zones in 20 s = %.1f/s\n", "'"$CASE"'", n, n/20 }' "$WORK/$CASE.csv" | tee -a "$WORK/rates.txt"
+}
+```
+
+**Case setup.** All commands go through `msg` against `$NIRI_SOCKET`. Helper to open more kitty windows and wait for them: `spawn_kitty() { msg action spawn -- kitty; for _ in $(seq 100); do [ "$(msg -j windows | jq '[.[] | select(.app_id=="kitty")] | length')" -ge "$1" ] && return; sleep 0.1; done; echo "kitty $1 never mapped" >&2; exit 1; }`. Config variants are separate files applied with `msg action load-config-file "$WORK/<variant>.kdl"`; each variant is the base config plus the lines named. After every setup, assert the state with the `jq` line given, then call `count_steady <case>`.
+
+| Case | Setup and state assertion |
 |---|---|
-| Quiet window with accent ring | none after the crossfade |
-| `Demand + Pulse --until-focus`, focused elsewhere | about 27 per second, then none after `focus-window` |
-| `Demand + Breathe` | about 8 per second |
-| `Demand + Flash` | about 16 per second |
-| Ten seeded Breathe windows | same as one |
-| Ten Flash windows | same as one |
-| `Demand + Pulse` on an inactive workspace, as a hidden tab, in an offscreen column | none |
-| `signal { motion "off" }` with a Pulse window and live impulses | none after the crossfade |
-| `signal { motion "reduced" }` with Flash | Pulse rate |
-| response `attention none` with Pulse | none |
-| every impulse response `none` with pulses arriving | none beyond the one redraw per pulse and per expiry |
-| `done` pulse | redraws for 1.5 s then none |
-| `flash` on default glass | visibly jolts in the screenshot |
-| `animations { slowdown 3 }` | rates unchanged |
+| quiet-ring | `msg set-window-signal --id "$WID" --source demo --accent '#e5a33c'`; assert `msg -j windows \| jq '.[] \| select(.id=='"$WID"') \| .signal.level' == "Quiet"` |
+| demand-pulse | `spawn_kitty 2`; `OTHER=$(msg -j windows \| jq '.[] \| select(.app_id=="kitty" and .id!='"$WID"') \| .id')`; `msg set-window-signal --id "$WID" --source demo --level demand --motion pulse --until-focus`; `msg action focus-window --id "$OTHER"`; assert `.is_focused==false` for `$WID` |
+| demand-pulse-focused | continue from demand-pulse: `msg action focus-window --id "$WID"`; assert `.signal.level=="Quiet"` for `$WID` (until-focus demoted it) |
+| demand-breathe / demand-flash | as demand-pulse with `--motion breathe` / `--motion flash` |
+| ten-breathe / ten-flash | `spawn_kitty 10`; `for w in $(msg -j windows \| jq '.[] \| select(.app_id=="kitty") \| .id'); do msg set-window-signal --id "$w" --source demo --level demand --motion breathe; done` (or `flash`); focus a non-kitty-free state is not needed since all ten are visible or tabbed; assert ten windows report `.signal.motion=="Breathe"` |
+| inactive-workspace | from demand-pulse: `msg action focus-window --id "$WID"; msg action move-window-to-workspace-down --focus false`; assert `$WID`'s `.workspace_id` differs from `$OTHER`'s and `$OTHER` `.is_focused==true` |
+| hidden-tab | from demand-pulse: `msg action focus-window --id "$OTHER"; msg action consume-or-expel-window-left; msg action toggle-column-tabbed-display; msg action focus-window --id "$OTHER"` so both share one tabbed column and `$OTHER` is the shown tab; assert both have equal `.layout.pos_in_scrolling_layout[0]` and `$WID` `.is_focused==false` |
+| offscreen-column | from demand-pulse with `$WID` in the leftmost column: `spawn_kitty 3; spawn_kitty 4;` then `msg action focus-column-last`; with default 0.5-proportion columns on a 1280 px view the leftmost column is scrolled out; assert `$WID` `.layout.tile_pos_in_workspace_view[0] + .layout.tile_size[0] <= 0` |
+| motion-off | `load-config-file` variant with `signal { motion "off" }`; set demand-pulse on `$WID` and two `pulse ... --kind done`; assert `.signal.motion=="Pulse"` (stored) while the capture shows no recurrence |
+| reduced-flash | variant with `signal { motion "reduced" }`; set `--motion flash`; expect the Pulse rate |
+| attention-none | variant whose `response "default" { attention "none" }`; set demand-pulse |
+| impulse-none | variant whose `response "default" { ping "none"; done "none"; error "none" }`; set the slot, then pulse `done` three times inside the first 10 s |
+| done-pulse | set the slot; pulse `done` once inside the first 10 s |
+| slowdown | variant with `animations { slowdown 3 }`; repeat demand-pulse |
+
+The contract from Task 9: one coalescible redraw request per output per mutation and per deadline firing; steady state is what the 20 s window measures.
+
+| Case | Expected `Niri::redraw` zones in the final 20 s |
+|---|---|
+| quiet-ring | 0 |
+| demand-pulse | about 540 (27/s) |
+| demand-pulse-focused | 0 |
+| demand-breathe | about 160 (8/s) |
+| demand-flash | about 320 (16/s) |
+| ten-breathe, ten-flash | within 10% of the single-window case |
+| inactive-workspace, hidden-tab, offscreen-column | 0 |
+| motion-off | 0 |
+| reduced-flash | about 540 (the Pulse rate) |
+| attention-none | 0 |
+| impulse-none | 0 (the per-pulse and per-expiry requests all fall in the first 10 s) |
+| done-pulse | 0 in the final 20 s; additionally, in the first 10 s, a burst lasting about 1.5 s after the pulse |
+| error flash on default glass | visibly jolts in the Task 10 screenshot |
+| slowdown | rates equal to demand-pulse |
 
 Record per-frame GPU `draw shader` cost of ring plus rim orbit against the roughness baseline the same way the roughness smoke did (matched steady-state samples, median, delta). Stop the instance and the Weston unit after the last case.
 

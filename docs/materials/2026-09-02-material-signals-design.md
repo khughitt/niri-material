@@ -298,8 +298,9 @@ helper in section 6 is the one place that interprets them. Everything
 downstream, including the transitions term,
 timer candidates, and the fingerprint, is computed from the effective
 signal, so state that draws nothing costs no recurring redraws. Each
-accepted mutation and each expiry still queues exactly one redraw so the
-tile can re-evaluate; that single frame is the whole cost. The stored slots,
+accepted mutation and each deadline-timer firing still queues one
+coalescible redraw request per output so the tile can re-evaluate; an
+already queued frame absorbs it, and that is the whole cost. The stored slots,
 impulse queue, and expiry timers are unaffected, because the event stream
 reports stored state.
 
