@@ -72,6 +72,73 @@ unsafe fn compile_program(gl: &ffi::Gles2, src: &str) -> Result<BlurProgramInter
     })
 }
 
+unsafe fn draw_downsample(
+    gl: &ffi::Gles2,
+    program: &BlurProgramInternal,
+    source: &GlesTexture,
+    targets: &[GlesTexture],
+    offset: f32,
+) {
+    unsafe {
+        gl.UseProgram(program.program);
+        gl.Uniform1i(program.uniform_tex, 0);
+        gl.Uniform1f(program.uniform_offset, offset);
+
+        let vertices: [f32; 12] = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0];
+        gl.EnableVertexAttribArray(program.attrib_vert as u32);
+        gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
+        gl.VertexAttribPointer(
+            program.attrib_vert as u32,
+            2,
+            ffi::FLOAT,
+            ffi::FALSE,
+            0,
+            vertices.as_ptr().cast(),
+        );
+
+        let src = once(source).chain(targets);
+        for (src, dst) in zip(src, targets) {
+            let dst_size = dst.size();
+            let w = dst_size.w;
+            let h = dst_size.h;
+            gl.Viewport(0, 0, w, h);
+
+            // During downsampling, half_pixel is half of the destination pixel.
+            gl.Uniform2f(program.uniform_half_pixel, 0.5 / w as f32, 0.5 / h as f32);
+
+            let src = src.tex_id();
+            let dst = dst.tex_id();
+
+            trace!("drawing down {src} to {dst}");
+            gl.FramebufferTexture2D(
+                ffi::DRAW_FRAMEBUFFER,
+                ffi::COLOR_ATTACHMENT0,
+                ffi::TEXTURE_2D,
+                dst,
+                0,
+            );
+
+            gl.BindTexture(ffi::TEXTURE_2D, src);
+            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
+            gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, ffi::LINEAR as i32);
+            gl.TexParameteri(
+                ffi::TEXTURE_2D,
+                ffi::TEXTURE_WRAP_S,
+                ffi::CLAMP_TO_EDGE as i32,
+            );
+            gl.TexParameteri(
+                ffi::TEXTURE_2D,
+                ffi::TEXTURE_WRAP_T,
+                ffi::CLAMP_TO_EDGE as i32,
+            );
+
+            gl.DrawArrays(ffi::TRIANGLES, 0, 6);
+        }
+
+        gl.DisableVertexAttribArray(program.attrib_vert as u32);
+    }
+}
+
 impl BlurProgram {
     pub fn compile(renderer: &mut GlesRenderer) -> anyhow::Result<Self> {
         renderer
@@ -90,6 +157,42 @@ impl BlurProgram {
             gl.DeleteProgram(self.0.down.program);
             gl.DeleteProgram(self.0.up.program);
         })
+    }
+
+    pub fn render_downsample(
+        &self,
+        renderer: &mut GlesRenderer,
+        source: &GlesTexture,
+        targets: &mut [GlesTexture],
+        offset: f32,
+    ) -> anyhow::Result<()> {
+        let _span = tracy_client::span!("Prefilter::downsample");
+        ensure!(
+            targets.iter_mut().all(GlesTexture::is_unique_reference),
+            "prefilter texture has a non-unique reference"
+        );
+
+        renderer.with_profiled_context(
+            gpu_span_location!("Prefilter::downsample"),
+            |gl| unsafe {
+                while gl.GetError() != ffi::NO_ERROR {}
+
+                gl.Disable(ffi::BLEND);
+                gl.Disable(ffi::SCISSOR_TEST);
+                gl.ActiveTexture(ffi::TEXTURE0);
+
+                let mut fbo = 0;
+                gl.GenFramebuffers(1, &mut fbo);
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, fbo);
+
+                draw_downsample(gl, &self.0.down, source, targets, offset);
+
+                gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, 0);
+                gl.DeleteFramebuffers(1, &fbo);
+            },
+        )?;
+
+        Ok(())
     }
 }
 
@@ -207,68 +310,17 @@ impl Blur {
 
             gl.ActiveTexture(ffi::TEXTURE0);
 
-            let mut fbos = [0; 2];
-            gl.GenFramebuffers(fbos.len() as _, fbos.as_mut_ptr());
-            gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, fbos[0]);
+            let mut fbo = 0;
+            gl.GenFramebuffers(1, &mut fbo);
+            gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, fbo);
 
-            let program = &self.program.0.down;
-            gl.UseProgram(program.program);
-            gl.Uniform1i(program.uniform_tex, 0);
-            gl.Uniform1f(program.uniform_offset, options.offset as f32);
-
-            let vertices: [f32; 12] = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0];
-            gl.EnableVertexAttribArray(program.attrib_vert as u32);
-            gl.BindBuffer(ffi::ARRAY_BUFFER, 0);
-            gl.VertexAttribPointer(
-                program.attrib_vert as u32,
-                2,
-                ffi::FLOAT,
-                ffi::FALSE,
-                0,
-                vertices.as_ptr().cast(),
+            draw_downsample(
+                gl,
+                &self.program.0.down,
+                source,
+                &self.textures[1..],
+                options.offset as f32,
             );
-
-            let src = once(source).chain(&self.textures[1..]);
-            let dst = &self.textures[1..];
-            for (src, dst) in zip(src, dst) {
-                let dst_size = dst.size();
-                let w = dst_size.w;
-                let h = dst_size.h;
-                gl.Viewport(0, 0, w, h);
-
-                // During downsampling, half_pixel is half of the destination pixel.
-                gl.Uniform2f(program.uniform_half_pixel, 0.5 / w as f32, 0.5 / h as f32);
-
-                let src = src.tex_id();
-                let dst = dst.tex_id();
-
-                trace!("drawing down {src} to {dst}");
-                gl.FramebufferTexture2D(
-                    ffi::DRAW_FRAMEBUFFER,
-                    ffi::COLOR_ATTACHMENT0,
-                    ffi::TEXTURE_2D,
-                    dst,
-                    0,
-                );
-
-                gl.BindTexture(ffi::TEXTURE_2D, src);
-                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MIN_FILTER, ffi::LINEAR as i32);
-                gl.TexParameteri(ffi::TEXTURE_2D, ffi::TEXTURE_MAG_FILTER, ffi::LINEAR as i32);
-                gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_WRAP_S,
-                    ffi::CLAMP_TO_EDGE as i32,
-                );
-                gl.TexParameteri(
-                    ffi::TEXTURE_2D,
-                    ffi::TEXTURE_WRAP_T,
-                    ffi::CLAMP_TO_EDGE as i32,
-                );
-
-                gl.DrawArrays(ffi::TRIANGLES, 0, 6);
-            }
-
-            gl.DisableVertexAttribArray(program.attrib_vert as u32);
 
             // Up
             let program = &self.program.0.up;
@@ -334,7 +386,7 @@ impl Blur {
             gl.DisableVertexAttribArray(program.attrib_vert as u32);
 
             gl.BindFramebuffer(ffi::DRAW_FRAMEBUFFER, 0);
-            gl.DeleteFramebuffers(fbos.len() as _, fbos.as_ptr());
+            gl.DeleteFramebuffers(1, &fbo);
         })?;
 
         Ok(self.textures[0].clone())

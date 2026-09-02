@@ -12,7 +12,8 @@ use smithay::backend::renderer::{
 use smithay::utils::{Buffer, Logical, Physical, Scale, Size, Transform};
 
 use crate::niri::OutputRenderElements;
-use crate::render_helpers::blur::{Blur, BlurOptions};
+use crate::render_helpers::blur::{Blur, BlurOptions, BlurProgram};
+use crate::render_helpers::shaders::Shaders;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrefilterStatus {
@@ -167,6 +168,69 @@ struct Offscreen {
     ///
     /// When texture needs to be reblurred, this field must be reset to `None`.
     blurred: Option<GlesTexture>,
+    sharp_prefilter: PrefilterState,
+    sharp_prefilter_textures: Vec<GlesTexture>,
+    blurred_prefilter: PrefilterState,
+    blurred_prefilter_textures: Vec<GlesTexture>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PrefilteredTexture {
+    pub low: GlesTexture,
+    pub high: GlesTexture,
+    pub mix: f32,
+}
+
+fn prepare_prefilter(
+    renderer: &mut GlesRenderer,
+    program: &BlurProgram,
+    source: &GlesTexture,
+    state: &PrefilterState,
+    textures: &mut Vec<GlesTexture>,
+) -> anyhow::Result<()> {
+    let _span = tracy_client::span!("EffectBuffer::prepare_prefilter");
+
+    let reusable = textures.len() == state.level_sizes().len()
+        && textures
+            .iter()
+            .zip(state.level_sizes())
+            .all(|(texture, size)| texture.size() == *size)
+        && textures.iter_mut().all(GlesTexture::is_unique_reference);
+    if !reusable {
+        textures.clear();
+    }
+
+    for &size in &state.level_sizes()[textures.len()..] {
+        trace!(
+            "creating material prefilter texture: {} x {}",
+            size.w,
+            size.h
+        );
+        textures.push(
+            renderer
+                .create_buffer(Fourcc::Abgr8888, size)
+                .context("error creating prefilter texture")?,
+        );
+    }
+
+    // ponytail: regenerate the full pyramid after any source damage; generate
+    // only through the highest requested level if profiling shows this dominates
+    // changed frames, then add per-level damage regions if that still falls short.
+    program
+        .render_downsample(renderer, source, textures, 1.)
+        .context("error downsampling material prefilter")
+}
+
+fn prefilter_level(
+    source: &GlesTexture,
+    textures: &[GlesTexture],
+    level: usize,
+) -> Option<GlesTexture> {
+    if level == 0 {
+        Some(source.clone())
+    } else {
+        textures.get(level - 1).cloned()
+    }
 }
 
 impl Default for Elements {
@@ -222,6 +286,7 @@ impl EffectBuffer {
         self.blur_options = options;
 
         if let Some(offscreen) = &mut self.offscreen {
+            offscreen.blurred_prefilter.invalidate();
             if offscreen.blurred.is_some() {
                 offscreen.blurred = None;
                 self.commit_counter.increment();
@@ -313,6 +378,10 @@ impl EffectBuffer {
                 damage,
                 states: RenderElementStates::default(),
                 blurred: None,
+                sharp_prefilter: PrefilterState::new(self.size),
+                sharp_prefilter_textures: Vec::new(),
+                blurred_prefilter: PrefilterState::new(self.size),
+                blurred_prefilter_textures: Vec::new(),
             })
         };
 
@@ -327,6 +396,8 @@ impl EffectBuffer {
 
             self.commit_counter.increment();
             offscreen.blurred = None;
+            offscreen.sharp_prefilter.invalidate();
+            offscreen.blurred_prefilter.invalidate();
         }
 
         // Render the elements if any.
@@ -356,6 +427,8 @@ impl EffectBuffer {
 
             // Original texture changed; reset the blurred texture.
             offscreen.blurred = None;
+            offscreen.sharp_prefilter.invalidate();
+            offscreen.blurred_prefilter.invalidate();
         }
 
         // Clear and put the storage back.
@@ -420,10 +493,121 @@ impl EffectBuffer {
             let blurred = blur
                 .render(renderer, &offscreen.texture, self.blur_options)
                 .context("error rendering blur")?;
+            offscreen.blurred_prefilter.invalidate();
             offscreen.blurred.insert(blurred).clone()
         };
 
         Ok(texture)
+    }
+
+    pub fn render_prefiltered(
+        &mut self,
+        frame: &mut GlesFrame,
+        blur: bool,
+        roughness: f64,
+        ior: f64,
+    ) -> Option<PrefilteredTexture> {
+        let selection = {
+            let offscreen = self.offscreen.as_ref()?;
+            let state = if blur {
+                &offscreen.blurred_prefilter
+            } else {
+                &offscreen.sharp_prefilter
+            };
+            state.selection(roughness, ior)
+        };
+
+        let needs_pyramid = selection.low > 0 || selection.mix > 0.;
+        if needs_pyramid {
+            let offscreen = self.offscreen.as_ref()?;
+            let state = if blur {
+                &offscreen.blurred_prefilter
+            } else {
+                &offscreen.sharp_prefilter
+            };
+            if state.status == PrefilterStatus::Failed {
+                return None;
+            }
+        }
+
+        let source = match self.render(frame, blur) {
+            Ok(source) => source,
+            Err(err) => {
+                if needs_pyramid {
+                    self.record_prefilter_failure(blur, &err);
+                } else {
+                    warn!("material source failed: {err:?}");
+                }
+                return None;
+            }
+        };
+
+        if !needs_pyramid {
+            return Some(PrefilteredTexture {
+                low: source.clone(),
+                high: source,
+                mix: 0.,
+            });
+        }
+
+        let program = Shaders::get_from_frame(frame).blur.clone();
+        let mut guard = frame.renderer();
+        let renderer = guard.as_mut();
+        let offscreen = self.offscreen.as_mut()?;
+        let (state, textures, label) = if blur {
+            (
+                &mut offscreen.blurred_prefilter,
+                &mut offscreen.blurred_prefilter_textures,
+                "blurred",
+            )
+        } else {
+            (
+                &mut offscreen.sharp_prefilter,
+                &mut offscreen.sharp_prefilter_textures,
+                "sharp",
+            )
+        };
+
+        if state.needs_prepare() {
+            let result = program
+                .context("blur downsample program is missing")
+                .and_then(|program| {
+                    prepare_prefilter(renderer, &program, &source, state, textures)
+                });
+            if let Err(err) = result {
+                state.mark_failed();
+                warn!("{label} material prefilter failed: {err:?}");
+                return None;
+            }
+            state.mark_clean();
+        }
+
+        let low = prefilter_level(&source, textures, selection.low)?;
+        let high = if selection.mix == 0. {
+            low.clone()
+        } else {
+            prefilter_level(&source, textures, selection.high)?
+        };
+        Some(PrefilteredTexture {
+            low,
+            high,
+            mix: selection.mix,
+        })
+    }
+
+    fn record_prefilter_failure(&mut self, blur: bool, err: &anyhow::Error) {
+        let Some(offscreen) = self.offscreen.as_mut() else {
+            return;
+        };
+        let (state, label) = if blur {
+            (&mut offscreen.blurred_prefilter, "blurred")
+        } else {
+            (&mut offscreen.sharp_prefilter, "sharp")
+        };
+        if state.status != PrefilterStatus::Failed {
+            state.mark_failed();
+            warn!("{label} material prefilter failed: {err:?}");
+        }
     }
 }
 
