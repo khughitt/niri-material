@@ -381,12 +381,24 @@ git diff --exit-code -- integrations/niri/render.js integrations/niri/manifest.y
 
 Expected: all tests pass, and the last command confirms the renderer,
 manifest, and exact-KDL contracts are untouched. Commit only the definition
-and test, then land that commit in the requested Prism checkout:
+and test:
 
 ```bash
 git add defs/glass.yaml test/glass-defs.test.js
 git commit -m "docs(glass): clarify backdrop blur inheritance"
 ```
+
+Name the worktree branch `docs/material-cad932`. After the commit passes, land
+it in the requested clean `~/d/prism` checkout by fast-forward only:
+
+```bash
+git -C ~/d/prism status --short --branch
+git -C ~/d/prism merge --ff-only docs/material-cad932
+git -C ~/d/prism status --short --branch
+```
+
+Expected: the first status reports clean `main`, the merge fast-forwards, and
+the final status remains clean. Do not cherry-pick or create a merge commit.
 
 - [ ] **Step 3: Run the nested GLES acceptance matrix**
 
@@ -405,24 +417,140 @@ sha256sum /mnt/ssd3/tmp/niri-material-cad932-impl-target/debug/niri \
   > "$CAD932_ARTIFACT_DIR/implementation-binary.sha256"
 ```
 
-Use the dedicated 1280×720 Weston headless-GL fixture and cleanup discipline
+Use the dedicated 1280×720 Weston headless-GL lifecycle and cleanup discipline
 from `docs/materials/2026-08-29-material-backdrop-blur-evidence.md`: never run
 `niri --session`, record every owned PID/socket, stop only owned processes,
-and prove the socket is absent afterward. Use the same red/green color-bars
-wallpaper, a 704×640 kitty at `(40, 40)`, fixed capture timing after all
-animations settle, and one unchanged scene for every matched pair.
+and prove the socket is absent afterward.
 
-Capture these fixtures with both noise and saturation set explicitly unless
-the fixture is testing one of them:
+Do **not** reuse `/mnt/ssd3/tmp/material-cad932-config.kdl`: it has no material
+and exercises `background-effect { xray true; blur true }`, so it cannot prove
+this change. Create each runtime KDL from this exact material fixture instead:
 
-- pre-change and implementation binaries with `backdrop-blur false`,
-  `noise 0`, `saturation 1`;
-- effective blur with `noise 0`, `saturation 0`;
-- effective blur with `noise 0`, `saturation 1`, then `noise 0.08`,
-  `saturation 1`;
-- an opaque kitty with neutral values, then `noise 0.08`, `saturation 0`;
-- `blur { off }` with material opt-in, then global blur on with material
-  opt-out.
+```kdl
+prefer-no-csd
+
+layout {
+    gaps 40
+    background-color "transparent"
+    default-column-width { proportion 0.6; }
+    focus-ring { off; }
+    border { off; }
+    shadow { off; }
+}
+
+animations { off; }
+hotkey-overlay { skip-at-startup; }
+config-notification { disable-failed; }
+
+blur {
+    passes 1
+    offset 8
+    noise 0
+    saturation 1
+}
+
+material "cad932-probe" {
+    glass {
+        ior 1.5
+        thickness 20
+        attenuation-color "#dfe8ff"
+        attenuation-distance 60
+        chromatic-aberration 0
+        distortion 0 scale=0.5
+        anisotropic-blur 0
+        roughness 0
+        backdrop-blur true
+        jelly-flex 0
+        jelly-ripple 0
+        bevel 12
+        offset-x 6
+        offset-y 6
+    }
+}
+
+window-rule {
+    match app-id="^material-cad932-probe$"
+    material "cad932-probe"
+    geometry-corner-radius 0
+    background-effect {
+        blur false
+        noise 0
+        saturation 1
+    }
+}
+```
+
+The per-window block is Prism's exact inert contract: it contains no `xray`
+and its explicit values make `BackgroundEffect::Options::is_visible` false.
+Validate every saved KDL with the binary used for its capture, and reject any
+runtime KDL containing `xray true` or a bare `blur true` child:
+
+```bash
+baseline_binary=/mnt/ssd3/tmp/niri-material-cad932-target/debug/niri
+implementation_binary=/mnt/ssd3/tmp/niri-material-cad932-impl-target/debug/niri
+"$baseline_binary" validate \
+  --config "$CAD932_ARTIFACT_DIR/default-off-before.kdl"
+for capture in default-off-after saturation-0 noise-0 noise-008 \
+  opaque-neutral opaque-active blur-off material-opt-out; do
+  "$implementation_binary" validate \
+    --config "$CAD932_ARTIFACT_DIR/$capture.kdl"
+done
+for capture_kdl in "$CAD932_ARTIFACT_DIR"/*.kdl; do
+  if rg -n '^\s*(xray|blur) true\s*$' "$capture_kdl"; then
+    exit 1
+  fi
+done
+```
+
+Use this exact value matrix; “global off” means adding the child `off` inside
+the `blur` block, and all other rows omit that child:
+
+| Capture | Binary | `backdrop-blur` | global off | global noise | global saturation | Client |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `default-off-before` | recorded pre-change | false | no | 0 | 1 | transparent |
+| `default-off-after` | implementation | false | no | 0 | 1 | transparent |
+| `saturation-0` | implementation | true | no | 0 | 0 | transparent |
+| `noise-0` | implementation | true | no | 0 | 1 | transparent |
+| `noise-008` | implementation | true | no | 0.08 | 1 | transparent |
+| `opaque-neutral` | implementation | true | no | 0 | 1 | opaque |
+| `opaque-active` | implementation | true | no | 0.08 | 0 | opaque |
+| `blur-off` | implementation | true | yes | 0.08 | 0 | transparent |
+| `material-opt-out` | implementation | false | no | 0.08 | 0 | transparent |
+
+For each row, retain its complete KDL beside the PNG. Change only the table's
+four KDL values and the named client opacity between rows; keep the same
+process, output, position, wallpaper, and capture timing for each matched
+implementation pair.
+
+Pin the color-bars wallpaper by hash and content. It is three 1280×720 thirds:
+red `(255,32,32)` through x=425, green `(32,255,32)` through x=852, then blue
+`(32,32,255)`:
+
+```bash
+printf '%s  %s\n' \
+  fa81fd9535e1a4873b7c36b759d564418b12a341d13f4cdcaf08687d67a5370a \
+  /mnt/ssd3/tmp/material-cad932-color-bars.png | sha256sum -c -
+```
+
+Pin the probe using the blank client pattern from
+`docs/materials/plans/2026-08-24-v1-parity.md:430-441`. The transparent
+variant is:
+
+```bash
+env -u DISPLAY XDG_RUNTIME_DIR="$runtime_dir" \
+  WAYLAND_DISPLAY="$nested_display" \
+  kitty --config NONE --class material-cad932-probe \
+  --title "material cad932 probe" \
+  -o background_opacity=0 -o cursor_blink_interval=0 \
+  sh -c 'printf "\033[?25l"; exec sleep 600'
+```
+
+The `printf` hides the cursor and emits no printable character; `sleep` keeps
+the otherwise blank client mapped. The opaque variant changes only
+`background_opacity=0` to `background_opacity=1`. Require exactly one nested
+window with app ID `material-cad932-probe`, place its 704×640 surface at
+`(40,40)`, and capture only after it and the wallpaper have remained unchanged
+for the fixed settle interval.
 
 Use these exact checks after naming the captures accordingly:
 
@@ -443,15 +571,27 @@ magick compare -metric AE "$CAD932_ARTIFACT_DIR/saturation-r.png" \
   "$CAD932_ARTIFACT_DIR/saturation-g.png" null:
 magick compare -metric AE "$CAD932_ARTIFACT_DIR/saturation-r.png" \
   "$CAD932_ARTIFACT_DIR/saturation-b.png" null:
-magick compare -metric RMSE \
-  "$CAD932_ARTIFACT_DIR/noise-0.png" \
-  "$CAD932_ARTIFACT_DIR/noise-008.png" null:
 magick "$CAD932_ARTIFACT_DIR/noise-0.png" \
-  -crop 200x400+100+160 +repage -colorspace Gray \
-  -format 'noise_0_sd=%[fx:standard_deviation]\n' info:
+  -crop 200x400+100+160 +repage \
+  "$CAD932_ARTIFACT_DIR/noise-0-roi.png"
 magick "$CAD932_ARTIFACT_DIR/noise-008.png" \
-  -crop 200x400+100+160 +repage -colorspace Gray \
-  -format 'noise_008_sd=%[fx:standard_deviation]\n' info:
+  -crop 200x400+100+160 +repage \
+  "$CAD932_ARTIFACT_DIR/noise-008-roi.png"
+set +e
+noise_rmse=$(magick compare -metric RMSE \
+  "$CAD932_ARTIFACT_DIR/noise-0-roi.png" \
+  "$CAD932_ARTIFACT_DIR/noise-008-roi.png" null: 2>&1)
+noise_compare_status=$?
+set -e
+test "$noise_compare_status" -eq 1
+printf 'noise_roi_rmse=%s\n' "$noise_rmse"
+noise_0_sd=$(magick "$CAD932_ARTIFACT_DIR/noise-0-roi.png" \
+  -colorspace Gray -format '%[fx:standard_deviation]' info:)
+noise_008_sd=$(magick "$CAD932_ARTIFACT_DIR/noise-008-roi.png" \
+  -colorspace Gray -format '%[fx:standard_deviation]' info:)
+printf 'noise_0_sd=%s\nnoise_008_sd=%s\n' "$noise_0_sd" "$noise_008_sd"
+awk -v quiet="$noise_0_sd" -v active="$noise_008_sd" \
+  'BEGIN { exit !(active > quiet) }'
 magick "$CAD932_ARTIFACT_DIR/opaque-neutral.png" \
   -crop 400x300+160+200 +repage \
   "$CAD932_ARTIFACT_DIR/opaque-neutral-roi.png"
@@ -464,15 +604,26 @@ magick compare -metric AE \
 magick compare -metric AE \
   "$CAD932_ARTIFACT_DIR/blur-off.png" \
   "$CAD932_ARTIFACT_DIR/material-opt-out.png" null:
-if rg -n "material.*(error|fallback)|error compiling material shader|panic" \
-  "$CAD932_ARTIFACT_DIR"/*.log; then
-  exit 1
-fi
+test -s "$CAD932_ARTIFACT_DIR/niri.log"
+set +e
+log_hits=$(rg -n --glob '*.log' \
+  "material.*(error|fallback)|error compiling material shader|panic" \
+  "$CAD932_ARTIFACT_DIR")
+log_status=$?
+set -e
+case "$log_status" in
+  0) printf '%s\n' "$log_hits"; exit 1 ;;
+  1) ;;
+  *) exit "$log_status" ;;
+esac
 ```
 
-Acceptance is: every AE metric is `0`; both saturation channel comparisons
-are `0`; noise RMSE is nonzero and the grayscale standard deviation of the
-same solid-color ROI increases; and the final `rg` finds nothing. Record the
+Run the metric block under `set -e`; only the noise `compare` is bracketed by
+`set +e` because ImageMagick returns status 1 for the required non-identical
+pair while writing its metric to stderr. Acceptance is: every AE metric is
+`0`; both saturation channel comparisons are `0`; noise ROI RMSE reports a
+nonzero value with status 1 and its grayscale standard deviation increases;
+and the final log gate finds nothing. Record the
 Weston renderer/version, GLES version, source commit, binary hash, exact KDL,
 capture hashes, ROI statistics, commands, and cleanup proof.
 
