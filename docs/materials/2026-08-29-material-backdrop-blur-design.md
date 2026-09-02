@@ -353,10 +353,12 @@ them alongside the blur options — so they do not follow the backdrop into the
 material. Applying them after transmission in `material.frag` is a handful of
 lines and gives the glass block one coherent control surface.
 
-Two measurements taken while diagnosing this belong with that work, and look
-like bugs independent of the material: `blur.offset` appeared to have no
-observable effect at `passes 1`, and `saturation 0` did not reach grayscale.
-Both want confirming against a build before anything is changed.
+Those earlier observations were retested on current source commit `d9c912d1`
+and did not reproduce. With one pass, changing `blur.offset` from 1 to 8
+changed the text-free probe ROI by normalized RMSE `0.113418`, and
+`saturation 0` produced grayscale samples over both red and green wallpaper.
+They are not independent blur defects; the remaining work is only to compose
+the already-working global postprocess values into the material.
 
 ## Alternatives rejected
 

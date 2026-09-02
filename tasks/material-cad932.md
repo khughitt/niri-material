@@ -6,7 +6,7 @@ priority: 2
 size: s
 owner: feat/material-cad932
 created: 2026-09-01T14:36:13Z
-updated: 2026-09-02T10:56:10Z
+updated: 2026-09-02T11:07:18Z
 depends: []
 tags: [migration, design, rendering]
 spec: docs/specs/2026-09-02-material-noise-saturation-design.md
@@ -24,3 +24,4 @@ Outcome: glass with effective backdrop-blur inherits the global blur block's noi
 - 2026-09-02T10:49:14Z (feat/material-cad932): Architecture approved: effective backdrop-blur gates neutral versus inherited values; render state carries noise/saturation with commit tracking; material.frag applies them after optics and before coverage/window composite; no EffectBuffer, cache, grammar, or background-effect changes.
 - 2026-09-02T10:49:51Z (feat/material-cad932): Prism scope decision: keep ownership unchanged and add no global blur controls; update backdropBlur description/tests to document inherited global blur strength, saturation, and noise while generated KDL remains unchanged.
 - 2026-09-02T10:50:37Z (feat/material-cad932): Compatibility approved: default/opt-out unchanged; opted-in glass intentionally gains global defaults; blur off neutralizes all three effects; no new parsing, allocation, failure path, or compatibility layer; Prism KDL remains identical.
+- 2026-09-02T11:07:18Z (feat/material-cad932): Review amendments incorporated: named MaterialRenderConfig wrapper and pair-aware in-place commit update; Prism gains an explicit description assertion; the stale backdrop-blur follow-up now records current-build evidence; shader design uses a distinct hash seed and neutral branches for byte identity.

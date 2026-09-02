@@ -1,6 +1,7 @@
 # Glass noise and saturation composition: design
 
-**Status:** approved 2026-09-02; implementation not started.
+**Status:** approved 2026-09-02; review amendments incorporated;
+implementation not started.
 
 **Task:** `material-cad932`
 
@@ -83,9 +84,17 @@ sample selected backdrop
 ```
 
 Saturation uses the same luma weights and `mix(gray, color, saturation)` rule
-as `postprocess.frag`. Noise uses `material.frag`'s existing
-`hash12(gl_FragCoord.xy)` and the same centered amplitude formula as the
-postprocess shader. No shared GLSL helper is introduced for these few lines.
+as `postprocess.frag`. Noise uses `material.frag`'s existing `hash12` with the
+distinct seed `gl_FragCoord.xy + vec2(47.0, 113.0)` and the same centered
+amplitude formula as the postprocess shader. The offset avoids correlating
+noise brightness with the first optics tap, whose jitter seed is exactly
+`gl_FragCoord.xy`. No shared GLSL helper is introduced for these few lines.
+
+The material mirrors `postprocess.frag`'s neutral branches: saturation math
+runs only when saturation is not `1.0`, and noise math runs only when noise is
+greater than `0.0`. The neutral path therefore executes no new color math;
+default-off byte identity does not depend on floating-point identity
+operations being exact.
 
 Applying both effects before coverage makes them fade with the slab edge.
 Applying them before window composition preserves the material contract:
@@ -94,15 +103,21 @@ through window transparency or outside the window.
 
 ## Render state and damage
 
-The effective pair is private render-time state stored beside the resolved
-glass configuration in `MaterialState`; it is not added to the public
-`niri_config::Glass` or `ResolvedGlass` grammar.
+The effective pair is private render-time state; it is not added to the public
+`niri_config::Glass` or `ResolvedGlass` grammar. A render-side
+`MaterialRenderConfig` wraps the `ResolvedMaterial` with the effective `noise`
+and `saturation` values. `resolve_material` returns this wrapper, and both
+`MaterialState::new` and `apply_resolved` accept it. `MaterialState` owns the
+wrapper, keeping the pair beside the resolved glass configuration.
 
 Material resolution computes the gate and pair once. `MaterialState` copies
 the pair onto each `MaterialRenderElement`, which sends two scalar uniforms to
-the shader. Updating either effective value in place bumps the existing
-material commit counter without rebuilding the offscreen buffer or element
-identity. Both normal and resize render paths consume the same stored values.
+the shader. The same-name branch of `apply_resolved` compares the glass and
+effective pair, replaces the stored wrapper, and bumps the existing material
+commit counter when either changes, without rebuilding the offscreen buffer or
+element identity. This makes an in-place global `blur { noise; saturation }`
+edit damage material windows. Both normal and resize render paths consume the
+same stored values.
 
 `EffectBuffer`, sharp/blurred selection, roughness pyramids, and their damage
 contracts do not change. The new state causes no texture allocation or cache
@@ -116,9 +131,9 @@ material opt-in; global `blur.noise` and `blur.saturation` remain the controls.
 Prism already emits `backdrop-blur` and deliberately keeps its material-window
 background effect inert. It gains no restored terminal controls, glass aliases,
 or ownership of niri's global blur block. Its generated KDL must remain
-byte-identical. Only the `glass.backdropBlur` description and its contract test
-are updated to say that the global blur block supplies blur strength,
-saturation, and noise.
+byte-identical. Only the `glass.backdropBlur` description changes to say that
+the global blur block supplies blur strength, saturation, and noise;
+`test/glass-defs.test.js` gains an explicit assertion for that description.
 
 ## Compatibility
 
@@ -143,16 +158,25 @@ performance profiling is out of scope.
 
 ## Implementation surface
 
-- `src/layout/tile.rs`: resolve the effective inherited values alongside the
-  existing backdrop-blur gate.
-- `src/render_helpers/material.rs`: store, update, damage-track, and bind the
-  two render-time values.
+- `src/layout/tile.rs`: return a `MaterialRenderConfig` containing the resolved
+  material and effective inherited values from the existing backdrop-blur
+  gate.
+- `src/render_helpers/material.rs`: define the wrapper; make
+  `MaterialState::new` and `apply_resolved` consume it; include the pair in the
+  same-name update comparison; and store, damage-track, and bind the two
+  values.
 - `src/render_helpers/shaders/material.frag`: apply saturation then noise at
-  the approved composition point.
+  the approved composition point, behind neutral branches and with the
+  distinct noise seed.
 - `docs/materials/material-config.md`: document inheritance and independence
   from per-window background-effect overrides.
-- Prism `defs/glass.yaml` and its focused contract test: clarify the existing
-  `glass.backdropBlur` contract without changing emitted KDL.
+- `docs/materials/2026-08-29-material-backdrop-blur-design.md`: replace the
+  stale follow-up claim that offset and saturation looked independently broken
+  with the current-build measurements and conclusion, then grep user-facing
+  docs for the same stale claim.
+- Prism `defs/glass.yaml` and `test/glass-defs.test.js`: clarify the existing
+  `glass.backdropBlur` contract and assert its description without changing
+  emitted KDL.
 
 No config parser, `EffectBuffer`, blur shader, postprocess shader, or Prism
 renderer change is required.
