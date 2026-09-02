@@ -22,9 +22,17 @@
 - JSON convention: enum variants keep Rust names in JSON; the CLI accepts kebab-case through `clap::ValueEnum` (§2).
 - Config errors are whole-config errors; IPC errors are error replies with state unchanged (§8).
 - Commit messages use conventional commits with the scopes already in use: `feat(ipc)`, `feat(config)`, `feat(render)`, `feat(material)`, `docs(material)`. No AI attribution trailers.
-- Run `tasks start material-a54d89` before Task 1 and close it in the final docs commit.
-- Build and test with `cargo test -p niri-ipc`, `cargo test -p niri-config`, and `cargo test --bin niri <one filter>` from the worktree root. `cargo test` accepts a single positional filter; run the whole crate when a step names several tests. Reusing the main checkout's cache is fine: `CARGO_TARGET_DIR=/mnt/ssd/Dropbox/niri-material/target`.
-- Every `### Task N` heading has a task record (`tasks list --pretty | grep signals`) linked with `plan:` and `step:`; run `tasks start <id>` before a task and `tasks done <id>` in its final commit.
+- Build and test with `cargo test -p niri-ipc`, `cargo test -p niri-config`, and `cargo test --bin niri <one filter>` from the worktree root. `cargo test` accepts a single positional filter; run the whole crate when a step names several tests.
+- Task lifecycle: every `### Task N` heading has a task record linked with `plan:` and `step:`, chained so only the next one is ever `ready`. Before starting a task run `tasks start <its id>`; its final commit runs `tasks done <its id> "<result>"` and stages `tasks/`. The parent record `material-a54d89` depends on Task 12 and is closed only in Task 12's final step, after Task 12's own record.
+
+| Task | Record | | Task | Record |
+|---|---|---|---|---|
+| 1 | `material-b0e938` | | 7 | `material-f19f8f` |
+| 2 | `material-eb7fe7` | | 8 | `material-0e32cc` |
+| 3 | `material-f810f4` | | 9 | `material-9d06b4` |
+| 4 | `material-5875b2` | | 10 | `material-4a64bb` |
+| 5 | `material-25247f` | | 11 | `material-2ecd18` |
+| 6 | `material-844eea` | | 12 | `material-b43616` |
 
 ---
 
@@ -61,12 +69,12 @@
 ### Task 1: IPC wire types and event-state reduction
 
 **Files:**
-- Modify: `niri-ipc/src/lib.rs` (`Request` at line 67, `Event` at 1588, `Window` at ~1300, after `PickedColor` at 181)
+- Modify: `niri-ipc/src/lib.rs` (`Event` at 1588, `Window` at ~1300, types after `PickedColor` at 181; the `Request` variants are added in Task 6 together with their server arms, because `process()` in `src/ipc/server.rs:271` matches `Request` exhaustively)
 - Modify: `niri-ipc/src/state.rs` (`WindowsState::apply` at line 175)
 - Test: `niri-ipc/src/state.rs` (`#[cfg(test)]` module at the bottom; create it if absent)
 
 **Interfaces:**
-- Produces: `SignalLevel { Quiet, Active, Notice, Demand }`, `SignalMotion { Static, Breathe, Pulse, Flash }`, `ImpulseKind { Ping, Done, Error }`, `Signal`, `Impulse`, `Request::SetWindowSignal { .. }`, `Request::PulseWindowSignal { .. }`, `Request::ClearWindowSignal { .. }`, `Event::WindowSignalChanged { id, signal }`, `Window.signal: Option<Signal>`.
+- Produces: `SignalLevel { Quiet, Active, Notice, Demand }`, `SignalMotion { Static, Breathe, Pulse, Flash }`, `ImpulseKind { Ping, Done, Error }`, `Signal`, `Impulse`, `Event::WindowSignalChanged { id, signal }`, `Window.signal: Option<Signal>`. (The three `Request` variants are Task 6.)
 
 - [ ] **Step 1: Write the failing state test**
 
@@ -216,52 +224,6 @@ pub struct Signal {
 }
 ```
 
-Add to `Request` after `PickColor`:
-
-```rust
-    /// Set a source's signal on a window.
-    SetWindowSignal {
-        /// Id of the window.
-        id: u64,
-        /// Source name; `niri` is reserved.
-        source: String,
-        /// Accent color as `#rrggbb` or `#rrggbbaa`.
-        accent: Option<String>,
-        /// Level.
-        level: SignalLevel,
-        /// Sustained motion.
-        motion: SignalMotion,
-        /// Free-form tag for window-rule matching.
-        tag: Option<String>,
-        /// Time until the slot decays to `after_level` / `after_motion`, in ms.
-        ttl_ms: Option<u32>,
-        /// Level after decay.
-        after_level: Option<SignalLevel>,
-        /// Motion after decay.
-        after_motion: Option<SignalMotion>,
-        /// Whether focusing the window demotes the slot to its `after` pair.
-        until_focus: bool,
-    },
-    /// Raise a transient impulse on a window for an existing source.
-    PulseWindowSignal {
-        /// Id of the window.
-        id: u64,
-        /// Source name; must already have a slot.
-        source: String,
-        /// Kind of impulse.
-        kind: ImpulseKind,
-        /// Accent color override as `#rrggbb` or `#rrggbbaa`.
-        accent: Option<String>,
-    },
-    /// Remove a source's signal slot from a window.
-    ClearWindowSignal {
-        /// Id of the window.
-        id: u64,
-        /// Source name.
-        source: String,
-    },
-```
-
 Add to `Window` after `focus_timestamp`:
 
 ```rust
@@ -298,13 +260,14 @@ Fix every other construction of `Window` in the crate (there may be none besides
 - [ ] **Step 5: Run the test and the crate**
 
 Run: `cargo test -p niri-ipc`
-Expected: PASS. Then `cargo build` from the workspace root to find every compositor site that constructs `niri_ipc::Window` (`make_ipc_window` in `src/ipc/server.rs:513`); add `signal: None` there for now so the workspace compiles. Task 6 fills it in.
+Expected: PASS. Then `cargo build` from the workspace root: the only compositor site that constructs `niri_ipc::Window` is `make_ipc_window` in `src/ipc/server.rs:513`; add `signal: None` there for now so the workspace compiles, and add a `Event::WindowSignalChanged { .. } => {}` arm to any exhaustive `Event` match the build reports (grep `Event::WindowUrgencyChanged` to find them). Task 6 fills both in.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add niri-ipc/src/lib.rs niri-ipc/src/state.rs src/ipc/server.rs
-git commit -m "feat(ipc): add window signal types, requests, and event"
+tasks done material-b0e938 "feat(ipc): add window signal types and event"
+git add niri-ipc/src/lib.rs niri-ipc/src/state.rs src/ipc/server.rs tasks
+git commit -m "feat(ipc): add window signal types and event"
 ```
 
 ---
@@ -481,7 +444,8 @@ Expected: all PASS, including the three new ones. If the full-config `parse` tes
 - [ ] **Step 7: Commit**
 
 ```bash
-git add niri-config/src
+tasks done material-eb7fe7 "feat(config): add signal matches, motion policy, and material-signal animation"
+git add niri-config/src tasks
 git commit -m "feat(config): add signal matches, motion policy, and material-signal animation"
 ```
 
@@ -595,6 +559,22 @@ git commit -m "feat(config): add signal matches, motion policy, and material-sig
             "#,
         )]);
         assert!(err.contains("unknown response: loud"), "{err}");
+    }
+
+    #[test]
+    fn material_reference_rejects_malformed_nodes() {
+        for (bad, needle) in [
+            (r#"material "tg" "extra""#, "unexpected argument"),
+            (r#"material "tg" { glass {} }"#, "unexpected node"),
+            (r#"(typed)material "tg""#, "no type name expected"),
+            (r#"material "tg" bogus="x""#, "unexpected property"),
+        ] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!("material \"tg\" {{ glass {{}} }}\nwindow-rule {{ {bad} }}"),
+            )]);
+            assert!(err.contains(needle), "{bad}: {err}");
+        }
     }
 
     #[test]
@@ -819,9 +799,22 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for MaterialRef {
         node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
     ) -> Result<Self, DecodeError<S>> {
+        if let Some(type_name) = &node.type_name {
+            ctx.emit_error(DecodeError::unexpected(type_name, "type name", "no type name expected for this node"));
+        }
         let Some(arg) = node.arguments.first() else {
             return Err(DecodeError::missing(node, "material name argument"));
         };
+        if let Some(extra) = node.arguments.get(1) {
+            ctx.emit_error(DecodeError::unexpected(&extra.literal, "argument", "unexpected argument"));
+        }
+        for child in node.children() {
+            ctx.emit_error(DecodeError::unexpected(
+                child,
+                "node",
+                format!("unexpected node `{}`", child.node_name.escape_default()),
+            ));
+        }
         let knuffel::ast::Literal::String(ref name) = *arg.literal else {
             return Err(DecodeError::unsupported(&arg.literal, "material references must be strings"));
         };
@@ -937,7 +930,8 @@ Expected: all PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add niri-config/src src/window src/layout/tile.rs src/render_helpers/material.rs src/tests
+tasks done material-f810f4 "feat(config): add material response blocks and response references"
+git add niri-config/src src/window src/layout/tile.rs src/render_helpers/material.rs src/tests tasks
 git commit -m "feat(config): add material response blocks and response references"
 ```
 
@@ -1078,6 +1072,26 @@ mod tests {
         let f = s.fold(ms(1000)).unwrap();
         assert_eq!((f.level, f.motion, f.accent), (L::Quiet, M::Breathe, Some(accent)));
         assert_eq!(s.next_deadline(), None);
+    }
+
+    #[test]
+    fn expiry_then_focus_demotes_once_in_either_order() {
+        let expiry = Some(Expiry { at: ms(1000), after_level: L::Notice, after_motion: M::Breathe });
+        // Expiry first, then focus: focus is a no-op.
+        let mut s = WindowSignals::default();
+        s.set("a", SetSlot { until_focus: true, expiry, ..set(L::Demand, M::Pulse) }, ms(0)).unwrap();
+        assert!(s.advance(ms(1000)));
+        assert!(!s.on_focus());
+        let f = s.fold(ms(1000)).unwrap();
+        assert_eq!((f.level, f.motion), (L::Notice, M::Breathe));
+        // Focus first, then the old deadline: expiry is gone, nothing changes.
+        let mut s = WindowSignals::default();
+        s.set("a", SetSlot { until_focus: true, expiry, ..set(L::Demand, M::Pulse) }, ms(0)).unwrap();
+        assert!(s.on_focus());
+        assert_eq!(s.next_deadline(), None);
+        assert!(!s.advance(ms(1000)));
+        let f = s.fold(ms(1000)).unwrap();
+        assert_eq!((f.level, f.motion), (L::Notice, M::Breathe));
     }
 
     #[test]
@@ -1425,6 +1439,9 @@ impl WindowSignals {
                     slot.level = e.after_level;
                     slot.motion = e.after_motion;
                     slot.expires = None;
+                    // The after pair is the final state; a later focus must
+                    // not demote it a second time to Quiet/Static.
+                    slot.until_focus = false;
                     changed = true;
                 }
             }
@@ -1484,7 +1501,8 @@ Expected: all PASS. If `Color` does not implement `Eq`, keep the `PartialEq` der
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/window/signal.rs src/window/mod.rs
+tasks done material-5875b2 "feat(render): add the per-window signal store"
+git add src/window/signal.rs src/window/mod.rs tasks
 git commit -m "feat(render): add the per-window signal store"
 ```
 
@@ -1500,7 +1518,7 @@ git commit -m "feat(render): add the per-window signal store"
 - Create: `src/tests/signal.rs`; register `mod signal;` in `src/tests/mod.rs`
 
 **Interfaces:**
-- Produces: `Mapped::signals(&self) -> &WindowSignals`, `Mapped::signals_mut(&mut self) -> &mut WindowSignals` (callers must call `Mapped::signal_changed(&mut self)` afterwards, which sets `need_to_recompute_rules` and `signal_deadline_dirty`), `Mapped::take_signal_deadline_dirty(&mut self) -> bool`, `LayoutElement::signal(&self, now: Duration) -> Option<Folded>`, `Options.signal: niri_config::Signal`, `Layout::find_window_mut(&mut self, id: MappedId) -> Option<&mut W>` covering the interactively moved window.
+- Produces: `Mapped::signals(&self) -> &WindowSignals`, `Mapped::signals_mut(&mut self) -> &mut WindowSignals` (callers must call `Mapped::signal_changed(&mut self)` afterwards, which sets `need_to_recompute_rules` and `signal_deadline_dirty`), `Mapped::take_signal_deadline_dirty(&mut self) -> bool`, `LayoutElement::signal(&self, now: Duration) -> Option<Folded>`, `Options.signal: niri_config::Signal`, `Layout::find_window_mut_by(&mut self, pred: impl FnMut(&W) -> bool) -> Option<&mut W>` covering the interactively moved window.
 - Consumes: `WindowSignals` (Task 4), `Match.signal_source/tag` (Task 2).
 
 - [ ] **Step 1: Write the failing fixture test**
@@ -1680,18 +1698,22 @@ Implement for `Mapped` (`self.signals.fold(now)`) and for the test window type i
 Add a lookup on `Layout` next to `with_windows_mut` (`src/layout/mod.rs:1681`) that covers the interactively moved window, which lives outside every workspace while a drag is in progress:
 
 ```rust
-    pub fn find_window_mut(&mut self, id: MappedId) -> Option<&mut W> {
+    /// Finds a window by predicate, including one under interactive move,
+    /// which lives outside every workspace while the drag is in progress.
+    /// Predicate-based because `LayoutElement::Id` is `Window` for `Mapped`
+    /// while callers hold a `MappedId` or an IPC id.
+    pub fn find_window_mut_by(&mut self, mut pred: impl FnMut(&W) -> bool) -> Option<&mut W> {
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
-            if move_.tile.window().id() == id {
+            if pred(move_.tile.window()) {
                 return Some(move_.tile.window_mut());
             }
         }
         self.workspaces_mut()
-            .find_map(|ws| ws.windows_mut().find(|w| w.id() == id))
+            .find_map(|ws| ws.windows_mut().find(|w| pred(w)))
     }
 ```
 
-`MappedId` and `id()` come from `LayoutElement`; use the trait's id accessor name if it differs. Add a layout unit test in `src/layout/mod.rs` tests: open a window through the existing test harness, begin an interactive move on it with `interactive_move_begin` (line 3806) and one `interactive_move_update` so it enters `Moving`, then assert `find_window_mut(id).is_some()` while `workspaces_mut().flat_map(windows_mut)` no longer yields it.
+Add a layout unit test in `src/layout/mod.rs` tests: open a window through the existing test harness, begin an interactive move on it with `interactive_move_begin` (line 3806) and one `interactive_move_update` so it enters `Moving`, then with `let id = window.id().clone();` assert `find_window_mut_by(|w| w.id() == &id).is_some()` while `workspaces_mut().flat_map(|ws| ws.windows_mut())` no longer yields it.
 
 - [ ] **Step 6: Run the test**
 
@@ -1701,7 +1723,8 @@ Expected: PASS for the fixture test and the store tests.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/window src/layout src/tests
+tasks done material-25247f "feat(render): attach signals to windows and match on source and tag"
+git add src/window src/layout src/tests tasks
 git commit -m "feat(render): attach signals to windows and match on source and tag"
 ```
 
@@ -1853,14 +1876,8 @@ pub struct SetWindowSignalArgs {
 impl Niri {
     /// Finds a mapped window by IPC id, including one under interactive move.
     fn mapped_by_ipc_id(&mut self, id: u64) -> Result<&mut Mapped, String> {
-        let mapped_id = self
-            .layout
-            .windows()
-            .find(|(_, m)| m.id().get() == id)
-            .map(|(_, m)| m.id())
-            .ok_or_else(|| format!("no window with id {id}"))?;
         self.layout
-            .find_window_mut(mapped_id)
+            .find_window_mut_by(|m| m.id().get() == id)
             .ok_or_else(|| format!("no window with id {id}"))
     }
 
@@ -1938,7 +1955,7 @@ impl Niri {
         }
         let deadline = self
             .layout
-            .find_window_mut(id)
+            .find_window_mut_by(|m| m.id() == id)
             .and_then(|w| w.signals().next_deadline());
         let Some(deadline) = deadline else { return };
         let delay = deadline.saturating_sub(get_monotonic_time());
@@ -1956,9 +1973,9 @@ impl Niri {
     fn signal_deadline_fired(&mut self, id: MappedId) {
         self.signal_deadlines.remove(&id);
         let now = get_monotonic_time();
-        // `find_window_mut` covers a window under interactive move, so a
+        // `find_window_mut_by` covers a window under interactive move, so a
         // deadline that fires mid-drag is never lost.
-        let Some(w) = self.layout.find_window_mut(id) else { return };
+        let Some(w) = self.layout.find_window_mut_by(|m| m.id() == id) else { return };
         let changed = w.signals_mut().advance(now);
         // Always mark dirty so the refresh re-arms for the next deadline.
         w.signal_changed();
@@ -1969,9 +1986,100 @@ impl Niri {
 }
 ```
 
-Call `self.niri.refresh_signal_deadlines()` in `State::refresh` (`src/niri.rs:793`) immediately after `self.niri.refresh_window_rules()`. Remove the window's token when it unmaps: find where `Mapped` windows are removed from the layout on close (grep `remove_window` in `src/niri.rs`) and call `if let Some(t) = self.signal_deadlines.remove(&id) { self.event_loop.remove(t); }`. The xdg-activation path and the urgent actions need no extra call: `set_urgent` sets the dirty flag and the refresh re-arms.
+Call `self.niri.refresh_signal_deadlines()` in `State::refresh` (`src/niri.rs:793`) immediately after `self.niri.refresh_window_rules()`. Add one cancellation helper on `Niri`:
 
-- [ ] **Step 4: IPC server: conversion, request handling, event diff**
+```rust
+    /// Drops a window's deadline timer; called from every unmap path.
+    pub fn cancel_signal_deadline(&mut self, id: MappedId) {
+        if let Some(token) = self.signal_deadlines.remove(&id) {
+            self.event_loop.remove(token);
+        }
+    }
+```
+
+and call `self.niri.cancel_signal_deadline(id);` at both unmap sites, right before `self.niri.layout.remove_window(&window, transaction.clone())`: `src/handlers/compositor.rs:297` and `src/handlers/xdg_shell.rs:862`. The xdg-activation path and the urgent actions need no extra call: `set_urgent` sets the dirty flag and the refresh re-arms.
+
+Append two fixture tests to `src/tests/signal.rs`:
+
+```rust
+#[test]
+fn rewrite_replaces_the_deadline_and_close_cancels_it() {
+    use crate::niri::SetWindowSignalArgs;
+    use niri_ipc::{SignalLevel, SignalMotion};
+
+    let mut f = Fixture::with_config(config(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    let surface = open_window(&mut f, id, "a");
+    let wid = window_id(&mut f, "a");
+    let args = |ttl: u32| SetWindowSignalArgs {
+        id: wid, source: String::from("t"), accent: None,
+        level: SignalLevel::Notice, motion: SignalMotion::Static, tag: None,
+        ttl_ms: Some(ttl), after_level: Some(SignalLevel::Quiet), after_motion: None,
+        until_focus: false,
+    };
+    f.niri().set_window_signal(args(5000)).unwrap();
+    f.niri_state().refresh_and_flush_clients();
+    f.niri().set_window_signal(args(9000)).unwrap();
+    f.niri_state().refresh_and_flush_clients();
+    assert_eq!(f.niri().signal_deadlines.len(), 1, "rewrite replaced, not duplicated");
+
+    f.client(id).window(&surface).destroy(); // or the fixture's close helper
+    f.roundtrip(id);
+    f.niri_state().refresh_and_flush_clients();
+    assert!(f.niri().signal_deadlines.is_empty(), "close cancelled the timer");
+}
+```
+
+Use the fixture's real close helper if `destroy()` is not it (grep `fn close` in `src/tests/client.rs`).
+
+- [ ] **Step 4: IPC requests, server conversion, request handling, event diff**
+
+In `niri-ipc/src/lib.rs`, add to `Request` after `PickColor`:
+
+```rust
+    /// Set a source's signal on a window.
+    SetWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name; `niri` is reserved.
+        source: String,
+        /// Accent color as `#rrggbb` or `#rrggbbaa`.
+        accent: Option<String>,
+        /// Level.
+        level: SignalLevel,
+        /// Sustained motion.
+        motion: SignalMotion,
+        /// Free-form tag for window-rule matching.
+        tag: Option<String>,
+        /// Time until the slot decays to `after_level` / `after_motion`, in ms.
+        ttl_ms: Option<u32>,
+        /// Level after decay.
+        after_level: Option<SignalLevel>,
+        /// Motion after decay.
+        after_motion: Option<SignalMotion>,
+        /// Whether focusing the window demotes the slot to its `after` pair.
+        until_focus: bool,
+    },
+    /// Raise a transient impulse on a window for an existing source.
+    PulseWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name; must already have a slot.
+        source: String,
+        /// Kind of impulse.
+        kind: ImpulseKind,
+        /// Accent color override as `#rrggbb` or `#rrggbbaa`.
+        accent: Option<String>,
+    },
+    /// Remove a source's signal slot from a window.
+    ClearWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name.
+        source: String,
+    },
+```
 
 In `src/ipc/server.rs`:
 
@@ -2099,7 +2207,8 @@ Run: `cargo test --bin niri signal` (PASS) and `cargo run --bin niri -- msg set-
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/niri.rs src/ipc src/cli.rs src/handlers/mod.rs src/input/mod.rs src/tests/signal.rs
+tasks done material-844eea "feat(ipc): add window signal requests, event, timers, and CLI"
+git add src/niri.rs src/ipc src/cli.rs src/handlers/mod.rs src/input/mod.rs src/tests/signal.rs tasks
 git commit -m "feat(ipc): add window signal requests, event, timers, and CLI"
 ```
 
@@ -2511,7 +2620,8 @@ Expected: PASS. If `next_boundary_is_clock_aligned` differs by a nanosecond from
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/render_helpers/signal.rs src/render_helpers/mod.rs
+tasks done material-f19f8f "feat(render): add the signal solver and fingerprint"
+git add src/render_helpers/signal.rs src/render_helpers/mod.rs tasks
 git commit -m "feat(render): add the signal solver and fingerprint"
 ```
 
@@ -2828,7 +2938,8 @@ Expected: PASS, including the existing material tests, since quiet uniforms leav
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/render_helpers src/layout/tile.rs
+tasks done material-0e32cc "feat(render): add glass signal inputs and uniforms"
+git add src/render_helpers src/layout/tile.rs tasks
 git commit -m "feat(render): add glass signal inputs and uniforms"
 ```
 
@@ -2839,17 +2950,17 @@ git commit -m "feat(render): add glass signal inputs and uniforms"
 **Files:**
 - Modify: `src/layout/tile.rs` (fields at ~90-125, `new` at 286, `are_transitions_ongoing` at 569, both material sites at ~1321 and ~1503, `render` at 1697)
 - Modify: `src/render_helpers/mod.rs` (`RenderCtx` at 58)
-- Modify: `src/layout/scrolling.rs` (render loop at ~2930), `src/layout/floating.rs` (its tile render loop)
-- Modify: `src/niri.rs` (`OutputState` at 447, the output render function that builds `RenderCtx { target: RenderTarget::Output, .. }` near line 5270, `redraw` at 4578)
-- Test: `src/tests/signal.rs`
+- Modify: `src/render_helpers/signal.rs` (`slab_in_view`, `tick_deadline`)
+- Modify: `src/niri.rs` (`OutputState` at 447, `Niri::render` for injection and the view rect, `redraw` at 4578)
+- Test: `src/tests/signal.rs`, `src/render_helpers/signal.rs`
 
 **Interfaces:**
 - Produces:
   - `SignalTicks { pub next: Cell<Option<Duration>>, pub view: Cell<Rectangle<f64, Logical>> }` in `src/render_helpers/mod.rs` with `SignalTicks::report(&self, deadline: Duration)` (keeps the minimum) and `SignalTicks::reset(&self)`.
   - `RenderCtx.signal_ticks: Option<Rc<SignalTicks>>` (an `Rc`, so `Niri::render` can inject it from `&self` without lifetime coupling; `r()` clones it).
   - `OutputState.signal_ticks: Rc<SignalTicks>`, `OutputState.signal_timer: Option<RegistrationToken>`.
-  - `Tile::signal_tick_deadline(&self, location: Point<f64, Logical>, view: Rectangle<f64, Logical>, now: Duration) -> Option<Duration>` (pure; unit-tested).
-  - `Niri::arm_signal_timer(&mut self, output: &Output)`.
+  - `slab_in_view(location, size, bevel, view) -> bool` and `tick_deadline(eff, in_view, now) -> Option<Duration>` in `src/render_helpers/signal.rs` (pure; unit-tested); `Tile::signal_tick_deadline(&self, location, view, now) -> Option<Duration>` composes them.
+  - `pub fn Niri::arm_signal_timer(&mut self, output: &Output)` (public so the fixture test can call it).
   - `Tile::signal_crossfade: Option<SignalCrossfade>` (private).
 - Consumes: Tasks 5, 7, 8.
 
@@ -2884,9 +2995,14 @@ fn demand_window_reports_transition_only_while_impulse_lives_then_sustains() {
         })
         .unwrap();
 
+    // The crossfade is created by update_render_elements, which the headless
+    // fixture does not run on its own.
+    f.niri_state().refresh_and_flush_clients();
+    f.niri().layout.update_render_elements(None);
     // The crossfade from Quiet to Demand is a transition.
     assert!(f.niri().layout.are_animations_ongoing(None));
     f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
     // After the crossfade, sustained Pulse is NOT a transition (it uses bucket timers).
     assert!(!f.niri().layout.are_animations_ongoing(None));
 }
@@ -2898,6 +3014,7 @@ fn unsignaled_material_window_has_no_transition() {
     let id = f.add_client();
     open_window(&mut f, id, "a");
     f.niri_complete_animations(); // finish the open animation
+    f.niri().layout.update_render_elements(None);
     assert!(!f.niri().layout.are_animations_ongoing(None), "no crossfade starts for a quiet window");
 }
 
@@ -2921,31 +3038,57 @@ fn arm_signal_timer_follows_the_accumulator() {
 }
 ```
 
-The headless fixture never runs a real render pass, so tick *reporting* is covered by a pure unit test on `Tile::signal_tick_deadline` in `src/layout/tile.rs` tests (below) and timer *arming* by the test above; the end-to-end rate is measured in the Task 12 smoke.
+The headless fixture never runs a real render pass, so tick *reporting* is covered by pure helpers in `src/render_helpers/signal.rs` (the tile only composes them) and timer *arming* by the test above; the end-to-end rate is measured in the Task 12 smoke. There is no tile test constructor with a material in `src/layout/tile.rs` tests, which is why the logic lives in the pure module.
 
-Add to the `tile.rs` tests module, using the existing tile test constructor there:
+Add to `src/render_helpers/signal.rs`:
+
+```rust
+/// Whether a tile's slab band is in view. The band is the tile rect inflated
+/// by `bevel` on every side: a superset of the exact slab, so a visible
+/// band never freezes when the tile rect alone leaves view.
+pub fn slab_in_view(
+    location: Point<f64, Logical>,
+    size: Size<f64, Logical>,
+    bevel: f64,
+    view: Rectangle<f64, Logical>,
+) -> bool {
+    let slab = Rectangle::new(
+        location - Point::from((bevel, bevel)),
+        Size::from((size.w + 2. * bevel, size.h + 2. * bevel)),
+    );
+    slab.overlaps(view)
+}
+
+/// Next redraw deadline for a tile: only for sustained motion that is in view.
+pub fn tick_deadline(eff: &EffectiveSignal, in_view: bool, now: Duration) -> Option<Duration> {
+    if !eff.is_sustained() || !in_view {
+        return None;
+    }
+    next_boundary(eff.motion, now)
+}
+```
+
+with `use smithay::utils::{Logical, Point, Rectangle, Size};`, and these tests in its module:
 
 ```rust
     #[test]
-    fn signal_tick_deadline_requires_sustained_motion_and_slab_in_view() {
-        use crate::render_helpers::signal::EffectiveSignal;
-        use niri_ipc::{SignalLevel, SignalMotion};
-        let mut tile = test_tile_with_material(); // helper: a tile with a default glass material
+    fn slab_in_view_uses_the_bevel_band() {
         let view = Rectangle::new(Point::from((0., 0.)), Size::from((1920., 1080.)));
-        let now = Duration::from_millis(100);
+        let size = Size::from((400., 300.));
+        assert!(slab_in_view(Point::from((10., 10.)), size, 12., view));
+        // Tile rect fully left of the view, band still overlapping.
+        assert!(slab_in_view(Point::from((-400. + 6., 10.)), size, 12., view));
+        // Band entirely out of view.
+        assert!(!slab_in_view(Point::from((-400. - 20., 10.)), size, 12., view));
+    }
 
-        let sustained = EffectiveSignal { accent: None, level: SignalLevel::Demand, motion: SignalMotion::Pulse, impulses: vec![] };
-        *tile.signal_frame_cache.borrow_mut() = Some((sustained.clone(), 1., None));
-        assert!(tile.signal_tick_deadline(Point::from((10., 10.)), view, now).is_some());
-        // Tile rect fully left of the view, but its slab band (bevel 12) still overlaps: reports.
-        let w = tile.tile_size().w;
-        assert!(tile.signal_tick_deadline(Point::from((-w + 6., 10.)), view, now).is_some());
-        // Slab entirely out of view: no report.
-        assert!(tile.signal_tick_deadline(Point::from((-w - 20., 10.)), view, now).is_none());
-
-        let quiet = EffectiveSignal { motion: SignalMotion::Static, ..sustained };
-        *tile.signal_frame_cache.borrow_mut() = Some((quiet, 1., None));
-        assert!(tile.signal_tick_deadline(Point::from((10., 10.)), view, now).is_none());
+    #[test]
+    fn tick_deadline_requires_sustained_motion_in_view() {
+        let sustained = EffectiveSignal { accent: None, level: L::Demand, motion: M::Pulse, impulses: vec![] };
+        assert!(tick_deadline(&sustained, true, ms(100)).is_some());
+        assert!(tick_deadline(&sustained, false, ms(100)).is_none());
+        let quiet = EffectiveSignal { motion: M::Static, ..sustained };
+        assert!(tick_deadline(&quiet, true, ms(100)).is_none());
     }
 ```
 
@@ -3094,21 +3237,12 @@ Report sustained ticks in `Tile::render`, at the top, before rendering, through 
         view: Rectangle<f64, Logical>,
         now: Duration,
     ) -> Option<Duration> {
+        use crate::render_helpers::signal::{slab_in_view, tick_deadline};
         let cache = self.signal_frame_cache.borrow();
         let (eff, _, _) = cache.as_ref()?;
-        if !eff.is_sustained() {
-            return None;
-        }
         let bevel = self.material.as_ref()?.material().glass.bevel;
-        let size = self.tile_size();
-        let slab = Rectangle::new(
-            location - Point::from((bevel, bevel)),
-            Size::from((size.w + 2. * bevel, size.h + 2. * bevel)),
-        );
-        if !slab.overlaps(view) {
-            return None;
-        }
-        crate::render_helpers::signal::next_boundary(eff.motion, now)
+        let in_view = slab_in_view(location, self.tile_size(), bevel, view);
+        tick_deadline(eff, in_view, now)
     }
 ```
 
@@ -3133,17 +3267,9 @@ Extend `are_transitions_ongoing`:
                 .is_some_and(|(eff, _, _)| eff.has_live_impulses(self.clock.now_unadjusted()))
 ```
 
-- [ ] **Step 5: Set the view rect before tile rendering**
+- [ ] **Step 5: Set the view rect once per output pass**
 
-In `src/layout/scrolling.rs` render, where `view_rect` is built for closing windows (~line 2930), add before the column loop:
-
-```rust
-        if let Some(ticks) = &ctx.signal_ticks {
-            ticks.view.set(Rectangle::new(Point::from((0., 0.)), self.view_size));
-        }
-```
-
-The tile `location` passed to `Tile::render` there is already view-relative (`view_off + col_off + ...`), so the overlap test in Step 4 is consistent. Do the same in `src/layout/floating.rs` with its view size.
+`Niri::render` renders the interactively moved tile (`render_interactive_move_for_output`, `src/niri.rs:4361`) before any workspace, so the view must be set before that, not inside scrolling or floating rendering. In `Niri::render`, at the same point injection happens (Step 6), set `ticks.view` to the output's logical rect at the origin: `Rectangle::new(Point::from((0., 0.)), output_size(output).to_f64())` using the existing logical-size helper for outputs in `src/niri.rs`. Tile `location`s handed to `Tile::render` by scrolling, floating, and the interactive move are all in that output-view space (scrolling applies `view_off` before calling `tile.render`), so the overlap test in Step 4 is consistent on every path. During a workspace switch animation a tile of the outgoing workspace may report while sliding out; that over-reports for the duration of an animation that already runs at refresh rate, and is accepted.
 
 - [ ] **Step 6: Per-output timer in `niri.rs`**
 
@@ -3159,7 +3285,7 @@ Add to `OutputState`:
 Output render contexts are built by the backends (`src/backend/tty.rs:1884`, `src/backend/winit.rs:227`), which then call `niri.render_to_vec`, which calls `Niri::render` (`src/niri.rs`, the `pub fn render<R: NiriRenderer>(&self, mut ctx: RenderCtx<R>, output, ..)` entry). Centralize injection there: at the top of `Niri::render`, when `ctx.target == RenderTarget::Output` and `ctx.signal_ticks.is_none()`, look up `self.output_state.get(output)`, call `state.signal_ticks.reset()`, and set `ctx.signal_ticks = Some(state.signal_ticks.clone())`. Every downstream reborrow carries it. Arming happens after the pass:
 
 ```rust
-    fn arm_signal_timer(&mut self, output: &Output) {
+    pub fn arm_signal_timer(&mut self, output: &Output) {
         let state = self.output_state.get_mut(output).unwrap();
         if let Some(token) = state.signal_timer.take() {
             self.event_loop.remove(token);
@@ -3191,7 +3317,8 @@ Expected: PASS.
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/layout src/render_helpers/mod.rs src/niri.rs src/tests/signal.rs
+tasks done material-9d06b4 "feat(render): drive material signals from tiles with crossfade and bucket timers"
+git add src/layout src/render_helpers src/niri.rs src/tests/signal.rs tasks
 git commit -m "feat(render): drive material signals from tiles with crossfade and bucket timers"
 ```
 
@@ -3278,7 +3405,8 @@ Expected: an amber ring on the visible slab band, the rim glint swaying, one dia
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/render_helpers/shaders/material.frag
+tasks done material-4a64bb "feat(material): render ring, rim orbit, and sweep signal responses"
+git add src/render_helpers/shaders/material.frag tasks
 git commit -m "feat(material): render ring, rim orbit, and sweep signal responses"
 ```
 
@@ -3287,7 +3415,7 @@ git commit -m "feat(material): render ring, rim orbit, and sweep signal response
 ### Task 11: Documentation and task closure
 
 **Files:**
-- Modify: `docs/materials/material-config.md`, `docs/materials/README.md`, `docs/materials/2026-09-02-material-signals-design.md` (status header, §1 timer wording, §6 rim-orbit wording), `docs/wiki/IPC.md` if the fork keeps IPC docs there (otherwise a new `docs/materials/material-ipc.md`)
+- Modify: `docs/materials/material-config.md`, `docs/materials/README.md`, `docs/materials/2026-09-02-material-signals-design.md` (status header), `docs/wiki/IPC.md`
 
 - [ ] **Step 1: Configuration reference**
 
@@ -3295,16 +3423,17 @@ Add to `material-config.md`: the `response "name" { }` block with the glass voca
 
 - [ ] **Step 2: IPC reference**
 
-Document the three requests with every flag, the `WindowSignalChanged` event, the `signal` field on `Window`, the JSON shape (enum variants in Rust spelling), bounds, and the error cases.
+In `docs/wiki/IPC.md`, document the three requests with every flag, the `WindowSignalChanged` event, the `signal` field on `Window`, the JSON shape (enum variants in Rust spelling), bounds, and the error cases, in the same style as the existing event-stream section.
 
 - [ ] **Step 3: Design doc alignment**
 
-Update the design doc: status header to "implemented on `feat/material-signals` through `<commit>`; verification pending" (Task 12 finalizes it); in §1 note that slot expiry and impulse expiry share one deadline timer per window, which satisfies the one-timer-per-slot bound, that the fold is time-aware so reads never depend on timer delivery, and that timers are reconciled from `State::refresh` through a per-window dirty flag; in §4 note that the visibility test uses the tile rect inflated by `bevel`, a superset of the slab; in §6 make the rim-orbit sentence match the implementation (the light sways around top-left by up to `level * π/2`, driven by `breath`, and only under `rim-orbit`). Add the README ledger line (`../plans/2026-09-02-material-signals.md`, following the roughness entry).
+The design doc was amended before implementation (commit `6c67b026`) to match this plan: one deadline timer per window, time-aware fold, refresh-driven reconciliation, bevel-inflated visibility, and rim light only under `rim-orbit`. Here only update its status header to "implemented on `feat/material-signals` through `<commit>`; verification pending" (Task 12 finalizes it), and add the README ledger line (`../plans/2026-09-02-material-signals.md`, following the roughness entry). If implementation deviated from the design anywhere else, amend the design in this step and say so in the commit.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add docs
+tasks done material-2ecd18 "docs(material): document material signals configuration and IPC"
+git add docs tasks
 git commit -m "docs(material): document material signals configuration and IPC"
 ```
 
@@ -3357,6 +3486,7 @@ Install the Arch package per `docs/materials/2026-08-28-v1-daily-driver-rollout-
 Write the smoke doc, set the design doc status to implemented and verified with the commit and evidence link, add the README ledger lines, then:
 
 ```bash
+tasks done material-b43616 "Verification evidence recorded in docs/materials/<smoke>.md"
 tasks done material-a54d89 "Material signals landed on feat/material-signals; evidence in docs/materials/<smoke>.md"
 git add docs tasks
 git commit -m "docs(material): record material signals acceptance"
