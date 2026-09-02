@@ -23,6 +23,7 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-29-material-backdrop-blur-evidence.md`: retained backdrop blur verification evidence.
 - `2026-09-01-material-roughness-design.md`: implemented and verified native and Prism roughness design.
 - `2026-09-02-material-roughness-smoke.md`: passing nested GLES, Tracy, damage-reuse, and calibrated overview evidence.
+- `2026-09-02-material-signals-design.md`: accepted, not yet implemented, per-window signal, IPC, and glass response design.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
