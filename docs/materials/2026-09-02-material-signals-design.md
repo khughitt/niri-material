@@ -269,18 +269,48 @@ animates. Several sessions in one window are aggregated by the bridge
 before writing a single `familiar` slot. That mapping is out of scope here;
 the schema is chosen so the resulting aggregate needs no lossy translation.
 
-## 3. Envelope solver and `SignalFrame`
+## 3. Effective signal, envelope solver, and `SignalFrame`
 
 Per frame, the tile turns the folded `Signal` into a `SignalFrame` of plain
-scalars. Materials see only the frame.
+scalars in two stages. Materials see only the frame.
+
+**Stage 1, effective signal (tile).** The tile applies the global motion
+policy and the window's resolved response block to the folded signal:
+
+```text
+EffectiveSignal {
+    accent:   Option<Color>
+    level:    Level
+    motion:   Motion            // after policy; Static when attention is `none`
+    impulses: Vec<(selector: u8, accent: Option<Color>, at: Duration)>
+                                // only impulses whose response is not `none`
+}
+```
+
+`ResolvedResponse` exposes two material-agnostic methods for this:
+`attention_is_none()` and `impulse_selector(kind, policy) -> Option<u8>`.
+Selector values are opaque ids owned by the material type; the tile never
+interprets them. Everything downstream, including the transitions term,
+timer candidates, and the fingerprint, is computed from the effective
+signal, so state that draws nothing costs nothing. The stored slots,
+impulse queue, and expiry timers are unaffected, because the event stream
+reports stored state.
+
+**Stage 2, solver (pure).** `solve(effective, now_unadjusted, seed,
+crossfade) -> SignalFrame` and `next_boundary(motion, now_unadjusted) ->
+Option<Duration>` live in `src/render_helpers/signal.rs` with no renderer
+or config dependency, following the `PrefilterState` and `jelly_state`
+precedent so they are unit-testable without a GPU.
 
 ```text
 SignalFrame {
     accent:   Option<[f32; 3]>
     level:    f32              // 0 quiet, 1/3 active, 2/3 notice, 1 demand
     breath:   f32              // 0..1 oscillator; 0 when Static
-    impulses: [ImpulseFrame; 4] // kind, envelope 0..1, accent
+    impulses: [ImpulseFrame; 4]
 }
+ImpulseFrame { selector: u8, envelope: f32, progress: f32, accent: Option<[f32; 3]> }
+                              // envelope 0..1 for intensity; progress = age / 1.5 s, monotonic
 ```
 
 - **Baseline crossfade.** A change in `level` or `accent` animates through
@@ -295,26 +325,17 @@ SignalFrame {
   acceptable, and a shared phase is what keeps its wakeup bound per output
   rather than per window.
 - **Impulse envelope.** 80 ms linear attack, then exponential decay with a
-  350 ms time constant, dropped at 1.5 s. Kind selects only the response,
-  not the shape; per-kind shape constants are a follow-up if a response
-  needs them.
+  350 ms time constant, dropped at 1.5 s. `progress` runs from 0 to 1 over
+  the same 1.5 s so a response can move monotonically while the envelope
+  shapes intensity. Kind selects only the response, not the shape; per-kind
+  shape constants are a follow-up if a response needs them.
 - **Reduced motion.** A top-level `signal { motion "full" | "reduced" |
-  "off" }` block. `reduced` maps the sustained motion Flash to Pulse and
-  Pulse to Breathe, and maps the impulse response `flash` to `sweep`, so
-  no chromatic jolt or strobe reaches the screen; `sweep` and `ripple` are
-  single-pass and stay. `off` pins `breath` to zero and drops every
-  impulse, leaving the static accent and the level crossfade.
-- **Effective impulses.** The solver first applies the motion policy and
-  then resolves each stored impulse's kind through the window's response
-  block. Impulses that the policy drops or that resolve to `none` are not
-  part of the frame. The transitions term and the fingerprint in section 4
-  are computed from these effective impulses only, so a stored impulse
-  that draws nothing costs nothing. The stored queue and its expiry timer
-  are unaffected, because the event stream reports stored impulses.
-
-The solver is pure: `solve(signal, clock_now, seed, animation_state) ->
-SignalFrame`, with no renderer dependency, following the `PrefilterState`
-and `jelly_state` precedent so it is unit-testable without a GPU.
+  "off" }` block, applied in stage 1. `reduced` maps the sustained motion
+  Flash to Pulse and Pulse to Breathe, and maps the impulse response
+  `flash` to `sweep`, so no chromatic jolt or strobe reaches the screen;
+  `sweep` and `ripple` are single-pass and stay. `off` makes the effective
+  motion Static and drops every impulse, leaving the static accent and the
+  level crossfade.
 
 ## 4. Redraw and damage contract
 
@@ -326,9 +347,9 @@ signal motion are therefore driven differently.
 
 - **Transient motion rides the animation loop.** `Tile::are_transitions_ongoing`
   gains a signal term that is true while the baseline crossfade runs or any
-  effective impulse, as defined in section 3, is live. Impulses last at most 1.5 s; the crossfade lasts its
-  configured duration times the global animation slowdown, like every
-  other niri animation. Refresh-rate wakeups for those spans match how
+  effective impulse from section 3 is live. Impulses last at most 1.5 s;
+  the crossfade lasts its configured duration times the global animation
+  slowdown, like every other niri animation. Refresh-rate wakeups for those spans match how
   open, move, and resize animations already behave.
 - **Sustained motion uses one bucket timer per output.** Breathe, Pulse,
   and Flash do not set the transitions term. Breathe and Pulse boundaries
@@ -344,8 +365,8 @@ signal motion are therefore driven differently.
   `update_render_elements` visits every tile in a visible workspace,
   including hidden tabs and columns scrolled out of view, so it cannot be
   the visibility source. Instead, when `Tile::render` runs for a tile whose
-  folded motion is sustained and whose slab rect intersects the view rect
-  it was given, the tile reports its next boundary into a per-output
+  effective motion is sustained and whose slab rect intersects the view
+  rect it was given, the tile reports its next boundary into a per-output
   accumulator on the render context. Hidden tabs never reach `Tile::render`
   and offscreen columns fail the intersection, so neither contributes.
   After the pass, the output arms a single calloop `Timer` for the earliest
@@ -460,18 +481,18 @@ mat_sig_level        float
 mat_sig_breath       float
 mat_sig_light        vec3    // rim light direction xy, tint weight
 mat_sig_impulse_env  vec4    // envelope per impulse slot
+mat_sig_impulse_prog vec4    // progress per impulse slot
 mat_sig_impulse_rgb  vec3[4]
 mat_sig_impulse_resp ivec4   // response selector per impulse slot
 mat_sig_response     ivec2   // accent, attention selectors
 mat_sig_ring         vec2    // inset, width (logical px, like mat_area_size)
 ```
 
-Impulse kinds never reach the shader. The CPU resolves each live impulse's
-kind through the window's resolved response block into a response selector
-(`none`, `ripple`, `flash`, `sweep`) and uploads that per slot, so the
-shader only knows which effect to draw at which envelope and color. The
-`ripple` selector is folded into the jelly activity input on the CPU as
-well and reaches the shader as a zero-cost `none`. Response selection is a
+Impulse kinds never reach the shader. Stage 1 in section 3 has already
+resolved each live impulse to a glass selector (`ripple`, `flash`,
+`sweep`) and dropped `none`, so the shader only knows which effect to draw
+at which envelope, progress, and color. The tile folds `ripple` into the
+jelly activity input on the CPU and uploads it as a zero-cost `none`. Response selection is a
 uniform-int branch, so one program serves every combination and no
 permutation compile is needed.
 
@@ -485,9 +506,11 @@ permutation compile is needed.
   the light parks top-left and the output is bit-identical to today.
 - **`ring-pulse`.** The ring's emissive term is multiplied by
   `1 + breath * level`.
-- **`sweep`.** A specular band crossing the slab along the top-left to
-  bottom-right diagonal, position driven by the impulse envelope, tinted by
-  the impulse accent when present. Each sweep-selected slot draws its own
+- **`sweep`.** A specular band crossing the slab once along the top-left
+  to bottom-right diagonal. Position is `progress`, so the band moves
+  monotonically and never reverses; intensity is the envelope, so it
+  brightens quickly and fades as it travels. Tinted by the impulse accent
+  when present. Each sweep-selected slot draws its own
   band, so up to four bands can be in flight, each at its own position and
   accent.
 - **`flash`.** Additive, because both defaults are zero and a multiplier
@@ -521,7 +544,8 @@ without touching sections 1 through 5.
 | Slot expiry and impulse expiry timers | `src/niri.rs`, registration tokens stored on the slot and the window store |
 | Per-output oscillator bucket timer | `RenderCtx` in `src/render_helpers/mod.rs` gains a next-boundary accumulator and `Tile::render` gains the view rect it needs for the intersection test; `Tile::render` reports into the accumulator; the output render path in `src/niri.rs` arms or removes the timer after the pass, token stored per output |
 | Solver, `SignalFrame`, `SignalFingerprint`, oscillator constants | new `src/render_helpers/signal.rs`; pure, no GL |
-| Per-frame wiring, crossfade `Animation`, transitions term, impulse kind to selector resolution | `src/layout/tile.rs`, both `render_inner` material sites and `are_transitions_ongoing` |
+| Stage 1 effective signal (motion policy, response selection), crossfade `Animation`, transitions term, per-frame wiring | `src/layout/tile.rs`, both `render_inner` material sites and `are_transitions_ongoing` |
+| `ResolvedResponse::attention_is_none` and `impulse_selector` | `niri-config/src/material.rs`, per material type |
 | Response config, validation, resolved response | `niri-config/src/material.rs` (`Response`, `ResolvedResponse`), `niri-config/src/window_rule.rs` (`Match`, `MaterialRef`), `niri-config/src/lib.rs` (`validate_material_refs`) |
 | `signal { motion }` and `animations { material-signal }` | `niri-config/src/lib.rs`, `niri-config/src/animations.rs` |
 | Uniform upload and response selectors | `src/render_helpers/material.rs` (`MaterialRenderElement`) |
@@ -549,7 +573,9 @@ boundary, so there is one conversion, in the server, and it is tested.
   fold precedence, slot ordering, independent accent and tag selection,
   and the `sources` list; decay, `until_focus` demotion, timer replacement
   on rewrite, and impulse expiry pruning; every bound in section 1
-  including the TTL cap; fifth-pulse eviction; native slot creation and
+  including the TTL cap; fifth-pulse eviction; stage 1 effective signal
+  under each policy and with `none` responses; sweep progress monotonic
+  across the envelope; native slot creation and
   removal with urgency; simultaneous ripple clamping and flash max with
   the derived sample count; bucket alignment across differently seeded
   windows and Flash edge-only boundaries; `WindowsState::apply` for
@@ -573,8 +599,11 @@ boundary, so there is one conversion, in the server, and it is tested.
   sustained Flash window wakes only at its edges and ten Flash windows on
   one output wake at the same rate as one; a window with live impulses
   under `signal { motion "off" }` or with every impulse response set to
-  `none` produces no wakeups; wakeup rates are unchanged under a non-unit
-  animation slowdown; a `done` pulse ends and damage stops; `flash` is
+  `none` produces no wakeups; a `Demand + Pulse` window under `signal {
+  motion "off" }` arms no timer; a `Demand + Flash` window under
+  `reduced` wakes at Pulse bucket boundaries, not Flash edges; a window
+  whose response has `attention none` arms no timer; wakeup rates are
+  unchanged under a non-unit animation slowdown; a `done` pulse ends and damage stops; `flash` is
   visible on default glass; `signal { motion "off" }` leaves only the
   crossfade. Wakeups are measured from the Tracy redraw frames, and
   per-frame cost of ring plus rim orbit is captured against the roughness
