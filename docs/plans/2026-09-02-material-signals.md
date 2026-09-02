@@ -3380,6 +3380,7 @@ git commit -m "feat(render): drive material signals from tiles with crossfade an
 
 **Files:**
 - Modify: `src/render_helpers/shaders/material.frag` (Fresnel block at ~394-408, `slabSurface` for the outer SDF value)
+- Create: `docs/materials/scripts/material-signals-smoke.sh` (the nested harness Task 12 reuses)
 
 **Interfaces:**
 - Consumes the uniforms from Task 8. Selector ids: accent `1 = ring`; attention `1 = rim-orbit`, `2 = ring-pulse`; impulse `3 = sweep` (ripple and flash never reach the shader).
@@ -3441,78 +3442,332 @@ After `transmitted` and `specular` are computed, before `glassed`:
 
 GLES2 requires constant loop bounds and no dynamic vector indexing, which is why the selects are written out.
 
-- [ ] **Step 5: Verify compile and visuals on the nested instance**
+- [ ] **Step 5: Create the nested smoke harness and run its visual mode**
 
-Live nested runs never target the desktop session: the nested winit window throttles frame callbacks when unfocused, so a headless Weston host is used. The procedure below is the one Task 12 reuses; every command is run from the worktree root.
+Live nested runs never target the desktop session: the nested winit window throttles frame callbacks when unfocused, so a headless Weston host is used. All nested verification for this feature runs through one script, retained in the repo so Task 12 and later work reuse it. Create `docs/materials/scripts/material-signals-smoke.sh` with exactly this content and `chmod +x` it:
 
 ```bash
 #!/usr/bin/env bash
-# Nested signals fixture. Run from the worktree root. Every step polls with a
-# bound; nothing sleeps for a fixed guess, and failures are not masked.
+# material-signals-smoke.sh: nested headless fixture for the material signals
+# design (docs/materials/2026-09-02-material-signals-design.md, section 9).
+#
+# Usage: docs/materials/scripts/material-signals-smoke.sh MODE
+#   visual  build, drive one window through set/pulse/clear, screenshot the error flash
+#   ipc     event-stream round trip and every rejection case
+#   cases   Tracy redraw counts for every steady-state case
+#   gpu     Tracy GPU cost of ring plus rim orbit against the retained roughness baseline
+#
+# Every resource name is unique per run, every wait is bounded, and a
+# leftover nested socket fails the run. Requires: jq, weston, kitty, cmake
+# (only if the 0.13.1 Tracy tools must be rebuilt), NIRI_MATERIAL_WORK_ROOT.
 set -euo pipefail
-cargo build --release
-NIRI=$PWD/target/release/niri
-WORK=${NIRI_MATERIAL_WORK_ROOT:?set to the evidence root the roughness smoke used}/material-signals-$(git rev-parse --short HEAD)
-mkdir -p "$WORK"
-cat > "$WORK/config.kdl" <<'EOF'
-material "tg" { glass {} }
-window-rule { match app-id="^kitty$"; material "tg" }
-spawn-at-startup "kitty"
-EOF
 
-# Headless host (1280x720, kiosk shell); wait for its socket.
-systemd-run --user --unit=signals-headless-weston --collect \
-  weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
-  --width=1280 --height=720 --socket=signals-headless
-for _ in $(seq 50); do [ -S "$XDG_RUNTIME_DIR/signals-headless" ] && break; sleep 0.1; done
-[ -S "$XDG_RUNTIME_DIR/signals-headless" ] || { echo "weston socket never appeared" >&2; exit 1; }
-
-# Fresh short runtime dir for the nested compositor (long paths panic on SUN_LEN).
-RT=$XDG_RUNTIME_DIR/sig; rm -rf "$RT"; mkdir -p "$RT"
-ln -s "$XDG_RUNTIME_DIR/signals-headless" "$RT/signals-headless"
+MODE=${1:?usage: $0 {visual|ipc|cases|gpu}}
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+RUN=signals-$$-$(date +%s)
+EVIDENCE=${NIRI_MATERIAL_WORK_ROOT:?set to the evidence root the roughness smoke used}
+WORK=$EVIDENCE/material-signals-$(git rev-parse --short HEAD)/$RUN
+RT=$XDG_RUNTIME_DIR/$RUN          # unique, short: nested niri panics on long socket paths
+UNIT=$RUN-weston
+mkdir -p "$WORK" "$RT"
+NIRI_PID=; EVENTS_PID=; CAP_PID=
 
 cleanup() {
-  kill "${NIRI_PID:-}" 2>/dev/null || true
-  wait "${NIRI_PID:-}" 2>/dev/null || true
-  systemctl --user stop signals-headless-weston || true
-  if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "niri socket left behind in $RT" >&2; exit 1; fi
+    local rc=$?
+    stop_nested || true
+    [ -n "$EVENTS_PID" ] && { kill "$EVENTS_PID" 2>/dev/null || true; }
+    [ -n "$CAP_PID" ] && { kill "$CAP_PID" 2>/dev/null || true; }
+    systemctl --user stop "$UNIT" 2>/dev/null || true
+    if ls "$RT"/niri.*.sock >/dev/null 2>&1; then
+        echo "FAIL: nested niri socket left behind in $RT" >&2
+        rc=1
+    fi
+    rm -rf "$RT"
+    exit "$rc"
 }
 trap cleanup EXIT
 
-XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=signals-headless \
-  "$NIRI" -c "$WORK/config.kdl" > "$WORK/niri.log" 2>&1 &
-NIRI_PID=$!
-for _ in $(seq 100); do ls "$RT"/niri.*.sock >/dev/null 2>&1 && break; sleep 0.1; done
-export NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1)   # every niri msg below targets this instance
-msg() { "$NIRI" msg "$@"; }
-for _ in $(seq 100); do
-  WID=$(msg -j windows | jq -r '.[] | select(.app_id=="kitty") | .id' | head -1)
-  [ -n "$WID" ] && break; sleep 0.1
-done
-[ -n "${WID:-}" ] || { echo "kitty window never mapped" >&2; exit 1; }
+case $MODE in
+    cases|gpu) cargo build --release --features profile-with-tracy ;;
+    *)         cargo build --release ;;
+esac
+NIRI=$ROOT/target/release/niri
 
-# Drive the signal; the screenshot is taken 100 ms after the error pulse, at
-# the impulse's 80 ms peak.
-msg set-window-signal --id "$WID" --source demo --accent '#e5a33c' --level demand --motion pulse
-msg pulse-window-signal --id "$WID" --source demo --kind done
-sleep 1.6
-msg pulse-window-signal --id "$WID" --source demo --kind error
-sleep 0.1
-SHOT=$WORK/error-flash.png
-msg action screenshot-screen --write-to-disk true --show-pointer false --path "$SHOT"
-for _ in $(seq 50); do [ -s "$SHOT" ] && break; sleep 0.1; done   # write is asynchronous
-[ -s "$SHOT" ] || { echo "screenshot not written" >&2; exit 1; }
-msg clear-window-signal --id "$WID" --source demo
-sha256sum "$SHOT" | tee -a "$WORK/SHA256SUMS"
+# --- config variants -------------------------------------------------------
+# kitty runs with cursor blinking off and no shell, so the only client
+# damage is what the test causes.
+write_config() {   # $1 = path, remaining args = extra KDL lines
+    local f=$1; shift
+    {
+        cat <<'EOF'
+material "tg" { glass {} }
+window-rule { match app-id="^kitty$"; material "tg" }
+spawn-at-startup "kitty" "-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "--hold" "true"
+EOF
+        printf '%s\n' "$@"
+    } > "$f"
+}
+write_config "$WORK/base.kdl"
+write_config "$WORK/motion-off.kdl"     'signal { motion "off" }'
+write_config "$WORK/reduced.kdl"        'signal { motion "reduced" }'
+write_config "$WORK/slowdown.kdl"       'animations { slowdown 3 }'
+write_config "$WORK/narrow.kdl"         'layout { default-column-width { proportion 0.1 } }'
+write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none" } }' \
+                                         'window-rule { match app-id="^kitty$"; material "tg2" }'
+write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none" } }' \
+                                         'window-rule { match app-id="^kitty$"; material "tg2" }'
+
+# --- host and nested compositor -------------------------------------------
+systemd-run --user --unit="$UNIT" --collect \
+    weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
+    --width=1280 --height=720 --socket="$RUN"
+for _ in $(seq 100); do [ -S "$XDG_RUNTIME_DIR/$RUN" ] && break; sleep 0.1; done
+[ -S "$XDG_RUNTIME_DIR/$RUN" ] || { echo "FAIL: weston socket never appeared" >&2; exit 1; }
+ln -s "$XDG_RUNTIME_DIR/$RUN" "$RT/$RUN"
+
+msg() { "$NIRI" msg "$@"; }
+kitty_ids() { msg -j windows | jq -r '.[] | select(.app_id=="kitty") | .id'; }
+kitty_count() { kitty_ids | wc -l; }
+win() { msg -j windows | jq -r --argjson id "$1" ".[] | select(.id==\$id) | $2"; }   # $2 = jq path
+assert_eq() { [ "$1" = "$2" ] || { echo "FAIL: $3: got '$1', want '$2'" >&2; exit 1; }; }
+expect_fail() { if "$@" >/dev/null 2>&1; then echo "FAIL: expected failure: $*" >&2; exit 1; fi; }
+
+start_nested() {   # $1 = config path; sets NIRI_SOCKET and WID
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$RUN "$NIRI" -c "$1" >> "$WORK/niri.log" 2>&1 &
+    NIRI_PID=$!
+    for _ in $(seq 100); do ls "$RT"/niri.*.sock >/dev/null 2>&1 && break; sleep 0.1; done
+    NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1); export NIRI_SOCKET
+    wait_kitty 1
+    WID=$(kitty_ids | head -1)
+}
+stop_nested() {
+    [ -n "$NIRI_PID" ] || return 0
+    kill "$NIRI_PID" 2>/dev/null || true
+    wait "$NIRI_PID" 2>/dev/null || true
+    NIRI_PID=
+    # niri removes its socket on a clean exit; a leftover one is a failure
+    # the EXIT trap reports rather than something to delete quietly.
+    if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; exit 1; fi
+}
+wait_kitty() {   # $1 = count
+    for _ in $(seq 100); do [ "$(kitty_count)" -ge "$1" ] && return; sleep 0.1; done
+    echo "FAIL: only $(kitty_count) kitty windows, wanted $1" >&2; exit 1
+}
+spawn_kitty_to() {   # $1 = total count wanted
+    while [ "$(kitty_count)" -lt "$1" ]; do
+        local before; before=$(kitty_count)
+        msg action spawn -- kitty -o cursor_blink_interval=0 -o cursor_stop_blinking_after=0 --hold true
+        wait_kitty $((before + 1))
+    done
+}
+set_demand() {   # $1 = id, $2 = motion, rest = extra flags
+    local id=$1 motion=$2; shift 2
+    msg set-window-signal --id "$id" --source demo --accent '#e5a33c' --level demand --motion "$motion" "$@"
+}
+
+# --- Tracy 0.13.1 tools ----------------------------------------------------
+tools_ready() {
+    local retained=$EVIDENCE/material-roughness-b220152d/tools
+    TOOLS=$retained
+    if sha256sum -c --quiet - <<EOF 2>/dev/null
+7b95c9c388b6b689cd87da490b564dd086fa8c9dfd6489424b2401d6ef0c5b0c  $retained/tracy-capture
+472e08726cc62ab66ed38f75bd4cbb351f2160c1f742a709a9d5be57c68fb463  $retained/tracy-csvexport
+EOF
+    then return; fi
+    echo "retained Tracy 0.13.1 tools missing or altered; rebuilding" >&2
+    git clone --depth 1 --branch v0.13.1 https://github.com/wolfpld/tracy "$WORK/tracy-src"
+    cmake -S "$WORK/tracy-src/capture"   -B "$WORK/cap-build" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$WORK/cap-build"
+    cmake -S "$WORK/tracy-src/csvexport" -B "$WORK/csv-build" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$WORK/csv-build"
+    TOOLS=$WORK/tools; mkdir -p "$TOOLS"
+    cp "$WORK/cap-build/tracy-capture" "$WORK/csv-build/tracy-csvexport" "$TOOLS/"
+    "$TOOLS/tracy-csvexport" --help >/dev/null
+    sha256sum "$TOOLS"/* | tee -a "$WORK/SHA256SUMS"
+}
+capture_bg() { "$TOOLS/tracy-capture" -o "$WORK/$1.tracy" -a 127.0.0.1 -s 30 & CAP_PID=$!; }
+capture_wait() { wait "$CAP_PID"; CAP_PID=; }
+# Zones named exactly `Niri::redraw` (a substring filter would also match
+# `Niri::redraw_queued_outputs`) in the final 20 s of the trace, where the
+# trace end is the latest timestamp of ANY zone, not of the last redraw.
+count_steady() {   # $1 = case; appends "case: N zones in 20 s = R/s" to rates.txt
+    "$TOOLS/tracy-csvexport" --unwrap "$WORK/$1.tracy" > "$WORK/$1.csv"
+    awk -F, -v case="$1" 'NR>1 { t=$4+0; if (t>end) end=t; if ($1=="Niri::redraw") { n++; ts[n]=t } }
+        END { lo=end-20e9; c=0; for (i=1;i<=n;i++) if (ts[i]>=lo) c++;
+              printf "%s: %d zones in 20 s = %.1f/s\n", case, c, c/20 }' "$WORK/$1.csv" | tee -a "$WORK/rates.txt"
+}
+# Median exec time of the first 14 `draw shader` GPU zones between 20 s and
+# 28 s of a trace: the roughness smoke's steady-state sample rule.
+gpu_median() {   # $1 = trace path
+    "$TOOLS/tracy-csvexport" --unwrap "$1" \
+        | awk -F, 'NR>1 && $1=="draw shader" && $4>=20e9 && $4<28e9 { print $5+0 }' \
+        | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR==0) { print "no samples"; exit 1 }
+              m = (NR%2) ? a[(NR+1)/2] : (a[NR/2]+a[NR/2+1])/2; printf "%.3f ms (%d samples)\n", m/1e6, NR }'
+}
+
+# --- modes -----------------------------------------------------------------
+mode_visual() {
+    start_nested "$WORK/base.kdl"
+    set_demand "$WID" pulse
+    msg pulse-window-signal --id "$WID" --source demo --kind done
+    sleep 1.6
+    msg pulse-window-signal --id "$WID" --source demo --kind error
+    sleep 0.1                                   # the impulse's 80 ms peak
+    local shot=$WORK/error-flash-$(date +%s%N).png
+    msg action screenshot-screen --write-to-disk true --show-pointer false --path "$shot"
+    for _ in $(seq 50); do [ -s "$shot" ] && break; sleep 0.1; done
+    [ -s "$shot" ] || { echo "FAIL: screenshot not written" >&2; exit 1; }
+    sleep 1.6
+    msg clear-window-signal --id "$WID" --source demo
+    sha256sum "$shot" | tee -a "$WORK/SHA256SUMS"
+}
+
+mode_ipc() {
+    start_nested "$WORK/base.kdl"
+    msg -j event-stream > "$WORK/events.jsonl" & EVENTS_PID=$!
+    sleep 0.5
+    set_demand "$WID" pulse
+    msg pulse-window-signal --id "$WID" --source demo --kind done
+    sleep 1.7                                   # done impulse expires -> event
+    msg clear-window-signal --id "$WID" --source demo   # -> "signal": null
+    # Decay must change the fold: Demand -> Quiet.
+    msg set-window-signal --id "$WID" --source demo --level demand --ttl-ms 2000 --after-level quiet
+    sleep 2.5
+    # Rejections, all while the stream is still recording; none may emit an event.
+    local before; before=$(wc -l < "$WORK/events.jsonl")
+    expect_fail msg set-window-signal --id 999999 --source x
+    expect_fail msg set-window-signal --id "$WID" --source niri
+    expect_fail msg pulse-window-signal --id "$WID" --source niri --kind done
+    expect_fail msg clear-window-signal --id "$WID" --source niri
+    expect_fail msg pulse-window-signal --id "$WID" --source fresh --kind done
+    expect_fail msg set-window-signal --id "$WID" --source demo --accent zzz
+    expect_fail msg set-window-signal --id "$WID" --source demo --ttl-ms 90000000 --after-level quiet
+    expect_fail msg set-window-signal --id "$WID" --source demo --after-level quiet
+    local i; for i in $(seq 15); do msg set-window-signal --id "$WID" --source "s$i"; done   # demo + s1..s15 = 16
+    before=$(wc -l < "$WORK/events.jsonl")   # the 15 accepted writes emitted events; re-baseline
+    expect_fail msg set-window-signal --id "$WID" --source s16
+    sleep 0.3
+    assert_eq "$(wc -l < "$WORK/events.jsonl")" "$before" "rejections emit no event"
+    kill "$EVENTS_PID"; EVENTS_PID=
+    local signals; signals=$(jq -c 'select(.WindowSignalChanged) | .WindowSignalChanged.signal' "$WORK/events.jsonl")
+    echo "$signals" | grep -q '"level":"Demand"'          || { echo "FAIL: no Demand event" >&2; exit 1; }
+    echo "$signals" | grep -q '"impulses":\[\]'           || { echo "FAIL: no impulse-expiry event" >&2; exit 1; }
+    echo "$signals" | grep -qx 'null'                     || { echo "FAIL: no null on final clear" >&2; exit 1; }
+    echo "$signals" | grep -q '"level":"Quiet"'           || { echo "FAIL: no decay event" >&2; exit 1; }
+    echo "ipc: OK ($(wc -l < "$WORK/events.jsonl") events recorded)"
+}
+
+# run_case NAME CONFIG SETUP [DURING]: fresh nested instance per case so no
+# state leaks. SETUP runs before the capture; DURING runs after the capture
+# starts and must finish inside the first 10 s (the steady window is the
+# final 20 s).
+run_case() {
+    local name=$1 cfg=$2 setup=$3 during=${4:-true}
+    start_nested "$cfg"
+    $setup
+    capture_bg "$name"
+    sleep 0.5
+    $during
+    capture_wait
+    count_steady "$name"
+    stop_nested
+}
+other_kitty() { kitty_ids | grep -vx "$WID" | head -1; }
+setup_quiet_ring() { msg set-window-signal --id "$WID" --source demo --accent '#e5a33c'; assert_eq "$(win "$WID" .signal.level)" Quiet quiet-ring; }
+setup_demand() {   # $1 = motion; signaled window unfocused, no until-focus
+    spawn_kitty_to 2; OTHER=$(other_kitty)
+    set_demand "$WID" "$1"; msg action focus-window --id "$OTHER"
+    assert_eq "$(win "$WID" .is_focused)" false "$1 unfocused"
+}
+setup_demand_focused() {   # until-focus set, then focused: demoted
+    spawn_kitty_to 2; OTHER=$(other_kitty)
+    set_demand "$WID" pulse --until-focus; msg action focus-window --id "$OTHER"
+    msg action focus-window --id "$WID"
+    assert_eq "$(win "$WID" .signal.level)" Quiet "until-focus demoted"
+}
+setup_ten() {   # $1 = motion; narrow columns so all ten are visible on 1280 px
+    spawn_kitty_to 10
+    local w; for w in $(kitty_ids); do set_demand "$w" "$1"; done
+    for w in $(kitty_ids); do
+        assert_eq "$(win "$w" .signal.motion)" "$2" "ten $1"
+        local x; x=$(win "$w" '.layout.tile_pos_in_workspace_view[0]')
+        awk -v x="$x" 'BEGIN { exit !(x >= 0 && x < 1280) }' || { echo "FAIL: window $w not in view (x=$x)" >&2; exit 1; }
+    done
+}
+setup_inactive_workspace() {
+    spawn_kitty_to 2; OTHER=$(other_kitty)
+    set_demand "$WID" pulse                       # no until-focus: focusing must not demote
+    msg action focus-window --id "$WID"
+    msg action move-window-to-workspace-down --focus false
+    assert_eq "$(win "$WID" .signal.level)" Demand "still Demand after move"
+    [ "$(win "$WID" .workspace_id)" != "$(win "$OTHER" .workspace_id)" ] || { echo "FAIL: same workspace" >&2; exit 1; }
+    assert_eq "$(win "$OTHER" .is_focused)" true "focus stayed"
+}
+setup_hidden_tab() {
+    spawn_kitty_to 2; OTHER=$(other_kitty)
+    set_demand "$WID" pulse
+    msg action focus-window --id "$OTHER"
+    msg action consume-or-expel-window-left     # OTHER joins WID's column
+    msg action toggle-column-tabbed-display
+    msg action focus-window --id "$OTHER"       # OTHER is the shown tab
+    assert_eq "$(win "$WID" '.layout.pos_in_scrolling_layout[0]')" "$(win "$OTHER" '.layout.pos_in_scrolling_layout[0]')" "same column"
+    assert_eq "$(win "$WID" .is_focused)" false "hidden tab unfocused"
+}
+setup_offscreen_column() {
+    spawn_kitty_to 4                              # four half-width columns; WID is leftmost
+    set_demand "$WID" pulse
+    msg action focus-column-last
+    local x w; x=$(win "$WID" '.layout.tile_pos_in_workspace_view[0]'); w=$(win "$WID" '.layout.tile_size[0]')
+    awk -v x="$x" -v w="$w" 'BEGIN { exit !(x + w <= 0) }' || { echo "FAIL: WID still in view (x=$x w=$w)" >&2; exit 1; }
+}
+setup_motion_off() { set_demand "$WID" pulse; assert_eq "$(win "$WID" .signal.motion)" Pulse "stored motion"; }
+during_pulses() { local k; for k in 1 2 3; do msg pulse-window-signal --id "$WID" --source demo --kind done; sleep 0.3; done; }
+during_one_done() { msg pulse-window-signal --id "$WID" --source demo --kind done; }
+
+mode_cases() {
+    tools_ready
+    run_case quiet-ring          "$WORK/base.kdl"           setup_quiet_ring
+    run_case demand-pulse        "$WORK/base.kdl"           "setup_demand pulse"
+    run_case demand-pulse-focused "$WORK/base.kdl"          setup_demand_focused
+    run_case demand-breathe      "$WORK/base.kdl"           "setup_demand breathe"
+    run_case demand-flash        "$WORK/base.kdl"           "setup_demand flash"
+    run_case ten-breathe         "$WORK/narrow.kdl"         "setup_ten breathe Breathe"
+    run_case ten-flash           "$WORK/narrow.kdl"         "setup_ten flash Flash"
+    run_case inactive-workspace  "$WORK/base.kdl"           setup_inactive_workspace
+    run_case hidden-tab          "$WORK/base.kdl"           setup_hidden_tab
+    run_case offscreen-column    "$WORK/base.kdl"           setup_offscreen_column
+    run_case motion-off          "$WORK/motion-off.kdl"     setup_motion_off during_pulses
+    run_case reduced-flash       "$WORK/reduced.kdl"        "setup_demand flash"
+    run_case attention-none      "$WORK/attention-none.kdl" "setup_demand pulse"
+    run_case impulse-none        "$WORK/impulse-none.kdl"   setup_quiet_ring during_pulses
+    run_case done-pulse          "$WORK/base.kdl"           setup_quiet_ring during_one_done
+    run_case slowdown            "$WORK/slowdown.kdl"       "setup_demand pulse"
+    echo "cases: OK, rates in $WORK/rates.txt"
+}
+
+mode_gpu() {
+    tools_ready
+    local base; base=$(sha256sum "$EVIDENCE"/material-roughness-b220152d/*.tracy | awk '$1=="2559901a945a65cdcd0d37dbf5af5f41b07d37c9ee3743633e2d8823026405a9" { print $2 }')
+    [ -n "$base" ] || { echo "FAIL: retained roughness-0 GPU trace not found by hash" >&2; exit 1; }
+    run_case gpu-ring-rim "$WORK/base.kdl" "setup_demand pulse"
+    {
+        echo "roughness-0 baseline ($base): $(gpu_median "$base")"
+        echo "ring + rim orbit, demand pulse: $(gpu_median "$WORK/gpu-ring-rim.tracy")"
+    } | tee "$WORK/gpu.txt"
+}
+
+"mode_$MODE"
 ```
 
-Expected: an amber ring on the visible slab band, the rim glint swaying, one diagonal sweep, one chromatic jolt captured in `error-flash.png`, then the default look again. Take further screenshots by repeating the `screenshot-screen` line with a new `--path` at each state. The evidence directory and `SHA256SUMS` feed the Task 12 record.
+Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh visual`
+Expected: exit 0, and `error-flash-<ns>.png` under the run's work directory shows an amber ring on the visible slab band, the rim glint swayed, and the chromatic jolt. Take further screenshots for the sweep by adding `screenshot-screen` calls with new `--path` values in `mode_visual` while iterating; the retained copy keeps the error-flash shot only.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 tasks done material-4a64bb "feat(material): render ring, rim orbit, and sweep signal responses"
-git add src/render_helpers/shaders/material.frag tasks
+git add src/render_helpers/shaders/material.frag docs/materials/scripts/material-signals-smoke.sh tasks
 git commit -m "feat(material): render ring, rim orbit, and sweep signal responses"
 ```
 
@@ -3549,6 +3804,7 @@ git commit -m "docs(material): document material signals configuration and IPC"
 
 **Files:**
 - Create: `docs/materials/2026-09-XX-material-signals-smoke.md` (date of the run)
+- Uses: `docs/materials/scripts/material-signals-smoke.sh` from Task 10
 - Modify: design doc status header, `docs/materials/README.md`
 
 - [ ] **Step 1: Unit and fixture suites**
@@ -3558,78 +3814,39 @@ Expected: all PASS. Record the counts.
 
 - [ ] **Step 2: Nested IPC round trip**
 
-Start the nested instance with the Task 10 Step 5 script up to the `msg()` definition (put the driving commands below in place of its signal section; the `trap` cleanup still applies). Record the event stream in the background: `msg -j event-stream > "$WORK/events.jsonl" & EVENTS_PID=$!`. Then set, pulse, clear as in Task 10 Step 5, then `msg set-window-signal --id "$WID" --source demo --ttl-ms 2000 --after-level quiet`, `sleep 2.5`, and `kill "$EVENTS_PID"`. Expected in `events.jsonl`: `WindowSignalChanged` on every write, on impulse expiry about 1.5 s after each pulse, on decay at 2 s, and `"signal":null` after the final clear; verify with `jq -c 'select(.WindowSignalChanged) | .WindowSignalChanged.signal' "$WORK/events.jsonl"`. Also run each rejection and assert a non-zero exit plus no new line in `events.jsonl`: unknown id (`--id 999999`), `--source niri` on set, pulse, and clear, pulse before set (`--source fresh`), `--accent zzz`, `--ttl-ms 90000000 --after-level quiet`, `--after-level quiet` without `--ttl-ms`, and a 17th source (`for i in $(seq 17); do msg set-window-signal --id "$WID" --source "s$i"; done`, expecting the last to fail).
+Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh ipc`
+
+The `ipc` mode records `niri msg -j event-stream` for the whole sequence and asserts, in the script: a `Demand` event on set, an event with an empty impulse list after the `done` impulse expires (the pulse is left alone for 1.7 s), `null` after the clear, and a `Quiet` event when the `--ttl-ms 2000 --after-level quiet` slot decays from `Demand`. It then runs every rejection while the stream is still recording, each wrapped so a non-zero exit is the success condition: unknown id, `--source niri` on set, pulse, and clear, pulse for a source with no slot, `--accent zzz`, `--ttl-ms 90000000`, `--after-level` without `--ttl-ms`, and a 16th external source (`demo` plus `s1` to `s15` fill the bound, so `s16` must fail). It asserts that no rejection appended an event. Expected: exit 0 and `ipc: OK`; `events.jsonl` is retained in the work directory.
 
 - [ ] **Step 3: GLES smoke with redraw counts**
 
-**Tracy tooling.** This tree's `tracy-client-sys 0.28.0` embeds Tracy 0.13.1 (protocol 76); the installed 0.14 tools cannot read its traces, as the roughness smoke records. Use the protocol-matched tools the roughness run built, verifying them against that record's SHA-256 table:
+Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh cases`
 
-```bash
-TOOLS=${NIRI_MATERIAL_WORK_ROOT:?}/material-roughness-b220152d/tools
-sha256sum "$TOOLS/tracy-capture" "$TOOLS/tracy-csvexport"   # must match the roughness smoke table
-```
+The `cases` mode builds the `profile-with-tracy` binary, then for each case starts a fresh nested instance from the named config variant, applies the setup, asserts the state through `niri msg -j windows`, captures 30 s with the protocol-matched Tracy 0.13.1 tools (verified by `sha256sum -c` against the roughness smoke's table, or rebuilt from the `v0.13.1` tag), and counts zones named exactly `Niri::redraw` in the final 20 s of the trace, where the trace end is the latest timestamp of any zone. Cases that raise impulses do so inside the first 10 s, concurrently with the capture. Kitty runs with cursor blinking disabled and no shell (`--hold true`), so the only client damage during a capture is what the case causes.
 
-If they are absent, rebuild them from the pinned release before continuing:
+Expected `Niri::redraw` zones in the final 20 s, read from `rates.txt`:
 
-```bash
-git clone --depth 1 --branch v0.13.1 https://github.com/wolfpld/tracy "$WORK/tracy-src"
-cmake -S "$WORK/tracy-src/capture"   -B "$WORK/tracy-capture-build"   -DCMAKE_BUILD_TYPE=Release && cmake --build "$WORK/tracy-capture-build"
-cmake -S "$WORK/tracy-src/csvexport" -B "$WORK/tracy-csvexport-build" -DCMAKE_BUILD_TYPE=Release && cmake --build "$WORK/tracy-csvexport-build"
-TOOLS=$WORK/tools; mkdir -p "$TOOLS"; cp "$WORK"/tracy-capture-build/tracy-capture "$WORK"/tracy-csvexport-build/tracy-csvexport "$TOOLS"/
-```
+| Case | Setup (asserted in the script) | Expected |
+|---|---|---|
+| quiet-ring | accent only, level Quiet | 0 |
+| demand-pulse | Demand + Pulse, another window focused | about 540 (27/s) |
+| demand-pulse-focused | set with `--until-focus`, then focused: level Quiet | 0 |
+| demand-breathe | Demand + Breathe, unfocused | about 160 (8/s) |
+| demand-flash | Demand + Flash, unfocused | about 320 (16/s) |
+| ten-breathe, ten-flash | ten windows in 0.1-proportion columns, all asserted in view | within 10% of the single-window case |
+| inactive-workspace | Demand + Pulse without until-focus, moved down with `--focus false`, level asserted still Demand | 0 |
+| hidden-tab | shares a tabbed column with the shown window | 0 |
+| offscreen-column | leftmost of four half-width columns, `focus-column-last`, asserted `x + w <= 0` | 0 |
+| motion-off | `signal { motion "off" }`, Pulse stored, three `done` pulses in the first 10 s | 0 |
+| reduced-flash | `signal { motion "reduced" }`, Flash requested | about 540 (the Pulse rate) |
+| attention-none | response `attention "none"`, Demand + Pulse | 0 |
+| impulse-none | every impulse response `none`, three pulses in the first 10 s | 0 |
+| done-pulse | one `done` pulse in the first 10 s | 0 (the burst it causes lies inside the first 10 s) |
+| slowdown | `animations { slowdown 3 }`, Demand + Pulse | equal to demand-pulse |
 
-Build the profiling binary with `cargo build --release --features profile-with-tracy` and run the Task 10 Step 5 script with `NIRI=$PWD/target/release/niri` from that build. For each case: apply the case setup, start a 30 s capture, and count `Niri::redraw` zones in the steady-state window, defined as the final 20 s of the trace, so the first 10 s absorb setup events and the trace's retained earlier history is excluded by construction:
+Then run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh gpu`
 
-```bash
-count_steady() {  # $1 = case name; prints Niri::redraw zones in the last 20 s and the rate per second
-  local CASE=$1 CAP="$WORK/$1.tracy"
-  "$TOOLS/tracy-capture" -o "$CAP" -a 127.0.0.1 -s 30
-  "$TOOLS/tracy-csvexport" --unwrap -f "Niri::redraw" "$CAP" > "$WORK/$CASE.csv"
-  # --unwrap emits one row per zone with ns_since_start in column 4; without it the rows are aggregates.
-  awk -F, 'NR>1 { t=$4+0; if (t>max) max=t; ts[NR]=t }
-           END { lo=max-20e9; n=0; for (k in ts) if (ts[k]>=lo) n++; printf "%s: %d zones in 20 s = %.1f/s\n", "'"$CASE"'", n, n/20 }' "$WORK/$CASE.csv" | tee -a "$WORK/rates.txt"
-}
-```
-
-**Case setup.** All commands go through `msg` against `$NIRI_SOCKET`. Helper to open more kitty windows and wait for them: `spawn_kitty() { msg action spawn -- kitty; for _ in $(seq 100); do [ "$(msg -j windows | jq '[.[] | select(.app_id=="kitty")] | length')" -ge "$1" ] && return; sleep 0.1; done; echo "kitty $1 never mapped" >&2; exit 1; }`. Config variants are separate files applied with `msg action load-config-file "$WORK/<variant>.kdl"`; each variant is the base config plus the lines named. After every setup, assert the state with the `jq` line given, then call `count_steady <case>`.
-
-| Case | Setup and state assertion |
-|---|---|
-| quiet-ring | `msg set-window-signal --id "$WID" --source demo --accent '#e5a33c'`; assert `msg -j windows \| jq '.[] \| select(.id=='"$WID"') \| .signal.level' == "Quiet"` |
-| demand-pulse | `spawn_kitty 2`; `OTHER=$(msg -j windows \| jq '.[] \| select(.app_id=="kitty" and .id!='"$WID"') \| .id')`; `msg set-window-signal --id "$WID" --source demo --level demand --motion pulse --until-focus`; `msg action focus-window --id "$OTHER"`; assert `.is_focused==false` for `$WID` |
-| demand-pulse-focused | continue from demand-pulse: `msg action focus-window --id "$WID"`; assert `.signal.level=="Quiet"` for `$WID` (until-focus demoted it) |
-| demand-breathe / demand-flash | as demand-pulse with `--motion breathe` / `--motion flash` |
-| ten-breathe / ten-flash | `spawn_kitty 10`; `for w in $(msg -j windows \| jq '.[] \| select(.app_id=="kitty") \| .id'); do msg set-window-signal --id "$w" --source demo --level demand --motion breathe; done` (or `flash`); focus a non-kitty-free state is not needed since all ten are visible or tabbed; assert ten windows report `.signal.motion=="Breathe"` |
-| inactive-workspace | from demand-pulse: `msg action focus-window --id "$WID"; msg action move-window-to-workspace-down --focus false`; assert `$WID`'s `.workspace_id` differs from `$OTHER`'s and `$OTHER` `.is_focused==true` |
-| hidden-tab | from demand-pulse: `msg action focus-window --id "$OTHER"; msg action consume-or-expel-window-left; msg action toggle-column-tabbed-display; msg action focus-window --id "$OTHER"` so both share one tabbed column and `$OTHER` is the shown tab; assert both have equal `.layout.pos_in_scrolling_layout[0]` and `$WID` `.is_focused==false` |
-| offscreen-column | from demand-pulse with `$WID` in the leftmost column: `spawn_kitty 3; spawn_kitty 4;` then `msg action focus-column-last`; with default 0.5-proportion columns on a 1280 px view the leftmost column is scrolled out; assert `$WID` `.layout.tile_pos_in_workspace_view[0] + .layout.tile_size[0] <= 0` |
-| motion-off | `load-config-file` variant with `signal { motion "off" }`; set demand-pulse on `$WID` and two `pulse ... --kind done`; assert `.signal.motion=="Pulse"` (stored) while the capture shows no recurrence |
-| reduced-flash | variant with `signal { motion "reduced" }`; set `--motion flash`; expect the Pulse rate |
-| attention-none | variant whose `response "default" { attention "none" }`; set demand-pulse |
-| impulse-none | variant whose `response "default" { ping "none"; done "none"; error "none" }`; set the slot, then pulse `done` three times inside the first 10 s |
-| done-pulse | set the slot; pulse `done` once inside the first 10 s |
-| slowdown | variant with `animations { slowdown 3 }`; repeat demand-pulse |
-
-The contract from Task 9: one coalescible redraw request per output per mutation and per deadline firing; steady state is what the 20 s window measures.
-
-| Case | Expected `Niri::redraw` zones in the final 20 s |
-|---|---|
-| quiet-ring | 0 |
-| demand-pulse | about 540 (27/s) |
-| demand-pulse-focused | 0 |
-| demand-breathe | about 160 (8/s) |
-| demand-flash | about 320 (16/s) |
-| ten-breathe, ten-flash | within 10% of the single-window case |
-| inactive-workspace, hidden-tab, offscreen-column | 0 |
-| motion-off | 0 |
-| reduced-flash | about 540 (the Pulse rate) |
-| attention-none | 0 |
-| impulse-none | 0 (the per-pulse and per-expiry requests all fall in the first 10 s) |
-| done-pulse | 0 in the final 20 s; additionally, in the first 10 s, a burst lasting about 1.5 s after the pulse |
-| error flash on default glass | visibly jolts in the Task 10 screenshot |
-| slowdown | rates equal to demand-pulse |
-
-Record per-frame GPU `draw shader` cost of ring plus rim orbit against the roughness baseline the same way the roughness smoke did (matched steady-state samples, median, delta). Stop the instance and the Weston unit after the last case.
+The `gpu` mode locates the retained roughness-0 GPU trace by its SHA-256 from the roughness smoke table, captures the ring plus rim-orbit Demand + Pulse case, and reports for both traces the median execution time of the first 14 `draw shader` GPU zones between 20 s and 28 s, the roughness smoke's steady-state sample rule. Record both medians and the delta in the evidence document; the design sets no threshold for this delta, so report it without inventing one, and stop before changing status only if the quiet-ring case regresses the default path beyond run-to-run noise.
 
 - [ ] **Step 4: Physical DRM check**
 

@@ -631,8 +631,8 @@ boundary, so there is one conversion, in the server, and it is tested.
   sustained Flash window wakes only at its edges and ten Flash windows on
   one output wake at the same rate as one; a window with live impulses
   under `signal { motion "off" }` or with every impulse response set to
-  `none` produces no redraws beyond the one each pulse and each expiry
-  queues; a `Demand + Pulse` window under `signal {
+  `none` produces no recurring redraws, only the coalescible request per
+  pulse and per deadline firing; a `Demand + Pulse` window under `signal {
   motion "off" }` arms no timer; a `Demand + Flash` window under
   `reduced` wakes at Pulse bucket boundaries, not Flash edges; a window
   whose response has `attention none` arms no timer; wakeup rates are
