@@ -1,12 +1,12 @@
 ---
 id: material-c854bd
 title: Add mipmapped backdrop storage and glass roughness
-status: doing
+status: done
 priority: 2
 size: l
 owner: feat/material-c854bd
 created: 2026-09-01T14:36:13Z
-updated: 2026-09-02T03:38:53Z
+updated: 2026-09-02T10:08:21Z
 depends: [material-ef9eec]
 tags: [migration, feature, rendering]
 ---
@@ -21,3 +21,4 @@ Outcome: glass exposes a meaningful roughness control backed by damage-aware, bu
 - 2026-09-02T03:06:24Z (feat/material-c854bd): Final design review renames the GL-free policy holder to PrefilterState, makes EffectBuffer ownership explicit, and scales the overview tolerance to one captured screen pixel at roughness 0.5.
 - 2026-09-02T03:15:15Z (feat/material-c854bd): Implementation plan split into material-26a496, material-2793ca, material-768b40, material-46f6b7, and material-ef9eec; the final acceptance step remains open until the dependent Prism commit lands.
 - 2026-09-02T03:38:53Z (feat/material-c854bd): Native implementation through 26c14954 passes GLSL validation and the full workspace suite; Prism handoff commits 2540fad and f1a65dd pass 141 Node plus Lua tests in a writable clone. Final closure awaits applying those commits to ~/d/prism and focused GPU evidence.
+- 2026-09-02T10:08:21Z (feat/material-c854bd): Cross-repository delivery is complete: native implementation and acceptance evidence are on feat/material-c854bd; Prism roughness landed at c3c459d; full automated, nested GLES, Tracy reuse/performance, and calibrated overview gates pass.

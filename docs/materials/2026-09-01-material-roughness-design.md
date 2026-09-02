@@ -1,11 +1,10 @@
 # Material roughness and prefiltered backdrop storage: design
 
-**Status:** accepted 2026-09-01; review amendments incorporated 2026-09-01.
-Native implementation is complete on `feat/material-c854bd` through
-`26c14954`; Prism definition and sink wiring are complete in handoff commit
-`f1a65dd`. The nested GLES smoke is recorded in
-[`2026-09-02-material-roughness-smoke.md`](2026-09-02-material-roughness-smoke.md);
-Tracy, calibrated overview evidence, and final merge are pending. Tracked by
+**Status:** implemented and verified 2026-09-02 on `feat/material-c854bd`
+through `eadba69a`; final acceptance evidence is recorded in
+[`2026-09-02-material-roughness-smoke.md`](2026-09-02-material-roughness-smoke.md).
+Prism definition and sink wiring landed on its `main` branch at `c3c459d`.
+Final merge into the native production branch is pending. Tracked by
 `material-c854bd`.
 
 ## Context

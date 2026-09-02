@@ -21,8 +21,8 @@ All future production rebases and material commits happen in this repository.
 - `2026-08-28-v1-daily-driver-rollout-design.md`: implemented deployment and passed burn-in design.
 - `2026-08-29-material-backdrop-blur-design.md`: implemented backdrop blur design.
 - `2026-08-29-material-backdrop-blur-evidence.md`: retained backdrop blur verification evidence.
-- `2026-09-01-material-roughness-design.md`: native and Prism roughness implementation complete; focused GPU acceptance pending.
-- `2026-09-02-material-roughness-smoke.md`: passing nested GLES smoke; Tracy and calibrated overview acceptance pending.
+- `2026-09-01-material-roughness-design.md`: implemented and verified native and Prism roughness design.
+- `2026-09-02-material-roughness-smoke.md`: passing nested GLES, Tracy, damage-reuse, and calibrated overview evidence.
 - `material-config.md`: material and glass configuration reference.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
@@ -35,7 +35,7 @@ All future production rebases and material commits happen in this repository.
 - `plans/2026-08-27-v1-drm-acceptance.md`: executed physical DRM acceptance plan.
 - `plans/2026-08-28-v1-daily-driver-rollout.md`: executed package and daily-driver rollout procedure.
 - `plans/2026-08-29-material-backdrop-blur.md`: executed backdrop blur plan.
-- `../plans/2026-09-01-material-roughness.md`: active roughness implementation and verification plan.
+- `../plans/2026-09-01-material-roughness.md`: executed roughness implementation and verification plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the

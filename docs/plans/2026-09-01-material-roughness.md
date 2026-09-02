@@ -68,7 +68,7 @@ performs no allocation or downsample work.
 - Consumed by: Task 4 passes `ResolvedGlass::roughness` to both effect
   buffers.
 
-- [ ] **Step 1: Write the failing config tests**
+- [x] **Step 1: Write the failing config tests**
 
 In `niri-config/src/lib.rs`, add `roughness 0.08` to
 `material_parses_full_glass_block`, add `roughness: 0.08` to its expected
@@ -91,7 +91,7 @@ In `niri-config/src/lib.rs`, add `roughness 0.08` to
     }
 ```
 
-- [ ] **Step 2: Run the focused tests and confirm the new field is missing**
+- [x] **Step 2: Run the focused tests and confirm the new field is missing**
 
 Run:
 
@@ -101,7 +101,7 @@ cargo test -p niri-config roughness -- --nocapture
 
 Expected: FAIL because `ResolvedGlass` has no `roughness` field.
 
-- [ ] **Step 3: Add the minimal parser and resolver fields**
+- [x] **Step 3: Add the minimal parser and resolver fields**
 
 In `Glass`, immediately after `anisotropic_blur`, add:
 
@@ -117,7 +117,7 @@ Add `pub roughness: f64` in the same position in `ResolvedGlass`, set
                 roughness: g.roughness.map_or(d.roughness, |x| x.0),
 ```
 
-- [ ] **Step 4: Run the config suite**
+- [x] **Step 4: Run the config suite**
 
 Run:
 
@@ -127,7 +127,7 @@ cargo test -p niri-config material_ -- --nocapture
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add niri-config/src/material.rs niri-config/src/lib.rs
@@ -150,7 +150,7 @@ git commit -m "feat(config): add glass roughness"
   `mark_clean()`, `mark_failed()`, `selection(f64, f64)` and
   `level_sizes()`.
 
-- [ ] **Step 1: Add failing state tests**
+- [x] **Step 1: Add failing state tests**
 
 Append an inline test module to `effect_buffer.rs`:
 
@@ -199,7 +199,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run the tests and confirm the types are missing**
+- [x] **Step 2: Run the tests and confirm the types are missing**
 
 Run:
 
@@ -209,7 +209,7 @@ cargo test -p niri prefilter_ -- --nocapture
 
 Expected: FAIL because `PrefilterState` is undefined.
 
-- [ ] **Step 3: Implement the state machine and exact level math**
+- [x] **Step 3: Implement the state machine and exact level math**
 
 Add above `EffectBuffer`:
 
@@ -272,7 +272,7 @@ impl PrefilterState {
 }
 ```
 
-- [ ] **Step 4: Run the focused tests**
+- [x] **Step 4: Run the focused tests**
 
 Run:
 
@@ -282,7 +282,7 @@ cargo test -p niri prefilter_ -- --nocapture
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/render_helpers/effect_buffer.rs
@@ -307,7 +307,7 @@ git commit -m "feat(render): model roughness prefilter state"
   f64) -> Option<PrefilteredTexture>`.
 - Consumed by: Task 4 material drawing.
 
-- [ ] **Step 1: Extract the existing downsample draw without changing blur output**
+- [x] **Step 1: Extract the existing downsample draw without changing blur output**
 
 Move the downsample half of `Blur::render` into one private helper used by
 both callers. Expose this thin wrapper on `BlurProgram`:
@@ -335,7 +335,7 @@ clamp filtering, destination-sized `half_pixel`, and one draw per target.
 `Blur::render` calls it with `&mut self.textures[1..]` and
 `options.offset as f32`; prefilter calls it with `1.0`.
 
-- [ ] **Step 2: Run the existing blur build checks**
+- [x] **Step 2: Run the existing blur build checks**
 
 Run:
 
@@ -345,7 +345,7 @@ cargo test -p niri render_helpers::blur --no-run
 
 Expected: PASS; extraction has not changed the full blur path.
 
-- [ ] **Step 3: Add two states and two texture vectors to each offscreen**
+- [x] **Step 3: Add two states and two texture vectors to each offscreen**
 
 Add these fields to `Offscreen`, initialized from the new texture's size:
 
@@ -371,7 +371,7 @@ Use one helper to map level zero to the selected source and positive levels to
 `textures[level - 1]`. Never clone a texture before downsampling finishes,
 because `is_unique_reference` is the allocation guard.
 
-- [ ] **Step 4: Implement lazy preparation and once-per-dirty failure**
+- [x] **Step 4: Implement lazy preparation and once-per-dirty failure**
 
 `render_prefiltered` first calls the existing `render(frame, blur)` to obtain
 the selected source, computes `selection`, and immediately returns the source
@@ -403,7 +403,7 @@ changes invalidate only `blurred_prefilter`; size or context replacement
 recreates the whole `Offscreen`. Add the accepted ponytail comment above the
 full-chain regeneration.
 
-- [ ] **Step 5: Build and run state/config tests**
+- [x] **Step 5: Build and run state/config tests**
 
 Run:
 
@@ -416,7 +416,7 @@ cargo build --workspace --all-targets
 Expected: all PASS. Inspect the new method to confirm the clean and failed
 branches allocate nothing and issue no GL draw.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/render_helpers/blur.rs src/render_helpers/effect_buffer.rs
@@ -439,7 +439,7 @@ git commit -m "feat(render): cache roughness prefilter pyramids"
 - Produces: samplers `niri_tex_bg_high`, `niri_tex_backdrop_high` and uniforms
   `mat_bg_prefilter_mix`, `mat_backdrop_prefilter_mix`.
 
-- [ ] **Step 1: Extend the in-place parameter commit test**
+- [x] **Step 1: Extend the in-place parameter commit test**
 
 In `parameter_change_advances_the_commit_in_place`, change only roughness on
 the second resolved material before `apply_resolved`:
@@ -451,7 +451,7 @@ the second resolved material before `apply_resolved`:
 Keep the assertions that the slot identity is preserved and the commit
 advances.
 
-- [ ] **Step 2: Request level pairs and preserve the plain fallback**
+- [x] **Step 2: Request level pairs and preserve the plain fallback**
 
 Replace both `EffectBuffer::render(...).ok()` calls with:
 
@@ -471,7 +471,7 @@ effect-buffer transition emits the one actionable warning.
 Add each pair's `mix` to the uniform array and bind five textures total. At
 mix zero, bind the selected level-zero clone for both low and high.
 
-- [ ] **Step 3: Add the GLSL pair sampler**
+- [x] **Step 3: Add the GLSL pair sampler**
 
 Declare the two new samplers and mix uniforms, then add:
 
@@ -492,7 +492,7 @@ vec4 samplePrefilter(
 Use it in `sampleBackdrop` and the workspace branch of `sampleBackground`.
 Do not change composition order or any optical tap math.
 
-- [ ] **Step 4: Register the uniforms and samplers**
+- [x] **Step 4: Register the uniforms and samplers**
 
 In `Shaders::compile`, add two `_1f` `UniformName`s and replace the material
 sampler slice with:
@@ -507,7 +507,7 @@ sampler slice with:
             ],
 ```
 
-- [ ] **Step 5: Run shader and Rust verification**
+- [x] **Step 5: Run shader and Rust verification**
 
 Run:
 
@@ -520,7 +520,7 @@ cargo test --workspace --all-targets
 Expected: all PASS. The compiled material program declares exactly five
 samplers, below the GLES2 minimum of eight.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/render_helpers/material.rs src/render_helpers/shaders/material.frag src/render_helpers/shaders/mod.rs
@@ -543,7 +543,7 @@ git commit -m "feat(material): render glass roughness"
   closed task chain. Prism is a separate repository delivery and must not be
   claimed complete by this task.
 
-- [ ] **Step 1: Run the complete automated suite**
+- [x] **Step 1: Run the complete automated suite**
 
 Run:
 
@@ -558,7 +558,7 @@ git diff --check
 Expected: all exit zero. Existing unrelated warnings may remain, but no new
 warning is accepted.
 
-- [ ] **Step 2: Record focused GPU evidence**
+- [x] **Step 2: Record focused GPU evidence**
 
 Use the established nested Weston material fixture and the same output size,
 driver, binary profile, window layout, and capture timing for every run. Save
@@ -579,7 +579,7 @@ raw traces and images outside the source tree. Record:
 If the default path regresses beyond run-to-run noise for an unexplained
 reason, stop before changing status.
 
-- [ ] **Step 3: Update the user reference and evidence record**
+- [x] **Step 3: Update the user reference and evidence record**
 
 Add `roughness` to the example and parameter table in
 `docs/materials/material-config.md`, documenting native default `0`, range
@@ -594,7 +594,7 @@ rg -n "roughness|mipmap|prefilter|implementation has not started" README.md docs
 Correct only claims made stale by this delivery; preserve historical design
 records as historical.
 
-- [ ] **Step 4: Close the native task records and commit**
+- [x] **Step 4: Close the native task records and commit**
 
 Use `tasks done` for each completed plan step, then close `material-c854bd`
 only after the separate Prism commit exists and the accepted cross-repository
