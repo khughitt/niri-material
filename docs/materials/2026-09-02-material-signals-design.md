@@ -289,8 +289,10 @@ EffectiveSignal {
 
 `ResolvedResponse` exposes two material-agnostic methods for this:
 `attention_is_none()` and `impulse_selector(kind, policy) -> Option<u8>`.
-Selector values are opaque ids owned by the material type; the tile never
-interprets them. Everything downstream, including the transitions term,
+Selector values are ids owned by the material type. They are opaque to
+stage 1 and to the solver, which only carry them; the material-specific
+helper in section 6 is the one place that interprets them. Everything
+downstream, including the transitions term,
 timer candidates, and the fingerprint, is computed from the effective
 signal, so state that draws nothing costs nothing. The stored slots,
 impulse queue, and expiry timers are unaffected, because the event stream
@@ -376,10 +378,14 @@ signal motion are therefore driven differently.
   a workspace switch or the overview actually renders it. Wakeups per output
   are bounded by the union of the bucket grids in use: about 8 per second
   for Breathe alone, about 27 for Pulse, 16 for Flash.
-- `InputFingerprint` gains a `SignalFingerprint`: `level` and each accent
-  channel quantized to 1/256, `breath` quantized to 1/32 of its period, each
-  impulse envelope quantized to 1/128, and oscillator time pinned to a
-  constant when motion is `Static` and no impulse is live.
+- `InputFingerprint` gains a `SignalFingerprint` covering the complete
+  effective frame plus the material helper's derived inputs: `level` and
+  each accent channel quantized to 1/256, `breath` quantized to 1/32 of its
+  period, and per impulse slot the selector, the envelope and progress each
+  quantized to 1/128, and the accent channels at 1/256. Oscillator time is
+  pinned to a constant when motion is `Static` and no impulse is live. A
+  sweep whose band moves while its envelope stays in one bucket, or a slot
+  whose selector changes, therefore always produces damage.
 - `MaterialState::advance_commit` is unchanged: the element commit advances
   only when the fingerprint differs, so a quiet window carrying only an
   accent ring costs zero redraws and zero wakeups.
@@ -491,10 +497,19 @@ mat_sig_ring         vec2    // inset, width (logical px, like mat_area_size)
 Impulse kinds never reach the shader. Stage 1 in section 3 has already
 resolved each live impulse to a glass selector (`ripple`, `flash`,
 `sweep`) and dropped `none`, so the shader only knows which effect to draw
-at which envelope, progress, and color. The tile folds `ripple` into the
-jelly activity input on the CPU and uploads it as a zero-cost `none`. Response selection is a
-uniform-int branch, so one program serves every combination and no
-permutation compile is needed.
+at which envelope, progress, and color.
+
+All glass-specific interpretation of selectors lives in one pure helper,
+`glass_signal_inputs(frame, glass) -> GlassSignalInputs` in
+`src/render_helpers/material.rs`, called from the tile's material branch.
+It folds `ripple` slots into the jelly activity term, computes the
+effective chromatic aberration and distortion from `flash` slots, derives
+the sample count from those effective values, and rewrites consumed slots
+to a zero-cost `none` selector. Its outputs feed both the uniforms and the
+`SignalFingerprint`, so the tile's generic code and the solver never
+branch on a selector value. A future material type supplies its own
+helper. Response selection is a uniform-int branch, so one program serves
+every combination and no permutation compile is needed.
 
 - **`ring`.** A second rounded-box SDF band inside the slab at `ring-inset`,
   `ring-width` wide, added as an emissive term in the accent. Baseline
@@ -514,8 +529,8 @@ permutation compile is needed.
   band, so up to four bands can be in flight, each at its own position and
   accent.
 - **`flash`.** Additive, because both defaults are zero and a multiplier
-  would be inert on default glass. The CPU takes `env = max` over
-  flash-selected slots and derives the effective values: chromatic
+  would be inert on default glass. `glass_signal_inputs` takes `env = max`
+  over flash-selected slots and derives the effective values: chromatic
   aberration `min(1, base + 0.5 * env)` and distortion
   `min(1, base + 0.25 * env)`, with `distortion-scale` unchanged. Those
   effective values are what the tile uploads as `mat_chromatic_aberration`
@@ -523,10 +538,10 @@ permutation compile is needed.
   so the sample budget follows the flashed value and the shader needs no
   flash-specific path. Both are part of the fingerprint through the
   envelope.
-- **`ripple`.** Ripple impulse envelopes are summed with the native jelly
-  `activity` and clamped to the existing `[0, 1)` contract, so an event
-  ripples the slab exactly as a resize does and simultaneous ripples
-  saturate rather than overflow.
+- **`ripple`.** In `glass_signal_inputs`, ripple impulse envelopes are
+  summed with the native jelly `activity` and clamped to the existing
+  `[0, 1)` contract, so an event ripples the slab exactly as a resize does
+  and simultaneous ripples saturate rather than overflow.
 
 Fireflies, frost-on-idle, accent tint of attenuation color, and inactive
 desaturation are not in this slice. They slot in as new response names
@@ -548,6 +563,7 @@ without touching sections 1 through 5.
 | `ResolvedResponse::attention_is_none` and `impulse_selector` | `niri-config/src/material.rs`, per material type |
 | Response config, validation, resolved response | `niri-config/src/material.rs` (`Response`, `ResolvedResponse`), `niri-config/src/window_rule.rs` (`Match`, `MaterialRef`), `niri-config/src/lib.rs` (`validate_material_refs`) |
 | `signal { motion }` and `animations { material-signal }` | `niri-config/src/lib.rs`, `niri-config/src/animations.rs` |
+| `glass_signal_inputs` helper: ripple to activity, flash to effective aberration, distortion, and sample count | `src/render_helpers/material.rs`, pure, tested without a GPU |
 | Uniform upload and response selectors | `src/render_helpers/material.rs` (`MaterialRenderElement`) |
 | Shader responses | `src/render_helpers/shaders/material.frag` |
 
@@ -575,7 +591,9 @@ boundary, so there is one conversion, in the server, and it is tested.
   on rewrite, and impulse expiry pruning; every bound in section 1
   including the TTL cap; fifth-pulse eviction; stage 1 effective signal
   under each policy and with `none` responses; sweep progress monotonic
-  across the envelope; native slot creation and
+  across the envelope; `SignalFingerprint` differs when progress or a
+  selector changes while the envelope bucket is constant;
+  `glass_signal_inputs` for ripple summation, flash max, and sample count; native slot creation and
   removal with urgency; simultaneous ripple clamping and flash max with
   the derived sample count; bucket alignment across differently seeded
   windows and Flash edge-only boundaries; `WindowsState::apply` for
