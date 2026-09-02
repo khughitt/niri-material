@@ -94,6 +94,8 @@ Impulse { kind: Ping | Done | Error, accent: Option<Color>, at: Instant }
 - `tag` follows the same rule as `accent`.
 - Impulses are the union of all sources, capped at four live entries; the
   oldest is evicted first.
+- `sources` lists every contributing slot name, native slot included, in
+  write order, for window-rule matching and for IPC consumers.
 
 **Decay.** A slot with `expires` set is replaced by its `after` pair at
 `expires.at`, keeping `accent` and `tag`. Decay is pre-resolved by the
@@ -112,23 +114,35 @@ fight identity.
 
 **Lifecycle.** Slots die with the window. Focus applies `until_focus`
 demotion to every slot that asked for it. A source that wants to clear its
-contribution sends the clear action; the compositor never garbage-collects
+contribution sends the clear request; the compositor never garbage-collects
 a live source's slot on its own.
+
+**Bounds.** Signal state is written by unprivileged local clients, so it is
+bounded: at most 16 external slots per window, source names at most 64
+bytes, tags at most 256 bytes, at most four live impulses. A write past a
+bound is rejected with an error and changes nothing. Each slot owns at most
+one expiry timer; a rewrite removes the previous timer's registration token
+before scheduling a new one, and a clear or window close removes it.
 
 ## 2. IPC contract
 
-Three actions and one event, shaped like the existing urgency actions in
-`niri-ipc/src/lib.rs`.
+Three requests and one event in `niri-ipc/src/lib.rs`. They are `Request`
+variants, not `Action`s: `Action` is the keybind vocabulary, `do_action`
+returns nothing, and the server always answers an action with
+`Response::Handled`. Signal writes need a reply path, so they follow the
+`PickColor` pattern instead: the server posts the mutation to the event
+loop through `insert_idle`, waits on a bounded channel for a
+`Result<(), String>`, and answers `Handled` or the error.
 
 ```text
-niri msg action set-window-signal --id 12 --source familiar \
+niri msg set-window-signal --id 12 --source familiar \
     --accent '#e5a33c' --level demand --motion pulse --tag cats/ginger \
     --ttl-ms 30000 --after-level quiet --after-motion breathe --until-focus
 
-niri msg action pulse-window-signal --id 12 --source familiar --kind done \
+niri msg pulse-window-signal --id 12 --source familiar --kind done \
     [--accent '#e5a33c']
 
-niri msg action clear-window-signal --id 12 --source familiar
+niri msg clear-window-signal --id 12 --source familiar
 ```
 
 Rules:
@@ -142,16 +156,18 @@ Rules:
   the other defaults to `quiet` or `static`. Either `after` flag without
   `--ttl-ms` is an error.
 - Unknown window id, unknown source on `clear`, unknown level or motion or
-  kind, and malformed color all return an error reply. Nothing is silently
-  ignored.
+  kind, malformed color, and any bound in section 1 all return an error
+  reply, checked before mutation so a rejected request changes nothing.
+  Nothing is silently ignored.
 - Colors are `#rrggbb` or `#rrggbbaa`; alpha is accepted and ignored so
   the familiar ramp can be forwarded verbatim.
 
-The `Event` stream gains `WindowSignalChanged { id, signal }` carrying the
-folded `Signal`, emitted whenever the fold result changes, including on
-decay and focus demotion. The `Window` struct gains an optional `signal`
-field with the same shape so `niri msg windows` shows it. Both are additive
-and serialize as `null` when no slot exists.
+The `Event` stream gains `WindowSignalChanged { id, signal: Option<Signal> }`
+carrying the folded `Signal`, emitted whenever the fold result changes,
+including on decay, focus demotion, and the clear that removes the last
+slot, which sends `None`. The `Window` struct gains the same
+`signal: Option<Signal>` field so `niri msg windows` shows it. Both are
+additive and serialize as `null` when no slot exists.
 
 The familiar bridge, when it lands in familiar's repo, maps `intent.json`
 per session as: `color.base` to `--accent`; `urgency` `none` to `quiet`
@@ -199,24 +215,37 @@ and `jelly_state` precedent so it is unit-testable without a GPU.
 
 ## 4. Redraw and damage contract
 
-Signals follow the jelly discipline exactly.
+Fingerprints bound damage, not compositor wakeups. While
+`unfinished_animations_remain` is set, the tty backend requeues a redraw on
+every vblank, so anything that reports itself as an ongoing transition runs
+the render loop at refresh rate for as long as it lasts. The two kinds of
+signal motion are therefore driven differently.
 
-- `Tile::are_transitions_ongoing` gains a signal term: true while the
-  baseline crossfade runs, while the folded motion is not `Static`, or while
-  any impulse is live. The tile therefore rides niri's existing
-  `are_animations_ongoing` redraw loop; no new timer is introduced.
+- **Transient motion rides the animation loop.** `Tile::are_transitions_ongoing`
+  gains a signal term that is true while the baseline crossfade runs or any
+  impulse is live. Both are bounded, at most 1.5 s, so refresh-rate
+  wakeups for that span are acceptable and match how open, move, and resize
+  animations already behave.
+- **Sustained motion uses bucket timers.** Breathe, Pulse, and Flash do
+  not set the transitions term. Instead the tile schedules a calloop
+  `Timer` for the next quantization boundary of the oscillator, and the
+  timer callback queues a redraw for the window's output. The compositor
+  wakes only when the uniform will actually change: about 8 times per
+  second for Breathe, about 27 for Pulse, and at the edges for Flash. The
+  timer is replaced on every fold change and removed when motion returns to
+  `Static` or the window closes.
 - `InputFingerprint` gains a `SignalFingerprint`: `level` and each accent
   channel quantized to 1/256, `breath` quantized to 1/32 of its period, each
   impulse envelope quantized to 1/128, and oscillator time pinned to a
   constant when motion is `Static` and no impulse is live.
 - `MaterialState::advance_commit` is unchanged: the element commit advances
   only when the fingerprint differs, so a quiet window carrying only an
-  accent ring costs zero redraws.
+  accent ring costs zero redraws and zero wakeups.
 
-Expected redraw rates from the quantization: Breathe about 8 per second,
-Pulse about 27, Flash bounded by the 50 ms edges, impulses about 128 over
-1.5 s then nothing. A `Demand` window pulses until focused; that is the
-intended behavior and the reason the reduced-motion switch exists.
+A `Demand` window pulses until focused; that is the intended behavior and
+the reason the reduced-motion switch exists. The smoke test in section 9
+measures wakeups per second, not just damage, so the timer path is verified
+rather than assumed.
 
 ## 5. Configuration contract
 
@@ -268,15 +297,33 @@ Rules:
 - `ring-inset` and `ring-width` are logical pixels. `ring-inset` is measured
   inward from the slab's outer edge. `ring-inset + ring-width <= bevel` is
   validated on the resolved material, mirroring the existing
-  `offset > bevel` rule, so the ring always lies in the bevel band and stays
-  visible behind an opaque window.
+  `offset > bevel` rule, so the ring lies within the slab. The ring is
+  subject to the compositing contract like every other slab term: it shows
+  through the exterior band and through translucent window pixels, and is
+  hidden under fully opaque window pixels. `material_frame` inflates the
+  slab by `bevel - max(|offset|)` and then translates it by the offset, so
+  the exterior band on each side is that inflation plus or minus the
+  offset. With the defaults, bevel 12 and offsets 6, the band is 12 px on
+  the right and bottom and 0 px on the top and left, so an opaque window
+  shows the default ring on two sides only, consistent with how the offset
+  slab already reads. Terminals with translucent backgrounds show the full
+  ring. A full ring behind an opaque window needs
+  `bevel >= 2 * max(|offset|) + ring-inset + ring-width`; the
+  documentation states this rather than the validator enforcing it, because
+  the two-sided look is a legitimate choice.
 - `response=` on a window-rule material reference is validated in the same
   pass as material names (`validate_material_refs`), so an unknown response
   for that material is a whole-config error `material <name>: unknown
   response: <response>`. A rule without `response=` gets `default`.
-- `signal-source` and `signal-tag` are regex matches on the folded
-  `Signal`, added to `Match` next to `is-urgent`. A window with no slot
-  matches neither. A signal write, decay, or focus demotion sets
+- `signal-source` and `signal-tag` are regex matches added to `Match` next
+  to `is-urgent`. `signal-source` matches when any slot on the window,
+  including the native `niri` slot, has a source name matching the regex;
+  a window is a familiar window whether or not familiar's slot won the
+  fold. `signal-tag` matches against the folded `tag`, which follows the
+  accent provider. A window with no slot matches neither. The fold gains a
+  `sources: Vec<String>` listing contributing slot names, which the event
+  stream and `Window.signal` also expose. A signal write, decay, or focus
+  demotion sets
   `need_to_recompute_rules` the way `set_urgent` does, so `refresh_material`
   re-resolves the material and response without new plumbing. Matching on
   level is deferred; `is-urgent` covers the native case.
@@ -289,19 +336,25 @@ Glass realizes a `SignalFrame` inside the existing `ProgramType::Material`
 program. New uniforms:
 
 ```text
-mat_sig_accent      vec4   // rgb, w = 1 when accent present
-mat_sig_level       float
-mat_sig_breath      float
-mat_sig_light       vec3   // rim light direction xy, tint weight
-mat_sig_impulse_env vec4   // envelope per impulse slot
-mat_sig_impulse_rgb vec3[4]
-mat_sig_response    ivec4  // accent, attention, ping, done selectors
-mat_sig_response2   ivec2  // error selector, spare
-mat_sig_ring        vec2   // inset, width (physical pixels)
+mat_sig_accent       vec4    // rgb, w = 1 when accent present
+mat_sig_level        float
+mat_sig_breath       float
+mat_sig_light        vec3    // rim light direction xy, tint weight
+mat_sig_impulse_env  vec4    // envelope per impulse slot
+mat_sig_impulse_rgb  vec3[4]
+mat_sig_impulse_resp ivec4   // response selector per impulse slot
+mat_sig_response     ivec2   // accent, attention selectors
+mat_sig_ring         vec2    // inset, width (physical pixels)
 ```
 
-Response selection is a uniform-int branch, so one program serves every
-combination and no permutation compile is needed.
+Impulse kinds never reach the shader. The CPU resolves each live impulse's
+kind through the window's resolved response block into a response selector
+(`none`, `ripple`, `flash`, `sweep`) and uploads that per slot, so the
+shader only knows which effect to draw at which envelope and color. The
+`ripple` selector is folded into the jelly activity input on the CPU as
+well and reaches the shader as a zero-cost `none`. Response selection is a
+uniform-int branch, so one program serves every combination and no
+permutation compile is needed.
 
 - **`ring`.** A second rounded-box SDF band inside the slab at `ring-inset`,
   `ring-width` wide, added as an emissive term in the accent. Baseline
@@ -316,8 +369,10 @@ combination and no permutation compile is needed.
 - **`sweep`.** One specular band crossing the slab along the top-left to
   bottom-right diagonal, position driven by the impulse envelope, tinted by
   the impulse accent when present.
-- **`flash`.** Chromatic aberration and distortion each scaled by
-  `1 + 3 * envelope`, then back.
+- **`flash`.** Additive, because both defaults are zero and a multiplier
+  would be inert on default glass: chromatic aberration becomes
+  `min(1, base + 0.5 * envelope)` and distortion `min(1, base + 0.25 *
+  envelope)`, with `distortion-scale` unchanged, then back.
 - **`ripple`.** The impulse envelope is added into the existing jelly
   `activity` input, so an event ripples the slab exactly as a resize does.
 
@@ -330,10 +385,11 @@ without touching sections 1 through 5.
 | Concern | Location |
 |---|---|
 | `WindowSignals`, `Slot`, `Impulse`, fold, decay, focus demotion | new `src/window/signal.rs`, stored on `MappedWindow` beside `is_urgent` |
-| IPC types (`Level`, `Motion`, `ImpulseKind`, `Signal`, actions, event) | `niri-ipc/src/lib.rs` |
-| Action handling and `WindowSignalChanged` diffing | `src/input/mod.rs` next to the urgency actions; `src/ipc/server.rs` next to `WindowUrgencyChanged` |
+| IPC types (`Level`, `Motion`, `ImpulseKind`, `Signal`, requests, event) | `niri-ipc/src/lib.rs` |
+| Request handling with result channel, `WindowSignalChanged` diffing | `src/ipc/server.rs` next to `PickColor` and `WindowUrgencyChanged`; mutation entry points on `Niri` in `src/niri.rs` returning `Result` |
+| Expiry and oscillator bucket timers | `src/niri.rs`, registration tokens stored on the slot and tile |
 | Solver, `SignalFrame`, `SignalFingerprint`, oscillator constants | new `src/render_helpers/signal.rs`; pure, no GL |
-| Per-frame wiring, crossfade `Animation`, transitions term | `src/layout/tile.rs`, both `render_inner` material sites and `are_transitions_ongoing` |
+| Per-frame wiring, crossfade `Animation`, transitions term, impulse kind to selector resolution | `src/layout/tile.rs`, both `render_inner` material sites and `are_transitions_ongoing` |
 | Response config, validation, resolved response | `niri-config/src/material.rs` (`Response`, `ResolvedResponse`), `niri-config/src/window_rule.rs` (`Match`, `MaterialRef`), `niri-config/src/lib.rs` (`validate_material_refs`) |
 | `signal { motion }` and `animations { material-signal }` | `niri-config/src/lib.rs`, `niri-config/src/animations.rs` |
 | Uniform upload and response selectors | `src/render_helpers/material.rs` (`MaterialRenderElement`) |
@@ -357,20 +413,25 @@ so the event stream and the internal fold cannot drift.
 ## 9. Verification
 
 - Unit tests, `src/tests/material.rs` and a new `src/tests/signal.rs`:
-  fold precedence and accent inheritance; decay and `until_focus`
-  demotion; oscillator and envelope shapes at fixed clock values; fingerprint
-  pinned to a constant at rest and changing under motion; config parse and
-  validation for every error in section 5, including `response=` reference
-  checking and the ring-band rule.
+  fold precedence, accent inheritance, and the `sources` list; decay,
+  `until_focus` demotion, and timer replacement on rewrite; every bound in
+  section 1; oscillator and envelope shapes at fixed clock values; impulse
+  kind to selector resolution; fingerprint pinned to a constant at rest and
+  changing under motion; config parse and validation for every error in
+  section 5, including `response=` reference checking and the ring rule.
 - IPC round trip on a nested instance: set, pulse, clear through
-  `niri msg`, asserting the `WindowSignalChanged` events and the `signal`
-  field in `niri msg windows`, plus every rejection case.
+  `niri msg`, asserting the `WindowSignalChanged` events including the
+  `null` on final clear and the `signal` field in `niri msg windows`, plus
+  every rejection case returning an error reply with state unchanged.
 - Nested GLES smoke on the headless verification unit, mirroring
   `2026-09-02-material-roughness-smoke.md`: a quiet window with an accent
-  ring produces zero material redraws; a `Demand + Pulse` window redraws at
-  the quantized rate and stops on focus; a `done` pulse ends and damage
-  stops; `signal { motion "off" }` leaves only the crossfade. Tracy capture
-  for per-frame cost of ring plus rim orbit against the roughness baseline.
+  ring produces zero material redraws and zero redraw wakeups; a
+  `Demand + Pulse` window wakes at the bucket rate, not the refresh rate,
+  and stops on focus; a `done` pulse ends and damage stops; `flash` is
+  visible on default glass; `signal { motion "off" }` leaves only the
+  crossfade. Wakeups are measured from the Tracy redraw frames, and
+  per-frame cost of ring plus rim orbit is captured against the roughness
+  baseline.
 - Physical DRM check on the daily-driver build before acceptance, because
   this is the first material effect that runs on unfocused windows for long
   stretches.
@@ -381,8 +442,8 @@ so the event stream and the internal fold cannot drift.
   vocabulary, `ring-inset`/`ring-width`, `signal-source`/`signal-tag`
   matches, `response=` on material references, `signal { motion }`, and the
   `material-signal` animation.
-- `docs/wiki/IPC.md` or the fork's IPC notes: the three actions, the event,
-  and the `signal` field.
+- `docs/wiki/IPC.md` or the fork's IPC notes: the three requests, the
+  event, and the `signal` field.
 - `docs/materials/README.md`: this design and its evidence entries.
 - This document's status header.
 
@@ -437,6 +498,22 @@ Prism's file bus is global-scalar and write-path-only. Per-window addressing
 and a daemon fast path are explicitly deferred in its design, and adding
 them for this consumer would reintroduce the external-client-chasing-IPC
 model the fork exists to replace. Prism keeps the static tuning role.
+
+### Signal writes as `Action`s
+
+Making the three writes `Action` variants would let keybinds send them and
+would reuse `validate_action`, but `do_action` has no return value and the
+server always replies `Handled`, so unknown ids and bound violations could
+not be reported. Nothing needs a keybind to write a signal; requests with a
+result channel keep the error contract.
+
+### Sustained motion on the animation loop
+
+Reporting Breathe or Pulse as an ongoing transition is the least code, but
+`unfinished_animations_remain` requeues every vblank, so a single
+`Demand` window would hold the output at refresh rate indefinitely while the
+fingerprint discarded most of those frames. Bucket timers wake the
+compositor only when the uniform changes.
 
 ### Shader-side envelopes
 
