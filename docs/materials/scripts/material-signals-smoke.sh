@@ -493,14 +493,32 @@ mode_cases() {
     echo "cases: OK, rates in $WORK/rates.txt"
 }
 
-# Three captures per case; the reported figure is the median of the three
-# per-capture medians, which is what run-to-run noise is judged against.
-gpu_case_ns() {   # $1 = name, $2 = cfg, $3 = setup; sets GPU_NS to the median ns over three runs
-    local k m; for k in 1 2 3; do
-        run_case "$1-$k" "$2" "$3"
-        m=$(gpu_median_ns "$WORK/$1-$k.tracy"); echo "$m" >> "$WORK/$1.medians"
-    done
-    GPU_NS=$(sort -n "$WORK/$1.medians" | sed -n 2p)
+# Three captures per case; each round rotates their order to balance temporal
+# host/GPU drift. The reported figure remains the median of three medians.
+gpu_sample_ns() {   # $1 = name, $2 = cfg, $3 = setup, $4 = binary, $5 = round
+    local m
+    NIRI=$4 run_case "$1-$5" "$2" "$3"
+    m=$(gpu_median_ns "$WORK/$1-$5.tracy"); echo "$m" >> "$WORK/$1.medians"
+}
+gpu_round() {   # $1 = round; orders are reference/default/ring, default/ring/reference, ring/reference/default
+    case $1 in
+        1)
+            gpu_sample_ns gpu-reference "$WORK/gpu.kdl" true "$REF_NIRI" "$1"
+            gpu_sample_ns gpu-default "$WORK/gpu.kdl" true "$WORK/niri" "$1"
+            gpu_sample_ns gpu-ring-rim "$WORK/gpu.kdl" setup_gpu_ring "$WORK/niri" "$1"
+            ;;
+        2)
+            gpu_sample_ns gpu-default "$WORK/gpu.kdl" true "$WORK/niri" "$1"
+            gpu_sample_ns gpu-ring-rim "$WORK/gpu.kdl" setup_gpu_ring "$WORK/niri" "$1"
+            gpu_sample_ns gpu-reference "$WORK/gpu.kdl" true "$REF_NIRI" "$1"
+            ;;
+        3)
+            gpu_sample_ns gpu-ring-rim "$WORK/gpu.kdl" setup_gpu_ring "$WORK/niri" "$1"
+            gpu_sample_ns gpu-reference "$WORK/gpu.kdl" true "$REF_NIRI" "$1"
+            gpu_sample_ns gpu-default "$WORK/gpu.kdl" true "$WORK/niri" "$1"
+            ;;
+        *) echo "FAIL: invalid GPU round $1" >&2; exit 1 ;;
+    esac
 }
 # The regression reference is this same fixture run on the branch's base
 # commit, built with the same features: GPU time is workload dependent, so
@@ -537,12 +555,11 @@ setup_gpu_ring() { set_demand "$WID" static; assert_eq "$(win "$WID" .signal.lev
 mode_gpu() {
     tools_ready
     build_reference
-    local ref_ns default_ns ring_ns
-    NIRI=$REF_NIRI
-    gpu_case_ns gpu-reference "$WORK/gpu.kdl" true; ref_ns=$GPU_NS
-    NIRI=$WORK/niri
-    gpu_case_ns gpu-default "$WORK/gpu.kdl" true; default_ns=$GPU_NS             # no signal: the default path
-    gpu_case_ns gpu-ring-rim "$WORK/gpu.kdl" setup_gpu_ring; ring_ns=$GPU_NS     # ring + rim orbit at Demand, Static
+    local k ref_ns default_ns ring_ns
+    for k in 1 2 3; do gpu_round "$k"; done
+    ref_ns=$(sort -n "$WORK/gpu-reference.medians" | sed -n 2p)
+    default_ns=$(sort -n "$WORK/gpu-default.medians" | sed -n 2p)                # no signal: the default path
+    ring_ns=$(sort -n "$WORK/gpu-ring-rim.medians" | sed -n 2p)                  # ring + rim orbit at Demand, Static
     {
         printf 'base-commit build, default path (median of 3): %.3f ms\n' "$(awk -v n="$ref_ns" 'BEGIN { print n/1e6 }')"
         printf 'this build, default path, no signal (median of 3): %.3f ms\n' "$(awk -v n="$default_ns" 'BEGIN { print n/1e6 }')"
