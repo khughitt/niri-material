@@ -226,12 +226,11 @@ capture_bg() {   # stdout and stderr go to a per-capture log so numeric substitu
     timeout 90 "$TOOLS/tracy-capture" -o "$WORK/$1.tracy" -a 127.0.0.1 -p "$TRACY_PORT" -s 30 \
         > "$WORK/$1.capture.log" 2>&1 & CAP_PID=$!
 }
-# The -s timer starts when the client connects. Wait until the capture log
-# has grown past its initial connecting line before starting any timed
-# action, bounded at 30 s.
+# The -s timer starts when the client connects. Since tracy-capture buffers
+# redirected output, wait for its TCP session on this run's locked unique port.
 capture_ready() {   # $1 = case
     local _; for _ in $(seq 300); do
-        [ "$(wc -l < "$WORK/$1.capture.log")" -ge 2 ] && return
+        [ -n "$(ss -H -tn state established "( sport = :$TRACY_PORT or dport = :$TRACY_PORT )")" ] && return
         kill -0 "$CAP_PID" 2>/dev/null || break
         sleep 0.1
     done
