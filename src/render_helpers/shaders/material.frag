@@ -435,20 +435,22 @@ void main() {
             emissive += mat_sig_accent.rgb * glow * band;
         }
 
-        float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
-        for (int k = 0; k < 4; ++k) {
-            int sel = k == 0 ? mat_sig_impulse_resp.x : k == 1 ? mat_sig_impulse_resp.y
-                    : k == 2 ? mat_sig_impulse_resp.z : mat_sig_impulse_resp.w;
-            if (sel != 3)
-                continue;
-            float env = k == 0 ? mat_sig_impulse_env.x : k == 1 ? mat_sig_impulse_env.y
-                      : k == 2 ? mat_sig_impulse_env.z : mat_sig_impulse_env.w;
-            float prog = k == 0 ? mat_sig_impulse_prog.x : k == 1 ? mat_sig_impulse_prog.y
-                       : k == 2 ? mat_sig_impulse_prog.z : mat_sig_impulse_prog.w;
-            vec3 rgb = k == 0 ? mat_sig_impulse_rgb0 : k == 1 ? mat_sig_impulse_rgb1
-                     : k == 2 ? mat_sig_impulse_rgb2 : mat_sig_impulse_rgb3;
-            float d = (diag - prog) / 0.06;
-            emissive += rgb * env * 0.5 * exp(-d * d);
+        if (any(equal(mat_sig_impulse_resp, ivec4(3)))) {
+            float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
+            for (int k = 0; k < 4; ++k) {
+                int sel = k == 0 ? mat_sig_impulse_resp.x : k == 1 ? mat_sig_impulse_resp.y
+                        : k == 2 ? mat_sig_impulse_resp.z : mat_sig_impulse_resp.w;
+                if (sel != 3)
+                    continue;
+                float env = k == 0 ? mat_sig_impulse_env.x : k == 1 ? mat_sig_impulse_env.y
+                          : k == 2 ? mat_sig_impulse_env.z : mat_sig_impulse_env.w;
+                float prog = k == 0 ? mat_sig_impulse_prog.x : k == 1 ? mat_sig_impulse_prog.y
+                           : k == 2 ? mat_sig_impulse_prog.z : mat_sig_impulse_prog.w;
+                vec3 rgb = k == 0 ? mat_sig_impulse_rgb0 : k == 1 ? mat_sig_impulse_rgb1
+                         : k == 2 ? mat_sig_impulse_rgb2 : mat_sig_impulse_rgb3;
+                float d = (diag - prog) / 0.06;
+                emissive += rgb * env * 0.5 * exp(-d * d);
+            }
         }
 
         glassed = vec4(linearToSrgb(transmitted + specular + emissive), 1.0) * coverage;
