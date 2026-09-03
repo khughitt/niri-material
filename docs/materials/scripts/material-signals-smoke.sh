@@ -24,21 +24,25 @@ WORK=$EVIDENCE/material-signals-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # unique, short: nested niri panics on long socket paths
 HOST_SEQ=0; UNIT=; HOST_SOCKET=; NIRI_SOCKET=
 NIRI_PID=; EVENTS_PID=; CAP_PID=
-STEADY_N=
+STEADY_N=; GPU_NS=
+
+pid_running() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
 
 stop_nested() {
     local rc=0
     if [ -n "$NIRI_PID" ]; then
-        local pid=$NIRI_PID
+        local pid=$NIRI_PID child_rc=0 fallback=0
         if [ -S "$NIRI_SOCKET" ]; then
             msg action quit --skip-confirmation >/dev/null 2>&1 || true
-            for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+            for _ in $(seq 50); do pid_running "$pid" || break; sleep 0.1; done
         fi
-        if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; fi
-        for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
-        if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
-        wait "$pid" 2>/dev/null || true
+        if pid_running "$pid"; then fallback=1; kill "$pid" 2>/dev/null || true; fi
+        for _ in $(seq 50); do pid_running "$pid" || break; sleep 0.1; done
+        if pid_running "$pid"; then kill -KILL "$pid" 2>/dev/null || true; fi
+        wait "$pid" 2>/dev/null || child_rc=$?
         NIRI_PID=; NIRI_SOCKET=
+        if [ "$fallback" -ne 0 ]; then echo "FAIL: nested niri required forced cleanup" >&2; rc=1
+        elif [ "$child_rc" -ne 0 ]; then echo "FAIL: nested niri exited $child_rc" >&2; rc=1; fi
         # niri removes its socket on a clean exit; a leftover one is a failure.
         if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; rc=1; fi
     fi
@@ -148,7 +152,7 @@ write_gpu_config "$WORK/gpu.kdl"
 write_config "$WORK/motion-off.kdl"     'signal { motion "off"; }'
 write_config "$WORK/reduced.kdl"        'signal { motion "reduced"; }'
 write_config "$WORK/slowdown.kdl"       'animations { slowdown 3; }'
-write_config "$WORK/narrow.kdl"         'layout { default-column-width { proportion 0.1; }; }'
+write_config "$WORK/narrow.kdl"         'layout { gaps 0; default-column-width { proportion 0.1; }; }'
 write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none"; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
 write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; }; }' \
@@ -403,13 +407,18 @@ setup_demand_focused() {   # until-focus set, then focused: demoted
 setup_ten() {   # $1 = motion; narrow columns so all ten are visible on 1280 px
     spawn_kitty_to 10
     local w; for w in $(kitty_ids); do set_demand "$w" "$1"; done
-    local cols; cols=$(msg -j windows | jq -r '[.[] | select(.app_id=="kitty") | .layout.pos_in_scrolling_layout[0]] | sort | @csv')
-    assert_eq "$cols" "1,2,3,4,5,6,7,8,9,10" "ten scrolling columns"
-    for w in $(kitty_ids); do
+    local workspace view expected=1 x=0 col width
+    workspace=$(win "$WID" .workspace_id)
+    view=$(msg -j workspaces | jq -r --argjson id "$workspace" '.[] | select(.id==$id) | .scrolling_view_pos')
+    while read -r w col width; do
+        assert_eq "$col" "$expected" "ten scrolling columns"
         assert_eq "$(win "$w" .signal.motion)" "$2" "ten $1"
-        local width; width=$(win "$w" '.layout.tile_size[0]')
-        awk -v width="$width" 'BEGIN { exit !(width > 0 && width <= 128) }' || { echo "FAIL: window $w is not narrow (width=$width)" >&2; exit 1; }
-    done
+        awk -v x="$x" -v view="$view" -v width="$width" 'BEGIN { x-=view; exit !(width>0 && width<=128 && x<1280 && x+width>0) }' \
+            || { echo "FAIL: window $w is not narrow and visible (layout-x=$x view=$view width=$width)" >&2; exit 1; }
+        x=$(awk -v x="$x" -v width="$width" 'BEGIN { print x+width }')
+        expected=$((expected + 1))
+    done < <(msg -j windows | jq -r '[.[] | select(.app_id=="kitty")] | sort_by(.layout.pos_in_scrolling_layout[0]) | .[] | [.id, .layout.pos_in_scrolling_layout[0], .layout.tile_size[0]] | @tsv')
+    assert_eq "$expected" 11 "ten scrolling windows"
 }
 setup_inactive_workspace() {
     spawn_kitty_to 2; OTHER=$(other_kitty)
@@ -482,12 +491,12 @@ mode_cases() {
 
 # Three captures per case; the reported figure is the median of the three
 # per-capture medians, which is what run-to-run noise is judged against.
-gpu_case_ns() {   # $1 = name, $2 = cfg, $3 = setup; prints the median ns over three runs
+gpu_case_ns() {   # $1 = name, $2 = cfg, $3 = setup; sets GPU_NS to the median ns over three runs
     local k m; for k in 1 2 3; do
         run_case "$1-$k" "$2" "$3"
         m=$(gpu_median_ns "$WORK/$1-$k.tracy"); echo "$m" >> "$WORK/$1.medians"
     done
-    sort -n "$WORK/$1.medians" | sed -n 2p
+    GPU_NS=$(sort -n "$WORK/$1.medians" | sed -n 2p)
 }
 # The regression reference is this same fixture run on the branch's base
 # commit, built with the same features: GPU time is workload dependent, so
@@ -526,10 +535,10 @@ mode_gpu() {
     build_reference
     local ref_ns default_ns ring_ns
     NIRI=$REF_NIRI
-    ref_ns=$(gpu_case_ns gpu-reference "$WORK/gpu.kdl" true)
+    gpu_case_ns gpu-reference "$WORK/gpu.kdl" true; ref_ns=$GPU_NS
     NIRI=$WORK/niri
-    default_ns=$(gpu_case_ns gpu-default  "$WORK/gpu.kdl" true)             # no signal: the default path
-    ring_ns=$(gpu_case_ns   gpu-ring-rim  "$WORK/gpu.kdl" setup_gpu_ring)   # ring + rim orbit at Demand, Static
+    gpu_case_ns gpu-default "$WORK/gpu.kdl" true; default_ns=$GPU_NS             # no signal: the default path
+    gpu_case_ns gpu-ring-rim "$WORK/gpu.kdl" setup_gpu_ring; ring_ns=$GPU_NS     # ring + rim orbit at Demand, Static
     {
         printf 'base-commit build, default path (median of 3): %.3f ms\n' "$(awk -v n="$ref_ns" 'BEGIN { print n/1e6 }')"
         printf 'this build, default path, no signal (median of 3): %.3f ms\n' "$(awk -v n="$default_ns" 'BEGIN { print n/1e6 }')"
