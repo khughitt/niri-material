@@ -16,6 +16,8 @@ use smithay::wayland::shell::xdg::{
 
 use crate::utils::with_toplevel_role;
 
+pub mod signal;
+
 pub mod mapped;
 pub use mapped::Mapped;
 
