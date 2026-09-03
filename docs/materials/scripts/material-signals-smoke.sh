@@ -24,6 +24,7 @@ WORK=$EVIDENCE/material-signals-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # unique, short: nested niri panics on long socket paths
 HOST_SEQ=0; UNIT=; HOST_SOCKET=; NIRI_SOCKET=
 NIRI_PID=; EVENTS_PID=; CAP_PID=
+STEADY_N=
 
 stop_nested() {
     local rc=0
@@ -402,10 +403,12 @@ setup_demand_focused() {   # until-focus set, then focused: demoted
 setup_ten() {   # $1 = motion; narrow columns so all ten are visible on 1280 px
     spawn_kitty_to 10
     local w; for w in $(kitty_ids); do set_demand "$w" "$1"; done
+    local cols; cols=$(msg -j windows | jq -r '[.[] | select(.app_id=="kitty") | .layout.pos_in_scrolling_layout[0]] | sort | @csv')
+    assert_eq "$cols" "1,2,3,4,5,6,7,8,9,10" "ten scrolling columns"
     for w in $(kitty_ids); do
         assert_eq "$(win "$w" .signal.motion)" "$2" "ten $1"
-        local x; x=$(win "$w" '.layout.tile_pos_in_workspace_view[0]')
-        awk -v x="$x" 'BEGIN { exit !(x >= 0 && x < 1280) }' || { echo "FAIL: window $w not in view (x=$x)" >&2; exit 1; }
+        local width; width=$(win "$w" '.layout.tile_size[0]')
+        awk -v width="$width" 'BEGIN { exit !(width > 0 && width <= 128) }' || { echo "FAIL: window $w is not narrow (width=$width)" >&2; exit 1; }
     done
 }
 setup_inactive_workspace() {
@@ -440,7 +443,7 @@ during_one_done() { msg pulse-window-signal --id "$WID" --source demo --kind don
 
 # Steady cases: the final 20 s must match the expectation.
 steady_zero()  { run_case "$1" "$2" "$3"; expect_zero "$1" "$(count_steady "$1")"; }
-steady_about() { run_case "$1" "$2" "$3"; local n; n=$(count_steady "$1"); expect_about "$1" "$n" "$4" 0.15; echo "$n"; }
+steady_about() { run_case "$1" "$2" "$3"; STEADY_N=$(count_steady "$1"); expect_about "$1" "$STEADY_N" "$4" 0.15; }
 # Impulse cases with `none` responses: the pulses fire inside the window and
 # may cost at most the coalescible request per pulse and per deadline firing
 # (two per pulse), with nothing after them.
@@ -454,17 +457,17 @@ mode_cases() {
     tools_ready
     steady_zero  quiet-ring           "$WORK/base.kdl" setup_quiet_ring
     local pulse_n breathe_n flash_n n
-    pulse_n=$(steady_about   demand-pulse   "$WORK/base.kdl" "setup_demand pulse"   540)
+    steady_about demand-pulse "$WORK/base.kdl" "setup_demand pulse" 540; pulse_n=$STEADY_N
     steady_zero  demand-pulse-focused "$WORK/base.kdl" setup_demand_focused
-    breathe_n=$(steady_about demand-breathe "$WORK/base.kdl" "setup_demand breathe" 160)
-    flash_n=$(steady_about   demand-flash   "$WORK/base.kdl" "setup_demand flash"   320)
-    n=$(steady_about ten-breathe "$WORK/narrow.kdl" "setup_ten breathe Breathe" "$breathe_n"); expect_about "ten-breathe vs one" "$n" "$breathe_n" 0.10
-    n=$(steady_about ten-flash   "$WORK/narrow.kdl" "setup_ten flash Flash"     "$flash_n");   expect_about "ten-flash vs one"   "$n" "$flash_n"   0.10
+    steady_about demand-breathe "$WORK/base.kdl" "setup_demand breathe" 160; breathe_n=$STEADY_N
+    steady_about demand-flash "$WORK/base.kdl" "setup_demand flash" 320; flash_n=$STEADY_N
+    steady_about ten-breathe "$WORK/narrow.kdl" "setup_ten breathe Breathe" "$breathe_n"; n=$STEADY_N; expect_about "ten-breathe vs one" "$n" "$breathe_n" 0.10
+    steady_about ten-flash "$WORK/narrow.kdl" "setup_ten flash Flash" "$flash_n"; n=$STEADY_N; expect_about "ten-flash vs one" "$n" "$flash_n" 0.10
     steady_zero  inactive-workspace "$WORK/base.kdl" setup_inactive_workspace
     steady_zero  hidden-tab         "$WORK/base.kdl" setup_hidden_tab
     steady_zero  offscreen-column   "$WORK/base.kdl" setup_offscreen_column
     impulse_none_case motion-off   "$WORK/motion-off.kdl"   setup_motion_off
-    n=$(steady_about reduced-flash "$WORK/reduced.kdl" "setup_demand flash" "$pulse_n"); expect_about "reduced-flash vs pulse" "$n" "$pulse_n" 0.15
+    steady_about reduced-flash "$WORK/reduced.kdl" "setup_demand flash" "$pulse_n"; n=$STEADY_N; expect_about "reduced-flash vs pulse" "$n" "$pulse_n" 0.15
     steady_zero  attention-none "$WORK/attention-none.kdl" "setup_demand pulse"
     impulse_none_case impulse-none "$WORK/impulse-none.kdl" setup_quiet_ring
     # A drawn `done` impulse: a refresh-rate burst for 1.5 s, then nothing.
@@ -473,7 +476,7 @@ mode_cases() {
     [ "$burst" -ge 30 ] || { echo "FAIL: done-pulse: only $burst redraws in the 3 s burst window (min 30)" >&2; exit 1; }
     expect_zero "done-pulse after" "$after"
     echo "done-pulse: burst $burst, after $after" | tee -a "$WORK/rates.txt" >&2
-    n=$(steady_about slowdown "$WORK/slowdown.kdl" "setup_demand pulse" "$pulse_n"); expect_about "slowdown vs pulse" "$n" "$pulse_n" 0.10
+    steady_about slowdown "$WORK/slowdown.kdl" "setup_demand pulse" "$pulse_n"; n=$STEADY_N; expect_about "slowdown vs pulse" "$n" "$pulse_n" 0.10
     echo "cases: OK, rates in $WORK/rates.txt"
 }
 
