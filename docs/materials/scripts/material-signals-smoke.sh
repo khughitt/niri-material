@@ -204,8 +204,8 @@ tools_ready() {
     local retained=$EVIDENCE/material-roughness-b220152d/tools
     TOOLS=$retained
     if sha256sum -c --quiet - <<EOF 2>/dev/null
-7b95c9c388b6b689cd87da490b564dd086fa8c9dfd6489424b2401d6ef0c5b0c  $retained/tracy-capture
-472e08726cc62ab66ed38f75bd4cbb351f2160c1f742a709a9d5be57c68fb463  $retained/tracy-csvexport
+957db02d917aaf217021ff04c59fbe196415ddb5e8b9615d9e0f91ff25d75ca6  $retained/tracy-capture
+588642902b24282d831cf4f4088ba7c3f28e59f0c506da3fa8f02288ec3efc30  $retained/tracy-csvexport
 EOF
     then return; fi
     echo "retained Tracy 0.13.1 tools missing or altered; rebuilding" >&2
