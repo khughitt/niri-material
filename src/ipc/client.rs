@@ -478,6 +478,10 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowUrgencyChanged { id, urgent } => {
                         println!("Window {id}: urgency changed to {urgent}");
                     }
+                    Event::WindowSignalChanged { id, signal } => match signal {
+                        Some(signal) => println!("Window {id}: signal changed to {signal:?}"),
+                        None => println!("Window {id}: signal cleared"),
+                    },
                     Event::WindowLayoutsChanged { changes } => {
                         println!("Window layouts changed: {changes:?}");
                     }
