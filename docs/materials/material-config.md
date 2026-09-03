@@ -77,6 +77,88 @@ inflated by `bevel - max(abs(offset-x), abs(offset-y))`, then translated by
 the offsets. Its inner corners follow the window's effective
 `geometry-corner-radius`; the outer corners add the drawn chamfer.
 
+## Signal responses
+
+Each material can map a window signal to glass effects with named `response`
+blocks. A material with no response blocks gets this built-in `default`:
+
+| Parameter | Values | Default |
+| --- | --- | --- |
+| `accent` | `ring`, `none` | `ring` |
+| `attention` | `rim-orbit`, `ring-pulse`, `none` | `rim-orbit` |
+| `ping` | `ripple`, `flash`, `sweep`, `none` | `ripple` |
+| `done` | `ripple`, `flash`, `sweep`, `none` | `sweep` |
+| `error` | `ripple`, `flash`, `sweep`, `none` | `flash` |
+| `ring-inset` | 0–128 logical px | 6 logical px |
+| `ring-width` | 0–128 logical px | 2 logical px |
+
+When any `response` block is present, one must be named `default`. Named
+responses inherit omitted fields from that block; the `default` block itself
+inherits omitted fields from the built-in defaults.
+
+```kdl
+material "terminal-glass" {
+    glass {
+        bevel 16
+    }
+
+    response "default" {
+        accent ring
+        attention rim-orbit
+        ping ripple
+        done sweep
+        error flash
+        ring-inset 6
+        ring-width 2
+    }
+
+    response "loud" {
+        attention ring-pulse
+    }
+}
+
+window-rule {
+    match app-id="^kitty$" signal-source="^familiar$" signal-tag="^cats/"
+    material "terminal-glass" response="loud"
+}
+```
+
+`response=` selects a named response on the referenced material; omitting it
+selects `default`. `signal-source` and `signal-tag` are regex matches:
+`signal-source` matches any source slot (including niri's native `niri`
+slot), while `signal-tag` matches the window's folded signal tag. A window
+with no signal matches neither.
+
+`ring-inset` is measured inward from the slab's outer edge. Every resolved
+response must satisfy `ring-inset + ring-width <= bevel`, otherwise the
+configuration is rejected. The ring is visible through the slab's exterior
+band and translucent window pixels; an opaque window shows a full ring only
+when `bevel >= 2 * max(|offset-x|, |offset-y|) + ring-inset + ring-width`.
+
+## Signal motion and animation
+
+The top-level signal policy defaults to `full`:
+
+```kdl
+signal {
+    motion "reduced" // full | reduced | off
+}
+
+animations {
+    material-signal {
+        duration-ms 400
+        curve "ease-out-cubic"
+    }
+}
+```
+
+`reduced` changes sustained `flash` to `pulse`, `pulse` to `breathe`, and an
+impulse `flash` response to `sweep`. `off` makes sustained motion static and
+drops impulse effects, while retaining the static accent and level
+crossfade. `material-signal` is the baseline signal crossfade; it defaults to
+400 ms with `ease-out-cubic` and follows the normal animation configuration,
+including `animations { off }`.
+
 ## Window rules and validation
 
 `material "name"` is a scalar window-rule field. When several matching rules
@@ -91,7 +173,13 @@ The whole configuration is rejected with these validation errors:
   <max>` (or, for `attenuation-distance`, `value must be greater than 0 and at
   most 65535`);
 - an offset wider than the bevel: `offset must not exceed bevel`;
+- response blocks without `default`: `material <name>: missing response
+  "default"`;
+- duplicate response names: `duplicate response: <name>`;
+- a ring outside the bevel: `ring-inset + ring-width must not exceed bevel`;
 - an unknown window-rule reference: `unknown material: <name>`.
+- an unknown response reference: `material <name>: unknown response:
+  <response>`.
 
 Includes participate in the same validation, including duplicate names and
 unknown references.

@@ -28,6 +28,74 @@ You can get raw events from `niri msg --json event-stream`, or by connecting to 
 
 You can find the full list of events along with documentation [here](https://niri-wm.github.io/niri/niri_ipc/enum.Event.html).
 
+### Window signals
+
+`set-window-signal`, `pulse-window-signal`, and `clear-window-signal` write
+per-window signal state. They return `Handled` on success and an error reply
+without changing state on failure.
+
+```sh
+niri msg set-window-signal --id 12 --source familiar \
+    --accent '#e5a33c' --level demand --motion pulse --tag cats/ginger \
+    --ttl-ms 30000 --after-level quiet --after-motion breathe --until-focus
+niri msg pulse-window-signal --id 12 --source familiar --kind done
+niri msg clear-window-signal --id 12 --source familiar
+```
+
+| Request | Required flags | Optional flags and defaults |
+| --- | --- | --- |
+| `set-window-signal` | `--id`, `--source` | `--accent`; `--level` (`quiet`); `--motion` (`static`); `--tag`; `--ttl-ms`; `--after-level`; `--after-motion`; `--until-focus` (off) |
+| `pulse-window-signal` | `--id`, `--source`, `--kind` (`ping`, `done`, or `error`) | `--accent` |
+| `clear-window-signal` | `--id`, `--source` | — |
+
+`set-window-signal` replaces the source's whole slot. With `--ttl-ms`, at
+least one `--after-level` or `--after-motion` is required; the other defaults
+to `quiet` or `static`. Supplying either `after` flag without `--ttl-ms` is
+an error. `--until-focus` demotes the slot to that after pair when the window
+is focused. `pulse-window-signal` requires that the source already have a
+slot; `clear-window-signal` removes its slot and impulses.
+
+Sources are case-sensitive, `niri` is reserved, and a window accepts at most
+16 external sources. Source names are limited to 64 bytes and tags to 256
+bytes. `--ttl-ms` is at most 86400000 (24 hours). A window retains at most
+four live impulses; a fifth evicts the oldest. Accent colors are `#rrggbb` or
+`#rrggbbaa`; alpha is accepted but ignored. Unknown window or source,
+reserved or oversized source, oversized tag or TTL, invalid TTL/after
+combination, malformed color, and an invalid level, motion, or impulse kind
+all return errors. Rejected requests are atomic.
+
+`Window.signal` is either `null` or a folded signal. Event streams emit the
+same value when it changes as `WindowSignalChanged`:
+
+```json
+{
+  "WindowSignalChanged": {
+    "id": 12,
+    "signal": {
+      "level": "Demand",
+      "motion": "Pulse",
+      "accent": "#e5a33c",
+      "tag": "cats/ginger",
+      "sources": ["familiar"],
+      "impulses": [{
+        "source": "familiar",
+        "kind": "Done",
+        "accent": null,
+        "at": {"secs": 42, "nanos": 0},
+        "expires_at": {"secs": 43, "nanos": 500000000}
+      }]
+    }
+  }
+}
+```
+
+The `Window` JSON object gains the same `"signal": { ... }` field (or
+`"signal": null` when no source has a slot). Enum values use Rust spelling
+on the wire: levels are `Quiet`, `Active`, `Notice`, `Demand`; motion is
+`Static`, `Breathe`, `Pulse`, `Flash`; impulse kinds are `Ping`, `Done`,
+`Error`. The CLI accepts their kebab-case equivalents. `at` and `expires_at`
+are monotonic `Timestamp` objects with `secs` and `nanos` fields.
+
 ### Programmatic Access
 
 `niri msg --json` is a thin wrapper over writing and reading to a socket.

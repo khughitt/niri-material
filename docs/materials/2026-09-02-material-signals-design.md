@@ -1,11 +1,11 @@
 # Material signals: design
 
-**Status:** accepted 2026-09-02 on `feat/material-signals`; not yet
-implemented. Compositor-first slice: signal model, IPC, envelope solver,
-configuration, and the first glass responses. External sources (familiar,
-shell integration, others) are follow-up tasks against the IPC contract
-fixed here. Tracked by `material-a54d89`; follow-ups are the `signals`
-tagged idea tasks that depend on it.
+**Status:** implemented on `feat/material-signals` through `9840dfde`;
+verification pending. Compositor-first slice: signal model, IPC, envelope
+solver, configuration, and the first glass responses. External sources
+(familiar, shell integration, others) are follow-up tasks against the IPC
+contract fixed here. Tracked by `material-a54d89`; follow-ups are the
+`signals` tagged idea tasks that depend on it.
 
 ## Context
 
@@ -592,9 +592,8 @@ boundary, so there is one conversion, in the server, and it is tested.
   request.
 - A response name that a material's type does not define is rejected at
   parse time, never at render time, so the renderer has no fallback path.
-- A material assigned to a window whose type does not implement signals at
-  all (none exist yet) receives the frame and ignores it; the interface
-  requires no material to respond.
+- A future material type that does not implement signals receives the frame
+  and ignores it; the interface requires no material to respond.
 
 ## 9. Verification
 
