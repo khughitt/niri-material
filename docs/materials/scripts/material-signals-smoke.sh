@@ -163,7 +163,7 @@ expect_fail() { if "$@" >/dev/null 2>&1; then echo "FAIL: expected failure: $*" 
 
 start_nested() {   # $1 = config path; sets NIRI_SOCKET and WID
     HOST_SEQ=$((HOST_SEQ + 1))
-    local host=$RUN-host-$HOST_SEQ
+    local host=$RUN-host-$BASHPID-$HOST_SEQ
     UNIT=$host-weston; HOST_SOCKET=$XDG_RUNTIME_DIR/$host
     systemd-run --user --unit="$UNIT" --collect \
         weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
