@@ -38,6 +38,15 @@ fn material_of(f: &mut Fixture, title: &str) -> Option<String> {
         .and_then(|(_, m)| m.rules().material.as_ref().map(|r| r.name.clone()))
 }
 
+fn window_id(f: &mut Fixture, title: &str) -> u64 {
+    f.niri()
+        .layout
+        .windows()
+        .find(|(_, m)| with_toplevel_role(m.toplevel(), |r| r.title.as_deref() == Some(title)))
+        .map(|(_, m)| m.id().get())
+        .unwrap()
+}
+
 fn set_slot(level: SignalLevel, tag: Option<&str>, until_focus: bool) -> SetSlot {
     SetSlot {
         accent: None,
@@ -210,4 +219,175 @@ fn focus_clears_native_urgency_and_demotes_only_until_focus_slots() {
     assert!(folded.sources.iter().any(|s| s == "until"));
     assert!(folded.sources.iter().any(|s| s == "persistent"));
     assert!(mapped.take_signal_deadline_dirty());
+}
+
+#[test]
+fn ipc_entry_points_validate_and_mutate() {
+    use crate::niri::SetWindowSignalArgs;
+    use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
+
+    let mut f = Fixture::with_config(config(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_window(&mut f, id, "a");
+    let wid = window_id(&mut f, "a");
+
+    let args = |source: &str| SetWindowSignalArgs {
+        id: wid,
+        source: source.to_owned(),
+        accent: Some(String::from("#e5a33c")),
+        level: SignalLevel::Demand,
+        motion: SignalMotion::Pulse,
+        tag: Some(String::from("cats/ginger")),
+        ttl_ms: Some(30_000),
+        after_level: Some(SignalLevel::Quiet),
+        after_motion: None,
+        until_focus: true,
+    };
+
+    let niri = f.niri();
+    assert!(niri
+        .set_window_signal(SetWindowSignalArgs {
+            id: 999,
+            ..args("familiar")
+        })
+        .is_err());
+    assert!(niri.set_window_signal(args("niri")).is_err());
+    assert!(niri
+        .pulse_window_signal(wid, "niri", ImpulseKind::Done, None)
+        .is_err());
+    assert!(niri.clear_window_signal(wid, "niri").is_err());
+    assert!(niri
+        .pulse_window_signal(wid, "familiar", ImpulseKind::Done, None)
+        .is_err());
+    niri.set_window_signal(args("familiar")).unwrap();
+    assert!(niri
+        .pulse_window_signal(wid, "familiar", ImpulseKind::Done, Some("zzz"))
+        .is_err());
+    niri.pulse_window_signal(wid, "familiar", ImpulseKind::Done, None)
+        .unwrap();
+
+    let now = get_monotonic_time();
+    let (_, mapped) = niri
+        .layout
+        .windows()
+        .find(|(_, m)| m.id().get() == wid)
+        .unwrap();
+    let signal = crate::ipc::server::to_ipc_signal(&mapped.signals().fold(now).unwrap());
+    assert_eq!(signal.level, SignalLevel::Demand);
+    assert_eq!(signal.accent.as_deref(), Some("#e5a33c"));
+    assert_eq!(signal.sources, vec!["familiar"]);
+    assert_eq!(signal.impulses.len(), 1);
+    assert_eq!(signal.impulses[0].kind, ImpulseKind::Done);
+    assert_eq!(
+        signal.impulses[0].expires_at.secs * 1_000_000_000
+            + u64::from(signal.impulses[0].expires_at.nanos),
+        signal.impulses[0].at.secs * 1_000_000_000
+            + u64::from(signal.impulses[0].at.nanos)
+            + 1_500_000_000
+    );
+
+    niri.clear_window_signal(wid, "familiar").unwrap();
+    assert!(niri.clear_window_signal(wid, "familiar").is_err());
+    let (_, mapped) = niri
+        .layout
+        .windows()
+        .find(|(_, m)| m.id().get() == wid)
+        .unwrap();
+    assert!(mapped.signals().fold(now).is_none());
+}
+
+#[test]
+fn refresh_reconciles_deadline_timer_after_focus() {
+    use crate::niri::SetWindowSignalArgs;
+    use niri_ipc::{SignalLevel, SignalMotion};
+
+    let mut f = Fixture::with_config(config(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_window(&mut f, id, "a");
+    open_window(&mut f, id, "b");
+    let wid = window_id(&mut f, "a");
+    f.niri()
+        .set_window_signal(SetWindowSignalArgs {
+            id: wid,
+            source: String::from("t"),
+            accent: None,
+            level: SignalLevel::Demand,
+            motion: SignalMotion::Pulse,
+            tag: None,
+            ttl_ms: Some(5000),
+            after_level: Some(SignalLevel::Quiet),
+            after_motion: None,
+            until_focus: true,
+        })
+        .unwrap();
+    f.niri_state().refresh_and_flush_clients();
+    let mapped_id = f
+        .niri()
+        .layout
+        .windows()
+        .find(|(_, m)| m.id().get() == wid)
+        .map(|(_, m)| m.id())
+        .unwrap();
+    assert!(
+        f.niri().signal_deadlines.contains_key(&mapped_id),
+        "ttl armed a deadline"
+    );
+
+    // Focusing "a" demotes the until-focus slot and cancels its expiry.
+    // `Mapped::is_focused` is written only by `State::update_keyboard_focus`
+    // (see the idiom in src/tests/material.rs), so move focus, update it,
+    // then refresh so `refresh_signal_deadlines` runs.
+    f.niri().layout.focus_left();
+    f.niri_state().update_keyboard_focus();
+    f.niri_state().refresh_and_flush_clients();
+    assert!(
+        !f.niri().signal_deadlines.contains_key(&mapped_id),
+        "focus reconciled the timer away"
+    );
+}
+
+#[test]
+fn rewrite_replaces_the_deadline_and_close_cancels_it() {
+    use crate::niri::SetWindowSignalArgs;
+    use niri_ipc::{SignalLevel, SignalMotion};
+
+    let mut f = Fixture::with_config(config(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    let surface = open_window(&mut f, id, "a");
+    let wid = window_id(&mut f, "a");
+    let args = |ttl: u32| SetWindowSignalArgs {
+        id: wid,
+        source: String::from("t"),
+        accent: None,
+        level: SignalLevel::Notice,
+        motion: SignalMotion::Static,
+        tag: None,
+        ttl_ms: Some(ttl),
+        after_level: Some(SignalLevel::Quiet),
+        after_motion: None,
+        until_focus: false,
+    };
+    f.niri().set_window_signal(args(5000)).unwrap();
+    f.niri_state().refresh_and_flush_clients();
+    f.niri().set_window_signal(args(9000)).unwrap();
+    f.niri_state().refresh_and_flush_clients();
+    assert_eq!(
+        f.niri().signal_deadlines.len(),
+        1,
+        "rewrite replaced, not duplicated"
+    );
+
+    // Unmap by committing a null buffer, the idiom used in src/tests/floating.rs.
+    let window = f.client(id).window(&surface);
+    window.attach_null();
+    window.commit();
+    f.double_roundtrip(id);
+    f.niri_state().refresh_and_flush_clients();
+    assert!(
+        f.niri().signal_deadlines.is_empty(),
+        "unmap cancelled the timer"
+    );
 }

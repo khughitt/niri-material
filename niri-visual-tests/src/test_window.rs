@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::rc::Rc;
+use std::time::Duration;
 
 use niri::layout::{
     ConfigureIntent, InteractiveResizeData, LayoutElement, LayoutElementRenderElement,
@@ -265,5 +266,9 @@ impl LayoutElement for TestWindow {
 
     fn is_urgent(&self) -> bool {
         false
+    }
+
+    fn signal(&self, _now: Duration) -> Option<niri::window::signal::Folded> {
+        None
     }
 }

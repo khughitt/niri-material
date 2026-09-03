@@ -228,6 +228,9 @@ pub struct Niri {
     // however it may have none (when there are no outputs connected) or multiple (when mirroring).
     pub layout: Layout<Mapped>,
 
+    /// One deadline timer per window with pending slot or impulse expiry (design §1).
+    pub signal_deadlines: HashMap<MappedId, RegistrationToken>,
+
     // This space does not actually contain any windows, but all outputs are mapped into it
     // according to their global position.
     pub global_space: Space<Window>,
@@ -826,6 +829,7 @@ impl State {
         self.ipc_refresh_casts();
 
         self.niri.refresh_window_rules();
+        self.niri.refresh_signal_deadlines();
         self.refresh_ipc_outputs();
         self.ipc_refresh_layout();
         self.ipc_refresh_keyboard_layout_index();
@@ -2222,7 +2226,155 @@ impl State {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct SetWindowSignalArgs {
+    pub id: u64,
+    pub source: String,
+    pub accent: Option<String>,
+    pub level: niri_ipc::SignalLevel,
+    pub motion: niri_ipc::SignalMotion,
+    pub tag: Option<String>,
+    pub ttl_ms: Option<u32>,
+    pub after_level: Option<niri_ipc::SignalLevel>,
+    pub after_motion: Option<niri_ipc::SignalMotion>,
+    pub until_focus: bool,
+}
+
 impl Niri {
+    /// Finds a mapped window by IPC id, including one under interactive move.
+    fn mapped_by_ipc_id(&mut self, id: u64) -> Result<&mut Mapped, String> {
+        self.layout
+            .find_window_mut_by(|m| m.id().get() == id)
+            .ok_or_else(|| format!("no window with id {id}"))
+    }
+
+    /// Queue a coalescible redraw after an accepted signal mutation.
+    fn after_signal_mutation(&mut self) {
+        self.queue_redraw_all();
+    }
+
+    /// Re-arm timers for every window whose signal deadlines changed.
+    pub fn refresh_signal_deadlines(&mut self) {
+        let mut dirty = Vec::new();
+        self.layout.with_windows_mut(|mapped, _| {
+            if mapped.take_signal_deadline_dirty() {
+                dirty.push(mapped.id());
+            }
+        });
+        for id in dirty {
+            self.rearm_signal_deadline(id);
+        }
+    }
+
+    pub fn set_window_signal(&mut self, a: SetWindowSignalArgs) -> Result<(), String> {
+        use crate::window::signal::{parse_accent, SetSlot};
+
+        let now = get_monotonic_time();
+        let accent = a
+            .accent
+            .as_deref()
+            .map(parse_accent)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let ttl = a.ttl_ms.map(|ms| Duration::from_millis(u64::from(ms)));
+        let expiry = SetSlot::expiry_from_ttl(ttl, a.after_level, a.after_motion, now)
+            .map_err(|e| e.to_string())?;
+        let set = SetSlot {
+            accent,
+            level: a.level,
+            motion: a.motion,
+            tag: a.tag,
+            expiry,
+            until_focus: a.until_focus,
+        };
+        let mapped = self.mapped_by_ipc_id(a.id)?;
+        mapped
+            .signals_mut()
+            .set(&a.source, set, now)
+            .map_err(|e| e.to_string())?;
+        mapped.signal_changed();
+        self.after_signal_mutation();
+        Ok(())
+    }
+
+    pub fn pulse_window_signal(
+        &mut self,
+        id: u64,
+        source: &str,
+        kind: niri_ipc::ImpulseKind,
+        accent: Option<&str>,
+    ) -> Result<(), String> {
+        use crate::window::signal::parse_accent;
+
+        let now = get_monotonic_time();
+        let accent = accent
+            .map(parse_accent)
+            .transpose()
+            .map_err(|e| e.to_string())?;
+        let mapped = self.mapped_by_ipc_id(id)?;
+        mapped
+            .signals_mut()
+            .pulse(source, kind, accent, now)
+            .map_err(|e| e.to_string())?;
+        mapped.signal_changed();
+        self.after_signal_mutation();
+        Ok(())
+    }
+
+    pub fn clear_window_signal(&mut self, id: u64, source: &str) -> Result<(), String> {
+        let mapped = self.mapped_by_ipc_id(id)?;
+        mapped
+            .signals_mut()
+            .clear(source)
+            .map_err(|e| e.to_string())?;
+        mapped.signal_changed();
+        self.after_signal_mutation();
+        Ok(())
+    }
+
+    /// Replaces the window's deadline timer with one for its next expiry, or removes it.
+    pub fn rearm_signal_deadline(&mut self, id: MappedId) {
+        if let Some(token) = self.signal_deadlines.remove(&id) {
+            self.event_loop.remove(token);
+        }
+        let deadline = self
+            .layout
+            .find_window_mut_by(|m| m.id() == id)
+            .and_then(|w| w.signals().next_deadline());
+        let Some(deadline) = deadline else {
+            return;
+        };
+        let timer = Timer::from_duration(deadline.saturating_sub(get_monotonic_time()));
+        let token = self
+            .event_loop
+            .insert_source(timer, move |_, _, state| {
+                state.niri.signal_deadline_fired(id);
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.signal_deadlines.insert(id, token);
+    }
+
+    fn signal_deadline_fired(&mut self, id: MappedId) {
+        self.signal_deadlines.remove(&id);
+        let now = get_monotonic_time();
+        let Some(window) = self.layout.find_window_mut_by(|m| m.id() == id) else {
+            return;
+        };
+        let changed = window.signals_mut().advance(now);
+        window.signal_changed();
+        if changed {
+            self.queue_redraw_all();
+        }
+    }
+
+    /// Drops a window's deadline timer; called from every unmap path.
+    pub fn cancel_signal_deadline(&mut self, id: MappedId) {
+        if let Some(token) = self.signal_deadlines.remove(&id) {
+            self.event_loop.remove(token);
+        }
+    }
+
     pub fn new(
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, State>,
@@ -2498,6 +2650,7 @@ impl Niri {
             clock: animation_clock,
 
             layout,
+            signal_deadlines: HashMap::new(),
             global_space: Space::default(),
             sorted_outputs: Vec::default(),
             output_state: HashMap::new(),

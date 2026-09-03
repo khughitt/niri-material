@@ -34,7 +34,7 @@ use crate::backend::IpcOutputMap;
 use crate::input::pick_window_grab::PickWindowGrab;
 use crate::layout::workspace::WorkspaceId;
 use crate::niri::State;
-use crate::utils::{version, with_toplevel_role};
+use crate::utils::{get_monotonic_time, version, with_toplevel_role};
 use crate::window::Mapped;
 
 // If an event stream client fails to read events fast enough that we accumulate more than this
@@ -378,6 +378,69 @@ async fn process(ctx: &ClientCtx, request: Request) -> Reply {
             let color = result.map_err(|_| String::from("error getting picked color"))?;
             Response::PickedColor(color)
         }
+        Request::SetWindowSignal {
+            id,
+            source,
+            accent,
+            level,
+            motion,
+            tag,
+            ttl_ms,
+            after_level,
+            after_motion,
+            until_focus,
+        } => {
+            let (tx, rx) = async_channel::bounded(1);
+            let args = crate::niri::SetWindowSignalArgs {
+                id,
+                source,
+                accent,
+                level,
+                motion,
+                tag,
+                ttl_ms,
+                after_level,
+                after_motion,
+                until_focus,
+            };
+            ctx.event_loop.insert_idle(move |state| {
+                let _ = tx.send_blocking(state.niri.set_window_signal(args));
+            });
+            rx.recv()
+                .await
+                .map_err(|_| String::from("error setting window signal"))??;
+            Response::Handled
+        }
+        Request::PulseWindowSignal {
+            id,
+            source,
+            kind,
+            accent,
+        } => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let _ = tx.send_blocking(state.niri.pulse_window_signal(
+                    id,
+                    &source,
+                    kind,
+                    accent.as_deref(),
+                ));
+            });
+            rx.recv()
+                .await
+                .map_err(|_| String::from("error pulsing window signal"))??;
+            Response::Handled
+        }
+        Request::ClearWindowSignal { id, source } => {
+            let (tx, rx) = async_channel::bounded(1);
+            ctx.event_loop.insert_idle(move |state| {
+                let _ = tx.send_blocking(state.niri.clear_window_signal(id, &source));
+            });
+            rx.recv()
+                .await
+                .map_err(|_| String::from("error clearing window signal"))??;
+            Response::Handled
+        }
         Request::Action(action) => {
             validate_action(&action)?;
 
@@ -512,6 +575,29 @@ async fn handle_event_stream_client(client: EventStreamClient) -> anyhow::Result
     Ok(())
 }
 
+pub fn to_ipc_signal(folded: &crate::window::signal::Folded) -> niri_ipc::Signal {
+    use crate::window::signal::accent_hex;
+
+    niri_ipc::Signal {
+        level: folded.level,
+        motion: folded.motion,
+        accent: folded.accent.map(accent_hex),
+        tag: folded.tag.clone(),
+        sources: folded.sources.clone(),
+        impulses: folded
+            .impulses
+            .iter()
+            .map(|i| niri_ipc::Impulse {
+                source: i.source.clone(),
+                kind: i.kind,
+                accent: i.accent.map(accent_hex),
+                at: Timestamp::from(i.at),
+                expires_at: Timestamp::from(i.expires_at()),
+            })
+            .collect(),
+    }
+}
+
 fn make_ipc_window(
     mapped: &Mapped,
     workspace_id: Option<WorkspaceId>,
@@ -528,7 +614,11 @@ fn make_ipc_window(
         is_urgent: mapped.is_urgent(),
         layout,
         focus_timestamp: mapped.get_focus_timestamp().map(Timestamp::from),
-        signal: None,
+        signal: mapped
+            .signals()
+            .fold(get_monotonic_time())
+            .as_ref()
+            .map(to_ipc_signal),
     })
 }
 
@@ -763,6 +853,15 @@ impl State {
             let urgent = mapped.is_urgent();
             if urgent != ipc_win.is_urgent {
                 events.push(Event::WindowUrgencyChanged { id, urgent })
+            }
+
+            let signal = mapped
+                .signals()
+                .fold(get_monotonic_time())
+                .as_ref()
+                .map(to_ipc_signal);
+            if signal != ipc_win.signal {
+                events.push(Event::WindowSignalChanged { id, signal });
             }
         });
 

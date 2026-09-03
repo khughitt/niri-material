@@ -79,6 +79,47 @@ pub enum Msg {
     PickWindow,
     /// Pick a color from the screen with the mouse.
     PickColor,
+    /// Set a source's signal on a window.
+    SetWindowSignal {
+        #[arg(long)]
+        id: u64,
+        #[arg(long)]
+        source: String,
+        #[arg(long)]
+        accent: Option<String>,
+        #[arg(long, value_enum, default_value_t = niri_ipc::SignalLevel::Quiet)]
+        level: niri_ipc::SignalLevel,
+        #[arg(long, value_enum, default_value_t = niri_ipc::SignalMotion::Static)]
+        motion: niri_ipc::SignalMotion,
+        #[arg(long)]
+        tag: Option<String>,
+        #[arg(long)]
+        ttl_ms: Option<u32>,
+        #[arg(long, value_enum)]
+        after_level: Option<niri_ipc::SignalLevel>,
+        #[arg(long, value_enum)]
+        after_motion: Option<niri_ipc::SignalMotion>,
+        #[arg(long)]
+        until_focus: bool,
+    },
+    /// Raise a transient impulse on a window for an existing signal source.
+    PulseWindowSignal {
+        #[arg(long)]
+        id: u64,
+        #[arg(long)]
+        source: String,
+        #[arg(long, value_enum)]
+        kind: niri_ipc::ImpulseKind,
+        #[arg(long)]
+        accent: Option<String>,
+    },
+    /// Remove a source's signal slot from a window.
+    ClearWindowSignal {
+        #[arg(long)]
+        id: u64,
+        #[arg(long)]
+        source: String,
+    },
     /// Perform an action.
     Action {
         #[command(subcommand)]

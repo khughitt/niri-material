@@ -85,6 +85,47 @@ pub enum Request {
     PickWindow,
     /// Request picking a color from the screen.
     PickColor,
+    /// Set a source's signal on a window.
+    SetWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name; `niri` is reserved.
+        source: String,
+        /// Accent color as `#rrggbb` or `#rrggbbaa`.
+        accent: Option<String>,
+        /// Level.
+        level: SignalLevel,
+        /// Sustained motion.
+        motion: SignalMotion,
+        /// Free-form tag for window-rule matching.
+        tag: Option<String>,
+        /// Time until the slot decays to `after_level` / `after_motion`, in ms.
+        ttl_ms: Option<u32>,
+        /// Level after decay.
+        after_level: Option<SignalLevel>,
+        /// Motion after decay.
+        after_motion: Option<SignalMotion>,
+        /// Whether focusing the window demotes the slot to its `after` pair.
+        until_focus: bool,
+    },
+    /// Raise a transient impulse on a window for an existing source.
+    PulseWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name; must already have a slot.
+        source: String,
+        /// Kind of impulse.
+        kind: ImpulseKind,
+        /// Accent color override as `#rrggbb` or `#rrggbbaa`.
+        accent: Option<String>,
+    },
+    /// Remove a source's signal slot from a window.
+    ClearWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name.
+        source: String,
+    },
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
