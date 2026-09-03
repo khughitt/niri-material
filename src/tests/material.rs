@@ -16,7 +16,13 @@ fn material_of(f: &mut Fixture, title: &str) -> Option<String> {
                 role.title.as_deref() == Some(title)
             })
         })
-        .and_then(|(_, mapped)| mapped.rules().material.clone())
+        .and_then(|(_, mapped)| {
+            mapped
+                .rules()
+                .material
+                .as_ref()
+                .map(|material| material.name.clone())
+        })
 }
 
 fn config(text: &str) -> Config {
@@ -65,8 +71,7 @@ fn last_matching_rule_wins() {
     let id = f.add_client();
     open_window(&mut f, id, "target");
 
-    // The material field is a scalar: the last matching rule replaces
-    // earlier ones rather than merging with them.
+    // The material field is replaced as a whole: the last matching rule wins.
     assert_eq!(material_of(&mut f, "target").as_deref(), Some("clear"));
 }
 
@@ -224,4 +229,38 @@ fn reload_removing_a_live_material_drops_it_without_panicking() {
     f.niri_state().reload_config(Ok(config("")));
 
     assert_eq!(material_of(&mut f, "target"), None);
+}
+
+#[test]
+fn response_only_reload_updates_retained_material() {
+    let base = |attention: &str| {
+        config(&format!(
+            r##"
+            material "tg" {{
+                glass {{}}
+                response "default" {{ attention "{attention}"; }}
+            }}
+            window-rule {{ material "tg"; }}
+            "##
+        ))
+    };
+    let mut f = Fixture::with_config(base("rim-orbit"));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_window(&mut f, id, "a");
+
+    f.niri_state().reload_config(Ok(base("ring-pulse")));
+    f.niri_state().refresh_and_flush_clients();
+
+    let response = f
+        .niri()
+        .layout
+        .workspaces()
+        .flat_map(|(_, _, workspace)| workspace.tiles())
+        .find_map(|tile| tile.material().map(|m| m.material().response(None)))
+        .unwrap();
+    assert_eq!(
+        response.attention,
+        niri_config::AttentionResponse::RingPulse
+    );
 }

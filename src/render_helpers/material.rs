@@ -506,8 +506,11 @@ pub fn apply_resolved(
             true
         }
         (Some(state), Some(resolved)) if state.material.name == resolved.name => {
-            if state.material.glass != resolved.glass {
+            let changed = state.material.glass != resolved.glass
+                || state.material.responses != resolved.responses;
+            if changed {
                 state.material.glass = resolved.glass;
+                state.material.responses = resolved.responses.clone();
                 state.bump();
             }
             false
@@ -719,6 +722,7 @@ mod tests {
         ResolvedMaterial {
             name: String::from(name),
             glass: ResolvedGlass::default(),
+            responses: vec![(String::from("default"), Default::default())],
         }
     }
 

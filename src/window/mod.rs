@@ -3,8 +3,8 @@ use std::cmp::{max, min};
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
-    BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
-    ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
+    BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, MaterialRef,
+    PresetSize, ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -99,8 +99,8 @@ pub struct ResolvedWindowRules {
     /// Extra opacity to draw this window with.
     pub opacity: Option<f32>,
 
-    /// Name of the material to render this window with.
-    pub material: Option<String>,
+    /// Material and response to render this window with.
+    pub material: Option<MaterialRef>,
 
     /// Corner radius to assume this window has.
     pub geometry_corner_radius: Option<CornerRadius>,
@@ -286,7 +286,7 @@ impl ResolvedWindowRules {
                 }
 
                 if let Some(x) = &rule.material {
-                    resolved.material = Some(x.0.clone());
+                    resolved.material = Some(x.clone());
                 }
                 if let Some(x) = rule.geometry_corner_radius {
                     resolved.geometry_corner_radius = Some(x);

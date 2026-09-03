@@ -58,7 +58,7 @@ pub struct WindowRule {
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
-    #[knuffel(child, unwrap(argument))]
+    #[knuffel(child)]
     pub material: Option<MaterialRef>,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,

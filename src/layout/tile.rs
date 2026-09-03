@@ -2,7 +2,9 @@ use core::f64;
 use std::rc::Rc;
 
 use niri_config::utils::MergeWith as _;
-use niri_config::{Color, CornerRadius, GradientInterpolation, ResolvedGlass, ResolvedMaterial};
+use niri_config::{
+    Color, CornerRadius, GradientInterpolation, MaterialRef, ResolvedGlass, ResolvedMaterial,
+};
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram};
@@ -171,9 +173,15 @@ fn backdrop_blur_enabled(glass: &ResolvedGlass, blur: &niri_config::Blur) -> boo
 ///
 /// The global `blur { off }` switch is applied here, so every consumer
 /// downstream reads one already-gated value rather than re-deriving it.
-fn resolve_material(name: Option<&str>, options: &Options) -> Option<ResolvedMaterial> {
-    let mut material = options.materials.get(name?).cloned()?;
+fn resolve_material(
+    reference: Option<&MaterialRef>,
+    options: &Options,
+) -> Option<ResolvedMaterial> {
+    let reference = reference?;
+    let mut material = options.materials.get(&reference.name).cloned()?;
     material.glass.backdrop_blur = backdrop_blur_enabled(&material.glass, &options.blur);
+    let selected = material.response(reference.response.as_deref());
+    material.responses = vec![(String::from("default"), selected)];
     Some(material)
 }
 
@@ -296,7 +304,7 @@ impl<W: LayoutElement> Tile<W> {
         let shadow_config = options.layout.shadow.merged_with(&rules.shadow);
         let sizing_mode = window.sizing_mode();
         let material =
-            resolve_material(window.rules().material.as_deref(), &options).map(MaterialState::new);
+            resolve_material(window.rules().material.as_ref(), &options).map(MaterialState::new);
 
         Self {
             window,
@@ -376,7 +384,7 @@ impl<W: LayoutElement> Tile<W> {
     /// Re-resolves this tile's material from its window rules and the current config, keeping the
     /// existing state when only parameters changed.
     fn refresh_material(&mut self) {
-        let resolved = resolve_material(self.window.rules().material.as_deref(), &self.options);
+        let resolved = resolve_material(self.window.rules().material.as_ref(), &self.options);
         apply_resolved(&mut self.material, resolved.as_ref());
     }
 
@@ -1938,6 +1946,10 @@ impl<W: LayoutElement> Tile<W> {
         &self.options
     }
 
+    pub fn material(&self) -> Option<&MaterialState> {
+        self.material.as_ref()
+    }
+
     #[cfg(test)]
     pub fn view_size(&self) -> Size<f64, Logical> {
         self.view_size
@@ -1971,6 +1983,10 @@ mod tests {
         let material = ResolvedMaterial {
             name: String::from(name),
             glass,
+            responses: vec![(
+                String::from("default"),
+                niri_config::ResolvedResponse::default(),
+            )],
         };
         Options {
             materials: Rc::new(HashMap::from([(String::from(name), material)])),
@@ -1985,7 +2001,11 @@ mod tests {
     #[test]
     fn backdrop_blur_survives_resolution_when_global_blur_is_on() {
         let options = options_with("frost", true, false);
-        let resolved = resolve_material(Some("frost"), &options).unwrap();
+        let reference = MaterialRef {
+            name: String::from("frost"),
+            response: None,
+        };
+        let resolved = resolve_material(Some(&reference), &options).unwrap();
         assert!(resolved.glass.backdrop_blur);
     }
 
@@ -1994,14 +2014,22 @@ mod tests {
         // `blur { off }` means off. BlurOptions carries only passes and offset,
         // so nothing downstream would honor `off` if it were not applied here.
         let options = options_with("frost", true, true);
-        let resolved = resolve_material(Some("frost"), &options).unwrap();
+        let reference = MaterialRef {
+            name: String::from("frost"),
+            response: None,
+        };
+        let resolved = resolve_material(Some(&reference), &options).unwrap();
         assert!(!resolved.glass.backdrop_blur);
     }
 
     #[test]
     fn backdrop_blur_stays_off_when_the_material_opts_out() {
         let options = options_with("frost", false, false);
-        let resolved = resolve_material(Some("frost"), &options).unwrap();
+        let reference = MaterialRef {
+            name: String::from("frost"),
+            response: None,
+        };
+        let resolved = resolve_material(Some(&reference), &options).unwrap();
         assert!(!resolved.glass.backdrop_blur);
     }
 
@@ -2010,6 +2038,10 @@ mod tests {
         // Reachable only between a reload's layout update and its rule
         // recompute. Panicking here took the whole compositor down when a
         // live material was renamed or removed.
-        assert!(resolve_material(Some("frost"), &Options::default()).is_none());
+        let reference = MaterialRef {
+            name: String::from("frost"),
+            response: None,
+        };
+        assert!(resolve_material(Some(&reference), &Options::default()).is_none());
     }
 }
