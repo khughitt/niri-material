@@ -26,13 +26,15 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
-    apply_resolved, background_mapping, bevel_depth, jelly_state, material_frame, InputFingerprint,
-    JellyFingerprint, JellyUniforms, MaterialRenderElement, MaterialState,
+    apply_resolved, background_mapping, bevel_depth, jelly_state, material_frame,
+    GlassSignalFingerprint, GlassSignalInputs, InputFingerprint, JellyFingerprint, JellyUniforms,
+    MaterialRenderElement, MaterialState, SignalUniforms,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
+use crate::render_helpers::signal::SignalFingerprint;
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::xray::{Xray, XrayPos};
@@ -1321,6 +1323,8 @@ impl<W: LayoutElement> Tile<W> {
                                             self.scale,
                                         );
                                         let glass = &material.material().glass;
+                                        let response = material.material().response(None);
+                                        let glass_signal = GlassSignalInputs::quiet(glass);
                                         let max_flex = 0.25
                                             * bevel_depth(
                                                 f64::from(frame.chamfer),
@@ -1383,12 +1387,18 @@ impl<W: LayoutElement> Tile<W> {
                                             corner_radius: radius
                                                 .fit_to(area.size.w as f32, area.size.h as f32),
                                             jelly: jelly_fp,
+                                            signal: SignalFingerprint::default(),
+                                            glass_signal: GlassSignalFingerprint::quantize(
+                                                &glass_signal,
+                                            ),
                                         };
 
                                         let mat_elem = material.element(
                                             frame,
                                             mapping,
                                             jelly_uniforms,
+                                            SignalUniforms::quiet(&response),
+                                            glass_signal,
                                             self.scale,
                                             win_alpha,
                                             ctx.target,
@@ -1506,6 +1516,8 @@ impl<W: LayoutElement> Tile<W> {
                                     self.scale,
                                 );
                                 let glass = &material.material().glass;
+                                let response = material.material().response(None);
+                                let glass_signal = GlassSignalInputs::quiet(glass);
                                 let max_flex =
                                     0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
                                 let jelly = jelly_state(
@@ -1564,12 +1576,16 @@ impl<W: LayoutElement> Tile<W> {
                                     backdrop_color,
                                     corner_radius: clip_radius,
                                     jelly: jelly_fp,
+                                    signal: SignalFingerprint::default(),
+                                    glass_signal: GlassSignalFingerprint::quantize(&glass_signal),
                                 };
 
                                 let elem = material.element(
                                     frame,
                                     mapping,
                                     jelly_uniforms,
+                                    SignalUniforms::quiet(&response),
+                                    glass_signal,
                                     self.scale,
                                     win_alpha,
                                     ctx.target,

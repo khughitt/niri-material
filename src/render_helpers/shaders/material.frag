@@ -38,6 +38,19 @@ uniform float mat_distortion_scale;
 uniform float mat_samples;
 uniform float mat_anisotropic_blur;
 uniform float mat_jelly_ripple;
+uniform vec4 mat_sig_accent;
+uniform float mat_sig_level;
+uniform float mat_sig_breath;
+uniform vec3 mat_sig_light;
+uniform vec4 mat_sig_impulse_env;
+uniform vec4 mat_sig_impulse_prog;
+uniform vec3 mat_sig_impulse_rgb0;
+uniform vec3 mat_sig_impulse_rgb1;
+uniform vec3 mat_sig_impulse_rgb2;
+uniform vec3 mat_sig_impulse_rgb3;
+uniform ivec4 mat_sig_impulse_resp;
+uniform ivec2 mat_sig_response;
+uniform vec2 mat_sig_ring;
 
 bool inRect(vec2 v, vec4 rect) {
     return all(greaterThanEqual(v, rect.xy))
