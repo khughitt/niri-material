@@ -22,42 +22,47 @@ RUN=signals-$$-$(date +%s)
 EVIDENCE=${NIRI_MATERIAL_WORK_ROOT:?set to the evidence root the roughness smoke used}
 WORK=$EVIDENCE/material-signals-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # unique, short: nested niri panics on long socket paths
-UNIT=$RUN-weston
+HOST_SEQ=0; UNIT=; HOST_SOCKET=; NIRI_SOCKET=
 NIRI_PID=; EVENTS_PID=; CAP_PID=
 
 stop_nested() {
-    [ -n "$NIRI_PID" ] || return 0
-    local pid=$NIRI_PID
-    if [ -S "${NIRI_SOCKET:-}" ]; then
-        msg action quit --skip-confirmation >/dev/null 2>&1 || true
+    local rc=0
+    if [ -n "$NIRI_PID" ]; then
+        local pid=$NIRI_PID
+        if [ -S "$NIRI_SOCKET" ]; then
+            msg action quit --skip-confirmation >/dev/null 2>&1 || true
+            for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        fi
+        if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; fi
         for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+        if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+        wait "$pid" 2>/dev/null || true
+        NIRI_PID=; NIRI_SOCKET=
+        # niri removes its socket on a clean exit; a leftover one is a failure.
+        if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; rc=1; fi
     fi
-    if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; fi
-    for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
-    if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
-    wait "$pid" 2>/dev/null || true
-    NIRI_PID=
-    # niri removes its socket on a clean exit; a leftover one is a failure.
-    # Return rather than exit so the EXIT trap still finishes cleanup.
-    if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; return 1; fi
+    if [ -n "$UNIT" ]; then
+        local unit=$UNIT host_socket=$HOST_SOCKET
+        if ! timeout 10 systemctl --user stop "$unit" >/dev/null 2>&1; then
+            echo "FAIL: could not stop Weston unit $unit" >&2
+            rc=1
+        fi
+        for _ in $(seq 50); do
+            if ! systemctl --user is-active --quiet "$unit" 2>/dev/null && [ ! -e "$host_socket" ] && [ ! -L "$host_socket" ]; then break; fi
+            sleep 0.1
+        done
+        if systemctl --user is-active --quiet "$unit" 2>/dev/null; then echo "FAIL: Weston unit $unit still active" >&2; rc=1; fi
+        if [ -e "$host_socket" ] || [ -L "$host_socket" ]; then echo "FAIL: Weston socket left behind at $host_socket" >&2; rc=1; fi
+        UNIT=; HOST_SOCKET=
+    fi
+    return "$rc"
 }
 
 cleanup() {
     local rc=$?
-    local host_socket=$XDG_RUNTIME_DIR/$RUN
     stop_nested || rc=1
     [ -n "$EVENTS_PID" ] && { kill "$EVENTS_PID" 2>/dev/null || true; }
     [ -n "$CAP_PID" ] && { kill "$CAP_PID" 2>/dev/null || true; }
-    if ! timeout 10 systemctl --user stop "$UNIT" >/dev/null 2>&1; then
-        echo "FAIL: could not stop Weston unit $UNIT" >&2
-        rc=1
-    fi
-    for _ in $(seq 50); do
-        if ! systemctl --user is-active --quiet "$UNIT" 2>/dev/null && [ ! -e "$host_socket" ] && [ ! -L "$host_socket" ]; then break; fi
-        sleep 0.1
-    done
-    if systemctl --user is-active --quiet "$UNIT" 2>/dev/null; then echo "FAIL: Weston unit $UNIT still active" >&2; rc=1; fi
-    if [ -e "$host_socket" ] || [ -L "$host_socket" ]; then echo "FAIL: Weston socket left behind at $host_socket" >&2; rc=1; fi
     if ls "$RT"/niri.*.sock >/dev/null 2>&1; then
         echo "FAIL: nested niri socket left behind in $RT" >&2
         rc=1
@@ -149,13 +154,6 @@ write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "de
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
 
 # --- host and nested compositor -------------------------------------------
-systemd-run --user --unit="$UNIT" --collect \
-    weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
-    --width=1280 --height=720 --socket="$RUN"
-for _ in $(seq 100); do [ -S "$XDG_RUNTIME_DIR/$RUN" ] && break; sleep 0.1; done
-[ -S "$XDG_RUNTIME_DIR/$RUN" ] || { echo "FAIL: weston socket never appeared" >&2; exit 1; }
-ln -s "$XDG_RUNTIME_DIR/$RUN" "$RT/$RUN"
-
 msg() { "$NIRI" msg "$@"; }
 kitty_ids() { msg -j windows | jq -r '.[] | select(.app_id=="kitty") | .id'; }
 kitty_count() { kitty_ids | wc -l; }
@@ -164,7 +162,16 @@ assert_eq() { [ "$1" = "$2" ] || { echo "FAIL: $3: got '$1', want '$2'" >&2; exi
 expect_fail() { if "$@" >/dev/null 2>&1; then echo "FAIL: expected failure: $*" >&2; exit 1; fi; }
 
 start_nested() {   # $1 = config path; sets NIRI_SOCKET and WID
-    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$RUN "$NIRI" -c "$1" >> "$WORK/niri.log" 2>&1 &
+    HOST_SEQ=$((HOST_SEQ + 1))
+    local host=$RUN-host-$HOST_SEQ
+    UNIT=$host-weston; HOST_SOCKET=$XDG_RUNTIME_DIR/$host
+    systemd-run --user --unit="$UNIT" --collect \
+        weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
+        --width=1280 --height=720 --socket="$host"
+    for _ in $(seq 100); do [ -S "$HOST_SOCKET" ] && break; sleep 0.1; done
+    [ -S "$HOST_SOCKET" ] || { echo "FAIL: Weston socket never appeared at $HOST_SOCKET" >&2; exit 1; }
+    ln -s "$HOST_SOCKET" "$RT/$host"
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$host "$NIRI" -c "$1" >> "$WORK/niri.log" 2>&1 &
     NIRI_PID=$!
     for _ in $(seq 100); do ls "$RT"/niri.*.sock >/dev/null 2>&1 && break; sleep 0.1; done
     NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1); export NIRI_SOCKET
