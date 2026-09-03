@@ -282,6 +282,10 @@ impl LayoutElement for TestWindow {
     fn is_urgent(&self) -> bool {
         false
     }
+
+    fn signal(&self, _now: Duration) -> Option<crate::window::signal::Folded> {
+        None
+    }
 }
 
 fn arbitrary_size() -> impl Strategy<Value = Size<i32, Logical>> {
@@ -2584,6 +2588,42 @@ fn start_interactive_move_then_remove_window() {
     ];
 
     check_ops(ops);
+}
+
+#[test]
+fn mutable_lookup_finds_interactively_moved_window() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(7),
+        },
+    ]);
+    let id = *layout.windows().next().unwrap().1.id();
+    check_ops_on_layout(
+        &mut layout,
+        [
+            Op::InteractiveMoveBegin {
+                window: id,
+                output_idx: 1,
+                px: 0.,
+                py: 0.,
+            },
+            Op::InteractiveMoveUpdate {
+                window: id,
+                dx: 1000.,
+                dy: 0.,
+                output_idx: 1,
+                px: 1000.,
+                py: 0.,
+            },
+        ],
+    );
+
+    assert!(!layout
+        .workspaces_mut()
+        .flat_map(|ws| ws.windows_mut())
+        .any(|w| w.id() == &id));
+    assert!(layout.find_window_mut_by(|w| w.id() == &id).is_some());
 }
 
 #[test]

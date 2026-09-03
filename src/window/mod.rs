@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
@@ -151,6 +152,13 @@ impl<'a> WindowRef<'a> {
         match self {
             WindowRef::Unmapped(_) => false,
             WindowRef::Mapped(mapped) => mapped.is_urgent(),
+        }
+    }
+
+    pub fn signal(self, now: Duration) -> Option<signal::Folded> {
+        match self {
+            WindowRef::Unmapped(_) => None,
+            WindowRef::Mapped(mapped) => mapped.signals().fold(now),
         }
     }
 
@@ -405,6 +413,23 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
     if let Some(is_urgent) = m.is_urgent {
         if window.is_urgent() != is_urgent {
             return false;
+        }
+    }
+
+    if m.signal_source.is_some() || m.signal_tag.is_some() {
+        let Some(folded) = window.signal(crate::utils::get_monotonic_time()) else {
+            return false;
+        };
+        if let Some(re) = &m.signal_source {
+            if !folded.sources.iter().any(|source| re.0.is_match(source)) {
+                return false;
+            }
+        }
+        if let Some(re) = &m.signal_tag {
+            match &folded.tag {
+                Some(tag) if re.0.is_match(tag) => {}
+                _ => return false,
+            }
         }
     }
 

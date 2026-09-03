@@ -88,6 +88,12 @@ pub struct Mapped {
     /// Whether this has an urgent indicator.
     is_urgent: bool,
 
+    /// Per-window signal store (design §1).
+    signals: crate::window::signal::WindowSignals,
+
+    /// Whether the signal deadline timer must be reconciled.
+    signal_deadline_dirty: bool,
+
     /// Whether this window has the keyboard focus.
     is_focused: bool,
 
@@ -286,6 +292,8 @@ impl Mapped {
             needs_frame_callback: false,
             offscreen_data: RefCell::new(None),
             is_urgent: false,
+            signals: Default::default(),
+            signal_deadline_dirty: false,
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
@@ -394,6 +402,12 @@ impl Mapped {
 
         self.is_focused = is_focused;
         self.is_urgent = false;
+        let now = crate::utils::get_monotonic_time();
+        let mut changed = self.signals.set_native_urgent(false, now);
+        if is_focused {
+            changed |= self.signals.on_focus();
+        }
+        self.signal_deadline_dirty |= changed;
         self.need_to_recompute_rules = true;
     }
 
@@ -605,7 +619,31 @@ impl Mapped {
 
         let changed = self.is_urgent != urgent;
         self.is_urgent = urgent;
+        if changed {
+            let now = crate::utils::get_monotonic_time();
+            if self.signals.set_native_urgent(urgent, now) {
+                self.signal_deadline_dirty = true;
+            }
+        }
         self.need_to_recompute_rules |= changed;
+    }
+
+    pub fn signals(&self) -> &crate::window::signal::WindowSignals {
+        &self.signals
+    }
+
+    pub fn signals_mut(&mut self) -> &mut crate::window::signal::WindowSignals {
+        &mut self.signals
+    }
+
+    /// Marks rules and deadline scheduling stale after a signal mutation.
+    pub fn signal_changed(&mut self) {
+        self.need_to_recompute_rules = true;
+        self.signal_deadline_dirty = true;
+    }
+
+    pub fn take_signal_deadline_dirty(&mut self) -> bool {
+        std::mem::take(&mut self.signal_deadline_dirty)
     }
 
     pub fn is_urgent(&self) -> bool {
@@ -976,6 +1014,10 @@ impl LayoutElement for Mapped {
 
     fn is_urgent(&self) -> bool {
         self.is_urgent
+    }
+
+    fn signal(&self, now: Duration) -> Option<crate::window::signal::Folded> {
+        self.signals.fold(now)
     }
 
     fn set_activated(&mut self, active: bool) {
