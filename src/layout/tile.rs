@@ -309,6 +309,15 @@ struct SignalCrossfade {
     accent_to: Option<[f32; 3]>,
 }
 
+struct MaterialDynamics {
+    jelly_fingerprint: JellyFingerprint,
+    jelly_uniforms: JellyUniforms,
+    signal_fingerprint: SignalFingerprint,
+    signal_uniforms: SignalUniforms,
+    glass_signal_fingerprint: GlassSignalFingerprint,
+    glass_signal: GlassSignalInputs,
+}
+
 impl SignalCrossfade {
     fn current(&self) -> (f32, Option<[f32; 3]>) {
         let t = self.anim.clamped_value() as f32;
@@ -477,6 +486,57 @@ impl<W: LayoutElement> Tile<W> {
             .as_ref()
             .map_or(target, SignalCrossfade::current);
         Some((eff, level, accent))
+    }
+
+    fn material_dynamics(
+        &self,
+        material: &MaterialState,
+        chamfer: f32,
+        motion_residual: Point<f64, Logical>,
+        size_residual: (f64, f64),
+        window_size: Size<f64, Logical>,
+    ) -> MaterialDynamics {
+        let glass = &material.material().glass;
+        let response = material.material().response(None);
+        let now = self.clock.now_unadjusted();
+        let signal = self.signal_frame_cache.borrow().clone();
+        let (signal_fingerprint, glass_signal, signal_uniforms) = match &signal {
+            Some((effective, level, accent)) => {
+                let frame = solve(effective, now, material.jelly_seed()[0], *level, *accent);
+                let glass_signal = glass_signal_inputs(&frame, glass);
+                let uniforms = SignalUniforms::from_frame(&frame, &glass_signal, &response);
+                (SignalFingerprint::quantize(&frame), glass_signal, uniforms)
+            }
+            None => (
+                SignalFingerprint::default(),
+                GlassSignalInputs::quiet(glass),
+                SignalUniforms::quiet(&response),
+            ),
+        };
+        let max_flex = 0.25 * bevel_depth(f64::from(chamfer), glass.thickness);
+        let mut jelly = jelly_state(
+            motion_residual,
+            size_residual,
+            window_size,
+            glass.jelly_flex,
+            max_flex,
+        );
+        jelly.activity = (jelly.activity + glass_signal.activity_add).min(0.999);
+        let time = self.clock.now().as_secs_f64();
+
+        MaterialDynamics {
+            jelly_fingerprint: JellyFingerprint::quantize(&jelly, time),
+            jelly_uniforms: JellyUniforms {
+                move_: jelly.move_,
+                resize: jelly.resize,
+                activity: jelly.activity,
+                time: (time % 3600.) as f32,
+            },
+            signal_fingerprint,
+            signal_uniforms,
+            glass_signal_fingerprint: GlassSignalFingerprint::quantize(&glass_signal),
+            glass_signal,
+        }
     }
 
     pub fn update_window(&mut self) {
@@ -1437,61 +1497,13 @@ impl<W: LayoutElement> Tile<W> {
                                             &material.material().glass,
                                             self.scale,
                                         );
-                                        let glass = &material.material().glass;
-                                        let response = material.material().response(None);
-                                        let now = self.clock.now_unadjusted();
-                                        let signal = self.signal_frame_cache.borrow().clone();
-                                        let (signal_fp, glass_signal, signal_uniforms) =
-                                            match &signal {
-                                                Some((effective, level, accent)) => {
-                                                    let frame = solve(
-                                                        effective,
-                                                        now,
-                                                        material.jelly_seed()[0],
-                                                        *level,
-                                                        *accent,
-                                                    );
-                                                    let glass_signal =
-                                                        glass_signal_inputs(&frame, glass);
-                                                    let uniforms = SignalUniforms::from_frame(
-                                                        &frame,
-                                                        &glass_signal,
-                                                        &response,
-                                                    );
-                                                    (
-                                                        SignalFingerprint::quantize(&frame),
-                                                        glass_signal,
-                                                        uniforms,
-                                                    )
-                                                }
-                                                None => (
-                                                    SignalFingerprint::default(),
-                                                    GlassSignalInputs::quiet(glass),
-                                                    SignalUniforms::quiet(&response),
-                                                ),
-                                            };
-                                        let max_flex = 0.25
-                                            * bevel_depth(
-                                                f64::from(frame.chamfer),
-                                                glass.thickness,
-                                            );
-                                        let mut jelly = jelly_state(
+                                        let dynamics = self.material_dynamics(
+                                            material,
+                                            frame.chamfer,
                                             motion_residual,
                                             size_residual,
                                             window_size,
-                                            glass.jelly_flex,
-                                            max_flex,
                                         );
-                                        jelly.activity =
-                                            (jelly.activity + glass_signal.activity_add).min(0.999);
-                                        let time = self.clock.now().as_secs_f64();
-                                        let jelly_fp = JellyFingerprint::quantize(&jelly, time);
-                                        let jelly_uniforms = JellyUniforms {
-                                            move_: jelly.move_,
-                                            resize: jelly.resize,
-                                            activity: jelly.activity,
-                                            time: (time % 3600.) as f32,
-                                        };
 
                                         let win_texture = offscreen_elem.texture().clone();
                                         let win_src = offscreen_elem.src();
@@ -1533,19 +1545,17 @@ impl<W: LayoutElement> Tile<W> {
                                             backdrop_color,
                                             corner_radius: radius
                                                 .fit_to(area.size.w as f32, area.size.h as f32),
-                                            jelly: jelly_fp,
-                                            signal: signal_fp,
-                                            glass_signal: GlassSignalFingerprint::quantize(
-                                                &glass_signal,
-                                            ),
+                                            jelly: dynamics.jelly_fingerprint,
+                                            signal: dynamics.signal_fingerprint,
+                                            glass_signal: dynamics.glass_signal_fingerprint,
                                         };
 
                                         let mat_elem = material.element(
                                             frame,
                                             mapping,
-                                            jelly_uniforms,
-                                            signal_uniforms,
-                                            glass_signal,
+                                            dynamics.jelly_uniforms,
+                                            dynamics.signal_uniforms,
+                                            dynamics.glass_signal,
                                             self.scale,
                                             win_alpha,
                                             ctx.target,
@@ -1662,56 +1672,13 @@ impl<W: LayoutElement> Tile<W> {
                                     &material.material().glass,
                                     self.scale,
                                 );
-                                let glass = &material.material().glass;
-                                let response = material.material().response(None);
-                                let now = self.clock.now_unadjusted();
-                                let signal = self.signal_frame_cache.borrow().clone();
-                                let (signal_fp, glass_signal, signal_uniforms) = match &signal {
-                                    Some((effective, level, accent)) => {
-                                        let frame = solve(
-                                            effective,
-                                            now,
-                                            material.jelly_seed()[0],
-                                            *level,
-                                            *accent,
-                                        );
-                                        let glass_signal = glass_signal_inputs(&frame, glass);
-                                        let uniforms = SignalUniforms::from_frame(
-                                            &frame,
-                                            &glass_signal,
-                                            &response,
-                                        );
-                                        (
-                                            SignalFingerprint::quantize(&frame),
-                                            glass_signal,
-                                            uniforms,
-                                        )
-                                    }
-                                    None => (
-                                        SignalFingerprint::default(),
-                                        GlassSignalInputs::quiet(glass),
-                                        SignalUniforms::quiet(&response),
-                                    ),
-                                };
-                                let max_flex =
-                                    0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
-                                let mut jelly = jelly_state(
+                                let dynamics = self.material_dynamics(
+                                    material,
+                                    frame.chamfer,
                                     motion_residual,
                                     size_residual,
                                     window_size,
-                                    glass.jelly_flex,
-                                    max_flex,
                                 );
-                                jelly.activity =
-                                    (jelly.activity + glass_signal.activity_add).min(0.999);
-                                let time = self.clock.now().as_secs_f64();
-                                let jelly_fp = JellyFingerprint::quantize(&jelly, time);
-                                let jelly_uniforms = JellyUniforms {
-                                    move_: jelly.move_,
-                                    resize: jelly.resize,
-                                    activity: jelly.activity,
-                                    time: (time % 3600.) as f32,
-                                };
 
                                 let win_texture = offscreen_elem.texture().clone();
                                 let win_src = offscreen_elem.src();
@@ -1752,17 +1719,17 @@ impl<W: LayoutElement> Tile<W> {
                                     mapping: mapping.clone(),
                                     backdrop_color,
                                     corner_radius: clip_radius,
-                                    jelly: jelly_fp,
-                                    signal: signal_fp,
-                                    glass_signal: GlassSignalFingerprint::quantize(&glass_signal),
+                                    jelly: dynamics.jelly_fingerprint,
+                                    signal: dynamics.signal_fingerprint,
+                                    glass_signal: dynamics.glass_signal_fingerprint,
                                 };
 
                                 let elem = material.element(
                                     frame,
                                     mapping,
-                                    jelly_uniforms,
-                                    signal_uniforms,
-                                    glass_signal,
+                                    dynamics.jelly_uniforms,
+                                    dynamics.signal_uniforms,
+                                    dynamics.glass_signal,
                                     self.scale,
                                     win_alpha,
                                     ctx.target,
