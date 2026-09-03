@@ -451,7 +451,7 @@ setup_offscreen_column() {
         || { echo "FAIL: WID still in view (view=$view width=$width)" >&2; exit 1; }
 }
 setup_motion_off() { set_demand "$WID" pulse; assert_eq "$(win "$WID" .signal.motion)" Pulse "stored motion"; }
-during_pulses() { local k; for k in 1 2 3; do msg pulse-window-signal --id "$WID" --source demo --kind done; sleep 0.3; done; }
+during_pulses() { local k; for k in 1 2 3; do msg pulse-window-signal --id "$WID" --source demo --kind done; done; }
 during_one_done() { msg pulse-window-signal --id "$WID" --source demo --kind done; }
 
 # Steady cases: the final 20 s must match the expectation.
