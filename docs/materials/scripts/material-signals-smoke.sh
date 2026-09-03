@@ -550,7 +550,8 @@ mode_gpu() {
         printf 'ring + rim orbit delta vs default: %+.1f%%\n' "$(awk -v a="$default_ns" -v b="$ring_ns" 'BEGIN { print (b-a)/a*100 }')"
     } | tee -a "$WORK/gpu.txt"
     # Gate: the default path must not regress against the base commit on the identical fixture.
-    expect_about "default path vs base-commit build" "$default_ns" "$ref_ns" 0.10
+    awk -v g="$default_ns" -v r="$ref_ns" 'BEGIN { exit !(g <= r*1.10) }' \
+        || { echo "FAIL: default path vs base-commit build: got $default_ns, exceeds $ref_ns by more than 10%" >&2; exit 1; }
     git worktree remove --force "$WORK/ref-src"
     echo "gpu: OK"
 }
