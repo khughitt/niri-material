@@ -182,7 +182,6 @@ impl Shaders {
                 UniformName::new("mat_samples", UniformType::_1f),
                 UniformName::new("mat_anisotropic_blur", UniformType::_1f),
                 UniformName::new("mat_jelly_ripple", UniformType::_1f),
-                UniformName::new("mat_sig_active", UniformType::_1f),
                 UniformName::new("mat_sig_accent", UniformType::_4f),
                 UniformName::new("mat_sig_level", UniformType::_1f),
                 UniformName::new("mat_sig_breath", UniformType::_1f),
