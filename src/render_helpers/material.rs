@@ -586,6 +586,10 @@ impl MaterialState {
         &self.material
     }
 
+    pub fn jelly_seed(&self) -> [f32; 3] {
+        self.jelly_seed
+    }
+
     pub fn has_program(renderer: &mut GlesRenderer) -> bool {
         Shaders::get(renderer).material.is_some()
     }

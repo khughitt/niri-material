@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use niri_config::{Color, ResolvedResponse, SignalMotionPolicy};
 use niri_ipc::{SignalLevel, SignalMotion};
+use smithay::utils::{Logical, Point, Rectangle, Size};
 
 use crate::window::signal::{Folded, IMPULSE_LIFETIME};
 
@@ -193,6 +194,30 @@ pub fn next_boundary(motion: SignalMotion, now: Duration) -> Option<Duration> {
     let bucket = period / BUCKETS_PER_PERIOD;
     let n = now.as_nanos() / bucket.as_nanos() + 1;
     Some(Duration::from_nanos((n * bucket.as_nanos()) as u64))
+}
+
+/// Whether a tile's slab band is in view. The band is the tile rect inflated
+/// by `bevel` on every side: a superset of the exact slab, so a visible
+/// band never freezes when the tile rect alone leaves view.
+pub fn slab_in_view(
+    location: Point<f64, Logical>,
+    size: Size<f64, Logical>,
+    bevel: f64,
+    view: Rectangle<f64, Logical>,
+) -> bool {
+    let slab = Rectangle::new(
+        location - Point::from((bevel, bevel)),
+        Size::from((size.w + 2. * bevel, size.h + 2. * bevel)),
+    );
+    slab.overlaps(view)
+}
+
+/// Next redraw deadline for a tile: only for sustained motion that is in view.
+pub fn tick_deadline(eff: &EffectiveSignal, in_view: bool, now: Duration) -> Option<Duration> {
+    if !eff.is_sustained() || !in_view {
+        return None;
+    }
+    next_boundary(eff.motion, now)
 }
 
 /// Stage 2: pure solve (design §3). `level` and `accent` are the
@@ -429,6 +454,44 @@ mod tests {
             .flat_map(|edge| (1..=4).map(move |k| Duration::from_micros(edge * 1000 + 12_500 * k)))
             .collect();
         assert_eq!(seq, expected);
+    }
+
+    #[test]
+    fn slab_in_view_uses_the_bevel_band() {
+        let view = Rectangle::new(Point::from((0., 0.)), Size::from((1920., 1080.)));
+        let size = Size::from((400., 300.));
+        assert!(slab_in_view(Point::from((10., 10.)), size, 12., view));
+        // Tile rect fully left of the view, band still overlapping.
+        assert!(slab_in_view(
+            Point::from((-400. + 6., 10.)),
+            size,
+            12.,
+            view
+        ));
+        // Band entirely out of view.
+        assert!(!slab_in_view(
+            Point::from((-400. - 20., 10.)),
+            size,
+            12.,
+            view
+        ));
+    }
+
+    #[test]
+    fn tick_deadline_requires_sustained_motion_in_view() {
+        let sustained = EffectiveSignal {
+            accent: None,
+            level: L::Demand,
+            motion: M::Pulse,
+            impulses: vec![],
+        };
+        assert!(tick_deadline(&sustained, true, ms(100)).is_some());
+        assert!(tick_deadline(&sustained, false, ms(100)).is_none());
+        let quiet = EffectiveSignal {
+            motion: M::Static,
+            ..sustained
+        };
+        assert!(tick_deadline(&quiet, true, ms(100)).is_none());
     }
 
     #[test]

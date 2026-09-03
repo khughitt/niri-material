@@ -1,9 +1,12 @@
 use core::f64;
+use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     Color, CornerRadius, GradientInterpolation, MaterialRef, ResolvedGlass, ResolvedMaterial,
+    ResolvedResponse,
 };
 use niri_ipc::WindowLayout;
 use smithay::backend::renderer::element::{Element, Kind};
@@ -26,15 +29,15 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::{
-    apply_resolved, background_mapping, bevel_depth, jelly_state, material_frame,
-    GlassSignalFingerprint, GlassSignalInputs, InputFingerprint, JellyFingerprint, JellyUniforms,
-    MaterialRenderElement, MaterialState, SignalUniforms,
+    apply_resolved, background_mapping, bevel_depth, glass_signal_inputs, jelly_state,
+    material_frame, GlassSignalFingerprint, GlassSignalInputs, InputFingerprint, JellyFingerprint,
+    JellyUniforms, MaterialRenderElement, MaterialState, SignalUniforms,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
-use crate::render_helpers::signal::SignalFingerprint;
+use crate::render_helpers::signal::{solve, EffectiveSignal, SignalFingerprint};
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::xray::{Xray, XrayPos};
@@ -127,6 +130,11 @@ pub struct Tile<W: LayoutElement> {
 
     /// State for slice-0 material rendering.
     material: Option<MaterialState>,
+
+    signal_crossfade: Option<SignalCrossfade>,
+    signal_target: Option<(f32, Option<[f32; 3]>)>,
+    #[allow(clippy::type_complexity)]
+    signal_frame_cache: RefCell<Option<(EffectiveSignal, f32, Option<[f32; 3]>)>>,
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
@@ -292,6 +300,29 @@ pub(super) struct AlphaAnimation {
     offscreen: OffscreenBuffer,
 }
 
+#[derive(Debug)]
+struct SignalCrossfade {
+    anim: Animation,
+    level_from: f32,
+    level_to: f32,
+    accent_from: Option<[f32; 3]>,
+    accent_to: Option<[f32; 3]>,
+}
+
+impl SignalCrossfade {
+    fn current(&self) -> (f32, Option<[f32; 3]>) {
+        let t = self.anim.clamped_value() as f32;
+        let level = self.level_from + (self.level_to - self.level_from) * t;
+        let accent = match (self.accent_from, self.accent_to) {
+            (Some(a), Some(b)) => Some([0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)),
+            (None, Some(b)) => Some(b.map(|v| v * t)),
+            (Some(a), None) => Some(a.map(|v| v * (1. - t))),
+            (None, None) => None,
+        };
+        (level, accent)
+    }
+}
+
 impl<W: LayoutElement> Tile<W> {
     pub fn new(
         window: W,
@@ -332,6 +363,9 @@ impl<W: LayoutElement> Tile<W> {
             scale,
             clock,
             material,
+            signal_crossfade: None,
+            signal_target: Some((0., None)),
+            signal_frame_cache: RefCell::new(None),
             options,
         }
     }
@@ -388,6 +422,61 @@ impl<W: LayoutElement> Tile<W> {
     fn refresh_material(&mut self) {
         let resolved = resolve_material(self.window.rules().material.as_ref(), &self.options);
         apply_resolved(&mut self.material, resolved.as_ref());
+    }
+
+    /// Stage 1 plus crossfade bookkeeping. Returns the effective signal and
+    /// the crossfaded (level, accent) for this frame, or `None` when the
+    /// window has no signal and no crossfade is running.
+    fn signal_for_frame(
+        &mut self,
+        response: &ResolvedResponse,
+    ) -> Option<(EffectiveSignal, f32, Option<[f32; 3]>)> {
+        use crate::render_helpers::signal::{color_linear, effective, level_value};
+
+        let folded = self.window.signal(self.clock.now_unadjusted());
+        let eff = folded
+            .as_ref()
+            .map(|folded| effective(folded, self.options.signal.motion, response))
+            .unwrap_or(EffectiveSignal {
+                accent: None,
+                level: niri_ipc::SignalLevel::Quiet,
+                motion: niri_ipc::SignalMotion::Static,
+                impulses: vec![],
+            });
+        let target = (level_value(eff.level), eff.accent.map(color_linear));
+
+        if self.signal_target != Some(target) {
+            let (from_level, from_accent) = self
+                .signal_crossfade
+                .as_ref()
+                .map(SignalCrossfade::current)
+                .or(self.signal_target)
+                .unwrap_or((0., None));
+            self.signal_crossfade = Some(SignalCrossfade {
+                anim: Animation::new(
+                    self.clock.clone(),
+                    0.,
+                    1.,
+                    0.,
+                    self.options.animations.material_signal.0,
+                ),
+                level_from: from_level,
+                level_to: target.0,
+                accent_from: from_accent,
+                accent_to: target.1,
+            });
+            self.signal_target = Some(target);
+        }
+
+        if folded.is_none() && self.signal_crossfade.is_none() {
+            return None;
+        }
+
+        let (level, accent) = self
+            .signal_crossfade
+            .as_ref()
+            .map_or(target, SignalCrossfade::current);
+        Some((eff, level, accent))
     }
 
     pub fn update_window(&mut self) {
@@ -570,6 +659,14 @@ impl<W: LayoutElement> Tile<W> {
                 self.alpha_animation = None;
             }
         }
+
+        if self
+            .signal_crossfade
+            .as_ref()
+            .is_some_and(|crossfade| crossfade.anim.is_done())
+        {
+            self.signal_crossfade = None;
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -585,9 +682,27 @@ impl<W: LayoutElement> Tile<W> {
                 .alpha_animation
                 .as_ref()
                 .is_some_and(|alpha| !alpha.anim.is_done())
+            || self
+                .signal_crossfade
+                .as_ref()
+                .is_some_and(|crossfade| !crossfade.anim.is_done())
+            || self
+                .signal_frame_cache
+                .borrow()
+                .as_ref()
+                .is_some_and(|(eff, _, _)| eff.has_live_impulses(self.clock.now_unadjusted()))
     }
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+        let response = self
+            .material
+            .as_ref()
+            .map(|material| material.material().response(None));
+        let signal = response
+            .as_ref()
+            .and_then(|response| self.signal_for_frame(response));
+        *self.signal_frame_cache.get_mut() = signal;
+
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
         let expanded_progress = self.expanded_progress();
@@ -1324,19 +1439,51 @@ impl<W: LayoutElement> Tile<W> {
                                         );
                                         let glass = &material.material().glass;
                                         let response = material.material().response(None);
-                                        let glass_signal = GlassSignalInputs::quiet(glass);
+                                        let now = self.clock.now_unadjusted();
+                                        let signal = self.signal_frame_cache.borrow().clone();
+                                        let (signal_fp, glass_signal, signal_uniforms) =
+                                            match &signal {
+                                                Some((effective, level, accent)) => {
+                                                    let frame = solve(
+                                                        effective,
+                                                        now,
+                                                        material.jelly_seed()[0],
+                                                        *level,
+                                                        *accent,
+                                                    );
+                                                    let glass_signal =
+                                                        glass_signal_inputs(&frame, glass);
+                                                    let uniforms = SignalUniforms::from_frame(
+                                                        &frame,
+                                                        &glass_signal,
+                                                        &response,
+                                                    );
+                                                    (
+                                                        SignalFingerprint::quantize(&frame),
+                                                        glass_signal,
+                                                        uniforms,
+                                                    )
+                                                }
+                                                None => (
+                                                    SignalFingerprint::default(),
+                                                    GlassSignalInputs::quiet(glass),
+                                                    SignalUniforms::quiet(&response),
+                                                ),
+                                            };
                                         let max_flex = 0.25
                                             * bevel_depth(
                                                 f64::from(frame.chamfer),
                                                 glass.thickness,
                                             );
-                                        let jelly = jelly_state(
+                                        let mut jelly = jelly_state(
                                             motion_residual,
                                             size_residual,
                                             window_size,
                                             glass.jelly_flex,
                                             max_flex,
                                         );
+                                        jelly.activity =
+                                            (jelly.activity + glass_signal.activity_add).min(0.999);
                                         let time = self.clock.now().as_secs_f64();
                                         let jelly_fp = JellyFingerprint::quantize(&jelly, time);
                                         let jelly_uniforms = JellyUniforms {
@@ -1387,7 +1534,7 @@ impl<W: LayoutElement> Tile<W> {
                                             corner_radius: radius
                                                 .fit_to(area.size.w as f32, area.size.h as f32),
                                             jelly: jelly_fp,
-                                            signal: SignalFingerprint::default(),
+                                            signal: signal_fp,
                                             glass_signal: GlassSignalFingerprint::quantize(
                                                 &glass_signal,
                                             ),
@@ -1397,7 +1544,7 @@ impl<W: LayoutElement> Tile<W> {
                                             frame,
                                             mapping,
                                             jelly_uniforms,
-                                            SignalUniforms::quiet(&response),
+                                            signal_uniforms,
                                             glass_signal,
                                             self.scale,
                                             win_alpha,
@@ -1517,16 +1664,46 @@ impl<W: LayoutElement> Tile<W> {
                                 );
                                 let glass = &material.material().glass;
                                 let response = material.material().response(None);
-                                let glass_signal = GlassSignalInputs::quiet(glass);
+                                let now = self.clock.now_unadjusted();
+                                let signal = self.signal_frame_cache.borrow().clone();
+                                let (signal_fp, glass_signal, signal_uniforms) = match &signal {
+                                    Some((effective, level, accent)) => {
+                                        let frame = solve(
+                                            effective,
+                                            now,
+                                            material.jelly_seed()[0],
+                                            *level,
+                                            *accent,
+                                        );
+                                        let glass_signal = glass_signal_inputs(&frame, glass);
+                                        let uniforms = SignalUniforms::from_frame(
+                                            &frame,
+                                            &glass_signal,
+                                            &response,
+                                        );
+                                        (
+                                            SignalFingerprint::quantize(&frame),
+                                            glass_signal,
+                                            uniforms,
+                                        )
+                                    }
+                                    None => (
+                                        SignalFingerprint::default(),
+                                        GlassSignalInputs::quiet(glass),
+                                        SignalUniforms::quiet(&response),
+                                    ),
+                                };
                                 let max_flex =
                                     0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
-                                let jelly = jelly_state(
+                                let mut jelly = jelly_state(
                                     motion_residual,
                                     size_residual,
                                     window_size,
                                     glass.jelly_flex,
                                     max_flex,
                                 );
+                                jelly.activity =
+                                    (jelly.activity + glass_signal.activity_add).min(0.999);
                                 let time = self.clock.now().as_secs_f64();
                                 let jelly_fp = JellyFingerprint::quantize(&jelly, time);
                                 let jelly_uniforms = JellyUniforms {
@@ -1576,7 +1753,7 @@ impl<W: LayoutElement> Tile<W> {
                                     backdrop_color,
                                     corner_radius: clip_radius,
                                     jelly: jelly_fp,
-                                    signal: SignalFingerprint::default(),
+                                    signal: signal_fp,
                                     glass_signal: GlassSignalFingerprint::quantize(&glass_signal),
                                 };
 
@@ -1584,7 +1761,7 @@ impl<W: LayoutElement> Tile<W> {
                                     frame,
                                     mapping,
                                     jelly_uniforms,
-                                    SignalUniforms::quiet(&response),
+                                    signal_uniforms,
                                     glass_signal,
                                     self.scale,
                                     win_alpha,
@@ -1729,6 +1906,14 @@ impl<W: LayoutElement> Tile<W> {
     ) {
         let _span = tracy_client::span!("Tile::render");
 
+        if let Some(ticks) = &ctx.signal_ticks {
+            if let Some(deadline) =
+                self.signal_tick_deadline(location, ticks.view.get(), self.clock.now_unadjusted())
+            {
+                ticks.report(deadline);
+            }
+        }
+
         let scale = Scale::from(self.scale);
 
         let tile_alpha = self
@@ -1805,6 +1990,23 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// Next bucket boundary this tile needs a redraw for, if its effective
+    /// motion is sustained and its slab band is in view.
+    pub fn signal_tick_deadline(
+        &self,
+        location: Point<f64, Logical>,
+        view: Rectangle<f64, Logical>,
+        now: Duration,
+    ) -> Option<Duration> {
+        use crate::render_helpers::signal::{slab_in_view, tick_deadline};
+
+        let cache = self.signal_frame_cache.borrow();
+        let (eff, _, _) = cache.as_ref()?;
+        let bevel = self.material.as_ref()?.material().glass.bevel;
+        let in_view = slab_in_view(location, self.tile_size(), bevel, view);
+        tick_deadline(eff, in_view, now)
+    }
+
     pub fn store_unmap_snapshot_if_empty(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -1842,6 +2044,7 @@ impl<W: LayoutElement> Tile<W> {
                 target: RenderTarget::Output,
                 renderer,
                 xray: xray.as_deref(),
+                signal_ticks: None,
             },
             Point::from((0., 0.)),
             xray_pos,
@@ -1894,6 +2097,7 @@ impl<W: LayoutElement> Tile<W> {
                         target: RenderTarget::Output,
                         renderer,
                         xray: Some(xray),
+                        signal_ticks: None,
                     },
                     Point::from((0., 0.)),
                     xray_pos,
@@ -1915,6 +2119,7 @@ impl<W: LayoutElement> Tile<W> {
                 target: RenderTarget::Screencast,
                 renderer,
                 xray: xray.as_deref(),
+                signal_ticks: None,
             },
             Point::from((0., 0.)),
             xray_pos,

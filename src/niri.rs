@@ -487,6 +487,10 @@ pub struct OutputState {
     screen_transition: Option<ScreenTransition>,
     /// Damage tracker used for the debug damage visualization.
     pub debug_damage_tracker: OutputDamageTracker,
+    /// Earliest sustained-signal bucket boundary reported during the last render (design §4).
+    pub signal_ticks: Rc<crate::render_helpers::SignalTicks>,
+    /// Timer armed for that boundary, if any.
+    pub signal_timer: Option<RegistrationToken>,
 }
 
 #[derive(Debug, Default)]
@@ -2056,6 +2060,7 @@ impl State {
                     target: RenderTarget::Output,
                     renderer,
                     xray: None,
+                    signal_ticks: None,
                 };
 
                 self.niri.fill_xray_elements(ctx.r(), output);
@@ -2373,6 +2378,29 @@ impl Niri {
         if let Some(token) = self.signal_deadlines.remove(&id) {
             self.event_loop.remove(token);
         }
+    }
+
+    pub fn arm_signal_timer(&mut self, output: &Output) {
+        let state = self.output_state.get_mut(output).unwrap();
+        if let Some(token) = state.signal_timer.take() {
+            self.event_loop.remove(token);
+        }
+        let Some(deadline) = state.signal_ticks.next.get() else {
+            return;
+        };
+        let delay = deadline.saturating_sub(get_monotonic_time());
+        let timer_output = output.clone();
+        let token = self
+            .event_loop
+            .insert_source(Timer::from_duration(delay), move |_, _, state| {
+                if let Some(output_state) = state.niri.output_state.get_mut(&timer_output) {
+                    output_state.signal_timer = None;
+                }
+                state.niri.queue_redraw(&timer_output);
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.output_state.get_mut(output).unwrap().signal_timer = Some(token);
     }
 
     pub fn new(
@@ -3028,6 +3056,8 @@ impl Niri {
             lock_color_buffer: SolidColorBuffer::new(size, CLEAR_COLOR_LOCKED),
             screen_transition: None,
             debug_damage_tracker: OutputDamageTracker::from_output(&output),
+            signal_ticks: Rc::new(Default::default()),
+            signal_timer: None,
         };
         let rv = self.output_state.insert(output.clone(), state);
         assert!(rv.is_none(), "output was already tracked");
@@ -3068,6 +3098,9 @@ impl Niri {
             RedrawState::WaitingForVBlank { .. } => (),
             RedrawState::WaitingForEstimatedVBlank(token) => self.event_loop.remove(token),
             RedrawState::WaitingForEstimatedVBlankAndQueued(token) => self.event_loop.remove(token),
+        }
+        if let Some(token) = state.signal_timer {
+            self.event_loop.remove(token);
         }
 
         self.stop_casts_for_target(CastTarget::output(output));
@@ -4321,6 +4354,15 @@ impl Niri {
     ) {
         let _span = tracy_client::span!("Niri::render");
 
+        if ctx.target == RenderTarget::Output && ctx.signal_ticks.is_none() {
+            let ticks = self.output_state.get(output).unwrap().signal_ticks.clone();
+            ticks.reset();
+            ticks
+                .view
+                .set(Rectangle::new(Point::from((0., 0.)), output_size(output)));
+            ctx.signal_ticks = Some(ticks);
+        }
+
         if ctx.target == RenderTarget::Output {
             if let Some(preview) = self.config.borrow().debug.preview_render {
                 ctx.target = match preview {
@@ -4771,6 +4813,9 @@ impl Niri {
 
             // Render.
             res = backend.render(self, output, target_presentation_time);
+            if res != RenderResult::Skipped {
+                self.arm_signal_timer(output);
+            }
         }
 
         let is_locked = self.is_locked();
@@ -5424,6 +5469,7 @@ impl Niri {
                         renderer,
                         target: RenderTarget::ScreenCapture,
                         xray: None,
+                        signal_ticks: None,
                     };
                     let offset = screencopy.region_loc().upscale(-1);
                     let mut elements = Vec::new();
@@ -5502,6 +5548,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
+            signal_ticks: None,
         };
         let offset = screencopy.region_loc().upscale(-1);
         let mut elements = Vec::new();
@@ -5627,6 +5674,7 @@ impl Niri {
                     renderer,
                     target,
                     xray: None,
+                    signal_ticks: None,
                 };
                 let elements = self.render_to_vec(ctx, &output, false);
                 let elements = elements.iter().rev();
@@ -5709,6 +5757,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
+            signal_ticks: None,
         };
         let elements = self.render_to_vec(ctx, output, include_pointer);
         let elements = elements.iter().rev();
@@ -5764,6 +5813,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
+            signal_ticks: None,
         };
         mapped.render(
             ctx,
@@ -5930,6 +5980,7 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
+            signal_ticks: None,
         };
         let elements = self.render_to_vec(ctx, &output, include_pointer);
         let elements = elements.iter().rev();
@@ -6408,6 +6459,7 @@ impl Niri {
                         renderer,
                         target,
                         xray: None,
+                        signal_ticks: None,
                     };
                     let elements = self.render_to_vec(ctx, &output, false);
                     let elements = elements.iter().rev();

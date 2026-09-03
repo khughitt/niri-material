@@ -57,6 +57,7 @@ impl TestCase for Window {
             renderer,
             target: RenderTarget::Output,
             xray: None,
+            signal_ticks: None,
         };
         self.window
             .render_normal(ctx, location, Scale::from(1.), 1., &mut |elem| {

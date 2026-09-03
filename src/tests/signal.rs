@@ -391,3 +391,120 @@ fn rewrite_replaces_the_deadline_and_close_cancels_it() {
         "unmap cancelled the timer"
     );
 }
+
+#[test]
+fn crossfade_and_live_impulses_are_transitions_but_sustained_motion_is_not() {
+    use crate::niri::SetWindowSignalArgs;
+    use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
+    use std::time::Duration;
+
+    let mut f = Fixture::with_config(config(
+        r#"
+        material "tg" { glass {}; }
+        window-rule { material "tg"; }
+        "#,
+    ));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_window(&mut f, id, "a");
+    let wid = window_id(&mut f, "a");
+
+    // Baseline: settle the open animation first, or it masks every assertion below.
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        !f.niri().layout.are_animations_ongoing(None),
+        "settled window has no transition"
+    );
+
+    f.niri()
+        .set_window_signal(SetWindowSignalArgs {
+            id: wid,
+            source: String::from("t"),
+            accent: Some(String::from("#e5a33c")),
+            level: SignalLevel::Demand,
+            motion: SignalMotion::Pulse,
+            tag: None,
+            ttl_ms: None,
+            after_level: None,
+            after_motion: None,
+            until_focus: false,
+        })
+        .unwrap();
+    // The crossfade is created by update_render_elements, which the headless
+    // fixture does not run on its own.
+    f.niri_state().refresh_and_flush_clients();
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        f.niri().layout.are_animations_ongoing(None),
+        "crossfade is a transition"
+    );
+
+    f.niri_complete_animations(); // drops the finished crossfade in Tile::advance_animations
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        !f.niri().layout.are_animations_ongoing(None),
+        "sustained Pulse is not a transition"
+    );
+
+    f.niri()
+        .pulse_window_signal(wid, "t", ImpulseKind::Done, None)
+        .unwrap();
+    f.niri_state().refresh_and_flush_clients();
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        f.niri().layout.are_animations_ongoing(None),
+        "live impulse is a transition"
+    );
+
+    // Expire the impulse by advancing the frozen unadjusted clock past 1.5 s.
+    let later = f.niri().clock.now_unadjusted() + Duration::from_secs(2);
+    f.niri().clock.set_unadjusted(later);
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        !f.niri().layout.are_animations_ongoing(None),
+        "expired impulse is not a transition"
+    );
+    f.niri().clock.clear();
+}
+
+#[test]
+fn unsignaled_material_window_has_no_transition() {
+    let mut f = Fixture::with_config(config(
+        r#"
+        material "tg" { glass {}; }
+        window-rule { material "tg"; }
+        "#,
+    ));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_window(&mut f, id, "a");
+    f.niri_complete_animations(); // finish the open animation
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        !f.niri().layout.are_animations_ongoing(None),
+        "no crossfade starts for a quiet window"
+    );
+}
+
+#[test]
+fn arm_signal_timer_follows_the_accumulator() {
+    let mut f = Fixture::with_config(config(""));
+    f.add_output(1, (1920, 1080));
+    let output = f.niri_output(1);
+
+    f.niri().arm_signal_timer(&output);
+    assert!(f.niri().output_state[&output].signal_timer.is_none());
+
+    let deadline = get_monotonic_time() + std::time::Duration::from_millis(50);
+    f.niri().output_state[&output].signal_ticks.report(deadline);
+    f.niri().arm_signal_timer(&output);
+    assert!(f.niri().output_state[&output].signal_timer.is_some());
+
+    f.niri().output_state[&output].signal_ticks.reset();
+    f.niri().arm_signal_timer(&output);
+    assert!(
+        f.niri().output_state[&output].signal_timer.is_none(),
+        "reset removes the timer"
+    );
+}
