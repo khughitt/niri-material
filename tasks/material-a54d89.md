@@ -1,11 +1,11 @@
 ---
 id: material-a54d89
 title: "Implement material signals: model, IPC, solver, config, glass responses"
-status: todo
+status: done
 priority: 1
 size: l
 created: 2026-09-02T12:08:58Z
-updated: 2026-09-02T14:26:51Z
+updated: 2026-09-03T23:46:00Z
 depends: [material-b43616]
 tags: [signals, rendering, ipc]
 ---
@@ -15,3 +15,4 @@ Outcome: the compositor-first slice of docs/materials/2026-09-02-material-signal
 ## Notes
 
 - 2026-09-02T12:27:59Z (feat/material-signals): Review pass 2026-09-02: signal writes are IPC Requests with a result channel, not Actions; sustained motion uses bucket timers rather than the animation loop; impulse kinds resolve to shader selectors on the CPU; flash is additive; ring geometry documented against the offset slab; state bounds and event Option<Signal> added. See spec sections 1, 2, 4, 5, 6.
+- 2026-09-03T23:46:00Z (feat/material-signals): Material signals landed on feat/material-signals; evidence in docs/materials/2026-09-03-material-signals-smoke.md

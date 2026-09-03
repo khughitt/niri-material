@@ -78,7 +78,7 @@
 **Interfaces:**
 - Produces: `SignalLevel { Quiet, Active, Notice, Demand }`, `SignalMotion { Static, Breathe, Pulse, Flash }`, `ImpulseKind { Ping, Done, Error }`, `Signal`, `Impulse`, `Event::WindowSignalChanged { id, signal }`, `Window.signal: Option<Signal>`. (The three `Request` variants are Task 6.)
 
-- [ ] **Step 1: Write the failing state test**
+- [x] **Step 1: Write the failing state test**
 
 Append to `niri-ipc/src/state.rs`:
 
@@ -138,12 +138,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cargo test -p niri-ipc window_signal_changed_updates_cached_window`
 Expected: compile error, `Signal` and `signal` field not found.
 
-- [ ] **Step 3: Add the wire types**
+- [x] **Step 3: Add the wire types**
 
 In `niri-ipc/src/lib.rs`, after `PickedColor` (line ~185):
 
@@ -245,7 +245,7 @@ Add to `Event` after `WindowUrgencyChanged`:
     },
 ```
 
-- [ ] **Step 4: Reduce the event in `WindowsState::apply`**
+- [x] **Step 4: Reduce the event in `WindowsState::apply`**
 
 In `niri-ipc/src/state.rs`, after the `WindowUrgencyChanged` arm:
 
@@ -259,7 +259,7 @@ In `niri-ipc/src/state.rs`, after the `WindowUrgencyChanged` arm:
 
 Fix every other construction of `Window` in the crate (there may be none besides the test).
 
-- [ ] **Step 5: Run the test and the crate**
+- [x] **Step 5: Run the test and the crate**
 
 Run: `cargo test -p niri-ipc`
 Expected: PASS. Then `cargo build` from the workspace root. Two compositor sites break and are fixed in this task: `make_ipc_window` in `src/ipc/server.rs:513` gets `signal: None` (Task 6 replaces it with the real fold), and the exhaustive non-JSON event printer in `src/ipc/client.rs:430` gets its final arm now, next to `WindowUrgencyChanged`:
@@ -271,7 +271,7 @@ Expected: PASS. Then `cargo build` from the workspace root. Two compositor sites
                     },
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 tasks done material-b0e938 "feat(ipc): add window signal types and event"
@@ -293,7 +293,7 @@ git commit -m "feat(ipc): add window signal types and event"
 **Interfaces:**
 - Produces: `Match.signal_source: Option<RegexEq>`, `Match.signal_tag: Option<RegexEq>`, `niri_config::SignalMotionPolicy { Full, Reduced, Off }`, `Config.signal: niri_config::Signal { motion: SignalMotionPolicy }`, `Animations.material_signal: MaterialSignalAnim(pub Animation)` with default easing 400 ms `EaseOutCubic`.
 
-- [ ] **Step 1: Write the failing config tests**
+- [x] **Step 1: Write the failing config tests**
 
 In `niri-config/src/lib.rs` tests module:
 
@@ -350,12 +350,12 @@ In `niri-config/src/lib.rs` tests module:
     }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cargo test -p niri-config signal_`
 Expected: compile errors for `signal`, `material_signal`, `signal_source`.
 
-- [ ] **Step 3: Add the match fields**
+- [x] **Step 3: Add the match fields**
 
 In `niri-config/src/window_rule.rs`, inside `Match` after `is_urgent`:
 
@@ -366,7 +366,7 @@ In `niri-config/src/window_rule.rs`, inside `Match` after `is_urgent`:
     pub signal_tag: Option<RegexEq>,
 ```
 
-- [ ] **Step 4: Add the `signal` block**
+- [x] **Step 4: Add the `signal` block**
 
 Create `niri-config/src/signal.rs`:
 
@@ -422,7 +422,7 @@ impl MergeWith<SignalPart> for Signal {
 
 In `niri-config/src/lib.rs`: add `mod signal;`, `pub use crate::signal::{Signal, SignalMotionPolicy, SignalPart};`, the field `pub signal: Signal,` in `Config` (after `blur`), `signal: Default::default()` in `Config::default()`, and `"signal" => m_merge!(signal),` in the `ConfigPart` match after `"blur"`.
 
-- [ ] **Step 5: Add the animation entry**
+- [x] **Step 5: Add the animation entry**
 
 In `niri-config/src/animations.rs`, next to `RecentWindowsCloseAnim`:
 
@@ -445,12 +445,12 @@ impl Default for MaterialSignalAnim {
 
 Copy the `knuffel::Decode` impl that `RecentWindowsCloseAnim` uses (it wraps a plain `Animation` node) for `MaterialSignalAnim`. Add `pub material_signal: MaterialSignalAnim` to `Animations`, `material_signal: Default::default()` to its `Default`, `#[knuffel(child)] pub material_signal: Option<MaterialSignalAnim>` to `AnimationsPart`, and `material_signal` to the `merge_clone!` list.
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `cargo test -p niri-config`
 Expected: all PASS, including the three new ones. If the full-config `parse` test at line ~1274 compares a whole `Config`, add `signal: Signal::default()` and the new animation to its expected value.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 tasks done material-eb7fe7 "feat(config): add signal matches, motion policy, and material-signal animation"
@@ -477,7 +477,7 @@ git commit -m "feat(config): add signal matches, motion policy, and material-sig
   - `ResolvedMaterial { name, glass, responses: Vec<(String, ResolvedResponse)> }` and `ResolvedMaterial::response(&self, name: Option<&str>) -> ResolvedResponse` (default when `None`).
 - Consumes: `niri_ipc::ImpulseKind` (Task 1), `SignalMotionPolicy` (Task 2). Add `niri-ipc` as a dependency of `niri-config` only if it is not already one; check `niri-config/Cargo.toml` first. If adding it is undesirable, define a local `ImpulseKind` in `niri-config` with a `From<niri_ipc::ImpulseKind>` impl in the compositor crate.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
     #[test]
@@ -610,12 +610,12 @@ git commit -m "feat(config): add signal matches, motion policy, and material-sig
     }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cargo test -p niri-config`
 Expected: compile errors.
 
-- [ ] **Step 3: Add the response types**
+- [x] **Step 3: Add the response types**
 
 In `niri-config/src/material.rs`:
 
@@ -794,7 +794,7 @@ Extend `Material::validate` after the offset rule:
         }
 ```
 
-- [ ] **Step 4: Make `MaterialRef` a node with `response=`**
+- [x] **Step 4: Make `MaterialRef` a node with `response=`**
 
 Replace the `DecodeScalar` impl with a `knuffel::Decode` impl for a node that has one string argument and an optional `response` property. Keep the ref recording: `MaterialRefs.root` becomes `Vec<(Spanned<Literal, S>, Option<String>)>` and `included` becomes `Vec<(String, Option<String>, String)>`.
 
@@ -858,7 +858,7 @@ In `window_rule.rs` change the attribute on `material` to `#[knuffel(child)]`. C
 
 Extend `validate_material_refs` so that, when the material is known and `response` is `Some(r)`, it checks `materials.iter().find(|m| m.name == name).map(|m| m.responses.is_empty() && r == "default" || m.responses.iter().any(|b| b.name == r))` and emits `format!("material {name}: unknown response: {r}")` otherwise.
 
-- [ ] **Step 5: Fix every consumer of `MaterialRef(pub String)`**
+- [x] **Step 5: Fix every consumer of `MaterialRef(pub String)`**
 
 `cargo build` and follow the errors: `src/window/mod.rs:103` (`ResolvedRules.material: Option<String>` becomes `Option<MaterialRef>`), the rule-resolution code that copies it, `src/layout/tile.rs:378` (`resolve_material(self.window.rules().material.as_ref(), &self.options)`), and any test in `src/tests/material.rs` that reads `.material` (compare `.as_ref().map(|m| m.name.as_str())`).
 
@@ -876,7 +876,7 @@ fn resolve_material(r: Option<&MaterialRef>, options: &Options) -> Option<Resolv
 }
 ```
 
-- [ ] **Step 6: Make a response-only reload reach the retained state**
+- [x] **Step 6: Make a response-only reload reach the retained state**
 
 `apply_resolved` in `src/render_helpers/material.rs:498` copies only changed glass fields when the name is unchanged, so editing a response under the same material name would leave `MaterialState` on the old response. Change the same-name arm to:
 
@@ -930,12 +930,12 @@ fn response_only_reload_updates_retained_material() {
 
 `State::reload_config(&mut self, config: Result<Config, ()>)` is at `src/niri.rs:1421`. Add a `Tile::material(&self) -> Option<&MaterialState>` accessor if one does not exist.
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `cargo test -p niri-config` then `cargo test --bin niri material`
 Expected: all PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 tasks done material-f810f4 "feat(config): add material response blocks and response references"
@@ -967,7 +967,7 @@ git commit -m "feat(config): add material response blocks and response reference
   - `parse_accent(s: &str) -> Result<Color, SignalError>` and `accent_hex(c: Color) -> String` (normalized `#rrggbb`).
 - Consumes: `niri_ipc::{SignalLevel, SignalMotion, ImpulseKind}`, `niri_config::Color`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/window/signal.rs` with the tests first:
 
@@ -1147,12 +1147,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cargo test --bin niri window::signal`
 Expected: compile errors.
 
-- [ ] **Step 3: Implement the store**
+- [x] **Step 3: Implement the store**
 
 Above the tests in `src/window/signal.rs`:
 
@@ -1501,12 +1501,12 @@ impl WindowSignals {
 
 Add `pub mod signal;` to `src/window/mod.rs`.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cargo test --bin niri window::signal`
 Expected: all PASS. If `Color` does not implement `Eq`, keep the `PartialEq` derives as written and compare with `assert_eq!` (it only needs `PartialEq`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 tasks done material-5875b2 "feat(render): add the per-window signal store"
@@ -1529,7 +1529,7 @@ git commit -m "feat(render): add the per-window signal store"
 - Produces: `Mapped::signals(&self) -> &WindowSignals`, `Mapped::signals_mut(&mut self) -> &mut WindowSignals` (callers must call `Mapped::signal_changed(&mut self)` afterwards, which sets `need_to_recompute_rules` and `signal_deadline_dirty`), `Mapped::take_signal_deadline_dirty(&mut self) -> bool`, `LayoutElement::signal(&self, now: Duration) -> Option<Folded>`, `Options.signal: niri_config::Signal`, `Layout::find_window_mut_by(&mut self, pred: impl FnMut(&W) -> bool) -> Option<&mut W>` covering the interactively moved window.
 - Consumes: `WindowSignals` (Task 4), `Match.signal_source/tag` (Task 2).
 
-- [ ] **Step 1: Write the failing fixture test**
+- [x] **Step 1: Write the failing fixture test**
 
 `src/tests/signal.rs`:
 
@@ -1603,12 +1603,12 @@ fn urgency_creates_native_slot_and_matches_signal_source() {
 
 `State::refresh_and_flush_clients` (`src/niri.rs:754`) runs `State::refresh`, which calls `refresh_window_rules`, so the rule with the signal match re-resolves.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cargo test --bin niri urgency_creates_native_slot`
 Expected: compile error, `signals` not found.
 
-- [ ] **Step 3: Store signals on `Mapped`**
+- [x] **Step 3: Store signals on `Mapped`**
 
 In `src/window/mapped.rs`, add the field and accessors:
 
@@ -1667,7 +1667,7 @@ In `set_is_focused`, after `self.is_urgent = false;`:
 
 `need_to_recompute_rules = true` is already set on both paths.
 
-- [ ] **Step 4: Match on signal source and tag**
+- [x] **Step 4: Match on signal source and tag**
 
 In `src/window/mod.rs::window_matches`, after the `is_urgent` block:
 
@@ -1692,7 +1692,7 @@ In `src/window/mod.rs::window_matches`, after the `is_urgent` block:
 
 `WindowRef` is the type passed to `window_matches`; add `fn signal(&self, now: Duration) -> Option<Folded>` to whatever trait or impl gives it `is_urgent()` (see `src/window/mod.rs:187`), delegating to `mapped.signals().fold(now)`.
 
-- [ ] **Step 5: Expose the fold to the layout**
+- [x] **Step 5: Expose the fold to the layout**
 
 In `src/layout/mod.rs`, in `LayoutElement` after `fn is_urgent(&self) -> bool;`:
 
@@ -1723,12 +1723,12 @@ Add a lookup on `Layout` next to `with_windows_mut` (`src/layout/mod.rs:1681`) t
 
 Add a layout unit test in `src/layout/mod.rs` tests: open a window through the existing test harness, begin an interactive move on it with `interactive_move_begin` (line 3806) and one `interactive_move_update` so it enters `Moving`, then with `let id = window.id().clone();` assert `find_window_mut_by(|w| w.id() == &id).is_some()` while `workspaces_mut().flat_map(|ws| ws.windows_mut())` no longer yields it.
 
-- [ ] **Step 6: Run the test**
+- [x] **Step 6: Run the test**
 
 Run: `cargo test --bin niri signal`
 Expected: PASS for the fixture test and the store tests.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 tasks done material-25247f "feat(render): attach signals to windows and match on source and tag"
@@ -1752,7 +1752,7 @@ git commit -m "feat(render): attach signals to windows and match on source and t
 - Produces: `Niri::set_window_signal(&mut self, req: SetWindowSignalArgs) -> Result<(), String>`, `Niri::pulse_window_signal(&mut self, id: u64, source: &str, kind: ImpulseKind, accent: Option<&str>) -> Result<(), String>`, `Niri::clear_window_signal(&mut self, id: u64, source: &str) -> Result<(), String>`, `Niri::refresh_signal_deadlines(&mut self)` (called from `State::refresh` right after `refresh_window_rules`), `Niri::rearm_signal_deadline(&mut self, id: MappedId)`, `to_ipc_signal(folded: &Folded) -> niri_ipc::Signal`.
 - Consumes: Tasks 1, 4, 5.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `src/tests/signal.rs`:
 
@@ -1853,12 +1853,12 @@ fn refresh_reconciles_deadline_timer_after_focus() {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `cargo test --bin niri ipc_entry_points`
 Expected: compile errors.
 
-- [ ] **Step 3: Add the entry points and deadline timer on `Niri`**
+- [x] **Step 3: Add the entry points and deadline timer on `Niri`**
 
 In `src/niri.rs`, add to the `Niri` struct:
 
@@ -2050,7 +2050,7 @@ fn rewrite_replaces_the_deadline_and_close_cancels_it() {
 }
 ```
 
-- [ ] **Step 4: IPC requests, server conversion, request handling, event diff**
+- [x] **Step 4: IPC requests, server conversion, request handling, event diff**
 
 In `niri-ipc/src/lib.rs`, add to `Request` after `PickColor`:
 
@@ -2167,7 +2167,7 @@ Add the three request arms next to `PickColor`, following its channel pattern:
 
 The handler returns `Result<Response, String>`; the double `?` turns both the channel failure and the compositor's `Err(String)` into the error reply.
 
-- [ ] **Step 5: CLI**
+- [x] **Step 5: CLI**
 
 In `src/cli.rs` `Msg`, after `PickColor`:
 
@@ -2217,11 +2217,11 @@ In `src/cli.rs` `Msg`, after `PickColor`:
 
 In `src/ipc/client.rs`, map each to the matching `Request` variant (clone fields), and handle the response like `Msg::Action` does (expect `Response::Handled`, print nothing).
 
-- [ ] **Step 6: Run the tests and a CLI check**
+- [x] **Step 6: Run the tests and a CLI check**
 
 Run: `cargo test --bin niri signal` (PASS) and `cargo run --bin niri -- msg set-window-signal --help` (prints the flags, `--level` shows `quiet, active, notice, demand`).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 tasks done material-844eea "feat(ipc): add window signal requests, event, timers, and CLI"
@@ -2249,7 +2249,7 @@ git commit -m "feat(ipc): add window signal requests, event, timers, and CLI"
   - `SignalFingerprint::quantize(frame: &SignalFrame) -> SignalFingerprint` (`Default` = at rest).
 - Consumes: `Folded` (Task 4), `ResolvedResponse` and `SignalMotionPolicy` (Tasks 2, 3).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 #[cfg(test)]
@@ -2386,12 +2386,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cargo test --bin niri render_helpers::signal`
 Expected: compile errors.
 
-- [ ] **Step 3: Implement the module**
+- [x] **Step 3: Implement the module**
 
 ```rust
 //! Effective signal and the pure envelope solver (design §3, §4).
@@ -2629,12 +2629,12 @@ impl SignalFingerprint {
 
 The 1/32 quantization of `breath` in the fingerprint follows the bucket count so a Breathe or Pulse window changes fingerprint exactly when its bucket changes.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cargo test --bin niri render_helpers::signal`
 Expected: PASS. If `next_boundary_is_clock_aligned` differs by a nanosecond from integer division, compare with a 1 µs tolerance rather than changing the algorithm.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 tasks done material-f19f8f "feat(render): add the signal solver and fingerprint"
@@ -2663,7 +2663,7 @@ git commit -m "feat(render): add the signal solver and fingerprint"
   - `SignalUniforms::from_frame(frame, g, response)` sets `light` to the quiet `[-1, -1, 0]` unless `response.attention == AttentionResponse::RimOrbit`.
 - Consumes: Task 7 types, `ResolvedResponse` (Task 3).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In the tests module of `src/render_helpers/material.rs`:
 
@@ -2718,12 +2718,12 @@ In the tests module of `src/render_helpers/material.rs`:
     }
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cargo test --bin niri glass_signal_inputs`
 Expected: compile errors.
 
-- [ ] **Step 3: Implement the helper and uniform struct**
+- [x] **Step 3: Implement the helper and uniform struct**
 
 In `src/render_helpers/material.rs`:
 
@@ -2957,12 +2957,12 @@ Unused uniforms may be optimized out by the GL compiler; smithay's `ShaderProgra
 
 Every existing call to `MaterialState::element` in `src/layout/tile.rs` passes `SignalUniforms::quiet(&response)` and `GlassSignalInputs::quiet(glass)` for now, with `InputFingerprint { signal: SignalFingerprint::default(), glass_signal: GlassSignalFingerprint::quantize(&quiet_inputs), .. }`. Task 9 wires the real values.
 
-- [ ] **Step 4: Run the tests and the material suite**
+- [x] **Step 4: Run the tests and the material suite**
 
 Run: `cargo test --bin niri material`
 Expected: PASS, including the existing material tests, since quiet uniforms leave output unchanged.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 tasks done material-0e32cc "feat(render): add glass signal inputs and uniforms"
@@ -2991,7 +2991,7 @@ git commit -m "feat(render): add glass signal inputs and uniforms"
   - `Tile::signal_crossfade: Option<SignalCrossfade>` (private).
 - Consumes: Tasks 5, 7, 8.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `src/tests/signal.rs`:
 
@@ -3139,12 +3139,12 @@ with `use smithay::utils::{Logical, Point, Rectangle, Size};`, and these tests i
 
 `niri_complete_animations` exists on the fixture (line 85).
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `cargo test --bin niri signal`
 Expected: first assertion fails (no crossfade yet) or compile error on `signal_timer`.
 
-- [ ] **Step 3: Add `SignalTicks` to the render context**
+- [x] **Step 3: Add `SignalTicks` to the render context**
 
 In `src/render_helpers/mod.rs`:
 
@@ -3178,7 +3178,7 @@ pub struct RenderCtx<'a, R> {
 
 Update `RenderCtx::r()` (clone the `Rc`) and every `RenderCtx { .. }` construction site (`grep -rn "RenderCtx {" src/`, including `src/backend/tty.rs:1884` and `src/backend/winit.rs:227`) to carry `signal_ticks: None`. The backends never set it; injection is centralized in `Niri::render` (Step 6).
 
-- [ ] **Step 4: Crossfade and per-frame wiring in `Tile`**
+- [x] **Step 4: Crossfade and per-frame wiring in `Tile`**
 
 In `src/layout/tile.rs` add:
 
@@ -3329,11 +3329,11 @@ Extend `are_transitions_ongoing`:
                 .is_some_and(|(eff, _, _)| eff.has_live_impulses(self.clock.now_unadjusted()))
 ```
 
-- [ ] **Step 5: Set the view rect once per output pass**
+- [x] **Step 5: Set the view rect once per output pass**
 
 `Niri::render` renders the interactively moved tile (`render_interactive_move_for_output`, `src/niri.rs:4361`) before any workspace, so the view must be set before that, not inside scrolling or floating rendering. In `Niri::render`, at the same point injection happens (Step 6), set `ticks.view` to the output's logical rect at the origin: `Rectangle::new(Point::from((0., 0.)), output_size(output).to_f64())` using the existing logical-size helper for outputs in `src/niri.rs`. Tile `location`s handed to `Tile::render` by scrolling, floating, and the interactive move are all in that output-view space (scrolling applies `view_off` before calling `tile.render`), so the overlap test in Step 4 is consistent on every path. During a workspace switch animation a tile of the outgoing workspace may report while sliding out; that over-reports for the duration of an animation that already runs at refresh rate, and is accepted.
 
-- [ ] **Step 6: Per-output timer in `niri.rs`**
+- [x] **Step 6: Per-output timer in `niri.rs`**
 
 Add to `OutputState`:
 
@@ -3371,12 +3371,12 @@ Output render contexts are built by the backends (`src/backend/tty.rs:1884`, `sr
 
 Call `self.arm_signal_timer(output)` in `Niri::redraw` immediately after `res = backend.render(self, output, target_presentation_time);`, and only when `res != RenderResult::Skipped`, so a skipped frame never arms from a stale accumulator. Remove the token when the output is removed (grep `output_state.remove`).
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `cargo test --bin niri signal` and `cargo test --bin niri material`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 tasks done material-9d06b4 "feat(render): drive material signals from tiles with crossfade and bucket timers"
@@ -3395,11 +3395,11 @@ git commit -m "feat(render): drive material signals from tiles with crossfade an
 **Interfaces:**
 - Consumes the uniforms from Task 8. Selector ids: accent `1 = ring`; attention `1 = rim-orbit`, `2 = ring-pulse`; impulse `3 = sweep` (ripple and flash never reach the shader).
 
-- [ ] **Step 1: Expose the slab's outer signed distance**
+- [x] **Step 1: Expose the slab's outer signed distance**
 
 `slabSurface` already computes the outer rounded-box SDF for `coverage`. Add an `out float outerDist` parameter returning that signed distance (negative inside), and capture it in `main` as `float slabDist;`.
 
-- [ ] **Step 2: Replace the fixed light direction**
+- [x] **Step 2: Replace the fixed light direction**
 
 In the Fresnel block, replace `normalize(vec2(-1.0, -1.0))` with `normalize(mat_sig_light.xy)`. With `SignalUniforms::quiet` the vector is `(-1, -1, 0)`, so the output is bit-identical to today. Tint the specular:
 
@@ -3409,7 +3409,7 @@ In the Fresnel block, replace `normalize(vec2(-1.0, -1.0))` with `normalize(mat_
             specular = mix(specular, specular * mat_sig_accent.rgb * 2.0, mat_sig_light.z);
 ```
 
-- [ ] **Step 3: Ring and ring pulse**
+- [x] **Step 3: Ring and ring pulse**
 
 After `transmitted` and `specular` are computed, before `glassed`:
 
@@ -3428,7 +3428,7 @@ After `transmitted` and `specular` are computed, before `glassed`:
         }
 ```
 
-- [ ] **Step 4: Sweep**
+- [x] **Step 4: Sweep**
 
 ```glsl
         float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
@@ -3452,7 +3452,7 @@ After `transmitted` and `specular` are computed, before `glassed`:
 
 GLES2 requires constant loop bounds and no dynamic vector indexing, which is why the selects are written out.
 
-- [ ] **Step 5: Create the nested smoke harness and run its visual mode**
+- [x] **Step 5: Create the nested smoke harness and run its visual mode**
 
 Live nested runs never target the desktop session: the nested winit window throttles frame callbacks when unfocused, so a headless Weston host is used. All nested verification for this feature runs through one script, retained in the repo so Task 12 and later work reuse it. Create `docs/materials/scripts/material-signals-smoke.sh` with exactly this content and `chmod +x` it:
 
@@ -3965,7 +3965,7 @@ mode_gpu() {
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh visual`
 Expected: exit 0 and five uniquely named screenshots under the run's work directory, each listed in `SHA256SUMS`. The fixture places a translucent kitty over a checkerboard backdrop, so the slab is visible through the window body and refraction has detail to act on: `rim-a` and `rim-b`, taken half a Breathe period apart, show the amber ring and the rim glint swayed to opposite sides; `sweep-mid` shows the diagonal band a third of the way across; `error-flash`, requested 50 ms after the pulse so it lands near the 80 ms peak, shows the chromatic fringing and distortion of the checkerboard; `cleared` shows the default look again.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 tasks done material-4a64bb "feat(material): render ring, rim orbit, and sweep signal responses"
@@ -3980,19 +3980,19 @@ git commit -m "feat(material): render ring, rim orbit, and sweep signal response
 **Files:**
 - Modify: `docs/materials/material-config.md`, `docs/materials/README.md`, `docs/materials/2026-09-02-material-signals-design.md` (status header), `docs/wiki/IPC.md`
 
-- [ ] **Step 1: Configuration reference**
+- [x] **Step 1: Configuration reference**
 
 Add to `material-config.md`: the `response "name" { }` block with the glass vocabulary and defaults, `ring-inset`/`ring-width` and the rule `ring-inset + ring-width <= bevel` plus the full-ring condition `bevel >= 2 * max(|offset|) + ring-inset + ring-width`, `material "name" response="loud"` on window rules, `signal-source` and `signal-tag` matches, the top-level `signal { motion "full" | "reduced" | "off" }` block, and `animations { material-signal { } }`. Follow the file's existing table style.
 
-- [ ] **Step 2: IPC reference**
+- [x] **Step 2: IPC reference**
 
 In `docs/wiki/IPC.md`, document the three requests with every flag, the `WindowSignalChanged` event, the `signal` field on `Window`, the JSON shape (enum variants in Rust spelling), bounds, and the error cases, in the same style as the existing event-stream section.
 
-- [ ] **Step 3: Design doc alignment**
+- [x] **Step 3: Design doc alignment**
 
 The design doc was amended before implementation (commit `6c67b026`) to match this plan: one deadline timer per window, time-aware fold, refresh-driven reconciliation, bevel-inflated visibility, and rim light only under `rim-orbit`. Here only update its status header to "implemented on `feat/material-signals` through `<commit>`; verification pending" (Task 12 finalizes it), and add the README ledger line (`../plans/2026-09-02-material-signals.md`, following the roughness entry). If implementation deviated from the design anywhere else, amend the design in this step and say so in the commit.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 tasks done material-2ecd18 "docs(material): document material signals configuration and IPC"
@@ -4009,18 +4009,18 @@ git commit -m "docs(material): document material signals configuration and IPC"
 - Uses: `docs/materials/scripts/material-signals-smoke.sh` from Task 10
 - Modify: design doc status header, `docs/materials/README.md`
 
-- [ ] **Step 1: Unit and fixture suites**
+- [x] **Step 1: Unit and fixture suites**
 
 Run: `cargo test -p niri-ipc && cargo test -p niri-config && cargo test --bin niri`
 Expected: all PASS. Record the counts.
 
-- [ ] **Step 2: Nested IPC round trip**
+- [x] **Step 2: Nested IPC round trip**
 
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh ipc`
 
 The `ipc` mode records `niri msg -j event-stream` for the whole sequence and asserts, in the script: a `Demand` event on set, an event with an empty impulse list after the `done` impulse expires (the pulse is left alone for 1.7 s), `null` after the clear, and a `Quiet` event when the `--ttl-ms 2000 --after-level quiet` slot decays from `Demand`. It then runs every rejection while the stream is still recording, each wrapped so a non-zero exit is the success condition: unknown id, `--source niri` on set, pulse, and clear, pulse for a source with no slot, `--accent zzz`, `--ttl-ms 90000000`, `--after-level` without `--ttl-ms`, and a 16th external source (`demo` plus `s1` to `s15` fill the bound, so `s16` must fail). It asserts that no rejection appended an event. Expected: exit 0 and `ipc: OK`; `events.jsonl` is retained in the work directory.
 
-- [ ] **Step 3: GLES smoke with redraw counts**
+- [x] **Step 3: GLES smoke with redraw counts**
 
 Run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/material-signals-smoke.sh cases`
 
@@ -4050,11 +4050,11 @@ Then run: `NIRI_MATERIAL_WORK_ROOT=<evidence root> docs/materials/scripts/materi
 
 The `gpu` mode uses a dedicated fixture in which a single focused kitty repaints ten times a second, so every GPU case has identical topology, focus, and damage cadence and material draws throughout the 20 s to 28 s sample window. GPU zones are exported with `--gpu`, columns are located by their Tracy 0.13.1 header names, and only the material-specific `MaterialRenderElement::draw` zone from Task 8 is sampled, never the generic `draw shader` zone that border, shadow, and resize shaders share. Because GPU time is workload dependent, the retained roughness trace (different backdrop, geometry, and damage driver) is not a comparable reference; instead the script checks out the branch's base commit in a temporary worktree, applies the same profiling-only `MaterialRenderElement::draw` zone wrapper that Task 8 adds (the base commit has only the generic zone), builds it with its own target directory, and runs the identical fixture on it. Both binaries are snapshot copies under the work directory, hashed into `SHA256SUMS`, so a concurrent build in the shared Cargo target directory cannot replace an executable mid-capture. The ring case sets Demand at Static motion on the same single window, which exercises the ring and rim-orbit shading without adding signal-driven redraws. For the base-commit default path, this build's default path (no signal), and this build's ring plus rim-orbit case, it captures three times and takes the median of the three per-capture medians, each being the median of exactly 14 material zones between 20 s and 28 s. It enforces one gate: this build's default path must be within 10% of the base-commit build, so the feature does not regress unsignaled windows. The ring plus rim-orbit delta against the default path is reported in `gpu.txt` without a threshold, since the design sets none; record all three medians and the delta in the evidence document.
 
-- [ ] **Step 4: Physical DRM check**
+- [x] **Step 4: Physical DRM check**
 
 Install the Arch package per `docs/materials/2026-08-28-v1-daily-driver-rollout-design.md`, leave a `Demand + Pulse` window unfocused for ten minutes, and confirm no regressions in the daily-driver session. Record the build hash.
 
-- [ ] **Step 5: Close out**
+- [x] **Step 5: Close out**
 
 Write the smoke doc, set the design doc status to implemented and verified with the commit and evidence link, add the README ledger lines, then:
 
