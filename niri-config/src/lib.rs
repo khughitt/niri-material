@@ -41,6 +41,7 @@ pub mod material;
 pub mod misc;
 pub mod output;
 pub mod recent_windows;
+pub mod signal;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -59,6 +60,7 @@ pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
+pub use crate::signal::{Signal, SignalMotionPolicy, SignalPart};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{
@@ -83,6 +85,7 @@ pub struct Config {
     pub config_notification: ConfigNotification,
     pub animations: Animations,
     pub blur: Blur,
+    pub signal: Signal,
     pub gestures: Gestures,
     pub overview: Overview,
     pub environment: Environment,
@@ -209,6 +212,7 @@ where
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
                 "blur" => m_merge!(blur),
+                "signal" => m_merge!(signal),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
@@ -761,6 +765,59 @@ mod tests {
     fn parse_files_err(files: &[(&str, &str)]) -> String {
         let err = parse_files(files).expect_err("config should have failed to parse");
         format!("{:?}", miette::Report::new(err))
+    }
+
+    #[test]
+    fn signal_block_and_matches_parse() {
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r##"
+            signal {
+                motion "reduced"
+            }
+
+            animations {
+                material-signal { duration-ms 250; curve "ease-out-quad"; }
+            }
+
+            window-rule {
+                match signal-source="^familiar$" signal-tag="^cats/"
+                opacity 0.9
+            }
+            "##,
+        )])
+        .unwrap();
+
+        assert_eq!(parsed.signal.motion, crate::SignalMotionPolicy::Reduced);
+        assert_eq!(
+            parsed.animations.material_signal.0.kind,
+            crate::animations::Kind::Easing(crate::animations::EasingParams {
+                duration_ms: 250,
+                curve: crate::animations::Curve::EaseOutQuad,
+            })
+        );
+        let m = &parsed.window_rules[0].matches[0];
+        assert!(m.signal_source.as_ref().unwrap().0.is_match("familiar"));
+        assert!(m.signal_tag.as_ref().unwrap().0.is_match("cats/ginger"));
+    }
+
+    #[test]
+    fn signal_motion_defaults_to_full() {
+        let parsed = parse_files(&[("config.kdl", "")]).unwrap();
+        assert_eq!(parsed.signal.motion, crate::SignalMotionPolicy::Full);
+        assert_eq!(
+            parsed.animations.material_signal.0.kind,
+            crate::animations::Kind::Easing(crate::animations::EasingParams {
+                duration_ms: 400,
+                curve: crate::animations::Curve::EaseOutCubic,
+            })
+        );
+    }
+
+    #[test]
+    fn signal_motion_rejects_unknown_value() {
+        let err = parse_files_err(&[("config.kdl", "signal { motion \"loud\"\n}")]);
+        assert!(err.contains("unknown"), "{err}");
     }
 
     #[test]
@@ -2250,6 +2307,17 @@ mod tests {
                         ),
                     },
                 ),
+                material_signal: MaterialSignalAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 400,
+                                curve: EaseOutCubic,
+                            },
+                        ),
+                    },
+                ),
             },
             blur: Blur {
                 off: false,
@@ -2257,6 +2325,9 @@ mod tests {
                 offset: 3.0,
                 noise: 0.02,
                 saturation: 1.5,
+            },
+            signal: Signal {
+                motion: Full,
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
@@ -2341,6 +2412,8 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            signal_source: None,
+                            signal_tag: None,
                             at_startup: None,
                         },
                     ],
@@ -2360,6 +2433,8 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            signal_source: None,
+                            signal_tag: None,
                             at_startup: None,
                         },
                         Match {
@@ -2375,6 +2450,8 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            signal_source: None,
+                            signal_tag: None,
                             at_startup: None,
                         },
                     ],

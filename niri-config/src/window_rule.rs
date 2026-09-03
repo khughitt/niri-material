@@ -138,6 +138,10 @@ pub struct Match {
     pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]
     pub is_urgent: Option<bool>,
+    #[knuffel(property, str)]
+    pub signal_source: Option<RegexEq>,
+    #[knuffel(property, str)]
+    pub signal_tag: Option<RegexEq>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
 }
