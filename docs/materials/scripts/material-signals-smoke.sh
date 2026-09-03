@@ -28,7 +28,11 @@ NIRI_PID=; EVENTS_PID=; CAP_PID=
 stop_nested() {
     [ -n "$NIRI_PID" ] || return 0
     local pid=$NIRI_PID
-    kill "$pid" 2>/dev/null || true
+    if [ -S "${NIRI_SOCKET:-}" ]; then
+        msg action quit --skip-confirmation >/dev/null 2>&1 || true
+        for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    fi
+    if kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || true; fi
     for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
     if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
     wait "$pid" 2>/dev/null || true
