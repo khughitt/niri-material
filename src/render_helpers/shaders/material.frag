@@ -256,7 +256,7 @@ vec2 sdRoundedBoxGrad(vec2 p, vec2 b, vec4 radii) {
 // chamfer's inner edge is the front face and trails the jelly shear
 // (later slice-2 work) — the quad-form equivalent of the legacy anchored
 // vertex shear. Chamfer normals slope at 45 degrees like the mesh ring.
-void slabSurface(vec2 p, out float coverage, out vec3 normal) {
+void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist) {
     vec2 slab_min = mat_slab_rect.xy * mat_area_size;
     vec2 slab_size = mat_slab_rect.zw * mat_area_size;
     vec2 half_ext = slab_size * 0.5;
@@ -293,6 +293,7 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal) {
     vec4 outer_r = inner_r + vec4(chamfer);
 
     float d = sdRoundedBox(p - center, half_ext, outer_r);
+    outerDist = d;
     float aa = 1.0 / niri_scale;
     coverage = 1.0 - smoothstep(-aa, 0.0, d);
 
@@ -337,7 +338,8 @@ void main() {
 
     float coverage;
     vec3 surfaceNormal;
-    slabSurface(p, coverage, surfaceNormal);
+    float slabDist;
+    slabSurface(p, coverage, surfaceNormal, slabDist);
 
     vec4 glassed = vec4(0.0);
     if (coverage > 0.0) {
@@ -405,7 +407,7 @@ void main() {
         vec3 transmitted = sampled * att;
 
         // Fresnel edge glint: Schlick from the configured IOR on the
-        // structural normal, lit from the top-left. Replaces the legacy
+        // structural normal. Replaces the legacy
         // environment-probe specular on the chamfer; additive per the §2
         // slab terms. The strength constants are art-directed against the
         // legacy look and validated visually, not physically derived.
@@ -415,10 +417,41 @@ void main() {
         float facing = 0.0;
         if (length(surfaceNormal.xy) > 0.001)
             facing = max(dot(normalize(surfaceNormal.xy),
-                             normalize(vec2(-1.0, -1.0))), 0.0);
+                             normalize(mat_sig_light.xy)), 0.0);
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
+        if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0)
+            specular = mix(specular, specular * mat_sig_accent.rgb * 2.0, mat_sig_light.z);
 
-        glassed = vec4(linearToSrgb(transmitted + specular), 1.0) * coverage;
+        vec3 emissive = vec3(0.0);
+        if (mat_sig_response.x == 1 && mat_sig_accent.w > 0.0) {
+            float inset = mat_sig_ring.x;
+            float width = mat_sig_ring.y;
+            float depth = -slabDist;             // distance inward from the slab edge, logical px
+            float band = smoothstep(inset - 0.5, inset + 0.5, depth)
+                       * (1.0 - smoothstep(inset + width - 0.5, inset + width + 0.5, depth));
+            float glow = 0.15 + 0.35 * mat_sig_level;
+            if (mat_sig_response.y == 2)
+                glow *= 1.0 + mat_sig_breath * mat_sig_level;
+            emissive += mat_sig_accent.rgb * glow * band;
+        }
+
+        float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
+        for (int k = 0; k < 4; ++k) {
+            int sel = k == 0 ? mat_sig_impulse_resp.x : k == 1 ? mat_sig_impulse_resp.y
+                    : k == 2 ? mat_sig_impulse_resp.z : mat_sig_impulse_resp.w;
+            if (sel != 3)
+                continue;
+            float env = k == 0 ? mat_sig_impulse_env.x : k == 1 ? mat_sig_impulse_env.y
+                      : k == 2 ? mat_sig_impulse_env.z : mat_sig_impulse_env.w;
+            float prog = k == 0 ? mat_sig_impulse_prog.x : k == 1 ? mat_sig_impulse_prog.y
+                       : k == 2 ? mat_sig_impulse_prog.z : mat_sig_impulse_prog.w;
+            vec3 rgb = k == 0 ? mat_sig_impulse_rgb0 : k == 1 ? mat_sig_impulse_rgb1
+                     : k == 2 ? mat_sig_impulse_rgb2 : mat_sig_impulse_rgb3;
+            float d = (diag - prog) / 0.06;
+            emissive += rgb * env * 0.5 * exp(-d * d);
+        }
+
+        glassed = vec4(linearToSrgb(transmitted + specular + emissive), 1.0) * coverage;
     }
 
     // §2 compositing contract: opaque window pixels pass through
