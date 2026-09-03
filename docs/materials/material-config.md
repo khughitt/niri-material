@@ -103,17 +103,17 @@ material "terminal-glass" {
     }
 
     response "default" {
-        accent ring
-        attention rim-orbit
-        ping ripple
-        done sweep
-        error flash
+        accent "ring"
+        attention "rim-orbit"
+        ping "ripple"
+        done "sweep"
+        error "flash"
         ring-inset 6
         ring-width 2
     }
 
     response "loud" {
-        attention ring-pulse
+        attention "ring-pulse"
     }
 }
 

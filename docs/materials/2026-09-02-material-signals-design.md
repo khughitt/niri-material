@@ -9,12 +9,12 @@ contract fixed here. Tracked by `material-a54d89`; follow-ups are the
 
 ## Context
 
-Native glass renders a window's material from static configuration plus
-niri's own motion. Nothing in the material knows whether the window wants
-attention, which project or agent it belongs to, or that something just
-finished inside it. The only state-driven behavior available today is a hard
-swap between named materials through `match is-urgent=true`, with no
-interpolation and no per-window color.
+Before this slice, native glass rendered a window's material from static
+configuration plus niri's own motion. It had no signal awareness: it could
+not know whether the window wanted attention, which project or agent it
+belonged to, or that something had just finished inside it. The only
+state-driven behavior was a hard swap between named materials through `match
+is-urgent=true`, with no interpolation and no per-window color.
 
 Two external systems want to drive that appearance:
 
@@ -416,16 +416,16 @@ picks which response set a window gets.
 material "terminal-glass" {
     glass { /* unchanged */ }
     response "default" {
-        accent    ring          // ring | none
-        attention rim-orbit     // rim-orbit | ring-pulse | none
-        ping      ripple        // ripple | flash | sweep | none
-        done      sweep
-        error     flash
+        accent    "ring"          // "ring" | "none"
+        attention "rim-orbit"     // "rim-orbit" | "ring-pulse" | "none"
+        ping      "ripple"        // "ripple" | "flash" | "sweep" | "none"
+        done      "sweep"
+        error     "flash"
         ring-inset 6
         ring-width 2
     }
     response "loud" {
-        attention ring-pulse
+        attention "ring-pulse"
     }
 }
 

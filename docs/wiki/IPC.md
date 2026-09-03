@@ -48,12 +48,15 @@ niri msg clear-window-signal --id 12 --source familiar
 | `pulse-window-signal` | `--id`, `--source`, `--kind` (`ping`, `done`, or `error`) | `--accent` |
 | `clear-window-signal` | `--id`, `--source` | — |
 
-`set-window-signal` replaces the source's whole slot. With `--ttl-ms`, at
-least one `--after-level` or `--after-motion` is required; the other defaults
-to `quiet` or `static`. Supplying either `after` flag without `--ttl-ms` is
-an error. `--until-focus` demotes the slot to that after pair when the window
-is focused. `pulse-window-signal` requires that the source already have a
-slot; `clear-window-signal` removes its slot and impulses.
+`set-window-signal` replaces the source's whole slot. Omitting `--accent` or
+`--tag` clears that field; omitting `--ttl-ms` leaves the slot without an
+expiry. With `--ttl-ms`, at least one `--after-level` or `--after-motion` is
+required; the other defaults to `quiet` or `static`. Supplying either `after`
+flag without `--ttl-ms` is an error. `--until-focus` demotes the slot to that
+after pair when the window is focused, or to `quiet`/`static` when it has no
+TTL. `pulse-window-signal` requires that the source already have a slot;
+omitting its `--accent` sends no impulse accent override.
+`clear-window-signal` removes the source's slot and impulses.
 
 Sources are case-sensitive, `niri` is reserved, and a window accepts at most
 16 external sources. Source names are limited to 64 bytes and tags to 256
