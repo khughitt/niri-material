@@ -443,8 +443,13 @@ setup_offscreen_column() {
     spawn_kitty_to 4                              # four half-width columns; WID is leftmost
     set_demand "$WID" pulse
     msg action focus-column-last
-    local x w; x=$(win "$WID" '.layout.tile_pos_in_workspace_view[0]'); w=$(win "$WID" '.layout.tile_size[0]')
-    awk -v x="$x" -v w="$w" 'BEGIN { exit !(x + w <= 0) }' || { echo "FAIL: WID still in view (x=$x w=$w)" >&2; exit 1; }
+    local col workspace view width
+    col=$(win "$WID" '.layout.pos_in_scrolling_layout[0]'); assert_eq "$col" 1 "WID leftmost column"
+    workspace=$(win "$WID" .workspace_id)
+    view=$(msg -j workspaces | jq -r --argjson id "$workspace" '.[] | select(.id==$id) | .scrolling_view_pos')
+    width=$(win "$WID" '.layout.tile_size[0]')
+    awk -v view="$view" -v width="$width" 'BEGIN { exit !(width-view <= 0) }' \
+        || { echo "FAIL: WID still in view (view=$view width=$width)" >&2; exit 1; }
 }
 setup_motion_off() { set_demand "$WID" pulse; assert_eq "$(win "$WID" .signal.motion)" Pulse "stored motion"; }
 during_pulses() { local k; for k in 1 2 3; do msg pulse-window-signal --id "$WID" --source demo --kind done; sleep 0.3; done; }
