@@ -38,6 +38,7 @@ uniform float mat_distortion_scale;
 uniform float mat_samples;
 uniform float mat_anisotropic_blur;
 uniform float mat_jelly_ripple;
+uniform float mat_sig_active;
 uniform vec4 mat_sig_accent;
 uniform float mat_sig_level;
 uniform float mat_sig_breath;
@@ -415,40 +416,47 @@ void main() {
         f0 = f0 * f0;
         float fresnel = f0 + (1.0 - f0) * pow(1.0 - surfaceCosine, 5.0);
         float facing = 0.0;
-        if (length(surfaceNormal.xy) > 0.001)
-            facing = max(dot(normalize(surfaceNormal.xy),
-                             normalize(mat_sig_light.xy)), 0.0);
-        vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
-        if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0)
-            specular = mix(specular, specular * mat_sig_accent.rgb * 2.0, mat_sig_light.z);
-
-        vec3 emissive = vec3(0.0);
-        if (mat_sig_response.x == 1 && mat_sig_accent.w > 0.0) {
-            float inset = mat_sig_ring.x;
-            float width = mat_sig_ring.y;
-            float depth = -slabDist;             // distance inward from the slab edge, logical px
-            float band = smoothstep(inset - 0.5, inset + 0.5, depth)
-                       * (1.0 - smoothstep(inset + width - 0.5, inset + width + 0.5, depth));
-            float glow = 0.15 + 0.35 * mat_sig_level;
-            if (mat_sig_response.y == 2)
-                glow *= 1.0 + mat_sig_breath * mat_sig_level;
-            emissive += mat_sig_accent.rgb * glow * band;
+        if (length(surfaceNormal.xy) > 0.001) {
+            if (mat_sig_active > 0.0)
+                facing = max(dot(normalize(surfaceNormal.xy),
+                                 normalize(mat_sig_light.xy)), 0.0);
+            else
+                facing = max(dot(normalize(surfaceNormal.xy),
+                                 normalize(vec2(-1.0, -1.0))), 0.0);
         }
+        vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
+        vec3 emissive = vec3(0.0);
+        if (mat_sig_active > 0.0) {
+            if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0)
+                specular = mix(specular, specular * mat_sig_accent.rgb * 2.0, mat_sig_light.z);
 
-        float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
-        for (int k = 0; k < 4; ++k) {
-            int sel = k == 0 ? mat_sig_impulse_resp.x : k == 1 ? mat_sig_impulse_resp.y
-                    : k == 2 ? mat_sig_impulse_resp.z : mat_sig_impulse_resp.w;
-            if (sel != 3)
-                continue;
-            float env = k == 0 ? mat_sig_impulse_env.x : k == 1 ? mat_sig_impulse_env.y
-                      : k == 2 ? mat_sig_impulse_env.z : mat_sig_impulse_env.w;
-            float prog = k == 0 ? mat_sig_impulse_prog.x : k == 1 ? mat_sig_impulse_prog.y
-                       : k == 2 ? mat_sig_impulse_prog.z : mat_sig_impulse_prog.w;
-            vec3 rgb = k == 0 ? mat_sig_impulse_rgb0 : k == 1 ? mat_sig_impulse_rgb1
-                     : k == 2 ? mat_sig_impulse_rgb2 : mat_sig_impulse_rgb3;
-            float d = (diag - prog) / 0.06;
-            emissive += rgb * env * 0.5 * exp(-d * d);
+            if (mat_sig_response.x == 1 && mat_sig_accent.w > 0.0) {
+                float inset = mat_sig_ring.x;
+                float width = mat_sig_ring.y;
+                float depth = -slabDist;             // distance inward from the slab edge, logical px
+                float band = smoothstep(inset - 0.5, inset + 0.5, depth)
+                           * (1.0 - smoothstep(inset + width - 0.5, inset + width + 0.5, depth));
+                float glow = 0.15 + 0.35 * mat_sig_level;
+                if (mat_sig_response.y == 2)
+                    glow *= 1.0 + mat_sig_breath * mat_sig_level;
+                emissive += mat_sig_accent.rgb * glow * band;
+            }
+
+            float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
+            for (int k = 0; k < 4; ++k) {
+                int sel = k == 0 ? mat_sig_impulse_resp.x : k == 1 ? mat_sig_impulse_resp.y
+                        : k == 2 ? mat_sig_impulse_resp.z : mat_sig_impulse_resp.w;
+                if (sel != 3)
+                    continue;
+                float env = k == 0 ? mat_sig_impulse_env.x : k == 1 ? mat_sig_impulse_env.y
+                          : k == 2 ? mat_sig_impulse_env.z : mat_sig_impulse_env.w;
+                float prog = k == 0 ? mat_sig_impulse_prog.x : k == 1 ? mat_sig_impulse_prog.y
+                           : k == 2 ? mat_sig_impulse_prog.z : mat_sig_impulse_prog.w;
+                vec3 rgb = k == 0 ? mat_sig_impulse_rgb0 : k == 1 ? mat_sig_impulse_rgb1
+                         : k == 2 ? mat_sig_impulse_rgb2 : mat_sig_impulse_rgb3;
+                float d = (diag - prog) / 0.06;
+                emissive += rgb * env * 0.5 * exp(-d * d);
+            }
         }
 
         glassed = vec4(linearToSrgb(transmitted + specular + emissive), 1.0) * coverage;

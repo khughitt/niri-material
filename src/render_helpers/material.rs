@@ -256,6 +256,7 @@ pub struct JellyUniforms {
 /// Uniform values for the signal responses.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SignalUniforms {
+    pub active: f32,
     pub accent: [f32; 4],
     pub level: f32,
     pub breath: f32,
@@ -272,6 +273,7 @@ impl SignalUniforms {
     /// A window with no signal: bit-identical to today's output.
     pub fn quiet(response: &niri_config::ResolvedResponse) -> Self {
         Self {
+            active: 0.,
             accent: [0.; 4],
             level: 0.,
             breath: 0.,
@@ -310,6 +312,7 @@ impl SignalUniforms {
             impulse_rgb[slot] = impulse.accent.or(frame.accent).unwrap_or([1.; 3]);
         }
         Self {
+            active: 1.,
             accent: frame
                 .accent
                 .map_or([0.; 4], |color| [color[0], color[1], color[2], 1.]),
@@ -825,6 +828,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_samples", f32::from(self.glass_signal.samples)),
             Uniform::new("mat_anisotropic_blur", g.anisotropic_blur as f32),
             Uniform::new("mat_jelly_ripple", g.jelly_ripple as f32),
+            Uniform::new("mat_sig_active", self.signal.active),
             Uniform::new("mat_sig_accent", self.signal.accent),
             Uniform::new("mat_sig_level", self.signal.level),
             Uniform::new("mat_sig_breath", self.signal.breath),
@@ -908,7 +912,7 @@ impl<'render> RenderElement<TtyRenderer<'render>> for MaterialRenderElement {
 
 #[cfg(test)]
 mod tests {
-    use niri_config::{ResolvedGlass, ResolvedMaterial};
+    use niri_config::{ResolvedGlass, ResolvedMaterial, ResolvedResponse};
     use smithay::backend::renderer::Color32F;
     use smithay::utils::Point;
 
@@ -1564,6 +1568,31 @@ mod tests {
             let quiet = SignalUniforms::quiet(&r).light;
             assert_eq!(u.light != quiet, moves, "{attention:?}");
         }
+    }
+
+    #[test]
+    fn quiet_signal_uniforms_disable_fragment_responses() {
+        assert_eq!(
+            SignalUniforms::quiet(&ResolvedResponse::default()).active,
+            0.
+        );
+    }
+
+    #[test]
+    fn present_quiet_signal_keeps_fragment_responses_enabled() {
+        let frame = SignalFrame {
+            accent: None,
+            level: 0.,
+            breath: 0.,
+            impulses: Default::default(),
+        };
+        let glass = ResolvedGlass::default();
+        let glass_signal = glass_signal_inputs(&frame, &glass);
+
+        assert_eq!(
+            SignalUniforms::from_frame(&frame, &glass_signal, &ResolvedResponse::default()).active,
+            1.
+        );
     }
 
     #[test]
