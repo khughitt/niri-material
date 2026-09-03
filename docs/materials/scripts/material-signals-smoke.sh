@@ -10,7 +10,7 @@
 #           the branch base commit on the identical fixture, plus ring and rim orbit
 #
 # Every resource name is unique per run, every wait is bounded, and a
-# leftover nested socket fails the run. Requires: jq, weston, kitty, swaybg,
+# leftover nested socket fails the run. Requires: jq, weston, kitty, swaybg, flock, ss,
 # ImageMagick (`magick` or `convert`) for the checkerboard backdrop, cmake
 # (only if the 0.13.1 Tracy tools must be rebuilt), NIRI_MATERIAL_WORK_ROOT.
 set -euo pipefail
@@ -23,15 +23,37 @@ EVIDENCE=${NIRI_MATERIAL_WORK_ROOT:?set to the evidence root the roughness smoke
 WORK=$EVIDENCE/material-signals-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # unique, short: nested niri panics on long socket paths
 UNIT=$RUN-weston
-mkdir -p "$WORK" "$RT"
 NIRI_PID=; EVENTS_PID=; CAP_PID=
+
+stop_nested() {
+    [ -n "$NIRI_PID" ] || return 0
+    local pid=$NIRI_PID
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 50); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid" 2>/dev/null || true; fi
+    wait "$pid" 2>/dev/null || true
+    NIRI_PID=
+    # niri removes its socket on a clean exit; a leftover one is a failure.
+    # Return rather than exit so the EXIT trap still finishes cleanup.
+    if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; return 1; fi
+}
 
 cleanup() {
     local rc=$?
+    local host_socket=$XDG_RUNTIME_DIR/$RUN
     stop_nested || rc=1
     [ -n "$EVENTS_PID" ] && { kill "$EVENTS_PID" 2>/dev/null || true; }
     [ -n "$CAP_PID" ] && { kill "$CAP_PID" 2>/dev/null || true; }
-    systemctl --user stop "$UNIT" 2>/dev/null || true
+    if ! timeout 10 systemctl --user stop "$UNIT" >/dev/null 2>&1; then
+        echo "FAIL: could not stop Weston unit $UNIT" >&2
+        rc=1
+    fi
+    for _ in $(seq 50); do
+        if ! systemctl --user is-active --quiet "$UNIT" 2>/dev/null && [ ! -e "$host_socket" ] && [ ! -L "$host_socket" ]; then break; fi
+        sleep 0.1
+    done
+    if systemctl --user is-active --quiet "$UNIT" 2>/dev/null; then echo "FAIL: Weston unit $UNIT still active" >&2; rc=1; fi
+    if [ -e "$host_socket" ] || [ -L "$host_socket" ]; then echo "FAIL: Weston socket left behind at $host_socket" >&2; rc=1; fi
     if ls "$RT"/niri.*.sock >/dev/null 2>&1; then
         echo "FAIL: nested niri socket left behind in $RT" >&2
         rc=1
@@ -44,7 +66,22 @@ cleanup() {
 }
 # Unique Tracy port so concurrent runs never share the default 8086; the
 # client reads TRACY_PORT, the capture tool takes -p.
-TRACY_PORT=$((20000 + $$ % 20000)); export TRACY_PORT
+reserve_tracy_port() {
+    local port listeners
+    for port in $(seq 20000 39999); do
+        exec {TRACY_LOCK_FD}>"$XDG_RUNTIME_DIR/niri-material-tracy-$port.lock"
+        if flock -n "$TRACY_LOCK_FD" \
+            && listeners=$(ss -H -ltn "sport = :$port") && [ -z "$listeners" ]; then
+            TRACY_PORT=$port; export TRACY_PORT
+            return
+        fi
+        exec {TRACY_LOCK_FD}>&-
+    done
+    echo "FAIL: no free Tracy port in 20000-39999" >&2
+    return 1
+}
+reserve_tracy_port
+mkdir -p "$WORK" "$RT"
 trap cleanup EXIT
 
 # Cargo's target directory is configured outside the tree here and is
@@ -129,15 +166,6 @@ start_nested() {   # $1 = config path; sets NIRI_SOCKET and WID
     NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1); export NIRI_SOCKET
     wait_kitty 1
     WID=$(kitty_ids | head -1)
-}
-stop_nested() {
-    [ -n "$NIRI_PID" ] || return 0
-    kill "$NIRI_PID" 2>/dev/null || true
-    wait "$NIRI_PID" 2>/dev/null || true
-    NIRI_PID=
-    # niri removes its socket on a clean exit; a leftover one is a failure.
-    # Return rather than exit so the EXIT trap still finishes cleanup.
-    if ls "$RT"/niri.*.sock >/dev/null 2>&1; then echo "FAIL: nested niri left its socket behind" >&2; return 1; fi
 }
 wait_kitty() {   # $1 = count
     for _ in $(seq 100); do [ "$(kitty_count)" -ge "$1" ] && return; sleep 0.1; done
