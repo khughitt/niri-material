@@ -319,15 +319,6 @@ struct MaterialDynamics {
     glass_signal: GlassSignalInputs,
 }
 
-fn jelly_time(clock: &Clock, signal_activity: f32) -> f64 {
-    if signal_activity > 0. {
-        clock.now_unadjusted()
-    } else {
-        clock.now()
-    }
-    .as_secs_f64()
-}
-
 impl SignalCrossfade {
     fn current(&self) -> (f32, Option<[f32; 3]>) {
         let t = self.anim.clamped_value() as f32;
@@ -533,7 +524,7 @@ impl<W: LayoutElement> Tile<W> {
             max_flex,
         );
         jelly.activity = (jelly.activity + glass_signal.activity_add).min(0.999);
-        let time = jelly_time(&self.clock, glass_signal.activity_add);
+        let time = self.clock.now().as_secs_f64();
 
         MaterialDynamics {
             jelly_fingerprint: JellyFingerprint::quantize(&jelly, time),
@@ -2194,7 +2185,6 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::render_helpers::material::JellyState;
 
     fn options_with(name: &str, backdrop_blur: bool, blur_off: bool) -> Options {
         let glass = niri_config::ResolvedGlass {
@@ -2217,29 +2207,6 @@ mod tests {
             },
             ..Default::default()
         }
-    }
-
-    #[test]
-    fn signal_ripple_uses_unadjusted_jelly_clock() {
-        let mut clock = Clock::with_time(Duration::ZERO);
-        clock.set_rate(0.25);
-        clock.set_unadjusted(Duration::from_secs(4));
-
-        let signal_time = jelly_time(&clock, 0.5);
-        let native_time = jelly_time(&clock, 0.);
-        assert_eq!(signal_time, 4.);
-        assert_eq!(native_time, 1.);
-
-        let jelly = JellyState {
-            move_: [1., 0.],
-            resize: [0.; 2],
-            activity: 0.5,
-        };
-        assert_ne!(
-            JellyFingerprint::quantize(&jelly, signal_time),
-            JellyFingerprint::quantize(&jelly, native_time),
-            "signal and native jelly damage follow their respective clock domains"
-        );
     }
 
     #[test]
