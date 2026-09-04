@@ -86,6 +86,21 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for MaterialRef {
         for (key, val) in &node.properties {
             match &***key {
                 "response" => {
+                    let key_span: miette::SourceSpan = key.span().clone().into();
+                    let value_span: miette::SourceSpan = val
+                        .type_name
+                        .as_ref()
+                        .map_or_else(|| val.literal.span().clone(), |ty| ty.span().clone())
+                        .into();
+                    // Knuffel's property map retains the first key and last value on duplicates.
+                    let duplicate = value_span.offset() != key_span.offset() + key_span.len() + 1;
+                    if response.is_some() || duplicate {
+                        ctx.emit_error(DecodeError::unexpected(
+                            key,
+                            "property",
+                            "unexpected duplicate property `response`",
+                        ));
+                    }
                     response = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
                 }
                 other => {

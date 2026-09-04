@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use niri_config::Config;
-use niri_ipc::{SignalLevel, SignalMotion};
+use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
 
 use super::client::ClientId;
 use super::*;
 use crate::layout::LayoutElement as _;
+use crate::niri::SetWindowSignalArgs;
 use crate::utils::{get_monotonic_time, with_toplevel_role};
 use crate::window::signal::SetSlot;
 
@@ -56,6 +57,39 @@ fn set_slot(level: SignalLevel, tag: Option<&str>, until_focus: bool) -> SetSlot
         expiry: None,
         until_focus,
     }
+}
+
+fn trigger_signal_transition(f: &mut Fixture, id: u64) {
+    f.niri()
+        .set_window_signal(SetWindowSignalArgs {
+            id,
+            source: String::from("t"),
+            accent: None,
+            level: SignalLevel::Demand,
+            motion: SignalMotion::Static,
+            tag: None,
+            ttl_ms: None,
+            after_level: None,
+            after_motion: None,
+            until_focus: false,
+        })
+        .unwrap();
+    f.niri()
+        .pulse_window_signal(id, "t", ImpulseKind::Done, None)
+        .unwrap();
+    f.niri_state().refresh_and_flush_clients();
+}
+
+fn material_fixture() -> (Fixture, ClientId) {
+    let mut f = Fixture::with_config(config(
+        r#"
+        material "tg" { glass {}; }
+        window-rule { material "tg"; }
+        "#,
+    ));
+    f.add_output(1, (1920, 1080));
+    let client = f.add_client();
+    (f, client)
 }
 
 #[test]
@@ -390,6 +424,120 @@ fn rewrite_replaces_the_deadline_and_close_cancels_it() {
         f.niri().signal_deadlines.is_empty(),
         "unmap cancelled the timer"
     );
+}
+
+#[test]
+fn hidden_tab_signal_transitions_do_not_animate_layout() {
+    let (mut f, client) = material_fixture();
+    open_window(&mut f, client, "hidden");
+    open_window(&mut f, client, "visible");
+    let hidden = window_id(&mut f, "hidden");
+
+    f.niri().layout.consume_or_expel_window_left(None);
+    f.niri()
+        .layout
+        .set_column_display(niri_ipc::ColumnDisplay::Tabbed);
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    let (_, _, visible) = f
+        .niri()
+        .layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_render_positions()
+        .find(|(tile, _, _)| tile.window().id().get() == hidden)
+        .unwrap();
+    assert!(!visible, "target window must be a hidden tab");
+    assert!(!f.niri().layout.are_animations_ongoing(None));
+
+    trigger_signal_transition(&mut f, hidden);
+    f.niri().layout.update_render_elements(None);
+    assert!(!f.niri().layout.are_animations_ongoing(None));
+}
+
+#[test]
+fn offscreen_column_signal_transitions_do_not_animate_layout() {
+    let (mut f, client) = material_fixture();
+    for title in ["offscreen", "middle", "visible"] {
+        let surface = open_window(&mut f, client, title);
+        let window = f.client(client).window(&surface);
+        window.set_size(1000, 800);
+        window.ack_last_and_commit();
+        f.double_roundtrip(client);
+    }
+    let offscreen = window_id(&mut f, "offscreen");
+
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    let (tile, pos, _) = f
+        .niri()
+        .layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_render_positions()
+        .find(|(tile, _, _)| tile.window().id().get() == offscreen)
+        .unwrap();
+    assert!(
+        !crate::render_helpers::signal::slab_in_view(
+            pos,
+            tile.tile_size(),
+            tile.material().unwrap().material().glass.bevel,
+            smithay::utils::Rectangle::from_size((1920., 1080.).into()),
+        ),
+        "target column's material slab must be outside the output: pos={pos:?}, size={:?}",
+        tile.tile_size()
+    );
+    assert!(!f.niri().layout.are_animations_ongoing(None));
+
+    trigger_signal_transition(&mut f, offscreen);
+    f.niri().layout.update_render_elements(None);
+    assert!(!f.niri().layout.are_animations_ongoing(None));
+}
+
+#[test]
+fn offscreen_workspace_signal_transitions_do_not_animate_layout() {
+    let (mut f, client) = material_fixture();
+    open_window(&mut f, client, "offscreen");
+    open_window(&mut f, client, "visible");
+    let offscreen = window_id(&mut f, "offscreen");
+
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    f.niri().layout.move_to_workspace_down(true);
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        !f.niri()
+            .layout
+            .active_workspace()
+            .unwrap()
+            .windows()
+            .any(|window| window.id().get() == offscreen),
+        "target window must be on a culled workspace"
+    );
+    assert!(!f.niri().layout.are_animations_ongoing(None));
+
+    trigger_signal_transition(&mut f, offscreen);
+    f.niri().layout.update_render_elements(None);
+    assert!(!f.niri().layout.are_animations_ongoing(None));
+}
+
+#[test]
+fn culled_workspace_stops_live_signal_transition() {
+    let (mut f, client) = material_fixture();
+    open_window(&mut f, client, "offscreen");
+    open_window(&mut f, client, "visible");
+    let offscreen = window_id(&mut f, "offscreen");
+
+    f.niri_complete_animations();
+    trigger_signal_transition(&mut f, offscreen);
+    f.niri().layout.update_render_elements(None);
+    assert!(f.niri().layout.are_animations_ongoing(None));
+
+    f.niri().layout.move_to_workspace_down(true);
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    assert!(!f.niri().layout.are_animations_ongoing(None));
 }
 
 #[test]

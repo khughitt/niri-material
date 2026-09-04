@@ -265,7 +265,12 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.iter().any(Tile::are_transitions_ongoing) || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        visible: bool,
+        view_rect: Rectangle<f64, Logical>,
+    ) {
         let active = self.active_window_id.clone();
         for (tile, offset) in self.tiles_with_offsets_mut() {
             let id = tile.window().id();
@@ -273,7 +278,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= offset + tile.render_offset();
-            tile.update_render_elements(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, visible, tile_view_rect);
         }
     }
 

@@ -135,6 +135,7 @@ pub struct Tile<W: LayoutElement> {
     signal_target: Option<(f32, Option<[f32; 3]>)>,
     #[allow(clippy::type_complexity)]
     signal_frame_cache: RefCell<Option<(EffectiveSignal, f32, Option<[f32; 3]>)>>,
+    signal_render_visible: bool,
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
@@ -318,6 +319,15 @@ struct MaterialDynamics {
     glass_signal: GlassSignalInputs,
 }
 
+fn jelly_time(clock: &Clock, signal_activity: f32) -> f64 {
+    if signal_activity > 0. {
+        clock.now_unadjusted()
+    } else {
+        clock.now()
+    }
+    .as_secs_f64()
+}
+
 impl SignalCrossfade {
     fn current(&self) -> (f32, Option<[f32; 3]>) {
         let t = self.anim.clamped_value() as f32;
@@ -375,6 +385,7 @@ impl<W: LayoutElement> Tile<W> {
             signal_crossfade: None,
             signal_target: Some((0., None)),
             signal_frame_cache: RefCell::new(None),
+            signal_render_visible: false,
             options,
         }
     }
@@ -522,7 +533,7 @@ impl<W: LayoutElement> Tile<W> {
             max_flex,
         );
         jelly.activity = (jelly.activity + glass_signal.activity_add).min(0.999);
-        let time = self.clock.now().as_secs_f64();
+        let time = jelly_time(&self.clock, glass_signal.activity_add);
 
         MaterialDynamics {
             jelly_fingerprint: JellyFingerprint::quantize(&jelly, time),
@@ -742,18 +753,30 @@ impl<W: LayoutElement> Tile<W> {
                 .alpha_animation
                 .as_ref()
                 .is_some_and(|alpha| !alpha.anim.is_done())
-            || self
-                .signal_crossfade
-                .as_ref()
-                .is_some_and(|crossfade| !crossfade.anim.is_done())
-            || self
-                .signal_frame_cache
-                .borrow()
-                .as_ref()
-                .is_some_and(|(eff, _, _)| eff.has_live_impulses(self.clock.now_unadjusted()))
+            || self.signal_render_visible
+                && (self
+                    .signal_crossfade
+                    .as_ref()
+                    .is_some_and(|crossfade| !crossfade.anim.is_done())
+                    || self
+                        .signal_frame_cache
+                        .borrow()
+                        .as_ref()
+                        .is_some_and(|(eff, _, _)| {
+                            eff.has_live_impulses(self.clock.now_unadjusted())
+                        }))
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn clear_signal_render_visibility(&mut self) {
+        self.signal_render_visible = false;
+    }
+
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        visible: bool,
+        view_rect: Rectangle<f64, Logical>,
+    ) {
         let response = self
             .material
             .as_ref()
@@ -762,6 +785,15 @@ impl<W: LayoutElement> Tile<W> {
             .as_ref()
             .and_then(|response| self.signal_for_frame(response));
         *self.signal_frame_cache.get_mut() = signal;
+        self.signal_render_visible = visible
+            && self.material.as_ref().is_some_and(|material| {
+                crate::render_helpers::signal::slab_in_view(
+                    Point::default(),
+                    self.tile_size(),
+                    material.material().glass.bevel,
+                    view_rect,
+                )
+            });
 
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
@@ -2162,6 +2194,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use crate::render_helpers::material::JellyState;
 
     fn options_with(name: &str, backdrop_blur: bool, blur_off: bool) -> Options {
         let glass = niri_config::ResolvedGlass {
@@ -2184,6 +2217,29 @@ mod tests {
             },
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn signal_ripple_uses_unadjusted_jelly_clock() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        clock.set_rate(0.25);
+        clock.set_unadjusted(Duration::from_secs(4));
+
+        let signal_time = jelly_time(&clock, 0.5);
+        let native_time = jelly_time(&clock, 0.);
+        assert_eq!(signal_time, 4.);
+        assert_eq!(native_time, 1.);
+
+        let jelly = JellyState {
+            move_: [1., 0.],
+            resize: [0.; 2],
+            activity: 0.5,
+        };
+        assert_ne!(
+            JellyFingerprint::quantize(&jelly, signal_time),
+            JellyFingerprint::quantize(&jelly, native_time),
+            "signal and native jelly damage follow their respective clock domains"
+        );
     }
 
     #[test]

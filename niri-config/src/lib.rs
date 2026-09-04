@@ -917,6 +917,18 @@ mod tests {
     }
 
     #[test]
+    fn material_reference_rejects_duplicate_response_property() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"
+            material "tg" { glass {}; }
+            window-rule { material "tg" response="default" response="default"; }
+            "#,
+        )]);
+        assert!(err.contains("duplicate property `response`"), "{err}");
+    }
+
+    #[test]
     fn material_reference_rejects_malformed_nodes() {
         for (bad, needle) in [
             (r#"material "tg" "extra""#, "unexpected argument"),

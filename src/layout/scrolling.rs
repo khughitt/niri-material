@@ -4128,12 +4128,16 @@ impl<W: LayoutElement> Column<W> {
 
     pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
         let active_idx = self.active_tile_idx;
+        let display_mode = self.display_mode;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
             let is_active = is_active && tile_idx == active_idx;
+            let visible = tile_idx == active_idx
+                || display_mode != ColumnDisplay::Tabbed
+                || tile.alpha_animation.is_some();
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update_render_elements(is_active, tile_view_rect);
+            tile.update_render_elements(is_active, visible, tile_view_rect);
         }
 
         let config = self.tab_indicator.config();
