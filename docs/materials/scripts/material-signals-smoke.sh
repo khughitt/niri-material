@@ -126,7 +126,7 @@ write_config() {   # $1 = path, remaining args = extra KDL lines
     local f=$1; shift
     {
         cat <<EOF
-material "tg" { glass {}; }
+material "tg" { glass {}; response "default" { ring-drift-hz 0; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
 spawn-at-startup "kitty" $KITTY_OPTS "--hold" "true"
@@ -140,7 +140,7 @@ EOF
 write_gpu_config() {   # $1 = path
     {
         cat <<EOF
-material "tg" { glass {}; }
+material "tg" { glass {}; response "default" { ring-drift-hz 0; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
 spawn-at-startup "kitty" $KITTY_OPTS "sh" "-c" "while :; do date +%s%N; sleep 0.1; done"
@@ -153,10 +153,25 @@ write_config "$WORK/motion-off.kdl"     'signal { motion "off"; }'
 write_config "$WORK/reduced.kdl"        'signal { motion "reduced"; }'
 write_config "$WORK/slowdown.kdl"       'animations { slowdown 3; }'
 write_config "$WORK/narrow.kdl"         'layout { gaps 0; default-column-width { proportion 0.1; }; }'
-write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none"; }; }' \
+write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none"; ring-drift-hz 0; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
-write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; }; }' \
+write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; ring-drift-hz 0; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
+# Focused-window fixtures: the filament drifts at ring-drift-hz on the focused
+# window only, so these keep the default 15 Hz while everything else is pinned.
+write_config "$WORK/drift.kdl"          'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+                                         'window-rule { match app-id="^kitty$"; material "tg2"; }'
+write_config "$WORK/drift-anim-off.kdl" 'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+                                         'window-rule { match app-id="^kitty$"; material "tg2"; }' \
+                                         'animations { off; }'
+write_config "$WORK/drift-reduced.kdl"  'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+                                         'window-rule { match app-id="^kitty$"; material "tg2"; }' \
+                                         'signal { motion "reduced"; }'
+# focus "none" turns the filament off and the gradient focus ring is off too,
+# so whatever a focus change still costs here is not the material.
+write_config "$WORK/focus-none.kdl"     'material "tg2" { glass {}; response "default" { focus "none"; ring-drift-hz 15; }; }' \
+                                         'window-rule { match app-id="^kitty$"; material "tg2"; }' \
+                                         'layout { focus-ring { off; }; }'
 
 # --- host and nested compositor -------------------------------------------
 msg() { "$NIRI" msg "$@"; }
@@ -451,8 +466,11 @@ setup_offscreen_column() {
         || { echo "FAIL: WID still in view (view=$view width=$width)" >&2; exit 1; }
 }
 setup_motion_off() { set_demand "$WID" pulse; assert_eq "$(win "$WID" .signal.motion)" Pulse "stored motion"; }
+setup_focused_quiet() { assert_eq "$(win "$WID" .is_focused)" true "focused"; }
+setup_other_focused() { spawn_kitty_to 2; OTHER=$(other_kitty); msg action focus-window --id "$OTHER"; assert_eq "$(win "$WID" .is_focused)" false "WID unfocused"; }
 during_pulses() { local k; for k in 1 2 3; do msg pulse-window-signal --id "$WID" --source demo --kind done; done; }
 during_one_done() { msg pulse-window-signal --id "$WID" --source demo --kind done; }
+during_focus_toggles() { local k; for k in 1 2 3; do msg action focus-window --id "$OTHER"; sleep 0.5; msg action focus-window --id "$WID"; sleep 0.5; done; }
 
 # Steady cases: the final 20 s must match the expectation.
 steady_zero()  { run_case "$1" "$2" "$3"; expect_zero "$1" "$(count_steady "$1")"; }
@@ -466,10 +484,31 @@ impulse_none_case() {   # $1 name, $2 cfg, $3 setup
     [ "$total" -le 6 ] || { echo "FAIL: $1: $total redraws for three none-impulses (max 6)" >&2; exit 1; }
     expect_zero "$1 after" "$after"
 }
+# Six focus changes under `focus "none"`: nothing crossfades, so each change may
+# cost at most the one coalescible redraw its own focus bookkeeping requests.
+# This bound is currently not met on this fixture and the miss is not the
+# material: the same toggles with no material on the windows cost as much,
+# because kitty repaints on activation. See
+# docs/materials/2026-09-05-ring-light-focus-smoke.md, "focus-none-toggle".
+focus_toggle_case() {   # $1 name, $2 cfg: six focus changes, max one redraw each, zero after
+    run_case "$1" "$2" setup_other_focused during_focus_toggles
+    local total after; total=$(count_steady "$1"); after=$(count_window "$1" 14 0)
+    [ "$total" -le 6 ] || { echo "FAIL: $1: $total redraws for six focus changes under focus none (max 6)" >&2; exit 1; }
+    expect_zero "$1 after" "$after"
+}
 mode_cases() {
     tools_ready
     steady_zero  quiet-ring           "$WORK/base.kdl" setup_quiet_ring
-    local pulse_n breathe_n flash_n n
+    local pulse_n breathe_n flash_n drift_n n
+    # The focus filament: it wakes the focused window at ring-drift-hz and
+    # nothing else, and `other-focused` shows only the focused window drifts.
+    steady_zero  focused-static    "$WORK/base.kdl"           setup_focused_quiet
+    steady_about focused-drift     "$WORK/drift.kdl"          setup_focused_quiet 300; drift_n=$STEADY_N
+    steady_about focused-reduced   "$WORK/drift-reduced.kdl"  setup_focused_quiet 150
+    steady_zero  focused-anim-off  "$WORK/drift-anim-off.kdl" setup_focused_quiet
+    steady_zero  focus-none-drift  "$WORK/focus-none.kdl"     setup_focused_quiet
+    steady_about other-focused     "$WORK/drift.kdl"          setup_other_focused "$drift_n"
+    focus_toggle_case focus-none-toggle "$WORK/focus-none.kdl"
     steady_about demand-pulse "$WORK/base.kdl" "setup_demand pulse" 540; pulse_n=$STEADY_N
     steady_zero  demand-pulse-focused "$WORK/base.kdl" setup_demand_focused
     steady_about demand-breathe "$WORK/base.kdl" "setup_demand breathe" 160; breathe_n=$STEADY_N
