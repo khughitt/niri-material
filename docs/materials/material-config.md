@@ -56,11 +56,22 @@ representation; their configuration values and ranges above are unchanged.
 
 `light-ior` multiplies the bend applied to the focus filament's light path
 only; the background taps are unaffected. The light-path index is
-`1 + (ior - 1) * light-ior`, and the calibrated look has that product near
-0.12, which is what the default 6 gives at Prism's `ior 1.02`. Denser glass
-saturates the filament's shared refracted shift, which is capped at half
-`ring-inset` so the core stays inside the bevel; past that point `light-ior`
-only widens the chromatic split.
+`1 + (ior - 1) * light-ior`.
+
+The knob is much narrower than its range suggests. The filament's shared
+refracted shift is capped at half `ring-inset` — 2.5 px at the default
+inset of 5 — so the core always stays inside the bevel, and the shift grows
+roughly as `sin(45deg - asin(sin 45deg / n)) * 0.6 * thickness`. At
+`light-ior 1`, the minimum, that is already about 3.5 px on the stock
+default glass (`ior 1.5`, `thickness 20`) and about 4.6 px on thick glass
+near `ior 1.24` with `thickness 43.3`. Both are past the cap, so on such
+glass *every* `light-ior` value saturates it: the knob no longer positions
+the filament's core, and only widens the chromatic split — which does
+nothing at all when `chromatic-aberration` is 0.
+
+`light-ior` only positions the core on very low-index glass near `ior 1.02`
+(the calibration the spike used), where the light-path product lands near
+0.12 at the default 6.
 
 `backdrop-blur` makes the glass refract the blurred backdrop rather than the
 sharp one, which is what produces a frosted appearance: blur and refraction
@@ -166,6 +177,18 @@ window pixels; an opaque window shows a full ring only when
 Set `focus-ring { off }` (globally or in a window rule) for material
 windows so the gradient ring does not draw a second ring; non-material
 windows keep whatever ring the layout configures.
+
+**What changes on upgrade.** The focus filament is on by default, so a
+material window that never configured a `response` block now shows a
+drifting ring of light in its bevel whenever it is focused. The signal
+accent ring changed shape at the same time: it was a box band with +/-0.5 px
+soft edges and is now a Gaussian core with a halo, at new defaults of
+`ring-inset 5` and `ring-width 2.6` (previously 6 and 2). To go back to an unlit focused
+window, set `focus "none"` in the material's `default` response; the
+filament and the accent ring are otherwise the same band, so `accent "none"`
+turns off the signal tint alone. If the upgrade leaves two rings on screen,
+that is the layout's gradient ring underneath — turn it off with
+`focus-ring { off; }`.
 
 ## Signal motion and animation
 

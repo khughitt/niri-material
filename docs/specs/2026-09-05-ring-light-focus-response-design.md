@@ -124,9 +124,13 @@ filament. For the fragment at element position `p` with perturbed normal
 `n`, the ray refracts through the light-path index `1 + (ior - 1) *
 light_ior` and lands at 60% of the slab thickness. The shared part of that
 in-plane shift is capped at half `ring-inset`, so however dense the glass
-the core stays inside the bevel: at the default glass the uncapped shift is
-8.3 px, wider than the whole bevel, and would carry the core out past the
-silhouette. The per-channel aberration offsets ride on top of the capped
+the core stays inside the bevel: at the stock default glass the uncapped
+shift is about 6.9 px, wider than the whole bevel, and would carry the core
+out past the silhouette. The cap saturates on any glass much denser than
+the spike's calibration index of 1.02 — on the stock default glass and on
+Prism's `ior 1.24` it is already reached at `light-ior 1` — so there
+`light-ior` no longer positions the core and only widens the chromatic
+split. The per-channel aberration offsets ride on top of the capped
 shift, so dense glass keeps its chromatic split. The band is evaluated at
 those landing points per channel with the material's chromatic aberration
 scaled by 0.1, as `exp(-2 d^2)` over `(depth - inset) / width` plus a halo
@@ -230,7 +234,7 @@ the instruction to set `focus-ring { off }` for material windows.
 | Active flag, focus crossfade, transitions term, bucket reporting | `src/layout/tile.rs` |
 | `SignalUniforms`, `SignalFingerprint`, new uniforms | `src/render_helpers/material.rs`, `shaders/mod.rs` |
 | Filament in place of the accent band | `src/render_helpers/shaders/material.frag` |
-| Docs | `docs/materials/material-config.md`, default config comment |
+| Docs | `docs/materials/material-config.md` (none in the default config, which has no material block) |
 | Prism | `light-ior` in the generated glass block |
 
 ## Verification
@@ -249,22 +253,34 @@ the instruction to set `focus-ring { off }` for material windows.
   presence; the four `accent` and `focus` selector combinations produce the
   expected show flags and breath gate.
 - Shader-side mask tests through the fingerprint-free path are not
-  possible, so the nested capture below is the check: light strictly inside
-  the bevel with distortion 0.06 and jelly ripple active, and none at zero
-  chamfer.
-- A nested GLES capture with a small window below the chamfer clamp and one
-  with a full-flex jelly resize confirms no filament light on the face.
+  possible, so the nested captures are the check.
+- Nested GLES captures (`docs/materials/scripts/focus-ring-light.sh`,
+  recorded in the smoke evidence) render each scene twice, once with the
+  filament and once with `focus "none"; accent "none"`, so only the
+  filament differs. Gated: at rest no face pixel changes (face absolute
+  error 0) and the whole-frame filament difference is bounded by the slab
+  rectangle; the accent fade measures a red share of 0.498 at half fade,
+  the straight mix; and the four `accent` and `focus` selector
+  combinations are independent in both face error and filament color.
+- `resize-flex` — face confinement under a running jelly flex, and the
+  breath ratio — is recorded as informational and **not verified by
+  measurement**: the two lockstep hosts skew mid-resize, so client glyph
+  differences swamp whatever face light there might be. A deterministic
+  mid-flex probe is filed as `material-22d78f`.
+- `tiny` (zero chamfer) is **not verified by render**: no client on the
+  host produces a window small enough to reach that branch, so it is
+  covered by the Rust-side `material_frame` tests only.
 - Fingerprint tests: a focused drifting window changes once per bucket and
   never within one; a focused static window is constant after the
   crossfade; the quiet fingerprint tests extend to focus 0 and 1.
-- Shader compile check covers the GLSL; the spike's validator step stays in
-  the harness.
-- Smoke: the material-signals smoke harness gains a focused-window case
+- The GLSL was validated with `glslangValidator` by hand during Task 5;
+  the harness carries no validator step.
+- Smoke: the material-signals smoke harness gains focused-window cases
   measuring wakeups per second at drift 15, drift 0, and animations off,
-  judged by the criteria it already applies to Breathe. The focus ring
-  light harness reruns against the real binary with `focus "ring-light"`
-  replacing the probe and its corner crop is compared to the spike's ring
-  case. The DRM acceptance gates run once with a drifting focused window.
+  judged by the criteria it already applies to Breathe, plus a focus-toggle
+  case measured against a no-material client control. The DRM acceptance
+  gates run once pinned and once with a drifting focused window; both are
+  awaiting the operator run described in the smoke evidence.
 
 ## Non-goals
 

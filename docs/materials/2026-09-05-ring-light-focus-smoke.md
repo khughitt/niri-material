@@ -132,7 +132,7 @@ Recorded, not gated (see "resize-flex" below and "tiny" after it):
 |---|---|
 | resize-flex: host layout skew at rest | 0 px |
 | resize-flex: host layout skew mid-resize | -1 px |
-| resize-flex: face pixels differing mid-resize | 261 of 254828 |
+| resize-flex: face pixels differing mid-resize | 261 of 254828 (261.494 recorded) |
 | resize-flex: face max channel delta mid-resize | 104 |
 | resize-flex: filament emissive luminance mid-resize vs rest | 1.182x |
 | tiny (zero chamfer) | not verified by render |
@@ -177,8 +177,9 @@ Mid-resize they are not the same scene. One `niri msg` process spawn separates
 the two `set-column-width` calls, and another the two screenshot requests, so
 the hosts sit at different points in a 20 s animation: they align at **-1 px**
 of layout, and each client has re-rendered its terminal text at a slightly
-different width. The result is **261** differing face pixels out of 254828,
-with a **104**-level maximum, concentrated on glyph edges near the top-left of
+different width. The result is **261** differing face pixels out of 254828
+(the recorded HDRI absolute-error value is 261.494), with a **104**-level
+maximum, concentrated on glyph edges near the top-left of
 the face — client content, not light. Any face light the filament could leak
 under flex is below that floor, so this comparison cannot see it, and the
 **1.182x** emissive ratio is likewise sampled across the skew rather than

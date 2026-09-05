@@ -55,6 +55,11 @@ probe is throwaway and is retained as `niri-experiments`
 `fixtures/focus-ring-light-probe.patch`; the branch that carries this
 write-up does not carry it.
 
+The harness this write-up describes is the version of
+`scripts/focus-ring-light.sh` at this document's commit (`592611b8`); the
+script at that path now carries the measured capture cases for the shipped
+feature instead, so the candidate cases below no longer exist in it.
+
 `scripts/focus-ring-light.sh` nests the probe binary under a headless
 Weston host, spawns two kitty windows at background opacity 0 with no
 decorations showing the focus-glass transcript, over the dark split glass
@@ -183,4 +188,8 @@ $NIRI_MATERIAL_WORK_ROOT/focus-ring-light-fcdc5ed4
 `niri-experiments` `fixtures/focus-ring-light-probe.patch` and applies
 cleanly to `materials-26.04` at `119f1cf3`. The harness is
 `scripts/focus-ring-light.sh` and was re-run from its committed location
-for the `baseline` case.
+for the `baseline` case. Reproducing these candidate runs needs the harness
+as of `592611b8`, this document's commit: the script at that path now
+carries the shipped feature's measured capture cases (`rest-confinement`,
+`accent-midfade`, `resize-flex`, `selectors`) and no longer has the
+`motes`, `rays` or `ring-hz20` candidates.
