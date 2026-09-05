@@ -4,8 +4,9 @@
 (native piece `material-1293e8`), `just check` and `just test` passing, nested GLES evidence
 in
 [`2026-09-05-material-glass-noise-saturation-params-evidence.md`](../materials/2026-09-05-material-glass-noise-saturation-params-evidence.md).
-Hub goal `prism-63dd45`; the Prism piece `prism-d0d4cb` follows once this
-build is installed.
+Hub goal `prism-63dd45`; the Prism piece `prism-d0d4cb` landed on Prism `main`
+at `bdb52dd` against the installed `26.04.r252.gd47f675a` package, panel
+acceptance PASS 2026-09-05.
 
 **Task:** `material-1293e8`
 
