@@ -26,10 +26,12 @@ All future production rebases and material commits happen in this repository.
 - `../specs/2026-09-02-material-noise-saturation-design.md`: implemented native and Prism noise/saturation composition design.
 - `2026-09-02-material-noise-saturation-evidence.md`: passing native automated, nested GLES, and Prism composition evidence.
 - `2026-09-04-focus-glass-spike.md`: passing focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.
+- `2026-09-05-focus-ring-light-spike.md`: focus ring light spike; an embedded, refracted ring of light wins over motes, rays, shadow, noise, and canopy, and the static gradient ring is invisible on the dark focus glass.
 - `2026-09-02-material-signals-design.md`: implemented and verified per-window signal, IPC, and glass response design.
 - `2026-09-03-material-signals-smoke.md`: passing suites, IPC, redraw, GPU, package, and physical DRM evidence.
 - `material-config.md`: material and glass configuration reference.
 - `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
+- `scripts/focus-ring-light.sh`: headless harness for the focus ring light captures; needs the probe patch from `niri-experiments`.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
 - `plans/2026-08-22-slice1.md`: implemented config-and-assignment plan.
