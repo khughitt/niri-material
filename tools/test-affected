@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""Affected-only tests: `python3 tools/test-affected [--select] [nextest args...]`.
+
+Selects the workspace packages touched by the changes against HEAD (staged, unstaged,
+and untracked files) plus every workspace package that depends on one of them,
+transitively, from the resolve graph of `cargo metadata`, and runs `cargo nextest run`
+on that set. A change to the root Cargo.toml, Cargo.lock, rust-toolchain*, or .cargo/
+selects the whole workspace. Files at the workspace root count for the root package only
+under its source directories (src/, tests/, benches/, examples/, resources/, build.rs),
+so a docs or tasks edit selects nothing. `--select` prints the selection, one package
+per line, and runs nothing.
+
+niri-visual-tests is never run, as in CI (`--exclude niri-visual-tests`), and nextest
+does not run doctests; `just test` covers both.
+
+An empty selection is a result, not a failure: nothing runs, the exit is 0, and one
+line in nextest's summary shape is printed so the timing wrapper records `tests: 0`.
+A `cargo metadata` that fails to run or to parse runs the whole workspace and says so.
+nextest reports on stderr, which is merged into stdout here so the wrapper can count.
+Design: ops docs/specs/2026-09-04-test-ci-audit-design.md, section 4.5.
+"""
+import json
+import pathlib
+import subprocess
+import sys
+
+EXCLUDED = {"niri-visual-tests"}
+WHOLE_WORKSPACE = ("Cargo.toml", "Cargo.lock", "rust-toolchain", "rust-toolchain.toml")
+WHOLE_WORKSPACE_DIRS = (".cargo",)
+ROOT_SOURCE = ("src", "tests", "benches", "examples", "resources", "build.rs")
+
+
+def git_lines(root, *args):
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=True)
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def changed_files(root):
+    """Paths changed against HEAD, relative to the workspace root: tracked changes,
+    staged or not, and untracked files that are not ignored."""
+    tracked = git_lines(root, "diff", "--name-only", "HEAD")
+    untracked = git_lines(root, "ls-files", "--others", "--exclude-standard")
+    return sorted(set(tracked) | set(untracked))
+
+
+def workspace(root):
+    """(members, dependents): member name to manifest directory relative to the root,
+    and member name to the set of members that depend on it directly."""
+    result = subprocess.run(
+        ["cargo", "metadata", "--format-version", "1"], cwd=root, capture_output=True, text=True, check=True
+    )
+    metadata = json.loads(result.stdout)
+    member_ids = set(metadata["workspace_members"])
+    packages = {p["id"]: p for p in metadata["packages"] if p["id"] in member_ids}
+    members = {
+        p["name"]: pathlib.Path(p["manifest_path"]).parent.relative_to(root).as_posix() for p in packages.values()
+    }
+    dependents = {name: set() for name in members}
+    for node in metadata["resolve"]["nodes"]:
+        if node["id"] not in packages:
+            continue
+        for dep in node["deps"]:
+            if dep["pkg"] in packages:
+                dependents[packages[dep["pkg"]]["name"]].add(packages[node["id"]]["name"])
+    return members, dependents
+
+
+def package_of(path, members):
+    """The member whose manifest directory contains the path, longest directory first;
+    the root package only for files under its source directories."""
+    parts = pathlib.PurePosixPath(path).parts
+    best = None
+    for name, directory in members.items():
+        if directory == ".":
+            if parts[0] in ROOT_SOURCE and (best is None or best[1] == "."):
+                best = (name, ".")
+            continue
+        prefix = pathlib.PurePosixPath(directory).parts
+        if parts[: len(prefix)] == prefix and (best is None or len(prefix) > len(pathlib.PurePosixPath(best[1]).parts)):
+            best = (name, directory)
+    return best[0] if best else None
+
+
+def select(changed, members, dependents):
+    """The members to test for these changed paths: touched members and, transitively,
+    every member depending on one, minus the excluded ones. Any whole-workspace file
+    selects every member."""
+    touched = set()
+    for path in changed:
+        parts = pathlib.PurePosixPath(path).parts
+        if path in WHOLE_WORKSPACE or parts[0] in WHOLE_WORKSPACE_DIRS:
+            touched = set(members)
+            break
+        package = package_of(path, members)
+        if package:
+            touched.add(package)
+    selected = set(touched)
+    frontier = list(touched)
+    while frontier:
+        for dependent in dependents.get(frontier.pop(), ()):
+            if dependent not in selected:
+                selected.add(dependent)
+                frontier.append(dependent)
+    return sorted(selected - EXCLUDED)
+
+
+def main(argv):
+    root = pathlib.Path(git_lines(pathlib.Path.cwd(), "rev-parse", "--show-toplevel")[0])
+    select_only = "--select" in argv
+    extra = [arg for arg in argv if arg != "--select"]
+    try:
+        members, dependents = workspace(root)
+    except (subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as error:
+        print(f"test-affected: cargo metadata unavailable ({error}); running the whole workspace")
+        selected = None
+    else:
+        selected = select(changed_files(root), members, dependents)
+    if select_only:
+        print("\n".join(selected if selected is not None else ["<whole workspace>"]))
+        return 0
+    if selected == []:
+        print("     Summary [   0.000s] 0 tests run: 0 passed, 0 skipped (no workspace package changed against HEAD)")
+        return 0
+    command = ["cargo", "nextest", "run"]
+    if selected is None:
+        command += ["--workspace", *(f"--exclude={name}" for name in sorted(EXCLUDED))]
+    else:
+        command += [f"--package={name}" for name in selected]
+    command += extra
+    print("test-affected:", " ".join(command), flush=True)
+    return subprocess.run(command, cwd=root, stderr=subprocess.STDOUT).returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

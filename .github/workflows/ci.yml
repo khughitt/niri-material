@@ -38,8 +38,10 @@ jobs:
       - name: Build tests
         run: cargo test --no-run --all --exclude niri-visual-tests
 
+      - uses: extractions/setup-just@v4
+
       - name: Test
-        run: cargo test --all --exclude niri-visual-tests -- --nocapture
+        run: just ci-test
 
   build:
     strategy:
@@ -137,8 +139,10 @@ jobs:
       - name: Build tests
         run: cargo test --no-run --all --exclude niri-visual-tests --release
 
+      - uses: extractions/setup-just@v4
+
       - name: Test
-        run: cargo test --all --exclude niri-visual-tests --release
+        run: just ci-test-release
 
   visual-tests:
     strategy:

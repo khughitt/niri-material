@@ -1,0 +1,276 @@
+#!/usr/bin/env python3
+# tt version 2
+"""Timing wrapper: `tt <target> -- <command> [args...]`.
+
+Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
+describing the run to the log. Source of truth: the ops repository, bin/tt. Projects carry
+a byte-identical copy at tools/tt. Standard library only. Design: ops
+docs/specs/2026-09-04-test-ci-audit-design.md.
+"""
+import contextlib
+import datetime
+import fcntl
+import json
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import time
+import tomllib
+
+VERSION = 2
+FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source"]
+
+PYTEST_WORD = r"(?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?|rerun)"
+
+# Runners colour their summaries whenever they think they have a terminal (a pty in CI,
+# CARGO_TERM_COLOR=always, FORCE_COLOR); the escapes land in the middle of the numbers.
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+# Runner summary lines. `seen` says a runner printed its summary; `count` extracts the
+# number of tests from such a line. A `seen` line whose count cannot be read makes the
+# whole result null rather than a low sum. Empty messages count as zero.
+RUNNERS = [
+    {   # cargo test: one line per test binary and one for doctests; sum passed + failed
+        "seen": re.compile(r"^test result: "),
+        "count": re.compile(r"^test result: \w+\. (\d+) passed; (\d+) failed;"),
+    },
+    {   # nextest
+        "seen": re.compile(r"^\s*Summary \["),
+        "count": re.compile(r"^\s*Summary \[[^\]]*\] (\d+) tests? run:"),
+    },
+    {   # vitest: the parenthesised total, one line per package
+        "seen": re.compile(r"^\s*Tests\s+\d"),
+        "count": re.compile(r"^\s*Tests\s+.*\((\d+)\)\s*$"),
+        "empty": re.compile(r"^No test files found, exiting with code 0"),
+    },
+    {   # python unittest
+        "seen": re.compile(r"^Ran \d+ tests? in "),
+        "count": re.compile(r"^Ran (\d+) tests? in "),
+    },
+    {   # node --test, spec (ℹ) and tap (#) reporters
+        "seen": re.compile(r"^(?:ℹ|#) tests\b"),
+        "count": re.compile(r"^(?:ℹ|#) tests (\d+)\s*$"),
+    },
+    {   # pytest: the final summary, quiet or with bars; passed + failed + errors. The
+        # words are pytest's own so "5 items in 3.2s" from some other tool never counts.
+        "seen": re.compile(r"(?:^|=+ )(?:\d+ " + PYTEST_WORD + r", )*\d+ " + PYTEST_WORD + r" in [\d.]+s"),
+        "count": re.compile(r"(?:^|=+ )((?:\d+ " + PYTEST_WORD + r", )*\d+ " + PYTEST_WORD + r") in [\d.]+s"),
+        "sum_words": ("passed", "failed", "error", "errors"),
+        "empty": re.compile(r"^no tests ran in |^collected 0 items"),
+    },
+]
+
+
+def parse_tests(lines):
+    """Sum of tests run over every runner summary line; None when no runner printed a
+    summary or one printed a summary whose count could not be read."""
+    total = 0
+    matched = False
+    for raw in lines:
+        line = ANSI.sub("", raw)
+        for runner in RUNNERS:
+            empty = runner.get("empty")
+            if empty and empty.search(line):
+                matched = True
+                break
+            if not runner["seen"].search(line):
+                continue
+            found = runner["count"].search(line)
+            if not found:
+                return None
+            if "sum_words" in runner:
+                parts = found.group(1).split(", ")
+                total += sum(int(n) for n, word in (p.split(" ") for p in parts) if word in runner["sum_words"])
+            else:
+                total += sum(int(g) for g in found.groups())
+            matched = True
+            break
+    return total if matched else None
+
+
+def fail(message):
+    sys.stderr.write(f"tt: {message}\n")
+    sys.exit(1)
+
+
+def project_of(cwd):
+    """(root, prefix) of the nearest tasks/.config.toml above cwd, else (None, None).
+    A config that does not parse is an error: the wrapper must not guess a project."""
+    for directory in [cwd, *cwd.parents]:
+        config = directory / "tasks" / ".config.toml"
+        if config.is_file():
+            try:
+                prefix = tomllib.loads(config.read_text())["prefix"]
+            except (tomllib.TOMLDecodeError, KeyError) as error:
+                fail(f"cannot read {config}: {error}")
+            return directory, prefix
+    return None, None
+
+
+def _git(cwd, *args):
+    try:
+        result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def git_info(cwd):
+    rev = _git(cwd, "rev-parse", "--short", "HEAD")
+    if rev is None:
+        return None, None
+    status = _git(cwd, "status", "--porcelain")
+    return rev, bool(status) if status is not None else None
+
+
+def main_checkout(cwd):
+    """The main working tree of the repository containing cwd, from the common git dir."""
+    common = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common is None:
+        return None
+    return pathlib.Path(common).parent.resolve()
+
+
+def agent_of(env):
+    if env.get("CLAUDECODE"):
+        return "claude", env.get("CLAUDE_CODE_SESSION_ID") or None
+    if env.get("CODEX_CI") == "1":
+        return "codex", env.get("CODEX_SESSION_ID") or None
+    return None, None
+
+
+def owner_of(env, cwd):
+    """The tasks owner rule: $TASKS_OWNER, else the git branch, else $USER, else None."""
+    if env.get("TASKS_OWNER"):
+        return env["TASKS_OWNER"]
+    # symbolic-ref works on an unborn branch and fails on a detached HEAD, which is
+    # exactly the distinction wanted: a branch name or nothing.
+    branch = _git(cwd, "symbolic-ref", "--short", "-q", "HEAD")
+    if branch:
+        return branch
+    return env.get("USER") or None
+
+
+def shared_log(env):
+    if env.get("TT_LOG"):
+        return pathlib.Path(env["TT_LOG"])
+    if env.get("XDG_DATA_HOME"):
+        return pathlib.Path(env["XDG_DATA_HOME"]) / "ops" / "runs.jsonl"
+    return pathlib.Path(env.get("HOME", "~")).expanduser() / ".local/share/ops/runs.jsonl"
+
+
+def _writable(path):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "a", encoding="utf-8"):
+            return True
+    except OSError:
+        return False
+
+
+def choose_log(cwd, root, env):
+    """The first writable log location and the warning to print when it is a fallback.
+    Checked before the command runs; exits 1 when nothing is writable."""
+    shared = shared_log(env)
+    if _writable(shared):
+        return shared, None
+    candidates = []
+    main = main_checkout(cwd)
+    if main:
+        candidates.append(main / ".tt" / "runs.jsonl")
+    if root and (main is None or root.resolve() != main):
+        candidates.append(root / ".tt" / "runs.jsonl")
+    for fallback in candidates:
+        if _writable(fallback):
+            return fallback, f"tt: cannot append to {shared}; recording in {fallback}"
+    tried = ", ".join(str(p) for p in [shared, *candidates])
+    fail(f"cannot append to any log ({tried}); refusing to run unrecorded")
+
+
+@contextlib.contextmanager
+def locked(path):
+    """An exclusive lock on <log>.lock, shared with tt-report's harvest so an append and
+    a rename never interleave."""
+    path = path.resolve()
+    lock = path.with_name(path.name + ".lock")
+    with open(lock, "a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def record(path, line):
+    """Appends one line, opening the file under the lock so a concurrent harvest either
+    happens entirely before (the line lands in the fresh file) or entirely after."""
+    missing = [field for field in FIELDS if field not in line]
+    if missing:
+        raise ValueError(f"log line missing {missing}")
+    text = json.dumps({field: line[field] for field in FIELDS}) + "\n"
+    with locked(path):
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+
+
+def run(command, capture):
+    """Runs the command with stdio passed through. When `capture`, stdout is teed so the
+    summary lines can be parsed; the caller still sees every byte. Returns (exit, lines)."""
+    try:
+        if not capture:
+            return subprocess.run(command).returncode, []
+        process = subprocess.Popen(command, stdout=subprocess.PIPE)
+    except FileNotFoundError:
+        sys.stderr.write(f"tt: {command[0]}: command not found\n")
+        return 127, []
+    lines = []
+    assert process.stdout is not None
+    for raw in process.stdout:
+        sys.stdout.buffer.write(raw)
+        sys.stdout.buffer.flush()
+        lines.append(raw.decode("utf-8", errors="replace").rstrip("\n"))
+    return process.wait(), lines
+
+
+def main(argv, env, cwd):
+    if len(argv) < 3 or argv[1] != "--":
+        sys.stderr.write("usage: tt <target> -- <command> [args...]\n")
+        return 2
+    target, command = argv[0], argv[2:]
+    root, prefix = project_of(cwd)
+    log, warning = choose_log(cwd, root, env)
+    if warning:
+        sys.stderr.write(warning + "\n")
+    rev, dirty = git_info(cwd)
+    agent, session = agent_of(env)
+    started_at = now()
+    started = time.monotonic()
+    status, lines = run(command, capture=not sys.stdout.isatty())
+    seconds = round(time.monotonic() - started, 3)
+    record(log, {
+        "at": started_at,
+        "project": prefix,
+        "target": target,
+        "command": " ".join(command),
+        "seconds": seconds,
+        "exit": status,
+        "tests": parse_tests(lines) if lines else None,
+        "rev": rev,
+        "dirty": dirty,
+        "by": owner_of(env, cwd),
+        "agent": agent,
+        "session": session,
+        "source": "wrapper",
+    })
+    return status
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:], os.environ, pathlib.Path.cwd()))

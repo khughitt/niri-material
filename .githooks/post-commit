@@ -1,0 +1,3 @@
+#!/bin/sh
+# Git LFS hook, kept because core.hooksPath bypasses the copies in .git/hooks.
+exec git lfs post-commit "$@"
