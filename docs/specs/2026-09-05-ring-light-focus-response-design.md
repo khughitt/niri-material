@@ -78,15 +78,28 @@ frame; that is the degrade path.
 already produces per-frame fingerprints while nonzero, so no new
 scheduling.
 
-**Accent presence.** Today the tile crossfades the accent RGB toward black
-when a signal expires, and `SignalUniforms::from_frame` sets the accent
-alpha to 0 or 1 from bare presence. Mixing the filament color by that alpha
-would snap. `SignalCrossfade` therefore gains a `presence` pair (0 or 1 at
-each end) crossfaded on the same animation as level and accent, and the
-uniform's accent alpha carries the crossfaded value. An interrupted fade
-starts from the current interpolated presence, the way level and accent
-already start from `SignalCrossfade::current`. `SignalFingerprint`
-quantizes presence to 1/256 next to the accent channels.
+**Accent presence and color.** Today `SignalCrossfade::current` scales the
+accent RGB by the fade (toward black on expiry, from black on arrival) and
+`SignalUniforms::from_frame` sets the accent alpha to 0 or 1 from bare
+presence. Weighting that RGB by a fading presence would count the fade
+twice: halfway through arrival the filament would be half base and a
+quarter accent. The crossfade therefore carries the two separately:
+
+- `presence` fades 0 to 1 on arrival and 1 to 0 on expiry, on the
+  `material-signal` animation.
+- `accent_rgb` is straight, unpremultiplied color. On arrival it is the
+  arriving color for the whole fade. On expiry it holds the last live color
+  for the whole fade. When one live accent replaces another, presence stays
+  1 and the RGB interpolates straight between the two colors in linear
+  light.
+
+An interrupted fade starts from the current interpolated presence and the
+current RGB, the way level already starts from `SignalCrossfade::current`.
+The uniform's accent alpha carries presence and its RGB carries the
+straight color; every existing consumer of the accent uniform (rim-orbit
+tint, impulse colors) multiplies by alpha where it needs the faded value.
+`SignalFingerprint` quantizes presence to 1/256 next to the accent
+channels.
 
 **What reaches the shader.** `SignalUniforms` gains `focus` (0 to 1,
 crossfaded), `drift` (bucketed phase, radians), and the filament's base
@@ -112,15 +125,19 @@ spike's calibrated values and stay constants.
 
 **Bevel confinement.** The Gaussian tails, the halo, and the refracted
 displacement are not bounded by `ring-inset + ring-width <= bevel`, so the
-band is masked to the rendered bevel: `slabSurface` publishes the inner
-face distance it already computes (`di`, after the tiny-slab chamfer clamp
-and the jelly shear and resize of the inner face), the mask is
-`smoothstep(-1, 0, di)` evaluated at the refracted position, and the band
-is multiplied by it. Nothing lights the face, the mask follows the
-deformed inner edge, and on a window too small to carry a chamfer the mask
-is zero and the filament vanishes with the bevel. The existing inset plus
-width rule stays as the guarantee that the filament's center lies in the
-bevel.
+band is masked to the rendered bevel at the displayed fragment.
+`slabSurface` publishes the clamped rendered chamfer and the inner face
+distance it already computes for the fragment (`di`, after the tiny-slab
+chamfer clamp and the jelly shear and resize of the inner face). The mask
+is `chamfer > 0 ? smoothstep(0, 1, di) : 0`, evaluated at the original
+fragment position, never at the refracted one: it is exactly 0 on the face
+and everywhere `di <= 0`, ramps to 1 over the first pixel of the bevel, and
+is identically 0 when the rendered chamfer is 0, including the silhouette.
+Only the filament sampling is refracted; the mask is not, so distortion and
+jelly ripple can move light within the bevel but never onto the face. The
+mask follows the deformed inner edge, and on a window too small to carry a
+chamfer the filament vanishes with the bevel. The existing inset plus width
+rule stays as the guarantee that the filament's center lies in the bevel.
 
 Brightness and color, in linear light, with the selectors made explicit:
 
@@ -132,12 +149,14 @@ accent_glow  = show_accent ? (0.15 + 0.35 * level) * (1 + pulse * level) : 0
 focus_glow   = show_focus  ? focus * 0.7 * (0.55 + 0.45 * travel(drift, angle)) : 0
 glow         = (accent_glow * presence + focus_glow) * (1 + 2 * jelly_activity)
 color        = show_accent ? mix(ring_color, accent_rgb, presence) : ring_color
+mask         = chamfer > 0 ? smoothstep(0, 1, di_at_fragment) : 0
 emissive    += color * glow * band * mask
 ```
 
-`presence` is the crossfaded accent presence from the inputs section, so
-color and accent glow move smoothly when a signal arrives, expires, or is
-interrupted mid-fade. `travel` is the spike's two-wave product over the
+`presence` and `accent_rgb` are the crossfaded presence and the straight
+color from the inputs section, so halfway through arrival the color is half
+base and half accent, and color and accent glow move smoothly when a signal
+arrives, expires, changes, or is interrupted mid-fade. `travel` is the spike's two-wave product over the
 perimeter angle from the slab center. Breath modulates the filament only
 under `attention "ring-pulse"`, as it does today; `rim-orbit` moves the
 Fresnel glint and leaves the filament alone. When `glow` is zero the band
@@ -205,9 +224,16 @@ the instruction to set `focus-ring { off }` for material windows.
   with the new defaults, `ring-width 0` rejected and a fractional width
   accepted, `light-ior` range, inheritance in named responses.
 - Uniform tests: presence crossfades 0 to 1 and back on the animation,
-  an interrupted fade starts from the current value, and the accent alpha
-  uniform equals it; the four `accent` and `focus` selector combinations
-  produce the expected show flags and breath gate.
+  RGB holds the arriving or last color through a fade and interpolates
+  straight between two live colors, an interrupted fade starts from the
+  current presence and color, the mixed filament color at the midpoint of
+  arrival is half base and half accent, and the accent alpha uniform equals
+  presence; the four `accent` and `focus` selector combinations produce the
+  expected show flags and breath gate.
+- Shader-side mask tests through the fingerprint-free path are not
+  possible, so the nested capture below is the check: light strictly inside
+  the bevel with distortion 0.06 and jelly ripple active, and none at zero
+  chamfer.
 - A nested GLES capture with a small window below the chamfer clamp and one
   with a full-flex jelly resize confirms no filament light on the face.
 - Fingerprint tests: a focused drifting window changes once per bucket and
