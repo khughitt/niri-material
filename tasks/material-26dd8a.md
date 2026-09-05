@@ -1,12 +1,12 @@
 ---
 id: material-26dd8a
 title: "Ring of light focus response: embedded refracted filament with drift"
-status: doing
+status: done
 priority: 2
 size: m
 owner: design/ring-light
 created: 2026-09-05T10:16:06Z
-updated: 2026-09-05T17:14:09Z
+updated: 2026-09-05T20:33:42Z
 depends: []
 parent: material-d1f471
 tags: [material, focus-ring]
@@ -23,3 +23,4 @@ Winner of the focus ring light spike (docs/materials/2026-09-05-focus-ring-light
 - 2026-09-05T11:53:30Z (design/ring-light): spec review round 2: accent RGB carried straight with a separate crossfaded presence (arrival holds the new color, expiry holds the last, live-to-live interpolates); bevel mask is chamfer > 0 ? smoothstep(0,1,di) : 0 at the displayed fragment, only the filament sampling is refracted
 - 2026-09-05T17:14:08Z (design/ring-light): Prism follow-up: prism-0ea68f
 - 2026-09-05T17:14:09Z (design/ring-light): closure pending the operator DRM run recorded in material-be1e01; everything else landed
+- 2026-09-05T20:33:42Z (materials-26.04): ring of light focus response: config, solver drift, tile crossfades, refracted filament with shift cap, smoke and DRM evidence; merged to materials-26.04 at f8bcb34c; DRM workspace-transition timing failures accepted by the owner
