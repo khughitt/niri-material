@@ -18,9 +18,6 @@ mkdir -p "$OUT"
 RT=$(mktemp -d "$XDG_RUNTIME_DIR/gns.XXXXXX")
 RUN=$(basename "$RT")
 HOST=$RUN-host; UNIT=$RUN-weston; NIRI_PID=
-WALL=$OUT/color-bars.png
-magick -size 425x720 xc:'rgb(255,32,32)' -size 427x720 xc:'rgb(32,255,32)' -size 428x720 xc:'rgb(32,32,255)' +append "$WALL"
-
 fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup() {
     local rc=$?
@@ -31,6 +28,8 @@ cleanup() {
     exit "$rc"
 }
 trap cleanup EXIT
+WALL=$OUT/color-bars.png
+magick -size 425x720 xc:'rgb(255,32,32)' -size 427x720 xc:'rgb(32,255,32)' -size 428x720 xc:'rgb(32,32,255)' +append "$WALL"
 
 write_config() {   # $1 path, $2 glass extra lines, $3 blur extra lines
     cat > "$1" <<KDL
@@ -194,11 +193,11 @@ for v in omitted_identity_ae written_neutral_vs_omitted_ae sat0_rg_ae sat0_rb_ae
 done | tee "$OUT/metrics.txt"
 
 assert_zero omitted_identity_ae "$omitted_identity_ae"                    # omitted values: byte-identical to the pre-change binary
-assert_zero written_neutral_vs_omitted_ae "$written_neutral_vs_omitted_ae"  # explicit neutral beats non-neutral globals, backdrop-blur off
+assert_zero written_neutral_vs_omitted_ae "$written_neutral_vs_omitted_ae"  # writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim itself is covered by the written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur unit test in src/layout/tile.rs)
 assert_zero sat0_rg_ae "$sat0_rg_ae"                                      # written saturation 0 renders grayscale with backdrop-blur off
 assert_zero sat0_rb_ae "$sat0_rb_ae"
 assert_positive noise_roi_rmse "$noise_roi_rmse"                          # written noise changes the ROI
-assert_greater noise_sd "$noise05_sd" "$neutral_sd"                       # and raises its variance
+assert_greater noise05_sd "$noise05_sd" "$neutral_sd"                     # and raises its variance
 assert_zero bluroff_rg_ae "$bluroff_rg_ae"                                # written values survive blur { off }
 assert_positive bluroff_vs_omitted_ae "$bluroff_vs_omitted_ae"
 

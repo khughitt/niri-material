@@ -18,7 +18,14 @@ fallbacks, or panics appear in the log for any of the six captures.
   `9f2b2bab223e279028dda2be489ab4db295b665147513d8a6f30acf94ead5c9a`.
 - Pre-change source commit `7185ee51`, binary
   `/mnt/ssd3/tmp/material-1293e8-base-target/debug/niri`, SHA-256
-  `5c7b1e18165cd65cc738dc0e06dc8855e1b936e4e80d6a2c33cef8c7e5b673c1`.
+  `5c7b1e18165cd65cc738dc0e06dc8855e1b936e4e80d6a2c33cef8c7e5b673c1`. `7185ee51`
+  is not reachable from any ref (`git for-each-ref --contains 7185ee51` is
+  empty) — it is a rewritten sibling of `56aed303` with the identical tree
+  `25043f50b06ddf8d3307ce2dc22a24ffb92cc123` (`git rev-parse
+  56aed303^{tree}`), reachable only through the reflog and due for garbage
+  collection. `56aed303` is the reachable commit with this tree and is on
+  `materials-26.04`; the binary itself remains valid because its tree
+  matches.
 
 Both confirmed with `sha256sum` before use; both matched their expected
 hashes exactly, so neither binary was rebuilt. Version strings recorded by
@@ -30,6 +37,11 @@ niri 26.04 (7185ee51)
 $ cat impl.version
 niri 26.04 (ff2b922d-modified)
 ```
+
+The `-modified` suffix means the tree was dirty at build time: the source
+was `ff2b922d` with Task 3's documentation edits present as docs-only
+changes (uncommitted or later committed on top), with no `src/` or
+`niri-config/` difference from `ff2b922d`.
 
 `just check` and `just test`, run by Task 5 on commit `acf3fe73` (HEAD, the
 finished piece including this task's own smoke test):
@@ -84,7 +96,7 @@ All eight assertions held:
 | Assertion | Value | Meaning |
 | --- | --- | --- |
 | `omitted_identity_ae` = 0 | 0 | omitted values are byte-identical to the pre-change binary |
-| `written_neutral_vs_omitted_ae` = 0 | 0 | explicit `noise 0; saturation 1` overrides the non-neutral globals and renders with backdrop-blur off |
+| `written_neutral_vs_omitted_ae` = 0 | 0 | writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim is covered by the `written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur` unit test in `src/layout/tile.rs`) |
 | `sat0_rg_ae`, `sat0_rb_ae` = 0 | 0, 0 | written `saturation 0` renders grayscale with backdrop-blur off |
 | `noise_roi_rmse` > 0 | 8054.6 | written noise changes the ROI |
 | `noise05_sd` > `neutral_sd` | 0.119614 > 0 | and raises its variance |

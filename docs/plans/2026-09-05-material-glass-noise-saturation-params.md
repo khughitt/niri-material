@@ -441,7 +441,11 @@ git commit -m "docs(materials): document written glass noise and saturation"
 - Modify: `docs/materials/README.md` (two index entries)
 
 **Interfaces:**
-- Consumes: a debug `niri` built from this branch and one built from the merge base `7185ee51`.
+- Consumes: a debug `niri` built from this branch and one built from the
+  merge base with `materials-26.04`, `56aed303`. (An earlier revision of
+  this step used `7185ee51`, a rewritten sibling of `56aed303` with the
+  identical tree; `7185ee51` is not reachable from any ref, so `56aed303`
+  is the commit to name and to build from.)
 
 - [ ] **Step 0: Start the child task**
 
@@ -452,7 +456,7 @@ Run: `tasks start material-4af245`
 ```bash
 W=/mnt/ssd/Dropbox/niri-material/.worktrees/glass-noise-saturation
 cargo build --manifest-path "$W/Cargo.toml" --target-dir /mnt/ssd3/tmp/material-1293e8-impl-target
-git -C /mnt/ssd/Dropbox/niri-material worktree add /mnt/ssd3/tmp/material-1293e8-base 7185ee51
+git -C /mnt/ssd/Dropbox/niri-material worktree add /mnt/ssd3/tmp/material-1293e8-base 56aed303
 cargo build --manifest-path /mnt/ssd3/tmp/material-1293e8-base/Cargo.toml --target-dir /mnt/ssd3/tmp/material-1293e8-base-target
 ```
 
@@ -483,9 +487,6 @@ mkdir -p "$OUT"
 RT=$(mktemp -d "$XDG_RUNTIME_DIR/gns.XXXXXX")
 RUN=$(basename "$RT")
 HOST=$RUN-host; UNIT=$RUN-weston; NIRI_PID=
-WALL=$OUT/color-bars.png
-magick -size 425x720 xc:'rgb(255,32,32)' -size 427x720 xc:'rgb(32,255,32)' -size 428x720 xc:'rgb(32,32,255)' +append "$WALL"
-
 fail() { echo "FAIL: $*" >&2; exit 1; }
 cleanup() {
     local rc=$?
@@ -496,6 +497,8 @@ cleanup() {
     exit "$rc"
 }
 trap cleanup EXIT
+WALL=$OUT/color-bars.png
+magick -size 425x720 xc:'rgb(255,32,32)' -size 427x720 xc:'rgb(32,255,32)' -size 428x720 xc:'rgb(32,32,255)' +append "$WALL"
 
 write_config() {   # $1 path, $2 glass extra lines, $3 blur extra lines
     cat > "$1" <<KDL
@@ -659,11 +662,11 @@ for v in omitted_identity_ae written_neutral_vs_omitted_ae sat0_rg_ae sat0_rb_ae
 done | tee "$OUT/metrics.txt"
 
 assert_zero omitted_identity_ae "$omitted_identity_ae"                    # omitted values: byte-identical to the pre-change binary
-assert_zero written_neutral_vs_omitted_ae "$written_neutral_vs_omitted_ae"  # explicit neutral beats non-neutral globals, backdrop-blur off
+assert_zero written_neutral_vs_omitted_ae "$written_neutral_vs_omitted_ae"  # writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim itself is covered by the written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur unit test in src/layout/tile.rs)
 assert_zero sat0_rg_ae "$sat0_rg_ae"                                      # written saturation 0 renders grayscale with backdrop-blur off
 assert_zero sat0_rb_ae "$sat0_rb_ae"
 assert_positive noise_roi_rmse "$noise_roi_rmse"                          # written noise changes the ROI
-assert_greater noise_sd "$noise05_sd" "$neutral_sd"                       # and raises its variance
+assert_greater noise05_sd "$noise05_sd" "$neutral_sd"                     # and raises its variance
 assert_zero bluroff_rg_ae "$bluroff_rg_ae"                                # written values survive blur { off }
 assert_positive bluroff_vs_omitted_ae "$bluroff_vs_omitted_ae"
 
@@ -689,7 +692,7 @@ Expected: the script prints `PASS: artifacts in ...` and `exit=0`. The assertion
 | Assertion | Meaning |
 | --- | --- |
 | `omitted_identity_ae` is 0 | omitted values are byte-identical to the pre-change binary |
-| `written_neutral_vs_omitted_ae` is 0 | explicit `noise 0; saturation 1` overrides the non-neutral globals and renders with backdrop-blur off |
+| `written_neutral_vs_omitted_ae` is 0 | writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim is covered by the `written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur` unit test in `src/layout/tile.rs`) |
 | `sat0_rg_ae`, `sat0_rb_ae` are 0 | written `saturation 0` renders grayscale with backdrop-blur off |
 | `noise_roi_rmse` > 0 and `noise05_sd` > `neutral_sd` | written noise changes the ROI and raises its variance |
 | `bluroff_rg_ae` is 0 and `bluroff_vs_omitted_ae` > 0 | written values survive `blur { off }` |
@@ -710,7 +713,10 @@ Create `docs/materials/2026-09-05-material-glass-noise-saturation-params-evidenc
 ## Pinned revisions
 
 - Implementation source commit and binary SHA-256 (from `binaries.sha256`).
-- Pre-change source commit `7185ee51` and binary SHA-256.
+- Pre-change source commit `56aed303` (the merge base with `materials-26.04`)
+  and binary SHA-256. If the binary was actually built from a rewritten
+  sibling commit with the identical tree, name the reachable commit here and
+  note the sibling's hash for context — never pin an unreachable commit.
 - `just test` and `just check` results on the implementation commit.
 
 ## Procedure
