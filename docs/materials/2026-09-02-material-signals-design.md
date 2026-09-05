@@ -1,7 +1,8 @@
 # Material signals: design
 
-**Status:** implemented and verified 2026-09-04 on `feat/material-signals`;
-accepted implementation `663202b1`, package recipe `aaae42a4`, and
+**Status:** implemented and verified 2026-09-04; accepted feature implementation
+`663202b1`, merged into `materials-26.04` at `f9656128`, with the Arch recipe
+pinned to that merge and
 [acceptance evidence](2026-09-03-material-signals-smoke.md). Compositor-first
 slice: signal model, IPC, envelope solver, configuration, and the first glass responses. External sources
 (familiar, shell integration, others) are follow-up tasks against the IPC

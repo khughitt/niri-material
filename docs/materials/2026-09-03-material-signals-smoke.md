@@ -1,7 +1,9 @@
 # Material signals acceptance evidence
 
-**Status:** passed 2026-09-04 on `feat/material-signals`. The accepted
-implementation is `663202b1`; `aaae42a4` pins the Arch package to that source.
+**Status:** passed 2026-09-04 on `feat/material-signals`. The accepted feature
+implementation is `663202b1`; `aaae42a4` pins the verified feature package to
+that source. The tested integration landed on `materials-26.04` at `f9656128`,
+whose Arch recipe pins the merged source.
 
 This run covers the unit and fixture suites, nested IPC behavior, redraw
 cadence and suppression, GPU cost, package contents, and a ten-minute physical
