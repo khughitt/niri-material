@@ -31,13 +31,16 @@ $ cat impl.version
 niri 26.04 (ff2b922d-modified)
 ```
 
-`just test` (the full suite) on the implementation commit: exit 0, all
-crates' unit and doc tests passed (`niri_ipc`: 4 passed; doc-tests for
-`niri`, `niri_config`, `niri_ipc`: 0/0/1 passed, 0 failed across all).
+`just check` and `just test`, run by Task 5 on commit `acf3fe73` (HEAD, the
+finished piece including this task's own smoke test):
 
-`just check` (format, clippy, tooling tests, tasks check) on the
-implementation commit with this task's changes applied: exit 0 (see the
-Task 4 report for the run transcript).
+- `just check` (format, clippy, tooling tests, `tasks check`): exit 0.
+- `just test` (full workspace suite, `cargo test`): exit 0. Final summary
+  line: `test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0
+  filtered out; finished in 0.06s` (niri_ipc doc-tests, the last binary run).
+  Every binary in the run passed: `niri` lib 303, `niri` bin 0, `niri_config`
+  lib 68, `niri_config` `wiki-parses` 1, `niri_ipc` lib 4, doc-tests `niri` 0,
+  `niri_config` 0, `niri_ipc` 1 — 377 passed, 0 failed overall.
 
 ## Procedure
 

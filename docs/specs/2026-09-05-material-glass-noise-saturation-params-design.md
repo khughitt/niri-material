@@ -1,9 +1,11 @@
 # Glass noise and saturation parameters: design
 
-**Status:** accepted 2026-09-05; not yet implemented. Native piece
-`material-1293e8`; hub goal `prism-63dd45` in Prism, whose spec
-`docs/specs/2026-09-05-glass-noise-saturation-focus-state-design.md` covers
-the panel and sink side.
+**Status:** implemented on `glass-noise-saturation` (native piece
+`material-1293e8`), `just check` and `just test` passing, nested GLES evidence
+in
+[`2026-09-05-material-glass-noise-saturation-params-evidence.md`](../materials/2026-09-05-material-glass-noise-saturation-params-evidence.md).
+Hub goal `prism-63dd45`; the Prism piece `prism-d0d4cb` follows once this
+build is installed.
 
 **Task:** `material-1293e8`
 
