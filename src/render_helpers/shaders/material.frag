@@ -57,6 +57,11 @@ uniform vec2 mat_sig_focus;
 uniform vec3 mat_sig_ring_color;
 uniform float mat_light_ior;
 
+// Slab geometry published by slabSurface for the focus filament.
+vec2 g_center;
+vec2 g_half;
+vec4 g_outer_r;
+
 bool inRect(vec2 v, vec4 rect) {
     return all(greaterThanEqual(v, rect.xy))
         && all(lessThan(v, rect.xy + rect.zw));
@@ -261,7 +266,8 @@ vec2 sdRoundedBoxGrad(vec2 p, vec2 b, vec4 radii) {
 // chamfer's inner edge is the front face and trails the jelly shear
 // (later slice-2 work) — the quad-form equivalent of the legacy anchored
 // vertex shear. Chamfer normals slope at 45 degrees like the mesh ring.
-void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist) {
+void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist,
+                 out float innerDist, out float chamferOut) {
     vec2 slab_min = mat_slab_rect.xy * mat_area_size;
     vec2 slab_size = mat_slab_rect.zw * mat_area_size;
     vec2 half_ext = slab_size * 0.5;
@@ -297,12 +303,18 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     vec4 inner_r = fitRadii(mat_corner_radius, radius_half);
     vec4 outer_r = inner_r + vec4(chamfer);
 
+    g_center = center;
+    g_half = half_ext;
+    g_outer_r = outer_r;
+    chamferOut = chamfer;
+
     float d = sdRoundedBox(p - center, half_ext, outer_r);
     outerDist = d;
     float aa = 1.0 / niri_scale;
     coverage = 1.0 - smoothstep(-aa, 0.0, d);
 
     float di = sdRoundedBox(p - inner_center, inner_half, inner_r);
+    innerDist = di;
 
     if (chamfer > 0.0 && di >= 0.0) {
         vec2 g = sdRoundedBoxGrad(p - inner_center, inner_half, inner_r);
@@ -322,6 +334,19 @@ vec3 tap(vec2 v, vec3 n, float ior, float thickness) {
     vec3 refr = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
     vec2 vv = v + (refr.xy * thickness) / mat_area_size;
     return srgbToLinear(sampleBackground(vv));
+}
+
+// Focus filament (design: Rendering). The ray through p refracts at the
+// perturbed normal through the light-path index and lands `depth` px into
+// the slab; the band is a Gaussian of that landing point's distance from the
+// outer edge around `inset`, plus a soft halo bleeding into the glass.
+float filamentBand(vec2 p, vec3 n, float ior, float depth, float inset, float width) {
+    vec3 refr = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
+    vec2 q = p + refr.xy * depth;
+    float d = -sdRoundedBox(q - g_center, g_half, g_outer_r);
+    float core = (d - inset) / width;
+    float halo = (d - inset - 2.0) / 9.0;
+    return exp(-2.0 * core * core) + 0.3 * exp(-2.0 * halo * halo);
 }
 
 void main() {
@@ -344,7 +369,9 @@ void main() {
     float coverage;
     vec3 surfaceNormal;
     float slabDist;
-    slabSurface(p, coverage, surfaceNormal, slabDist);
+    float innerDist;
+    float slabChamfer;
+    slabSurface(p, coverage, surfaceNormal, slabDist, innerDist, slabChamfer);
 
     vec4 glassed = vec4(0.0);
     if (coverage > 0.0) {
@@ -425,19 +452,49 @@ void main() {
                              normalize(mat_sig_light.xy)), 0.0);
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
         if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0)
-            specular = mix(specular, specular * mat_sig_accent.rgb * 2.0, mat_sig_light.z);
+            specular = mix(specular, specular * mat_sig_accent.rgb * 2.0,
+                           mat_sig_light.z * mat_sig_accent.w);
 
         vec3 emissive = vec3(0.0);
-        if (mat_sig_response.x == 1 && mat_sig_accent.w > 0.0) {
-            float inset = mat_sig_ring.x;
-            float width = mat_sig_ring.y;
-            float depth = -slabDist;             // distance inward from the slab edge, logical px
-            float band = smoothstep(inset - 0.5, inset + 0.5, depth)
-                       * (1.0 - smoothstep(inset + width - 0.5, inset + width + 0.5, depth));
-            float glow = 0.15 + 0.35 * mat_sig_level;
-            if (mat_sig_response.y == 2)
-                glow *= 1.0 + mat_sig_breath * mat_sig_level;
-            emissive += mat_sig_accent.rgb * glow * band;
+        bool showAccent = mat_sig_response.x == 1 && mat_sig_accent.w > 0.0;
+        bool showFocus = mat_sig_response.z == 1 && mat_sig_focus.x > 0.0;
+        if ((showAccent || showFocus) && slabChamfer > 0.0) {
+            // Mask at the displayed fragment, never at the refracted point:
+            // exactly 0 on the face and everywhere di <= 0, 1 one px into
+            // the bevel, 0 everywhere when the rendered chamfer is 0.
+            float mask = smoothstep(0.0, 1.0, innerDist);
+            if (mask > 0.0) {
+                float inset = mat_sig_ring.x;
+                float width = mat_sig_ring.y;
+                float depth = mat_thickness * 0.6;
+                float ior = 1.0 + (mat_ior - 1.0) * mat_light_ior;
+                float ca = mat_chromatic_aberration * 0.1;
+                vec3 band = vec3(
+                    filamentBand(p, n, ior, depth, inset, width),
+                    filamentBand(p, n, ior * (1.0 + ca), depth, inset, width),
+                    filamentBand(p, n, ior * (1.0 + 2.0 * ca), depth, inset, width));
+                float presence = mat_sig_accent.w;
+                float pulse = mat_sig_response.y == 2 ? mat_sig_breath : 0.0;
+                float accentGlow = showAccent
+                    ? (0.15 + 0.35 * mat_sig_level) * (1.0 + pulse * mat_sig_level)
+                    : 0.0;
+                float focusGlow = 0.0;
+                if (showFocus) {
+                    vec3 refr = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
+                    vec2 q = p + refr.xy * depth - g_center;
+                    float ang = atan(q.y, q.x);
+                    float drift = mat_sig_focus.y;
+                    // Mirrors signal.rs `travel`: integer multiples of the
+                    // drift keep the 2π wrap continuous.
+                    float travel = sin(ang * 2.0 + drift) * sin(ang * 3.0 - 2.0 * drift);
+                    focusGlow = mat_sig_focus.x * 0.7 * (0.55 + 0.45 * travel);
+                }
+                float glow = (accentGlow * presence + focusGlow) * (1.0 + 2.0 * mat_jelly_activity);
+                vec3 color = showAccent
+                    ? mix(mat_sig_ring_color, mat_sig_accent.rgb, presence)
+                    : mat_sig_ring_color;
+                emissive += color * glow * band * mask * pow(att, vec3(0.2));
+            }
         }
 
         float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
