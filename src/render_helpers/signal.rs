@@ -13,6 +13,8 @@ pub const BREATHE_PERIOD: Duration = Duration::from_millis(4000);
 pub const PULSE_PERIOD: Duration = Duration::from_millis(1200);
 pub const FLASH_PERIOD: Duration = Duration::from_millis(500);
 pub const FLASH_EDGE: Duration = Duration::from_millis(50);
+/// Focus filament drift: one lap of the travelling brightness.
+pub const DRIFT_PERIOD: Duration = Duration::from_millis(10_000);
 const BUCKETS_PER_PERIOD: u32 = 32;
 const FLASH_EDGE_SAMPLES: u32 = 4;
 const ATTACK: Duration = Duration::from_millis(80);
@@ -90,10 +92,40 @@ pub struct ImpulseFrame {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct SignalFrame {
+    /// Straight (unpremultiplied) accent color; `presence` says how much of it shows.
     pub accent: Option<[f32; 3]>,
     pub level: f32,
     pub breath: f32,
     pub impulses: [ImpulseFrame; 4],
+    /// Crossfaded accent presence, 0 to 1.
+    pub presence: f32,
+    /// Crossfaded focus, 0 to 1.
+    pub focus: f32,
+    /// Drift phase in radians, bucketed; 0 when unfocused or pinned.
+    pub drift: f32,
+}
+
+/// The tile's crossfaded values and effective drift rate for one frame.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FrameInputs {
+    pub level: f32,
+    pub accent: Option<[f32; 3]>,
+    pub presence: f32,
+    pub focus: f32,
+    /// Effective drift bucket rate after policy; 0 pins.
+    pub drift_hz: f64,
+}
+
+impl FrameInputs {
+    pub fn quiet() -> Self {
+        Self {
+            level: 0.,
+            accent: None,
+            presence: 0.,
+            focus: 0.,
+            drift_hz: 0.,
+        }
+    }
 }
 
 pub fn level_value(level: SignalLevel) -> f32 {
@@ -196,6 +228,67 @@ pub fn next_boundary(motion: SignalMotion, now: Duration) -> Option<Duration> {
     Some(Duration::from_nanos((n * bucket.as_nanos()) as u64))
 }
 
+/// Effective drift rate: the response's rate under the motion policy and
+/// the global animation switch (design: Inputs and motion).
+pub fn drift_rate(hz: f64, policy: SignalMotionPolicy, animations_off: bool) -> f64 {
+    if animations_off {
+        return 0.;
+    }
+    match policy {
+        SignalMotionPolicy::Off => 0.,
+        SignalMotionPolicy::Reduced => hz / 2.,
+        SignalMotionPolicy::Full => hz,
+    }
+}
+
+/// Buckets per drift period for a rate: the rate quantized to tenths of a
+/// hertz, at least one bucket. Config guarantees `hz == 0 || hz >= 1`
+/// before the reduced-motion halving, so this is at least 5.
+fn drift_buckets(hz: f64) -> Option<u128> {
+    if hz <= 0. {
+        return None;
+    }
+    Some(((hz * DRIFT_PERIOD.as_secs_f64()).round() as u128).max(1))
+}
+
+/// Drift phase in radians, constant within each bucket. Buckets divide the
+/// 10 s period evenly and are anchored to period starts on the absolute
+/// clock, in integer nanoseconds, so no rounding accumulates over uptime
+/// and every drifting window on an output shares the same boundaries. The
+/// seed offsets the phase, not the boundary. Pinned to 0 when the rate is
+/// 0 so a static filament fingerprints to a constant.
+pub fn drift(hz: f64, now: Duration, seed: f32) -> f32 {
+    let Some(n) = drift_buckets(hz) else {
+        return 0.;
+    };
+    let period = DRIFT_PERIOD.as_nanos();
+    let k = (now.as_nanos() % period) * n / period;
+    let phase = (k as f32 / n as f32 + seed).fract();
+    (phase * TAU).rem_euclid(TAU)
+}
+
+/// Next absolute-clock instant at which `drift` changes: the first
+/// nanosecond of the next bucket, so it is strictly in the future and
+/// `drift` evaluated there is already the next bucket's value (ceiling
+/// division; a floor would land one nanosecond early and re-arm the same
+/// deadline). The `as u64` cast is exact below 584 years of uptime.
+pub fn drift_next_boundary(hz: f64, now: Duration) -> Option<Duration> {
+    let n = drift_buckets(hz)?;
+    let period = DRIFT_PERIOD.as_nanos();
+    let start = now.as_nanos() - now.as_nanos() % period;
+    let k = (now.as_nanos() - start) * n / period + 1;
+    Some(Duration::from_nanos(
+        (start + (period * k).div_ceil(n)) as u64,
+    ))
+}
+
+/// The filament's travelling brightness in `[-1, 1]`, mirrored exactly by
+/// the shader: two sines of the perimeter angle whose phases are integer
+/// multiples of the drift, so the `2π` wrap is continuous.
+pub fn travel(angle: f32, drift: f32) -> f32 {
+    (2. * angle + drift).sin() * (3. * angle - 2. * drift).sin()
+}
+
 /// Whether a tile's slab band is in view. The band is the tile rect inflated
 /// by `bevel` on every side: a superset of the exact slab, so a visible
 /// band never freezes when the tile rect alone leaves view.
@@ -212,23 +305,32 @@ pub fn slab_in_view(
     slab.overlaps(view)
 }
 
-/// Next redraw deadline for a tile: only for sustained motion that is in view.
-pub fn tick_deadline(eff: &EffectiveSignal, in_view: bool, now: Duration) -> Option<Duration> {
-    if !eff.is_sustained() || !in_view {
+/// Next redraw deadline for a tile: sustained signal motion and focus drift,
+/// both only while the slab band is in view.
+pub fn tick_deadline(
+    eff: &EffectiveSignal,
+    in_view: bool,
+    now: Duration,
+    drift_hz: f64,
+) -> Option<Duration> {
+    if !in_view {
         return None;
     }
-    next_boundary(eff.motion, now)
+    let signal = if eff.is_sustained() {
+        next_boundary(eff.motion, now)
+    } else {
+        None
+    };
+    let drift = drift_next_boundary(drift_hz, now);
+    match (signal, drift) {
+        (Some(a), Some(b)) => Some(a.min(b)),
+        (a, b) => a.or(b),
+    }
 }
 
-/// Stage 2: pure solve (design §3). `level` and `accent` are the
-/// crossfaded values the tile already computed.
-pub fn solve(
-    e: &EffectiveSignal,
-    now: Duration,
-    seed: f32,
-    level: f32,
-    accent: Option<[f32; 3]>,
-) -> SignalFrame {
+/// Stage 2: pure solve (design §3). `inputs` are the crossfaded values the
+/// tile already computed plus the effective drift rate.
+pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs) -> SignalFrame {
     let mut impulses = [ImpulseFrame::default(); 4];
     let live = e.impulses.iter().filter(|i| now < i.at + IMPULSE_LIFETIME);
     for (slot, i) in impulses.iter_mut().zip(live) {
@@ -240,11 +342,19 @@ pub fn solve(
             accent: i.accent.map(color_linear),
         };
     }
+    let drift = if inputs.focus > 0. {
+        drift(inputs.drift_hz, now, seed)
+    } else {
+        0.
+    };
     SignalFrame {
-        accent,
-        level,
+        accent: inputs.accent,
+        level: inputs.level,
         breath: breath(e.motion, now, seed),
         impulses,
+        presence: inputs.presence,
+        focus: inputs.focus,
+        drift,
     }
 }
 
@@ -255,6 +365,9 @@ pub struct SignalFingerprint {
     accent_q: [i32; 3],
     breath_q: i32,
     impulses_q: [(u8, i32, i32, [i32; 3]); 4],
+    presence_q: i32,
+    focus_q: i32,
+    drift_q: i32,
 }
 
 impl Default for SignalFingerprint {
@@ -265,6 +378,9 @@ impl Default for SignalFingerprint {
             accent_q: [-1; 3],
             breath_q: 0,
             impulses_q: [(0, 0, 0, [-1; 3]); 4],
+            presence_q: 0,
+            focus_q: 0,
+            drift_q: 0,
         }
     }
 }
@@ -292,6 +408,9 @@ impl SignalFingerprint {
             accent_q: color(f.accent),
             breath_q: (f.breath * 32.).round() as i32,
             impulses_q,
+            presence_q: q256(f.presence),
+            focus_q: q256(f.focus),
+            drift_q: (f.drift * 1024.).round() as i32,
         }
     }
 }
@@ -485,13 +604,13 @@ mod tests {
             motion: M::Pulse,
             impulses: vec![],
         };
-        assert!(tick_deadline(&sustained, true, ms(100)).is_some());
-        assert!(tick_deadline(&sustained, false, ms(100)).is_none());
+        assert!(tick_deadline(&sustained, true, ms(100), 0.).is_some());
+        assert!(tick_deadline(&sustained, false, ms(100), 0.).is_none());
         let quiet = EffectiveSignal {
             motion: M::Static,
             ..sustained
         };
-        assert!(tick_deadline(&quiet, true, ms(100)).is_none());
+        assert!(tick_deadline(&quiet, true, ms(100), 0.).is_none());
     }
 
     #[test]
@@ -516,7 +635,7 @@ mod tests {
             motion: M::Static,
             impulses: vec![],
         };
-        let f = solve(&e, ms(5000), 0.1, 0., None);
+        let f = solve(&e, ms(5000), 0.1, FrameInputs::quiet());
         assert_eq!(
             SignalFingerprint::quantize(&f),
             SignalFingerprint::default()
@@ -529,13 +648,13 @@ mod tests {
             at: ms(0),
         });
         // Two moments on the flat tail where the envelope bucket is the same but progress moved.
-        let a = SignalFingerprint::quantize(&solve(&e2, ms(1400), 0.1, 0., None));
-        let b = SignalFingerprint::quantize(&solve(&e2, ms(1420), 0.1, 0., None));
+        let a = SignalFingerprint::quantize(&solve(&e2, ms(1400), 0.1, FrameInputs::quiet()));
+        let b = SignalFingerprint::quantize(&solve(&e2, ms(1420), 0.1, FrameInputs::quiet()));
         assert_ne!(a, b);
 
         let mut e3 = e2.clone();
         e3.impulses[0].selector = 2;
-        let c = SignalFingerprint::quantize(&solve(&e3, ms(1400), 0.1, 0., None));
+        let c = SignalFingerprint::quantize(&solve(&e3, ms(1400), 0.1, FrameInputs::quiet()));
         assert_ne!(a, c);
     }
 
@@ -584,7 +703,17 @@ mod tests {
                 })
                 .collect(),
         };
-        let f = solve(&e, ms(80), 0., 0.75, Some([0.1, 0.2, 0.3]));
+        let f = solve(
+            &e,
+            ms(80),
+            0.,
+            FrameInputs {
+                level: 0.75,
+                accent: Some([0.1, 0.2, 0.3]),
+                presence: 1.,
+                ..FrameInputs::quiet()
+            },
+        );
         assert_eq!(f.level, 0.75);
         assert_eq!(f.accent, Some([0.1, 0.2, 0.3]));
         assert_eq!(f.impulses.map(|i| i.selector), [1, 2, 3, 4]);
@@ -608,6 +737,9 @@ mod tests {
                 ImpulseFrame::default(),
                 ImpulseFrame::default(),
             ],
+            presence: 1. / 512.,
+            focus: 1. / 256.,
+            drift: 1. / 2048.,
         };
         assert_eq!(
             SignalFingerprint::quantize(&frame),
@@ -621,7 +753,206 @@ mod tests {
                     (0, 0, 0, [-1; 3]),
                     (0, 0, 0, [-1; 3]),
                 ],
+                presence_q: 1,
+                focus_q: 1,
+                drift_q: 1,
             }
         );
+    }
+
+    #[test]
+    fn drift_rate_follows_policy_and_animations() {
+        assert_eq!(drift_rate(15., P::Full, false), 15.);
+        assert_eq!(drift_rate(15., P::Reduced, false), 7.5);
+        assert_eq!(drift_rate(15., P::Off, false), 0.);
+        assert_eq!(drift_rate(15., P::Full, true), 0.);
+        assert_eq!(drift_rate(0., P::Full, false), 0.);
+    }
+
+    #[test]
+    fn drift_is_pinned_at_rate_zero_and_bucketed_otherwise() {
+        assert_eq!(drift(0., ms(1234), 0.3), 0.);
+        assert_eq!(drift(0., ms(9999), 0.7), 0.);
+        // 15 Hz buckets are 66.666 ms: two instants in one bucket agree, the next bucket differs.
+        let a = drift(15., ms(100), 0.3);
+        let b = drift(15., ms(130), 0.3);
+        let c = drift(15., ms(140), 0.3);
+        assert_eq!(a, b);
+        assert_ne!(b, c);
+        for t in (0..10_000).step_by(250) {
+            let d = drift(15., ms(t), 0.3);
+            assert!((0. ..TAU).contains(&d), "{t}: {d}");
+        }
+        // The seed offsets the phase, not the bucket.
+        assert_ne!(drift(15., ms(100), 0.), drift(15., ms(100), 0.5));
+    }
+
+    #[test]
+    fn drift_boundaries_are_clock_aligned_and_shared() {
+        assert_eq!(drift_next_boundary(0., ms(100)), None);
+        assert_eq!(drift_next_boundary(20., ms(0)), Some(ms(50)));
+        assert_eq!(drift_next_boundary(20., ms(50)), Some(ms(100)));
+        assert_eq!(drift_next_boundary(20., ms(51)), Some(ms(100)));
+        // 15 Hz: 150 buckets per 10 s period, 66.67 ms each, anchored to the period start.
+        assert_eq!(drift_next_boundary(15., ms(0)).unwrap().as_millis(), 66);
+        assert_eq!(drift_next_boundary(15., ms(9_990)), Some(ms(10_000)));
+        // Nine days is a whole number of periods, so buckets and boundaries repeat exactly.
+        let days = Duration::from_secs(9 * 86_400);
+        for t in [ms(10), ms(66), ms(67), ms(4_321), ms(9_999)] {
+            assert_eq!(
+                drift_next_boundary(15., days + t).map(|n| n - days),
+                drift_next_boundary(15., t),
+                "{t:?}"
+            );
+            assert_eq!(drift(15., days + t, 0.3), drift(15., t, 0.3), "{t:?}");
+        }
+        // 7.5 Hz (reduced from 15) is 75 buckets; still exact.
+        assert_eq!(drift_next_boundary(7.5, ms(0)).unwrap().as_millis(), 133);
+    }
+
+    #[test]
+    fn drift_boundary_is_strictly_future_and_advances_the_bucket() {
+        for hz in [15., 7.5, 20., 1., 30.] {
+            let mut now = Duration::ZERO;
+            for _ in 0..400 {
+                let b = drift_next_boundary(hz, now).unwrap();
+                assert!(b > now, "{hz} Hz at {now:?}: {b:?}");
+                assert_ne!(drift(hz, b, 0.3), drift(hz, now, 0.3), "{hz} Hz at {now:?}");
+                // One nanosecond earlier is still the old bucket.
+                assert_eq!(
+                    drift(hz, b - Duration::from_nanos(1), 0.3),
+                    drift(hz, now, 0.3),
+                    "{hz} Hz at {now:?}"
+                );
+                now = b;
+            }
+        }
+        // The exact 15 Hz value: first nanosecond of bucket 1.
+        assert_eq!(
+            drift_next_boundary(15., ms(0)),
+            Some(Duration::from_nanos(66_666_667))
+        );
+    }
+
+    #[test]
+    fn travel_is_continuous_across_the_phase_wrap() {
+        for k in 0..16 {
+            let a = k as f32 / 16. * TAU;
+            let before = travel(a, TAU - 1e-4);
+            let after = travel(a, 0.);
+            assert!(
+                (before - after).abs() < 2e-3,
+                "angle {a}: {before} vs {after}"
+            );
+            assert!((travel(a, 1.) - travel(a, 1. + TAU)).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn solve_carries_focus_presence_and_drift() {
+        let e = EffectiveSignal {
+            accent: None,
+            level: L::Quiet,
+            motion: M::Static,
+            impulses: vec![],
+        };
+        let quiet = solve(&e, ms(5000), 0.1, FrameInputs::quiet());
+        assert_eq!((quiet.presence, quiet.focus, quiet.drift), (0., 0., 0.));
+        assert_eq!(
+            SignalFingerprint::quantize(&quiet),
+            SignalFingerprint::default()
+        );
+
+        let focused = solve(
+            &e,
+            ms(5000),
+            0.1,
+            FrameInputs {
+                focus: 1.,
+                drift_hz: 15.,
+                ..FrameInputs::quiet()
+            },
+        );
+        assert_eq!(focused.focus, 1.);
+        assert_eq!(focused.drift, drift(15., ms(5000), 0.1));
+
+        // Unfocused windows never carry drift, whatever the rate.
+        let unfocused = solve(
+            &e,
+            ms(5000),
+            0.1,
+            FrameInputs {
+                drift_hz: 15.,
+                ..FrameInputs::quiet()
+            },
+        );
+        assert_eq!(unfocused.drift, 0.);
+
+        let half = solve(
+            &e,
+            ms(5000),
+            0.1,
+            FrameInputs {
+                accent: Some([1., 0.5, 0.]),
+                presence: 0.5,
+                ..FrameInputs::quiet()
+            },
+        );
+        assert_eq!(
+            half.accent,
+            Some([1., 0.5, 0.]),
+            "accent is carried straight"
+        );
+        assert_eq!(half.presence, 0.5);
+    }
+
+    #[test]
+    fn fingerprint_changes_once_per_drift_bucket_and_never_when_pinned() {
+        let e = EffectiveSignal {
+            accent: None,
+            level: L::Quiet,
+            motion: M::Static,
+            impulses: vec![],
+        };
+        let at = |t: u64, hz: f64| {
+            SignalFingerprint::quantize(&solve(
+                &e,
+                ms(t),
+                0.1,
+                FrameInputs {
+                    focus: 1.,
+                    drift_hz: hz,
+                    ..FrameInputs::quiet()
+                },
+            ))
+        };
+        assert_eq!(at(100, 20.), at(149, 20.));
+        assert_ne!(at(149, 20.), at(150, 20.));
+        assert_eq!(at(100, 0.), at(7000, 0.));
+        assert_ne!(
+            at(100, 0.),
+            SignalFingerprint::default(),
+            "focus itself is fingerprinted"
+        );
+    }
+
+    #[test]
+    fn tick_deadline_includes_drift_when_in_view() {
+        let quiet = EffectiveSignal {
+            accent: None,
+            level: L::Quiet,
+            motion: M::Static,
+            impulses: vec![],
+        };
+        assert_eq!(tick_deadline(&quiet, true, ms(100), 0.), None);
+        assert_eq!(tick_deadline(&quiet, true, ms(100), 20.), Some(ms(150)));
+        assert_eq!(tick_deadline(&quiet, false, ms(100), 20.), None);
+        let breathing = EffectiveSignal {
+            motion: M::Breathe,
+            ..quiet
+        };
+        // Breathe boundary at 125 ms beats the 20 Hz drift boundary at 150 ms.
+        assert_eq!(tick_deadline(&breathing, true, ms(100), 20.), Some(ms(125)));
+        assert_eq!(tick_deadline(&breathing, true, ms(130), 20.), Some(ms(150)));
     }
 }

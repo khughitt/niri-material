@@ -36,7 +36,7 @@ use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
-use crate::render_helpers::signal::{solve, EffectiveSignal, SignalFingerprint};
+use crate::render_helpers::signal::{solve, EffectiveSignal, FrameInputs, SignalFingerprint};
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::xray::{Xray, XrayPos};
@@ -513,7 +513,17 @@ impl<W: LayoutElement> Tile<W> {
         let signal = self.signal_frame_cache.borrow().clone();
         let (signal_fingerprint, glass_signal, signal_uniforms) = match &signal {
             Some((effective, level, accent)) => {
-                let frame = solve(effective, now, material.jelly_seed()[0], *level, *accent);
+                let frame = solve(
+                    effective,
+                    now,
+                    material.jelly_seed()[0],
+                    FrameInputs {
+                        level: *level,
+                        accent: *accent,
+                        presence: if accent.is_some() { 1. } else { 0. },
+                        ..FrameInputs::quiet()
+                    },
+                );
                 let glass_signal = glass_signal_inputs(&frame, glass);
                 let uniforms = SignalUniforms::from_frame(&frame, &glass_signal, &response);
                 (SignalFingerprint::quantize(&frame), glass_signal, uniforms)
@@ -2003,7 +2013,7 @@ impl<W: LayoutElement> Tile<W> {
         let (eff, _, _) = cache.as_ref()?;
         let bevel = self.material.as_ref()?.material().glass.bevel;
         let in_view = slab_in_view(location, self.tile_size(), bevel, view);
-        tick_deadline(eff, in_view, now)
+        tick_deadline(eff, in_view, now, 0.)
     }
 
     pub fn store_unmap_snapshot_if_empty(

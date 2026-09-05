@@ -1530,6 +1530,9 @@ mod tests {
             level: 0.,
             breath: 0.,
             impulses: Default::default(),
+            presence: 0.,
+            focus: 0.,
+            drift: 0.,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Ripple as u8,
@@ -1584,6 +1587,9 @@ mod tests {
             level: 1.,
             breath: 1.,
             impulses: Default::default(),
+            presence: 1.,
+            focus: 0.,
+            drift: 0.,
         };
         let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
         let mut r = ResolvedResponse::default();
@@ -1609,6 +1615,9 @@ mod tests {
             level: 0.,
             breath: 0.,
             impulses: Default::default(),
+            presence: 0.,
+            focus: 0.,
+            drift: 0.,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Sweep as u8,
