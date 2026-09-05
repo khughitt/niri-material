@@ -189,8 +189,9 @@ material window that never configured a `response` block now shows a
 drifting ring of light in its bevel whenever it is focused. The signal
 accent ring changed shape at the same time: it was a box band with +/-0.5 px
 soft edges and is now a Gaussian core with a halo, at new defaults of
-`ring-inset 5` and `ring-width 2.6` (previously 6 and 2). To go back to an unlit focused
-window, set `focus "none"` in the material's `default` response; the
+`ring-inset 5` and `ring-width 2.6` (previously 6 and 2). To go back to an
+unlit focused window, set `focus "none"` in the material's `default`
+response; the
 filament and the accent ring are otherwise the same band, so `accent "none"`
 turns off the signal tint alone. If the upgrade leaves two rings on screen,
 that is the layout's gradient ring underneath — turn it off with

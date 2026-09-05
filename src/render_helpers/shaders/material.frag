@@ -346,9 +346,9 @@ vec2 lightShift(vec3 n, float ior, float depth) {
 // The band at a landing point `q`: a Gaussian of its distance from the outer
 // edge around `inset`, plus a soft halo bleeding into the glass. The caller
 // caps the shared part of the shift at half the inset before landing here —
-// dense glass bends the light path further than the whole bevel is wide
-// (default glass, light-ior 6: 8.3 px), which would carry the core out past
-// the silhouette and leave nothing drawn. The per-channel aberration offsets
+// dense glass bends the light path further than the inset (default glass,
+// light-ior 6: about 6.9 px against a 5 px inset), which would carry the
+// core out past the silhouette and leave nothing drawn. The per-channel aberration offsets
 // ride on top of the capped shift, so the chromatic split survives the cap.
 float filamentBand(vec2 q, float inset, float width) {
     float d = -sdRoundedBox(q - g_center, g_half, g_outer_r);

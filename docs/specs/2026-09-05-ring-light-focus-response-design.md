@@ -125,7 +125,7 @@ filament. For the fragment at element position `p` with perturbed normal
 light_ior` and lands at 60% of the slab thickness. The shared part of that
 in-plane shift is capped at half `ring-inset`, so however dense the glass
 the core stays inside the bevel: at the stock default glass the uncapped
-shift is about 6.9 px, wider than the whole bevel, and would carry the core
+shift is about 6.9 px, more than the 5 px inset, and would carry the core
 out past the silhouette. The cap saturates on any glass much denser than
 the spike's calibration index of 1.02 — on the stock default glass and on
 Prism's `ior 1.24` it is already reached at `light-ior 1` — so there
@@ -258,8 +258,8 @@ the instruction to set `focus-ring { off }` for material windows.
   recorded in the smoke evidence) render each scene twice, once with the
   filament and once with `focus "none"; accent "none"`, so only the
   filament differs. Gated: at rest no face pixel changes (face absolute
-  error 0) and the whole-frame filament difference is bounded by the slab
-  rectangle; the accent fade measures a red share of 0.498 at half fade,
+  error 0). Measured from the same frames: the whole-frame filament
+  difference is bounded by the slab rectangle; the accent fade measures a red share of 0.498 at half fade,
   the straight mix; and the four `accent` and `focus` selector
   combinations are independent in both face error and filament color.
 - `resize-flex` — face confinement under a running jelly flex, and the
