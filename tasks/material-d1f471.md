@@ -1,12 +1,12 @@
 ---
 id: material-d1f471
 title: "Explore a lit, dynamic focus ring to replace the static gradient ring"
-status: todo
+status: done
 priority: 3
 size: l
 owner: explore/focus-ring-light
 created: 2026-09-05T01:10:50Z
-updated: 2026-09-05T17:14:09Z
+updated: 2026-09-05T20:40:04Z
 depends: []
 tags: [material, focus-ring]
 ---
@@ -26,3 +26,4 @@ Output: a ranked write-up with captures; the winner becomes a scoped child task 
 - 2026-09-05T10:16:06Z (explore/focus-ring-light): spike done: write-up docs/materials/2026-09-05-focus-ring-light-spike.md, harness docs/materials/scripts/focus-ring-light.sh, probe patch niri-experiments fixtures/focus-ring-light-probe.patch (results/slice3 8e31521, not pushed), captures $NIRI_MATERIAL_WORK_ROOT/focus-ring-light-fcdc5ed4. Ranking: ring of light > organic noise (a mode of the ring) > shadow (free complement) > canopy (attention response material, not focus) > motes > rays. Baseline static ring is invisible on the dark focus glass. All animating candidates cost 60 draws/s while focused-idle; HZ quantization of the fingerprint does not throttle under a per-frame animation flag, a timer is needed. Winner scoped as a child.
 - 2026-09-05T13:07:32Z (materials-26.04): niri-experiments probe patch commit rewritten to 536992b (trailer removed); results/slice3, not pushed
 - 2026-09-05T17:14:09Z (design/ring-light): winner shipped as material-26dd8a
+- 2026-09-05T20:40:04Z (materials-26.04): winner shipped as material-26dd8a
