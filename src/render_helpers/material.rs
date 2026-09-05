@@ -264,8 +264,12 @@ pub struct SignalUniforms {
     pub impulse_prog: [f32; 4],
     pub impulse_rgb: [[f32; 3]; 4],
     pub impulse_resp: [i32; 4],
-    pub response: [i32; 2],
+    pub response: [i32; 3],
     pub ring: [f32; 2],
+    /// Crossfaded focus and bucketed drift phase.
+    pub focus: [f32; 2],
+    /// Filament base color, linear RGB.
+    pub ring_color: [f32; 3],
 }
 
 impl SignalUniforms {
@@ -280,8 +284,14 @@ impl SignalUniforms {
             impulse_prog: [0.; 4],
             impulse_rgb: [[0.; 3]; 4],
             impulse_resp: [0; 4],
-            response: [response.accent as i32, response.attention as i32],
+            response: [
+                response.accent as i32,
+                response.attention as i32,
+                response.focus as i32,
+            ],
             ring: [response.ring_inset as f32, response.ring_width as f32],
+            focus: [0., 0.],
+            ring_color: crate::render_helpers::signal::color_linear(response.ring_color),
         }
     }
 
@@ -307,12 +317,16 @@ impl SignalUniforms {
             impulse_env[slot] = impulse.envelope;
             impulse_prog[slot] = impulse.progress;
             impulse_resp[slot] = i32::from(impulse.selector);
-            impulse_rgb[slot] = impulse.accent.or(frame.accent).unwrap_or([1.; 3]);
+            impulse_rgb[slot] = impulse
+                .accent
+                .or_else(|| frame.accent.map(|c| c.map(|v| v * frame.presence)))
+                .unwrap_or([1.; 3]);
         }
         Self {
-            accent: frame
-                .accent
-                .map_or([0.; 4], |color| [color[0], color[1], color[2], 1.]),
+            accent: {
+                let rgb = frame.accent.unwrap_or([0.; 3]);
+                [rgb[0], rgb[1], rgb[2], frame.presence]
+            },
             level: frame.level,
             breath: frame.breath,
             light,
@@ -320,8 +334,14 @@ impl SignalUniforms {
             impulse_prog,
             impulse_rgb,
             impulse_resp,
-            response: [response.accent as i32, response.attention as i32],
+            response: [
+                response.accent as i32,
+                response.attention as i32,
+                response.focus as i32,
+            ],
             ring: [response.ring_inset as f32, response.ring_width as f32],
+            focus: [frame.focus, frame.drift],
+            ring_color: crate::render_helpers::signal::color_linear(response.ring_color),
         }
     }
 }
@@ -851,9 +871,16 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             ),
             Uniform::new(
                 "mat_sig_response",
-                UniformValue::_2i(self.signal.response[0], self.signal.response[1]),
+                UniformValue::_3i(
+                    self.signal.response[0],
+                    self.signal.response[1],
+                    self.signal.response[2],
+                ),
             ),
             Uniform::new("mat_sig_ring", self.signal.ring),
+            Uniform::new("mat_sig_focus", self.signal.focus),
+            Uniform::new("mat_sig_ring_color", self.signal.ring_color),
+            Uniform::new("mat_light_ior", g.light_ior as f32),
         ]);
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
@@ -1734,5 +1761,104 @@ mod tests {
         let win_src = Rectangle::new(Point::new(0., 0.), Size::new(500., 500.));
 
         assert!(plain_window_subdraw(src, dst, [0.5, 0., 0.5, 1.], win_src, &[], &[],).is_none());
+    }
+
+    #[test]
+    fn signal_uniforms_carry_presence_focus_drift_and_selectors() {
+        use crate::render_helpers::signal::{color_linear, SignalFrame};
+        use niri_config::{FocusResponse, ResolvedResponse};
+
+        let mut r = ResolvedResponse::default();
+        let quiet = SignalUniforms::quiet(&r);
+        assert_eq!(quiet.focus, [0., 0.]);
+        assert_eq!(quiet.ring_color, color_linear(r.ring_color));
+        assert_eq!(quiet.response, [1, 1, 1], "ring, rim-orbit, ring-light");
+        assert_eq!(quiet.accent[3], 0.);
+
+        let frame = SignalFrame {
+            accent: Some([1., 0.5, 0.]),
+            level: 0.,
+            breath: 0.,
+            impulses: Default::default(),
+            presence: 0.25,
+            focus: 0.75,
+            drift: 1.5,
+        };
+        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let u = SignalUniforms::from_frame(&frame, &g, &r);
+        assert_eq!(
+            u.accent,
+            [1., 0.5, 0., 0.25],
+            "straight rgb, presence in alpha"
+        );
+        assert_eq!(u.focus, [0.75, 1.5]);
+
+        r.focus = FocusResponse::None;
+        assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).response[2], 0);
+
+        // All four accent/focus selector combinations reach the shader independently.
+        use niri_config::AccentResponse;
+        for (accent, focus, want) in [
+            (AccentResponse::Ring, FocusResponse::RingLight, [1, 1]),
+            (AccentResponse::Ring, FocusResponse::None, [1, 0]),
+            (AccentResponse::None, FocusResponse::RingLight, [0, 1]),
+            (AccentResponse::None, FocusResponse::None, [0, 0]),
+        ] {
+            r.accent = accent;
+            r.focus = focus;
+            let u = SignalUniforms::from_frame(&frame, &g, &r);
+            assert_eq!([u.response[0], u.response[2]], want, "{accent:?} {focus:?}");
+        }
+    }
+
+    #[test]
+    fn inherited_impulse_color_fades_with_presence() {
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
+        use niri_config::{ImpulseResponse as R, ResolvedResponse};
+
+        let r = ResolvedResponse::default();
+        let mut frame = SignalFrame {
+            accent: Some([1., 0.5, 0.]),
+            level: 0.,
+            breath: 0.,
+            impulses: Default::default(),
+            presence: 0.5,
+            focus: 0.,
+            drift: 0.,
+        };
+        frame.impulses[0] = ImpulseFrame {
+            selector: R::Sweep as u8,
+            envelope: 1.,
+            progress: 0.2,
+            accent: None,
+        };
+        frame.impulses[1] = ImpulseFrame {
+            selector: R::Sweep as u8,
+            envelope: 1.,
+            progress: 0.2,
+            accent: Some([0., 0., 1.]),
+        };
+        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let u = SignalUniforms::from_frame(&frame, &g, &r);
+        assert_eq!(
+            u.impulse_rgb[0],
+            [0.5, 0.25, 0.],
+            "inherited window accent scaled by presence"
+        );
+        assert_eq!(
+            u.impulse_rgb[1],
+            [0., 0., 1.],
+            "explicit impulse color untouched"
+        );
+
+        frame.accent = None;
+        frame.presence = 0.;
+        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let u = SignalUniforms::from_frame(&frame, &g, &r);
+        assert_eq!(
+            u.impulse_rgb[0],
+            [1., 1., 1.],
+            "no accent falls back to white"
+        );
     }
 }
