@@ -395,6 +395,10 @@ pub struct Glass {
     #[knuffel(child, unwrap(argument))]
     pub roughness: Option<FloatOrInt<0, 1>>,
     #[knuffel(child, unwrap(argument))]
+    pub noise: Option<FloatOrInt<0, 1>>,
+    #[knuffel(child, unwrap(argument))]
+    pub saturation: Option<FloatOrInt<0, 3>>,
+    #[knuffel(child, unwrap(argument))]
     pub backdrop_blur: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub jelly_flex: Option<Milli<0, 20>>,
@@ -448,6 +452,14 @@ pub struct ResolvedGlass {
     pub bevel: f64,
     pub offset_x: f64,
     pub offset_y: f64,
+    /// Post-optics noise amplitude. `None` means inherit: the global `blur`
+    /// block's value while backdrop blur is effective, neutral otherwise. A
+    /// written value applies regardless of either switch. The layout applies
+    /// the rule, since only it knows the global block.
+    pub noise: Option<f64>,
+    /// Post-optics saturation factor, with the same inheritance rule as
+    /// `noise`.
+    pub saturation: Option<f64>,
 }
 
 impl Default for ResolvedGlass {
@@ -469,6 +481,8 @@ impl Default for ResolvedGlass {
             bevel: 12.,
             offset_x: 6.,
             offset_y: 6.,
+            noise: None,
+            saturation: None,
         }
     }
 }
@@ -529,6 +543,8 @@ impl Material {
                 bevel: g.bevel.map_or(d.bevel, |x| x.0),
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
+                noise: g.noise.map(|x| x.0),
+                saturation: g.saturation.map(|x| x.0),
             },
             responses,
         }

@@ -352,6 +352,9 @@ Before native commit `7c702e58`, the operator's
 background effect, not the effect buffer. They now also compose after
 transmission in `material.frag`, giving the glass block one coherent control
 surface without restoring the redundant background-effect pass.
+Since 2026-09-05 a material may also write its own `noise` and `saturation`
+(`../specs/2026-09-05-material-glass-noise-saturation-params-design.md`);
+inheritance is the omitted-value behaviour.
 
 Those earlier observations were retested on current source commit `d9c912d1`
 and did not reproduce. With one pass, changing `blur.offset` from 1 to 8

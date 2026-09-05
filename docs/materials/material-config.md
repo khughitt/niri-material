@@ -44,6 +44,8 @@ lengths are logical pixels.
 | `distortion` `scale=` | float | 0.5 | 0–2 | — |
 | `anisotropic-blur` | float | 0 | 0–1 | — |
 | `roughness` | float | 0 | 0–1 | — |
+| `noise` | float | inherit | 0–1 | — |
+| `saturation` | float | inherit | 0–3 | — |
 | `backdrop-blur` | bool | false | true / false | — |
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
@@ -60,11 +62,15 @@ strength — the amount of blur comes from the global `blur` block's `passes` an
 `offset`, shared with every other blur consumer. Setting `blur { off }`
 disables it along with all other blur, regardless of this parameter.
 
-When `backdrop-blur` is effective, glass also inherits `noise` and
-`saturation` from the global `blur` block. The material applies saturation
-then screen-space noise after its glass optics. `blur { off }` or material
-opt-out makes both values neutral. Per-window `background-effect` overrides
-remain independent and do not alter the material.
+`noise` and `saturation` are applied after the glass optics: saturation
+first, then screen-space noise. A written value is a material optic and
+applies regardless of `backdrop-blur` and of `blur { off }`. An omitted
+value inherits the global `blur` block's `noise` or `saturation` while
+`backdrop-blur` is effective and is neutral otherwise (`noise 0`,
+`saturation 1`); each parameter decides on its own, so `blur { off }` and
+material opt-out neutralise only inherited values. Per-window
+`background-effect` overrides remain independent and do not alter the
+material.
 
 It is unrelated to `anisotropic-blur`, which smears the refraction itself along
 one axis and does not soften the backdrop.
