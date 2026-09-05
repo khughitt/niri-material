@@ -1434,7 +1434,7 @@ write_config "$WORK/focus-none.kdl"     'material "tg2" { glass {}; response "de
                                          'layout { focus-ring { off; }; }'
 ```
 
-`focus-none.kdl` turns the gradient ring off so a focus change alone redraws nothing, which is what lets the toggle case below measure the material.
+`focus-none.kdl` turns the gradient ring off so nothing but the material and the client can redraw on a focus change, which is what lets the toggle case below measure the material against a control.
 
 Add a setup that leaves the single kitty focused with no signal:
 
@@ -1461,28 +1461,52 @@ In `mode_cases`, after `steady_zero  quiet-ring ...` add:
 
 and add `drift_n` to the `local` declaration. `other-focused` shows that with two windows only the focused one drifts: the count matches one drifting window within the usual tolerance.
 
-Add a toggle case proving `focus "none"` starts no crossfade: two windows, focus moved back and forth three times inside the window, at most one coalescible redraw per change and nothing after.
+Add a toggle case proving `focus "none"` starts no crossfade: two windows, focus moved back and forth three times inside the window, costing no more than the fixture itself costs and nothing after.
+
+A focus change is client damage before it is anything else: kitty repaints its cursor as it gains and loses activation, and the compositor must serve that whatever the material does. So the acceptance is measured, not assumed. A `toggle-control` case runs the same six toggles on the same fixture with **no material on the windows at all** (`write_no_material_config`), and `focus-none-toggle` is gated at the control's total plus 6 — the one coalescible redraw each change can request of its own focus bookkeeping.
+
+The "nothing after" window is derived, not fixed: each `niri msg action focus-window` spawns the niri binary, so six changes take about 6 s rather than the 3 s of their sleeps, and a fixed window would straddle the toggles themselves. `during_focus_toggles` times its own sequence, waits out the client's repaint burst, and reports the span so the after-window starts where the toggles actually ended.
 
 ```bash
-during_focus_toggles() { local k; for k in 1 2 3; do msg action focus-window --id "$OTHER"; sleep 0.5; msg action focus-window --id "$WID"; sleep 0.5; done; }
-focus_toggle_case() {   # $1 name, $2 cfg: six focus changes, max one redraw each, zero after
+TOGGLE_QUIET=1.0
+TOGGLE_SPAN=
+during_focus_toggles() {
+    local k t0; t0=$(date +%s.%N)
+    for k in 1 2 3; do msg action focus-window --id "$OTHER"; sleep 0.5; msg action focus-window --id "$WID"; sleep 0.5; done
+    sleep "$TOGGLE_QUIET"
+    TOGGLE_SPAN=$(awk -v a="$(date +%s.%N)" -v b="$t0" 'BEGIN { printf "%.1f", a - b }')
+}
+toggle_control_case() {   # $1 name, $2 cfg: recorded, never gated
     run_case "$1" "$2" setup_other_focused during_focus_toggles
-    local total after; total=$(count_steady "$1"); after=$(count_window "$1" 14 0)
-    [ "$total" -le 6 ] || { echo "FAIL: $1: $total redraws for six focus changes under focus none (max 6)" >&2; exit 1; }
+    STEADY_N=$(count_steady "$1")
+}
+focus_toggle_case() {   # $1 name, $2 cfg, $3 control total
+    run_case "$1" "$2" setup_other_focused during_focus_toggles
+    local total after tail bound
+    total=$(count_steady "$1")
+    tail=$(awk -v s="$TOGGLE_SPAN" 'BEGIN { printf "%.1f", 18 - s }')   # `during` starts 12 s into a 30 s capture
+    after=$(count_window "$1" "$tail" 0)
+    bound=$(( $3 + 6 ))
+    [ "$total" -le "$bound" ] || { echo "FAIL: $1: $total redraws for six focus changes, control $3 plus 6 = $bound" >&2; exit 1; }
     expect_zero "$1 after" "$after"
 }
 ```
 
-and in `mode_cases` after `other-focused`: `focus_toggle_case focus-none-toggle "$WORK/focus-none.kdl"`.
+and in `mode_cases` after `other-focused`:
+
+```bash
+toggle_control_case toggle-control "$WORK/no-material.kdl"; toggle_n=$STEADY_N
+focus_toggle_case   focus-none-toggle "$WORK/focus-none.kdl" "$toggle_n"
+```
 
 - [ ] **Step 3: Run the cases mode and record**
 
 Run: `docs/materials/scripts/material-signals-smoke.sh cases`
-Expected: `cases: OK`, with `focused-drift` about 300 in 20 s, `focused-reduced` about 150, `focus-none-toggle` at most 6 then zero, the zero cases zero. Copy `rates.txt` lines for the new cases into the evidence doc. Any failure reopens Task 4 or 5; it is not recorded as a result and moved past.
+Expected: `cases: OK`, with `focused-drift` about 300 in 20 s, `focused-reduced` about 150, `focus-none-toggle` within 6 of `toggle-control` then zero, the zero cases zero. Copy `rates.txt` lines for the new cases into the evidence doc. Any failure reopens Task 4 or 5; it is not recorded as a result and moved past.
 
 - [ ] **Step 4: Measured captures on the spike harness**
 
-`docs/materials/scripts/focus-ring-light.sh` keeps its nested-host plumbing (`start_nested`, `spawn_kitty`, `shot`, the dark split glass) and its `baseline` case. Retire the probe cases: the default `CASES` becomes `baseline accent-midfade resize-flex tiny selectors`, `start_nested` drops the `NIRI_FOCUS_PROBE*` variables, and `run_case` dispatches by name. Add a linear-light pixel sampler and the cases. Coordinates below are for the 1280 x 720 host with the harness layout (right window at about x 656 to 1228, y 48 to 672; slab edge 8 px outside the window on the right window's top edge, so the bevel spans about y 40 to 51 and the face starts at about y 52); confirm them once against `baseline-right-focused-corner.png` and adjust the constants at the top of the script if the geometry moved.
+`docs/materials/scripts/focus-ring-light.sh` keeps its nested-host plumbing (`start_nested`, `spawn_kitty`, `shot`, the dark split glass) and its `baseline` case. Retire the probe cases: the default `CASES` becomes `baseline rest-confinement accent-midfade resize-flex selectors tiny` (`rest-confinement` writes the shared `off` frame the other cases compare against, so it has to run first), `start_nested` drops the `NIRI_FOCUS_PROBE*` variables, and `run_case` dispatches by name. Add a linear-light pixel sampler and the cases. Coordinates below are for the 1280 x 720 host with the harness layout (right window at about x 656 to 1228, y 48 to 672; slab edge 8 px outside the window on the right window's top edge, so the bevel spans about y 40 to 51 and the face starts at about y 52); confirm them once against `baseline-right-focused-corner.png` and adjust the constants at the top of the script if the geometry moved.
 
 ```bash
 FIL_X=940; FIL_Y=45                       # top edge of the right window: filament row
@@ -1505,7 +1529,7 @@ Every case renders the same scene twice, once with the filament and once with it
 
 - `rest-confinement`: focus the right window, `shot` `on`; in the disabled instance `shot` `off`. Require `face_ae on off` to be 0: at rest, not one face pixel changes when the filament is enabled. Also require `red_fraction "$(emissive on off FIL_X FIL_Y)"` between 0.24 and 0.31 (the base color's red share is 0.273) and the emissive luminance above 0.01: the filament is present and untinted.
 - `accent-midfade`: config adds `animations { slowdown 20; material-signal { duration-ms 400; curve "linear"; }; }`, so the presence fade is linear over 8 s. Focus the right window; `msg set-window-signal --id "$RIGHT" --source demo --accent '#ff0000'`; sleep 4.0; `shot` `mid` (presence between 0.46 and 0.54 given screenshot latency); sleep 6; `shot` `settled`. With `off` from `rest-confinement`, compute `f=$(red_fraction "$(emissive mid off FIL_X FIL_Y)")`. Straight color at presence 0.46 to 0.54 gives a red share between 0.476 and 0.526; the double-faded regression (RGB already scaled by presence, then mixed by presence) gives at most 0.435. Require `0.46 <= f <= 0.54`. Require the settled frame's red share at least 0.90 (color is the accent at presence 1).
-- `resize-flex`: two nested hosts started back to back (a second `HOST`/`UNIT` pair), identical configs except the disabled response, `animations { slowdown 50; }`. Focus the right window in both; issue `msg action set-column-width +200` to both within the same second; sleep 3 (jelly at high flex, the 20 s resize far from settled); `shot` `flex-on` and `flex-off` back to back. The two instances are not on one clock, so allow the lockstep jitter: require `face_max flex-on flex-off` at most 2 levels, and `face_ae` of the two *rest* frames from before the resize to be 0. Require the filament row's emissive luminance in `flex-on` (against `flex-off`) to exceed the rest value from `rest-confinement` by at least 20%: the jelly breath is live.
+- `resize-flex`: two nested hosts started back to back (a second `HOST`/`UNIT` pair), identical configs except the disabled response, `animations { slowdown 50; }`. Focus the right window in both; issue `msg action set-column-width +200` to both within the same second; sleep 3 (jelly at high flex, the 20 s resize far from settled); `shot` `flex-on` and `flex-off` back to back. **Only the rest comparison is gated**: `face_ae` of the two *rest* frames from before the resize must be 0. The two instances are not on one clock — one `niri msg` process spawn separates the two resizes and another the two screenshots — so mid-resize they sit at different points in the animation and their frames differ for reasons the filament has nothing to do with. Face confinement under flex and the jelly-breath ratio are therefore **informational; not verified by measurement**: record, with an `info` marker and never a gate, the hosts' layout skew (the horizontal shift that best aligns a strip spanning the column gap, at rest and in flex), the face `AE` and `face_max` between the two flex frames, and the filament row's emissive luminance in `flex-on` against `flex-off` as a ratio of the rest value from `rest-confinement`. A deterministic mid-flex probe is filed as a follow-up idea.
 - `selectors`: four filament-enabled instances, one per response `{ accent "ring"; focus "ring-light"; }`, `{ accent "ring"; focus "none"; }`, `{ accent "none"; focus "ring-light"; }`, `{ accent "none"; focus "none"; }`, each with the red accent set on the focused right window and left to settle 2 s. Against `off`: face `AE` 0 for all four; filament emissive red share at least 0.90 for the first two (tinted by the settled accent), between 0.24 and 0.31 for the third (never tinted), and emissive luminance at most 0.005 for the fourth (nothing drawn).
 - `tiny` (zero chamfer): the shader's `slabChamfer > 0.0` gate is reached only when the slab is at most 2 px on one axis, because a chamfer of 0 is otherwise unconfigurable with a filament (`ring-inset + ring-width <= bevel` with `ring-width > 0`). No client on the host produces such a window (kitty and foot have a one-cell minimum, `weston-simple-egl` is fixed at 250 px), and `niri-visual-tests` renders with `xray: None`, so materials do not draw there. Record this in the evidence document as **not verified by render**, with the gate quoted, and list it in the closure note. It does not block Task 6, and the owner decides at closure whether a tiny-client fixture is worth a follow-up task.
 

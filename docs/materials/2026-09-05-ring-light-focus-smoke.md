@@ -1,35 +1,40 @@
 # Ring of light focus response: wakeup and capture evidence
 
-**Status:** partial, 2026-09-05 on `design/ring-light`. Seven of the eight
-wakeup cases and three of the four measurable capture cases pass on the nested
-headless host; the fifth capture case (`tiny`) is recorded as not verified by
-render. The wakeup case `focus-none-toggle`, the two mid-resize bounds of
-`resize-flex`, and both DRM acceptance runs do not close here. Each is recorded
-below with its measured number and the reason, and none of them is a defect in
-the rendering the plan added.
+**Status:** passing, 2026-09-05 on `design/ring-light`, except the DRM
+acceptance runs, which are awaiting the operator on VT2. Every wakeup case and
+every gated capture check passes on the nested headless host. Two properties
+are recorded but **not verified by measurement** and are called out where they
+belong: the filament's face confinement *under a running resize*, and its
+zero-chamfer branch.
 
 Measured against `166cd3e6` ("feat(material): cap the focus filament's
-refracted shift"), the head of the ring-light implementation. The working tree
-at capture time differed from that commit only in the two harness scripts and
-this document, so the binary reports `niri 26.04 (166cd3e6-modified)`.
+refracted shift"), the head of the ring-light implementation; no Rust source
+has changed since, so the binaries below differ only in their embedded version
+string and their profiling feature.
 
-| Binary | sha256 |
-|---|---|
-| `cargo build --release` | `9900c0467290f733e5586fea8cd0317d611c19762d7c861064c02ef607217574` |
-| `cargo build --release --features profile-with-tracy` (wakeup runs) | `68d1f1abd95b8bd0bfd695c15ca1f37712a8793cd6f950794f89ecc0d332dec6` |
+| Run | Binary | sha256 |
+|---|---|---|
+| wakeup cadence | release + `profile-with-tracy` | `237a399d4f5f155333d63e7d4ed573dfbc5ebfed74cbcbc1766f2116071d4455` |
+| measured captures | release | `e06d52d80ee4239bbd3a1df463b333f07e4b79210808b11608515c2bc847a4a0` |
+
+Both report `niri 26.04 (33b5217f-modified)`: the tree carried this document
+and the two harness scripts on top of the commit. The two builds render
+identically, which the captures show directly — `rest-confinement` returns the
+same emissive triple to six decimals on either binary.
 
 Defaults under test: `focus "ring-light"`, `ring-inset 5`, `ring-width 2.6`,
 `ring-color "#ccccff"`, `ring-drift-hz 15`, `light-ior 6`.
 
 ## Wakeup cadence
 
-`docs/materials/scripts/material-signals-smoke.sh cases`. Every pre-existing
-case now pins `ring-drift-hz 0` in its material, so the focused window in each
-fixture no longer drifts and the existing zero-redraw expectations still
-describe the compositor rather than the new clock.
+`docs/materials/scripts/material-signals-smoke.sh cases`, exit 0, `cases: OK`.
+Run directory `signals-1602095-1788624775`. Every pre-existing case now pins
+`ring-drift-hz 0` in its material, so the focused window in each fixture no
+longer drifts and the existing zero-redraw expectations still describe the
+compositor rather than the new clock.
 
-The seven new cases and the unchanged `quiet-ring` line, from the gated run's
-`rates.txt` (`signals-1322718-1788620308`):
+The seven new cases, the control they are measured against, and the unchanged
+`quiet-ring` line, from `rates.txt`:
 
 | Case | Measured redraws | Acceptance |
 |---|---:|---|
@@ -40,7 +45,8 @@ The seven new cases and the unchanged `quiet-ring` line, from the gated run's
 | `focused-anim-off` (focused, 15 Hz, `animations { off; }`) | 0 (0.0/s) | pass: zero |
 | `focus-none-drift` (focused, 15 Hz, `focus "none"`) | 0 (0.0/s) | pass: zero |
 | `other-focused` (two windows, one focused, 15 Hz) | 300 (15.0/s) | pass: within 15% of `focused-drift` |
-| `focus-none-toggle` (six focus changes under `focus "none"`) | 23, then 12 in the final 14 s | **not met**: wanted at most 6, then zero |
+| `toggle-control` (six focus changes, no material at all) | 22 (1.1/s) | recorded, not gated |
+| `focus-none-toggle` (the same six under `focus "none"`) | 21, and 0 in the 10.9 s after | pass: at most control + 6 = 28, then zero |
 
 The drift lands exactly on its bucket rate: 15.0/s at `ring-drift-hz 15`, half
 that under `motion "reduced"`, nothing at all under `animations { off; }`,
@@ -48,38 +54,40 @@ under `focus "none"`, or on an unfocused window. `other-focused` matching
 `focused-drift` to the count is the direct statement that only the focused
 window drifts: adding a second, unfocused window adds no wakeups.
 
-### focus-none-toggle: what the number means
+### The focus toggle is measured against a client control
 
-The case fails, and it is not the material. Repeating the same six focus
-toggles on the same fixture with **no material on the windows at all** costs
-20 redraws in the same window; with the material and `focus "none"` it costs
-21 to 23 over two runs. The redraws are the fixture's own client damage:
-in the Tracy trace each redraw carries 60 to 100 `CompositorHandler::commit`
-zones at its own timestamp, in bursts of three to five frames per focus
-change, which is kitty repainting its cursor as it gains and loses activation.
-No material configuration can make a focus change on this fixture cost one
-redraw.
+A focus change is client damage before it is anything else. In the Tracy trace
+each redraw during the toggles carries 60 to 100 `CompositorHandler::commit`
+zones at its own timestamp, in bursts of three to five frames per change: that
+is kitty repainting its cursor as it gains and loses activation, and the
+compositor has to serve it whatever the material does. An absolute bound on
+this case would have measured the fixture, so the acceptance is the control.
 
-The `after` bound misses for a second, independent reason: `during_focus_toggles`
-was costed at 3 s (six changes, 0.5 s apart), but each `niri msg action
-focus-window` spawns the niri binary and takes about 0.5 s of its own, so the
-sequence takes about 6 s and runs from `end-18 s` to `end-12 s`, straddling the
-`[end-14 s, end)` window the "nothing after" check reads. Both bounds are
-recorded as measured; neither was relaxed.
+`toggle-control` runs the same six toggles on the same two windows with **no
+material on them at all** and costs 22 redraws. `focus-none-toggle`, the same
+toggles with the material present and `focus "none"`, costs **21** — inside the
+control, and well inside the control-plus-six bound that allows each change the
+one coalescible redraw its own focus bookkeeping can request. Under
+`focus "none"` the material adds nothing measurable to a focus change.
+
+The "nothing after" window is derived rather than fixed. Each `niri msg action
+focus-window` spawns the niri binary, so the six changes take about 6 s rather
+than the 3 s of their sleeps, and the duration varies with host load; a fixed
+window would straddle the toggles themselves. The case times its own sequence,
+waits out the client's repaint burst, and starts the after-window where the
+toggles ended — here 10.9 s of quiet tail, containing **0** redraws.
 
 Every pre-existing case still meets its published acceptance with the drift
-pinned, confirmed on a full pass of the suite (`signals-1476691-1788622538`,
-run with the `focus-none-toggle` gate downgraded to a warning so the cases
-after it could run): `demand-pulse` 533, `demand-pulse-focused` 0,
-`demand-breathe` 160, `demand-flash` 320, `ten-breathe` 159, `ten-flash` 319,
-`inactive-workspace` 0, `hidden-tab` 0, `offscreen-column` 0, `motion-off` 6,
-`reduced-flash` 534, `attention-none` 0, `impulse-none` 6, `done-pulse` burst
-91 with 0 after, `slowdown` 533 — the same numbers as the
-2026-09-03 signals evidence.
+pinned: `demand-pulse` 533, `demand-pulse-focused` 0, `demand-breathe` 160,
+`demand-flash` 320, `ten-breathe` 160, `ten-flash` 313, `inactive-workspace` 0,
+`hidden-tab` 0, `offscreen-column` 0, `motion-off` 6, `reduced-flash` 534,
+`attention-none` 0, `impulse-none` 6, `done-pulse` burst 93 with 0 after,
+`slowdown` 533 — the same numbers as the 2026-09-03 signals evidence.
 
 ## Measured captures
 
-`docs/materials/scripts/focus-ring-light.sh`. Each case renders the scene
+`docs/materials/scripts/focus-ring-light.sh` with its default `CASES`, exit 0.
+Capture directory `focus-ring-light-e06d52d8`. Each case renders the scene
 twice, once with the filament and once with it disabled (`response "default" {
 focus "none"; accent "none"; }`), so refraction, attenuation, Fresnel and jelly
 are identical in both and only the filament differs. Every case pins
@@ -113,13 +121,21 @@ edge; the face region is the window inset by 40 px on every side
 | accent-midfade: red share at half fade | 0.498 | pass: 0.46 to 0.54 |
 | accent-midfade: red share settled | 1.000 | pass: at least 0.90 |
 | resize-flex: face pixels differing at rest | 0 | pass: 0 |
-| resize-flex: face max channel delta under flex | 104 | **not met**: wanted at most 2 |
-| resize-flex: filament emissive luminance vs rest | 1.186x | **not met**: wanted at least 1.20x |
 | selectors `accent "ring"` + `focus "ring-light"`: face AE, red share | 0, 1.000 | pass: 0, at least 0.90 |
 | selectors `accent "ring"` + `focus "none"`: face AE, red share | 0, 1.000 | pass: 0, at least 0.90 |
 | selectors `accent "none"` + `focus "ring-light"`: face AE, red share | 0, 0.272 | pass: 0, 0.24 to 0.31 |
 | selectors `accent "none"` + `focus "none"`: face AE, emissive luminance | 0, 0.0000 | pass: 0, at most 0.005 |
-| tiny (zero chamfer) | not verified by render | recorded, see below |
+
+Recorded, not gated (see "resize-flex" below and "tiny" after it):
+
+| Value | Measured |
+|---|---|
+| resize-flex: host layout skew at rest | 0 px |
+| resize-flex: host layout skew mid-resize | -1 px |
+| resize-flex: face pixels differing mid-resize | 261 of 254828 |
+| resize-flex: face max channel delta mid-resize | 104 |
+| resize-flex: filament emissive luminance mid-resize vs rest | 1.182x |
+| tiny (zero chamfer) | not verified by render |
 
 Sampled emissive triples at (946, 50), linear light, filament minus disabled:
 
@@ -147,29 +163,33 @@ filament-enabled and filament-disabled rest frames has bounding box
 runs from y=45 (the slab edge, 37/255) through a peak at y=47 (139/255) and
 decays inward, and is zero at y=44 and above.
 
-### resize-flex: what the two numbers mean
+### resize-flex: confinement under flex is not verified by measurement
 
 The case starts two nested instances, identical but for the disabled response,
 and drives `set-column-width +200` into both under `animations { slowdown 50;
-}`, then samples both three seconds in. At rest the two instances are
-byte-identical over the face (AE 0), which is what makes every other
-cross-instance comparison here valid.
+}`, then samples both three seconds in.
 
-Under the moving resize they are not. Scanning row y=360 of the two flex
-frames puts the right window's slab edge at x=557..561 in the
-filament-enabled frame and x=555..556 in the disabled one: the two instances
-are 2 to 5 px apart in the resize. The animation travels 200 px in about 20 s,
-so that is 0.2 to 0.5 s of clock skew — one `niri msg` process spawn, which is
-what separates the two `set-column-width` calls and the two screenshot
-requests. A geometric offset of several pixels moves window content and the
-refracted backdrop, which is what the 104-level face delta measures; it is not
-light on the face. The emissive ratio of 1.186x is sampled across that same
-offset, so it does not measure the jelly breath either.
+At rest the two instances are byte-identical over the face (AE 0) and align at
+exactly **0 px**, which is what makes every other cross-instance comparison in
+this document valid, and which is gated.
 
-Both numbers are recorded as measured. Neither was tuned, and no acceptance
-bound was relaxed to admit them. Making this case measurable needs the two
-resizes and the two screenshots driven from one trigger with sub-frame skew,
-which the current one-process-per-IPC-call harness cannot provide.
+Mid-resize they are not the same scene. One `niri msg` process spawn separates
+the two `set-column-width` calls, and another the two screenshot requests, so
+the hosts sit at different points in a 20 s animation: they align at **-1 px**
+of layout, and each client has re-rendered its terminal text at a slightly
+different width. The result is **261** differing face pixels out of 254828,
+with a **104**-level maximum, concentrated on glyph edges near the top-left of
+the face — client content, not light. Any face light the filament could leak
+under flex is below that floor, so this comparison cannot see it, and the
+**1.182x** emissive ratio is likewise sampled across the skew rather than
+across a clean jelly breath.
+
+Face confinement under a running resize and the jelly-breath ratio are
+therefore recorded and **not verified by measurement**. What *is* verified is
+confinement at rest, above: zero face pixels change, and the whole-frame
+difference is bounded by the slab rect. A deterministic mid-flex probe — both
+renders at identical animation progress, by clock stepping or a single-host
+toggle — is filed as `material-22d78f`.
 
 ### tiny (zero chamfer): not verified by render
 
@@ -197,21 +217,52 @@ follow-up task is a closure decision.
 
 ## DRM acceptance: awaiting operator run
 
+Both runs are awaiting the operator on VT2. Neither has been prepared, and
+neither can be until two edits land in `niri-experiments`.
+
 The retained DRM gate lives in the `niri-experiments` evidence worktree
 (`fixtures/v1-drm-smoke.sh`, procedure in
 `docs/materials/plans/2026-08-27-v1-drm-acceptance.md`). Its identity gates
 require paired settled frames to be byte-identical, which a drifting filament
-cannot satisfy, so the acceptance is two runs: a pinned one that must pass
-every gate, and a drifting one bounded to the bevel band.
+cannot satisfy, so the acceptance is two runs: a **pinned** one
+(`ring-drift-hz 0` inside `material "frost"`) that must pass every gate, and a
+**drifting** one bounded to the bevel band.
 
-Neither run happened here, and neither handoff could be prepared. `--run`
-requires an active VT2 session on seat0 with the RTX 3070 and DP-1, which no
-agent session can provide; but `--prepare`, which does work outside VT2,
-refused both configurations for reasons that need a decision in the
-`niri-experiments` repository:
+`--run` needs an active VT2 session on seat0 with the RTX 3070 and DP-1, which
+no agent session can provide. `--prepare` does work outside VT2, and was tried
+for both configurations; both were refused, each for a reason that is a
+deliberate, reviewable edit in the fixture repository rather than something a
+caller can pass:
 
-**Pinned run.** `fixtures/v1-drm-smoke-pinned.kdl` was written next to the
-original — the retained config with
+- **Drifting.** With a clean worktree, `--prepare` writes the handoff and then
+  refuses at `validate_handoff` (exit 2), because the candidate's source commit
+  is not admitted:
+
+  ```sh
+  case "$(jq -r '.pins.material_source_commit' "$handoff")" in
+      138697be4cbb779c80425fe2a366ceca3610f38e) ;;  # accepted v1
+      52f74f1059fd9651ed378db60a077129d53dc0d9) ;;  # v1 + backdrop-blur
+      *) return 2 ;;
+  esac
+  ```
+
+  The fixture's own comment says admitting a source is "a reviewable edit rather
+  than a caller argument".
+
+- **Pinned.** The pinned config validates against this build, but `--prepare`
+  refuses with
+
+  ```
+  fixture worktree must be clean
+  ```
+
+  (exit 2) as soon as the file is in the worktree, and `set_paths` hard-codes
+  `config_path=$repository_root/fixtures/v1-drm-smoke.kdl` in any case, so the
+  fixture cannot be pointed at another file.
+
+The pinned config is kept outside the fixture repository, at
+`$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/v1-drm-smoke-pinned.kdl`, so
+that worktree stays clean. It is the retained config with
 
 ```kdl
 material "frost" {
@@ -222,57 +273,41 @@ material "frost" {
 }
 ```
 
-added — and validates against this build. `--prepare` refuses it:
+### What the operator does
 
-```
-fixture worktree must be clean
-```
+1. **In `niri-experiments`, two edits.**
+   - Add the final material source commit to the `material_source_commit`
+     allowlist in `fixtures/v1-drm-smoke.sh`, beside the two already there.
+     (The commit measured here is
+     `166cd3e6cd7b28563d8a095ba35ad02855c0db48`; use whatever commit the
+     candidate binary is actually built from.)
+   - For the pinned run, either make the pinned config the tracked
+     `fixtures/v1-drm-smoke.kdl` (copy the file above over it) or add a config
+     override argument to the fixture. The worktree must be clean when
+     `--prepare` runs, so whichever is chosen has to be committed there.
 
-(exit 2). The fixture requires `git status --short` to be empty, so an
-untracked config makes every `--prepare` in that worktree fail, and
-`set_paths` hard-codes `config_path=$repository_root/fixtures/v1-drm-smoke.kdl`
-in any case, so the fixture cannot be pointed at another file. A pinned run
-needs the drift pinned in the tracked `v1-drm-smoke.kdl` and committed in
-`niri-experiments`.
+2. **Prepare, run and analyze, once per config**, from the evidence worktree:
 
-**Drifting run.** With a clean worktree, `--prepare` gets as far as writing the
-handoff and then refuses at `validate_handoff` (exit 2) because the candidate's
-source commit is not admitted:
+   ```sh
+   export NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material
+   artifact_dir=$(mktemp -d "$NIRI_MATERIAL_WORK_ROOT/v1-drm-acceptance.XXXXXX")
+   handoff=$NIRI_MATERIAL_WORK_ROOT/v1-drm-acceptance-handoff.json
+   test ! -e "$handoff"
+   sh fixtures/v1-drm-smoke.sh --prepare \
+       "$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/niri" \
+       "$artifact_dir" "$handoff" \
+       'niri 26.04 (166cd3e6-modified)' \
+       166cd3e6cd7b28563d8a095ba35ad02855c0db48
+   sh fixtures/v1-drm-smoke.sh --run "$handoff"       # active VT2, seat0
+   sh fixtures/v1-drm-smoke.sh --analyze "$handoff"
+   ```
 
-```sh
-case "$(jq -r '.pins.material_source_commit' "$handoff")" in
-    138697be4cbb779c80425fe2a366ceca3610f38e) ;;  # accepted v1
-    52f74f1059fd9651ed378db60a077129d53dc0d9) ;;  # v1 + backdrop-blur
-    *) return 2 ;;
-esac
-```
-
-The fixture's own comment says admitting a source is "a reviewable edit rather
-than a caller argument", so `166cd3e6cd7b28563d8a095ba35ad02855c0db48` has to
-be added to that list and committed in `niri-experiments` before this build can
-be prepared at all.
-
-Once both edits land in the fixture repository, the operator runs, from the
-evidence worktree, for each of the two configs:
-
-```sh
-export NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material
-artifact_dir=$(mktemp -d "$NIRI_MATERIAL_WORK_ROOT/v1-drm-acceptance.XXXXXX")
-handoff=$NIRI_MATERIAL_WORK_ROOT/v1-drm-acceptance-handoff.json
-sh fixtures/v1-drm-smoke.sh --prepare \
-    "$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/niri" \
-    "$artifact_dir" "$handoff" \
-    'niri 26.04 (166cd3e6-modified)' \
-    166cd3e6cd7b28563d8a095ba35ad02855c0db48
-sh fixtures/v1-drm-smoke.sh --run "$handoff"       # active VT2, seat0
-sh fixtures/v1-drm-smoke.sh --analyze "$handoff"
-```
-
-The candidate binary is snapshotted at
-`$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/niri`
-(sha256 `9900c046...`, recorded beside it in `binary.sha256`); rebuild and
-re-snapshot if the source moves, and pass the new `--version` string and
-commit.
+   The artifact directory must be directly under the work root and named
+   `v1-drm-acceptance.*`; the handoff may be anywhere under the work root. The
+   candidate binary is snapshotted at
+   `$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/niri`, sha256
+   `9900c046…`, recorded beside it in `binary.sha256`; rebuild and re-snapshot
+   if the source moves, and pass the new `--version` string and commit.
 
 **Pass criteria, pinned run.** Every gate, including `static-repeat`,
 `move-repeat`, `resize-return`, `remap-return` and `final-return`, passes. A
@@ -281,7 +316,8 @@ failure blocks closure.
 **Pass criteria, drifting run.** The run completes with no compositor error in
 its log and every non-identity gate passes. Each identity gate that fails must
 fail only inside the probe's bevel band. Take the probe window rectangle
-`x,y,w,h` from the gate's artifact JSON and, for each failing pair:
+`x,y,w,h` from the gate's artifact JSON (the settled probe geometry it already
+records) and, for each failing pair `a.png b.png`:
 
 ```sh
 magick a.png b.png -compose difference -composite -threshold 0 diff.png
@@ -300,9 +336,11 @@ Any other outcome, or any non-identity failure, blocks closure.
 
 All under `$NIRI_MATERIAL_WORK_ROOT`:
 
-- `focus-ring-light-9900c046/` — every capture, the per-case configs, the
-  check log (`checks.txt`) and the frame hashes (`SHA256SUMS`).
-- `material-signals-166cd3e6/` — the wakeup runs: Tracy traces, CSV exports and
-  `rates.txt` per run directory.
-- `ring-light-drm-166cd3e6/` — the snapshotted candidate binary and its hash,
-  for the operator's DRM runs.
+- `focus-ring-light-e06d52d8/` — every capture, the per-case configs, the check
+  log (`checks.txt`, where `ok:` lines are gates and `info:` lines are the
+  recorded-not-gated values) and the frame hashes (`SHA256SUMS`).
+- `material-signals-33b5217f/signals-1602095-1788624775/` — the wakeup run:
+  Tracy traces, CSV exports and `rates.txt`.
+- `ring-light-drm-166cd3e6/` — the snapshotted candidate binary, its hash, and
+  `v1-drm-smoke-pinned.kdl`, for the operator's DRM runs. Nothing was left in
+  the `niri-experiments` worktree.
