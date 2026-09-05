@@ -25,7 +25,9 @@ All future production rebases and material commits happen in this repository.
 - `2026-09-02-material-roughness-smoke.md`: passing nested GLES, Tracy, damage-reuse, and calibrated overview evidence.
 - `../specs/2026-09-02-material-noise-saturation-design.md`: implemented native and Prism noise/saturation composition design.
 - `2026-09-02-material-noise-saturation-evidence.md`: passing native automated, nested GLES, and Prism composition evidence.
+- `2026-09-04-focus-glass-spike.md`: passing focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.
 - `material-config.md`: material and glass configuration reference.
+- `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
 - `plans/2026-08-22-slice1.md`: implemented config-and-assignment plan.
