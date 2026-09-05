@@ -1,7 +1,7 @@
 # Glass noise and saturation parameters: design
 
-**Status:** implemented on `glass-noise-saturation` (native piece
-`material-1293e8`), `just check` and `just test` passing, nested GLES evidence
+**Status:** implemented and merged into `materials-26.04` at `6377515f`
+(native piece `material-1293e8`), `just check` and `just test` passing, nested GLES evidence
 in
 [`2026-09-05-material-glass-noise-saturation-params-evidence.md`](../materials/2026-09-05-material-glass-noise-saturation-params-evidence.md).
 Hub goal `prism-63dd45`; the Prism piece `prism-d0d4cb` follows once this
