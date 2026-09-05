@@ -30,11 +30,12 @@ All future production rebases and material commits happen in this repository.
 - `scripts/glass-noise-saturation-smoke.sh`: headless harness for those captures.
 - `2026-09-04-focus-glass-spike.md`: passing focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.
 - `2026-09-05-focus-ring-light-spike.md`: focus ring light spike; an embedded, refracted ring of light wins over motes, rays, shadow, noise, and canopy, and the static gradient ring is invisible on the dark focus glass.
+- `2026-09-05-ring-light-focus-smoke.md`: ring of light focus response wakeup and capture evidence; DRM acceptance awaiting the operator run.
 - `2026-09-02-material-signals-design.md`: implemented and verified per-window signal, IPC, and glass response design.
 - `2026-09-03-material-signals-smoke.md`: passing suites, IPC, redraw, GPU, package, and physical DRM evidence.
 - `material-config.md`: material and glass configuration reference.
 - `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
-- `scripts/focus-ring-light.sh`: headless harness for the focus ring light captures; needs the probe patch from `niri-experiments`.
+- `scripts/focus-ring-light.sh`: headless harness for the focus ring light captures and the measured filament checks.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: implemented renderer-seam plan.
 - `plans/2026-08-22-slice1.md`: implemented config-and-assignment plan.
@@ -49,6 +50,8 @@ All future production rebases and material commits happen in this repository.
 - `../plans/2026-09-01-material-roughness.md`: executed roughness implementation and verification plan.
 - `../plans/2026-09-02-material-noise-saturation.md`: executed noise and saturation composition plan.
 - `../plans/2026-09-02-material-signals.md`: executed and verified material-signals plan.
+- `../specs/2026-09-05-ring-light-focus-response-design.md`: approved ring of light focus response design.
+- `../plans/2026-09-05-ring-light-focus-response.md`: ring of light focus response implementation plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the

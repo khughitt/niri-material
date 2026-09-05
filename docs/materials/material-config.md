@@ -50,10 +50,30 @@ lengths are logical pixels.
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
 | `bevel` | float | 12 | 0–128 | logical px |
+| `light-ior` | float | 6 | 1–12 | — |
 | `offset-x` / `offset-y` | float | 6 | −64–64 | logical px |
 
 `jelly-flex` and `jelly-ripple` use thousandths only in their internal
 representation; their configuration values and ranges above are unchanged.
+
+`light-ior` multiplies the bend applied to the focus filament's light path
+only; the background taps are unaffected. The light-path index is
+`1 + (ior - 1) * light-ior`.
+
+The knob is much narrower than its range suggests. The filament's shared
+refracted shift is capped at half `ring-inset` — 2.5 px at the default
+inset of 5 — so the core always stays inside the bevel, and the shift grows
+roughly as `sin(45deg - asin(sin 45deg / n)) * 0.6 * thickness`. At
+`light-ior 1`, the minimum, that is already about 3.5 px on the stock
+default glass (`ior 1.5`, `thickness 20`) and about 4.6 px on thick glass
+near `ior 1.24` with `thickness 43.3`. Both are past the cap, so on such
+glass *every* `light-ior` value saturates it: the knob no longer positions
+the filament's core, and only widens the chromatic split — which does
+nothing at all when `chromatic-aberration` is 0.
+
+`light-ior` only positions the core on very low-index glass near `ior 1.02`
+(the calibration the spike used), where the light-path product lands near
+0.12 at the default 6.
 
 `backdrop-blur` makes the glass refract the blurred backdrop rather than the
 sharp one, which is what produces a frosted appearance: blur and refraction
@@ -97,12 +117,15 @@ blocks. A material with no response blocks gets this built-in `default`:
 | Parameter | Values | Default |
 | --- | --- | --- |
 | `accent` | `ring`, `none` | `ring` |
+| `focus` | `ring-light`, `none` | `ring-light` |
 | `attention` | `rim-orbit`, `ring-pulse`, `none` | `rim-orbit` |
 | `ping` | `ripple`, `flash`, `sweep`, `none` | `ripple` |
 | `done` | `ripple`, `flash`, `sweep`, `none` | `sweep` |
 | `error` | `ripple`, `flash`, `sweep`, `none` | `flash` |
-| `ring-inset` | 0–128 logical px | 6 logical px |
-| `ring-width` | 0–128 logical px | 2 logical px |
+| `ring-inset` | 0–128 logical px | 5 logical px |
+| `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
+| `ring-color` | `"#rrggbb"` | `#ccccff` |
+| `ring-drift-hz` | 0, or 1–30 (quantized to tenths of a hertz) | 15 |
 
 When any `response` block is present, one must be named `default`. Named
 responses inherit omitted fields from that block; the `default` block itself
@@ -116,12 +139,15 @@ material "terminal-glass" {
 
     response "default" {
         accent "ring"
+        focus "ring-light"
         attention "rim-orbit"
         ping "ripple"
         done "sweep"
         error "flash"
-        ring-inset 6
-        ring-width 2
+        ring-inset 5
+        ring-width 2.6
+        ring-color "#ccccff"
+        ring-drift-hz 15
     }
 
     response "loud" {
@@ -141,11 +167,34 @@ selects `default`. `signal-source` and `signal-tag` are regex matches:
 slot), while `signal-tag` matches the window's folded signal tag. A window
 with no signal matches neither.
 
-`ring-inset` is measured inward from the slab's outer edge. Every resolved
-response must satisfy `ring-inset + ring-width <= bevel`, otherwise the
-configuration is rejected. The ring is visible through the slab's exterior
-band and translucent window pixels; an opaque window shows a full ring only
-when `bevel >= 2 * max(|offset-x|, |offset-y|) + ring-inset + ring-width`.
+The filament is one band shared by focus and signals. `focus "ring-light"`
+lights it on the focused window, in `ring-color`, drifting at
+`ring-drift-hz` steps per second (0 pins it; otherwise at least 1, and the
+rate is quantized to tenths of a hertz so the steps divide the 10 s drift
+period evenly). `accent "ring"` lets a
+window signal light and tint the same band on any window. Both together show
+the drifting filament in the accent color. The band sits `ring-inset` px
+inward from the slab's outer edge, is refracted through the glass, and is
+masked to the bevel, so it never lights the window face. Every resolved
+response must satisfy `ring-inset + ring-width <= bevel` and `ring-width > 0`.
+The filament shows through the slab's exterior band and through translucent
+window pixels; an opaque window shows a full ring only when
+`bevel >= 2 * max(|offset-x|, |offset-y|) + ring-inset + ring-width`.
+Set `focus-ring { off }` (globally or in a window rule) for material
+windows so the gradient ring does not draw a second ring; non-material
+windows keep whatever ring the layout configures.
+
+**What changes on upgrade.** The focus filament is on by default, so a
+material window that never configured a `response` block now shows a
+drifting ring of light in its bevel whenever it is focused. The signal
+accent ring changed shape at the same time: it was a box band with +/-0.5 px
+soft edges and is now a Gaussian core with a halo, at new defaults of
+`ring-inset 5` and `ring-width 2.6` (previously 6 and 2). To go back to an unlit focused
+window, set `focus "none"` in the material's `default` response; the
+filament and the accent ring are otherwise the same band, so `accent "none"`
+turns off the signal tint alone. If the upgrade leaves two rings on screen,
+that is the layout's gradient ring underneath — turn it off with
+`focus-ring { off; }`.
 
 ## Signal motion and animation
 
@@ -169,7 +218,9 @@ impulse `flash` response to `sweep`. `off` makes sustained motion static and
 drops impulse effects, while retaining the static accent and level
 crossfade. `material-signal` is the baseline signal crossfade; it defaults to
 400 ms with `ease-out-cubic` and follows the normal animation configuration,
-including `animations { off }`.
+including `animations { off }`. The focus filament fades in and out with
+`material-signal` too, and `reduced` halves `ring-drift-hz` while `off` and
+`animations { off }` pin the drift.
 
 ## Window rules and validation
 
@@ -189,6 +240,9 @@ The whole configuration is rejected with these validation errors:
   "default"`;
 - duplicate response names: `duplicate response: <name>`;
 - a ring outside the bevel: `ring-inset + ring-width must not exceed bevel`;
+- a zero or negative ring width: `ring-width must be positive`;
+- a drift rate strictly between 0 and 1: `ring-drift-hz must be 0 or at
+  least 1`;
 - an unknown window-rule reference: `unknown material: <name>`.
 - an unknown response reference: `material <name>: unknown response:
   <response>`.

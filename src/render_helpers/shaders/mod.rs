@@ -195,8 +195,11 @@ impl Shaders {
                 UniformName::new("mat_sig_impulse_rgb2", UniformType::_3f),
                 UniformName::new("mat_sig_impulse_rgb3", UniformType::_3f),
                 UniformName::new("mat_sig_impulse_resp", UniformType::_4i),
-                UniformName::new("mat_sig_response", UniformType::_2i),
+                UniformName::new("mat_sig_response", UniformType::_3i),
                 UniformName::new("mat_sig_ring", UniformType::_2f),
+                UniformName::new("mat_sig_focus", UniformType::_2f),
+                UniformName::new("mat_sig_ring_color", UniformType::_3f),
+                UniformName::new("mat_light_ior", UniformType::_1f),
             ],
             &[
                 "niri_tex_win",
