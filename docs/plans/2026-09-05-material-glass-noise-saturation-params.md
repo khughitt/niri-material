@@ -589,14 +589,48 @@ capture() {   # $1 name, $2 niri binary, $3 glass extra, $4 blur extra
     stop_nested
 }
 
-# ImageMagick exits 1 for a non-identical pair and prints the metric on stderr;
-# these helpers return the number and leave the judgement to the assertions.
-ae() { magick compare -metric AE "$1" "$2" null: 2>&1 >/dev/null || true; }
-rmse() { magick compare -metric RMSE "$1" "$2" null: 2>&1 >/dev/null | awk '{print $1}' || true; }
-sd() { magick "$1" -colorspace Gray -format '%[fx:standard_deviation]' info:; }
-assert_zero() { [ "$2" = "0" ] || fail "$1 expected 0, got $2"; }
-assert_positive() { awk -v v="$2" 'BEGIN { exit !(v > 0) }' || fail "$1 expected > 0, got $2"; }
-assert_greater() { awk -v a="$2" -v b="$3" 'BEGIN { exit !(a > b) }' || fail "$1 expected $2 > $3"; }
+# magick compare exits 0 for an identical pair, 1 for a differing pair, and 2
+# on an execution error such as a missing image. The metric is the first
+# field on stderr, printed as "<absolute> (<normalized>)". Only statuses 0 and
+# 1 are comparisons; anything else is a failure, and a metric that is not a
+# number is a failure, so a broken capture can never pass as a positive value.
+# The helpers leave their number in METRIC instead of printing it, so `fail`
+# runs in this shell and exits the script rather than a $(...) subshell.
+is_number() { [[ $1 =~ ^[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$ ]]; }
+compare_metric() {   # $1 metric name, $2 image, $3 image; result in METRIC
+    local out status
+    set +e
+    out=$(magick compare -metric "$1" "$2" "$3" null: 2>&1 >/dev/null)
+    status=$?
+    set -e
+    case $status in
+        0|1) ;;
+        *) fail "magick compare $1 $2 $3 exited $status: $out" ;;
+    esac
+    out=${out%% *}
+    is_number "$out" || fail "magick compare $1 $2 $3 returned a non-numeric metric: $out"
+    METRIC=$out
+}
+ae() { compare_metric AE "$1" "$2"; }
+rmse() { compare_metric RMSE "$1" "$2"; }
+sd() {   # $1 image; result in METRIC
+    local out
+    out=$(magick "$1" -colorspace Gray -format '%[fx:standard_deviation]' info:) || fail "magick info on $1 failed"
+    is_number "$out" || fail "standard deviation of $1 is not numeric: $out"
+    METRIC=$out
+}
+assert_zero() {
+    is_number "$2" || fail "$1 is not numeric: $2"
+    awk -v v="$2" 'BEGIN { exit !(v == 0) }' || fail "$1 expected 0, got $2"
+}
+assert_positive() {
+    is_number "$2" || fail "$1 is not numeric: $2"
+    awk -v v="$2" 'BEGIN { exit !(v > 0) }' || fail "$1 expected > 0, got $2"
+}
+assert_greater() {
+    is_number "$2" && is_number "$3" || fail "$1 is not numeric: $2 vs $3"
+    awk -v a="$2" -v b="$3" 'BEGIN { exit !(a > b) }' || fail "$1 expected $2 > $3"
+}
 
 sha256sum "$IMPL" "$BASE" > "$OUT/binaries.sha256"
 "$BASE" --version > "$OUT/base.version"; "$IMPL" --version > "$OUT/impl.version"
@@ -608,17 +642,17 @@ capture written-sat-0    "$IMPL" $'noise 0\n        saturation 0' ""
 capture written-noise-05 "$IMPL" $'noise 0.5\n        saturation 1' ""
 capture written-blur-off "$IMPL" $'noise 0.5\n        saturation 0' "off"
 
-omitted_identity_ae=$(ae "$OUT/omitted-before.png" "$OUT/omitted-after.png")
-written_neutral_vs_omitted_ae=$(ae "$OUT/written-neutral.png" "$OUT/omitted-after.png")
+ae "$OUT/omitted-before.png" "$OUT/omitted-after.png";   omitted_identity_ae=$METRIC
+ae "$OUT/written-neutral.png" "$OUT/omitted-after.png";  written_neutral_vs_omitted_ae=$METRIC
 for ch in R G B; do magick "$OUT/written-sat-0-roi.png" -channel $ch -separate "$OUT/sat0-$ch.png"; done
-sat0_rg_ae=$(ae "$OUT/sat0-R.png" "$OUT/sat0-G.png")
-sat0_rb_ae=$(ae "$OUT/sat0-R.png" "$OUT/sat0-B.png")
-noise_roi_rmse=$(rmse "$OUT/written-neutral-roi.png" "$OUT/written-noise-05-roi.png")
-neutral_sd=$(sd "$OUT/written-neutral-roi.png")
-noise05_sd=$(sd "$OUT/written-noise-05-roi.png")
+ae "$OUT/sat0-R.png" "$OUT/sat0-G.png";                   sat0_rg_ae=$METRIC
+ae "$OUT/sat0-R.png" "$OUT/sat0-B.png";                   sat0_rb_ae=$METRIC
+rmse "$OUT/written-neutral-roi.png" "$OUT/written-noise-05-roi.png"; noise_roi_rmse=$METRIC
+sd "$OUT/written-neutral-roi.png";                        neutral_sd=$METRIC
+sd "$OUT/written-noise-05-roi.png";                       noise05_sd=$METRIC
 for ch in R G B; do magick "$OUT/written-blur-off-roi.png" -channel $ch -separate "$OUT/bluroff-$ch.png"; done
-bluroff_rg_ae=$(ae "$OUT/bluroff-R.png" "$OUT/bluroff-G.png")
-bluroff_vs_omitted_ae=$(ae "$OUT/written-blur-off.png" "$OUT/omitted-after.png")
+ae "$OUT/bluroff-R.png" "$OUT/bluroff-G.png";             bluroff_rg_ae=$METRIC
+ae "$OUT/written-blur-off.png" "$OUT/omitted-after.png";  bluroff_vs_omitted_ae=$METRIC
 
 for v in omitted_identity_ae written_neutral_vs_omitted_ae sat0_rg_ae sat0_rb_ae noise_roi_rmse neutral_sd noise05_sd bluroff_rg_ae bluroff_vs_omitted_ae; do
     printf '%s=%s\n' "$v" "${!v}"
