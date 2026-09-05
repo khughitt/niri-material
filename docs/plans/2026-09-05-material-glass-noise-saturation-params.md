@@ -585,7 +585,7 @@ capture() {   # $1 name, $2 niri binary, $3 glass extra, $4 blur extra
     msg "$2" action screenshot-screen --write-to-disk true --show-pointer false --path "$png"
     for _ in $(seq 50); do [ -s "$png" ] && break; sleep 0.1; done
     [ -s "$png" ] || fail "capture $1 not written"
-    magick "$png" -crop 200x400+100+160 +repage "$OUT/$1-roi.png"
+    magick "$png" -crop 200x400+100+160 +repage -define png:color-type=2 "$OUT/$1-roi.png"
     stop_nested
 }
 
