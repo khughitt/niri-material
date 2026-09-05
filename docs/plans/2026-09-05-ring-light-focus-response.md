@@ -14,7 +14,8 @@
 
 - Lengths are logical pixels; colors reach the shader in linear RGB via `color_linear`; the fingerprint quantizes level, accent channels, presence, and focus to 1/256, breath to 1/32, drift phase to 1/1024 radian.
 - Time: drift buckets and boundaries use the unadjusted monotonic clock (`Clock::now_unadjusted`); the focus crossfade uses `Clock::now` like the level crossfade.
-- Drift: period 10 s, phase = clock in period plus the per-window jelly seed, boundaries aligned to the clock alone. Rate 0, `signal { motion "off" }`, and `animations { off }` pin the phase to 0 and report no boundary; `"reduced"` halves the rate.
+- Drift: period 10 s divided into `round(hz * 10)` buckets anchored to period starts on the unadjusted clock, so boundaries repeat exactly across any multiple of 10 s of uptime; phase = bucket fraction plus the per-window jelly seed, wrapped to `[0, 2π)`. Rate 0, `signal { motion "off" }`, and `animations { off }` pin the phase to 0 and report no boundary; `"reduced"` halves the rate. A configured rate is 0 or at least 1 Hz.
+- Travel waveform, identical in the solver mirror and the shader: `sin(2a + d) * sin(3a - 2d)` with `a` the perimeter angle and `d` the drift phase; every term is 2π-periodic in `d`, so the wrap is continuous.
 - Filament constants stay constants: depth fraction 0.6 of thickness, aberration scale 0.1, halo 0.3 at `inset + 2` with width 9, attenuation exponent 0.2, jelly breath `1 + 2 * activity`.
 - Defaults: `focus "ring-light"`, `ring-inset 5`, `ring-width 2.6`, `ring-color "#ccccff"`, `ring-drift-hz 15`, `light-ior 6`.
 - Config errors are whole-config errors with the exact messages given in each task.
@@ -114,6 +115,23 @@ Append to the `mod tests` in `niri-config/src/lib.rs`, after `material_without_r
     }
 
     #[test]
+    fn ring_drift_hz_is_zero_or_at_least_one() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-drift-hz 0.5; }; }"#,
+        )]);
+        assert!(err.contains("ring-drift-hz must be 0 or at least 1"), "{err}");
+        for ok in ["0", "1", "7.5", "30"] {
+            let parsed = parse_files(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ ring-drift-hz {ok}; }}; }}"#),
+            )])
+            .unwrap();
+            assert_eq!(parsed.materials[0].resolve().response(None).ring_drift_hz, ok.parse::<f64>().unwrap());
+        }
+    }
+
+    #[test]
     fn focus_response_rejects_out_of_range() {
         for body in [
             r#"material "tg" { glass {}; response "default" { ring-drift-hz 31; }; }"#,
@@ -168,7 +186,7 @@ In `ResolvedResponse`, after `ring_width: f64,`:
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
     pub ring_color: Color,
-    /// Drift bucket rate in Hz; 0 pins the drift.
+    /// Drift bucket rate in Hz; 0 pins the drift, otherwise at least 1.
     pub ring_drift_hz: f64,
 ```
 
@@ -210,6 +228,16 @@ In `validate`, after the `ring_fits` computation and before the `if !self.respon
         {
             return Err(String::from("ring-width must be positive"));
         }
+        // The solver divides the 10 s period into `hz * 10` buckets; a rate
+        // below 1 Hz (before the reduced-motion halving) has no sensible
+        // bucket and is refused rather than clamped.
+        if resolved
+            .responses
+            .iter()
+            .any(|(_, response)| response.ring_drift_hz > 0. && response.ring_drift_hz < 1.)
+        {
+            return Err(String::from("ring-drift-hz must be 0 or at least 1"));
+        }
 ```
 
 In `niri-config/src/lib.rs` line 58-61, add `FocusResponse` to the re-export list (alphabetical, after `AttentionResponse`).
@@ -227,7 +255,7 @@ Expected: all pass, including the three new tests.
 
 ```bash
 just test
-tasks done material-ad58ba "focus, ring-color, ring-drift-hz, light-ior parse with defaults 5/2.6/#ccccff/15/6; ring-width 0 rejected"
+tasks done material-ad58ba "focus, ring-color, ring-drift-hz, light-ior parse with defaults 5/2.6/#ccccff/15/6; ring-width 0 and drift rates between 0 and 1 rejected"
 git add niri-config/src/material.rs niri-config/src/lib.rs src/layout/tile.rs tasks/
 git commit -m "feat(config): add the focus response vocabulary and light-ior"
 ```
@@ -246,6 +274,7 @@ git commit -m "feat(config): add the focus response vocabulary and light-ior"
   - `pub fn drift_rate(hz: f64, policy: SignalMotionPolicy, animations_off: bool) -> f64`.
   - `pub fn drift(hz: f64, now: Duration, seed: f32) -> f32` (radians in `[0, TAU)`, 0 when `hz <= 0`).
   - `pub fn drift_next_boundary(hz: f64, now: Duration) -> Option<Duration>`.
+  - `pub fn travel(angle: f32, drift: f32) -> f32`: the shader's brightness waveform, mirrored for tests.
   - `pub struct FrameInputs { pub level: f32, pub accent: Option<[f32; 3]>, pub presence: f32, pub focus: f32, pub drift_hz: f64 }` with `FrameInputs::quiet()`.
   - `SignalFrame { presence: f32, focus: f32, drift: f32, .. }`.
   - `pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs) -> SignalFrame`.
@@ -290,13 +319,32 @@ Append inside `mod tests` in `src/render_helpers/signal.rs`:
         assert_eq!(drift_next_boundary(20., ms(0)), Some(ms(50)));
         assert_eq!(drift_next_boundary(20., ms(50)), Some(ms(100)));
         assert_eq!(drift_next_boundary(20., ms(51)), Some(ms(100)));
-        // 15 Hz: 66.67 ms buckets; do not pin the last nanosecond of the float conversion.
+        // 15 Hz: 150 buckets per 10 s period, 66.67 ms each, anchored to the period start.
         assert_eq!(drift_next_boundary(15., ms(0)).unwrap().as_millis(), 66);
+        assert_eq!(drift_next_boundary(15., ms(9_990)), Some(ms(10_000)));
+        // Nine days is a whole number of periods, so buckets and boundaries repeat exactly.
         let days = Duration::from_secs(9 * 86_400);
-        assert_eq!(
-            drift_next_boundary(15., days + ms(10)).map(|n| n - days),
-            drift_next_boundary(15., ms(10))
-        );
+        for t in [ms(10), ms(66), ms(67), ms(4_321), ms(9_999)] {
+            assert_eq!(
+                drift_next_boundary(15., days + t).map(|n| n - days),
+                drift_next_boundary(15., t),
+                "{t:?}"
+            );
+            assert_eq!(drift(15., days + t, 0.3), drift(15., t, 0.3), "{t:?}");
+        }
+        // 7.5 Hz (reduced from 15) is 75 buckets; still exact.
+        assert_eq!(drift_next_boundary(7.5, ms(0)).unwrap().as_millis(), 133);
+    }
+
+    #[test]
+    fn travel_is_continuous_across_the_phase_wrap() {
+        for k in 0..16 {
+            let a = k as f32 / 16. * TAU;
+            let before = travel(a, TAU - 1e-4);
+            let after = travel(a, 0.);
+            assert!((before - after).abs() < 2e-3, "angle {a}: {before} vs {after}");
+            assert!((travel(a, 1.) - travel(a, 1. + TAU)).abs() < 1e-3);
+        }
     }
 
     #[test]
@@ -487,32 +535,47 @@ pub fn drift_rate(hz: f64, policy: SignalMotionPolicy, animations_off: bool) -> 
     }
 }
 
-fn drift_bucket(hz: f64) -> Duration {
-    Duration::from_secs_f64(1. / hz)
-}
-
-/// Drift phase in radians, constant within each `1 / hz` bucket aligned to
-/// the absolute clock; the seed offsets the phase, not the boundary. Pinned
-/// to 0 when the rate is 0 so a static filament fingerprints to a constant.
-pub fn drift(hz: f64, now: Duration, seed: f32) -> f32 {
-    if hz <= 0. {
-        return 0.;
-    }
-    let bucket = drift_bucket(hz);
-    let n = now.as_nanos() / bucket.as_nanos();
-    let t = Duration::from_nanos((n * bucket.as_nanos()) as u64);
-    let phase = in_period(t, DRIFT_PERIOD) / DRIFT_PERIOD.as_secs_f32() + seed;
-    (phase.fract() * TAU).rem_euclid(TAU)
-}
-
-/// Next absolute-clock instant at which `drift` changes.
-pub fn drift_next_boundary(hz: f64, now: Duration) -> Option<Duration> {
+/// Buckets per drift period for a rate: the rate quantized to tenths of a
+/// hertz, at least one bucket. Config guarantees `hz == 0 || hz >= 1`
+/// before the reduced-motion halving, so this is at least 5.
+fn drift_buckets(hz: f64) -> Option<u128> {
     if hz <= 0. {
         return None;
     }
-    let bucket = drift_bucket(hz);
-    let n = now.as_nanos() / bucket.as_nanos() + 1;
-    Some(Duration::from_nanos((n * bucket.as_nanos()) as u64))
+    Some(((hz * DRIFT_PERIOD.as_secs_f64()).round() as u128).max(1))
+}
+
+/// Drift phase in radians, constant within each bucket. Buckets divide the
+/// 10 s period evenly and are anchored to period starts on the absolute
+/// clock, in integer nanoseconds, so no rounding accumulates over uptime
+/// and every drifting window on an output shares the same boundaries. The
+/// seed offsets the phase, not the boundary. Pinned to 0 when the rate is
+/// 0 so a static filament fingerprints to a constant.
+pub fn drift(hz: f64, now: Duration, seed: f32) -> f32 {
+    let Some(n) = drift_buckets(hz) else {
+        return 0.;
+    };
+    let period = DRIFT_PERIOD.as_nanos();
+    let k = (now.as_nanos() % period) * n / period;
+    let phase = (k as f32 / n as f32 + seed).fract();
+    (phase * TAU).rem_euclid(TAU)
+}
+
+/// Next absolute-clock instant at which `drift` changes. The `as u64` cast
+/// is exact below 584 years of uptime.
+pub fn drift_next_boundary(hz: f64, now: Duration) -> Option<Duration> {
+    let n = drift_buckets(hz)?;
+    let period = DRIFT_PERIOD.as_nanos();
+    let start = now.as_nanos() - now.as_nanos() % period;
+    let k = (now.as_nanos() - start) * n / period + 1;
+    Some(Duration::from_nanos((start + period * k / n) as u64))
+}
+
+/// The filament's travelling brightness in `[-1, 1]`, mirrored exactly by
+/// the shader: two sines of the perimeter angle whose phases are integer
+/// multiples of the drift, so the `2π` wrap is continuous.
+pub fn travel(angle: f32, drift: f32) -> f32 {
+    (2. * angle + drift).sin() * (3. * angle - 2. * drift).sin()
 }
 ```
 
@@ -622,7 +685,7 @@ Expected: all pass.
 
 ```bash
 just test
-tasks done material-181856 "drift oscillator with clock-aligned buckets, FrameInputs, presence/focus/drift in frame and fingerprint, drift in tick_deadline"
+tasks done material-181856 "drift oscillator with period-anchored buckets exact over uptime, travel mirror continuous at the wrap, FrameInputs, presence/focus/drift in frame and fingerprint, drift in tick_deadline"
 git add src/render_helpers/signal.rs src/layout/tile.rs src/render_helpers/material.rs tasks/
 git commit -m "feat(render): add the focus drift oscillator to the signal solver"
 ```
@@ -672,6 +735,59 @@ Append to `mod tests` in `src/render_helpers/material.rs`:
 
         r.focus = FocusResponse::None;
         assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).response[2], 0);
+
+        // All four accent/focus selector combinations reach the shader independently.
+        use niri_config::AccentResponse;
+        for (accent, focus, want) in [
+            (AccentResponse::Ring, FocusResponse::RingLight, [1, 1]),
+            (AccentResponse::Ring, FocusResponse::None, [1, 0]),
+            (AccentResponse::None, FocusResponse::RingLight, [0, 1]),
+            (AccentResponse::None, FocusResponse::None, [0, 0]),
+        ] {
+            r.accent = accent;
+            r.focus = focus;
+            let u = SignalUniforms::from_frame(&frame, &g, &r);
+            assert_eq!([u.response[0], u.response[2]], want, "{accent:?} {focus:?}");
+        }
+    }
+
+    #[test]
+    fn inherited_impulse_color_fades_with_presence() {
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
+        use niri_config::{ImpulseResponse as R, ResolvedResponse};
+
+        let r = ResolvedResponse::default();
+        let mut frame = SignalFrame {
+            accent: Some([1., 0.5, 0.]),
+            level: 0.,
+            breath: 0.,
+            impulses: Default::default(),
+            presence: 0.5,
+            focus: 0.,
+            drift: 0.,
+        };
+        frame.impulses[0] = ImpulseFrame {
+            selector: R::Sweep as u8,
+            envelope: 1.,
+            progress: 0.2,
+            accent: None,
+        };
+        frame.impulses[1] = ImpulseFrame {
+            selector: R::Sweep as u8,
+            envelope: 1.,
+            progress: 0.2,
+            accent: Some([0., 0., 1.]),
+        };
+        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let u = SignalUniforms::from_frame(&frame, &g, &r);
+        assert_eq!(u.impulse_rgb[0], [0.5, 0.25, 0.], "inherited window accent scaled by presence");
+        assert_eq!(u.impulse_rgb[1], [0., 0., 1.], "explicit impulse color untouched");
+
+        frame.accent = None;
+        frame.presence = 0.;
+        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let u = SignalUniforms::from_frame(&frame, &g, &r);
+        assert_eq!(u.impulse_rgb[0], [1., 1., 1.], "no accent falls back to white");
     }
 
 ```
@@ -705,7 +821,16 @@ In `quiet`:
             ring_color: crate::render_helpers::signal::color_linear(response.ring_color),
 ```
 
-In `from_frame`, replace the `accent:` line and `response:` and add the two fields:
+In `from_frame`, the impulse loop line `impulse_rgb[slot] = impulse.accent.or(frame.accent).unwrap_or([1.; 3]);` becomes
+
+```rust
+            impulse_rgb[slot] = impulse
+                .accent
+                .or_else(|| frame.accent.map(|c| c.map(|v| v * frame.presence)))
+                .unwrap_or([1.; 3]);
+```
+
+so an impulse inheriting the window accent fades with it while an explicit impulse color and the no-accent white fallback are unchanged. Then replace the `accent:` line and `response:` and add the two fields:
 
 ```rust
             accent: {
@@ -759,7 +884,7 @@ Expected: tests pass; the release binary builds (the shader compiles at runtime,
 
 ```bash
 just test
-tasks done material-72d290 "SignalUniforms carry focus, drift, ring color, focus selector, presence in accent alpha; registry gains mat_sig_focus, mat_sig_ring_color, mat_light_ior"
+tasks done material-72d290 "SignalUniforms carry focus, drift, ring color, focus selector, presence in accent alpha, presence-scaled inherited impulse color; registry gains mat_sig_focus, mat_sig_ring_color, mat_light_ior"
 git add src/render_helpers/material.rs src/render_helpers/shaders/mod.rs src/render_helpers/shaders/material.frag tasks/
 git commit -m "feat(material): upload the focus filament uniforms"
 ```
@@ -830,6 +955,17 @@ In the `#[cfg(test)] mod tests` of `src/layout/tile.rs` (near the `ResolvedGlass
         let (_, accent, presence) = changing.current();
         assert_eq!(accent, Some([1. - t, 0., t]));
         assert_eq!(presence, 1.);
+
+        // Interrupted mid-fade: the next crossfade starts from the current point,
+        // not from the settled target.
+        let origin = crossfade_origin(Some(&changing), Some((0., None)));
+        assert_eq!(origin, changing.current());
+        assert_eq!(
+            crossfade_origin(None, Some((0.5, Some([1., 0., 0.])))),
+            (0.5, Some([1., 0., 0.]), 1.),
+            "settled accent has presence 1"
+        );
+        assert_eq!(crossfade_origin(None, None), (0., None, 0.));
     }
 ```
 
@@ -871,6 +1007,19 @@ impl SignalCrossfade {
         let presence = self.presence_from + (self.presence_to - self.presence_from) * t;
         (level, accent, presence)
     }
+}
+
+/// Where a new signal crossfade starts: the current point of a running
+/// one (so an interrupted fade continues from where it is), else the last
+/// settled target with presence 1 when it had an accent, else quiet.
+fn crossfade_origin(
+    running: Option<&SignalCrossfade>,
+    settled: Option<(f32, Option<[f32; 3]>)>,
+) -> (f32, Option<[f32; 3]>, f32) {
+    running
+        .map(SignalCrossfade::current)
+        .or(settled.map(|(level, accent)| (level, accent, if accent.is_some() { 1. } else { 0. })))
+        .unwrap_or((0., None, 0.))
 }
 
 #[derive(Debug)]
@@ -935,13 +1084,16 @@ Add the helpers next to `signal_for_frame`:
     }
 ```
 
-In `update_render_elements`, before `let response = ...`:
+In `update_render_elements`, directly after the existing `let response = self.material.as_ref().map(|material| material.material().response(None));`, so that a response with `focus "none"` never starts a crossfade and never sets the transitions term:
 
 ```rust
+        let lights_focus = response
+            .as_ref()
+            .is_some_and(|response| response.focus == niri_config::FocusResponse::RingLight);
         if self.active != is_active {
             let from = self.focus_value();
             self.active = is_active;
-            self.focus_crossfade = Some(FocusCrossfade {
+            self.focus_crossfade = lights_focus.then(|| FocusCrossfade {
                 anim: Animation::new(
                     self.clock.clone(),
                     0.,
@@ -974,14 +1126,8 @@ Rewrite `signal_for_frame` to return `Option<(EffectiveSignal, FrameInputs)>`:
         let target = (level_value(eff.level), eff.accent.map(color_linear));
 
         if self.signal_target != Some(target) {
-            let (from_level, from_accent, from_presence) = self
-                .signal_crossfade
-                .as_ref()
-                .map(SignalCrossfade::current)
-                .or(self
-                    .signal_target
-                    .map(|(l, a)| (l, a, if a.is_some() { 1. } else { 0. })))
-                .unwrap_or((0., None, 0.));
+            let (from_level, from_accent, from_presence) =
+                crossfade_origin(self.signal_crossfade.as_ref(), self.signal_target);
             self.signal_crossfade = Some(SignalCrossfade {
                 anim: Animation::new(
                     self.clock.clone(),
@@ -1071,7 +1217,7 @@ Expected: all pass, including the crossfade test.
 
 ```bash
 just test
-tasks done material-609cc4 "tile records active state, crossfades focus and accent presence with straight color, reports the drift boundary, and keeps quiet unfocused windows bit-identical"
+tasks done material-609cc4 "tile records active state, crossfades focus (only under focus ring-light) and accent presence with straight color from the interrupted point, reports the drift boundary, and keeps quiet unfocused windows bit-identical"
 git add src/layout/tile.rs tasks/
 git commit -m "feat(material): crossfade focus and accent presence on the tile"
 ```
@@ -1175,7 +1321,9 @@ Replace the whole `if (mat_sig_response.x == 1 && mat_sig_accent.w > 0.0) { ... 
                     vec2 q = p + refr.xy * depth - g_center;
                     float ang = atan(q.y, q.x);
                     float drift = mat_sig_focus.y;
-                    float travel = sin(ang * 2.0 + drift) * sin(ang * 3.0 - drift * 0.6);
+                    // Mirrors signal.rs `travel`: integer multiples of the
+                    // drift keep the 2π wrap continuous.
+                    float travel = sin(ang * 2.0 + drift) * sin(ang * 3.0 - 2.0 * drift);
                     focusGlow = mat_sig_focus.x * 0.7 * (0.55 + 0.45 * travel);
                 }
                 float glow = (accentGlow * presence + focusGlow) * (1.0 + 2.0 * mat_jelly_activity);
@@ -1200,7 +1348,7 @@ cargo build --release
 
 Expected: validator exit 0, build succeeds.
 
-- [ ] **Step 5: Capture the filament on the headless host**
+- [ ] **Step 5: Look at the filament on the headless host**
 
 The spike harness's `baseline` case runs with no probe and the gradient ring on; with this build the default response draws the filament. Run:
 
@@ -1208,7 +1356,7 @@ The spike harness's `baseline` case runs with no probe and the gradient ring on;
 CASES=baseline docs/materials/scripts/focus-ring-light.sh
 ```
 
-Open `$NIRI_MATERIAL_WORK_ROOT/focus-ring-light-<sha>/baseline-right-focused-corner.png` and compare with the spike's `ring-right-focused-corner.png` under `focus-ring-light-fcdc5ed4`: a lavender filament mid-bevel with a halo, brighter on some edges than others, none on the face, and the unfocused left window with no filament. Check the idle sheet shows the brightness moving between frames. If the filament is absent, confirm `mat_sig_response.z` is 1 by adding `focus "ring-light"` explicitly to the harness config material block and rerun.
+Open `$NIRI_MATERIAL_WORK_ROOT/focus-ring-light-<sha>/baseline-right-focused-corner.png` and compare with the spike's `ring-right-focused-corner.png` under `focus-ring-light-fcdc5ed4`: a lavender filament mid-bevel with a halo, brighter on some edges than others, none on the face, and the unfocused left window with no filament. Check the idle sheet shows the brightness moving between frames. If the filament is absent, confirm `mat_sig_response.z` is 1 by adding `focus "ring-light"` explicitly to the harness config material block and rerun. The measured checks (face confinement, mid-fade color, selectors, tiny window) are Task 6.
 
 - [ ] **Step 6: Commit**
 
@@ -1224,7 +1372,8 @@ git commit -m "feat(material): render the focus filament in the bevel"
 ### Task 6: Smoke harness focused cases and captures
 
 **Files:**
-- Modify: `docs/materials/scripts/material-signals-smoke.sh` (`write_config` ~125-135, config list ~150-160, `mode_cases` ~469-496)
+- Modify: `docs/materials/scripts/material-signals-smoke.sh` (`write_config` ~125-135, config list ~150-160, setups ~394-405, `mode_cases` ~469-496)
+- Modify: `docs/materials/scripts/focus-ring-light.sh` (case list and `run_case`; the probe cases are retired now that the probe patch is not in the tree)
 - Create: `docs/materials/2026-09-05-ring-light-focus-smoke.md`
 
 **Interfaces:**
@@ -1254,8 +1403,11 @@ write_config "$WORK/drift-reduced.kdl"  'material "tg2" { glass {}; response "de
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }' \
                                          'signal { motion "reduced"; }'
 write_config "$WORK/focus-none.kdl"     'material "tg2" { glass {}; response "default" { focus "none"; ring-drift-hz 15; }; }' \
-                                         'window-rule { match app-id="^kitty$"; material "tg2"; }'
+                                         'window-rule { match app-id="^kitty$"; material "tg2"; }' \
+                                         'layout { focus-ring { off; }; }'
 ```
+
+`focus-none.kdl` turns the gradient ring off so a focus change alone redraws nothing, which is what lets the toggle case below measure the material.
 
 Add a setup that leaves the single kitty focused with no signal:
 
@@ -1282,29 +1434,72 @@ In `mode_cases`, after `steady_zero  quiet-ring ...` add:
 
 and add `drift_n` to the `local` declaration. `other-focused` shows that with two windows only the focused one drifts: the count matches one drifting window within the usual tolerance.
 
+Add a toggle case proving `focus "none"` starts no crossfade: two windows, focus moved back and forth three times inside the window, at most one coalescible redraw per change and nothing after.
+
+```bash
+during_focus_toggles() { local k; for k in 1 2 3; do msg action focus-window --id "$OTHER"; sleep 0.5; msg action focus-window --id "$WID"; sleep 0.5; done; }
+focus_toggle_case() {   # $1 name, $2 cfg: six focus changes, max one redraw each, zero after
+    run_case "$1" "$2" setup_other_focused during_focus_toggles
+    local total after; total=$(count_steady "$1"); after=$(count_window "$1" 14 0)
+    [ "$total" -le 6 ] || { echo "FAIL: $1: $total redraws for six focus changes under focus none (max 6)" >&2; exit 1; }
+    expect_zero "$1 after" "$after"
+}
+```
+
+and in `mode_cases` after `other-focused`: `focus_toggle_case focus-none-toggle "$WORK/focus-none.kdl"`.
+
 - [ ] **Step 3: Run the cases mode and record**
 
 Run: `docs/materials/scripts/material-signals-smoke.sh cases`
-Expected: `cases: OK`, with `focused-drift` about 300 in 20 s, `focused-reduced` about 150, the zero cases zero. Copy `rates.txt` lines for the new cases into the evidence doc.
+Expected: `cases: OK`, with `focused-drift` about 300 in 20 s, `focused-reduced` about 150, `focus-none-toggle` at most 6 then zero, the zero cases zero. Copy `rates.txt` lines for the new cases into the evidence doc. Any failure reopens Task 4 or 5; it is not recorded as a result and moved past.
 
-- [ ] **Step 4: Run the DRM acceptance gate once**
+- [ ] **Step 4: Measured captures on the spike harness**
 
-Run the retained DRM gate (`niri-experiments` `fixtures/v1-drm-smoke.sh`, per `docs/materials/2026-08-27-v1-drm-acceptance-design.md`) against this build; the default response drifts on the focused window, so the gate exercises it without a config change. Record pass or fail with the numbers it prints.
+`docs/materials/scripts/focus-ring-light.sh` keeps its nested-host plumbing (`start_nested`, `spawn_kitty`, `shot`, the dark split glass) and its `baseline` case. Retire the probe cases: the default `CASES` becomes `baseline accent-midfade resize-flex tiny selectors`, `start_nested` drops the `NIRI_FOCUS_PROBE*` variables, and `run_case` dispatches by name. Add a pixel sampler and the four cases. Coordinates below are for the 1280 x 720 host with the harness layout (right window at about x 656 to 1228, y 48 to 672; slab edge 8 px outside the window on the right window's top edge, so the bevel spans about y 40 to 51 and the face starts at about y 52); confirm them once against `baseline-right-focused-corner.png` and adjust the constants at the top of the script if the geometry moved.
 
-- [ ] **Step 5: Write the evidence document**
+```bash
+FIL_X=940; FIL_Y=45; FACE_Y=58   # top edge of the right window: filament row, and 6 px into the face
+px() { magick "$1" -format '%[fx:int(255*p{'"$2"','"$3"'}.r)] %[fx:int(255*p{'"$2"','"$3"'}.g)] %[fx:int(255*p{'"$2"','"$3"'}.b)]' info:; }
+lum() { set -- $(px "$1" "$2" "$3"); echo $(( (299*$1 + 587*$2 + 114*$3) / 1000 )); }
+between() {   # $1 label, $2 low, $3 value, $4 high: strictly between, with a 3-level margin
+    [ "$3" -gt $(( $2 + 3 )) ] && [ "$3" -lt $(( $4 - 3 )) ] || { echo "FAIL: $1: $3 not strictly between $2 and $4" >&2; exit 1; }
+}
+```
 
-Create `docs/materials/2026-09-05-ring-light-focus-smoke.md` with: the build SHA, the `rates.txt` lines for the six new cases and the unchanged `quiet-ring` line, the DRM gate result, and the path of the Task 5 capture directory. Add to `docs/materials/README.md` after the focus ring light spike line:
+The material in the harness config is the dark split glass; write the cases against it:
+
+- `accent-midfade`: config adds `animations { slowdown 20; }` (the 400 ms fade becomes 8 s). Focus the right window, `shot` `before`; `msg set-window-signal --id "$RIGHT" --source demo --accent '#ff0000'`; sleep 4; `shot` `mid`; sleep 6; `shot` `after`. Check `between accent-midfade-red "$(px before FIL_X FIL_Y | cut -d' ' -f1)" "$(px mid ...)" "$(px after ...)"` on the red channel and the reverse order on the blue channel: the mid color lies strictly between the base filament and the settled accent, which is only true when presence and straight color are both carried.
+- `resize-flex`: config adds `animations { slowdown 20; }`. Focus the right window, `shot` `rest`; `msg action set-column-width +200`; sleep 1.5 (mid-resize, jelly at full flex); `shot` `flex`; sleep 10; `shot` `settled`. Check the face row: `[ $(( $(lum flex FIL_X FACE_Y) - $(lum rest FIL_X FACE_Y) )) -le 2 ]` and the same for `settled`, in absolute value: no filament light reaches the face during or after the deformation. Also check the filament row in `flex` is brighter than in `rest` by at least 3 levels (jelly breath).
+- `tiny`: spawn a third kitty and `msg action set-window-width 6` then `set-window-height 6` on it; `shot` `tiny`. Kitty's minimum size may refuse. If the window reaches a size whose half extent minus one is at most 0 (the chamfer clamp), sample its center and its edge and check they equal the background within 2 levels (no filament, no bevel). If kitty refuses to shrink below the clamp, record the smallest size reached and note that the zero-chamfer path is unreachable with this client and is covered by the `slabChamfer > 0.0` gate in the shader; do not skip silently.
+- `selectors`: four nested runs, one per material block: `response "default" { accent "ring"; focus "ring-light"; }`, `{ accent "ring"; focus "none"; }`, `{ accent "none"; focus "ring-light"; }`, `{ accent "none"; focus "none"; }`; in each, focus the right window, set the red accent on it, sleep 2, `shot`. Expect at the filament pixel: red-tinted filament (both), red filament (accent only: today's ring, refracted), lavender filament (focus only: never tinted), and background luminance within 2 levels of the face row (neither).
+
+Run `docs/materials/scripts/focus-ring-light.sh` and require every check to pass. Keep the run directory as evidence.
+
+- [ ] **Step 5: DRM acceptance: pinned run is the gate, drifting run is bounded**
+
+The retained DRM gate (`niri-experiments` `fixtures/v1-drm-smoke.sh` with `v1-drm-smoke.kdl`, procedure in `docs/materials/plans/2026-08-27-v1-drm-acceptance.md`) requires paired settled frames to be byte-identical, which a drifting filament cannot satisfy. Run it twice:
+
+1. **Pinned (the acceptance gate).** Copy `v1-drm-smoke.kdl` to `v1-drm-smoke-pinned.kdl` and add `response "default" { ring-drift-hz 0; }` inside `material "frost"`; run `--prepare` against this build with that config, then `--run` and `--analyze`. Every gate, including `static-repeat`, `move-repeat`, `resize-return`, `remap-return`, and `final-return`, must pass. A failure blocks closure.
+2. **Drifting (bounded).** Run the unmodified `v1-drm-smoke.kdl` the same way. Expected: the run completes with no compositor error in its log; every non-identity gate passes; each identity gate that fails reports an `AE` no larger than the probe window's bevel band, `2 * (w + h) * 12` px for the probe's settled size. An `AE` beyond that, or any non-identity failure, blocks closure.
+
+Record both results with their numbers.
+
+- [ ] **Step 6: Write the evidence document**
+
+Create `docs/materials/2026-09-05-ring-light-focus-smoke.md` with: the build SHA, the `rates.txt` lines for the seven new cases and the unchanged `quiet-ring` line, the four measured capture checks with the sampled values, both DRM runs with their numbers, and the capture directory paths. Add to `docs/materials/README.md` after the focus ring light spike line:
 
 ```markdown
 - `2026-09-05-ring-light-focus-smoke.md`: ring of light focus response wakeup and DRM evidence.
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
+
+Only when every smoke case, every measured capture check, and the pinned DRM run pass and the drifting run is within its bound:
 
 ```bash
 just test
-tasks done material-be1e01 "smoke: focused-drift ~15/s, reduced ~7.5/s, static/anim-off/focus-none zero; DRM gate result recorded"
-git add docs/materials/scripts/material-signals-smoke.sh docs/materials/2026-09-05-ring-light-focus-smoke.md docs/materials/README.md tasks/
+tasks done material-be1e01 "smoke: focused-drift ~15/s, reduced ~7.5/s, static/anim-off/focus-none zero, focus-none toggle bounded; captures: mid-fade color between, no face light under flex, selectors independent; DRM pinned pass, drifting bounded"
+git add docs/materials/scripts/material-signals-smoke.sh docs/materials/scripts/focus-ring-light.sh docs/materials/2026-09-05-ring-light-focus-smoke.md docs/materials/README.md tasks/
 git commit -m "test(material): measure focus filament wakeups in the signals smoke"
 ```
 
@@ -1378,10 +1573,11 @@ git add docs/materials/material-config.md docs/specs/2026-09-05-ring-light-focus
 git commit -m "docs(material): document the ring of light focus response"
 ```
 
-`material-d1f471` closes when its owner confirms the goal is met (`tasks done material-d1f471`), after the merge.
+Closure of `material-26dd8a` requires Task 6's passing result; if any check there failed, Task 6 stays open and this step is not reached. `material-d1f471` closes when its owner confirms the goal is met (`tasks done material-d1f471`), after the merge.
 
 ## Self-review notes
 
 - Spec coverage: decisions (Task 4 fade, Task 5 shared band, Task 7 docs on `focus-ring { off }`); inputs and motion (Tasks 2 and 4); accent presence and straight color (Tasks 2, 3, 4); rendering, bevel confinement, gates (Task 5); configuration (Tasks 1 and 7); redraw contract (Task 6); verification (Tasks 1 to 6).
 - Type consistency: `FrameInputs` fields `level, accent, presence, focus, drift_hz` are used identically in Tasks 2 and 4; `SignalUniforms.focus: [f32; 2]` and `response: [i32; 3]` in Tasks 3 and 5; `SignalCrossfade::current` returns a triple in Task 4 only.
 - Known ordering: Task 2 Step 4 leaves a temporary `FrameInputs` construction in `tile.rs` that Task 4 Step 3 replaces.
+- Review round 1 (commit after `7bc5a63c`): travel waveform made 2π-periodic with a solver mirror and wrap test; inherited impulse color scaled by presence; drift rates in (0, 1) refused; bucket math anchored to period starts so uptime repeats exactly; focus crossfade gated by the response with a toggle smoke case; measured captures for mid-fade color, face confinement under flex, the tiny-window clamp, and the selector matrix; interrupted-fade origin extracted and tested; DRM gate run pinned as the acceptance and drifting as a bounded check, and closure conditioned on passing.
