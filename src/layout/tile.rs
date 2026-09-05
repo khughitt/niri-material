@@ -2299,6 +2299,9 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
+    use crate::animation::Clock;
+    use crate::layout::tests::{TestWindow, TestWindowParams};
+    use crate::window::ResolvedWindowRules;
 
     fn options_with(name: &str, backdrop_blur: bool, blur_off: bool) -> Options {
         let glass = niri_config::ResolvedGlass {
@@ -2451,5 +2454,74 @@ mod tests {
             "settled accent has presence 1"
         );
         assert_eq!(crossfade_origin(None, None), (0., None, 0.));
+    }
+
+    /// A tile carrying the material "frost", whose only response selects
+    /// `focus`. Everything else is stock: `motion "full"`, animations on.
+    fn focus_tile(focus: niri_config::FocusResponse, clock: Clock) -> Tile<TestWindow> {
+        let material = niri_config::ResolvedMaterial {
+            name: String::from("frost"),
+            glass: niri_config::ResolvedGlass::default(),
+            responses: vec![(
+                String::from("default"),
+                niri_config::ResolvedResponse {
+                    focus,
+                    ..Default::default()
+                },
+            )],
+        };
+        let options = Options {
+            materials: Rc::new(HashMap::from([(String::from("frost"), material)])),
+            ..Default::default()
+        };
+        let mut params = TestWindowParams::new(1);
+        params.rules = Some(ResolvedWindowRules {
+            material: Some(MaterialRef {
+                name: String::from("frost"),
+                response: None,
+            }),
+            ..Default::default()
+        });
+        Tile::new(
+            TestWindow::new(params),
+            Size::from((1280., 720.)),
+            1.,
+            clock,
+            Rc::new(options),
+        )
+    }
+
+    #[test]
+    fn focus_none_never_crossfades_the_filament() {
+        // `focus "none"` has to cost a focus change nothing: no crossfade is
+        // started, so the tile never reports itself as transitioning and the
+        // output never wakes for it.
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::None, clock);
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+
+        for is_active in [true, false, true] {
+            tile.update_render_elements(is_active, true, view);
+            assert!(tile.focus_crossfade.is_none(), "active {is_active}");
+            assert!(!tile.are_transitions_ongoing(), "active {is_active}");
+        }
+    }
+
+    #[test]
+    fn only_a_focused_tile_drifts() {
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        let response = tile.material.as_ref().unwrap().material().response(None);
+        assert_eq!(response.focus, niri_config::FocusResponse::RingLight);
+        assert!(response.ring_drift_hz > 0.);
+
+        // Unfocused and not fading: no drift, so nothing wakes.
+        assert!(!tile.active);
+        assert!(tile.focus_crossfade.is_none());
+        assert_eq!(tile.focus_drift_hz(&response), 0.);
+
+        // Focused, `motion "full"`, animations on: the configured rate.
+        tile.active = true;
+        assert_eq!(tile.focus_drift_hz(&response), response.ring_drift_hz);
     }
 }

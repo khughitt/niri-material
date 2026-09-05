@@ -44,10 +44,10 @@ struct TestWindowInner {
 }
 
 #[derive(Debug, Clone)]
-struct TestWindow(Rc<TestWindowInner>);
+pub(crate) struct TestWindow(Rc<TestWindowInner>);
 
 #[derive(Debug, Clone, Arbitrary)]
-struct TestWindowParams {
+pub(crate) struct TestWindowParams {
     #[proptest(strategy = "1..=5usize")]
     id: usize,
     #[proptest(strategy = "arbitrary_parent_id()")]
@@ -58,7 +58,7 @@ struct TestWindowParams {
     #[proptest(strategy = "arbitrary_min_max_size()")]
     min_max_size: (Size<i32, Logical>, Size<i32, Logical>),
     #[proptest(strategy = "prop::option::of(arbitrary_rules())")]
-    rules: Option<ResolvedWindowRules>,
+    pub(crate) rules: Option<ResolvedWindowRules>,
 }
 
 impl TestWindowParams {
@@ -75,7 +75,7 @@ impl TestWindowParams {
 }
 
 impl TestWindow {
-    fn new(params: TestWindowParams) -> Self {
+    pub(crate) fn new(params: TestWindowParams) -> Self {
         Self(Rc::new(TestWindowInner {
             id: params.id,
             parent_id: Cell::new(params.parent_id),

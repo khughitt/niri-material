@@ -19,7 +19,7 @@ use super::offscreen::OffscreenBuffer;
 use super::renderer::AsGlesFrame;
 use super::shader_element::ShaderRenderElement;
 use super::shaders::{ProgramType, Shaders};
-use super::signal::{ImpulseFrame, SignalFingerprint, SignalFrame};
+use super::signal::{color_linear, ImpulseFrame, SignalFingerprint, SignalFrame};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::RenderTarget;
 
@@ -291,7 +291,7 @@ impl SignalUniforms {
             ],
             ring: [response.ring_inset as f32, response.ring_width as f32],
             focus: [0., 0.],
-            ring_color: crate::render_helpers::signal::color_linear(response.ring_color),
+            ring_color: color_linear(response.ring_color),
         }
     }
 
@@ -341,7 +341,7 @@ impl SignalUniforms {
             ],
             ring: [response.ring_inset as f32, response.ring_width as f32],
             focus: [frame.focus, frame.drift],
-            ring_color: crate::render_helpers::signal::color_linear(response.ring_color),
+            ring_color: color_linear(response.ring_color),
         }
     }
 }
