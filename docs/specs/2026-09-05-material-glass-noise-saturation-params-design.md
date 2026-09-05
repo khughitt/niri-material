@@ -1,6 +1,6 @@
 # Glass noise and saturation parameters: design
 
-**Status:** implemented and merged into `materials-26.04` at `6377515f`
+**Status:** implemented and merged into `materials-26.04` at `e4e63b3b`
 (native piece `material-1293e8`), `just check` and `just test` passing, nested GLES evidence
 in
 [`2026-09-05-material-glass-noise-saturation-params-evidence.md`](../materials/2026-09-05-material-glass-noise-saturation-params-evidence.md).
