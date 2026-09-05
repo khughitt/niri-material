@@ -32,6 +32,12 @@
 # Requires: weston, kitty, swaybg, jq, ImageMagick, bc, and a Prism prism.kdl
 # in $XDG_STATE_HOME/prism/generated for the "terminal-glass" block.
 set -eu
+# Measurement helpers run inside `$(...)`, where a plain `exit` would only end
+# the subshell and let the caller carry on with an empty value, so failures go
+# through `die`, which signals the top-level shell.
+TOP_PID=$$
+trap 'exit 1' TERM
+die() { echo "FAIL: $*" >&2; kill -s TERM "$TOP_PID" 2>/dev/null || true; exit 1; }
 HERE=$(dirname "$(readlink -f "$0")")
 REPO=$(cd "$HERE/../../.." && pwd)
 NIRI=${NIRI:-$(cd "$REPO" && cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/release/niri}
@@ -97,7 +103,9 @@ DARK_ACTIVE=$(printf '%s\n' "$ACTIVE" | sed \
     -e 's/attenuation-distance .*/attenuation-distance 30/' \
     -e "s/^\\( *\\)ior .*/\\1ior $PIN_IOR/" \
     -e "s/^\\( *\\)thickness .*/\\1thickness $PIN_THICKNESS/" \
-    -e "s/^\\( *\\)bevel .*/\\1bevel $PIN_BEVEL/")
+    -e "s/^\\( *\\)bevel .*/\\1bevel $PIN_BEVEL/" \
+    -e "s/^\\( *\\)offset-x .*/\\1offset-x $PIN_OFFSET/" \
+    -e "s/^\\( *\\)offset-y .*/\\1offset-y $PIN_OFFSET/")
 DARK_INACTIVE=$(printf '%s\n' "$DARK_ACTIVE" | sed \
     -e 's/"dark"/"dark-inactive"/' \
     -e 's/roughness .*/roughness 0.5/' \
@@ -118,7 +126,8 @@ with_response() {   # $1 = material block, $2 = response body
 }
 assert_pinned_glass() {   # $1 = written config; both materials must carry the pinned geometry
     local k n
-    for k in "ior $PIN_IOR" "thickness $PIN_THICKNESS" "bevel $PIN_BEVEL"; do
+    for k in "ior $PIN_IOR" "thickness $PIN_THICKNESS" "bevel $PIN_BEVEL" \
+             "offset-x $PIN_OFFSET" "offset-y $PIN_OFFSET"; do
         n=$(sed 's/^ *//' "$1" | grep -cxF "$k" || true)
         [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 lines of '$k', found $n" >&2; exit 1; }
     done
@@ -233,8 +242,27 @@ open_scene() {
 plin() {   # $1 image, $2 x, $3 y: linear-light r g b in 0..1 (PNG is sRGB; -colorspace RGB decodes it)
     magick "$1" -colorspace RGB -format '%[fx:p{'"$2"','"$3"'}.r] %[fx:p{'"$2"','"$3"'}.g] %[fx:p{'"$2"','"$3"'}.b]' info:
 }
+# Exactly three numbers, or the reading is not a reading. A failing `magick
+# -fx` prints nothing, and `paste` pads that into a short or one-sided triple
+# that `red_fraction` reports as 0, which would let a "<= 0.005" check pass
+# vacuously; every triple is therefore asserted before any check sees it.
+assert_triple() {   # $1 = value, $2 = where it came from
+    awk -v e="$1" 'BEGIN {
+        n = split(e, c, " ")
+        if (n != 3) exit 1
+        for (i = 1; i <= 3; i++)
+            if (c[i] !~ /^[-+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][-+]?[0-9]+)?$/) exit 1
+    }' || die "$2: expected three numbers, got '$1' (magick failed?)"
+}
 # Emissive contribution at a pixel: linear(with filament) - linear(same scene, filament disabled).
-emissive() { paste -d' ' <(plin "$1" "$3" "$4" | tr ' ' '\n') <(plin "$2" "$3" "$4" | tr ' ' '\n') | awk '{ printf "%f ", $1 - $2 }'; }
+emissive() {
+    local a b e
+    a=$(plin "$1" "$3" "$4"); assert_triple "$a" "$1 at ($3,$4)"
+    b=$(plin "$2" "$3" "$4"); assert_triple "$b" "$2 at ($3,$4)"
+    e=$(paste -d' ' <(printf '%s\n' "$a" | tr ' ' '\n') <(printf '%s\n' "$b" | tr ' ' '\n') | awk '{ printf "%f ", $1 - $2 }')
+    assert_triple "$e" "emissive at ($3,$4)"
+    printf '%s' "$e"
+}
 red_fraction() { awk -v e="$1" 'BEGIN { split(e, c, " "); s = c[1] + c[2] + c[3]; if (s <= 0) { print 0; exit }; printf "%.3f", c[1] / s }'; }
 emissive_lum() { awk -v e="$1" 'BEGIN { split(e, c, " "); printf "%.4f", 0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3] }'; }
 face_ae() {   # $1 a, $2 b: count of differing pixels over the face region
