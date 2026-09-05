@@ -120,29 +120,35 @@ both fingerprint to constants.
 The accent ring term in `material.frag` is replaced by the embedded
 filament. For the fragment at element position `p` with perturbed normal
 `n`, the ray refracts through the light-path index `1 + (ior - 1) *
-light_ior` and lands at 60% of the slab thickness; the band is evaluated
-there per channel with the material's chromatic aberration scaled by 0.1,
-as `exp(-2 d^2)` over `(depth - inset) / width` plus a halo of 0.3 at
-`inset + 2` with width 9. The result is attenuated by the Beer-Lambert
-term raised to 0.2 so dense dark glass does not swallow it. Those three
-constants (depth fraction, aberration scale, attenuation exponent) are the
-spike's calibrated values and stay constants.
+light_ior` and lands at 60% of the slab thickness. The shared part of that
+in-plane shift is capped at half `ring-inset`, so however dense the glass
+the core stays inside the bevel: at the default glass the uncapped shift is
+8.3 px, wider than the whole bevel, and would carry the core out past the
+silhouette. The per-channel aberration offsets ride on top of the capped
+shift, so dense glass keeps its chromatic split. The band is evaluated at
+those landing points per channel with the material's chromatic aberration
+scaled by 0.1, as `exp(-2 d^2)` over `(depth - inset) / width` plus a halo
+of 0.3 at `inset + 2` with width 9. The result is attenuated by the
+Beer-Lambert term raised to 0.2 so dense dark glass does not swallow it.
+Those three constants (depth fraction, aberration scale, attenuation
+exponent) are the spike's calibrated values and stay constants.
 
-**Bevel confinement.** The Gaussian tails, the halo, and the refracted
-displacement are not bounded by `ring-inset + ring-width <= bevel`, so the
-band is masked to the rendered bevel at the displayed fragment.
-`slabSurface` publishes the clamped rendered chamfer and the inner face
-distance it already computes for the fragment (`di`, after the tiny-slab
-chamfer clamp and the jelly shear and resize of the inner face). The mask
-is `chamfer > 0 ? smoothstep(0, 1, di) : 0`, evaluated at the original
-fragment position, never at the refracted one: it is exactly 0 on the face
-and everywhere `di <= 0`, ramps to 1 over the first pixel of the bevel, and
-is identically 0 when the rendered chamfer is 0, including the silhouette.
-Only the filament sampling is refracted; the mask is not, so distortion and
-jelly ripple can move light within the bevel but never onto the face. The
-mask follows the deformed inner edge, and on a window too small to carry a
-chamfer the filament vanishes with the bevel. The existing inset plus width
-rule stays as the guarantee that the filament's center lies in the bevel.
+**Bevel confinement.** The refracted displacement is bounded by the cap
+above, but the Gaussian tails and the halo are not bounded by `ring-inset
++ ring-width <= bevel`, so the band is masked to the rendered bevel at the
+displayed fragment. `slabSurface` publishes the clamped rendered chamfer
+and the inner face distance it already computes for the fragment (`di`,
+after the tiny-slab chamfer clamp and the jelly shear and resize of the
+inner face). The mask is `chamfer > 0 ? smoothstep(0, 1, di) : 0`,
+evaluated at the original fragment position, never at the refracted one: it
+is exactly 0 on the face and everywhere `di <= 0`, ramps to 1 over the
+first pixel of the bevel, and is identically 0 when the rendered chamfer is
+0, including the silhouette. Only the filament sampling is refracted; the
+mask is not, so distortion and jelly ripple can move light within the bevel
+but never onto the face. The mask follows the deformed inner edge, and on a
+window too small to carry a chamfer the filament vanishes with the bevel.
+The existing inset plus width rule stays as the guarantee that the
+filament's center lies in the bevel.
 
 Brightness and color, in linear light, with the selectors made explicit:
 

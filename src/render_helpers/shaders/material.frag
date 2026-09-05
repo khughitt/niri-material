@@ -336,13 +336,21 @@ vec3 tap(vec2 v, vec3 n, float ior, float thickness) {
     return srgbToLinear(sampleBackground(vv));
 }
 
-// Focus filament (design: Rendering). The ray through p refracts at the
-// perturbed normal through the light-path index and lands `depth` px into
-// the slab; the band is a Gaussian of that landing point's distance from the
-// outer edge around `inset`, plus a soft halo bleeding into the glass.
-float filamentBand(vec2 p, vec3 n, float ior, float depth, float inset, float width) {
-    vec3 refr = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
-    vec2 q = p + refr.xy * depth;
+// Focus filament (design: Rendering). The ray through the fragment refracts
+// at the perturbed normal through the light-path index and lands `depth` px
+// into the slab; this is that in-plane displacement.
+vec2 lightShift(vec3 n, float ior, float depth) {
+    return refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior).xy * depth;
+}
+
+// The band at a landing point `q`: a Gaussian of its distance from the outer
+// edge around `inset`, plus a soft halo bleeding into the glass. The caller
+// caps the shared part of the shift at half the inset before landing here —
+// dense glass bends the light path further than the whole bevel is wide
+// (default glass, light-ior 6: 8.3 px), which would carry the core out past
+// the silhouette and leave nothing drawn. The per-channel aberration offsets
+// ride on top of the capped shift, so the chromatic split survives the cap.
+float filamentBand(vec2 q, float inset, float width) {
     float d = -sdRoundedBox(q - g_center, g_half, g_outer_r);
     float core = (d - inset) / width;
     float halo = (d - inset - 2.0) / 9.0;
@@ -469,10 +477,17 @@ void main() {
                 float depth = mat_thickness * 0.6;
                 float ior = 1.0 + (mat_ior - 1.0) * mat_light_ior;
                 float ca = mat_chromatic_aberration * 0.1;
+                vec2 shift0 = lightShift(n, ior, depth);
+                float len0 = length(shift0);
+                float cap = 0.5 * inset;
+                vec2 base = len0 > cap ? shift0 * (cap / len0) : shift0;
+                vec2 q0 = p + base;
                 vec3 band = vec3(
-                    filamentBand(p, n, ior, depth, inset, width),
-                    filamentBand(p, n, ior * (1.0 + ca), depth, inset, width),
-                    filamentBand(p, n, ior * (1.0 + 2.0 * ca), depth, inset, width));
+                    filamentBand(q0, inset, width),
+                    filamentBand(q0 + lightShift(n, ior * (1.0 + ca), depth) - shift0,
+                                 inset, width),
+                    filamentBand(q0 + lightShift(n, ior * (1.0 + 2.0 * ca), depth) - shift0,
+                                 inset, width));
                 float presence = mat_sig_accent.w;
                 float pulse = mat_sig_response.y == 2 ? mat_sig_breath : 0.0;
                 float accentGlow = showAccent
@@ -480,8 +495,7 @@ void main() {
                     : 0.0;
                 float focusGlow = 0.0;
                 if (showFocus) {
-                    vec3 refr = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
-                    vec2 q = p + refr.xy * depth - g_center;
+                    vec2 q = q0 - g_center;
                     float ang = atan(q.y, q.x);
                     float drift = mat_sig_focus.y;
                     // Mirrors signal.rs `travel`: integer multiples of the
