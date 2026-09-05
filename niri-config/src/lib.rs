@@ -56,8 +56,8 @@ pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocu
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::material::{
-    AccentResponse, AttentionResponse, Glass, ImpulseResponse, Material, MaterialRef, Positive,
-    ResolvedGlass, ResolvedMaterial, ResolvedResponse, Response,
+    AccentResponse, AttentionResponse, FocusResponse, Glass, ImpulseResponse, Material,
+    MaterialRef, Positive, ResolvedGlass, ResolvedMaterial, ResolvedResponse, Response,
 };
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
@@ -871,7 +871,106 @@ mod tests {
         assert_eq!(d.ping, crate::ImpulseResponse::Ripple);
         assert_eq!(d.done, crate::ImpulseResponse::Sweep);
         assert_eq!(d.error, crate::ImpulseResponse::Flash);
-        assert_eq!((d.ring_inset, d.ring_width), (6., 2.));
+        assert_eq!((d.ring_inset, d.ring_width), (5., 2.6));
+    }
+
+    #[test]
+    fn focus_response_fields_parse_and_default() {
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r##"
+            material "tg" {
+                glass { light-ior 3; }
+                response "default" {
+                    focus "none"
+                    ring-color "#ff8800"
+                    ring-drift-hz 20
+                }
+                response "still" { ring-drift-hz 0; }
+            }
+            "##,
+        )])
+        .unwrap();
+        let m = parsed.materials[0].resolve();
+        assert_eq!(m.glass.light_ior, 3.);
+        let d = m.response(None);
+        assert_eq!(d.focus, crate::FocusResponse::None);
+        assert_eq!(
+            d.ring_color,
+            Color::from_rgba8_unpremul(0xff, 0x88, 0x00, 0xff)
+        );
+        assert_eq!(d.ring_drift_hz, 20.);
+        let still = m.response(Some("still"));
+        assert_eq!(
+            still.focus,
+            crate::FocusResponse::None,
+            "inherited from default"
+        );
+        assert_eq!(still.ring_drift_hz, 0.);
+
+        let builtin = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)])
+            .unwrap()
+            .materials[0]
+            .resolve();
+        let b = builtin.response(None);
+        assert_eq!(b.focus, crate::FocusResponse::RingLight);
+        assert_eq!(
+            b.ring_color,
+            Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff)
+        );
+        assert_eq!(b.ring_drift_hz, 15.);
+        assert_eq!((b.ring_inset, b.ring_width), (5., 2.6));
+        assert_eq!(builtin.glass.light_ior, 6.);
+    }
+
+    #[test]
+    fn ring_width_must_be_positive_but_may_be_fractional() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-width 0; }; }"#,
+        )]);
+        assert!(err.contains("ring-width must be positive"), "{err}");
+        let ok = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-width 0.5; }; }"#,
+        )])
+        .unwrap();
+        assert_eq!(ok.materials[0].resolve().response(None).ring_width, 0.5);
+    }
+
+    #[test]
+    fn ring_drift_hz_is_zero_or_at_least_one() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-drift-hz 0.5; }; }"#,
+        )]);
+        assert!(
+            err.contains("ring-drift-hz must be 0 or at least 1"),
+            "{err}"
+        );
+        for ok in ["0", "1", "7.5", "30"] {
+            let parsed = parse_files(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ ring-drift-hz {ok}; }}; }}"#),
+            )])
+            .unwrap();
+            assert_eq!(
+                parsed.materials[0].resolve().response(None).ring_drift_hz,
+                ok.parse::<f64>().unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn focus_response_rejects_out_of_range() {
+        for body in [
+            r#"material "tg" { glass {}; response "default" { ring-drift-hz 31; }; }"#,
+            r#"material "tg" { glass { light-ior 13; }; }"#,
+            r#"material "tg" { glass { light-ior 0.5; }; }"#,
+            r#"material "tg" { glass {}; response "default" { focus "glow"; }; }"#,
+        ] {
+            parse_files_err(&[("config.kdl", body)]);
+        }
     }
 
     #[test]
@@ -1133,6 +1232,7 @@ mod tests {
                 bevel: 20.,
                 offset_x: -8.,
                 offset_y: 4.,
+                light_ior: 6.,
             }
         );
     }

@@ -230,6 +230,14 @@ pub enum ImpulseResponse {
     Sweep = 3,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum FocusResponse {
+    None = 0,
+    #[default]
+    RingLight = 1,
+}
+
 macro_rules! response_from_str {
     ($ty:ident, $($s:literal => $v:ident),+ $(,)?) => {
         impl std::str::FromStr for $ty {
@@ -248,6 +256,7 @@ macro_rules! response_from_str {
 response_from_str!(AccentResponse, "none" => None, "ring" => Ring);
 response_from_str!(AttentionResponse, "none" => None, "rim-orbit" => RimOrbit, "ring-pulse" => RingPulse);
 response_from_str!(ImpulseResponse, "none" => None, "ripple" => Ripple, "flash" => Flash, "sweep" => Sweep);
+response_from_str!(FocusResponse, "none" => None, "ring-light" => RingLight);
 
 /// A `response "name" { ... }` block inside a material definition.
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -268,6 +277,12 @@ pub struct Response {
     pub ring_inset: Option<FloatOrInt<0, 128>>,
     #[knuffel(child, unwrap(argument))]
     pub ring_width: Option<FloatOrInt<0, 128>>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub focus: Option<FocusResponse>,
+    #[knuffel(child)]
+    pub ring_color: Option<Color>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_drift_hz: Option<FloatOrInt<0, 30>>,
 }
 
 /// A fully resolved response block.
@@ -280,6 +295,11 @@ pub struct ResolvedResponse {
     pub error: ImpulseResponse,
     pub ring_inset: f64,
     pub ring_width: f64,
+    pub focus: FocusResponse,
+    /// Filament base color; alpha is ignored.
+    pub ring_color: Color,
+    /// Drift bucket rate in Hz; 0 pins the drift, otherwise at least 1.
+    pub ring_drift_hz: f64,
 }
 
 impl Default for ResolvedResponse {
@@ -290,8 +310,11 @@ impl Default for ResolvedResponse {
             ping: ImpulseResponse::Ripple,
             done: ImpulseResponse::Sweep,
             error: ImpulseResponse::Flash,
-            ring_inset: 6.,
-            ring_width: 2.,
+            ring_inset: 5.,
+            ring_width: 2.6,
+            focus: FocusResponse::RingLight,
+            ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
+            ring_drift_hz: 15.,
         }
     }
 }
@@ -306,6 +329,9 @@ impl ResolvedResponse {
             error: response.error.unwrap_or(base.error),
             ring_inset: response.ring_inset.map_or(base.ring_inset, |x| x.0),
             ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
+            focus: response.focus.unwrap_or(base.focus),
+            ring_color: response.ring_color.unwrap_or(base.ring_color),
+            ring_drift_hz: response.ring_drift_hz.map_or(base.ring_drift_hz, |x| x.0),
         }
     }
 
@@ -406,6 +432,11 @@ pub struct Glass {
     pub offset_x: Option<FloatOrInt<-64, 64>>,
     #[knuffel(child, unwrap(argument))]
     pub offset_y: Option<FloatOrInt<-64, 64>>,
+    /// Multiplier on the bend of the focus filament's light path. Prism's
+    /// glass at ior 1.02 bends nothing visible; the filament travels the
+    /// slab twice and is scattered, so its path is exaggerated.
+    #[knuffel(child, unwrap(argument))]
+    pub light_ior: Option<FloatOrInt<1, 12>>,
 }
 
 /// A material definition with every parameter resolved to a final value.
@@ -448,6 +479,7 @@ pub struct ResolvedGlass {
     pub bevel: f64,
     pub offset_x: f64,
     pub offset_y: f64,
+    pub light_ior: f64,
 }
 
 impl Default for ResolvedGlass {
@@ -469,6 +501,7 @@ impl Default for ResolvedGlass {
             bevel: 12.,
             offset_x: 6.,
             offset_y: 6.,
+            light_ior: 6.,
         }
     }
 }
@@ -529,6 +562,7 @@ impl Material {
                 bevel: g.bevel.map_or(d.bevel, |x| x.0),
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
+                light_ior: g.light_ior.map_or(d.light_ior, |x| x.0),
             },
             responses,
         }
@@ -568,6 +602,24 @@ impl Material {
             .responses
             .iter()
             .all(|(_, response)| response.ring_inset + response.ring_width <= bevel);
+
+        if resolved
+            .responses
+            .iter()
+            .any(|(_, response)| response.ring_width <= 0.)
+        {
+            return Err(String::from("ring-width must be positive"));
+        }
+        // The solver divides the 10 s period into `hz * 10` buckets; a rate
+        // below 1 Hz (before the reduced-motion halving) has no sensible
+        // bucket and is refused rather than clamped.
+        if resolved
+            .responses
+            .iter()
+            .any(|(_, response)| response.ring_drift_hz > 0. && response.ring_drift_hz < 1.)
+        {
+            return Err(String::from("ring-drift-hz must be 0 or at least 1"));
+        }
 
         // Prefer the explicitly configured response error when both it and
         // the inherited glass offset exceed the bevel.
