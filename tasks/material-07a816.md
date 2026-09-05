@@ -1,11 +1,12 @@
 ---
 id: material-07a816
 title: Test + CI iteration cost audit
-status: todo
+status: doing
 priority: 2
 size: m
+owner: materials-26.04
 created: 2026-09-04T21:44:54Z
-updated: 2026-09-05T08:30:49Z
+updated: 2026-09-05T08:32:12Z
 depends: [ops-31f038]
 tags: [testing]
 ---
