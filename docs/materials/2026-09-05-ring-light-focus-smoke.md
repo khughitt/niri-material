@@ -216,122 +216,89 @@ host produces such a window: kitty and foot have a one-cell minimum and
 Rust-side `material_frame` tests only. Whether a tiny-client fixture is worth a
 follow-up task is a closure decision.
 
-## DRM acceptance: awaiting operator run
+## DRM acceptance
 
-Both runs are awaiting the operator on VT2. Neither has been prepared, and
-neither can be until two edits land in `niri-experiments`.
+Both runs were performed by the operator on VT2 on 2026-09-05 against the
+candidate built from `b8688ba4` (materials-26.04 after the merge and the doc
+corrections; `niri 26.04 (b8688ba4-modified)`, sha256 `9855c8dc…`, snapshotted
+at `$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-b8688ba4/niri`). The fixture is
+`niri-experiments` results/slice3 with two commits on top of 536992b: 0f33981
+admits `b8688ba4` in the `material_source_commit` allowlist, and 9d8180e pins
+`ring-drift-hz 0` in the tracked `fixtures/v1-drm-smoke.kdl` for the pinned
+run; the drifting run used the tracked config as of 0f33981. Both runs were
+analyzed with `--analyze`; the machine summaries are copied beside the binary.
 
-The retained DRM gate lives in the `niri-experiments` evidence worktree
-(`fixtures/v1-drm-smoke.sh`, procedure in
-`docs/materials/plans/2026-08-27-v1-drm-acceptance.md`). Its identity gates
-require paired settled frames to be byte-identical, which a drifting filament
-cannot satisfy, so the acceptance is two runs: a **pinned** one
-(`ring-drift-hz 0` inside `material "frost"`) that must pass every gate, and a
-**drifting** one bounded to the bevel band.
+### Pinned run (`ring-drift-hz 0`): the acceptance gate
 
-`--run` needs an active VT2 session on seat0 with the RTX 3070 and DP-1, which
-no agent session can provide. `--prepare` does work outside VT2, and was tried
-for both configurations; both were refused, each for a reason that is a
-deliberate, reviewable edit in the fixture repository rather than something a
-caller can pass:
+Artifact `v1-drm-acceptance.1khrOY`. 17 of 19 gates pass. Every identity gate
+is byte-identical: `static-repeat`, `reload-invalid-retained`,
+`reload-restored`, `move-return`, `move-repeat`, `resize-return`,
+`remap-return`, `overview-return`, `workspace-return`, `final-return`. The
+non-identity gates `reload-changed`, `diagnostic-tile`, `move-motion`,
+`resize-motion`, `overview-transition`, `invalid-reload-log` and `clean-log`
+pass. `workspace-down-transition` and `workspace-up-transition` fail with "no
+frame contained both exact colors"; see below.
 
-- **Drifting.** With a clean worktree, `--prepare` writes the handoff and then
-  refuses at `validate_handoff` (exit 2), because the candidate's source commit
-  is not admitted:
+### Drifting run (unmodified config, 15 Hz)
 
-  ```sh
-  case "$(jq -r '.pins.material_source_commit' "$handoff")" in
-      138697be4cbb779c80425fe2a366ceca3610f38e) ;;  # accepted v1
-      52f74f1059fd9651ed378db60a077129d53dc0d9) ;;  # v1 + backdrop-blur
-      *) return 2 ;;
-  esac
-  ```
+Artifact `v1-drm-acceptance.miY5lu`. All ten identity gates differ (the
+fixture reports AE 2424 to 2964 per pair), as a drifting filament must; the
+same seven non-identity gates pass and the same two workspace-transition gates
+fail. The bounded-diff check per identity pair, with the probe rectangle
+`x=1066 y=46 w=1320 h=1360` (read from the differing pixels' bounding box
+`1332x1372+1060+40`, which is the window plus the 6 px exterior slab band
+under `bevel 12` with 6 px offsets, and confirmed against the frame) and the
+bound `2 * (w + h + 24) * 12 = 64896`:
 
-  The fixture's own comment says admitting a source is "a reviewable edit rather
-  than a caller argument".
+| Pair | Band pixels | Outside the 12 px inflated rect | Deeper than 16 px into the window |
+|---|---|---|---|
+| initial-a / initial-b | 55780 | 0 | 0 |
+| reload-valid / reload-invalid | 55680 | 0 | 0 |
+| initial-a / reload-restored | 55568 | 0 | 0 |
+| initial-a / move-settled-a | 56286 | 0 | 0 |
+| move-settled-a / move-settled-b | 55992 | 0 | 0 |
+| initial-a / resize-settled | 55824 | 0 | 0 |
+| initial-a / remap-settled | 53929 | 0 | 0 |
+| initial-a / overview-return | 55004 | 0 | 0 |
+| initial-a / workspace-return | 55004 | 0 | 0 |
+| initial-a / final-settled | 55831 | 0 | 0 |
 
-- **Pinned.** The pinned config validates against this build, but `--prepare`
-  refuses with
+The plan asked for zero differing pixels inside the window body on the premise
+that the probe is opaque. The fixture's probe is translucent glass (the
+acceptance design selects a translucent kitty for the `frost` material), so
+the filament's halo legitimately reaches about 10 px inside the window edge,
+and 26 to 28 thousand of each pair's band pixels lie in that inner strip. The
+body was therefore measured inset by 16 px: zero differing pixels on every
+pair. Counts are exact histogram counts of the thresholded difference image;
+the numbers are kept in `ring-light-drm-b8688ba4/drift-bounded-diff.txt`.
 
-  ```
-  fixture worktree must be clean
-  ```
+### The two workspace-transition gates
 
-  (exit 2) as soon as the file is in the worktree, and `set_paths` hard-codes
-  `config_path=$repository_root/fixtures/v1-drm-smoke.kdl` in any case, so the
-  fixture cannot be pointed at another file.
+Both runs fail `workspace-down-transition` and `workspace-up-transition`
+identically, with the drift on and off, so the drift is not the cause. The
+gate needs one of six frames (nominally 0, 50, 100, 200, 400 and 800 ms after
+the action) to show both the probe's orange marker and the purple backdrop
+mid-slide. In these runs the first capture request landed 35 ms (drifting) and
+41 ms (pinned) after the action, against 18 ms on the accepted Sep 1 run, and
+every later frame arrived 1.4 to 1.6 s apart against 0.3 s, because each
+3440x1440 screenshot took about twice as long on this machine during these
+runs. With the fixture's critically damped spring (stiffness 400) the windows
+had slid 317 px (drifting) and 473 px (pinned) by the first frame, against
+120 px on the accepted run, carrying the 240 px marker off the top of the
+screen; the backdrop band is visible mid-screen in both first frames (y 1123
+and 967), so the transition itself ran as before. Recorded as a capture-timing
+failure of the gate, not a rendering difference; the owner decides whether it
+blocks closure or a rerun is wanted.
 
-The pinned config is kept outside the fixture repository, at
-`$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/v1-drm-smoke-pinned.kdl`, so
-that worktree stays clean. It is the retained config with
+### Fixture notes
 
-```kdl
-material "frost" {
-    response "default" {
-        ring-drift-hz 0
-    }
-    glass { ... }
-}
-```
-
-### What the operator does
-
-1. **In `niri-experiments`, two edits.**
-   - Add the final material source commit to the `material_source_commit`
-     allowlist in `fixtures/v1-drm-smoke.sh`, beside the two already there.
-     (The commit measured here is
-     `166cd3e6cd7b28563d8a095ba35ad02855c0db48`; use whatever commit the
-     candidate binary is actually built from.)
-   - For the pinned run, either make the pinned config the tracked
-     `fixtures/v1-drm-smoke.kdl` (copy the file above over it) or add a config
-     override argument to the fixture. The worktree must be clean when
-     `--prepare` runs, so whichever is chosen has to be committed there.
-
-2. **Prepare, run and analyze, once per config**, from the evidence worktree:
-
-   ```sh
-   export NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material
-   artifact_dir=$(mktemp -d "$NIRI_MATERIAL_WORK_ROOT/v1-drm-acceptance.XXXXXX")
-   handoff=$NIRI_MATERIAL_WORK_ROOT/v1-drm-acceptance-handoff.json
-   test ! -e "$handoff"
-   sh fixtures/v1-drm-smoke.sh --prepare \
-       "$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/niri" \
-       "$artifact_dir" "$handoff" \
-       'niri 26.04 (166cd3e6-modified)' \
-       166cd3e6cd7b28563d8a095ba35ad02855c0db48
-   sh fixtures/v1-drm-smoke.sh --run "$handoff"       # active VT2, seat0
-   sh fixtures/v1-drm-smoke.sh --analyze "$handoff"
-   ```
-
-   The artifact directory must be directly under the work root and named
-   `v1-drm-acceptance.*`; the handoff may be anywhere under the work root. The
-   candidate binary is snapshotted at
-   `$NIRI_MATERIAL_WORK_ROOT/ring-light-drm-166cd3e6/niri`, sha256
-   `9900c046…`, recorded beside it in `binary.sha256`; rebuild and re-snapshot
-   if the source moves, and pass the new `--version` string and commit.
-
-**Pass criteria, pinned run.** Every gate, including `static-repeat`,
-`move-repeat`, `resize-return`, `remap-return` and `final-return`, passes. A
-failure blocks closure.
-
-**Pass criteria, drifting run.** The run completes with no compositor error in
-its log and every non-identity gate passes. Each identity gate that fails must
-fail only inside the probe's bevel band. Take the probe window rectangle
-`x,y,w,h` from the gate's artifact JSON (the settled probe geometry it already
-records) and, for each failing pair `a.png b.png`:
-
-```sh
-magick a.png b.png -compose difference -composite -threshold 0 diff.png
-# Outside the band (everything but the window inflated by the 12 px bevel): must be empty.
-magick diff.png -fill black -draw "rectangle $((x-12)),$((y-12)) $((x+w+12)),$((y+h+12))" -format '%[fx:int(mean*w*h)]' info:
-# Inside the window body (opaque probe pixels pass through the shader untouched): must be empty.
-magick diff.png -crop "${w}x${h}+${x}+${y}" +repage -format '%[fx:int(mean*w*h)]' info:
-# The band itself: at most its area.
-magick diff.png -format '%[fx:int(mean*w*h)]' info:
-```
-
-The first two counts must be 0 and the third at most `2 * (w + h + 24) * 12`.
-Any other outcome, or any non-identity failure, blocks closure.
+- `--prepare` refuses when `$NIRI_MATERIAL_WORK_ROOT/run-v1-drm-acceptance.sh`
+  is left from an earlier run. The Sep 1 wrapper was renamed to
+  `run-v1-drm-acceptance.sh.regression-52f74f10` and the drifting run's to
+  `run-v1-drm-acceptance.sh.ring-light-drift`.
+- `--analyze` exited 2 on its first invocation for both runs and left a
+  `.gates.*` temporary file in the artifact directory; removing that file and
+  invoking it again produced the machine summary. Not investigated further.
 
 ## Retained artifacts
 
@@ -342,6 +309,8 @@ All under `$NIRI_MATERIAL_WORK_ROOT`:
   recorded-not-gated values) and the frame hashes (`SHA256SUMS`).
 - `material-signals-33b5217f/signals-1602095-1788624775/` — the wakeup run:
   Tracy traces, CSV exports and `rates.txt`.
-- `ring-light-drm-166cd3e6/` — the snapshotted candidate binary, its hash, and
-  `v1-drm-smoke-pinned.kdl`, for the operator's DRM runs. Nothing was left in
-  the `niri-experiments` worktree.
+- `ring-light-drm-b8688ba4/` — the DRM candidate binary and its hash, the
+  pinned config, both machine summaries and the bounded-diff numbers;
+  `v1-drm-acceptance.1khrOY/` (pinned) and `v1-drm-acceptance.miY5lu/`
+  (drifting) hold the runs' captures and logs. `ring-light-drm-166cd3e6/` is
+  the earlier snapshot that `--prepare` refused.

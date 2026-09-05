@@ -1,8 +1,11 @@
 # Ring of light focus response: design
 
-**Status:** implemented on design/ring-light; smoke evidence in
-[2026-09-05-ring-light-focus-smoke.md](../materials/2026-09-05-ring-light-focus-smoke.md);
-DRM acceptance awaiting the operator run described there. Supersedes the
+**Status:** implemented and merged to materials-26.04 (f8bcb34c); smoke and
+DRM evidence in
+[2026-09-05-ring-light-focus-smoke.md](../materials/2026-09-05-ring-light-focus-smoke.md):
+the pinned DRM run passes every identity gate and the drifting run is bounded
+to the bevel band, with two workspace-transition capture-timing failures
+recorded there. Supersedes the
 static gradient focus ring for material windows; the spike that chose it is
 [`2026-09-05-focus-ring-light-spike.md`](../materials/2026-09-05-focus-ring-light-spike.md).
 

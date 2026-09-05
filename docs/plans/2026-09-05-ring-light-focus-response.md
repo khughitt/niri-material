@@ -1537,7 +1537,7 @@ Run `docs/materials/scripts/focus-ring-light.sh` and require every check to pass
 
 - [ ] **Step 5: DRM acceptance: pinned run is the gate, drifting run is bounded**
 
-The DRM acceptance runs are performed by the operator on VT2; Task 6 prepares the pinned config and documents both runs. `--run` needs an active VT2 session on seat0, which no agent session can provide, and `--prepare` refuses until two reviewable edits land in `niri-experiments` (the candidate source commit added to the `material_source_commit` allowlist, and the pinned config made the tracked `fixtures/v1-drm-smoke.kdl`).
+The DRM acceptance runs are performed by the operator on VT2 (done 2026-09-05; results in the evidence document); Task 6 prepares the pinned config and documents both runs. `--run` needs an active VT2 session on seat0, which no agent session can provide, and `--prepare` refuses until two reviewable edits land in `niri-experiments` (the candidate source commit added to the `material_source_commit` allowlist, and the pinned config made the tracked `fixtures/v1-drm-smoke.kdl`).
 
 The retained DRM gate (`niri-experiments` `fixtures/v1-drm-smoke.sh` with `v1-drm-smoke.kdl`, procedure in `docs/materials/plans/2026-08-27-v1-drm-acceptance.md`) requires paired settled frames to be byte-identical, which a drifting filament cannot satisfy, so the operator's procedure is two runs:
 
