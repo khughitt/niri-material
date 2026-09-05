@@ -183,6 +183,9 @@ fn backdrop_blur_enabled(glass: &ResolvedGlass, blur: &niri_config::Blur) -> boo
 ///
 /// The global `blur { off }` switch is applied here, so every consumer
 /// downstream reads one already-gated value rather than re-deriving it.
+/// The same goes for `noise` and `saturation`: a written glass value wins,
+/// an omitted one inherits the global value only while backdrop blur is
+/// effective, and the renderer receives one final pair.
 fn resolve_material(
     reference: Option<&MaterialRef>,
     options: &Options,
@@ -193,11 +196,18 @@ fn resolve_material(
     material.glass.backdrop_blur = backdrop_blur;
     let selected = material.response(reference.response.as_deref());
     material.responses = vec![(String::from("default"), selected)];
-    let (noise, saturation) = if backdrop_blur {
-        (options.blur.noise as f32, options.blur.saturation as f32)
-    } else {
-        (0., 1.)
-    };
+    // A written value is a material optic and renders as written. Only an
+    // omitted value inherits, and only while backdrop blur is effective;
+    // otherwise it is neutral. Each parameter decides on its own.
+    let inherited = |global: f64, neutral: f64| if backdrop_blur { global } else { neutral };
+    let noise = material
+        .glass
+        .noise
+        .unwrap_or_else(|| inherited(options.blur.noise, 0.)) as f32;
+    let saturation = material
+        .glass
+        .saturation
+        .unwrap_or_else(|| inherited(options.blur.saturation, 1.)) as f32;
     Some(MaterialRenderConfig {
         material,
         noise,
@@ -2195,13 +2205,9 @@ mod tests {
 
     use super::*;
 
-    fn options_with(name: &str, backdrop_blur: bool, blur_off: bool) -> Options {
-        let glass = niri_config::ResolvedGlass {
-            backdrop_blur,
-            ..Default::default()
-        };
+    fn options_for(glass: niri_config::ResolvedGlass, blur: niri_config::Blur) -> Options {
         let material = niri_config::ResolvedMaterial {
-            name: String::from(name),
+            name: String::from("frost"),
             glass,
             responses: vec![(
                 String::from("default"),
@@ -2209,13 +2215,24 @@ mod tests {
             )],
         };
         Options {
-            materials: Rc::new(HashMap::from([(String::from(name), material)])),
-            blur: niri_config::Blur {
+            materials: Rc::new(HashMap::from([(String::from("frost"), material)])),
+            blur,
+            ..Default::default()
+        }
+    }
+
+    fn options_with(name: &str, backdrop_blur: bool, blur_off: bool) -> Options {
+        assert_eq!(name, "frost", "the fixture defines one material");
+        options_for(
+            niri_config::ResolvedGlass {
+                backdrop_blur,
+                ..Default::default()
+            },
+            niri_config::Blur {
                 off: blur_off,
                 ..Default::default()
             },
-            ..Default::default()
-        }
+        )
     }
 
     #[test]
@@ -2270,6 +2287,60 @@ mod tests {
 
             let resolved = resolve_material(Some(&reference), &options).unwrap();
             assert_eq!((resolved.noise, resolved.saturation), expected);
+        }
+    }
+
+    #[test]
+    fn written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur() {
+        let reference = MaterialRef {
+            name: String::from("frost"),
+            response: None,
+        };
+        // Non-neutral globals so "inherited" and "neutral" are distinguishable
+        // from "written", and so an explicit neutral value is visibly a choice.
+        let global = niri_config::Blur {
+            noise: 0.02,
+            saturation: 1.5,
+            ..Default::default()
+        };
+        let global_off = niri_config::Blur {
+            off: true,
+            ..global
+        };
+        // (written noise, written saturation, backdrop-blur, blur block, expected pair)
+        for (noise, saturation, backdrop_blur, blur, expected) in [
+            // both written: the pair survives every switch
+            (Some(0.3), Some(0.5), true, global, (0.3, 0.5)),
+            (Some(0.3), Some(0.5), false, global, (0.3, 0.5)),
+            (Some(0.3), Some(0.5), true, global_off, (0.3, 0.5)),
+            // both omitted: today's inheritance
+            (None, None, true, global, (0.02, 1.5)),
+            (None, None, false, global, (0., 1.)),
+            (None, None, true, global_off, (0., 1.)),
+            // one written, one omitted: each side decided on its own
+            (Some(0.3), None, true, global, (0.3, 1.5)),
+            (Some(0.3), None, false, global, (0.3, 1.)),
+            (None, Some(0.5), true, global, (0.02, 0.5)),
+            (None, Some(0.5), false, global, (0., 0.5)),
+            // explicit neutral beats non-neutral globals
+            (Some(0.), Some(1.), true, global, (0., 1.)),
+        ] {
+            let options = options_for(
+                niri_config::ResolvedGlass {
+                    noise,
+                    saturation,
+                    backdrop_blur,
+                    ..Default::default()
+                },
+                blur,
+            );
+            let resolved = resolve_material(Some(&reference), &options).unwrap();
+            assert_eq!(
+                (resolved.noise, resolved.saturation),
+                expected,
+                "noise {noise:?} saturation {saturation:?} backdrop {backdrop_blur} off {}",
+                blur.off
+            );
         }
     }
 
