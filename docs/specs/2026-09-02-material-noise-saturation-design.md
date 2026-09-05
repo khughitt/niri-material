@@ -3,6 +3,10 @@
 **Status:** implemented as native commit `7c702e58` and Prism commit
 `bcedf4cd`; automated and nested GLES acceptance passed. See
 [`2026-09-02-material-noise-saturation-evidence.md`](../materials/2026-09-02-material-noise-saturation-evidence.md).
+Superseded in part on 2026-09-05: the "no glass-specific parameters" decision
+gave way to optional `glass { noise; saturation }` in
+[`2026-09-05-material-glass-noise-saturation-params-design.md`](2026-09-05-material-glass-noise-saturation-params-design.md).
+The composition order and inheritance for omitted values are unchanged.
 
 **Task:** `material-cad932`
 
