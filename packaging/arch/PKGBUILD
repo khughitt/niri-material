@@ -1,5 +1,5 @@
 pkgname=niri-material
-pkgver=26.04.r133.g52f74f10
+pkgver=26.04.r169.g88756be6
 pkgrel=1
 pkgdesc="A scrollable-tiling Wayland compositor with native materials"
 arch=(x86_64)
@@ -44,8 +44,9 @@ optdepends=(
 provides=("niri=$pkgver" wayland-compositor)
 conflicts=(niri niri-git niri-bin)
 options=(!debug)
-source=("niri::git+ssh://git@github.com/khughitt/niri-material.git#commit=52f74f1059fd9651ed378db60a077129d53dc0d9")
+source=("niri::git+ssh://git@github.com/khughitt/niri-material.git#commit=88756be6c1c6d72a20865d7abc01b5fc975977a8")
 sha256sums=('SKIP')
+export CARGO_TARGET_DIR=target
 
 prepare() {
   cd "$srcdir/niri"
@@ -54,7 +55,7 @@ prepare() {
 
 build() {
   cd "$srcdir/niri"
-  export NIRI_BUILD_COMMIT=52f74f10
+  export NIRI_BUILD_COMMIT=88756be6
   CFLAGS+=" -ffat-lto-objects"
   cargo build --frozen --release --features default
 
