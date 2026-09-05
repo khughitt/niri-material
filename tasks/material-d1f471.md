@@ -1,12 +1,12 @@
 ---
 id: material-d1f471
 title: "Explore a lit, dynamic focus ring to replace the static gradient ring"
-status: doing
+status: todo
 priority: 3
 size: l
 owner: explore/focus-ring-light
 created: 2026-09-05T01:10:50Z
-updated: 2026-09-05T10:16:06Z
+updated: 2026-09-05T10:27:19Z
 depends: []
 tags: [material, focus-ring]
 ---
