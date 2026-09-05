@@ -132,9 +132,11 @@ pub struct Tile<W: LayoutElement> {
 
     signal_crossfade: Option<SignalCrossfade>,
     signal_target: Option<(f32, Option<[f32; 3]>)>,
-    #[allow(clippy::type_complexity)]
-    signal_frame_cache: RefCell<Option<(EffectiveSignal, f32, Option<[f32; 3]>)>>,
+    signal_frame_cache: RefCell<Option<(EffectiveSignal, FrameInputs)>>,
     signal_render_visible: bool,
+    /// Whether this tile was active at the last `update_render_elements`.
+    active: bool,
+    focus_crossfade: Option<FocusCrossfade>,
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
@@ -315,8 +317,13 @@ struct SignalCrossfade {
     anim: Animation,
     level_from: f32,
     level_to: f32,
+    /// Straight colors. `None` on one side means that side has no accent;
+    /// the other side's color is held for the whole fade and `presence`
+    /// carries the fade.
     accent_from: Option<[f32; 3]>,
     accent_to: Option<[f32; 3]>,
+    presence_from: f32,
+    presence_to: f32,
 }
 
 struct MaterialDynamics {
@@ -329,16 +336,44 @@ struct MaterialDynamics {
 }
 
 impl SignalCrossfade {
-    fn current(&self) -> (f32, Option<[f32; 3]>) {
+    /// (level, straight accent color, presence) at the current clock.
+    fn current(&self) -> (f32, Option<[f32; 3]>, f32) {
         let t = self.anim.clamped_value() as f32;
         let level = self.level_from + (self.level_to - self.level_from) * t;
         let accent = match (self.accent_from, self.accent_to) {
             (Some(a), Some(b)) => Some([0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)),
-            (None, Some(b)) => Some(b.map(|v| v * t)),
-            (Some(a), None) => Some(a.map(|v| v * (1. - t))),
+            (None, Some(b)) => Some(b),
+            (Some(a), None) => Some(a),
             (None, None) => None,
         };
-        (level, accent)
+        let presence = self.presence_from + (self.presence_to - self.presence_from) * t;
+        (level, accent, presence)
+    }
+}
+
+/// Where a new signal crossfade starts: the current point of a running
+/// one (so an interrupted fade continues from where it is), else the last
+/// settled target with presence 1 when it had an accent, else quiet.
+fn crossfade_origin(
+    running: Option<&SignalCrossfade>,
+    settled: Option<(f32, Option<[f32; 3]>)>,
+) -> (f32, Option<[f32; 3]>, f32) {
+    running
+        .map(SignalCrossfade::current)
+        .or(settled.map(|(level, accent)| (level, accent, if accent.is_some() { 1. } else { 0. })))
+        .unwrap_or((0., None, 0.))
+}
+
+#[derive(Debug)]
+struct FocusCrossfade {
+    anim: Animation,
+    from: f32,
+    to: f32,
+}
+
+impl FocusCrossfade {
+    fn current(&self) -> f32 {
+        self.from + (self.to - self.from) * self.anim.clamped_value() as f32
     }
 }
 
@@ -386,6 +421,8 @@ impl<W: LayoutElement> Tile<W> {
             signal_target: Some((0., None)),
             signal_frame_cache: RefCell::new(None),
             signal_render_visible: false,
+            active: false,
+            focus_crossfade: None,
             options,
         }
     }
@@ -444,13 +481,35 @@ impl<W: LayoutElement> Tile<W> {
         apply_resolved(&mut self.material, resolved.as_ref());
     }
 
+    /// Crossfaded focus, 0 to 1.
+    fn focus_value(&self) -> f32 {
+        self.focus_crossfade
+            .as_ref()
+            .map(FocusCrossfade::current)
+            .unwrap_or(if self.active { 1. } else { 0. })
+    }
+
+    /// Effective drift rate for this frame: only a focused (or fading)
+    /// tile with a ring-light response drifts.
+    fn focus_drift_hz(&self, response: &ResolvedResponse) -> f64 {
+        use crate::render_helpers::signal::drift_rate;
+        if response.focus != niri_config::FocusResponse::RingLight || self.focus_value() <= 0. {
+            return 0.;
+        }
+        drift_rate(
+            response.ring_drift_hz,
+            self.options.signal.motion,
+            self.options.animations.off,
+        )
+    }
+
     /// Stage 1 plus crossfade bookkeeping. Returns the effective signal and
-    /// the crossfaded (level, accent) for this frame, or `None` when the
-    /// window has no signal and no crossfade is running.
+    /// the crossfaded frame inputs, or `None` when the window has no signal,
+    /// no crossfade is running and the tile is neither focused nor fading.
     fn signal_for_frame(
         &mut self,
         response: &ResolvedResponse,
-    ) -> Option<(EffectiveSignal, f32, Option<[f32; 3]>)> {
+    ) -> Option<(EffectiveSignal, FrameInputs)> {
         use crate::render_helpers::signal::{color_linear, effective, level_value};
 
         let folded = self.window.signal(self.clock.now_unadjusted());
@@ -466,12 +525,8 @@ impl<W: LayoutElement> Tile<W> {
         let target = (level_value(eff.level), eff.accent.map(color_linear));
 
         if self.signal_target != Some(target) {
-            let (from_level, from_accent) = self
-                .signal_crossfade
-                .as_ref()
-                .map(SignalCrossfade::current)
-                .or(self.signal_target)
-                .unwrap_or((0., None));
+            let (from_level, from_accent, from_presence) =
+                crossfade_origin(self.signal_crossfade.as_ref(), self.signal_target);
             self.signal_crossfade = Some(SignalCrossfade {
                 anim: Animation::new(
                     self.clock.clone(),
@@ -484,19 +539,41 @@ impl<W: LayoutElement> Tile<W> {
                 level_to: target.0,
                 accent_from: from_accent,
                 accent_to: target.1,
+                presence_from: from_presence,
+                presence_to: if target.1.is_some() { 1. } else { 0. },
             });
             self.signal_target = Some(target);
         }
 
-        if folded.is_none() && self.signal_crossfade.is_none() {
+        let focus = if response.focus == niri_config::FocusResponse::RingLight {
+            self.focus_value()
+        } else {
+            0.
+        };
+        let focus_fading = self
+            .focus_crossfade
+            .as_ref()
+            .is_some_and(|crossfade| !crossfade.anim.is_done());
+        if folded.is_none() && self.signal_crossfade.is_none() && focus <= 0. && !focus_fading {
             return None;
         }
 
-        let (level, accent) = self
+        let (level, accent, presence) = self
             .signal_crossfade
             .as_ref()
-            .map_or(target, SignalCrossfade::current);
-        Some((eff, level, accent))
+            .map(SignalCrossfade::current)
+            .unwrap_or((target.0, target.1, if target.1.is_some() { 1. } else { 0. }));
+        let drift_hz = self.focus_drift_hz(response);
+        Some((
+            eff,
+            FrameInputs {
+                level,
+                accent,
+                presence,
+                focus,
+                drift_hz,
+            },
+        ))
     }
 
     fn material_dynamics(
@@ -512,18 +589,8 @@ impl<W: LayoutElement> Tile<W> {
         let now = self.clock.now_unadjusted();
         let signal = self.signal_frame_cache.borrow().clone();
         let (signal_fingerprint, glass_signal, signal_uniforms) = match &signal {
-            Some((effective, level, accent)) => {
-                let frame = solve(
-                    effective,
-                    now,
-                    material.jelly_seed()[0],
-                    FrameInputs {
-                        level: *level,
-                        accent: *accent,
-                        presence: if accent.is_some() { 1. } else { 0. },
-                        ..FrameInputs::quiet()
-                    },
-                );
+            Some((effective, inputs)) => {
+                let frame = solve(effective, now, material.jelly_seed()[0], *inputs);
                 let glass_signal = glass_signal_inputs(&frame, glass);
                 let uniforms = SignalUniforms::from_frame(&frame, &glass_signal, &response);
                 (SignalFingerprint::quantize(&frame), glass_signal, uniforms)
@@ -748,6 +815,14 @@ impl<W: LayoutElement> Tile<W> {
         {
             self.signal_crossfade = None;
         }
+
+        if self
+            .focus_crossfade
+            .as_ref()
+            .is_some_and(|crossfade| crossfade.anim.is_done())
+        {
+            self.focus_crossfade = None;
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -772,9 +847,11 @@ impl<W: LayoutElement> Tile<W> {
                         .signal_frame_cache
                         .borrow()
                         .as_ref()
-                        .is_some_and(|(eff, _, _)| {
-                            eff.has_live_impulses(self.clock.now_unadjusted())
-                        }))
+                        .is_some_and(|(eff, _)| eff.has_live_impulses(self.clock.now_unadjusted()))
+                    || self
+                        .focus_crossfade
+                        .as_ref()
+                        .is_some_and(|crossfade| !crossfade.anim.is_done()))
     }
 
     pub fn clear_signal_render_visibility(&mut self) {
@@ -791,6 +868,24 @@ impl<W: LayoutElement> Tile<W> {
             .material
             .as_ref()
             .map(|material| material.material().response(None));
+        let lights_focus = response
+            .as_ref()
+            .is_some_and(|response| response.focus == niri_config::FocusResponse::RingLight);
+        if self.active != is_active {
+            let from = self.focus_value();
+            self.active = is_active;
+            self.focus_crossfade = lights_focus.then(|| FocusCrossfade {
+                anim: Animation::new(
+                    self.clock.clone(),
+                    0.,
+                    1.,
+                    0.,
+                    self.options.animations.material_signal.0,
+                ),
+                from,
+                to: if is_active { 1. } else { 0. },
+            });
+        }
         let signal = response
             .as_ref()
             .and_then(|response| self.signal_for_frame(response));
@@ -2010,10 +2105,10 @@ impl<W: LayoutElement> Tile<W> {
         use crate::render_helpers::signal::{slab_in_view, tick_deadline};
 
         let cache = self.signal_frame_cache.borrow();
-        let (eff, _, _) = cache.as_ref()?;
+        let (eff, inputs) = cache.as_ref()?;
         let bevel = self.material.as_ref()?.material().glass.bevel;
         let in_view = slab_in_view(location, self.tile_size(), bevel, view);
-        tick_deadline(eff, in_view, now, 0.)
+        tick_deadline(eff, in_view, now, inputs.drift_hz)
     }
 
     pub fn store_unmap_snapshot_if_empty(
@@ -2293,5 +2388,68 @@ mod tests {
             response: None,
         };
         assert!(resolve_material(Some(&reference), &Options::default()).is_none());
+    }
+
+    #[test]
+    fn signal_crossfade_carries_presence_and_straight_color() {
+        use crate::animation::{Animation, Clock};
+
+        // `Clock` is shared by clone (`src/animation/clock.rs`): advancing the
+        // test's handle advances the animation's.
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let config = niri_config::animations::MaterialSignalAnim::default().0; // 400 ms ease-out-cubic
+        let anim = Animation::new(clock.clone(), 0., 1., 0., config);
+        clock.set_unadjusted(Duration::from_millis(200));
+        let t = anim.clamped_value() as f32;
+        assert!(t > 0. && t < 1., "mid-fade: {t}");
+
+        // Arrival: the color is the arriving color throughout, presence rises with t.
+        let arriving = SignalCrossfade {
+            anim,
+            level_from: 0.,
+            level_to: 1.,
+            accent_from: None,
+            accent_to: Some([1., 0.5, 0.]),
+            presence_from: 0.,
+            presence_to: 1.,
+        };
+        let (_, accent, presence) = arriving.current();
+        assert_eq!(accent, Some([1., 0.5, 0.]));
+        assert!((presence - t).abs() < 1e-6);
+
+        // Expiry: the color holds the last live color, presence falls.
+        let expiring = SignalCrossfade {
+            accent_from: Some([1., 0.5, 0.]),
+            accent_to: None,
+            presence_from: 1.,
+            presence_to: 0.,
+            ..arriving
+        };
+        let (_, accent, presence) = expiring.current();
+        assert_eq!(accent, Some([1., 0.5, 0.]));
+        assert!((presence - (1. - t)).abs() < 1e-6);
+
+        // Live to live: straight interpolation by t, presence stays 1.
+        let changing = SignalCrossfade {
+            accent_from: Some([1., 0., 0.]),
+            accent_to: Some([0., 0., 1.]),
+            presence_from: 1.,
+            presence_to: 1.,
+            ..expiring
+        };
+        let (_, accent, presence) = changing.current();
+        assert_eq!(accent, Some([1. - t, 0., t]));
+        assert_eq!(presence, 1.);
+
+        // Interrupted mid-fade: the next crossfade starts from the current point,
+        // not from the settled target.
+        let origin = crossfade_origin(Some(&changing), Some((0., None)));
+        assert_eq!(origin, changing.current());
+        assert_eq!(
+            crossfade_origin(None, Some((0.5, Some([1., 0., 0.])))),
+            (0.5, Some([1., 0., 0.]), 1.),
+            "settled accent has presence 1"
+        );
+        assert_eq!(crossfade_origin(None, None), (0., None, 0.));
     }
 }
