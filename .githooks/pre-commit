@@ -1,0 +1,4 @@
+#!/bin/sh
+# Installed by `git config core.hooksPath .githooks`. Seconds only; the suite runs at
+# push. The recipe is the gate `just check` runs, recorded under its own target.
+exec just hook-pre-commit

@@ -1,0 +1,6 @@
+#!/bin/sh
+# core.hooksPath bypasses the hooks `git lfs install` wrote to .git/hooks, so Git LFS
+# runs here first; it reads the pushed refs from stdin, so nothing may consume it before.
+git lfs pre-push "$@" || exit
+# The full gate, recorded under its own target so the report can price the hook.
+exec just hook-pre-push
