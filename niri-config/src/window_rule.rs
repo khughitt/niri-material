@@ -58,7 +58,7 @@ pub struct WindowRule {
     pub draw_border_with_background: Option<bool>,
     #[knuffel(child, unwrap(argument))]
     pub opacity: Option<f32>,
-    #[knuffel(child, unwrap(argument))]
+    #[knuffel(child)]
     pub material: Option<MaterialRef>,
     #[knuffel(child)]
     pub geometry_corner_radius: Option<CornerRadius>,
@@ -138,6 +138,10 @@ pub struct Match {
     pub is_window_cast_target: Option<bool>,
     #[knuffel(property)]
     pub is_urgent: Option<bool>,
+    #[knuffel(property, str)]
+    pub signal_source: Option<RegexEq>,
+    #[knuffel(property, str)]
+    pub signal_tag: Option<RegexEq>,
     #[knuffel(property)]
     pub at_startup: Option<bool>,
 }

@@ -36,6 +36,44 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
         Msg::FocusedOutput => Request::FocusedOutput,
         Msg::PickWindow => Request::PickWindow,
         Msg::PickColor => Request::PickColor,
+        Msg::SetWindowSignal {
+            id,
+            source,
+            accent,
+            level,
+            motion,
+            tag,
+            ttl_ms,
+            after_level,
+            after_motion,
+            until_focus,
+        } => Request::SetWindowSignal {
+            id: *id,
+            source: source.clone(),
+            accent: accent.clone(),
+            level: *level,
+            motion: *motion,
+            tag: tag.clone(),
+            ttl_ms: *ttl_ms,
+            after_level: *after_level,
+            after_motion: *after_motion,
+            until_focus: *until_focus,
+        },
+        Msg::PulseWindowSignal {
+            id,
+            source,
+            kind,
+            accent,
+        } => Request::PulseWindowSignal {
+            id: *id,
+            source: source.clone(),
+            kind: *kind,
+            accent: accent.clone(),
+        },
+        Msg::ClearWindowSignal { id, source } => Request::ClearWindowSignal {
+            id: *id,
+            source: source.clone(),
+        },
         Msg::Action { action } => Request::Action(action.clone()),
         Msg::Output { output, action } => Request::Output {
             output: output.clone(),
@@ -317,7 +355,10 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                 println!("No color was picked.");
             }
         }
-        Msg::Action { .. } => {
+        Msg::SetWindowSignal { .. }
+        | Msg::PulseWindowSignal { .. }
+        | Msg::ClearWindowSignal { .. }
+        | Msg::Action { .. } => {
             let Response::Handled = response else {
                 bail!("unexpected response: expected Handled, got {response:?}");
             };
@@ -478,6 +519,10 @@ pub fn handle_msg(mut msg: Msg, json: bool) -> anyhow::Result<()> {
                     Event::WindowUrgencyChanged { id, urgent } => {
                         println!("Window {id}: urgency changed to {urgent}");
                     }
+                    Event::WindowSignalChanged { id, signal } => match signal {
+                        Some(signal) => println!("Window {id}: signal changed to {signal:?}"),
+                        None => println!("Window {id}: signal cleared"),
+                    },
                     Event::WindowLayoutsChanged { changes } => {
                         println!("Window layouts changed: {changes:?}");
                     }

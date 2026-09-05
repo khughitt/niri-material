@@ -1,4 +1,7 @@
+use std::cell::Cell;
 use std::ptr;
+use std::rc::Rc;
+use std::time::Duration;
 
 use anyhow::{ensure, Context as _};
 use niri_config::BlockOutFrom;
@@ -46,11 +49,31 @@ pub mod resources;
 pub mod shader_element;
 pub mod shaders;
 pub mod shadow;
+pub mod signal;
 pub mod snapshot;
 pub mod solid_color;
 pub mod surface;
 pub mod texture;
 pub mod xray;
+
+/// Per-output accumulator for the earliest sustained-signal bucket boundary
+/// among tiles that actually rendered (design §4).
+#[derive(Debug, Default)]
+pub struct SignalTicks {
+    pub next: Cell<Option<Duration>>,
+    pub view: Cell<Rectangle<f64, Logical>>,
+}
+
+impl SignalTicks {
+    pub fn reset(&self) {
+        self.next.set(None);
+    }
+
+    pub fn report(&self, deadline: Duration) {
+        let next = self.next.get().map_or(deadline, |n| n.min(deadline));
+        self.next.set(Some(next));
+    }
+}
 
 /// A rendering context.
 ///
@@ -59,6 +82,7 @@ pub struct RenderCtx<'a, R> {
     pub renderer: &'a mut R,
     pub target: RenderTarget,
     pub xray: Option<&'a Xray>,
+    pub signal_ticks: Option<Rc<SignalTicks>>,
 }
 
 impl<'a, R> RenderCtx<'a, R> {
@@ -69,6 +93,7 @@ impl<'a, R> RenderCtx<'a, R> {
             renderer: self.renderer,
             target: self.target,
             xray: self.xray,
+            signal_ticks: self.signal_ticks.clone(),
         }
     }
 }
@@ -79,6 +104,7 @@ impl<'a, R: AsGlesRenderer> RenderCtx<'a, R> {
             renderer: self.renderer.as_gles_renderer(),
             target: self.target,
             xray: self.xray,
+            signal_ticks: self.signal_ticks.clone(),
         }
     }
 }

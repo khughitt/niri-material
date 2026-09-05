@@ -26,6 +26,8 @@ All future production rebases and material commits happen in this repository.
 - `../specs/2026-09-02-material-noise-saturation-design.md`: implemented native and Prism noise/saturation composition design.
 - `2026-09-02-material-noise-saturation-evidence.md`: passing native automated, nested GLES, and Prism composition evidence.
 - `2026-09-04-focus-glass-spike.md`: passing focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.
+- `2026-09-02-material-signals-design.md`: implemented and verified per-window signal, IPC, and glass response design.
+- `2026-09-03-material-signals-smoke.md`: passing suites, IPC, redraw, GPU, package, and physical DRM evidence.
 - `material-config.md`: material and glass configuration reference.
 - `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
@@ -41,6 +43,7 @@ All future production rebases and material commits happen in this repository.
 - `plans/2026-08-29-material-backdrop-blur.md`: executed backdrop blur plan.
 - `../plans/2026-09-01-material-roughness.md`: executed roughness implementation and verification plan.
 - `../plans/2026-09-02-material-noise-saturation.md`: executed noise and saturation composition plan.
+- `../plans/2026-09-02-material-signals.md`: executed and verified material-signals plan.
 
 Research, results, and source fixtures live in the sibling
 `niri-experiments` repository. Explicitly qualified pre-split evidence and the

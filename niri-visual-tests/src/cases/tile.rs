@@ -118,6 +118,7 @@ impl TestCase for Tile {
 
         self.tile.update_render_elements(
             true,
+            true,
             Rectangle::new(Point::from((-location.x, -location.y)), size.to_logical(1.)),
         );
 
@@ -126,6 +127,7 @@ impl TestCase for Tile {
             renderer,
             target: RenderTarget::Output,
             xray: None,
+            signal_ticks: None,
         };
         let xray_pos = XrayPos::new(location, 1.);
         self.tile.render(

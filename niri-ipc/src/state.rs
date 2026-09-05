@@ -232,6 +232,11 @@ impl EventStreamStatePart for WindowsState {
                     }
                 }
             }
+            Event::WindowSignalChanged { id, signal } => {
+                if let Some(win) = self.windows.get_mut(&id) {
+                    win.signal = signal;
+                }
+            }
             Event::WindowLayoutsChanged { changes } => {
                 for (id, update) in changes {
                     let win = self.windows.get_mut(&id);
@@ -333,6 +338,9 @@ impl EventStreamStatePart for CastsState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        Impulse, ImpulseKind, Signal, SignalLevel, SignalMotion, Timestamp, Window, WindowLayout,
+    };
 
     fn ws(id: u64, view_pos: f64) -> Workspace {
         Workspace {
@@ -362,5 +370,62 @@ mod tests {
 
         assert_eq!(state.workspaces[&1].scrolling_view_pos, 250.5);
         assert_eq!(state.workspaces[&2].scrolling_view_pos, 100.0);
+    }
+
+    fn window(id: u64) -> Window {
+        Window {
+            id,
+            title: None,
+            app_id: None,
+            pid: None,
+            workspace_id: None,
+            is_focused: false,
+            is_floating: false,
+            is_urgent: false,
+            layout: WindowLayout {
+                pos_in_scrolling_layout: None,
+                tile_size: (0., 0.),
+                window_size: (0, 0),
+                tile_pos_in_workspace_view: None,
+                window_offset_in_tile: (0., 0.),
+            },
+            focus_timestamp: None,
+            signal: None,
+        }
+    }
+
+    #[test]
+    fn window_signal_changed_updates_cached_window() {
+        let mut state = WindowsState::default();
+        state.apply(Event::WindowsChanged {
+            windows: vec![window(7)],
+        });
+        let signal = Signal {
+            level: SignalLevel::Demand,
+            motion: SignalMotion::Pulse,
+            accent: Some(String::from("#e5a33c")),
+            tag: None,
+            sources: vec![String::from("familiar")],
+            impulses: vec![Impulse {
+                source: String::from("familiar"),
+                kind: ImpulseKind::Done,
+                accent: None,
+                at: Timestamp { secs: 1, nanos: 0 },
+                expires_at: Timestamp {
+                    secs: 2,
+                    nanos: 500_000_000,
+                },
+            }],
+        };
+        state.apply(Event::WindowSignalChanged {
+            id: 7,
+            signal: Some(signal.clone()),
+        });
+        assert_eq!(state.windows[&7].signal, Some(signal));
+        state.apply(Event::WindowSignalChanged {
+            id: 7,
+            signal: None,
+        });
+        assert_eq!(state.windows[&7].signal, None);
     }
 }

@@ -5,9 +5,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use niri_config::{CornerRadius, ResolvedGlass, ResolvedMaterial};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
-use smithay::backend::renderer::gles::{GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform};
+use smithay::backend::renderer::gles::{
+    GlesError, GlesFrame, GlesRenderer, GlesTexture, Uniform, UniformValue,
+};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::Color32F;
+use smithay::gpu_span_location;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
@@ -16,6 +19,7 @@ use super::offscreen::OffscreenBuffer;
 use super::renderer::AsGlesFrame;
 use super::shader_element::ShaderRenderElement;
 use super::shaders::{ProgramType, Shaders};
+use super::signal::{ImpulseFrame, SignalFingerprint, SignalFrame};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::RenderTarget;
 
@@ -111,6 +115,59 @@ fn tap_count(anisotropic_blur: f64, chromatic_aberration: f64) -> u8 {
     (8. * strength).ceil().clamp(2., 8.) as u8
 }
 
+/// Glass-specific interpretation of a `SignalFrame` (design §6). The one
+/// place glass selectors are read.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GlassSignalInputs {
+    pub activity_add: f32,
+    pub chromatic_aberration: f64,
+    pub distortion: f64,
+    pub samples: u8,
+    pub impulses: [ImpulseFrame; 4],
+}
+
+impl GlassSignalInputs {
+    pub fn quiet(glass: &ResolvedGlass) -> Self {
+        Self {
+            activity_add: 0.,
+            chromatic_aberration: glass.chromatic_aberration,
+            distortion: glass.distortion,
+            samples: tap_count(glass.anisotropic_blur, glass.chromatic_aberration),
+            impulses: Default::default(),
+        }
+    }
+}
+
+pub fn glass_signal_inputs(frame: &SignalFrame, glass: &ResolvedGlass) -> GlassSignalInputs {
+    use niri_config::ImpulseResponse as R;
+
+    let mut activity_add = 0.;
+    let mut flash = 0f32;
+    let mut impulses = frame.impulses;
+    for impulse in &mut impulses {
+        match impulse.selector {
+            selector if selector == R::Ripple as u8 => {
+                activity_add += impulse.envelope;
+                *impulse = ImpulseFrame::default();
+            }
+            selector if selector == R::Flash as u8 => {
+                flash = flash.max(impulse.envelope);
+                *impulse = ImpulseFrame::default();
+            }
+            _ => {}
+        }
+    }
+    let chromatic_aberration = (glass.chromatic_aberration + 0.5 * f64::from(flash)).min(1.);
+    let distortion = (glass.distortion + 0.25 * f64::from(flash)).min(1.);
+    GlassSignalInputs {
+        activity_add: activity_add.min(0.999),
+        chromatic_aberration,
+        distortion,
+        samples: tap_count(glass.anisotropic_blur, chromatic_aberration),
+        impulses,
+    }
+}
+
 static JELLY_SEED: AtomicUsize = AtomicUsize::new(0);
 
 /// The material element's coordinate frame: the inflated element area plus
@@ -196,6 +253,79 @@ pub struct JellyUniforms {
     pub time: f32,
 }
 
+/// Uniform values for the signal responses.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SignalUniforms {
+    pub accent: [f32; 4],
+    pub level: f32,
+    pub breath: f32,
+    pub light: [f32; 3],
+    pub impulse_env: [f32; 4],
+    pub impulse_prog: [f32; 4],
+    pub impulse_rgb: [[f32; 3]; 4],
+    pub impulse_resp: [i32; 4],
+    pub response: [i32; 2],
+    pub ring: [f32; 2],
+}
+
+impl SignalUniforms {
+    /// A window with no signal: bit-identical to today's output.
+    pub fn quiet(response: &niri_config::ResolvedResponse) -> Self {
+        Self {
+            accent: [0.; 4],
+            level: 0.,
+            breath: 0.,
+            light: [-1., -1., 0.],
+            impulse_env: [0.; 4],
+            impulse_prog: [0.; 4],
+            impulse_rgb: [[0.; 3]; 4],
+            impulse_resp: [0; 4],
+            response: [response.accent as i32, response.attention as i32],
+            ring: [response.ring_inset as f32, response.ring_width as f32],
+        }
+    }
+
+    /// Builds the uniforms from a frame after glass interpretation.
+    pub fn from_frame(
+        frame: &SignalFrame,
+        glass_signal: &GlassSignalInputs,
+        response: &niri_config::ResolvedResponse,
+    ) -> Self {
+        let light = if response.attention == niri_config::AttentionResponse::RimOrbit {
+            let base = -3. * std::f32::consts::FRAC_PI_4;
+            let sway = frame.level * std::f32::consts::FRAC_PI_2 * (2. * frame.breath - 1.) / 2.;
+            let angle = base + sway;
+            [angle.cos(), angle.sin(), frame.level]
+        } else {
+            [-1., -1., 0.]
+        };
+        let mut impulse_rgb = [[0.; 3]; 4];
+        let mut impulse_env = [0.; 4];
+        let mut impulse_prog = [0.; 4];
+        let mut impulse_resp = [0; 4];
+        for (slot, impulse) in glass_signal.impulses.iter().enumerate() {
+            impulse_env[slot] = impulse.envelope;
+            impulse_prog[slot] = impulse.progress;
+            impulse_resp[slot] = i32::from(impulse.selector);
+            impulse_rgb[slot] = impulse.accent.or(frame.accent).unwrap_or([1.; 3]);
+        }
+        Self {
+            accent: frame
+                .accent
+                .map_or([0.; 4], |color| [color[0], color[1], color[2], 1.]),
+            level: frame.level,
+            breath: frame.breath,
+            light,
+            impulse_env,
+            impulse_prog,
+            impulse_rgb,
+            impulse_resp,
+            response: [response.accent as i32, response.attention as i32],
+            ring: [response.ring_inset as f32, response.ring_width as f32],
+        }
+    }
+}
+
 /// Quantized jelly inputs for damage tracking: 1/1024-px buckets for the
 /// shear, 1 ms buckets for the ripple clock while active. At rest the time
 /// term is pinned so an idle slab contributes no damage. The clock is
@@ -222,6 +352,31 @@ impl JellyFingerprint {
             } else {
                 0
             },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlassSignalFingerprint {
+    activity_add_q: i32,
+    chromatic_q: i32,
+    distortion_q: i32,
+    samples: u8,
+}
+
+impl Default for GlassSignalFingerprint {
+    fn default() -> Self {
+        Self::quantize(&GlassSignalInputs::quiet(&ResolvedGlass::default()))
+    }
+}
+
+impl GlassSignalFingerprint {
+    pub fn quantize(glass_signal: &GlassSignalInputs) -> Self {
+        Self {
+            activity_add_q: (glass_signal.activity_add * 1024.).round() as i32,
+            chromatic_q: (glass_signal.chromatic_aberration * 1024.).round() as i32,
+            distortion_q: (glass_signal.distortion * 1024.).round() as i32,
+            samples: glass_signal.samples,
         }
     }
 }
@@ -391,6 +546,8 @@ pub struct InputFingerprint {
     /// to. Animated by the tile, so it changes with no config change.
     pub corner_radius: CornerRadius,
     pub jelly: JellyFingerprint,
+    pub signal: SignalFingerprint,
+    pub glass_signal: GlassSignalFingerprint,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -436,6 +593,10 @@ impl MaterialState {
         &self.config.material
     }
 
+    pub fn jelly_seed(&self) -> [f32; 3] {
+        self.jelly_seed
+    }
+
     pub fn has_program(renderer: &mut GlesRenderer) -> bool {
         Shaders::get(renderer).material.is_some()
     }
@@ -463,6 +624,8 @@ impl MaterialState {
         frame: MaterialFrame,
         mapping: BackgroundMapping,
         jelly: JellyUniforms,
+        signal: SignalUniforms,
+        glass_signal: GlassSignalInputs,
         scale: f64,
         alpha: f32,
         target: RenderTarget,
@@ -481,6 +644,8 @@ impl MaterialState {
             frame,
             corner_radius,
             jelly,
+            signal,
+            glass_signal,
             jelly_seed: self.jelly_seed,
             scale,
             alpha,
@@ -537,6 +702,8 @@ pub struct MaterialRenderElement {
     /// The window's rendered corner radius, in `CornerRadius` order.
     corner_radius: CornerRadius,
     jelly: JellyUniforms,
+    signal: SignalUniforms,
+    glass_signal: GlassSignalInputs,
     jelly_seed: [f32; 3],
     scale: f64,
     alpha: f32,
@@ -630,6 +797,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
 
         let g = &self.glass;
         let f = &self.frame;
+        let r = self.signal.impulse_resp;
         let uniforms: Rc<[Uniform<'static>]> = Rc::new([
             Uniform::new("mat_win_rect", self.win_rect),
             Uniform::new("mat_geo_rect", f.geo_rect),
@@ -658,15 +826,34 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
                 g.attenuation_color.to_array_unpremul(),
             ),
             Uniform::new("mat_attenuation_distance", g.attenuation_distance as f32),
-            Uniform::new("mat_chromatic_aberration", g.chromatic_aberration as f32),
-            Uniform::new("mat_distortion", g.distortion as f32),
-            Uniform::new("mat_distortion_scale", g.distortion_scale as f32),
             Uniform::new(
-                "mat_samples",
-                f32::from(tap_count(g.anisotropic_blur, g.chromatic_aberration)),
+                "mat_chromatic_aberration",
+                self.glass_signal.chromatic_aberration as f32,
             ),
+            Uniform::new("mat_distortion", self.glass_signal.distortion as f32),
+            Uniform::new("mat_distortion_scale", g.distortion_scale as f32),
+            Uniform::new("mat_samples", f32::from(self.glass_signal.samples)),
             Uniform::new("mat_anisotropic_blur", g.anisotropic_blur as f32),
             Uniform::new("mat_jelly_ripple", g.jelly_ripple as f32),
+            Uniform::new("mat_sig_accent", self.signal.accent),
+            Uniform::new("mat_sig_level", self.signal.level),
+            Uniform::new("mat_sig_breath", self.signal.breath),
+            Uniform::new("mat_sig_light", self.signal.light),
+            Uniform::new("mat_sig_impulse_env", self.signal.impulse_env),
+            Uniform::new("mat_sig_impulse_prog", self.signal.impulse_prog),
+            Uniform::new("mat_sig_impulse_rgb0", self.signal.impulse_rgb[0]),
+            Uniform::new("mat_sig_impulse_rgb1", self.signal.impulse_rgb[1]),
+            Uniform::new("mat_sig_impulse_rgb2", self.signal.impulse_rgb[2]),
+            Uniform::new("mat_sig_impulse_rgb3", self.signal.impulse_rgb[3]),
+            Uniform::new(
+                "mat_sig_impulse_resp",
+                UniformValue::_4i(r[0], r[1], r[2], r[3]),
+            ),
+            Uniform::new(
+                "mat_sig_response",
+                UniformValue::_2i(self.signal.response[0], self.signal.response[1]),
+            ),
+            Uniform::new("mat_sig_ring", self.signal.ring),
         ]);
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
@@ -688,7 +875,17 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             textures,
             Kind::Unspecified,
         );
-        RenderElement::<GlesRenderer>::draw(&inner, frame, src, dst, damage, opaque_regions, cache)
+        frame.with_gpu_span(gpu_span_location!("MaterialRenderElement::draw"), |frame| {
+            RenderElement::<GlesRenderer>::draw(
+                &inner,
+                frame,
+                src,
+                dst,
+                damage,
+                opaque_regions,
+                cache,
+            )
+        })
     }
 
     fn underlying_storage(&self, _renderer: &mut GlesRenderer) -> Option<UnderlyingStorage<'_>> {
@@ -733,6 +930,7 @@ mod tests {
             material: ResolvedMaterial {
                 name: String::from(name),
                 glass: ResolvedGlass::default(),
+                responses: vec![(String::from("default"), Default::default())],
             },
             noise: 0.,
             saturation: 1.,
@@ -778,6 +976,8 @@ mod tests {
             backdrop_color: [0.; 4],
             corner_radius: CornerRadius::default(),
             jelly: JellyFingerprint::default(),
+            signal: SignalFingerprint::default(),
+            glass_signal: GlassSignalFingerprint::default(),
         }
     }
 
@@ -1318,6 +1518,118 @@ mod tests {
         assert_eq!(tap_count(1., 0.), 8);
         // The stronger effect wins.
         assert_eq!(tap_count(0.125, 1.), 8);
+    }
+
+    #[test]
+    fn glass_signal_inputs_sums_ripples_and_maxes_flash() {
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
+        use niri_config::ImpulseResponse as R;
+
+        let mut frame = SignalFrame {
+            accent: None,
+            level: 0.,
+            breath: 0.,
+            impulses: Default::default(),
+        };
+        frame.impulses[0] = ImpulseFrame {
+            selector: R::Ripple as u8,
+            envelope: 0.7,
+            progress: 0.1,
+            accent: None,
+        };
+        frame.impulses[1] = ImpulseFrame {
+            selector: R::Ripple as u8,
+            envelope: 0.6,
+            progress: 0.2,
+            accent: None,
+        };
+        frame.impulses[2] = ImpulseFrame {
+            selector: R::Flash as u8,
+            envelope: 0.4,
+            progress: 0.3,
+            accent: None,
+        };
+        frame.impulses[3] = ImpulseFrame {
+            selector: R::Flash as u8,
+            envelope: 0.8,
+            progress: 0.4,
+            accent: None,
+        };
+        let glass = ResolvedGlass::default();
+        let g = glass_signal_inputs(&frame, &glass);
+
+        assert!(
+            (g.activity_add - 0.999).abs() < 1e-6,
+            "ripples clamp to [0, 1)"
+        );
+        assert!(
+            (g.chromatic_aberration - 0.4).abs() < 1e-6,
+            "0 + 0.5 * max(0.4, 0.8)"
+        );
+        assert!((g.distortion - 0.2).abs() < 1e-6);
+        assert_eq!(g.samples, tap_count(0., 0.4));
+        assert!(
+            g.impulses.iter().all(|i| i.selector == R::None as u8),
+            "consumed slots become none"
+        );
+    }
+
+    #[test]
+    fn rim_light_only_moves_under_rim_orbit() {
+        use crate::render_helpers::signal::SignalFrame;
+        use niri_config::{AttentionResponse, ResolvedResponse};
+
+        let frame = SignalFrame {
+            accent: Some([1., 0.5, 0.]),
+            level: 1.,
+            breath: 1.,
+            impulses: Default::default(),
+        };
+        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let mut r = ResolvedResponse::default();
+        for (attention, moves) in [
+            (AttentionResponse::RimOrbit, true),
+            (AttentionResponse::RingPulse, false),
+            (AttentionResponse::None, false),
+        ] {
+            r.attention = attention;
+            let u = SignalUniforms::from_frame(&frame, &g, &r);
+            let quiet = SignalUniforms::quiet(&r).light;
+            assert_eq!(u.light != quiet, moves, "{attention:?}");
+        }
+    }
+
+    #[test]
+    fn glass_signal_inputs_leaves_sweep_alone() {
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
+        use niri_config::ImpulseResponse as R;
+
+        let mut frame = SignalFrame {
+            accent: None,
+            level: 0.,
+            breath: 0.,
+            impulses: Default::default(),
+        };
+        frame.impulses[0] = ImpulseFrame {
+            selector: R::Sweep as u8,
+            envelope: 0.5,
+            progress: 0.5,
+            accent: None,
+        };
+        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+
+        assert_eq!(g.impulses[0].selector, R::Sweep as u8);
+        assert_eq!(g.activity_add, 0.);
+        assert_eq!(g.samples, 1);
+    }
+
+    #[test]
+    fn default_glass_signal_fingerprint_matches_quiet_default_glass() {
+        let quiet = GlassSignalInputs::quiet(&ResolvedGlass::default());
+        assert_eq!(
+            GlassSignalFingerprint::default(),
+            GlassSignalFingerprint::quantize(&quiet)
+        );
     }
 
     #[test]

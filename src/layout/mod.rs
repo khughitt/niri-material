@@ -247,6 +247,9 @@ pub trait LayoutElement {
 
     fn is_urgent(&self) -> bool;
 
+    /// The folded window signal at `now`, if any source has written one.
+    fn signal(&self, now: Duration) -> Option<crate::window::signal::Folded>;
+
     fn configure_intent(&self) -> ConfigureIntent;
     fn send_pending_configure(&mut self);
 
@@ -396,6 +399,7 @@ pub struct Options {
     pub gestures: niri_config::Gestures,
     pub overview: niri_config::Overview,
     pub blur: niri_config::Blur,
+    pub signal: niri_config::Signal,
     // Debug flags.
     pub disable_resize_throttling: bool,
     pub disable_transactions: bool,
@@ -667,6 +671,7 @@ impl Options {
             gestures: config.gestures,
             overview: config.overview,
             blur: config.blur,
+            signal: config.signal,
             disable_resize_throttling: config.debug.disable_resize_throttling,
             disable_transactions: config.debug.disable_transactions,
             deactivate_unfocused_windows: config.debug.deactivate_unfocused_windows,
@@ -1731,6 +1736,24 @@ impl<W: LayoutElement> Layout<W> {
                 }
             }
         }
+    }
+
+    /// Finds a window by predicate, including one under interactive move.
+    pub fn find_window_mut_by(&mut self, mut pred: impl FnMut(&W) -> bool) -> Option<&mut W> {
+        let moving_matches = self
+            .interactive_move
+            .as_ref()
+            .and_then(InteractiveMoveState::moving)
+            .is_some_and(|move_| pred(move_.tile.window()));
+        if moving_matches {
+            return self
+                .interactive_move
+                .as_mut()
+                .and_then(InteractiveMoveState::moving_mut)
+                .map(|move_| move_.tile.window_mut());
+        }
+        self.workspaces_mut()
+            .find_map(|ws| ws.windows_mut().find(|window| pred(window)))
     }
 
     fn active_monitor(&mut self) -> Option<&mut Monitor<W>> {
@@ -2800,7 +2823,7 @@ impl<W: LayoutElement> Layout<W> {
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
                         .downscale(zoom);
 
-                move_.tile.update_render_elements(true, view_rect);
+                move_.tile.update_render_elements(true, true, view_rect);
             }
         }
 
@@ -4682,7 +4705,7 @@ impl<W: LayoutElement> Layout<W> {
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
                         .downscale(zoom);
-                move_.tile.update_render_elements(false, view_rect);
+                move_.tile.update_render_elements(false, false, view_rect);
 
                 move_.tile.store_unmap_snapshot_if_empty(
                     renderer,

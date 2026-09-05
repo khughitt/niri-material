@@ -41,6 +41,7 @@ pub mod material;
 pub mod misc;
 pub mod output;
 pub mod recent_windows;
+pub mod signal;
 pub mod utils;
 pub mod window_rule;
 pub mod workspace;
@@ -54,11 +55,15 @@ pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
-pub use crate::material::{Glass, Material, Positive, ResolvedGlass, ResolvedMaterial};
+pub use crate::material::{
+    AccentResponse, AttentionResponse, Glass, ImpulseResponse, Material, MaterialRef, Positive,
+    ResolvedGlass, ResolvedMaterial, ResolvedResponse, Response,
+};
 pub use crate::misc::*;
 pub use crate::output::{Output, OutputName, Outputs, Position, Vrr};
 use crate::recent_windows::RecentWindowsPart;
 pub use crate::recent_windows::{MruDirection, MruFilter, MruPreviews, MruScope, RecentWindows};
+pub use crate::signal::{Signal, SignalMotionPolicy, SignalPart};
 pub use crate::utils::FloatOrInt;
 use crate::utils::{Flag, MergeWith as _};
 pub use crate::window_rule::{
@@ -83,6 +88,7 @@ pub struct Config {
     pub config_notification: ConfigNotification,
     pub animations: Animations,
     pub blur: Blur,
+    pub signal: Signal,
     pub gestures: Gestures,
     pub overview: Overview,
     pub environment: Environment,
@@ -209,6 +215,7 @@ where
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
                 "blur" => m_merge!(blur),
+                "signal" => m_merge!(signal),
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
@@ -764,6 +771,206 @@ mod tests {
     }
 
     #[test]
+    fn signal_block_and_matches_parse() {
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r##"
+            signal {
+                motion "reduced"
+            }
+
+            animations {
+                material-signal { duration-ms 250; curve "ease-out-quad"; }
+            }
+
+            window-rule {
+                match signal-source="^familiar$" signal-tag="^cats/"
+                opacity 0.9
+            }
+            "##,
+        )])
+        .unwrap();
+
+        assert_eq!(parsed.signal.motion, crate::SignalMotionPolicy::Reduced);
+        assert_eq!(
+            parsed.animations.material_signal.0.kind,
+            crate::animations::Kind::Easing(crate::animations::EasingParams {
+                duration_ms: 250,
+                curve: crate::animations::Curve::EaseOutQuad,
+            })
+        );
+        let m = &parsed.window_rules[0].matches[0];
+        assert!(m.signal_source.as_ref().unwrap().0.is_match("familiar"));
+        assert!(m.signal_tag.as_ref().unwrap().0.is_match("cats/ginger"));
+    }
+
+    #[test]
+    fn signal_motion_defaults_to_full() {
+        let parsed = parse_files(&[("config.kdl", "")]).unwrap();
+        assert_eq!(parsed.signal.motion, crate::SignalMotionPolicy::Full);
+        assert_eq!(
+            parsed.animations.material_signal.0.kind,
+            crate::animations::Kind::Easing(crate::animations::EasingParams {
+                duration_ms: 400,
+                curve: crate::animations::Curve::EaseOutCubic,
+            })
+        );
+    }
+
+    #[test]
+    fn signal_motion_rejects_unknown_value() {
+        let err = parse_files_err(&[("config.kdl", "signal { motion \"loud\"\n}")]);
+        assert!(err.contains("unknown"), "{err}");
+    }
+
+    #[test]
+    fn response_blocks_resolve_with_inheritance() {
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r##"
+            material "tg" {
+                glass { bevel 12; offset-x 0; offset-y 0; }
+                response "default" {
+                    accent "ring"
+                    attention "rim-orbit"
+                    ping "ripple"
+                    done "sweep"
+                    error "flash"
+                    ring-inset 6
+                    ring-width 2
+                }
+                response "loud" {
+                    attention "ring-pulse"
+                }
+            }
+            window-rule {
+                match app-id="^kitty$"
+                material "tg" response="loud"
+            }
+            "##,
+        )])
+        .unwrap();
+
+        let m = parsed.materials[0].resolve();
+        let loud = m.response(Some("loud"));
+        assert_eq!(loud.attention, crate::AttentionResponse::RingPulse);
+        assert_eq!(loud.accent, crate::AccentResponse::Ring);
+        assert_eq!(loud.done, crate::ImpulseResponse::Sweep);
+        assert_eq!(loud.ring_inset, 6.);
+        let r = parsed.window_rules[0].material.as_ref().unwrap();
+        assert_eq!(r.name, "tg");
+        assert_eq!(r.response.as_deref(), Some("loud"));
+    }
+
+    #[test]
+    fn material_without_response_block_gets_builtin_default() {
+        let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
+        let d = parsed.materials[0].resolve().response(None);
+        assert_eq!(d.accent, crate::AccentResponse::Ring);
+        assert_eq!(d.attention, crate::AttentionResponse::RimOrbit);
+        assert_eq!(d.ping, crate::ImpulseResponse::Ripple);
+        assert_eq!(d.done, crate::ImpulseResponse::Sweep);
+        assert_eq!(d.error, crate::ImpulseResponse::Flash);
+        assert_eq!((d.ring_inset, d.ring_width), (6., 2.));
+    }
+
+    #[test]
+    fn response_block_without_default_is_an_error() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "loud" { attention "ring-pulse"; }; }"#,
+        )]);
+        assert!(err.contains("missing response \"default\""), "{err}");
+    }
+
+    #[test]
+    fn duplicate_response_name_is_an_error() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" {}; response "default" {}; }"#,
+        )]);
+        assert!(err.contains("duplicate response: default"), "{err}");
+    }
+
+    #[test]
+    fn ring_must_fit_in_bevel() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"material "tg" { glass { bevel 4; }; response "default" { ring-inset 3; ring-width 2; }; }"#,
+        )]);
+        assert!(
+            err.contains("ring-inset + ring-width must not exceed bevel"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn unknown_response_reference_is_an_error() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"
+            material "tg" { glass {}; }
+            window-rule { material "tg" response="loud"; }
+            "#,
+        )]);
+        assert!(err.contains("unknown response: loud"), "{err}");
+    }
+
+    #[test]
+    fn material_reference_rejects_duplicate_response_property() {
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"
+            material "tg" { glass {}; }
+            window-rule { material "tg" response="default" response="default"; }
+            "#,
+        )]);
+        assert!(err.contains("duplicate property `response`"), "{err}");
+    }
+
+    #[test]
+    fn material_reference_rejects_malformed_nodes() {
+        for (bad, needle) in [
+            (r#"material "tg" "extra""#, "unexpected argument"),
+            (r#"material "tg" { glass {}; }"#, "unexpected node"),
+            (r#"(typed)material "tg""#, "no type name expected"),
+            (r#"material (typed)"tg""#, "type name"),
+            (r#"material "tg" response=(typed)"default""#, "type name"),
+            (r#"material "tg" bogus="x""#, "unexpected property"),
+        ] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!("material \"tg\" {{ glass {{}}; }}\nwindow-rule {{ {bad}; }}"),
+            )]);
+            assert!(err.contains(needle), "{bad}: {err}");
+        }
+    }
+
+    #[test]
+    fn impulse_selector_follows_policy() {
+        use crate::{ImpulseResponse, ResolvedResponse, SignalMotionPolicy};
+        let r = ResolvedResponse::default();
+        assert_eq!(
+            r.impulse_selector(niri_ipc::ImpulseKind::Error, SignalMotionPolicy::Full),
+            Some(ImpulseResponse::Flash as u8)
+        );
+        assert_eq!(
+            r.impulse_selector(niri_ipc::ImpulseKind::Error, SignalMotionPolicy::Reduced),
+            Some(ImpulseResponse::Sweep as u8)
+        );
+        assert_eq!(
+            r.impulse_selector(niri_ipc::ImpulseKind::Error, SignalMotionPolicy::Off),
+            None
+        );
+        let mut none = r;
+        none.done = ImpulseResponse::None;
+        assert_eq!(
+            none.impulse_selector(niri_ipc::ImpulseKind::Done, SignalMotionPolicy::Full),
+            None
+        );
+    }
+
+    #[test]
     fn window_rule_material_reference_resolves() {
         let parsed = do_parse(
             r##"
@@ -781,7 +988,7 @@ mod tests {
             parsed.window_rules[0]
                 .material
                 .as_ref()
-                .map(|m| m.0.as_str()),
+                .map(|m| m.name.as_str()),
             Some("frost")
         );
     }
@@ -805,7 +1012,7 @@ mod tests {
             parsed.window_rules[0]
                 .material
                 .as_ref()
-                .map(|m| m.0.as_str()),
+                .map(|m| m.name.as_str()),
             Some("frost")
         );
     }
@@ -2250,6 +2457,17 @@ mod tests {
                         ),
                     },
                 ),
+                material_signal: MaterialSignalAnim(
+                    Animation {
+                        off: false,
+                        kind: Easing(
+                            EasingParams {
+                                duration_ms: 400,
+                                curve: EaseOutCubic,
+                            },
+                        ),
+                    },
+                ),
             },
             blur: Blur {
                 off: false,
@@ -2257,6 +2475,9 @@ mod tests {
                 offset: 3.0,
                 noise: 0.02,
                 saturation: 1.5,
+            },
+            signal: Signal {
+                motion: Full,
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {
@@ -2341,6 +2562,8 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            signal_source: None,
+                            signal_tag: None,
                             at_startup: None,
                         },
                     ],
@@ -2360,6 +2583,8 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            signal_source: None,
+                            signal_tag: None,
                             at_startup: None,
                         },
                         Match {
@@ -2375,6 +2600,8 @@ mod tests {
                             is_floating: None,
                             is_window_cast_target: None,
                             is_urgent: None,
+                            signal_source: None,
+                            signal_tag: None,
                             at_startup: None,
                         },
                     ],

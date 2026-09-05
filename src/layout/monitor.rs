@@ -1096,6 +1096,10 @@ impl<W: LayoutElement> Monitor<W> {
             .as_ref()
             .and_then(|hint| hint.workspace.existing_id());
 
+        for tile in self.workspaces.iter_mut().flat_map(Workspace::tiles_mut) {
+            tile.clear_signal_render_visibility();
+        }
+
         for (ws, geo) in self.workspaces_with_render_geo_mut(true) {
             ws.update_render_elements(is_active);
 

@@ -85,6 +85,47 @@ pub enum Request {
     PickWindow,
     /// Request picking a color from the screen.
     PickColor,
+    /// Set a source's signal on a window.
+    SetWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name; `niri` is reserved.
+        source: String,
+        /// Accent color as `#rrggbb` or `#rrggbbaa`.
+        accent: Option<String>,
+        /// Level.
+        level: SignalLevel,
+        /// Sustained motion.
+        motion: SignalMotion,
+        /// Free-form tag for window-rule matching.
+        tag: Option<String>,
+        /// Time until the slot decays to `after_level` / `after_motion`, in ms.
+        ttl_ms: Option<u32>,
+        /// Level after decay.
+        after_level: Option<SignalLevel>,
+        /// Motion after decay.
+        after_motion: Option<SignalMotion>,
+        /// Whether focusing the window demotes the slot to its `after` pair.
+        until_focus: bool,
+    },
+    /// Raise a transient impulse on a window for an existing source.
+    PulseWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name; must already have a slot.
+        source: String,
+        /// Kind of impulse.
+        kind: ImpulseKind,
+        /// Accent color override as `#rrggbb` or `#rrggbbaa`.
+        accent: Option<String>,
+    },
+    /// Remove a source's signal slot from a window.
+    ClearWindowSignal {
+        /// Id of the window.
+        id: u64,
+        /// Source name.
+        source: String,
+    },
     /// Perform an action.
     Action(Action),
     /// Change output configuration temporarily.
@@ -181,6 +222,83 @@ pub struct Overview {
 pub struct PickedColor {
     /// Color values as red, green, blue, each ranging from 0.0 to 1.0.
     pub rgb: [f64; 3],
+}
+
+/// Attention level of a window signal.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum SignalLevel {
+    /// Nothing to report.
+    Quiet,
+    /// Something is happening; no attention needed.
+    Active,
+    /// Worth a glance.
+    Notice,
+    /// Needs the user.
+    Demand,
+}
+
+/// Sustained motion of a window signal.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum SignalMotion {
+    /// No sustained motion.
+    Static,
+    /// Slow 4 s oscillation.
+    Breathe,
+    /// 1.2 s oscillation.
+    Pulse,
+    /// 0.5 s square wave.
+    Flash,
+}
+
+/// Kind of a transient signal impulse.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "clap", derive(clap::ValueEnum))]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub enum ImpulseKind {
+    /// Generic attention tap.
+    Ping,
+    /// Something finished.
+    Done,
+    /// Something failed.
+    Error,
+}
+
+/// A live transient impulse on a window signal.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Impulse {
+    /// Source slot this impulse belongs to.
+    pub source: String,
+    /// Kind of the impulse.
+    pub kind: ImpulseKind,
+    /// Accent color as `#rrggbb`, if the impulse carries one.
+    pub accent: Option<String>,
+    /// When the impulse was raised (unadjusted monotonic clock).
+    pub at: Timestamp,
+    /// When the impulse expires (unadjusted monotonic clock).
+    pub expires_at: Timestamp,
+}
+
+/// The folded signal of a window.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+pub struct Signal {
+    /// Highest level across sources.
+    pub level: SignalLevel,
+    /// Motion of the source that won on level.
+    pub motion: SignalMotion,
+    /// Identity accent as `#rrggbb`, if any source has one.
+    pub accent: Option<String>,
+    /// Free-form tag, if any source has one.
+    pub tag: Option<String>,
+    /// Every contributing source name, in slot order.
+    pub sources: Vec<String>,
+    /// Live impulses, oldest first.
+    pub impulses: Vec<Impulse>,
 }
 
 /// Actions that niri can perform.
@@ -1334,6 +1452,8 @@ pub struct Window {
     ///
     /// The timestamp comes from the monotonic clock.
     pub focus_timestamp: Option<Timestamp>,
+    /// Folded window signal, if any source has written one.
+    pub signal: Option<Signal>,
 }
 
 /// A moment in time.
@@ -1676,6 +1796,13 @@ pub enum Event {
         id: u64,
         /// The new urgency state of the window.
         urgent: bool,
+    },
+    /// The folded signal of a window changed.
+    WindowSignalChanged {
+        /// Id of the window.
+        id: u64,
+        /// New folded signal, or `None` when the last slot was cleared.
+        signal: Option<Signal>,
     },
     /// The layout of one or more windows has changed.
     WindowLayoutsChanged {

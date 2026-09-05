@@ -1,10 +1,11 @@
 use std::cmp::{max, min};
+use std::time::Duration;
 
 use niri_config::utils::MergeWith as _;
 use niri_config::window_rule::{Match, WindowRule};
 use niri_config::{
-    BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, PresetSize,
-    ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
+    BackgroundEffect, BlockOutFrom, BorderRule, CornerRadius, FloatingPosition, MaterialRef,
+    PresetSize, ResolvedPopupsRules, ShadowRule, TabIndicatorRule,
 };
 use niri_ipc::ColumnDisplay;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
@@ -15,6 +16,8 @@ use smithay::wayland::shell::xdg::{
 };
 
 use crate::utils::with_toplevel_role;
+
+pub mod signal;
 
 pub mod mapped;
 pub use mapped::Mapped;
@@ -99,8 +102,8 @@ pub struct ResolvedWindowRules {
     /// Extra opacity to draw this window with.
     pub opacity: Option<f32>,
 
-    /// Name of the material to render this window with.
-    pub material: Option<String>,
+    /// Material and response to render this window with.
+    pub material: Option<MaterialRef>,
 
     /// Corner radius to assume this window has.
     pub geometry_corner_radius: Option<CornerRadius>,
@@ -149,6 +152,13 @@ impl<'a> WindowRef<'a> {
         match self {
             WindowRef::Unmapped(_) => false,
             WindowRef::Mapped(mapped) => mapped.is_urgent(),
+        }
+    }
+
+    pub fn signal(self, now: Duration) -> Option<signal::Folded> {
+        match self {
+            WindowRef::Unmapped(_) => None,
+            WindowRef::Mapped(mapped) => mapped.signals().fold(now),
         }
     }
 
@@ -286,7 +296,7 @@ impl ResolvedWindowRules {
                 }
 
                 if let Some(x) = &rule.material {
-                    resolved.material = Some(x.0.clone());
+                    resolved.material = Some(x.clone());
                 }
                 if let Some(x) = rule.geometry_corner_radius {
                     resolved.geometry_corner_radius = Some(x);
@@ -403,6 +413,23 @@ fn window_matches(window: WindowRef, role: &XdgToplevelSurfaceRoleAttributes, m:
     if let Some(is_urgent) = m.is_urgent {
         if window.is_urgent() != is_urgent {
             return false;
+        }
+    }
+
+    if m.signal_source.is_some() || m.signal_tag.is_some() {
+        let Some(folded) = window.signal(crate::utils::get_monotonic_time()) else {
+            return false;
+        };
+        if let Some(re) = &m.signal_source {
+            if !folded.sources.iter().any(|source| re.0.is_match(source)) {
+                return false;
+            }
+        }
+        if let Some(re) = &m.signal_tag {
+            match &folded.tag {
+                Some(tag) if re.0.is_match(tag) => {}
+                _ => return false,
+            }
         }
     }
 

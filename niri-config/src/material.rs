@@ -19,7 +19,10 @@ use crate::FloatOrInt;
 /// shared parse context; `validate_material_refs` checks them all once every
 /// include has merged.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MaterialRef(pub String);
+pub struct MaterialRef {
+    pub name: String,
+    pub response: Option<String>,
+}
 
 /// Window-rule material references collected during a parse.
 #[derive(Debug)]
@@ -27,14 +30,17 @@ pub struct MaterialRefs<S> {
     /// References from the root config file. Their spans are byte offsets
     /// into the source the root context reports against, so these can carry
     /// a proper caret.
-    pub root: Vec<knuffel::span::Spanned<knuffel::ast::Literal, S>>,
-    /// References from included files, as (material name, file name).
+    pub root: Vec<(
+        knuffel::span::Spanned<knuffel::ast::Literal, S>,
+        Option<String>,
+    )>,
+    /// References from included files, as (material name, response, file name).
     ///
     /// A `knuffel::Span` is a bare byte range with no file identity, and each
     /// include is parsed against its own `NamedSource`. Emitting an include's
     /// span into the root context would underline the wrong file, so these
     /// are reported without a snippet and name their file in the message.
-    pub included: Vec<(String, String)>,
+    pub included: Vec<(String, Option<String>, String)>,
 }
 
 impl<S> Default for MaterialRefs<S> {
@@ -46,31 +52,66 @@ impl<S> Default for MaterialRefs<S> {
     }
 }
 
-impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for MaterialRef {
-    fn type_check(
-        type_name: &Option<knuffel::span::Spanned<knuffel::ast::TypeName, S>>,
+impl<S: knuffel::traits::ErrorSpan> knuffel::Decode<S> for MaterialRef {
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
         ctx: &mut knuffel::decode::Context<S>,
-    ) {
-        if let Some(type_name) = &type_name {
+    ) -> Result<Self, DecodeError<S>> {
+        if let Some(type_name) = &node.type_name {
             ctx.emit_error(DecodeError::unexpected(
                 type_name,
                 "type name",
                 "no type name expected for this node",
             ));
         }
-    }
-
-    fn raw_decode(
-        val: &knuffel::span::Spanned<knuffel::ast::Literal, S>,
-        ctx: &mut knuffel::decode::Context<S>,
-    ) -> Result<Self, DecodeError<S>> {
-        let knuffel::ast::Literal::String(ref s) = **val else {
-            ctx.emit_error(DecodeError::unsupported(
-                val,
-                "material references must be strings",
-            ));
-            return Ok(Self(String::new()));
+        let Some(arg) = node.arguments.first() else {
+            return Err(DecodeError::missing(node, "material name argument"));
         };
+        let name: String = knuffel::traits::DecodeScalar::decode(arg, ctx)?;
+        if let Some(extra) = node.arguments.get(1) {
+            ctx.emit_error(DecodeError::unexpected(
+                &extra.literal,
+                "argument",
+                "unexpected argument",
+            ));
+        }
+        for child in node.children() {
+            ctx.emit_error(DecodeError::unexpected(
+                child,
+                "node",
+                format!("unexpected node `{}`", child.node_name.escape_default()),
+            ));
+        }
+        let mut response = None;
+        for (key, val) in &node.properties {
+            match &***key {
+                "response" => {
+                    let key_span: miette::SourceSpan = key.span().clone().into();
+                    let value_span: miette::SourceSpan = val
+                        .type_name
+                        .as_ref()
+                        .map_or_else(|| val.literal.span().clone(), |ty| ty.span().clone())
+                        .into();
+                    // Knuffel's property map retains the first key and last value on duplicates.
+                    let duplicate = value_span.offset() != key_span.offset() + key_span.len() + 1;
+                    if response.is_some() || duplicate {
+                        ctx.emit_error(DecodeError::unexpected(
+                            key,
+                            "property",
+                            "unexpected duplicate property `response`",
+                        ));
+                    }
+                    response = Some(knuffel::traits::DecodeScalar::decode(val, ctx)?);
+                }
+                other => {
+                    return Err(DecodeError::unexpected(
+                        key,
+                        "property",
+                        format!("unexpected property `{other}`"),
+                    ));
+                }
+            }
+        }
 
         let refs = ctx
             .get::<Rc<RefCell<MaterialRefs<S>>>>()
@@ -87,12 +128,16 @@ impl<S: knuffel::traits::ErrorSpan> knuffel::DecodeScalar<S> for MaterialRef {
             .clone();
 
         if recursion == 0 {
-            refs.borrow_mut().root.push(val.clone());
+            refs.borrow_mut()
+                .root
+                .push((arg.literal.clone(), response.clone()));
         } else {
-            refs.borrow_mut().included.push((s.to_string(), file));
+            refs.borrow_mut()
+                .included
+                .push((name.clone(), response.clone(), file));
         }
 
-        Ok(Self(s.clone().into()))
+        Ok(Self { name, response })
     }
 }
 
@@ -104,27 +149,193 @@ pub fn validate_material_refs<S: knuffel::traits::ErrorSpan>(
     materials: &[Material],
     ctx: &mut knuffel::decode::Context<S>,
 ) {
-    let known = |name: &str| materials.iter().any(|m| m.name == name);
+    let find = |name: &str| materials.iter().find(|m| m.name == name);
+    let response_known = |material: &Material, response: &str| {
+        material.responses.is_empty() && response == "default"
+            || material.responses.iter().any(|r| r.name == response)
+    };
 
-    for val in &refs.root {
+    for (val, response) in &refs.root {
         let knuffel::ast::Literal::String(ref s) = **val else {
             continue;
         };
 
-        if !known(s) {
-            ctx.emit_error(DecodeError::unexpected(
+        match find(s) {
+            None => ctx.emit_error(DecodeError::unexpected(
                 val,
                 "material",
                 format!("unknown material: {s}"),
-            ));
+            )),
+            Some(material) => {
+                if let Some(response) = response
+                    .as_ref()
+                    .filter(|response| !response_known(material, response))
+                {
+                    ctx.emit_error(DecodeError::unexpected(
+                        val,
+                        "material",
+                        format!("material {s}: unknown response: {response}"),
+                    ));
+                }
+            }
         }
     }
 
-    for (name, file) in &refs.included {
-        if !known(name) {
-            ctx.emit_error(DecodeError::Custom(
+    for (name, response, file) in &refs.included {
+        match find(name) {
+            None => ctx.emit_error(DecodeError::Custom(
                 format!("unknown material: {name} (referenced in {file})").into(),
-            ));
+            )),
+            Some(material) => {
+                if let Some(response) = response
+                    .as_ref()
+                    .filter(|response| !response_known(material, response))
+                {
+                    ctx.emit_error(DecodeError::Custom(
+                        format!(
+                            "material {name}: unknown response: {response} (referenced in {file})"
+                        )
+                        .into(),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum AccentResponse {
+    None = 0,
+    #[default]
+    Ring = 1,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum AttentionResponse {
+    None = 0,
+    #[default]
+    RimOrbit = 1,
+    RingPulse = 2,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum ImpulseResponse {
+    #[default]
+    None = 0,
+    Ripple = 1,
+    Flash = 2,
+    Sweep = 3,
+}
+
+macro_rules! response_from_str {
+    ($ty:ident, $($s:literal => $v:ident),+ $(,)?) => {
+        impl std::str::FromStr for $ty {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, String> {
+                match s {
+                    $($s => Ok(Self::$v),)+
+                    _ => Err(format!(concat!("unknown ", stringify!($ty), " value: {}"), s)),
+                }
+            }
+        }
+    };
+}
+
+response_from_str!(AccentResponse, "none" => None, "ring" => Ring);
+response_from_str!(AttentionResponse, "none" => None, "rim-orbit" => RimOrbit, "ring-pulse" => RingPulse);
+response_from_str!(ImpulseResponse, "none" => None, "ripple" => Ripple, "flash" => Flash, "sweep" => Sweep);
+
+/// A `response "name" { ... }` block inside a material definition.
+#[derive(knuffel::Decode, Debug, Clone, PartialEq)]
+pub struct Response {
+    #[knuffel(argument)]
+    pub name: String,
+    #[knuffel(child, unwrap(argument, str))]
+    pub accent: Option<AccentResponse>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub attention: Option<AttentionResponse>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub ping: Option<ImpulseResponse>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub done: Option<ImpulseResponse>,
+    #[knuffel(child, unwrap(argument, str))]
+    pub error: Option<ImpulseResponse>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_inset: Option<FloatOrInt<0, 128>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_width: Option<FloatOrInt<0, 128>>,
+}
+
+/// A fully resolved response block.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ResolvedResponse {
+    pub accent: AccentResponse,
+    pub attention: AttentionResponse,
+    pub ping: ImpulseResponse,
+    pub done: ImpulseResponse,
+    pub error: ImpulseResponse,
+    pub ring_inset: f64,
+    pub ring_width: f64,
+}
+
+impl Default for ResolvedResponse {
+    fn default() -> Self {
+        Self {
+            accent: AccentResponse::Ring,
+            attention: AttentionResponse::RimOrbit,
+            ping: ImpulseResponse::Ripple,
+            done: ImpulseResponse::Sweep,
+            error: ImpulseResponse::Flash,
+            ring_inset: 6.,
+            ring_width: 2.,
+        }
+    }
+}
+
+impl ResolvedResponse {
+    fn with_overrides(base: Self, response: &Response) -> Self {
+        Self {
+            accent: response.accent.unwrap_or(base.accent),
+            attention: response.attention.unwrap_or(base.attention),
+            ping: response.ping.unwrap_or(base.ping),
+            done: response.done.unwrap_or(base.done),
+            error: response.error.unwrap_or(base.error),
+            ring_inset: response.ring_inset.map_or(base.ring_inset, |x| x.0),
+            ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
+        }
+    }
+
+    pub fn attention_is_none(&self) -> bool {
+        self.attention == AttentionResponse::None
+    }
+
+    /// Resolves an impulse kind to an opaque glass selector under the policy.
+    pub fn impulse_selector(
+        &self,
+        kind: niri_ipc::ImpulseKind,
+        policy: crate::SignalMotionPolicy,
+    ) -> Option<u8> {
+        use crate::SignalMotionPolicy as P;
+
+        if policy == P::Off {
+            return None;
+        }
+        let response = match kind {
+            niri_ipc::ImpulseKind::Ping => self.ping,
+            niri_ipc::ImpulseKind::Done => self.done,
+            niri_ipc::ImpulseKind::Error => self.error,
+        };
+        let response = match (policy, response) {
+            (P::Reduced, ImpulseResponse::Flash) => ImpulseResponse::Sweep,
+            (_, response) => response,
+        };
+        match response {
+            ImpulseResponse::None => None,
+            response => Some(response as u8),
         }
     }
 }
@@ -143,6 +354,8 @@ pub struct Material {
     pub name: String,
     #[knuffel(child)]
     pub glass: Glass,
+    #[knuffel(children(name = "response"))]
+    pub responses: Vec<Response>,
 }
 
 /// `distortion <amount> scale=<scale>`.
@@ -200,6 +413,19 @@ pub struct Glass {
 pub struct ResolvedMaterial {
     pub name: String,
     pub glass: ResolvedGlass,
+    pub responses: Vec<(String, ResolvedResponse)>,
+}
+
+impl ResolvedMaterial {
+    /// The named response, or `default`. Names are validated at parse time.
+    pub fn response(&self, name: Option<&str>) -> ResolvedResponse {
+        let name = name.unwrap_or("default");
+        self.responses
+            .iter()
+            .find(|(candidate, _)| candidate == name)
+            .map(|(_, response)| *response)
+            .expect("response names are validated at parse time")
+    }
 }
 
 /// Final glass parameter values. Lengths are logical pixels.
@@ -253,6 +479,30 @@ impl Material {
     pub fn resolve(&self) -> ResolvedMaterial {
         let g = &self.glass;
         let d = ResolvedGlass::default();
+        let responses = if self.responses.is_empty() {
+            vec![(String::from("default"), ResolvedResponse::default())]
+        } else {
+            let default_block = self
+                .responses
+                .iter()
+                .find(|response| response.name == "default")
+                .expect("response blocks are validated before resolution");
+            let default =
+                ResolvedResponse::with_overrides(ResolvedResponse::default(), default_block);
+            let mut responses = vec![(String::from("default"), default)];
+            responses.extend(
+                self.responses
+                    .iter()
+                    .filter(|response| response.name != "default")
+                    .map(|response| {
+                        (
+                            response.name.clone(),
+                            ResolvedResponse::with_overrides(default, response),
+                        )
+                    }),
+            );
+            responses
+        };
 
         ResolvedMaterial {
             name: self.name.clone(),
@@ -280,6 +530,7 @@ impl Material {
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
             },
+            responses,
         }
     }
 
@@ -295,8 +546,43 @@ impl Material {
         let offset_x = self.glass.offset_x.map_or(d.offset_x, |x| x.0);
         let offset_y = self.glass.offset_y.map_or(d.offset_y, |x| x.0);
 
+        if !self.responses.is_empty()
+            && !self
+                .responses
+                .iter()
+                .any(|response| response.name == "default")
+        {
+            return Err(format!(
+                "material {}: missing response \"default\"",
+                self.name
+            ));
+        }
+        let mut seen = std::collections::HashSet::new();
+        for response in &self.responses {
+            if !seen.insert(response.name.as_str()) {
+                return Err(format!("duplicate response: {}", response.name));
+            }
+        }
+        let resolved = self.resolve();
+        let ring_fits = resolved
+            .responses
+            .iter()
+            .all(|(_, response)| response.ring_inset + response.ring_width <= bevel);
+
+        // Prefer the explicitly configured response error when both it and
+        // the inherited glass offset exceed the bevel.
+        if !self.responses.is_empty() && !ring_fits {
+            return Err(String::from(
+                "ring-inset + ring-width must not exceed bevel",
+            ));
+        }
         if offset_x.abs().max(offset_y.abs()) > bevel {
             return Err(String::from("offset must not exceed bevel"));
+        }
+        if !ring_fits {
+            return Err(String::from(
+                "ring-inset + ring-width must not exceed bevel",
+            ));
         }
 
         Ok(())

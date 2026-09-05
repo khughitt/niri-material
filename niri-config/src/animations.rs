@@ -19,6 +19,7 @@ pub struct Animations {
     pub screenshot_ui_open: ScreenshotUiOpenAnim,
     pub overview_open_close: OverviewOpenCloseAnim,
     pub recent_windows_close: RecentWindowsCloseAnim,
+    pub material_signal: MaterialSignalAnim,
 }
 
 impl Default for Animations {
@@ -37,6 +38,7 @@ impl Default for Animations {
             screenshot_ui_open: Default::default(),
             overview_open_close: Default::default(),
             recent_windows_close: Default::default(),
+            material_signal: Default::default(),
         }
     }
 }
@@ -71,6 +73,8 @@ pub struct AnimationsPart {
     pub overview_open_close: Option<OverviewOpenCloseAnim>,
     #[knuffel(child)]
     pub recent_windows_close: Option<RecentWindowsCloseAnim>,
+    #[knuffel(child)]
+    pub material_signal: Option<MaterialSignalAnim>,
 }
 
 impl MergeWith<AnimationsPart> for Animations {
@@ -97,6 +101,7 @@ impl MergeWith<AnimationsPart> for Animations {
             screenshot_ui_open,
             overview_open_close,
             recent_windows_close,
+            material_signal,
         );
     }
 }
@@ -326,6 +331,21 @@ impl Default for RecentWindowsCloseAnim {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MaterialSignalAnim(pub Animation);
+
+impl Default for MaterialSignalAnim {
+    fn default() -> Self {
+        Self(Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 400,
+                curve: Curve::EaseOutCubic,
+            }),
+        })
+    }
+}
+
 impl<S> knuffel::Decode<S> for WorkspaceSwitchAnim
 where
     S: knuffel::traits::ErrorSpan,
@@ -510,6 +530,21 @@ where
 }
 
 impl<S> knuffel::Decode<S> for RecentWindowsCloseAnim
+where
+    S: knuffel::traits::ErrorSpan,
+{
+    fn decode_node(
+        node: &knuffel::ast::SpannedNode<S>,
+        ctx: &mut knuffel::decode::Context<S>,
+    ) -> Result<Self, DecodeError<S>> {
+        let default = Self::default().0;
+        Ok(Self(Animation::decode_node(node, ctx, default, |_, _| {
+            Ok(false)
+        })?))
+    }
+}
+
+impl<S> knuffel::Decode<S> for MaterialSignalAnim
 where
     S: knuffel::traits::ErrorSpan,
 {
