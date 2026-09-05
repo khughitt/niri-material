@@ -160,6 +160,9 @@ the drifting filament in the accent color. The band sits `ring-inset` px
 inward from the slab's outer edge, is refracted through the glass, and is
 masked to the bevel, so it never lights the window face. Every resolved
 response must satisfy `ring-inset + ring-width <= bevel` and `ring-width > 0`.
+The filament shows through the slab's exterior band and through translucent
+window pixels; an opaque window shows a full ring only when
+`bevel >= 2 * max(|offset-x|, |offset-y|) + ring-inset + ring-width`.
 Set `focus-ring { off }` (globally or in a window rule) for material
 windows so the gradient ring does not draw a second ring; non-material
 windows keep whatever ring the layout configures.
