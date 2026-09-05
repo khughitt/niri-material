@@ -1,7 +1,7 @@
 # Material signals acceptance evidence
 
-**Status:** passed 2026-09-03 on `feat/material-signals`. The accepted
-implementation is `38d506f2`; `b746ee9d` pins the Arch package to that source.
+**Status:** passed 2026-09-04 on `feat/material-signals`. The accepted
+implementation is `663202b1`; `aaae42a4` pins the Arch package to that source.
 
 This run covers the unit and fixture suites, nested IPC behavior, redraw
 cadence and suppression, GPU cost, package contents, and a ten-minute physical
@@ -12,12 +12,15 @@ DRM check.
 | Command | Result |
 |---|---|
 | `cargo test -p niri-ipc` | 4 unit tests and 1 doctest passed |
-| `cargo test -p niri-config` | 62 unit tests and 1 integration test passed |
+| `cargo test -p niri-config` | 63 unit tests and 1 integration test passed |
 | `cargo test --bin niri` | command passed; this target contains no tests |
-| `cargo test --lib` | 296 fixture and unit tests passed |
+| `cargo test --lib` | 300 fixture and unit tests passed |
+| `cargo test -p niri-visual-tests --no-run` | visual test target compiled |
 
-The Arch package build repeated the full check and passed 296 niri tests, 62
-config tests, one wiki test, and four IPC tests.
+The Arch package build repeated the full check and passed 300 niri tests, 63
+config tests, one wiki integration test, four IPC tests, and compiled the
+visual test target. Final review added regression coverage for hidden tabs,
+offscreen columns, culled workspaces, and duplicate `response=` properties.
 
 ## Nested IPC round trip
 
@@ -57,6 +60,10 @@ The run retained 16 nonempty Tracy traces and matching capture logs and CPU
 exports. All nested services, sockets, and processes were absent after
 cleanup. Retained artifact directory: `signals-3219722-1788427980`.
 
+An exact-source nested visual smoke also exited zero and produced five
+distinct screenshots. Retained artifact directory:
+`signals-2078145-1788484085`.
+
 ## GPU comparison
 
 The host was in active use, and initial reference-first trials showed temporal
@@ -82,6 +89,12 @@ default in this sample. The current binary SHA-256 was
 `4be54a7002468cdd21693593a8636d5c2bd5b6563d14c559b7449e668aa434eb`
 in every trial. Cleanup leaked no service, socket, worktree, or process.
 
+These GPU captures used `38d506f2`. The accepted-source changes after that
+commit do not touch shader files: they correct CPU-side visibility scheduling,
+reject duplicate configuration properties, complete visual-test call sites,
+and pin the final package. The exact-source visual and package checks above
+cover those changes.
+
 Retained artifact directories:
 
 - `signals-377360-1788446987`
@@ -90,20 +103,21 @@ Retained artifact directories:
 
 ## Package and physical DRM
 
-The installed package is `niri-material 26.04.r209.g38d506f2-1`. Its archive
+The installed package is `niri-material 26.04.r215.g663202b1-1`. Its archive
 contains the same 27 entries and 11 files as the installed package and has
 SHA-256
-`028eb704ca66553d11885adc43d0a6d4f855ec9b9c84cfbfe660c9681b434fd0`.
+`3e154ef32b03d8b021ec207f3b2539dc611705c570c7be961183edb0fc979c2e`.
 The installed `/usr/bin/niri` has SHA-256
-`35c44dc13ba065c3fcb3787f8a01171645c1ff24c4a86f3564f0cfbead81f47f`.
+`23098121e5b24e39741a7a1d211229807446d39b7e4fc6ea2fb50a809408ec4a`.
 
 After an operator-controlled install and graphical-session restart, both the
-CLI and live compositor reported `niri 26.04 (38d506f2)`. From 19:33:31 to
-19:43:31 US/Eastern, an unfocused window on the active workspace held a
-Demand + Pulse signal with accent `#e5a33c`. Eleven samples at one-minute
-intervals confirmed that the window remained unfocused, the signal remained
-intact, and the compositor remained responsive on the accepted build. The
-session showed no visual or interaction regression. The compositor journal
-contained only a normal configuration reload during the interval, with no
-warning, error, or panic. Clearing the `physical-smoke` source restored the
-window's signal to `null`.
+CLI and live compositor reported `niri 26.04 (663202b1)`. From 21:28:31 to
+21:38:32 US/Eastern, an unfocused floating window held a Demand + Pulse signal
+with accent `#e5a33c`. The actively used desktop moved away from its workspace;
+eleven samples at one-minute intervals confirmed that the hidden window
+remained unfocused, the signal remained intact, and the compositor remained
+responsive on the accepted build. Returning the window to the active workspace
+preserved the signal and resumed the onscreen Pulse. The compositor journal
+contained only normal configuration reloads during the interval, with no
+warning, error, or panic. Clearing the `physical-smoke-final` source restored
+the window's signal to `null`, and the temporary client was removed.

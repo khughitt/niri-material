@@ -5,7 +5,7 @@ status: done
 priority: 1
 size: l
 created: 2026-09-02T12:08:58Z
-updated: 2026-09-03T23:46:00Z
+updated: 2026-09-05T01:40:56Z
 depends: [material-b43616]
 tags: [signals, rendering, ipc]
 ---
@@ -16,3 +16,4 @@ Outcome: the compositor-first slice of docs/materials/2026-09-02-material-signal
 
 - 2026-09-02T12:27:59Z (feat/material-signals): Review pass 2026-09-02: signal writes are IPC Requests with a result channel, not Actions; sustained motion uses bucket timers rather than the animation loop; impulse kinds resolve to shader selectors on the CPU; flash is additive; ring geometry documented against the offset slab; state bounds and event Option<Signal> added. See spec sections 1, 2, 4, 5, 6.
 - 2026-09-03T23:46:00Z (feat/material-signals): Material signals landed on feat/material-signals; evidence in docs/materials/2026-09-03-material-signals-smoke.md
+- 2026-09-05T01:40:56Z (feat/material-signals): Material signals implementation and final acceptance completed at 663202b1.

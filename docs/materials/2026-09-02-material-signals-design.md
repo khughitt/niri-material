@@ -1,7 +1,7 @@
 # Material signals: design
 
-**Status:** implemented and verified 2026-09-03 on `feat/material-signals`;
-accepted implementation `38d506f2`, package recipe `b746ee9d`, and
+**Status:** implemented and verified 2026-09-04 on `feat/material-signals`;
+accepted implementation `663202b1`, package recipe `aaae42a4`, and
 [acceptance evidence](2026-09-03-material-signals-smoke.md). Compositor-first
 slice: signal model, IPC, envelope solver, configuration, and the first glass responses. External sources
 (familiar, shell integration, others) are follow-up tasks against the IPC
