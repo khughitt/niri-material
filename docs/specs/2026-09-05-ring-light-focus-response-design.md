@@ -1,7 +1,9 @@
 # Ring of light focus response: design
 
-**Status:** approved design, not started. Supersedes the static gradient
-focus ring for material windows; the spike that chose it is
+**Status:** implemented on design/ring-light; smoke evidence in
+[2026-09-05-ring-light-focus-smoke.md](../materials/2026-09-05-ring-light-focus-smoke.md);
+DRM acceptance awaiting the operator run described there. Supersedes the
+static gradient focus ring for material windows; the spike that chose it is
 [`2026-09-05-focus-ring-light-spike.md`](../materials/2026-09-05-focus-ring-light-spike.md).
 
 **Task:** `material-26dd8a`, piece of `material-d1f471`.

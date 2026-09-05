@@ -20,7 +20,7 @@
 - Defaults: `focus "ring-light"`, `ring-inset 5`, `ring-width 2.6`, `ring-color "#ccccff"`, `ring-drift-hz 15`, `light-ior 6`.
 - Config errors are whole-config errors with the exact messages given in each task.
 - Run affected tests with `just test-fast` from the worktree root; each task's final step runs `just test`. Commits pass the pre-commit hook (`just check`: rustfmt, clippy, tooling tests, `tasks check`). Conventional commits with scopes `feat(config)`, `feat(render)`, `feat(material)`, `docs(material)`, `test(material)`. No AI attribution trailer.
-- Task lifecycle: every `### Task N` heading has a record linked with `plan:` and `step:`. Run `tasks start <id>` before a task; its final commit runs `tasks done <id> "<result>"` and stages `tasks/`. The parent `material-26dd8a` closes in Task 7's final step after Task 7's own record.
+- Task lifecycle: every `### Task N` heading has a record linked with `plan:` and `step:`. Run `tasks start <id>` before a task; its final commit runs `tasks done <id> "<result>"` and stages `tasks/`. The parent `material-26dd8a` stays open until the operator's DRM acceptance runs land; Task 7 closes its own record and notes the parent.
 
 | Task | Record | | Task | Record |
 |---|---|---|---|---|
@@ -1537,7 +1537,9 @@ Run `docs/materials/scripts/focus-ring-light.sh` and require every check to pass
 
 - [ ] **Step 5: DRM acceptance: pinned run is the gate, drifting run is bounded**
 
-The retained DRM gate (`niri-experiments` `fixtures/v1-drm-smoke.sh` with `v1-drm-smoke.kdl`, procedure in `docs/materials/plans/2026-08-27-v1-drm-acceptance.md`) requires paired settled frames to be byte-identical, which a drifting filament cannot satisfy. Run it twice:
+The DRM acceptance runs are performed by the operator on VT2; Task 6 prepares the pinned config and documents both runs. `--run` needs an active VT2 session on seat0, which no agent session can provide, and `--prepare` refuses until two reviewable edits land in `niri-experiments` (the candidate source commit added to the `material_source_commit` allowlist, and the pinned config made the tracked `fixtures/v1-drm-smoke.kdl`).
+
+The retained DRM gate (`niri-experiments` `fixtures/v1-drm-smoke.sh` with `v1-drm-smoke.kdl`, procedure in `docs/materials/plans/2026-08-27-v1-drm-acceptance.md`) requires paired settled frames to be byte-identical, which a drifting filament cannot satisfy, so the operator's procedure is two runs:
 
 1. **Pinned (the acceptance gate).** Copy `v1-drm-smoke.kdl` to `v1-drm-smoke-pinned.kdl` and add `response "default" { ring-drift-hz 0; }` inside `material "frost"`; run `--prepare` against this build with that config, then `--run` and `--analyze`. Every gate, including `static-repeat`, `move-repeat`, `resize-return`, `remap-return`, and `final-return`, must pass. A failure blocks closure.
 2. **Drifting (bounded to the bevel band).** Run the unmodified `v1-drm-smoke.kdl` the same way. Expected: the run completes with no compositor error in its log; every non-identity gate passes; and for each identity gate that fails, the differing pixels lie entirely in the probe's bevel band. Take the probe window rectangle `x,y,w,h` from the gate's artifact JSON (the settled probe geometry it already records) and, for each failing pair `a.png b.png`:
@@ -1554,7 +1556,7 @@ magick diff.png -format '%[fx:int(mean*w*h)]' info:
 
 The first two counts must be 0 and the third at most `2 * (w + h + 24) * 12`. Any other outcome, or any non-identity failure, blocks closure.
 
-Record both results with their numbers.
+The operator records both results with their numbers in the evidence document, and `material-be1e01` and `material-26dd8a` close after they pass.
 
 - [ ] **Step 6: Write the evidence document**
 
@@ -1566,11 +1568,11 @@ Create `docs/materials/2026-09-05-ring-light-focus-smoke.md` with: the build SHA
 
 - [ ] **Step 7: Commit**
 
-Only when every smoke case, every measured capture check, and the pinned DRM run pass and the drifting run is within its bound:
+Only when every smoke case and every measured capture check passes. The two DRM runs are the operator's; the evidence document records them as awaiting, and `material-be1e01` stays open until they pass:
 
 ```bash
 just test
-tasks done material-be1e01 "smoke: focused-drift ~15/s, reduced ~7.5/s, static/anim-off/focus-none zero, focus-none toggle bounded; captures: mid-fade color between, no face light under flex, selectors independent; DRM pinned pass, drifting bounded"
+tasks done material-be1e01 "smoke: focused-drift 15.0/s, reduced 7.5/s, static/anim-off/focus-none/other-focused zero, focus-none-toggle 21 against a 22 control then zero; captures: zero face pixels changed at rest, mid-fade red share 0.498, all four selectors pass; resize-flex mid-resize informational, tiny not verified by render; DRM acceptance awaiting the operator's VT2 runs"
 git add docs/materials/scripts/material-signals-smoke.sh docs/materials/scripts/focus-ring-light.sh docs/materials/2026-09-05-ring-light-focus-smoke.md docs/materials/README.md tasks/
 git commit -m "test(material): measure focus filament wakeups in the signals smoke"
 ```
@@ -1613,11 +1615,9 @@ windows so the gradient ring does not draw a second ring; non-material
 windows keep whatever ring the layout configures.
 ```
 
-In the glass parameter table of the same document add:
+In the glass parameter table of the same document add a `light-ior` row in the table's own five-column shape (`| \`light-ior\` | float | 6 | 1–12 | — |`), and a short paragraph under it: the parameter multiplies the bend on the focus filament's light path only, never the background taps; the light-path index is `1 + (ior - 1) * light-ior` and the calibrated look has that product near 0.12, which the default 6 gives at Prism's `ior 1.02`; denser glass saturates the shared shift, capped at half `ring-inset`, after which `light-ior` only widens the chromatic split.
 
-```markdown
-| `light-ior` | 1–12 | 6 | multiplier on the focus filament's refraction; the background taps are unaffected |
-```
+Add the two validation errors Task 1 introduced to the validation list: `ring-width must be positive` and `ring-drift-hz must be 0 or at least 1`.
 
 In the motion section, after the `material-signal` sentence add: "The focus filament fades in and out with `material-signal` too, and `reduced` halves `ring-drift-hz` while `off` and `animations { off }` pin the drift."
 
@@ -1634,20 +1634,20 @@ No dependency is recorded: the material piece is complete without Prism.
 
 - [ ] **Step 3: Update the spec status and the exploration goal**
 
-Change the spec's status line to `**Status:** implemented; evidence in [2026-09-05-ring-light-focus-smoke.md](../materials/2026-09-05-ring-light-focus-smoke.md).` Add a note to the exploration goal: `tasks note material-d1f471 "winner shipped as material-26dd8a"`.
+Change the spec's status line to `**Status:** implemented on design/ring-light; smoke evidence in [2026-09-05-ring-light-focus-smoke.md](../materials/2026-09-05-ring-light-focus-smoke.md); DRM acceptance awaiting the operator run described there.` Add a note to the exploration goal: `tasks note material-d1f471 "winner shipped as material-26dd8a"`.
 
 - [ ] **Step 4: Commit and close**
 
 ```bash
 just test
 tasks done material-23f92e "material-config documents focus, ring-color, ring-drift-hz, light-ior; Prism piece filed"
-tasks done material-26dd8a "ring of light focus response: config, solver drift, tile crossfades, refracted filament, smoke evidence"
+tasks note material-26dd8a "closure pending the operator DRM run recorded in material-be1e01; everything else landed"
 tasks check
-git add docs/materials/material-config.md docs/specs/2026-09-05-ring-light-focus-response-design.md tasks/
+git add docs/materials/material-config.md docs/specs/2026-09-05-ring-light-focus-response-design.md docs/plans/2026-09-05-ring-light-focus-response.md tasks/
 git commit -m "docs(material): document the ring of light focus response"
 ```
 
-Closure of `material-26dd8a` requires Task 6's passing result; if any check there failed, Task 6 stays open and this step is not reached. `material-d1f471` closes when its owner confirms the goal is met (`tasks done material-d1f471`), after the merge.
+Closure of `material-26dd8a` requires Task 6's DRM acceptance runs, which are the operator's on VT2 and have not happened; `material-be1e01` and the parent both stay open until they pass, and the parent is closed then rather than here. `material-d1f471` closes when its owner confirms the goal is met (`tasks done material-d1f471`), after the merge.
 
 ## Self-review notes
 

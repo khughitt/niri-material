@@ -6,7 +6,7 @@ priority: 3
 size: l
 owner: explore/focus-ring-light
 created: 2026-09-05T01:10:50Z
-updated: 2026-09-05T10:27:19Z
+updated: 2026-09-05T17:14:09Z
 depends: []
 tags: [material, focus-ring]
 ---
@@ -24,3 +24,4 @@ Output: a ranked write-up with captures; the winner becomes a scoped child task 
 
 - 2026-09-05T09:14:25Z (explore/focus-ring-light): spike approved: six candidates as throwaway branches inside material.frag behind an env-var selector plus active and time uniforms; harness nests the worktree binary on headless weston with two transparent kitty windows, captures stills and a frame burst per candidate; write-up ranks looks, idle redraw cost, and animations-off degrade path. Owner refinement: the ring of light is embedded in the slab and refracted by it, not a surface band, with slow movement so it interacts with different parts of the glass.
 - 2026-09-05T10:16:06Z (explore/focus-ring-light): spike done: write-up docs/materials/2026-09-05-focus-ring-light-spike.md, harness docs/materials/scripts/focus-ring-light.sh, probe patch niri-experiments fixtures/focus-ring-light-probe.patch (results/slice3 8e31521, not pushed), captures $NIRI_MATERIAL_WORK_ROOT/focus-ring-light-fcdc5ed4. Ranking: ring of light > organic noise (a mode of the ring) > shadow (free complement) > canopy (attention response material, not focus) > motes > rays. Baseline static ring is invisible on the dark focus glass. All animating candidates cost 60 draws/s while focused-idle; HZ quantization of the fingerprint does not throttle under a per-frame animation flag, a timer is needed. Winner scoped as a child.
+- 2026-09-05T17:14:09Z (design/ring-light): winner shipped as material-26dd8a
