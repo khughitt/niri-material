@@ -337,6 +337,30 @@ Append inside `mod tests` in `src/render_helpers/signal.rs`:
     }
 
     #[test]
+    fn drift_boundary_is_strictly_future_and_advances_the_bucket() {
+        for hz in [15., 7.5, 20., 1., 30.] {
+            let mut now = Duration::ZERO;
+            for _ in 0..400 {
+                let b = drift_next_boundary(hz, now).unwrap();
+                assert!(b > now, "{hz} Hz at {now:?}: {b:?}");
+                assert_ne!(drift(hz, b, 0.3), drift(hz, now, 0.3), "{hz} Hz at {now:?}");
+                // One nanosecond earlier is still the old bucket.
+                assert_eq!(
+                    drift(hz, b - Duration::from_nanos(1), 0.3),
+                    drift(hz, now, 0.3),
+                    "{hz} Hz at {now:?}"
+                );
+                now = b;
+            }
+        }
+        // The exact 15 Hz value: first nanosecond of bucket 1.
+        assert_eq!(
+            drift_next_boundary(15., ms(0)),
+            Some(Duration::from_nanos(66_666_667))
+        );
+    }
+
+    #[test]
     fn travel_is_continuous_across_the_phase_wrap() {
         for k in 0..16 {
             let a = k as f32 / 16. * TAU;
@@ -561,14 +585,17 @@ pub fn drift(hz: f64, now: Duration, seed: f32) -> f32 {
     (phase * TAU).rem_euclid(TAU)
 }
 
-/// Next absolute-clock instant at which `drift` changes. The `as u64` cast
-/// is exact below 584 years of uptime.
+/// Next absolute-clock instant at which `drift` changes: the first
+/// nanosecond of the next bucket, so it is strictly in the future and
+/// `drift` evaluated there is already the next bucket's value (ceiling
+/// division; a floor would land one nanosecond early and re-arm the same
+/// deadline). The `as u64` cast is exact below 584 years of uptime.
 pub fn drift_next_boundary(hz: f64, now: Duration) -> Option<Duration> {
     let n = drift_buckets(hz)?;
     let period = DRIFT_PERIOD.as_nanos();
     let start = now.as_nanos() - now.as_nanos() % period;
     let k = (now.as_nanos() - start) * n / period + 1;
-    Some(Duration::from_nanos((start + period * k / n) as u64))
+    Some(Duration::from_nanos((start + (period * k + n - 1) / n) as u64))
 }
 
 /// The filament's travelling brightness in `[-1, 1]`, mirrored exactly by
@@ -1455,23 +1482,32 @@ Expected: `cases: OK`, with `focused-drift` about 300 in 20 s, `focused-reduced`
 
 - [ ] **Step 4: Measured captures on the spike harness**
 
-`docs/materials/scripts/focus-ring-light.sh` keeps its nested-host plumbing (`start_nested`, `spawn_kitty`, `shot`, the dark split glass) and its `baseline` case. Retire the probe cases: the default `CASES` becomes `baseline accent-midfade resize-flex tiny selectors`, `start_nested` drops the `NIRI_FOCUS_PROBE*` variables, and `run_case` dispatches by name. Add a pixel sampler and the four cases. Coordinates below are for the 1280 x 720 host with the harness layout (right window at about x 656 to 1228, y 48 to 672; slab edge 8 px outside the window on the right window's top edge, so the bevel spans about y 40 to 51 and the face starts at about y 52); confirm them once against `baseline-right-focused-corner.png` and adjust the constants at the top of the script if the geometry moved.
+`docs/materials/scripts/focus-ring-light.sh` keeps its nested-host plumbing (`start_nested`, `spawn_kitty`, `shot`, the dark split glass) and its `baseline` case. Retire the probe cases: the default `CASES` becomes `baseline accent-midfade resize-flex tiny selectors`, `start_nested` drops the `NIRI_FOCUS_PROBE*` variables, and `run_case` dispatches by name. Add a linear-light pixel sampler and the cases. Coordinates below are for the 1280 x 720 host with the harness layout (right window at about x 656 to 1228, y 48 to 672; slab edge 8 px outside the window on the right window's top edge, so the bevel spans about y 40 to 51 and the face starts at about y 52); confirm them once against `baseline-right-focused-corner.png` and adjust the constants at the top of the script if the geometry moved.
 
 ```bash
-FIL_X=940; FIL_Y=45; FACE_Y=58   # top edge of the right window: filament row, and 6 px into the face
-px() { magick "$1" -format '%[fx:int(255*p{'"$2"','"$3"'}.r)] %[fx:int(255*p{'"$2"','"$3"'}.g)] %[fx:int(255*p{'"$2"','"$3"'}.b)]' info:; }
-lum() { set -- $(px "$1" "$2" "$3"); echo $(( (299*$1 + 587*$2 + 114*$3) / 1000 )); }
-between() {   # $1 label, $2 low, $3 value, $4 high: strictly between, with a 3-level margin
-    [ "$3" -gt $(( $2 + 3 )) ] && [ "$3" -lt $(( $4 - 3 )) ] || { echo "FAIL: $1: $3 not strictly between $2 and $4" >&2; exit 1; }
+FIL_X=940; FIL_Y=45                       # top edge of the right window: filament row
+FACE_CROP=520x560+700+90                  # face region: the right window inset by at least 40 px on every side
+plin() {   # $1 image, $2 x, $3 y: linear-light r g b in 0..1 (PNG is sRGB; -colorspace RGB decodes it)
+    magick "$1" -colorspace RGB -format '%[fx:p{'"$2"','"$3"'}.r] %[fx:p{'"$2"','"$3"'}.g] %[fx:p{'"$2"','"$3"'}.b]' info:
+}
+# Emissive contribution at a pixel: linear(with filament) - linear(same scene, filament disabled).
+emissive() { paste -d' ' <(plin "$1" "$3" "$4" | tr ' ' '\n') <(plin "$2" "$3" "$4" | tr ' ' '\n') | awk '{ printf "%f ", $1 - $2 }'; }
+red_fraction() { awk -v e="$1" 'BEGIN { split(e, c, " "); s = c[1] + c[2] + c[3]; if (s <= 0) { print 0; exit }; printf "%.3f", c[1] / s }'; }
+face_ae() {   # $1 a, $2 b: count of differing pixels over the face region
+    magick compare -metric AE \( "$1" -crop "$FACE_CROP" +repage \) \( "$2" -crop "$FACE_CROP" +repage \) null: 2>&1
+}
+face_max() {   # $1 a, $2 b: max per-channel difference over the face region, 0..255
+    magick \( "$1" -crop "$FACE_CROP" +repage \) \( "$2" -crop "$FACE_CROP" +repage \) -compose difference -composite -format '%[fx:int(255*maxima)]' info:
 }
 ```
 
-The material in the harness config is the dark split glass; write the cases against it:
+Every case renders the same scene twice, once with the filament and once with it disabled (`response "default" { focus "none"; accent "none"; }`), so refraction, attenuation, Fresnel, and jelly are identical in both and only the filament differs. Rest scenes are deterministic, so the disabled render is taken at rest in its own nested instance. Every case pins the drift (`ring-drift-hz 0`) so the clock does not enter. The capture material is the dark split glass with two changes for measurability: `attenuation-color "#888888"` (neutral, so the attenuation exponent scales all channels equally and hue survives) and `chromatic-aberration 0` (so the per-channel band is identical). The material base color stays `#ccccff` (linear 0.604, 0.604, 1.0) and the accent is `#ff0000` (linear 1, 0, 0).
 
-- `accent-midfade`: config adds `animations { slowdown 20; }` (the 400 ms fade becomes 8 s). Focus the right window, `shot` `before`; `msg set-window-signal --id "$RIGHT" --source demo --accent '#ff0000'`; sleep 4; `shot` `mid`; sleep 6; `shot` `after`. Check `between accent-midfade-red "$(px before FIL_X FIL_Y | cut -d' ' -f1)" "$(px mid ...)" "$(px after ...)"` on the red channel and the reverse order on the blue channel: the mid color lies strictly between the base filament and the settled accent, which is only true when presence and straight color are both carried.
-- `resize-flex`: config adds `animations { slowdown 20; }`. Focus the right window, `shot` `rest`; `msg action set-column-width +200`; sleep 1.5 (mid-resize, jelly at full flex); `shot` `flex`; sleep 10; `shot` `settled`. Check the face row: `[ $(( $(lum flex FIL_X FACE_Y) - $(lum rest FIL_X FACE_Y) )) -le 2 ]` and the same for `settled`, in absolute value: no filament light reaches the face during or after the deformation. Also check the filament row in `flex` is brighter than in `rest` by at least 3 levels (jelly breath).
-- `tiny`: spawn a third kitty and `msg action set-window-width 6` then `set-window-height 6` on it; `shot` `tiny`. Kitty's minimum size may refuse. If the window reaches a size whose half extent minus one is at most 0 (the chamfer clamp), sample its center and its edge and check they equal the background within 2 levels (no filament, no bevel). If kitty refuses to shrink below the clamp, record the smallest size reached and note that the zero-chamfer path is unreachable with this client and is covered by the `slabChamfer > 0.0` gate in the shader; do not skip silently.
-- `selectors`: four nested runs, one per material block: `response "default" { accent "ring"; focus "ring-light"; }`, `{ accent "ring"; focus "none"; }`, `{ accent "none"; focus "ring-light"; }`, `{ accent "none"; focus "none"; }`; in each, focus the right window, set the red accent on it, sleep 2, `shot`. Expect at the filament pixel: red-tinted filament (both), red filament (accent only: today's ring, refracted), lavender filament (focus only: never tinted), and background luminance within 2 levels of the face row (neither).
+- `rest-confinement`: focus the right window, `shot` `on`; in the disabled instance `shot` `off`. Require `face_ae on off` to be 0: at rest, not one face pixel changes when the filament is enabled. Also require `red_fraction "$(emissive on off FIL_X FIL_Y)"` between 0.24 and 0.31 (the base color's red share is 0.273) and the emissive luminance above 0.01: the filament is present and untinted.
+- `accent-midfade`: config adds `animations { slowdown 20; material-signal { duration-ms 400; curve "linear"; }; }`, so the presence fade is linear over 8 s. Focus the right window; `msg set-window-signal --id "$RIGHT" --source demo --accent '#ff0000'`; sleep 4.0; `shot` `mid` (presence between 0.46 and 0.54 given screenshot latency); sleep 6; `shot` `settled`. With `off` from `rest-confinement`, compute `f=$(red_fraction "$(emissive mid off FIL_X FIL_Y)")`. Straight color at presence 0.46 to 0.54 gives a red share between 0.476 and 0.526; the double-faded regression (RGB already scaled by presence, then mixed by presence) gives at most 0.435. Require `0.46 <= f <= 0.54`. Require the settled frame's red share at least 0.90 (color is the accent at presence 1).
+- `resize-flex`: two nested hosts started back to back (a second `HOST`/`UNIT` pair), identical configs except the disabled response, `animations { slowdown 50; }`. Focus the right window in both; issue `msg action set-column-width +200` to both within the same second; sleep 3 (jelly at high flex, the 20 s resize far from settled); `shot` `flex-on` and `flex-off` back to back. The two instances are not on one clock, so allow the lockstep jitter: require `face_max flex-on flex-off` at most 2 levels, and `face_ae` of the two *rest* frames from before the resize to be 0. Require the filament row's emissive luminance in `flex-on` (against `flex-off`) to exceed the rest value from `rest-confinement` by at least 20%: the jelly breath is live.
+- `selectors`: four filament-enabled instances, one per response `{ accent "ring"; focus "ring-light"; }`, `{ accent "ring"; focus "none"; }`, `{ accent "none"; focus "ring-light"; }`, `{ accent "none"; focus "none"; }`, each with the red accent set on the focused right window and left to settle 2 s. Against `off`: face `AE` 0 for all four; filament emissive red share at least 0.90 for the first two (tinted by the settled accent), between 0.24 and 0.31 for the third (never tinted), and emissive luminance at most 0.005 for the fourth (nothing drawn).
+- `tiny` (zero chamfer): the shader's `slabChamfer > 0.0` gate is reached only when the slab is at most 2 px on one axis, because a chamfer of 0 is otherwise unconfigurable with a filament (`ring-inset + ring-width <= bevel` with `ring-width > 0`). No client on the host produces such a window (kitty and foot have a one-cell minimum, `weston-simple-egl` is fixed at 250 px), and `niri-visual-tests` renders with `xray: None`, so materials do not draw there. Record this in the evidence document as **not verified by render**, with the gate quoted, and list it in the closure note. It does not block Task 6, and the owner decides at closure whether a tiny-client fixture is worth a follow-up task.
 
 Run `docs/materials/scripts/focus-ring-light.sh` and require every check to pass. Keep the run directory as evidence.
 
@@ -1480,7 +1516,19 @@ Run `docs/materials/scripts/focus-ring-light.sh` and require every check to pass
 The retained DRM gate (`niri-experiments` `fixtures/v1-drm-smoke.sh` with `v1-drm-smoke.kdl`, procedure in `docs/materials/plans/2026-08-27-v1-drm-acceptance.md`) requires paired settled frames to be byte-identical, which a drifting filament cannot satisfy. Run it twice:
 
 1. **Pinned (the acceptance gate).** Copy `v1-drm-smoke.kdl` to `v1-drm-smoke-pinned.kdl` and add `response "default" { ring-drift-hz 0; }` inside `material "frost"`; run `--prepare` against this build with that config, then `--run` and `--analyze`. Every gate, including `static-repeat`, `move-repeat`, `resize-return`, `remap-return`, and `final-return`, must pass. A failure blocks closure.
-2. **Drifting (bounded).** Run the unmodified `v1-drm-smoke.kdl` the same way. Expected: the run completes with no compositor error in its log; every non-identity gate passes; each identity gate that fails reports an `AE` no larger than the probe window's bevel band, `2 * (w + h) * 12` px for the probe's settled size. An `AE` beyond that, or any non-identity failure, blocks closure.
+2. **Drifting (bounded to the bevel band).** Run the unmodified `v1-drm-smoke.kdl` the same way. Expected: the run completes with no compositor error in its log; every non-identity gate passes; and for each identity gate that fails, the differing pixels lie entirely in the probe's bevel band. Take the probe window rectangle `x,y,w,h` from the gate's artifact JSON (the settled probe geometry it already records) and, for each failing pair `a.png b.png`:
+
+```bash
+magick a.png b.png -compose difference -composite -threshold 0 diff.png
+# Outside the band (everything but the window inflated by the 12 px bevel): must be empty.
+magick diff.png -fill black -draw "rectangle $((x-12)),$((y-12)) $((x+w+12)),$((y+h+12))" -format '%[fx:int(mean*w*h)]' info:
+# Inside the window body (opaque probe pixels pass through the shader untouched): must be empty.
+magick diff.png -crop "${w}x${h}+${x}+${y}" +repage -format '%[fx:int(mean*w*h)]' info:
+# The band itself: at most its area.
+magick diff.png -format '%[fx:int(mean*w*h)]' info:
+```
+
+The first two counts must be 0 and the third at most `2 * (w + h + 24) * 12`. Any other outcome, or any non-identity failure, blocks closure.
 
 Record both results with their numbers.
 
@@ -1520,7 +1568,7 @@ In the response table add rows and change the defaults:
 | `ring-inset` | 0–128 logical px | 5 logical px |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
 | `ring-color` | `"#rrggbb"` | `#ccccff` |
-| `ring-drift-hz` | 0–30 | 15 |
+| `ring-drift-hz` | 0, or 1–30 (quantized to tenths of a hertz) | 15 |
 ```
 
 In the example `response "default"` block add `focus "ring-light"`, `ring-color "#ccccff"`, `ring-drift-hz 15` and change the inset and width to 5 and 2.6. Replace the ring paragraph with:
@@ -1528,7 +1576,9 @@ In the example `response "default"` block add `focus "ring-light"`, `ring-color 
 ```markdown
 The filament is one band shared by focus and signals. `focus "ring-light"`
 lights it on the focused window, in `ring-color`, drifting at
-`ring-drift-hz` buckets per second (0 pins it). `accent "ring"` lets a
+`ring-drift-hz` steps per second (0 pins it; otherwise at least 1, and the
+rate is quantized to tenths of a hertz so the steps divide the 10 s drift
+period evenly). `accent "ring"` lets a
 window signal light and tint the same band on any window. Both together show
 the drifting filament in the accent color. The band sits `ring-inset` px
 inward from the slab's outer edge, is refracted through the glass, and is
@@ -1580,4 +1630,5 @@ Closure of `material-26dd8a` requires Task 6's passing result; if any check ther
 - Spec coverage: decisions (Task 4 fade, Task 5 shared band, Task 7 docs on `focus-ring { off }`); inputs and motion (Tasks 2 and 4); accent presence and straight color (Tasks 2, 3, 4); rendering, bevel confinement, gates (Task 5); configuration (Tasks 1 and 7); redraw contract (Task 6); verification (Tasks 1 to 6).
 - Type consistency: `FrameInputs` fields `level, accent, presence, focus, drift_hz` are used identically in Tasks 2 and 4; `SignalUniforms.focus: [f32; 2]` and `response: [i32; 3]` in Tasks 3 and 5; `SignalCrossfade::current` returns a triple in Task 4 only.
 - Known ordering: Task 2 Step 4 leaves a temporary `FrameInputs` construction in `tile.rs` that Task 4 Step 3 replaces.
-- Review round 1 (commit after `7bc5a63c`): travel waveform made 2π-periodic with a solver mirror and wrap test; inherited impulse color scaled by presence; drift rates in (0, 1) refused; bucket math anchored to period starts so uptime repeats exactly; focus crossfade gated by the response with a toggle smoke case; measured captures for mid-fade color, face confinement under flex, the tiny-window clamp, and the selector matrix; interrupted-fade origin extracted and tested; DRM gate run pinned as the acceptance and drifting as a bounded check, and closure conditioned on passing.
+- Review round 2: boundary uses ceiling division with a strictly-future test over 400 consecutive deadlines; captures compare filament-enabled against filament-disabled renders of the same scene in linear light with drift pinned and a neutral, aberration-free capture glass, and the mid-fade check uses a linear curve and a red-share window that rejects the double-faded regression; face confinement is measured as zero differing face pixels at rest and a two-level bound under lockstep flex; the zero-chamfer case is recorded as not renderable on this host rather than claimed; the drifting DRM run requires zero differences outside the bevel band and inside the opaque body.
+- Review round 1: travel waveform made 2π-periodic with a solver mirror and wrap test; inherited impulse color scaled by presence; drift rates in (0, 1) refused; bucket math anchored to period starts so uptime repeats exactly; focus crossfade gated by the response with a toggle smoke case; measured captures for mid-fade color, face confinement under flex, the tiny-window clamp, and the selector matrix; interrupted-fade origin extracted and tested; DRM gate run pinned as the acceptance and drifting as a bounded check, and closure conditioned on passing.

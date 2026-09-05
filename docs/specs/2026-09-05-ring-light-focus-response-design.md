@@ -65,9 +65,14 @@ the perimeter angle and phase, as in the spike. Period 10 s. Phase is the
 unadjusted clock plus the per-window jelly seed so panes do not move in
 lockstep; boundaries are aligned to the unadjusted clock alone, so every
 drifting window on an output shares them and ten windows cost the wakeups
-of one. `ring-drift-hz` sets the bucket rate, so the oscillator quantizes
-its phase to `1 / hz` and exposes `next_boundary(now)`. Rate 0 pins the
-phase to a constant and reports no boundary.
+of one. `ring-drift-hz` sets the bucket rate: the 10 s period is divided into
+`round(hz * 10)` equal buckets anchored to period starts in integer
+nanoseconds, so boundaries repeat exactly over any uptime and every
+drifting window on an output shares them; the oscillator exposes
+`next_boundary(now)` as the first nanosecond of the next bucket. Rate 0
+pins the phase to 0 and reports no boundary. A configured rate is 0 or at
+least 1 Hz; values between are a config error, since they have no sensible
+bucket.
 
 **Motion policy.** `signal { motion "reduced" }` halves the drift rate;
 `"off"` pins it. `animations { off }` pins it. A pinned drift with a
@@ -156,8 +161,11 @@ emissive    += color * glow * band * mask
 `presence` and `accent_rgb` are the crossfaded presence and the straight
 color from the inputs section, so halfway through arrival the color is half
 base and half accent, and color and accent glow move smoothly when a signal
-arrives, expires, changes, or is interrupted mid-fade. `travel` is the spike's two-wave product over the
-perimeter angle from the slab center. Breath modulates the filament only
+arrives, expires, changes, or is interrupted mid-fade. `travel(drift, angle)` is
+`sin(2 * angle + drift) * sin(3 * angle - 2 * drift)`, the spike's two-wave
+product over the perimeter angle from the slab center with integer drift
+multiples so the 2π wrap is continuous; the solver carries the same function
+for tests. Breath modulates the filament only
 under `attention "ring-pulse"`, as it does today; `rim-orbit` moves the
 Fresnel glint and leaves the filament alone. When `glow` is zero the band
 and mask are not evaluated. The four selector combinations of `accent`
@@ -176,14 +184,16 @@ response "default" {
     ring-inset    5               // default moves from 6 to 5
     ring-width    2.6             // default moves from 2 to 2.6
     ring-color    "#ccccff"       // filament base color; alpha ignored
-    ring-drift-hz 15              // 0..30; 0 pins the drift
+    ring-drift-hz 15              // 0, or 1..30 (tenths of a hertz); 0 pins the drift
 }
 ```
 
 `ring-inset + ring-width <= bevel` is validated as before. `ring-width`
 must be positive: the new band law divides by it, and 0 becomes the
 validation error `ring-width must be positive` rather than a degenerate
-band. Named responses inherit omitted fields from `default` as before.
+band. `ring-drift-hz` strictly between 0 and 1 is the validation error
+`ring-drift-hz must be 0 or at least 1`. Named responses inherit omitted
+fields from `default` as before.
 
 In the `glass` block: `light-ior` in 1 to 12, default 6, a multiplier on
 the bend applied to the filament's light path only, never to the
