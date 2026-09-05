@@ -6,7 +6,7 @@ priority: 2
 size: m
 owner: design/ring-light
 created: 2026-09-05T10:16:06Z
-updated: 2026-09-05T11:08:29Z
+updated: 2026-09-05T11:38:26Z
 depends: []
 parent: material-d1f471
 tags: [material, focus-ring]
@@ -18,3 +18,4 @@ Winner of the focus ring light spike (docs/materials/2026-09-05-focus-ring-light
 ## Notes
 
 - 2026-09-05T11:08:29Z (design/ring-light): design approved: fade the light only (swap interpolation stays material-5a5fff); one filament shared with the accent ring, accent tints it; gradient ring turned off explicitly by config; drift is a bucket-timer oscillator with ring-drift-hz, pinned at 0 / motion off / animations off; light-ior glass parameter default 6
+- 2026-09-05T11:38:26Z (design/ring-light): spec review fixes: crossfaded accent presence (accent.w) with interrupted-fade start and fingerprint; band masked to the rendered bevel via slabSurface's inner face distance at the refracted position; explicit accent/focus/ring-pulse gates; ring-width 0 is a validation error

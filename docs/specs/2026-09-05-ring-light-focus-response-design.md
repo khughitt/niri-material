@@ -78,13 +78,24 @@ frame; that is the degrade path.
 already produces per-frame fingerprints while nonzero, so no new
 scheduling.
 
+**Accent presence.** Today the tile crossfades the accent RGB toward black
+when a signal expires, and `SignalUniforms::from_frame` sets the accent
+alpha to 0 or 1 from bare presence. Mixing the filament color by that alpha
+would snap. `SignalCrossfade` therefore gains a `presence` pair (0 or 1 at
+each end) crossfaded on the same animation as level and accent, and the
+uniform's accent alpha carries the crossfaded value. An interrupted fade
+starts from the current interpolated presence, the way level and accent
+already start from `SignalCrossfade::current`. `SignalFingerprint`
+quantizes presence to 1/256 next to the accent channels.
+
 **What reaches the shader.** `SignalUniforms` gains `focus` (0 to 1,
 crossfaded), `drift` (bucketed phase, radians), and the filament's base
-color; `ring` keeps inset and width. `ResolvedGlass` gains `light_ior`.
-`SignalFingerprint` quantizes `focus` to 1/256 and `drift` to its bucket.
-The drift phase is pinned to a constant whenever the rate is 0 or motion is
-off, so a quiet unfocused window and a focused static window both
-fingerprint to constants.
+color; `accent.w` becomes the crossfaded presence; `ring` keeps inset and
+width; `response` gains the focus selector. `ResolvedGlass` gains
+`light_ior`. `SignalFingerprint` quantizes `focus` to 1/256 and `drift` to
+its bucket. The drift phase is pinned to a constant whenever the rate is 0
+or motion is off, so a quiet unfocused window and a focused static window
+both fingerprint to constants.
 
 ## Rendering
 
@@ -99,23 +110,41 @@ term raised to 0.2 so dense dark glass does not swallow it. Those three
 constants (depth fraction, aberration scale, attenuation exponent) are the
 spike's calibrated values and stay constants.
 
-Brightness and color, in linear light:
+**Bevel confinement.** The Gaussian tails, the halo, and the refracted
+displacement are not bounded by `ring-inset + ring-width <= bevel`, so the
+band is masked to the rendered bevel: `slabSurface` publishes the inner
+face distance it already computes (`di`, after the tiny-slab chamfer clamp
+and the jelly shear and resize of the inner face), the mask is
+`smoothstep(-1, 0, di)` evaluated at the refracted position, and the band
+is multiplied by it. Nothing lights the face, the mask follows the
+deformed inner edge, and on a window too small to carry a chamfer the mask
+is zero and the filament vanishes with the bevel. The existing inset plus
+width rule stays as the guarantee that the filament's center lies in the
+bevel.
+
+Brightness and color, in linear light, with the selectors made explicit:
 
 ```text
-accent_glow = (0.15 + 0.35 * level) * (1 + breath * level)   // today's law
-focus_glow  = 0.7 * (0.55 + 0.45 * travel(drift, angle))
-glow        = accent_glow * accent_present + focus * focus_glow
-glow       *= 1 + 2 * jelly_activity
-color       = mix(ring_color, accent_rgb, accent_present)
-emissive   += color * glow * band
+show_accent  = response.accent == ring  && presence > 0
+show_focus   = response.focus  == ring-light
+pulse        = response.attention == ring-pulse ? breath : 0   // today's gate
+accent_glow  = show_accent ? (0.15 + 0.35 * level) * (1 + pulse * level) : 0
+focus_glow   = show_focus  ? focus * 0.7 * (0.55 + 0.45 * travel(drift, angle)) : 0
+glow         = (accent_glow * presence + focus_glow) * (1 + 2 * jelly_activity)
+color        = show_accent ? mix(ring_color, accent_rgb, presence) : ring_color
+emissive    += color * glow * band * mask
 ```
 
-`accent_present` is the crossfaded accent alpha the tile already computes,
-so the color moves smoothly when a signal arrives or expires. `travel` is
-the spike's two-wave product over the perimeter angle from the slab
-center. With `focus` 0 and no accent the term is zero and the shader does
-no extra work beyond the band test, which is skipped when
-`accent "none"` and `focus "none"` are both set.
+`presence` is the crossfaded accent presence from the inputs section, so
+color and accent glow move smoothly when a signal arrives, expires, or is
+interrupted mid-fade. `travel` is the spike's two-wave product over the
+perimeter angle from the slab center. Breath modulates the filament only
+under `attention "ring-pulse"`, as it does today; `rim-orbit` moves the
+Fresnel glint and leaves the filament alone. When `glow` is zero the band
+and mask are not evaluated. The four selector combinations of `accent`
+and `focus` are independent: `accent "none"` with `focus "ring-light"`
+shows the focus filament in the base color and never tints it;
+`accent "ring"` with `focus "none"` is today's accent ring, refracted.
 
 ## Configuration and Prism
 
@@ -132,8 +161,10 @@ response "default" {
 }
 ```
 
-`ring-inset + ring-width <= bevel` is validated as before. Named responses
-inherit omitted fields from `default` as before.
+`ring-inset + ring-width <= bevel` is validated as before. `ring-width`
+must be positive: the new band law divides by it, and 0 becomes the
+validation error `ring-width must be positive` rather than a degenerate
+band. Named responses inherit omitted fields from `default` as before.
 
 In the `glass` block: `light-ior` in 1 to 12, default 6, a multiplier on
 the bend applied to the filament's light path only, never to the
@@ -171,7 +202,14 @@ the instruction to set `focus-ring { off }` for material windows.
   pinned to a constant at rate 0, under `motion "off"`, and with animations
   off; halved rate under `"reduced"`; shared boundaries across seeds.
 - Config tests: new fields, defaults, ranges, the inset plus width rule
-  with the new defaults, `light-ior` range, inheritance in named responses.
+  with the new defaults, `ring-width 0` rejected and a fractional width
+  accepted, `light-ior` range, inheritance in named responses.
+- Uniform tests: presence crossfades 0 to 1 and back on the animation,
+  an interrupted fade starts from the current value, and the accent alpha
+  uniform equals it; the four `accent` and `focus` selector combinations
+  produce the expected show flags and breath gate.
+- A nested GLES capture with a small window below the chamfer clamp and one
+  with a full-flex jelly resize confirms no filament light on the face.
 - Fingerprint tests: a focused drifting window changes once per bucket and
   never within one; a focused static window is constant after the
   crossfade; the quiet fingerprint tests extend to focus 0 and 1.
