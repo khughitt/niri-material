@@ -399,5 +399,287 @@ class Freshness(Fixture):
         self.assertIn("hand-written prose", target.read_text())
 
 
+class Conflicts(Fixture):
+    def diverged(self):
+        """base, ours, theirs: one file conflicting, one merging cleanly."""
+        self.write("shared.txt", "base\n")
+        self.write("quiet.txt", "base\n")
+        base = self.commit("base")
+
+        self.git("checkout", "-q", "-b", "ours", base)
+        self.write("shared.txt", "ours\n")
+        self.write("quiet.txt", "base\nours appended\n")
+        ours = self.commit("ours")
+
+        self.git("checkout", "-q", "-b", "theirs", base)
+        self.write("shared.txt", "theirs\n")
+        theirs = self.commit("theirs")
+        return base, ours, theirs
+
+    def test_clean_merge_reports_no_conflicts(self):
+        self.write("a.txt", "base\n")
+        base = self.commit("base")
+        self.git("checkout", "-q", "-b", "ours", base)
+        self.write("b.txt", "ours\n")
+        ours = self.commit("ours")
+        status, paths, messages = report.merge_tree(self.root, base, base, ours)
+        self.assertEqual(status, 0)
+        self.assertEqual(paths, [])
+
+    def test_conflict_reports_exit_one_and_the_exact_paths(self):
+        base, ours, theirs = self.diverged()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        self.assertEqual(status, 1)
+        self.assertEqual(paths, ["shared.txt"])
+        kinds = {kind for kind, _, _ in messages}
+        self.assertIn("Auto-merging", kinds)
+        self.assertTrue(any(kind.startswith("CONFLICT") for kind in kinds))
+
+    def test_bad_ref_is_an_error_not_a_clean_result(self):
+        base, ours, _ = self.diverged()
+        with self.assertRaises(report.ReportError):
+            report.merge_tree(self.root, base, ours, "no-such-ref")
+
+    def test_unacknowledged_path_is_a_finding(self):
+        problems = report.verdict(
+            1, ["src/a.rs"], [("CONFLICT (contents)", ["src/a.rs"], "…")], set()
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("src/a.rs", problems[0])
+
+    def test_acknowledged_path_passes(self):
+        problems = report.verdict(
+            1, ["src/a.rs"], [("CONFLICT (contents)", ["src/a.rs"], "…")], {"src/a.rs"}
+        )
+        self.assertEqual(problems, [])
+
+    def test_unattributed_conflict_fails(self):
+        """Exit 1 with no conflicted-file entries is a legitimate conflict — git
+        names directory-rename conflicts as a case — not a tool error and not a pass."""
+        problems = report.verdict(1, [], [], set())
+        self.assertEqual(len(problems), 1)
+        self.assertIn("unattributed", problems[0])
+
+    def test_unattributed_conflict_is_not_hidden_by_an_acknowledged_path(self):
+        """A conflict notice naming no path must fail even when every listed path
+        is acknowledged."""
+        messages = [
+            ("CONFLICT (contents)", ["src/a.rs"], "…"),
+            ("CONFLICT (directory rename split)", [], "…"),
+        ]
+        problems = report.verdict(1, ["src/a.rs"], messages, {"src/a.rs"})
+        self.assertEqual(len(problems), 1)
+        self.assertIn("unattributed", problems[0])
+
+    def test_conflict_notice_on_an_unlisted_path_fails(self):
+        messages = [("CONFLICT (rename/delete)", ["src/moved.rs"], "…")]
+        problems = report.verdict(1, [], messages, set())
+        self.assertTrue(any("src/moved.rs" in p for p in problems))
+
+    def test_clean_status_never_produces_findings(self):
+        self.assertEqual(report.verdict(0, [], [], set()), [])
+
+    def directory_rename_split(self):
+        """A divergence that really does yield exit 1 with NO conflicted-file entries.
+
+        Ours splits old/ across two directories; theirs adds a file into old/. Git
+        cannot decide where the new file goes and reports
+        `CONFLICT(directory rename unclear split)` naming the DIRECTORY `old`, with
+        an empty conflicted-file info section. Verified on git 2.55.0.
+
+        Note the kind string has no space after CONFLICT, unlike
+        `CONFLICT (contents)`; matching on the `CONFLICT` prefix covers both."""
+        for name in "abcdef":
+            self.write(f"old/{name}.txt", f"{name}\n")
+        base = self.commit("base")
+
+        self.git("checkout", "-q", "-b", "ours", base)
+        (self.root / "dir-a").mkdir()
+        (self.root / "dir-b").mkdir()
+        self.git("mv", "old/a.txt", "old/b.txt", "old/c.txt", "dir-a/")
+        self.git("mv", "old/d.txt", "old/e.txt", "old/f.txt", "dir-b/")
+        ours = self.commit("ours splits the directory")
+
+        self.git("checkout", "-q", "-b", "theirs", base)
+        self.write("old/new.txt", "new\n")
+        theirs = self.commit("theirs adds into old/")
+        return base, ours, theirs
+
+    def test_directory_rename_split_has_no_conflicted_file_entries(self):
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        self.assertEqual(status, 1)
+        self.assertEqual(paths, [])
+        kinds = [kind for kind, _, _ in messages]
+        self.assertTrue(any(kind.startswith("CONFLICT") for kind in kinds), kinds)
+
+    def test_directory_rename_split_fails_the_verdict(self):
+        """The required regression: exit 1 with an empty conflicted-file list must
+        never be read as a clean merge."""
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        self.assertNotEqual(report.verdict(status, paths, messages, set()), [])
+
+    def test_directory_rename_split_fails_beside_an_acknowledged_conflict(self):
+        """A non-empty, fully acknowledged path list must not conceal it."""
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        messages = messages + [("CONFLICT (contents)", ["src/a.rs"], "…")]
+        problems = report.verdict(
+            status, paths + ["src/a.rs"], messages, {"src/a.rs"}
+        )
+        self.assertNotEqual(problems, [])
+
+    def test_a_directory_cannot_be_acknowledged_away(self):
+        """The notice names the DIRECTORY `old`, which has no conflicted-file entry.
+        Acknowledging it must not silence the conflict — otherwise one line in
+        upstream-conflicts.toml hides every future conflict under that directory."""
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        involved = {path for _, paths_, _ in messages for path in paths_}
+        self.assertIn("old", involved)
+        self.assertEqual(paths, [])
+        self.assertNotEqual(report.verdict(status, paths, messages, {"old"}), [])
+
+    def test_a_directory_cannot_be_acknowledged_beside_a_real_one(self):
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        messages = messages + [("CONFLICT (contents)", ["src/a.rs"], "…")]
+        problems = report.verdict(
+            status, paths + ["src/a.rs"], messages, {"old", "src/a.rs"}
+        )
+        self.assertNotEqual(problems, [])
+        self.assertTrue(any("not acknowledgeable" in p for p in problems), problems)
+
+
+class Drift(Fixture):
+    def test_seam_paths_map_to_the_baseline_name(self):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.git("mv", "src/lib.rs", "src/renamed.rs")
+        self.git("add", "-A")
+        watched = report.seam_paths(report.inventory(self.root, tree))
+        self.assertEqual(watched["src/renamed.rs"], "src/lib.rs")
+
+    def test_churn_follows_the_baseline_path_across_a_fork_rename(self):
+        """The fork renamed src/lib.rs; upstream kept editing it under the old name.
+        Asking upstream about the fork's new name returns zero and hides the churn."""
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+
+        # Upstream continues from the release, editing the file under its old name.
+        self.git("checkout", "-q", "-b", "upstream-main", tag_commit)
+        self.write("src/lib.rs", "fn upstream() { moved_on(); }\n")
+        self.commit("upstream edits src/lib.rs")
+
+        self.git("checkout", "-q", patched)
+        self.git("mv", "src/lib.rs", "src/renamed.rs")
+        self.git("add", "-A")
+
+        watched = report.seam_paths(report.inventory(self.root, tree))
+        churns = report.churn(self.root, tag_commit, "upstream-main", watched)
+        count, letter, baseline, upstream_path = churns["src/renamed.rs"]
+        self.assertEqual(baseline, "src/lib.rs")
+        self.assertEqual(count, 1, "upstream churn must follow the baseline path")
+
+
+class Cli(Fixture):
+    """Subprocess-level tests. The helper tests never exercise the exit-code
+    contract, and CI branches on it: 0 success, 1 finding, 2 error."""
+
+    def stage_working_document(self):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.write("src/lib.rs", "fn upstream() { changed(); }\n")
+        self.write(report.CONFLICTS_PATH, "acknowledged = []\n")
+        self.write(
+            report.REPORT_PATH,
+            f"# Upstream divergence\n\n{report.LOCAL_BEGIN}\n{report.LOCAL_END}\n"
+            f"\n{report.DRIFT_BEGIN}\n{report.DRIFT_END}\n",
+        )
+        self.git("add", "-A")
+
+    def cli(self, *args):
+        tool = pathlib.Path(__file__).with_name("upstream-report")
+        return subprocess.run(
+            ["python3", str(tool), *args],
+            cwd=self.root, capture_output=True, text=True,
+        )
+
+    def test_stale_report_exits_one(self):
+        self.stage_working_document()
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("stale", result.stderr)
+
+    def test_fresh_report_exits_zero(self):
+        self.stage_working_document()
+        self.assertEqual(self.cli().returncode, 0)
+        self.git("add", report.REPORT_PATH)
+        self.assertEqual(self.cli("--check").returncode, 0)
+
+    def test_malformed_toml_exits_two_without_a_traceback(self):
+        self.stage_working_document()
+        self.write(report.BASELINE_PATH, "tag = [unterminated\n")
+        self.git("add", report.BASELINE_PATH)
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("upstream-report:", result.stderr)
+
+    def test_wrong_typed_config_exits_two_without_a_traceback(self):
+        """Valid TOML with the wrong shape. `carried = 1` parses, then explodes on
+        len() with a traceback and exit 1 unless the shape is validated."""
+        self.stage_working_document()
+        base = (self.root / report.BASELINE_PATH).read_text()
+        for broken in ("carried = 1", 'carried = "two"', "carried = [1, 2]"):
+            with self.subTest(broken=broken):
+                body = "\n".join(
+                    line for line in base.splitlines()
+                    if not line.strip().startswith(("[[carried]]", "subject", "patch_id"))
+                )
+                self.write(report.BASELINE_PATH, body + "\n" + broken + "\n")
+                self.git("add", report.BASELINE_PATH)
+                result = self.cli("--check")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_truncated_hash_exits_two(self):
+        """A short hash copied out of the design doc must not validate."""
+        self.stage_working_document()
+        text = (self.root / report.BASELINE_PATH).read_text()
+        lines, replaced = [], 0
+        for line in text.splitlines():
+            if line.strip().startswith("tree = "):
+                line, replaced = 'tree = "7b010d1b"', replaced + 1
+            lines.append(line)
+        # Assert the edit landed. Without this the test passes for the wrong reason:
+        # an unmodified config yields a stale-report finding, exit 1, not exit 2.
+        self.assertEqual(replaced, 1, text)
+        self.write(report.BASELINE_PATH, "\n".join(lines) + "\n")
+        self.git("add", report.BASELINE_PATH)
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("40-character", result.stderr)
+
+    def test_missing_markers_exit_two(self):
+        self.stage_working_document()
+        self.write(report.REPORT_PATH, "# Upstream divergence\n\nno markers\n")
+        self.git("add", report.REPORT_PATH)
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_bad_upstream_ref_exits_two_not_one(self):
+        """An unfetched or misspelled upstream is an ERROR. Reporting it as a finding
+        would let CI open a 'conflicts found' issue for a broken fetch."""
+        self.stage_working_document()
+        self.assertEqual(self.cli().returncode, 0)
+        self.git("add", report.REPORT_PATH)
+        result = self.cli("--drift", "--against", "no-such-remote/main")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
