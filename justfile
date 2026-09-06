@@ -14,7 +14,7 @@ tt := "python3 tools/tt"
 # rustfmt and clippy jobs run, the selector's own tests, and the task tracker.
 fast_cmd := "python3 tools/test-affected"
 test_cmd := "cargo test --all --exclude niri-visual-tests"
-check_cmd := "cargo fmt --all -- --check && cargo clippy --all --all-targets && python3 -m unittest discover -s tools 2>&1 && tasks check"
+check_cmd := "cargo fmt --all -- --check && cargo clippy --all --all-targets && python3 -m unittest discover -s tools 2>&1 && tasks check && python3 tools/upstream-report --check"
 
 # Affected-only: the inner loop.
 test-fast:
@@ -45,3 +45,8 @@ ci-test:
 # CI's randomized-and-slow job; it sets RUN_SLOW_TESTS and the proptest limits.
 ci-test-release:
     {{tt}} ci-test-release -- sh -c '{{test_cmd}} --release'
+
+# Regenerate the upstream divergence report. Pass --drift for the drift block
+# (needs `git fetch upstream --tags` first), --check to verify staged freshness.
+upstream-report *args:
+    python3 tools/upstream-report {{args}}

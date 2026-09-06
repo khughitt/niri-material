@@ -19,3 +19,7 @@ rendering design assumes.
 - Before removing a worktree, run `tt-report` so its fallback test-timing log is
   harvested.
 - `tools/tt` is a vendored copy of ops `bin/tt`: change it there and re-copy.
+- Before rebasing onto a new upstream release, read `docs/materials/upstream-divergence.md`:
+  it carries the baseline, the acknowledged conflicts, and the rebase procedure. Never
+  use `git merge-base` against upstream — this repository's history was rewritten and it
+  returns a 2023 commit.

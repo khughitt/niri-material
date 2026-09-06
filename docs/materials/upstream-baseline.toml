@@ -1,0 +1,21 @@
+# The upstream baseline this fork is measured against.
+#
+# Validation compares TREES, never commit identities: patched-26.04~2 is a different
+# commit object from v26.04 carrying the identical tree, because this repository's
+# history was rewritten. See docs/specs/2026-09-06-upstream-divergence-design.md.
+#
+# carried is oldest-first. Its length is the depth at which the baseline tree must
+# appear below patched_commit.
+
+tag = "v26.04"
+tag_commit = "aece2b0c4e1fed364f80b8d0083374d921fe710f"
+tree = "7b010d1b3ab29a1bee76b1554c6bc8eb09300ec6"
+patched_commit = "5e53b949810ac6576d9b801a55146163c8b19984"
+
+[[carried]]
+subject = "niri-ipc: add scrolling_view_pos to Workspace"
+patch_id = "a6cff6f991f38dc5a3beabc06c58c0ad87eec5f7"
+
+[[carried]]
+subject = "ipc: emit and expose workspace scrolling view position"
+patch_id = "f7adaa9a2e381f3e6a98e7eb4598dfc710dc8e9e"

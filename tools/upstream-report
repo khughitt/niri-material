@@ -1,0 +1,693 @@
+#!/usr/bin/env python3
+"""Upstream divergence report: `python3 tools/upstream-report [--check] [--drift] [--against REF]`.
+
+Reports what this fork changes relative to upstream niri, and whether upstream has
+moved into our seams. Everything is measured against the baseline recorded in
+docs/materials/upstream-baseline.toml, comparing TREES: this repository's history was
+rewritten, its recorded merge base is a 2023 commit, and a diff from that merge base
+reports 5743 files against a true 176. `git merge-base` is never called.
+
+All input is read from the git index (`git show :<path>`, `git diff-index --cached`),
+never the working tree and never a branch name, so one code path serves both the
+pre-commit hook (where the index is the tree about to be committed) and CI (where it
+is the checked-out commit). Output is written to the working tree.
+
+Exit status: 0 success, 1 a reportable finding (stale report, unacknowledged
+conflict), 2 an error (bad baseline, git failure, missing markers).
+
+Design: docs/specs/2026-09-06-upstream-divergence-design.md.
+"""
+import argparse
+import collections
+import datetime
+import pathlib
+import subprocess
+import sys
+import tomllib
+
+BASELINE_PATH = "docs/materials/upstream-baseline.toml"
+CONFLICTS_PATH = "docs/materials/upstream-conflicts.toml"
+REPORT_PATH = "docs/materials/upstream-divergence.md"
+SELF_PATHS = (BASELINE_PATH, CONFLICTS_PATH, REPORT_PATH)
+
+REQUIRED_KEYS = ("tag", "tag_commit", "tree", "patched_commit")
+
+
+class ReportError(Exception):
+    """Anything that must stop the run loudly rather than degrade into a guess."""
+
+
+def git(root, *args):
+    """Run git, returning stdout. Any non-zero status is a ReportError."""
+    result = subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise ReportError(
+            f"git {' '.join(args)} failed ({result.returncode}): "
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+    return result.stdout
+
+
+def rev(root, spec):
+    return git(root, "rev-parse", "--verify", spec).strip()
+
+
+def read_index(root, path):
+    """File content as staged in the index."""
+    return git(root, "show", f":{path}")
+
+
+SCAFFOLD_PREFIXES = ("tools/", ".githooks/", "packaging/", ".agents/")
+SCAFFOLD_FILES = ("justfile", "AGENTS.md")
+
+# `previous` is the baseline path for a rename, else None.
+Row = collections.namedtuple("Row", "status path previous added removed")
+
+
+def classify(status, path):
+    """A: fork-only additions. B: seam changes to files upstream also has.
+    C: vendored tooling and project scaffolding.
+
+    Class is an inventory aid, not a conflict filter: conflict detection runs over
+    the whole tree and is never scoped by class."""
+    if status[0] in ("M", "D", "R"):
+        return "B"
+    if path.startswith(SCAFFOLD_PREFIXES) or path in SCAFFOLD_FILES:
+        return "C"
+    return "A"
+
+
+def _split_z(text):
+    """NUL-delimited fields, without the trailing empty one."""
+    fields = text.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    return fields
+
+
+def _name_status(root, tree):
+    """path -> (status, previous path or None).
+
+    Records are `<status>\0<path>`, except a rename or copy, which is
+    `R<score>\0<old>\0<new>`. Record length depends on the status letter, which is
+    why this cannot be parsed line-wise."""
+    fields = _split_z(
+        git(root, "diff-index", "--cached", "--name-status", "-M", "-z", tree)
+    )
+    result = {}
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if status[:1] in ("R", "C"):
+            result[fields[index + 2]] = (status, fields[index + 1])
+            index += 3
+        else:
+            result[fields[index + 1]] = (status, None)
+            index += 2
+    return result
+
+
+def _numstat(root, tree):
+    """path -> (added, removed).
+
+    Records are `<added>\t<removed>\t<path>`, except a rename, where the third
+    tab-separated field is EMPTY and the old and new paths follow as two further
+    NUL-terminated fields. This encoding differs from --name-status, so the two must
+    be joined on the new path rather than zipped."""
+    fields = _split_z(
+        git(root, "diff-index", "--cached", "--numstat", "-M", "-z", tree)
+    )
+    result = {}
+    index = 0
+    while index < len(fields):
+        added, removed, path = fields[index].split("\t", 2)
+        if path == "":
+            path = fields[index + 2]  # old at index + 1, new at index + 2
+            index += 3
+        else:
+            index += 1
+        # "-" is git's marker for a binary file.
+        result[path] = (
+            0 if added == "-" else int(added),
+            0 if removed == "-" else int(removed),
+        )
+    return result
+
+
+def inventory(root, tree):
+    """Rows for every path differing between the baseline tree and the index,
+    excluding the tool's own files, sorted by path.
+
+    `previous` is the path the baseline knew, or None. It is carried all the way to
+    the drift analysis on purpose: upstream never saw our rename, so a seam file the
+    fork renamed must be looked up upstream under its OLD name. Dropping it reported
+    "0 upstream commits" for a file upstream was actively editing.
+
+    A key present in one diff format and not the other is an ERROR, never a default.
+    An earlier draft used `statuses.get(path, "M")`, and that silent fallback hid a
+    real bug: the two formats encode renames differently, so a rename produced the
+    nonexistent path `src/{old.rs => new.rs}` with a fabricated "M" status."""
+    statuses = _name_status(root, tree)
+    numbers = _numstat(root, tree)
+    if set(statuses) != set(numbers):
+        raise ReportError(
+            "diff-index --name-status and --numstat disagree on paths: "
+            f"{sorted(set(statuses) ^ set(numbers))[:5]}"
+        )
+    rows = [
+        Row(statuses[path][0], path, statuses[path][1], *numbers[path])
+        for path in statuses
+        if path not in SELF_PATHS
+    ]
+    return sorted(rows, key=lambda row: row.path)
+
+
+def render_local(record, rows):
+    """The generated local block: derived from the index alone, no network."""
+    counts = {"A": 0, "B": 0, "C": 0}
+    for row in rows:
+        counts[classify(row.status, row.path)] += 1
+
+    lines = [
+        f"Baseline `{record['tag']}` (`{record['tag_commit'][:12]}`), "
+        f"tree `{record['tree'][:12]}`, carrying {len(record['carried'])} patch(es).",
+        "",
+        f"{len(rows)} paths differ: {counts['B']} class B (seam), "
+        f"{counts['A']} class A (fork-only), {counts['C']} class C (scaffolding).",
+        "",
+        "| Path | Class | Status | +/- |",
+        "| --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        kind = classify(row.status, row.path)
+        if kind == "A":
+            continue
+        renamed = f" (was `{row.previous}`)" if row.previous else ""
+        lines.append(
+            f"| `{row.path}`{renamed} | {kind} | {row.status} "
+            f"| +{row.added}/-{row.removed} |"
+        )
+    lines.append("")
+    lines.append(
+        "Class A paths are counted, not listed: fork-only additions with no "
+        "upstream counterpart. Class C is listed because `tools/tt` has an "
+        "external source of truth in ops. Because class A is counted, editing an "
+        "existing class-A file's contents can never make this block stale; only "
+        "adding or removing one can."
+    )
+    return "\n".join(lines)
+
+
+def patch_id(root, commit):
+    """Stable patch-id of a single commit."""
+    patch = git(root, "diff-tree", "-p", "--no-color", commit)
+    result = subprocess.run(
+        ["git", "-C", str(root), "patch-id", "--stable"],
+        input=patch, capture_output=True, text=True,
+    )
+    if result.returncode != 0 or not result.stdout.split():
+        raise ReportError(f"git patch-id --stable produced nothing for {commit}")
+    return result.stdout.split()[0]
+
+
+def _hash(value):
+    return len(value) == 40 and all(c in "0123456789abcdef" for c in value)
+
+
+def load_baseline(root):
+    """The baseline record, as staged, with every field's SHAPE validated.
+
+    Valid TOML is not a valid record. `carried = 1` parses fine and then explodes on
+    `len()` with a traceback and the wrong exit code; a truncated hash pasted from
+    the design doc validates against nothing. Both are caught here, as ReportError,
+    so they reach the error boundary and exit 2."""
+    record = tomllib.loads(read_index(root, BASELINE_PATH))
+    if not isinstance(record, dict):
+        raise ReportError(f"{BASELINE_PATH}: not a table")
+
+    missing = [key for key in REQUIRED_KEYS if key not in record]
+    if missing:
+        raise ReportError(f"{BASELINE_PATH}: missing {', '.join(missing)}")
+    for key in REQUIRED_KEYS:
+        if not isinstance(record[key], str) or not record[key]:
+            raise ReportError(
+                f"{BASELINE_PATH}: {key} must be a non-empty string, "
+                f"got {record[key]!r}"
+            )
+    for key in ("tag_commit", "tree", "patched_commit"):
+        if not _hash(record[key]):
+            raise ReportError(
+                f"{BASELINE_PATH}: {key} must be a full 40-character hex hash, "
+                f"got {record[key]!r}"
+            )
+
+    if "carried" not in record:
+        raise ReportError(f"{BASELINE_PATH}: missing carried")
+    carried = record["carried"]
+    if not isinstance(carried, list):
+        raise ReportError(
+            f"{BASELINE_PATH}: carried must be an array of tables, got {carried!r}"
+        )
+    for index, entry in enumerate(carried):
+        if not isinstance(entry, dict):
+            raise ReportError(
+                f"{BASELINE_PATH}: carried[{index}] must be a table, got {entry!r}"
+            )
+        for key in ("subject", "patch_id"):
+            if not isinstance(entry.get(key), str) or not entry[key]:
+                raise ReportError(
+                    f"{BASELINE_PATH}: carried[{index}].{key} must be a "
+                    f"non-empty string"
+                )
+    return record
+
+
+def resolve_baseline(root, record):
+    """Validate the record against the object store. Trees on both sides; never
+    commit identity, because the fork's copy of the release commit is a different
+    object with the same content.
+
+    `tag_commit` proves the local tag still names the release TREE, and that is all
+    a tree can prove. History counting (`churn`, `_upstream_status`) needs a commit
+    that is actually on upstream's line of history, not merely a tree match: the
+    fork's baseline commit — `patched_commit~depth` — is upstream's real release
+    commit, while this fork's local tag is a rewritten copy of it with a different
+    SHA that `git log A..B` cannot walk across. `baseline_commit` is exposed on the
+    record for exactly that use."""
+    tree = record["tree"]
+    tag_commit = record["tag_commit"]
+
+    resolved = rev(root, f"{record['tag']}^{{commit}}")
+    if resolved != tag_commit:
+        raise ReportError(
+            f"tag {record['tag']} resolves to {resolved}, "
+            f"recorded tag_commit is {tag_commit}"
+        )
+
+    tag_tree = rev(root, f"{tag_commit}^{{tree}}")
+    if tag_tree != tree:
+        raise ReportError(
+            f"tree of tag_commit {tag_commit} is {tag_tree}, recorded tree is {tree}"
+        )
+
+    carried = record["carried"]
+    depth = len(carried)
+    baseline_commit = rev(root, f"{record['patched_commit']}~{depth}")
+    fork_tree = rev(root, f"{baseline_commit}^{{tree}}")
+    if fork_tree != tree:
+        raise ReportError(
+            f"tree of {record['patched_commit']}~{depth} is {fork_tree}, "
+            f"recorded tree is {tree}"
+        )
+    record["baseline_commit"] = baseline_commit
+
+    # carried is oldest-first; the oldest sits at depth-1 below patched_commit.
+    for index, entry in enumerate(carried):
+        commit = f"{record['patched_commit']}~{depth - 1 - index}"
+        found = patch_id(root, commit)
+        if found != entry.get("patch_id"):
+            raise ReportError(
+                f"carried[{index}] ({entry.get('subject', '?')}): patch-id at "
+                f"{commit} is {found}, recorded {entry.get('patch_id')}"
+            )
+    return record
+
+
+LOCAL_BEGIN = "<!-- BEGIN GENERATED: local -->"
+LOCAL_END = "<!-- END GENERATED: local -->"
+DRIFT_BEGIN = "<!-- BEGIN GENERATED: drift -->"
+DRIFT_END = "<!-- END GENERATED: drift -->"
+
+
+def splice(text, begin, end, body):
+    """Replace the content between two markers, leaving the markers in place."""
+    start = text.find(begin)
+    stop = text.find(end)
+    if start < 0 or stop < 0 or stop < start:
+        raise ReportError(f"{begin} / {end} not found in order")
+    return text[: start + len(begin)] + "\n" + body.rstrip("\n") + "\n" + text[stop:]
+
+
+def render_report(root, record, text):
+    """Splice the local block into a GIVEN document text.
+
+    The data comes from the index; the target text is the caller's choice. That
+    separation matters: regeneration splices into the WORKING TREE document, so an
+    unstaged edit to the feature table or the rebase log survives, while --check
+    splices into the STAGED document and compares. An earlier draft read the staged
+    document and wrote the result over the working tree, silently discarding
+    unstaged prose."""
+    body = render_local(record, inventory(root, record["tree"]))
+    return splice(text, LOCAL_BEGIN, LOCAL_END, body)
+
+
+def merge_tree(root, base, upstream, fork):
+    """(status, conflicted paths, informational records).
+
+    status is git's: 0 clean, 1 conflicts. Anything else is a ReportError — a bad
+    ref, a missing object, an unfetched upstream — and must never be reported as a
+    clean result. An empty path list with status 1 is a legitimate conflict, not a
+    tool error: git names directory-rename conflicts as a case with no conflicted
+    file entries."""
+    result = subprocess.run(
+        ["git", "-C", str(root), "merge-tree", "-z",
+         f"--merge-base={base}", upstream, fork],
+        capture_output=True, text=True,
+    )
+    if result.returncode not in (0, 1):
+        raise ReportError(
+            f"git merge-tree failed ({result.returncode}): "
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+
+    fields = result.stdout.split("\0")
+    paths = []
+    index = 1
+    while index < len(fields) and fields[index] != "":
+        # "<mode> <oid> <stage>\t<path>"
+        paths.append(fields[index].split("\t", 1)[1])
+        index += 1
+    index += 1  # the empty field separating the sections
+
+    messages = []
+    while index < len(fields):
+        field = fields[index]
+        if field == "" and index == len(fields) - 1:
+            # The trailing NUL of the whole stream splits into one legitimate
+            # empty field here. Anything else non-integer is malformed.
+            break
+        try:
+            count = int(field)
+        except ValueError:
+            raise ReportError(
+                "git merge-tree: informational section: expected an integer "
+                f"count, got {field!r}"
+            )
+        index += 1
+        involved = fields[index:index + count]
+        index += count
+        if index + 1 >= len(fields):
+            raise ReportError(
+                "git merge-tree: informational section: record truncated after "
+                f"{count} involved path(s)"
+            )
+        kind = fields[index]
+        text = fields[index + 1]
+        index += 2
+        messages.append((kind, involved, text.strip()))
+
+    return result.returncode, sorted(set(paths)), messages
+
+
+def load_acknowledged(root):
+    """Paths whose conflicts we accept and resolve by hand each cycle."""
+    record = tomllib.loads(read_index(root, CONFLICTS_PATH))
+    entries = record.get("acknowledged", [])
+    if not isinstance(entries, list):
+        raise ReportError(
+            f"{CONFLICTS_PATH}: acknowledged must be an array of tables, "
+            f"got {entries!r}"
+        )
+    paths = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            raise ReportError(
+                f"{CONFLICTS_PATH}: acknowledged[{index}] needs a string path"
+            )
+        paths.add(entry["path"])
+    return paths
+
+
+def verdict(status, paths, messages, acknowledged):
+    """Findings. The enumerated `kind` field is used only to WIDEN the failure set,
+    never to narrow it, and conflict types are never inferred.
+
+    Acknowledgment applies only to paths git listed in the conflicted-file info
+    section. A conflict notice naming something with no stage entry behind it — the
+    directory `old` in a rename split, for instance — is structural and is NEVER
+    acknowledgeable: an earlier draft merged those names into the acknowledgeable
+    set, so a single `path = "old"` entry silenced the whole directory-rename case
+    and returned a clean verdict."""
+    if status == 0:
+        return []
+
+    backed = set(paths)
+    problems = [
+        f"unacknowledged conflict: {path}" for path in sorted(backed - acknowledged)
+    ]
+
+    notices = [message for message in messages if message[0].startswith("CONFLICT")]
+    for kind, involved, text in notices:
+        unbacked = [path for path in involved if path not in backed]
+        if not involved or unbacked:
+            # Name the unbacked paths. Git already supplied them, and "which
+            # directory" is the first thing a reader needs.
+            where = ", ".join(unbacked) if unbacked else "no path"
+            problems.append(
+                f"unattributed conflict, not acknowledgeable ({kind}) "
+                f"at {where}: {text}"
+            )
+    if not notices and not backed:
+        problems.append(
+            "unattributed conflict: merge-tree exited 1 with no conflicted-file "
+            "entries and no conflict notices"
+        )
+    return problems
+
+
+def seam_paths(rows):
+    """{fork path: baseline path} for class-B paths: where upstream movement can
+    reach us, and the name upstream still knows each one by."""
+    return {
+        row.path: (row.previous or row.path)
+        for row in rows
+        if classify(row.status, row.path) == "B"
+    }
+
+
+def _upstream_status(root, baseline_commit, upstream):
+    """baseline path -> (status letter, upstream's current path).
+
+    Renames are keyed by the OLD path, because that is the name the baseline — and
+    therefore our inventory — knows the file by.
+
+    `baseline_commit` must be `record["baseline_commit"]`, never
+    `record["tag_commit"]`, for consistency with `churn`, which calls this: the
+    recorded tag_commit is a rewritten copy of the release commit and is NOT on
+    upstream's history line, so it must not be used here even though a tree diff,
+    unlike `git log`, does not itself require ancestry to run."""
+    fields = _split_z(
+        git(root, "diff", "--name-status", "-M", "-z",
+            f"{baseline_commit}..{upstream}")
+    )
+    result = {}
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if status[:1] in ("R", "C"):
+            result[fields[index + 1]] = (status, fields[index + 2])
+            index += 3
+        else:
+            result[fields[index + 1]] = (status, fields[index + 1])
+            index += 2
+    return result
+
+
+def churn(root, baseline_commit, upstream, watched):
+    """{fork path: baseline path} -> fork path -> (commits, upstream status, baseline
+    path, upstream path).
+
+    Upstream history is walked under the BASELINE path, never the fork's current
+    one: upstream never saw our rename, so asking it about `src/new.rs` returns zero
+    commits while it is busily editing `src/old.rs`.
+
+    `baseline_commit` must be `record["baseline_commit"]`, never
+    `record["tag_commit"]`: the recorded tag_commit is a rewritten copy of the
+    release commit and is NOT on upstream's history line, so `git log A..B`
+    cannot walk from it to upstream — it instead counts every commit reachable
+    from upstream that isn't reachable from that unrelated commit, which is
+    almost all of them (a 66x inflation was observed for src/layout/tile.rs:
+    133 vs the true 2)."""
+    statuses = _upstream_status(root, baseline_commit, upstream)
+    result = {}
+    for path, baseline in watched.items():
+        count = len(git(
+            root, "log", "--oneline", f"{baseline_commit}..{upstream}", "--", baseline
+        ).splitlines())
+        letter, upstream_path = statuses.get(baseline, ("", baseline))
+        result[path] = (
+            count,
+            letter if letter[:1] in ("R", "D") else "",
+            baseline,
+            upstream_path,
+        )
+    return result
+
+
+def render_drift(record, upstream_ref, upstream_sha, fork_sha, when,
+                 status, paths, messages, churns, acknowledged):
+    """The generated drift block. Stamped with the REPORT GENERATION date — not the
+    fork's commit date, which says nothing about when the comparison was run."""
+    lines = [
+        f"As of **{when}**: baseline tree `{record['tree'][:12]}`, "
+        f"fork `{fork_sha[:12]}`, upstream `{upstream_ref}` at `{upstream_sha[:12]}`.",
+        "",
+        "This is a three-way merge of final trees. It does not predict a rebase, "
+        "which replays commits individually, and it says nothing about whether the "
+        "result compiles or behaves correctly.",
+        "",
+    ]
+    lines.append(
+        "**No conflicts.**" if status == 0
+        else f"**{len(paths)} conflicting path(s).**"
+    )
+    lines.append("")
+
+    # The seam table is rendered ALWAYS, over every class-B path, not only over
+    # conflicting ones. Upstream churn in a seam file that still merges cleanly —
+    # including a clean upstream rename or delete — is exactly the early warning
+    # this block exists to give, and it is invisible in a conflict-only table.
+    lines.append(
+        "| Seam path | Upstream name | Upstream commits since baseline "
+        "| Upstream status | Conflict | Acknowledged |"
+    )
+    lines.append("| --- | --- | --- | --- | --- | --- |")
+    conflicting = set(paths)
+    for path in sorted(churns):
+        count, letter, baseline, upstream_path = churns[path]
+        # Show the fork's current path, but say which name upstream knows it by
+        # whenever either side has renamed it.
+        name = "same" if upstream_path == path else f"`{upstream_path}`"
+        conflict = "yes" if path in conflicting else "-"
+        mark = "yes" if path in acknowledged else ("**NO**" if path in conflicting else "-")
+        lines.append(
+            f"| `{path}` | {name} | {count} | {letter or '-'} | {conflict} | {mark} |"
+        )
+
+    unlisted = sorted(conflicting - set(churns))
+    if unlisted:
+        lines.append("")
+        lines.append(
+            "Conflicting paths outside the class-B inventory (upstream and this fork "
+            "changed the same path independently, or a directory moved): "
+            + ", ".join(f"`{path}`" for path in unlisted)
+        )
+    notices = [m for m in messages if m[0].startswith("CONFLICT")]
+    if notices:
+        lines.append("")
+        lines.append("Conflict notices, verbatim and unparsed:")
+        lines.append("")
+        # An INDENTED code block, not a fenced one. The report is markdown that
+        # gets embedded in other markdown — issue bodies, job summaries — and a
+        # nested fence breaks whichever fence encloses it.
+        for kind, involved, text in notices:
+            lines.append(f"    {text}")
+    return "\n".join(lines)
+
+
+def check(root, record):
+    """Findings, empty when the staged report is fresh. The drift block is not
+    checked: it needs a fetch, and a pre-commit hook must not touch the network."""
+    staged = read_index(root, REPORT_PATH)
+    if render_report(root, record, staged) != staged:
+        return [
+            f"{REPORT_PATH} is stale against the staged tree; "
+            f"run `just upstream-report` and stage the result"
+        ]
+    return []
+
+
+def run(root, args):
+    """The whole job. Returns 0 for success and 1 for a finding; every operational
+    failure raises and is caught by the boundary in main()."""
+    record = resolve_baseline(root, load_baseline(root))
+    if args.show_baseline:
+        print(f"{record['tag']} {record['tag_commit']} tree {record['tree']}")
+        print(f"patched {record['patched_commit']} carried {len(record['carried'])}")
+
+    if args.check:
+        findings = check(root, record)
+        for finding in findings:
+            print(f"upstream-report: {finding}", file=sys.stderr)
+        return 1 if findings else 0
+
+    target = root / REPORT_PATH
+    target.write_text(render_report(root, record, target.read_text()))
+    print(f"upstream-report: wrote {REPORT_PATH}")
+
+    if args.drift:
+        upstream_sha = rev(root, args.against)
+        fork_sha = rev(root, "HEAD")
+        # merge-tree needs only a TREE for --merge-base=, and tag_commit and
+        # baseline_commit carry the same one; churn below needs a commit that is
+        # actually an ancestor of upstream, which only baseline_commit is.
+        status, paths, messages = merge_tree(
+            root, record["tag_commit"], args.against, "HEAD"
+        )
+        acknowledged = load_acknowledged(root)
+        # Churn over every seam path plus anything that conflicted, so a cleanly
+        # merging seam file that upstream is actively rewriting still shows up.
+        watched = seam_paths(inventory(root, record["tree"]))
+        # A conflicting path outside the seam set is watched under its own name.
+        for path in paths:
+            watched.setdefault(path, path)
+        body = render_drift(
+            record, args.against, upstream_sha, fork_sha,
+            datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
+            status, paths, messages,
+            churn(root, record["baseline_commit"], args.against, watched),
+            acknowledged,
+        )
+        text = splice(
+            (root / REPORT_PATH).read_text(), DRIFT_BEGIN, DRIFT_END, body
+        )
+        (root / REPORT_PATH).write_text(text)
+        findings = verdict(status, paths, messages, acknowledged)
+        for finding in findings:
+            print(f"upstream-report: {finding}", file=sys.stderr)
+        if findings:
+            return 1
+
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--show-baseline", action="store_true",
+                        help="resolve and print the baseline, then exit")
+    parser.add_argument("--check", action="store_true",
+                        help="fail if the staged report is stale; write nothing")
+    parser.add_argument("--drift", action="store_true",
+                        help="also regenerate the drift block; needs a fetched upstream")
+    parser.add_argument("--against", default="upstream/main",
+                        help="upstream side of the comparison (default: upstream/main)")
+    args = parser.parse_args(argv)
+    # ONE error boundary. Every expected operational failure — a git error, a bad
+    # baseline, malformed TOML, an unreadable file — exits 2. Exit 1 is reserved for
+    # findings, so CI can tell "the check found something" from "the check broke".
+    #
+    # `except Exception`, not the three named types alone: an unexpected exception
+    # (a UnicodeDecodeError from a non-UTF-8 byte in git output, an IndexError from
+    # the -z index arithmetic) must not fall through uncaught, because Python then
+    # exits 1 — the workflow's "unacknowledged conflicts" code — and publishes a
+    # traceback as a drift finding. KeyboardInterrupt and SystemExit are BaseException,
+    # not Exception, so they still propagate untouched.
+    try:
+        root = pathlib.Path(
+            git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel").strip()
+        )
+        return run(root, args)
+    except (ReportError, tomllib.TOMLDecodeError, OSError) as error:
+        print(f"upstream-report: {error}", file=sys.stderr)
+        return 2
+    except Exception as error:
+        # Not one of the three expected types: name the class so an unexpected
+        # failure stays diagnosable without a traceback reaching stderr.
+        print(f"upstream-report: {type(error).__name__}: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
