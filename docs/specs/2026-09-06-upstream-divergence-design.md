@@ -1,6 +1,10 @@
 # Upstream divergence document and sync strategy: design
 
-**Status:** awaiting review 2026-09-06; not implemented.
+**Status:** implemented 2026-09-06; plan
+`../plans/2026-09-06-upstream-divergence.md`. The document it specifies is
+`../materials/upstream-divergence.md`, the baseline it pins is
+`../materials/upstream-baseline.toml`, and the canary is
+`.github/workflows/upstream-drift.yml`.
 
 **Task:** `material-a9447f`.
 
