@@ -143,20 +143,28 @@ class Fixture(unittest.TestCase):
         return tag_commit, tree, patched_commit
 
     def write_baseline(self, tag_commit, tree, patched_commit, carried):
-        entries = "\n".join(
-            f'[[carried]]\nsubject = "{s}"\npatch_id = "{p}"\n' for s, p in carried
-        )
-        self.write(
-            report.BASELINE_PATH,
-            f"""
-            tag = "v1.0"
-            tag_commit = "{tag_commit}"
-            tree = "{tree}"
-            patched_commit = "{patched_commit}"
+        """Flush-left TOML, built line by line.
 
-            {entries}
-            """,
-        )
+        Do NOT use an indented triple-quoted string here. `write` runs
+        textwrap.dedent, which strips the COMMON prefix across all non-blank lines —
+        and interpolating the carried entries flush-left makes that prefix empty, so
+        every other line silently keeps its indentation. TOML tolerates it, so the
+        file still parses and nothing complains; the damage shows up in tests that
+        match on `line.startswith("tree = ")` and quietly match nothing."""
+        lines = [
+            'tag = "v1.0"',
+            f'tag_commit = "{tag_commit}"',
+            f'tree = "{tree}"',
+            f'patched_commit = "{patched_commit}"',
+        ]
+        for subject, patch in carried:
+            lines += [
+                "",
+                "[[carried]]",
+                f'subject = "{subject}"',
+                f'patch_id = "{patch}"',
+            ]
+        self.write(report.BASELINE_PATH, "\n".join(lines) + "\n")
         self.git("add", report.BASELINE_PATH)
 
     def carried_ids(self, patched_commit, n):
@@ -600,9 +608,10 @@ class Inventory(Fixture):
         row = by_path["src/renamed.rs"]
         self.assertTrue(row.status.startswith("R"), row.status)
         self.assertEqual(report.classify(row.status, row.path), "B")
-        # The baseline path survives, so drift can ask upstream about the old name.
+        # The baseline path survives, so Task 4's drift analysis can ask upstream
+        # about the old name. seam_paths and churn are asserted in Task 4, which is
+        # where they are implemented — Task 2 must pass its own gate on its own.
         self.assertEqual(row.previous, "src/lib.rs")
-        self.assertEqual(report.seam_paths(rows)["src/renamed.rs"], "src/lib.rs")
 
     def test_disagreeing_diff_formats_are_an_error(self):
         tag_commit, tree, patched = self.baseline_repo()
@@ -620,28 +629,6 @@ class Inventory(Fixture):
         tree = self.stage_divergence()
         paths = [row.path for row in report.inventory(self.root, tree)]
         self.assertEqual(paths, sorted(paths))
-
-    def test_churn_follows_the_baseline_path_across_a_fork_rename(self):
-        """The fork renamed src/lib.rs; upstream kept editing it under the old name.
-        Asking upstream about the fork's new name returns zero and hides the churn."""
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
-
-        # Upstream continues from the release, editing the file under its old name.
-        self.git("checkout", "-q", "-b", "upstream-main", tag_commit)
-        self.write("src/lib.rs", "fn upstream() { moved_on(); }\n")
-        self.commit("upstream edits src/lib.rs")
-
-        self.git("checkout", "-q", patched)
-        self.git("mv", "src/lib.rs", "src/renamed.rs")
-        self.git("add", "-A")
-
-        watched = report.seam_paths(report.inventory(self.root, tree))
-        self.assertEqual(watched["src/renamed.rs"], "src/lib.rs")
-        churns = report.churn(self.root, tag_commit, "upstream-main", watched)
-        count, letter, baseline, upstream_path = churns["src/renamed.rs"]
-        self.assertEqual(baseline, "src/lib.rs")
-        self.assertEqual(count, 1, "upstream churn must follow the baseline path")
 
     def test_local_block_counts_classes(self):
         tree = self.stage_divergence()
@@ -1221,6 +1208,37 @@ Also add, to the same class, a fixture that actually exercises the empty-list ca
         self.assertTrue(any("not acknowledgeable" in p for p in problems), problems)
 
 
+class Drift(Fixture):
+    def test_seam_paths_map_to_the_baseline_name(self):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.git("mv", "src/lib.rs", "src/renamed.rs")
+        self.git("add", "-A")
+        watched = report.seam_paths(report.inventory(self.root, tree))
+        self.assertEqual(watched["src/renamed.rs"], "src/lib.rs")
+
+    def test_churn_follows_the_baseline_path_across_a_fork_rename(self):
+        """The fork renamed src/lib.rs; upstream kept editing it under the old name.
+        Asking upstream about the fork's new name returns zero and hides the churn."""
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+
+        # Upstream continues from the release, editing the file under its old name.
+        self.git("checkout", "-q", "-b", "upstream-main", tag_commit)
+        self.write("src/lib.rs", "fn upstream() { moved_on(); }\n")
+        self.commit("upstream edits src/lib.rs")
+
+        self.git("checkout", "-q", patched)
+        self.git("mv", "src/lib.rs", "src/renamed.rs")
+        self.git("add", "-A")
+
+        watched = report.seam_paths(report.inventory(self.root, tree))
+        churns = report.churn(self.root, tag_commit, "upstream-main", watched)
+        count, letter, baseline, upstream_path = churns["src/renamed.rs"]
+        self.assertEqual(baseline, "src/lib.rs")
+        self.assertEqual(count, 1, "upstream churn must follow the baseline path")
+
+
 class Cli(Fixture):
     """Subprocess-level tests. The helper tests never exercise the exit-code
     contract, and CI branches on it: 0 success, 1 finding, 2 error."""
@@ -1269,14 +1287,12 @@ class Cli(Fixture):
         """Valid TOML with the wrong shape. `carried = 1` parses, then explodes on
         len() with a traceback and exit 1 unless the shape is validated."""
         self.stage_working_document()
-        base = read = (self.root / report.BASELINE_PATH).read_text()
+        base = (self.root / report.BASELINE_PATH).read_text()
         for broken in ("carried = 1", 'carried = "two"', "carried = [1, 2]"):
             with self.subTest(broken=broken):
                 body = "\n".join(
                     line for line in base.splitlines()
-                    if not line.startswith("[[carried]]")
-                    and not line.startswith("subject")
-                    and not line.startswith("patch_id")
+                    if not line.strip().startswith(("[[carried]]", "subject", "patch_id"))
                 )
                 self.write(report.BASELINE_PATH, body + "\n" + broken + "\n")
                 self.git("add", report.BASELINE_PATH)
@@ -1288,11 +1304,14 @@ class Cli(Fixture):
         """A short hash copied out of the design doc must not validate."""
         self.stage_working_document()
         text = (self.root / report.BASELINE_PATH).read_text()
-        lines = []
+        lines, replaced = [], 0
         for line in text.splitlines():
-            if line.startswith("tree = "):
-                line = 'tree = "7b010d1b"'
+            if line.strip().startswith("tree = "):
+                line, replaced = 'tree = "7b010d1b"', replaced + 1
             lines.append(line)
+        # Assert the edit landed. Without this the test passes for the wrong reason:
+        # an unmodified config yields a stale-report finding, exit 1, not exit 2.
+        self.assertEqual(replaced, 1, text)
         self.write(report.BASELINE_PATH, "\n".join(lines) + "\n")
         self.git("add", report.BASELINE_PATH)
         result = self.cli("--check")
@@ -1416,8 +1435,12 @@ def verdict(status, paths, messages, acknowledged):
     for kind, involved, text in notices:
         unbacked = [path for path in involved if path not in backed]
         if not involved or unbacked:
+            # Name the unbacked paths. Git already supplied them, and "which
+            # directory" is the first thing a reader needs.
+            where = ", ".join(unbacked) if unbacked else "no path"
             problems.append(
-                f"unattributed conflict, not acknowledgeable ({kind}): {text}"
+                f"unattributed conflict, not acknowledgeable ({kind}) "
+                f"at {where}: {text}"
             )
     if not notices and not backed:
         problems.append(
@@ -2124,28 +2147,61 @@ git add docs/materials/upstream-divergence.md
 git commit -m "ci: add the weekly upstream drift canary"
 ```
 
-- [ ] **Step 7: Confirm GitHub accepts the workflow**
+- [ ] **Step 7: Confirm GitHub registered the workflow, then that it runs**
 
-`actionlint` proves the file is well-formed, but only GitHub decides whether it
-registers the workflow, and a workflow it rejects is **silently ignored** rather than
-reported. This must happen after the commit — before it, there is nothing on the
-remote to register.
+`actionlint` proves the file is well-formed YAML with valid Actions semantics. It
+cannot prove GitHub *registered* the workflow, and an unregistered workflow is
+**silently ignored** rather than reported. Confirm registration and behaviour in that
+order — they are different facts, and the second cannot substitute for the first.
+
+**First, registration, via the PR-triggered run.** The workflow has a
+`pull_request:` trigger, so a same-repo PR runs it from the head branch. A run
+appearing for the committed SHA is direct evidence GitHub parsed and registered the
+file:
 
 ```bash
 git push -u origin docs/upstream-divergence
-gh workflow run upstream-drift.yml --ref docs/upstream-divergence
-gh run list --workflow upstream-drift.yml --branch docs/upstream-divergence --limit 1
+gh pr create --fill --base materials-26.04
+SHA=$(git rev-parse HEAD)
+gh run list --workflow upstream-drift.yml \
+  --json databaseId,headSha,event,status,conclusion \
+  --jq "[.[] | select(.headSha == \"$SHA\")]"
 ```
 
-Expected: `workflow_dispatch` is accepted and a run appears for the branch. If
-`gh workflow run` reports the workflow does not exist, GitHub rejected the file —
-`gh workflow list` alone would not have told you, since it neither validates YAML nor
-scopes to a branch.
+Expected: at least one entry with `"event": "pull_request"`. An empty list after the
+PR checks have started means GitHub did not register the workflow — go back to
+`actionlint` and to the file's location and name.
 
-Then read the run's summary and artifact to confirm the report actually published:
+**Do not use `gh workflow run` for this.** `workflow_dispatch` can only dispatch a
+workflow GitHub has already registered, and registration for dispatch depends on the
+default branch, not on the branch you pushed. A "workflow does not exist" response
+from it therefore proves nothing about the YAML — it is the expected answer for a
+valid new workflow that has never been on the default branch.
+
+**Then, behaviour.** Once the PR run confirms registration, dispatch a full run —
+the PR run deliberately skips the drift steps — and follow that specific run:
 
 ```bash
-gh run view --log | sed -n '/Upstream drift/,+20p'
+gh workflow run upstream-drift.yml --ref docs/upstream-divergence
+RUN=$(gh run list --workflow upstream-drift.yml --event workflow_dispatch \
+  --limit 1 --json databaseId --jq '.[0].databaseId')
+gh run watch "$RUN" --exit-status
+gh run download "$RUN" --name upstream-divergence --dir ./drift-artifact
+grep -c 'Seam path' ./drift-artifact/upstream-divergence.md
+```
+
+Expected: the run completes, the artifact downloads, and the seam table is present.
+Capturing `$RUN` and passing it explicitly matters — a bare `gh run view` reads the
+most recent run in the repository, which may be someone else's.
+
+If the dispatch is rejected because the workflow is not yet on the default branch,
+that is expected at this point and not a failure: the registration evidence above
+already stands. Record it and verify behaviour after the merge.
+
+Clean up the artifact directory before committing anything further:
+
+```bash
+rm -rf ./drift-artifact
 ```
 
 Note the schedule itself will not fire from this branch. Scheduled workflows run only
