@@ -263,7 +263,15 @@ def load_baseline(root):
 def resolve_baseline(root, record):
     """Validate the record against the object store. Trees on both sides; never
     commit identity, because the fork's copy of the release commit is a different
-    object with the same content."""
+    object with the same content.
+
+    `tag_commit` proves the local tag still names the release TREE, and that is all
+    a tree can prove. History counting (`churn`, `_upstream_status`) needs a commit
+    that is actually on upstream's line of history, not merely a tree match: the
+    fork's baseline commit — `patched_commit~depth` — is upstream's real release
+    commit, while this fork's local tag is a rewritten copy of it with a different
+    SHA that `git log A..B` cannot walk across. `baseline_commit` is exposed on the
+    record for exactly that use."""
     tree = record["tree"]
     tag_commit = record["tag_commit"]
 
@@ -282,12 +290,14 @@ def resolve_baseline(root, record):
 
     carried = record["carried"]
     depth = len(carried)
-    fork_tree = rev(root, f"{record['patched_commit']}~{depth}^{{tree}}")
+    baseline_commit = rev(root, f"{record['patched_commit']}~{depth}")
+    fork_tree = rev(root, f"{baseline_commit}^{{tree}}")
     if fork_tree != tree:
         raise ReportError(
             f"tree of {record['patched_commit']}~{depth} is {fork_tree}, "
             f"recorded tree is {tree}"
         )
+    record["baseline_commit"] = baseline_commit
 
     # carried is oldest-first; the oldest sits at depth-1 below patched_commit.
     for index, entry in enumerate(carried):
@@ -580,6 +590,9 @@ def run(root, args):
     if args.drift:
         upstream_sha = rev(root, args.against)
         fork_sha = rev(root, "HEAD")
+        # merge-tree needs only a TREE for --merge-base=, and tag_commit and
+        # baseline_commit carry the same one; churn below needs a commit that is
+        # actually an ancestor of upstream, which only baseline_commit is.
         status, paths, messages = merge_tree(
             root, record["tag_commit"], args.against, "HEAD"
         )
@@ -594,7 +607,7 @@ def run(root, args):
             record, args.against, upstream_sha, fork_sha,
             datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
             status, paths, messages,
-            churn(root, record["tag_commit"], args.against, watched),
+            churn(root, record["baseline_commit"], args.against, watched),
             acknowledged,
         )
         text = splice(
