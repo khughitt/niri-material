@@ -4005,3 +4005,32 @@ proptest! {
         check_ops_with_options(options, ops);
     }
 }
+
+#[test]
+fn ipc_tile_pos_in_workspace_view_is_set_for_floating_only() {
+    let mut floating = TestWindowParams::new(2);
+    floating.is_floating = true;
+    let layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::AddWindow { params: floating },
+    ]);
+
+    let mut layouts = Vec::new();
+    layout.with_windows(|win, _, _, layout| layouts.push((*win.id(), layout)));
+    layouts.sort_by_key(|(id, _)| *id);
+    let [(1, tiled), (2, floating)] = layouts.as_slice() else {
+        panic!("expected windows 1 and 2, got {layouts:?}");
+    };
+
+    // Tiled windows report their scrolling indices and leave the view position unset; the
+    // niri-ipc docs promise exactly this, and Workspace::scrolling_view_pos is the route to a
+    // tiled window's on-screen position.
+    assert!(tiled.pos_in_scrolling_layout.is_some());
+    assert_eq!(tiled.tile_pos_in_workspace_view, None);
+
+    assert_eq!(floating.pos_in_scrolling_layout, None);
+    assert!(floating.tile_pos_in_workspace_view.is_some());
+}
