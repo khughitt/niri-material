@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Upstream divergence report: `python3 tools/upstream-report [--check] [--drift] [--against REF]`.
+
+Reports what this fork changes relative to upstream niri, and whether upstream has
+moved into our seams. Everything is measured against the baseline recorded in
+docs/materials/upstream-baseline.toml, comparing TREES: this repository's history was
+rewritten, its recorded merge base is a 2023 commit, and a diff from that merge base
+reports 5743 files against a true 176. `git merge-base` is never called.
+
+All input is read from the git index (`git show :<path>`, `git diff-index --cached`),
+never the working tree and never a branch name, so one code path serves both the
+pre-commit hook (where the index is the tree about to be committed) and CI (where it
+is the checked-out commit). Output is written to the working tree.
+
+Exit status: 0 success, 1 a reportable finding (stale report, unacknowledged
+conflict), 2 an error (bad baseline, git failure, missing markers).
+
+Design: docs/specs/2026-09-06-upstream-divergence-design.md.
+"""
+import argparse
+import collections
+import datetime
+import pathlib
+import subprocess
+import sys
+import tomllib
+
+BASELINE_PATH = "docs/materials/upstream-baseline.toml"
+CONFLICTS_PATH = "docs/materials/upstream-conflicts.toml"
+REPORT_PATH = "docs/materials/upstream-divergence.md"
+SELF_PATHS = (BASELINE_PATH, CONFLICTS_PATH, REPORT_PATH)
+
+REQUIRED_KEYS = ("tag", "tag_commit", "tree", "patched_commit")
+
+
+class ReportError(Exception):
+    """Anything that must stop the run loudly rather than degrade into a guess."""
+
+
+def git(root, *args):
+    """Run git, returning stdout. Any non-zero status is a ReportError."""
+    result = subprocess.run(
+        ["git", "-C", str(root), *args], capture_output=True, text=True
+    )
+    if result.returncode != 0:
+        raise ReportError(
+            f"git {' '.join(args)} failed ({result.returncode}): "
+            f"{result.stderr.strip() or result.stdout.strip()}"
+        )
+    return result.stdout
+
+
+def rev(root, spec):
+    return git(root, "rev-parse", "--verify", spec).strip()
+
+
+def read_index(root, path):
+    """File content as staged in the index."""
+    return git(root, "show", f":{path}")
+
+
+def patch_id(root, commit):
+    """Stable patch-id of a single commit."""
+    patch = git(root, "diff-tree", "-p", "--no-color", commit)
+    result = subprocess.run(
+        ["git", "-C", str(root), "patch-id", "--stable"],
+        input=patch, capture_output=True, text=True,
+    )
+    if result.returncode != 0 or not result.stdout.split():
+        raise ReportError(f"git patch-id --stable produced nothing for {commit}")
+    return result.stdout.split()[0]
+
+
+def _hash(value):
+    return len(value) == 40 and all(c in "0123456789abcdef" for c in value)
+
+
+def load_baseline(root):
+    """The baseline record, as staged, with every field's SHAPE validated.
+
+    Valid TOML is not a valid record. `carried = 1` parses fine and then explodes on
+    `len()` with a traceback and the wrong exit code; a truncated hash pasted from
+    the design doc validates against nothing. Both are caught here, as ReportError,
+    so they reach the error boundary and exit 2."""
+    record = tomllib.loads(read_index(root, BASELINE_PATH))
+    if not isinstance(record, dict):
+        raise ReportError(f"{BASELINE_PATH}: not a table")
+
+    missing = [key for key in REQUIRED_KEYS if key not in record]
+    if missing:
+        raise ReportError(f"{BASELINE_PATH}: missing {', '.join(missing)}")
+    for key in REQUIRED_KEYS:
+        if not isinstance(record[key], str) or not record[key]:
+            raise ReportError(
+                f"{BASELINE_PATH}: {key} must be a non-empty string, "
+                f"got {record[key]!r}"
+            )
+    for key in ("tag_commit", "tree", "patched_commit"):
+        if not _hash(record[key]):
+            raise ReportError(
+                f"{BASELINE_PATH}: {key} must be a full 40-character hex hash, "
+                f"got {record[key]!r}"
+            )
+
+    carried = record.setdefault("carried", [])
+    if not isinstance(carried, list):
+        raise ReportError(
+            f"{BASELINE_PATH}: carried must be an array of tables, got {carried!r}"
+        )
+    for index, entry in enumerate(carried):
+        if not isinstance(entry, dict):
+            raise ReportError(
+                f"{BASELINE_PATH}: carried[{index}] must be a table, got {entry!r}"
+            )
+        for key in ("subject", "patch_id"):
+            if not isinstance(entry.get(key), str) or not entry[key]:
+                raise ReportError(
+                    f"{BASELINE_PATH}: carried[{index}].{key} must be a "
+                    f"non-empty string"
+                )
+    return record
+
+
+def resolve_baseline(root, record):
+    """Validate the record against the object store. Trees on both sides; never
+    commit identity, because the fork's copy of the release commit is a different
+    object with the same content."""
+    tree = record["tree"]
+    tag_commit = record["tag_commit"]
+
+    resolved = rev(root, f"{record['tag']}^{{commit}}")
+    if resolved != tag_commit:
+        raise ReportError(
+            f"tag {record['tag']} resolves to {resolved}, "
+            f"recorded tag_commit is {tag_commit}"
+        )
+
+    tag_tree = rev(root, f"{tag_commit}^{{tree}}")
+    if tag_tree != tree:
+        raise ReportError(
+            f"tree of tag_commit {tag_commit} is {tag_tree}, recorded tree is {tree}"
+        )
+
+    carried = record["carried"]
+    depth = len(carried)
+    fork_tree = rev(root, f"{record['patched_commit']}~{depth}^{{tree}}")
+    if fork_tree != tree:
+        raise ReportError(
+            f"tree of {record['patched_commit']}~{depth} is {fork_tree}, "
+            f"recorded tree is {tree}"
+        )
+
+    # carried is oldest-first; the oldest sits at depth-1 below patched_commit.
+    for index, entry in enumerate(carried):
+        commit = f"{record['patched_commit']}~{depth - 1 - index}"
+        found = patch_id(root, commit)
+        if found != entry.get("patch_id"):
+            raise ReportError(
+                f"carried[{index}] ({entry.get('subject', '?')}): patch-id at "
+                f"{commit} is {found}, recorded {entry.get('patch_id')}"
+            )
+    return record
+
+
+def run(root, args):
+    """The whole job. Returns 0 for success and 1 for a finding; every operational
+    failure raises and is caught by the boundary in main()."""
+    record = resolve_baseline(root, load_baseline(root))
+    if args.show_baseline:
+        print(f"{record['tag']} {record['tag_commit']} tree {record['tree']}")
+        print(f"patched {record['patched_commit']} carried {len(record['carried'])}")
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--show-baseline", action="store_true",
+                        help="resolve and print the baseline, then exit")
+    args = parser.parse_args(argv)
+    # ONE error boundary. Every expected operational failure — a git error, a bad
+    # baseline, malformed TOML, an unreadable file — exits 2. Exit 1 is reserved for
+    # findings, so CI can tell "the check found something" from "the check broke".
+    try:
+        root = pathlib.Path(
+            git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel").strip()
+        )
+        return run(root, args)
+    except (ReportError, tomllib.TOMLDecodeError, OSError) as error:
+        print(f"upstream-report: {error}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
