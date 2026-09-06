@@ -21,7 +21,16 @@
 - Tests live in `tools/test_upstream_report.py` and are found by the existing `python3 -m unittest discover -s tools`, which `just check` already runs. Follow `tools/test_affected.py`: load the hyphenated script through `importlib.util.spec_from_loader` + `SourceFileLoader`.
 - Fixture repositories are built under `tempfile.mkdtemp()` and removed in `tearDown`. Each fixture sets `user.email`/`user.name` locally and passes `-c commit.gpgsign=false`, so the suite does not depend on the operator's git config.
 - Commits pass the pre-commit hook (`just check`: rustfmt, clippy, tooling tests, `tasks check`). Conventional commits with scopes `feat(tools)`, `test(tools)`, `docs(material)`, `build(just)`, `ci`. No AI attribution trailer.
-- Task lifecycle: every `### Task N` heading has a record linked with `plan:` and `step:`. Run `tasks start <id>` before a task; its final commit runs `tasks done <id> "<result>"` and stages `tasks/`. Task 7 closes the parent `material-a9447f`.
+- Task lifecycle: every `### Task N` heading has a record linked with `plan:` and `step:`. Run `tasks start <id>` before a task. Task 7 closes the parent `material-a9447f`.
+- **Closing sequence, in this exact order, for every task.** Getting it wrong makes the task's own commit fail its own gate:
+
+  1. `tasks done <id> "<result>"` — this REWRITES a file under `tasks/`, which is a class-A path in the inventory, so it must happen before anything is staged.
+  2. `git add` every input: source, config, `tasks/`.
+  3. `python3 tools/upstream-report` — regenerate, now that the index is final.
+  4. `git add docs/materials/upstream-divergence.md`.
+  5. `git commit`.
+
+  Steps 3-4 are no-ops before Task 5 creates the document, and harmless. From Task 6 on, `just check` runs `upstream-report --check` in the pre-commit hook, and skipping them makes the commit fail with `docs/materials/upstream-divergence.md is stale`.
 
 | Task | Record | | Task | Record |
 |---|---|---|---|---|
@@ -209,10 +218,23 @@ class Baseline(Fixture):
             report.resolve_baseline(self.root, report.load_baseline(self.root))
 
     def test_resolution_needs_no_branches(self):
+        """A fresh CI checkout has no local patched-26.04, so nothing may resolve by
+        branch name.
+
+        `git branch --format` is NOT usable here: baseline_repo leaves HEAD detached,
+        and it then prints `(HEAD detached at abc1234)`, which splits into the tokens
+        `(HEAD`, `detached`, `at`, `abc1234)`. for-each-ref lists refs only."""
         tag_commit, tree, patched = self.baseline_repo()
         self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
-        for branch in self.git("branch", "--format=%(refname:short)").split():
+        branches = self.git(
+            "for-each-ref", "--format=%(refname:short)", "refs/heads/"
+        ).split()
+        for branch in branches:
             self.git("branch", "-D", branch)
+        self.assertEqual(
+            self.git("for-each-ref", "--format=%(refname:short)", "refs/heads/").strip(),
+            "",
+        )
         report.resolve_baseline(self.root, report.load_baseline(self.root))
 
 
@@ -248,6 +270,7 @@ conflict), 2 an error (bad baseline, git failure, missing markers).
 Design: docs/specs/2026-09-06-upstream-divergence-design.md.
 """
 import argparse
+import datetime
 import pathlib
 import subprocess
 import sys
@@ -350,23 +373,32 @@ def resolve_baseline(root, record):
     return record
 
 
+def run(root, args):
+    """The whole job. Returns 0 for success and 1 for a finding; every operational
+    failure raises and is caught by the boundary in main()."""
+    record = resolve_baseline(root, load_baseline(root))
+    if args.show_baseline:
+        print(f"{record['tag']} {record['tag_commit']} tree {record['tree']}")
+        print(f"patched {record['patched_commit']} carried {len(record['carried'])}")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--show-baseline", action="store_true",
                         help="resolve and print the baseline, then exit")
     args = parser.parse_args(argv)
-    root = pathlib.Path(
-        git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel").strip()
-    )
+    # ONE error boundary. Every expected operational failure — a git error, a bad
+    # baseline, malformed TOML, an unreadable file — exits 2. Exit 1 is reserved for
+    # findings, so CI can tell "the check found something" from "the check broke".
     try:
-        record = resolve_baseline(root, load_baseline(root))
-    except ReportError as error:
+        root = pathlib.Path(
+            git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel").strip()
+        )
+        return run(root, args)
+    except (ReportError, tomllib.TOMLDecodeError, OSError) as error:
         print(f"upstream-report: {error}", file=sys.stderr)
         return 2
-    if args.show_baseline:
-        print(f"{record['tag']} {record['tag_commit']} tree {record['tree']}")
-        print(f"patched {record['patched_commit']} carried {len(record['carried'])}")
-    return 0
 
 
 if __name__ == "__main__":
@@ -433,10 +465,12 @@ Expected: exit 2 with `upstream-report: git show :docs/materials/upstream-baseli
 
 ```bash
 chmod +x tools/upstream-report
+tasks done material-a26c7b "baseline record and tree-based validation; fixture tests including the rewritten-ancestry case"
 git add tools/upstream-report tools/test_upstream_report.py docs/materials/upstream-baseline.toml tasks/
-tasks done material-a26c7b "baseline record and tree-based validation; 7 fixture tests including the rewritten-ancestry case"
 git commit -m "feat(tools): resolve the upstream baseline by tree, not ancestry"
 ```
+
+The document does not exist yet, so there is nothing to regenerate. From Task 5 on, the full closing sequence in Global Constraints applies.
 
 ---
 
@@ -509,6 +543,33 @@ class Inventory(Fixture):
         paths = [path for _, path, _, _ in report.inventory(self.root, tree)]
         self.assertNotIn("src/unstaged.rs", paths)
 
+    def test_rename_joins_both_diff_formats_on_the_new_path(self):
+        """--name-status gives `R100\0old\0new`; --numstat gives `0\t0\t\0old\0new`.
+        Joining them naively yields the nonexistent path `src/{old.rs => new.rs}`."""
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.git("mv", "src/lib.rs", "src/renamed.rs")
+        self.git("add", "-A")
+        rows = report.inventory(self.root, tree)
+        paths = [path for _, path, _, _ in rows]
+        self.assertIn("src/renamed.rs", paths)
+        self.assertFalse([p for p in paths if "=>" in p or "{" in p], paths)
+        status = {path: st for st, path, _, _ in rows}["src/renamed.rs"]
+        self.assertTrue(status.startswith("R"), status)
+        self.assertEqual(report.classify(status, "src/renamed.rs"), "B")
+
+    def test_disagreeing_diff_formats_are_an_error(self):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.git("add", "-A")
+        original = report._numstat
+        try:
+            report._numstat = lambda root, tree: {}
+            with self.assertRaises(report.ReportError):
+                report.inventory(self.root, tree)
+        finally:
+            report._numstat = original
+
     def test_inventory_is_sorted_by_path(self):
         tree = self.stage_divergence()
         paths = [path for _, path, _, _ in report.inventory(self.root, tree)]
@@ -551,34 +612,83 @@ def classify(status, path):
     return "A"
 
 
-def inventory(root, tree):
-    """(status, path, added, removed) for every path differing between the baseline
-    tree and the index, excluding the tool's own files, sorted by path."""
-    names = git(root, "diff-index", "--cached", "--name-status", "-M", tree)
-    numbers = git(root, "diff-index", "--cached", "--numstat", "-M", tree)
+def _split_z(text):
+    """NUL-delimited fields, without the trailing empty one."""
+    fields = text.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    return fields
 
-    statuses = {}
-    for line in names.splitlines():
-        if not line:
-            continue
-        fields = line.split("\t")
-        statuses[fields[-1]] = fields[0]
 
-    rows = []
-    for line in numbers.splitlines():
-        if not line:
-            continue
-        added, removed, *rest = line.split("\t")
-        path = rest[-1]
-        if path in SELF_PATHS:
-            continue
+def _name_status(root, tree):
+    """path -> (status, previous path or None).
+
+    Records are `<status>\0<path>`, except a rename or copy, which is
+    `R<score>\0<old>\0<new>`. Record length depends on the status letter, which is
+    why this cannot be parsed line-wise."""
+    fields = _split_z(
+        git(root, "diff-index", "--cached", "--name-status", "-M", "-z", tree)
+    )
+    result = {}
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if status[:1] in ("R", "C"):
+            result[fields[index + 2]] = (status, fields[index + 1])
+            index += 3
+        else:
+            result[fields[index + 1]] = (status, None)
+            index += 2
+    return result
+
+
+def _numstat(root, tree):
+    """path -> (added, removed).
+
+    Records are `<added>\t<removed>\t<path>`, except a rename, where the third
+    tab-separated field is EMPTY and the old and new paths follow as two further
+    NUL-terminated fields. This encoding differs from --name-status, so the two must
+    be joined on the new path rather than zipped."""
+    fields = _split_z(
+        git(root, "diff-index", "--cached", "--numstat", "-M", "-z", tree)
+    )
+    result = {}
+    index = 0
+    while index < len(fields):
+        added, removed, path = fields[index].split("\t", 2)
+        if path == "":
+            path = fields[index + 2]  # old at index + 1, new at index + 2
+            index += 3
+        else:
+            index += 1
         # "-" is git's marker for a binary file.
-        rows.append((
-            statuses.get(path, "M"),
-            path,
+        result[path] = (
             0 if added == "-" else int(added),
             0 if removed == "-" else int(removed),
-        ))
+        )
+    return result
+
+
+def inventory(root, tree):
+    """(status, path, added, removed) for every path differing between the baseline
+    tree and the index, excluding the tool's own files, sorted by path.
+
+    A key present in one diff format and not the other is an ERROR, never a default.
+    An earlier draft used `statuses.get(path, "M")`, and that silent fallback hid a
+    real bug: the two formats encode renames differently, so a rename produced the
+    nonexistent path `src/{old.rs => new.rs}` with a fabricated "M" status."""
+    statuses = _name_status(root, tree)
+    numbers = _numstat(root, tree)
+    if set(statuses) != set(numbers):
+        raise ReportError(
+            "diff-index --name-status and --numstat disagree on paths: "
+            f"{sorted(set(statuses) ^ set(numbers))[:5]}"
+        )
+    rows = [
+        (statuses[path][0], path, numbers[path][0], numbers[path][1])
+        for path in statuses
+        if path not in SELF_PATHS
+    ]
     return sorted(rows, key=lambda row: row[1])
 
 
@@ -639,8 +749,8 @@ Expected: class B is **38** and total is **176** minus whichever of the tool's o
 - [ ] **Step 6: Commit**
 
 ```bash
+tasks done material-7d0d29 "index-backed inventory with -z rename-safe parsing; class B reproduces the measured 38"
 git add tools/upstream-report tools/test_upstream_report.py tasks/
-tasks done material-7d0d29 "index-backed inventory and A/B/C classification; class B reproduces the measured 38"
 git commit -m "feat(tools): inventory the seam from the index against the baseline tree"
 ```
 
@@ -654,7 +764,7 @@ git commit -m "feat(tools): inventory the seam from the index against the baseli
 
 **Interfaces:**
 - Consumes: everything from Tasks 1-2.
-- Produces: `splice(text, begin, end, body) -> str`; `generate(root, record, path) -> str`; `check(root, record) -> list[str]`; constants `LOCAL_BEGIN`, `LOCAL_END`, `DRIFT_BEGIN`, `DRIFT_END`.
+- Produces: `splice(text, begin, end, body) -> str`; `render_report(root, record, text) -> str`; `check(root, record) -> list[str]`; constants `LOCAL_BEGIN`, `LOCAL_END`, `DRIFT_BEGIN`, `DRIFT_END`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -700,6 +810,10 @@ class Freshness(Fixture):
         self.git("add", "-A")
         return tree
 
+    def regenerate(self, record):
+        target = self.root / report.REPORT_PATH
+        target.write_text(report.render_report(self.root, record, target.read_text()))
+
     def test_stale_report_is_a_finding(self):
         self.stage_document()
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
@@ -708,14 +822,14 @@ class Freshness(Fixture):
     def test_regenerated_and_staged_report_passes(self):
         self.stage_document()
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
-        (self.root / report.REPORT_PATH).write_text(report.generate(self.root, record, report.REPORT_PATH))
+        self.regenerate(record)
         self.git("add", report.REPORT_PATH)
         self.assertEqual(report.check(self.root, record), [])
 
     def test_unstaged_source_change_does_not_affect_the_verdict(self):
         self.stage_document()
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
-        (self.root / report.REPORT_PATH).write_text(report.generate(self.root, record, report.REPORT_PATH))
+        self.regenerate(record)
         self.git("add", report.REPORT_PATH)
         (self.root / "src" / "lib.rs").write_text("fn upstream() { changed_again(); }\n")
         self.assertEqual(report.check(self.root, record), [])
@@ -723,31 +837,46 @@ class Freshness(Fixture):
     def test_unstaged_baseline_edit_is_ignored(self):
         """Configuration comes from the index too. An edit left in the working tree
         must not change the verdict — this is the test that catches reading config
-        from the working tree while reading sources from the index."""
+        from the working tree while reading sources from the index.
+
+        The baseline is RELOADED after the edit; reusing the record loaded before it
+        would pass even if load_baseline read the working tree."""
         self.stage_document()
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
-        (self.root / report.REPORT_PATH).write_text(report.generate(self.root, record, report.REPORT_PATH))
+        self.regenerate(record)
         self.git("add", report.REPORT_PATH)
         (self.root / report.BASELINE_PATH).write_text('tag = "bogus"\n')
-        self.assertEqual(report.check(self.root, record), [])
+        reloaded = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.assertEqual(reloaded["tag"], "v1.0")
+        self.assertEqual(report.check(self.root, reloaded), [])
 
     def test_fresh_checkout_with_empty_staging_area_validates_the_commit(self):
         self.stage_document()
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
-        (self.root / report.REPORT_PATH).write_text(report.generate(self.root, record, report.REPORT_PATH))
+        self.regenerate(record)
         self.git("add", report.REPORT_PATH)
         self.commit("divergence")
         # Nothing staged now; the index still describes the checked-out commit.
         self.assertEqual(self.git("diff", "--cached", "--name-only").strip(), "")
         self.assertEqual(report.check(self.root, record), [])
 
-    def test_generate_is_a_fixpoint(self):
+    def test_generation_is_a_fixpoint(self):
         self.stage_document()
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
-        once = report.generate(self.root, record, report.REPORT_PATH)
-        (self.root / report.REPORT_PATH).write_text(once)
+        target = self.root / report.REPORT_PATH
+        once = report.render_report(self.root, record, target.read_text())
+        target.write_text(once)
         self.git("add", report.REPORT_PATH)
-        self.assertEqual(report.generate(self.root, record, report.REPORT_PATH), once)
+        self.assertEqual(report.render_report(self.root, record, once), once)
+
+    def test_regeneration_preserves_unstaged_prose(self):
+        """Editing the feature table and regenerating must not discard the edit."""
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        target = self.root / report.REPORT_PATH
+        target.write_text(target.read_text() + "\nhand-written prose\n")
+        self.regenerate(record)
+        self.assertIn("hand-written prose", target.read_text())
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -775,18 +904,24 @@ def splice(text, begin, end, body):
     return text[: start + len(begin)] + "\n" + body.rstrip("\n") + "\n" + text[stop:]
 
 
-def generate(root, record, path):
-    """The report as it should be, built from the index."""
-    staged = read_index(root, path)
+def render_report(root, record, text):
+    """Splice the local block into a GIVEN document text.
+
+    The data comes from the index; the target text is the caller's choice. That
+    separation matters: regeneration splices into the WORKING TREE document, so an
+    unstaged edit to the feature table or the rebase log survives, while --check
+    splices into the STAGED document and compares. An earlier draft read the staged
+    document and wrote the result over the working tree, silently discarding
+    unstaged prose."""
     body = render_local(record, inventory(root, record["tree"]))
-    return splice(staged, LOCAL_BEGIN, LOCAL_END, body)
+    return splice(text, LOCAL_BEGIN, LOCAL_END, body)
 
 
 def check(root, record):
     """Findings, empty when the staged report is fresh. The drift block is not
     checked: it needs a fetch, and a pre-commit hook must not touch the network."""
     staged = read_index(root, REPORT_PATH)
-    if generate(root, record, REPORT_PATH) != staged:
+    if render_report(root, record, staged) != staged:
         return [
             f"{REPORT_PATH} is stale against the staged tree; "
             f"run `just upstream-report` and stage the result"
@@ -801,7 +936,7 @@ Extend `main` to accept `--check` and to regenerate by default:
                         help="fail if the staged report is stale; write nothing")
 ```
 
-and after baseline resolution:
+and extend `run` — inside the error boundary, never in `main` — after baseline resolution:
 
 ```python
     if args.check:
@@ -810,11 +945,8 @@ and after baseline resolution:
             print(f"upstream-report: {finding}", file=sys.stderr)
         return 1 if findings else 0
 
-    try:
-        (root / REPORT_PATH).write_text(generate(root, record, REPORT_PATH))
-    except ReportError as error:
-        print(f"upstream-report: {error}", file=sys.stderr)
-        return 2
+    target = root / REPORT_PATH
+    target.write_text(render_report(root, record, target.read_text()))
     print(f"upstream-report: wrote {REPORT_PATH}")
     return 0
 ```
@@ -827,8 +959,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
+tasks done material-13b933 "marker splice, index-sourced generation that preserves unstaged prose, and the --check contract"
 git add tools/upstream-report tools/test_upstream_report.py tasks/
-tasks done material-13b933 "marker splice, index-only generation, and the --check freshness contract"
 git commit -m "feat(tools): generate and verify the local block from the index"
 ```
 
@@ -936,29 +1068,119 @@ class Conflicts(Fixture):
 Also add, to the same class, a fixture that actually exercises the empty-list case rather than asserting it from a hand-built tuple:
 
 ```python
-    def test_directory_rename_fixture_shape_is_recorded(self):
-        """Build a directory-rename divergence and RECORD what this git version does.
+    def directory_rename_split(self):
+        """A divergence that really does yield exit 1 with NO conflicted-file entries.
 
-        Git documents that some directory-rename conflicts produce no conflicted-file
-        entries. Whether a given construction hits that case is version-dependent, so
-        this test asserts the invariant we actually rely on — never that exit 1 implies
-        a non-empty path list — and prints the observed shape for the record."""
-        self.write("old/a.txt", "base\n")
-        self.write("old/b.txt", "base\n")
+        Ours splits old/ across two directories; theirs adds a file into old/. Git
+        cannot decide where the new file goes and reports
+        `CONFLICT(directory rename unclear split)` naming the DIRECTORY `old`, with
+        an empty conflicted-file info section. Verified on git 2.55.0.
+
+        Note the kind string has no space after CONFLICT, unlike
+        `CONFLICT (contents)`; matching on the `CONFLICT` prefix covers both."""
+        for name in "abcdef":
+            self.write(f"old/{name}.txt", f"{name}\n")
         base = self.commit("base")
 
         self.git("checkout", "-q", "-b", "ours", base)
-        self.git("mv", "old", "new-ours")
-        ours = self.commit("ours renames the directory")
+        (self.root / "dir-a").mkdir()
+        (self.root / "dir-b").mkdir()
+        self.git("mv", "old/a.txt", "old/b.txt", "old/c.txt", "dir-a/")
+        self.git("mv", "old/d.txt", "old/e.txt", "old/f.txt", "dir-b/")
+        ours = self.commit("ours splits the directory")
 
         self.git("checkout", "-q", "-b", "theirs", base)
-        self.git("mv", "old", "new-theirs")
-        theirs = self.commit("theirs renames the directory")
+        self.write("old/new.txt", "new\n")
+        theirs = self.commit("theirs adds into old/")
+        return base, ours, theirs
 
+    def test_directory_rename_split_has_no_conflicted_file_entries(self):
+        base, ours, theirs = self.directory_rename_split()
         status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
-        self.assertIn(status, (0, 1))
-        if status == 1:
-            self.assertEqual(report.verdict(status, paths, messages, set()) != [], True)
+        self.assertEqual(status, 1)
+        self.assertEqual(paths, [])
+        kinds = [kind for kind, _, _ in messages]
+        self.assertTrue(any(kind.startswith("CONFLICT") for kind in kinds), kinds)
+
+    def test_directory_rename_split_fails_the_verdict(self):
+        """The required regression: exit 1 with an empty conflicted-file list must
+        never be read as a clean merge."""
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        self.assertNotEqual(report.verdict(status, paths, messages, set()), [])
+
+    def test_directory_rename_split_fails_beside_an_acknowledged_conflict(self):
+        """A non-empty, fully acknowledged path list must not conceal it."""
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        messages = messages + [("CONFLICT (contents)", ["src/a.rs"], "…")]
+        problems = report.verdict(
+            status, paths + ["src/a.rs"], messages, {"src/a.rs"}
+        )
+        self.assertNotEqual(problems, [])
+
+
+class Cli(Fixture):
+    """Subprocess-level tests. The helper tests never exercise the exit-code
+    contract, and CI branches on it: 0 success, 1 finding, 2 error."""
+
+    def stage_working_document(self):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.write("src/lib.rs", "fn upstream() { changed(); }\n")
+        self.write(report.CONFLICTS_PATH, "acknowledged = []\n")
+        self.write(
+            report.REPORT_PATH,
+            f"# Upstream divergence\n\n{report.LOCAL_BEGIN}\n{report.LOCAL_END}\n"
+            f"\n{report.DRIFT_BEGIN}\n{report.DRIFT_END}\n",
+        )
+        self.git("add", "-A")
+
+    def cli(self, *args):
+        tool = pathlib.Path(__file__).with_name("upstream-report")
+        return subprocess.run(
+            ["python3", str(tool), *args],
+            cwd=self.root, capture_output=True, text=True,
+        )
+
+    def test_stale_report_exits_one(self):
+        self.stage_working_document()
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("stale", result.stderr)
+
+    def test_fresh_report_exits_zero(self):
+        self.stage_working_document()
+        self.assertEqual(self.cli().returncode, 0)
+        self.git("add", report.REPORT_PATH)
+        self.assertEqual(self.cli("--check").returncode, 0)
+
+    def test_malformed_toml_exits_two_without_a_traceback(self):
+        self.stage_working_document()
+        self.write(report.BASELINE_PATH, "tag = [unterminated\n")
+        self.git("add", report.BASELINE_PATH)
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("upstream-report:", result.stderr)
+
+    def test_missing_markers_exit_two(self):
+        self.stage_working_document()
+        self.write(report.REPORT_PATH, "# Upstream divergence\n\nno markers\n")
+        self.git("add", report.REPORT_PATH)
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+    def test_bad_upstream_ref_exits_two_not_one(self):
+        """An unfetched or misspelled upstream is an ERROR. Reporting it as a finding
+        would let CI open a 'conflicts found' issue for a broken fetch."""
+        self.stage_working_document()
+        self.assertEqual(self.cli().returncode, 0)
+        self.git("add", report.REPORT_PATH)
+        result = self.cli("--drift", "--against", "no-such-remote/main")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -1050,6 +1272,11 @@ def verdict(status, paths, messages, acknowledged):
     return problems
 
 
+def seam_paths(rows):
+    """Class-B paths from an inventory: where upstream movement can reach us."""
+    return [path for status, path, _, _ in rows if classify(status, path) == "B"]
+
+
 def churn(root, tag_commit, upstream, paths):
     """path -> (upstream commits touching it since the baseline, upstream status).
 
@@ -1075,7 +1302,8 @@ def churn(root, tag_commit, upstream, paths):
 
 def render_drift(record, upstream_ref, upstream_sha, fork_sha, when,
                  status, paths, messages, churns, acknowledged):
-    """The generated drift block. Stamped so staleness is visible, never silent."""
+    """The generated drift block. Stamped with the REPORT GENERATION date — not the
+    fork's commit date, which says nothing about when the comparison was run."""
     lines = [
         f"As of **{when}**: baseline tree `{record['tree'][:12]}`, "
         f"fork `{fork_sha[:12]}`, upstream `{upstream_ref}` at `{upstream_sha[:12]}`.",
@@ -1085,17 +1313,33 @@ def render_drift(record, upstream_ref, upstream_sha, fork_sha, when,
         "result compiles or behaves correctly.",
         "",
     ]
-    if status == 0:
-        lines.append("**No conflicts.**")
-    else:
-        lines.append(f"**{len(paths)} conflicting path(s).**")
+    lines.append(
+        "**No conflicts.**" if status == 0
+        else f"**{len(paths)} conflicting path(s).**"
+    )
+    lines.append("")
+
+    # The seam table is rendered ALWAYS, over every class-B path, not only over
+    # conflicting ones. Upstream churn in a seam file that still merges cleanly —
+    # including a clean upstream rename or delete — is exactly the early warning
+    # this block exists to give, and it is invisible in a conflict-only table.
+    lines.append("| Seam path | Upstream commits since baseline | Upstream status | Conflict | Acknowledged |")
+    lines.append("| --- | --- | --- | --- | --- |")
+    conflicting = set(paths)
+    for path in sorted(churns):
+        count, letter = churns[path]
+        conflict = "yes" if path in conflicting else "-"
+        mark = "yes" if path in acknowledged else ("**NO**" if path in conflicting else "-")
+        lines.append(f"| `{path}` | {count} | {letter or '-'} | {conflict} | {mark} |")
+
+    unlisted = sorted(conflicting - set(churns))
+    if unlisted:
         lines.append("")
-        lines.append("| Path | Acknowledged | Upstream commits since baseline | Upstream status |")
-        lines.append("| --- | --- | --- | --- |")
-        for path in paths:
-            count, letter = churns.get(path, (0, ""))
-            mark = "yes" if path in acknowledged else "**NO**"
-            lines.append(f"| `{path}` | {mark} | {count} | {letter or '-'} |")
+        lines.append(
+            "Conflicting paths outside the class-B inventory (upstream and this fork "
+            "changed the same path independently, or a directory moved): "
+            + ", ".join(f"`{path}`" for path in unlisted)
+        )
     if messages:
         lines.append("")
         lines.append("Informational messages, verbatim and unparsed:")
@@ -1117,7 +1361,7 @@ Extend `main` with the drift options:
                         help="upstream side of the comparison (default: upstream/main)")
 ```
 
-and, in the regeneration path, after writing the local block:
+and, in `run`'s regeneration path, after writing the local block:
 
 ```python
     if args.drift:
@@ -1127,11 +1371,16 @@ and, in the regeneration path, after writing the local block:
             root, record["tag_commit"], args.against, "HEAD"
         )
         acknowledged = load_acknowledged(root)
+        # Churn over every seam path plus anything that conflicted, so a cleanly
+        # merging seam file that upstream is actively rewriting still shows up.
+        watched = sorted(
+            set(seam_paths(inventory(root, record["tree"]))) | set(paths)
+        )
         body = render_drift(
             record, args.against, upstream_sha, fork_sha,
-            git(root, "log", "-1", "--format=%cs", "HEAD").strip(),
+            datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
             status, paths, messages,
-            churn(root, record["tag_commit"], args.against, paths),
+            churn(root, record["tag_commit"], args.against, watched),
             acknowledged,
         )
         text = splice(
@@ -1194,8 +1443,8 @@ note = "we insert the material pass before blur; expected to conflict every cycl
 - [ ] **Step 6: Commit**
 
 ```bash
+tasks done material-e62c55 "merge-tree canary with structured -z parsing, path acknowledgments, seam churn, and the six current conflicts"
 git add tools/upstream-report tools/test_upstream_report.py docs/materials/upstream-conflicts.toml tasks/
-tasks done material-e62c55 "merge-tree canary with structured -z parsing, path acknowledgments, and the six current conflicts"
 git commit -m "feat(tools): detect upstream drift with merge-tree and acknowledged paths"
 ```
 
@@ -1338,10 +1587,14 @@ Expected: `FRESH`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add docs/materials/upstream-divergence.md tasks/
 tasks done material-46c3be "the divergence document: classes, feature table, rebase procedure, log, and both generated blocks populated"
+git add tasks/
+python3 tools/upstream-report
+git add docs/materials/upstream-divergence.md
 git commit -m "docs(material): add the upstream divergence document"
 ```
+
+The regenerate-after-staging step matters from here on: `tasks done` rewrote a file under `tasks/`, which is in the inventory, so the report written in Step 2 is already stale.
 
 ---
 
@@ -1404,10 +1657,14 @@ Expected: `exit=1` with `docs/materials/upstream-divergence.md is stale against 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add justfile tasks/
 tasks done material-331614 "just upstream-report recipe and the freshness check in check_cmd, verified to fail on a staged source change"
+git add justfile tasks/
+python3 tools/upstream-report
+git add docs/materials/upstream-divergence.md
 git commit -m "build(just): enforce upstream report freshness in check"
 ```
+
+`justfile` is a class-C path in the inventory and its line counts just changed, so without the regeneration this commit fails the gate it is itself installing.
 
 ---
 
@@ -1417,6 +1674,7 @@ git commit -m "build(just): enforce upstream report freshness in check"
 - Create: `.github/workflows/upstream-drift.yml`
 - Modify: `docs/materials/README.md`
 - Modify: `AGENTS.md`
+- Modify: `docs/specs/2026-09-06-upstream-divergence-design.md` (status header)
 
 **Interfaces:**
 - Consumes: `just upstream-report --drift` and `python3 -m unittest discover -s tools`.
@@ -1477,8 +1735,36 @@ jobs:
           set -e
           cat drift.err
 
+      # An error (2) is NOT a conflict finding (1). Fail loudly and open no issue:
+      # a broken fetch or a bad baseline must never be reported as drift.
+      - name: Fail on analysis error
+        if: github.event_name != 'pull_request' && steps.drift.outputs.status == '2'
+        run: |
+          echo "::error::upstream-report failed to run; this is not a drift finding"
+          cat drift.err
+          exit 1
+
+      # Publish on EVERY completed analysis, findings or not. The committed document
+      # is a snapshot from the last local run; this workflow does not commit, so
+      # without this the refreshed table exists only inside the dead runner.
+      - name: Publish the report
+        if: github.event_name != 'pull_request' && steps.drift.outputs.status != '2'
+        run: |
+          {
+            echo "## Upstream drift"
+            echo
+            sed -n "/BEGIN GENERATED: drift/,/END GENERATED: drift/p" \
+              docs/materials/upstream-divergence.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request' && steps.drift.outputs.status != '2'
+        with:
+          name: upstream-divergence
+          path: docs/materials/upstream-divergence.md
+
       - name: Report drift
-        if: github.event_name != 'pull_request' && steps.drift.outputs.status != '0'
+        if: github.event_name != 'pull_request' && steps.drift.outputs.status == '1'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -1490,6 +1776,9 @@ jobs:
           \`\`\`
           $(cat drift.err)
           \`\`\`
+
+          The refreshed report is attached to this run as the \`upstream-divergence\`
+          artifact and rendered in the run summary.
 
           Run \`just upstream-report --drift\` locally, then either resolve the seam
           or acknowledge the path with a note explaining why it conflicts."
@@ -1508,22 +1797,47 @@ Baseline resolution in this job works because `upstream-baseline.toml` pins SHAs
 
 - [ ] **Step 2: Validate the workflow parses**
 
-The stdlib has no YAML parser, so assert the structural invariants the design depends on instead:
+Checking raw substrings would fail on this workflow's own comment, which mentions
+`just check` in order to record that it is deliberately not run — so strip comments
+first and assert over the executable lines only.
 
 ```bash
-python3 - <<'PY'
-import pathlib, re, sys
-text = pathlib.Path(".github/workflows/upstream-drift.yml").read_text()
-# stdlib has no YAML parser; assert the structural invariants we depend on.
+python3 - <<'GUARD'
+import pathlib
+lines = pathlib.Path(".github/workflows/upstream-drift.yml").read_text().splitlines()
+code = "\n".join(l for l in lines if not l.lstrip().startswith("#"))
+
 for needed in ("schedule:", "cron:", "issues: write", "fetch-depth: 0",
-               "upstream-report --check", "upstream-report --drift"):
-    assert needed in text, needed
-assert "just check" not in text, "must not run just check"
+               "upstream-report --check", "upstream-report --drift",
+               "upload-artifact", "GITHUB_STEP_SUMMARY"):
+    assert needed in code, needed
+
+# The toolchain claim: no Rust, no apt, no tasks CLI, no just.
+for forbidden in ("just ", "cargo ", "apt-get", "tasks "):
+    assert forbidden not in code, forbidden
+
+# A tab makes the file invalid YAML.
+assert not any("\t" in l for l in lines), "tab in workflow"
+
+# The error/finding split must be explicit in the guards.
+assert "steps.drift.outputs.status == '2'" in code, "no error guard"
+assert "steps.drift.outputs.status == '1'" in code, "no finding guard"
 print("workflow invariants ok")
-PY
+GUARD
 ```
 
 Expected: `workflow invariants ok`.
+
+These are invariants, not YAML validation — the stdlib has no YAML parser. GitHub
+**silently ignores** a malformed workflow rather than reporting it, so confirm the
+file actually parses by pushing the branch and checking that the workflow appears:
+
+```bash
+git push -u origin docs/upstream-divergence
+gh workflow list | grep "upstream drift"
+```
+
+Expected: the workflow is listed. If it is absent, the YAML is malformed.
 
 - [ ] **Step 3: Add the index entry and the agent pointer**
 
@@ -1542,7 +1856,29 @@ In `AGENTS.md`, extend the session protocol list with:
   returns a 2023 commit.
 ```
 
-- [ ] **Step 4: Full verification**
+- [ ] **Step 4: Correct the spec's status**
+
+The design doc still reads `**Status:** awaiting review 2026-09-06; not implemented.`
+A merge is the moment a status goes stale. Update the header of
+`docs/specs/2026-09-06-upstream-divergence-design.md`:
+
+```markdown
+**Status:** implemented 2026-09-06 (`<the Task 7 commit>`); plan
+`../plans/2026-09-06-upstream-divergence.md`. The document it specifies is
+`../materials/upstream-divergence.md`; the baseline it pins is
+`../materials/upstream-baseline.toml`.
+```
+
+Then correct the same claim where it propagated, in `docs/materials/README.md`:
+change `awaiting review` to `implemented`. Grep before committing:
+
+```bash
+grep -rn "awaiting review" docs/ | grep upstream-divergence
+```
+
+Expected: no output.
+
+- [ ] **Step 5: Full verification**
 
 ```bash
 just gate
@@ -1550,23 +1886,39 @@ just gate
 
 Expected: PASS — rustfmt, clippy, tooling tests, `tasks check`, the freshness check, and the test suite.
 
-- [ ] **Step 5: Commit and close**
+- [ ] **Step 6: Commit and close**
 
 ```bash
-git add .github/workflows/upstream-drift.yml docs/materials/README.md AGENTS.md tasks/
 tasks done material-d467fb "weekly drift workflow on python3+git only, index entry, and the AGENTS pointer"
 tasks done material-a9447f "upstream divergence document, generated inventory, drift canary, and rebase procedure landed"
+git add .github/workflows/upstream-drift.yml docs/materials/README.md AGENTS.md \
+        docs/specs/2026-09-06-upstream-divergence-design.md tasks/
+python3 tools/upstream-report
+git add docs/materials/upstream-divergence.md
 git commit -m "ci: add the weekly upstream drift canary"
 ```
+
+Three staged paths here are in the inventory — the workflow and `AGENTS.md` are class B (both already exist upstream or in the fork's seam set), and `tasks/` is class A — so the regeneration is required, not optional.
 
 ---
 
 ## Self-review notes
 
-**Spec coverage.** Baseline identity → Task 1. Seam inventory and classes → Task 2. Marker blocks and freshness enforcement → Task 3. Canary invocation, parsing, acknowledgments, drift block → Task 4. Document structure, feature table, rebase procedure, rebase log → Task 5. `just` wiring → Task 6. Workflow contract, index, pointer → Task 7. The spec's Verification section maps onto the fixtures in Tasks 1-4; the "generated numbers match the hand-measured figures" acceptance is Task 5 Step 3.
+**Spec coverage.** Baseline identity → Task 1. Seam inventory and classes → Task 2. Marker blocks and freshness enforcement → Task 3. Canary invocation, parsing, acknowledgments, drift block → Task 4. Document structure, feature table, rebase procedure, rebase log → Task 5. `just` wiring → Task 6. Workflow contract, index, pointer, and the spec's own status correction → Task 7. The spec's Verification section maps onto the fixtures in Tasks 1-4; the "generated numbers match the hand-measured figures" acceptance is Task 5 Step 3.
+
+**Drift coverage.** The drift block's seam table is rendered over **every class-B path**, not only conflicting ones, and unconditionally rather than only when conflicts exist. Upstream churn in a seam file that still merges cleanly — a clean upstream rename or delete especially — is the earliest warning available, and a conflict-only table hides it. Conflicting paths outside the class-B set are listed separately rather than dropped.
 
 **Not covered by code, by design.** The rebase procedure is a written human procedure (Task 5), not automation — the spec's non-goals forbid automated rebasing. `tasks check` in CI is the spec's named deliberate gap.
 
-**Type consistency.** `inventory` returns 4-tuples `(status, path, added, removed)` throughout; `render_local`, the Task 2 tests, and Task 5's Step 3 grep all assume that shape. `merge_tree` returns `(status, paths, messages)` with `messages` as `(kind, involved, text)` 3-tuples, consumed identically by `verdict` and `render_drift`. `resolve_baseline` returns the record it was given, so `load_baseline` → `resolve_baseline` composes.
+**Type consistency.** `inventory` returns 4-tuples `(status, path, added, removed)` throughout; `render_local`, `seam_paths`, the Task 2 tests, and Task 5's Step 3 grep all assume that shape. `_name_status` returns `path -> (status, previous)` and `_numstat` returns `path -> (added, removed)`, joined on the new path. `merge_tree` returns `(status, paths, messages)` with `messages` as `(kind, involved, text)` 3-tuples, consumed identically by `verdict` and `render_drift`. `resolve_baseline` returns the record it was given, so `load_baseline` → `resolve_baseline` composes. `render_report(root, record, text)` takes its target text as a parameter — regeneration passes the working tree, `check` passes the index.
 
-**Known ordering constraint.** Task 6 must not land before Task 5: `check_cmd` gains `upstream-report --check`, which fails until `upstream-divergence.md` exists with its markers.
+**Exit-code contract, asserted end to end.** `run()` returns 0 or 1; every operational failure raises and is converted to 2 by the single boundary in `main()`. The `Cli` test class exercises this through `subprocess`, because the helper tests cannot: they call functions that raise, never a process that exits. CI branches on `== '2'` (error, fail loudly, open no issue) and `== '1'` (finding, open the deduplicated issue).
+
+**Verified constructions, not assumed ones.** Three facts in this plan were measured on git 2.55.0 rather than reasoned about, because each had already produced a wrong answer once:
+- `--name-status -z` and `--numstat -z` encode renames differently. Joining them line-wise yields the nonexistent path `src/{old.rs => new.rs}`; Task 2 parses both with `-z` and joins on the new path, and errors rather than defaulting when the key sets disagree.
+- A directory-rename **split** (ours splits `old/` across two directories, theirs adds a file into `old/`) really does produce exit 1 with an empty conflicted-file list and a `CONFLICT(directory rename unclear split)` record — note no space after `CONFLICT`. Plain both-sides-rename does not; it produces 15 stage entries. Task 4's fixture uses the construction that works.
+- `git branch --format` prints `(HEAD detached at abc1234)` under a detached HEAD, so Task 1's branchless fixture uses `for-each-ref refs/heads/`.
+
+**Known ordering constraints.**
+- Task 6 must not land before Task 5: `check_cmd` gains `upstream-report --check`, which fails until `upstream-divergence.md` exists with its markers.
+- Within every task, `tasks done` runs before staging and the report is regenerated after staging. `tasks/` is a class-A inventory path, so closing a record changes the inventory; from Task 6 on, staging without regenerating makes the commit fail its own freshness gate.
