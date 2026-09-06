@@ -59,6 +59,145 @@ def read_index(root, path):
     return git(root, "show", f":{path}")
 
 
+SCAFFOLD_PREFIXES = ("tools/", ".githooks/", "packaging/", ".agents/")
+SCAFFOLD_FILES = ("justfile", "AGENTS.md")
+
+# `previous` is the baseline path for a rename, else None.
+Row = collections.namedtuple("Row", "status path previous added removed")
+
+
+def classify(status, path):
+    """A: fork-only additions. B: seam changes to files upstream also has.
+    C: vendored tooling and project scaffolding.
+
+    Class is an inventory aid, not a conflict filter: conflict detection runs over
+    the whole tree and is never scoped by class."""
+    if status[0] in ("M", "D", "R"):
+        return "B"
+    if path.startswith(SCAFFOLD_PREFIXES) or path in SCAFFOLD_FILES:
+        return "C"
+    return "A"
+
+
+def _split_z(text):
+    """NUL-delimited fields, without the trailing empty one."""
+    fields = text.split("\0")
+    if fields and fields[-1] == "":
+        fields.pop()
+    return fields
+
+
+def _name_status(root, tree):
+    """path -> (status, previous path or None).
+
+    Records are `<status>\0<path>`, except a rename or copy, which is
+    `R<score>\0<old>\0<new>`. Record length depends on the status letter, which is
+    why this cannot be parsed line-wise."""
+    fields = _split_z(
+        git(root, "diff-index", "--cached", "--name-status", "-M", "-z", tree)
+    )
+    result = {}
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if status[:1] in ("R", "C"):
+            result[fields[index + 2]] = (status, fields[index + 1])
+            index += 3
+        else:
+            result[fields[index + 1]] = (status, None)
+            index += 2
+    return result
+
+
+def _numstat(root, tree):
+    """path -> (added, removed).
+
+    Records are `<added>\t<removed>\t<path>`, except a rename, where the third
+    tab-separated field is EMPTY and the old and new paths follow as two further
+    NUL-terminated fields. This encoding differs from --name-status, so the two must
+    be joined on the new path rather than zipped."""
+    fields = _split_z(
+        git(root, "diff-index", "--cached", "--numstat", "-M", "-z", tree)
+    )
+    result = {}
+    index = 0
+    while index < len(fields):
+        added, removed, path = fields[index].split("\t", 2)
+        if path == "":
+            path = fields[index + 2]  # old at index + 1, new at index + 2
+            index += 3
+        else:
+            index += 1
+        # "-" is git's marker for a binary file.
+        result[path] = (
+            0 if added == "-" else int(added),
+            0 if removed == "-" else int(removed),
+        )
+    return result
+
+
+def inventory(root, tree):
+    """Rows for every path differing between the baseline tree and the index,
+    excluding the tool's own files, sorted by path.
+
+    `previous` is the path the baseline knew, or None. It is carried all the way to
+    the drift analysis on purpose: upstream never saw our rename, so a seam file the
+    fork renamed must be looked up upstream under its OLD name. Dropping it reported
+    "0 upstream commits" for a file upstream was actively editing.
+
+    A key present in one diff format and not the other is an ERROR, never a default.
+    An earlier draft used `statuses.get(path, "M")`, and that silent fallback hid a
+    real bug: the two formats encode renames differently, so a rename produced the
+    nonexistent path `src/{old.rs => new.rs}` with a fabricated "M" status."""
+    statuses = _name_status(root, tree)
+    numbers = _numstat(root, tree)
+    if set(statuses) != set(numbers):
+        raise ReportError(
+            "diff-index --name-status and --numstat disagree on paths: "
+            f"{sorted(set(statuses) ^ set(numbers))[:5]}"
+        )
+    rows = [
+        Row(statuses[path][0], path, statuses[path][1], *numbers[path])
+        for path in statuses
+        if path not in SELF_PATHS
+    ]
+    return sorted(rows, key=lambda row: row.path)
+
+
+def render_local(record, rows):
+    """The generated local block: derived from the index alone, no network."""
+    counts = {"A": 0, "B": 0, "C": 0}
+    for row in rows:
+        counts[classify(row.status, row.path)] += 1
+
+    lines = [
+        f"Baseline `{record['tag']}` (`{record['tag_commit'][:12]}`), "
+        f"tree `{record['tree'][:12]}`, carrying {len(record['carried'])} patch(es).",
+        "",
+        f"{len(rows)} paths differ: {counts['B']} class B (seam), "
+        f"{counts['A']} class A (fork-only), {counts['C']} class C (scaffolding).",
+        "",
+        "| Path | Class | Status | +/- |",
+        "| --- | --- | --- | --- |",
+    ]
+    for row in rows:
+        kind = classify(row.status, row.path)
+        if kind == "A":
+            continue
+        renamed = f" (was `{row.previous}`)" if row.previous else ""
+        lines.append(
+            f"| `{row.path}`{renamed} | {kind} | {row.status} "
+            f"| +{row.added}/-{row.removed} |"
+        )
+    lines.append("")
+    lines.append(
+        "Class A paths are counted, not listed: fork-only additions with no "
+        "upstream counterpart. Class C is listed because `tools/tt` has an "
+        "external source of truth in ops."
+    )
+    return "\n".join(lines)
+
+
 def patch_id(root, commit):
     """Stable patch-id of a single commit."""
     patch = git(root, "diff-tree", "-p", "--no-color", commit)

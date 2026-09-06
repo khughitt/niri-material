@@ -189,5 +189,107 @@ class Baseline(Fixture):
         report.resolve_baseline(self.root, report.load_baseline(self.root))
 
 
+class Classify(unittest.TestCase):
+    def test_modified_upstream_files_are_class_b(self):
+        self.assertEqual(report.classify("M", "src/layout/tile.rs"), "B")
+        self.assertEqual(report.classify("M", ".github/workflows/ci.yml"), "B")
+
+    def test_deleted_and_renamed_upstream_files_are_class_b(self):
+        self.assertEqual(report.classify("D", "src/gone.rs"), "B")
+        self.assertEqual(report.classify("R100", "src/moved.rs"), "B")
+
+    def test_added_scaffolding_is_class_c(self):
+        for path in ("tools/tt", ".githooks/pre-commit", "packaging/arch/PKGBUILD",
+                     ".agents/x.md", "justfile", "AGENTS.md"):
+            self.assertEqual(report.classify("A", path), "C", path)
+
+    def test_other_additions_are_class_a(self):
+        self.assertEqual(report.classify("A", "src/render_helpers/material.rs"), "A")
+        self.assertEqual(report.classify("A", "docs/materials/render-pipeline.md"), "A")
+
+
+class Inventory(Fixture):
+    def stage_divergence(self):
+        """A baseline plus one modified upstream file, one added source file, one
+        added scaffold file, and the tool's own files."""
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.write("src/lib.rs", "fn upstream() { changed(); }\n")
+        self.write("src/material.rs", "fn material() {}\n")
+        self.write("tools/tt", "#!/bin/sh\n")
+        self.write(report.REPORT_PATH, "placeholder\n")
+        self.write(report.CONFLICTS_PATH, "acknowledged = []\n")
+        self.git("add", "-A")
+        return tree
+
+    def test_inventory_reports_status_path_and_line_counts(self):
+        tree = self.stage_divergence()
+        rows = report.inventory(self.root, tree)
+        by_path = {row.path: row for row in rows}
+        self.assertEqual(by_path["src/lib.rs"].status, "M")
+        self.assertEqual(by_path["src/material.rs"].status, "A")
+        self.assertEqual(by_path["tools/tt"].status, "A")
+        self.assertEqual(by_path["src/material.rs"].added, 1)
+        self.assertEqual(by_path["src/material.rs"].removed, 0)
+        self.assertIsNone(by_path["src/material.rs"].previous)
+
+    def test_inventory_excludes_the_tools_own_files(self):
+        tree = self.stage_divergence()
+        paths = [row.path for row in report.inventory(self.root, tree)]
+        for own in report.SELF_PATHS:
+            self.assertNotIn(own, paths)
+
+    def test_inventory_reads_the_index_not_the_working_tree(self):
+        tree = self.stage_divergence()
+        (self.root / "src" / "unstaged.rs").write_text("fn unstaged() {}\n")
+        paths = [row.path for row in report.inventory(self.root, tree)]
+        self.assertNotIn("src/unstaged.rs", paths)
+
+    def test_rename_joins_both_diff_formats_on_the_new_path(self):
+        """--name-status gives `R100\0old\0new`; --numstat gives `0\t0\t\0old\0new`.
+        Joining them naively yields the nonexistent path `src/{old.rs => new.rs}`."""
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.git("mv", "src/lib.rs", "src/renamed.rs")
+        self.git("add", "-A")
+        rows = report.inventory(self.root, tree)
+        by_path = {row.path: row for row in rows}
+        self.assertIn("src/renamed.rs", by_path)
+        self.assertFalse([p for p in by_path if "=>" in p or "{" in p], list(by_path))
+        row = by_path["src/renamed.rs"]
+        self.assertTrue(row.status.startswith("R"), row.status)
+        self.assertEqual(report.classify(row.status, row.path), "B")
+        # The baseline path survives, so Task 4's drift analysis can ask upstream
+        # about the old name. seam_paths and churn are asserted in Task 4, which is
+        # where they are implemented — Task 2 must pass its own gate on its own.
+        self.assertEqual(row.previous, "src/lib.rs")
+
+    def test_disagreeing_diff_formats_are_an_error(self):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.git("add", "-A")
+        original = report._numstat
+        try:
+            report._numstat = lambda root, tree: {}
+            with self.assertRaises(report.ReportError):
+                report.inventory(self.root, tree)
+        finally:
+            report._numstat = original
+
+    def test_inventory_is_sorted_by_path(self):
+        tree = self.stage_divergence()
+        paths = [row.path for row in report.inventory(self.root, tree)]
+        self.assertEqual(paths, sorted(paths))
+
+    def test_local_block_counts_classes(self):
+        tree = self.stage_divergence()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        body = report.render_local(record, report.inventory(self.root, tree))
+        self.assertIn("| `src/lib.rs` | B |", body)
+        self.assertIn("| `tools/tt` | C |", body)
+        self.assertNotIn("src/material.rs", body)  # class A is counted, not listed
+        self.assertIn("v1.0", body)
+
+
 if __name__ == "__main__":
     unittest.main()
