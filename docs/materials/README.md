@@ -52,7 +52,8 @@ All future production rebases and material commits happen in this repository.
 - `../plans/2026-09-02-material-noise-saturation.md`: executed noise and saturation composition plan.
 - `../plans/2026-09-02-material-signals.md`: executed and verified material-signals plan.
 - `../specs/2026-09-05-ring-light-focus-response-design.md`: approved ring of light focus response design.
-- `../specs/2026-09-06-upstream-divergence-design.md`: upstream divergence document and rebase strategy, awaiting review. The fork is permanent and upstreams seams only. Records the rewritten-ancestry trap: resolve the baseline from a pinned record and compare trees, never merge-base.
+- `../specs/2026-09-06-upstream-divergence-design.md`: upstream divergence document and rebase strategy, awaiting review.
+- `../plans/2026-09-06-upstream-divergence.md`: implementation plan for that design, seven tasks from the baseline record to the weekly drift canary. The fork is permanent and upstreams seams only. Records the rewritten-ancestry trap: resolve the baseline from a pinned record and compare trees, never merge-base.
 - `../plans/2026-09-05-ring-light-focus-response.md`: ring of light focus response implementation plan.
 
 Research, results, and source fixtures live in the sibling

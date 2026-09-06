@@ -6,10 +6,11 @@ priority: 2
 size: m
 owner: docs/upstream-divergence
 created: 2026-09-06T11:09:40Z
-updated: 2026-09-06T11:31:54Z
+updated: 2026-09-06T11:44:48Z
 depends: []
 tags: [docs, upstream, tooling]
 spec: docs/specs/2026-09-06-upstream-divergence-design.md
+plan: docs/plans/2026-09-06-upstream-divergence.md
 ---
 
 Permanent-fork posture: upstream only the seams. Produce docs/materials/upstream-divergence.md (prose + generated inventory), tools/upstream-report, a just recipe, and a new scheduled workflow that reports drift against upstream/main. Baseline is pinned by tree hash: patched-26.04~2^{tree} == v26.04^{tree} == 7b010d1b.
