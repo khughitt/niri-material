@@ -1,13 +1,24 @@
 ---
 id: material-37cec9
 title: Parameter sweep script for the smoke harness
-status: todo
+status: done
 priority: 2
 size: s
 created: 2026-09-06T00:38:33Z
-updated: 2026-09-06T00:38:33Z
+updated: 2026-09-06T11:19:28Z
 depends: []
 tags: [tooling, harness]
+spec: docs/specs/2026-09-06-glass-parameter-sweep-design.md
 ---
 
 A script under docs/materials/scripts that renders one glass parameter at N values across its range in the headless harness (as glass-noise-saturation-smoke.sh does for fixed values) and reports the perceptual delta between neighboring captures (an AE or Lab RMSE metric, as the noise/saturation evidence already computes). Output is a table of value versus delta so the region where the effect stops changing is visible. Prism's slider range task prism-5758d3 consumes it to choose bounds and scales; refraction (prism-8e8a18) is the first parameter to run.
+
+## Notes
+
+- 2026-09-06T09:49:21Z (harness/glass-parameter-sweep): Spec revised after review: two ROIs (bevel ring vs face interior) because lateral refraction is zero in the flat face at every ior; blur-block gate asserted since resolve_material only inherits global noise/saturation when backdrop blur is effective; per-step normalization so non-uniform value lists do not read as reduced sensitivity; flex/ripple excluded to material-36e968.
+- 2026-09-06T10:01:59Z (harness/glass-parameter-sweep): Second review round: ROIs now fixed for the whole sweep (per-value crops compared different pixels and broke on bevel 0); bevel RMSE demoted to regional image change with bending substantiated by subimage-search displacement, since Fresnel and the filament both track ior; flat-face claim qualified with distortion=0; noise is not face-confined (material.frag:535-539 adds it before coverage) so zero-normalization is checked against duplicate captures instead, requiring the table stage to be separable from capture.
+- 2026-09-06T10:20:07Z (harness/glass-parameter-sweep): Third review round: subimage-search validated as an assumption, not trusted - review showed IM7 moving a perfect-score RMSE match from (2,2) to (12,2) on a brightness-only change, so the backdrop gains a unique asymmetric marker distinct from the periodic grid, the search is constrained to a window around its known position, and the matcher must pass known-translation and brightness-only synthetic cases before any displacement is read as bending. Identical-image check reconciled with the first-row sentinel contract.
+- 2026-09-06T10:28:06Z (harness/glass-parameter-sweep): Probes run before implementation. Matcher: reviewer's sliding match reproduces only on a PERIODIC template under RMSE, sliding exactly one 20px grid period; NCC on the unique marker in a +/-12px window passes both synthetic cases and also survives the periodic template, so NCC is chosen; PHASH fails the translation case. Lab: compare honours -colorspace Lab (0.1198 vs sRGB 0.2459); the spec's earlier pre-convert fallback was wrong - PNG silently returns the sRGB number and TIFF silently returns 0, which is indistinguishable from the flat sweep the script exists to report. MIFF is the only safe intermediate.
+- 2026-09-06T11:04:25Z (harness/glass-parameter-sweep): Script runs end to end (exit 0). Three bugs found and fixed by running it: swept key duplicated its baseline line (KDL rejects duplicate single nodes); window rect came from IPC tile_pos_in_workspace_view which is null here and jq turned null[0]+0 into a silent 0,0 - now measured from an opaque no-material probe's bounding box, giving the correct 704x640+40+40; awk nd index uninitialized dropped row 1's marker columns. OPEN: displacement reports 0,0 at every ior. Matcher self-check passes, so the matcher is sound; the template spans x35-65 while the chamfer is only 40-52, so 18 of 30 columns cannot bend at distortion 0 and pin the match. Flat-vs-textured control: bevel delta ior1->ior3 is 0.0512 flat vs 0.0772 textured, so about two thirds of the bevel RMSE is Fresnel/filament, not bending. Bending evidence needs a different instrument.
+- 2026-09-06T11:19:19Z (harness/glass-parameter-sweep): Shipped: bending columns removed, bevel/face regional RMSE only. Reproducibility bug found and fixed - the default focus response is RingLight, which drifts over time and draws at the window edge, so the bevel column varied between runs by Lab RMSE 0.077, the same magnitude as the whole ior 1-to-3 signal, while the face column was byte-identical; script now pins response default focus none, and two independent runs are byte-identical. Evidence in docs/materials/2026-09-06-glass-parameter-sweep-evidence.md. Bending explicitly unmet (material-343f27); flex/ripple unmet (material-36e968).
+- 2026-09-06T11:19:28Z (harness/glass-parameter-sweep): Sweep script lands at docs/materials/scripts/glass-parameter-sweep.sh: renders one glass or blur key at N values on headless Weston and reports Lab RMSE per value for two fixed ROIs (bevel band, face interior) with neighbor, per-step, cumulative and normalized columns. ior evidence recorded; per-step shows the edge effect front-loading with per-step falling from 0.505 at ior 1.4 to 0.036 at ior 3, which is the data prism-5758d3 needs. Reports where the image changes, not why: bending is explicitly not demonstrated (material-343f27) and flex/ripple are out of scope (material-36e968).
