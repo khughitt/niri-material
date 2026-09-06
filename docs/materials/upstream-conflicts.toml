@@ -1,0 +1,34 @@
+# Conflicts we accept and resolve by hand each rebase. Hand-edited; the tool never
+# writes this file, so regenerating the report can never approve a new conflict.
+#
+# LIMITATION: acknowledgment is path-granular. A NEW conflict inside an already
+# acknowledged file is not detected — acknowledging a path accepts every conflict in
+# it, now and later. The drift block's per-file upstream churn count is the mitigation:
+# it rises visibly when upstream works in a file we have accepted.
+#
+# Acknowledgment is not approval of upstream's change. It records that we expect to
+# resolve this conflict by hand.
+
+[[acknowledged]]
+path = "src/layout/floating.rs"
+note = "material state on floating tiles"
+
+[[acknowledged]]
+path = "src/layout/monitor.rs"
+note = "material render pass threaded through the monitor"
+
+[[acknowledged]]
+path = "src/layout/tile.rs"
+note = "signal level, focus crossfade, and the material element live here"
+
+[[acknowledged]]
+path = "src/layout/workspace.rs"
+note = "carries the #4147 IPC field as well as material state"
+
+[[acknowledged]]
+path = "src/protocols/foreign_toplevel.rs"
+note = "signal sources hook the toplevel protocol"
+
+[[acknowledged]]
+path = "src/render_helpers/blur.rs"
+note = "we insert the material pass before blur; expected to conflict every cycle"

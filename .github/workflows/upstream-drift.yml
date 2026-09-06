@@ -1,0 +1,122 @@
+name: upstream drift
+
+on:
+  schedule:
+    # Weekly. Scheduled workflows only run from the file on the DEFAULT branch,
+    # so a rebase that leaves the default behind silently stops this check.
+    - cron: "17 6 * * 1"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    name: upstream drift
+    runs-on: ubuntu-24.04
+    steps:
+      # python3 and git only. Deliberately NOT `just check`: two of check_cmd's
+      # commands need the Rust toolchain and apt dependencies, and `tasks check`
+      # needs the tasks CLI, which CI does not have. ci.yml's rustfmt and clippy
+      # jobs already cover format and lint; they are not duplicated here.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          show-progress: false
+
+      - name: Tooling tests
+        run: python3 -m unittest discover -s tools
+
+      - name: Report freshness
+        run: python3 tools/upstream-report --check
+
+      - name: Fetch upstream
+        if: github.event_name != 'pull_request'
+        # A fetch failure fails the job. It must never be reported as clean drift.
+        run: |
+          git remote add upstream https://github.com/niri-wm/niri
+          git fetch --tags --no-recurse-submodules upstream
+
+      - name: Drift
+        if: github.event_name != 'pull_request'
+        id: drift
+        run: |
+          set +e
+          python3 tools/upstream-report --drift 2>drift.err
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          set -e
+          cat drift.err
+
+      # ANY status other than 0 or 1 is an error, not a conflict finding: 2 from the
+      # tool's own boundary, but also 137 from an OOM kill, 124 from a timeout, or a
+      # shell failure. Fail loudly and open no issue. Testing `== '2'` would let every
+      # other failure fall through to publication as though the analysis had run.
+      - name: Fail on analysis error
+        if: >-
+          github.event_name != 'pull_request'
+          && steps.drift.outputs.status != '0'
+          && steps.drift.outputs.status != '1'
+        run: |
+          echo "::error::upstream-report exited ${{ steps.drift.outputs.status }};\
+            this is an analysis failure, not a drift finding"
+          cat drift.err || true
+          exit 1
+
+      # Publish on EVERY completed analysis, findings or not. The committed document
+      # is a snapshot from the last local run; this workflow does not commit, so
+      # without this the refreshed table exists only inside the dead runner.
+      - name: Publish the report
+        if: >-
+          github.event_name != 'pull_request'
+          && contains(fromJSON('["0", "1"]'), steps.drift.outputs.status)
+        run: |
+          {
+            echo "## Upstream drift"
+            echo
+            sed -n "/BEGIN GENERATED: drift/,/END GENERATED: drift/p" \
+              docs/materials/upstream-divergence.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: >-
+          github.event_name != 'pull_request'
+          && contains(fromJSON('["0", "1"]'), steps.drift.outputs.status)
+        with:
+          name: upstream-divergence
+          path: docs/materials/upstream-divergence.md
+
+      - name: Report drift
+        if: github.event_name != 'pull_request' && steps.drift.outputs.status == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          marker="<!-- upstream-drift-canary -->"
+          # Written flush-left to a file, not embedded in a quoted shell string: a
+          # quoted string here would render this whole issue body as an indented
+          # code block, and the intended fence would come out as literal text.
+          cat <<BODY >issue-body.md
+          $marker
+          The weekly upstream drift canary found conflicts that
+          \`docs/materials/upstream-conflicts.toml\` does not acknowledge.
+
+          \`\`\`
+          $(cat drift.err)
+          \`\`\`
+
+          The refreshed report is attached to this run as the \`upstream-divergence\`
+          artifact and rendered in the run summary.
+
+          Run \`just upstream-report --drift\` locally, then either resolve the seam
+          or acknowledge the path with a note explaining why it conflicts.
+          BODY
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "$marker in:body" --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body-file issue-body.md
+          else
+            gh issue create --title "Upstream drift: unacknowledged conflicts" \
+              --body-file issue-body.md
+          fi
+          exit 1
