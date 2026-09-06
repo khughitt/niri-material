@@ -1,9 +1,14 @@
 # Glass parameter sweep script: design
 
-**Status:** designed, not yet implemented. Branch `harness/glass-parameter-sweep`.
-Revised twice after review: two fixed ROIs, blur gating, per-step
-normalization, displacement as the bending evidence, flex and ripple deferred
-to `material-36e968`.
+**Status:** implemented on branch `harness/glass-parameter-sweep`; `ior`
+evidence in
+[`2026-09-06-glass-parameter-sweep-evidence.md`](../materials/2026-09-06-glass-parameter-sweep-evidence.md).
+
+Revised three times under review. What shipped: two fixed ROIs, blur gating,
+per-step normalization, the focus ring pinned off for reproducibility. Two
+acceptance criteria are **explicitly unmet** and are recorded as such below —
+bending evidence (deferred to `material-343f27`) and flex/ripple (deferred to
+`material-36e968`).
 
 **Task:** `material-37cec9`
 
@@ -48,7 +53,7 @@ Env vars, following the model script's style:
 | `VALUES` | yes | two or more whitespace-separated values, ascending |
 | `ROI_BEVEL` | no | override the derived bevel-ring crop |
 | `ROI_FACE` | no | override the derived face-interior crop |
-| `DISPLACEMENT` | no | `1` to also locate a backdrop template inside the bevel band and report its offset |
+| `TABLE_ONLY` | no | `1` to recompute the table from captures already in `OUT` |
 
 The caller supplies the values rather than a range and a count. Ranges worth
 sweeping are rarely uniform — refraction wants density near 1.4 to 1.7 and a
@@ -104,16 +109,21 @@ The backdrop is a generated high-frequency pattern (a grid over color patches),
 not the model script's three flat color bars: a flat field shows a bent ray
 landing on the same color it started from.
 
-The grid is periodic, which is what makes it a good RMSE target and a bad
-template-matching target. So the backdrop also carries one asymmetric,
-non-repeating marker placed where the bevel band will cross it, reserved for the
-displacement measurement. The two serve different metrics and must not be the
-same feature.
+The grid is periodic. That is fine for RMSE, which does not care, and wrong for
+template matching, which slides by exactly one period — see the bending note.
 
 Glass values are pinned in the script and recorded in the evidence document.
 They are not derived from a generated `prism.kdl`: that file drifts (`ior` moved
 1.02 to 1.24 within a week), which would make two runs of the same sweep
 incomparable.
+
+The material also pins `response "default" { focus "none" }`. The focus response
+defaults to `RingLight`, which **drifts over time** and is drawn at the window
+edge — exactly the bevel band. Left on, it moved the bevel column between two
+runs of the same sweep by Lab RMSE `0.077`, the same magnitude as the entire
+`ior 1` to `ior 3` signal, while the face column stayed byte-identical. Pinned
+off, two independent runs produce byte-identical tables. The ring is a separate
+feature with its own parameters; this script measures glass optics.
 
 ### Two ROIs
 
@@ -258,9 +268,6 @@ A TSV to stdout and `$OUT/sweep.tsv`, one row per value:
 key  value  step  bevel_neighbor  bevel_per_step  bevel_cumulative  bevel_normalized  face_neighbor  face_per_step  face_cumulative  face_normalized
 ```
 
-With `DISPLACEMENT=1`, two further columns carry the template's offset inside
-the bevel band and its shift relative to the first value.
-
 The table is computed in a pass that reads the captures back from disk, separate
 from the pass that produces them. That separation is what makes the
 zero-normalization case checkable against prepared images, and it lets a table
@@ -306,15 +313,22 @@ Checks that the run must satisfy:
 - every value produces a capture, and the table has one row per value
 - both ROIs are the same screen coordinates in every row of the run
 - `bevel_cumulative` is non-zero — the region responds to IOR at all
-- the matcher passes both synthetic cases — known translation `k` reports `k`,
-  brightness-only change reports `0` — *before* any displacement number is read
-  as bending. This runs first; it needs no compositor
-- with `DISPLACEMENT=1`, the backdrop marker's offset inside the bevel band
-  grows with IOR. This, not the RMSE, is the check that backdrop refraction
-  works; a rising RMSE beside a pinned offset is a failure to investigate, not
-  a pass
 - `niri.log` is free of material errors, shader fallbacks and panics
-- a second run of the same sweep reproduces the table
+- a second run of the same sweep reproduces the table, byte for byte
+
+### Explicitly unmet
+
+Two criteria an earlier draft of this spec asserted are **not** met, and are
+recorded here rather than quietly dropped.
+
+**Bending.** No check here establishes that the ray bends. `bevel_cumulative`
+being non-zero says the region responds to IOR, which Fresnel and the filament
+are sufficient to explain. The instrument that was supposed to close this —
+marker displacement — failed validation on the real run and is deferred to
+`material-343f27` along with the reasons. Anyone reading this table for evidence
+that refraction works is reading it wrong.
+
+**Flex and ripple.** Out of scope for the static harness; `material-36e968`.
 
 A second run sweeping glass `noise` exercises the noise path in both regions.
 It does **not** exercise the flat-sweep path: `:535-539` adds noise to
