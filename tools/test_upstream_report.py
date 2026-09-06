@@ -582,6 +582,45 @@ class Drift(Fixture):
         self.assertEqual(baseline, "src/lib.rs")
         self.assertEqual(count, 1, "upstream churn must follow the baseline path")
 
+    def test_resolve_baseline_exposes_the_fork_baseline_commit(self):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        expected = self.git("rev-parse", f"{patched}~2").strip()
+        self.assertEqual(record["baseline_commit"], expected)
+        self.assertEqual(
+            self.git("rev-parse", f"{record['baseline_commit']}^{{tree}}").strip(),
+            tree,
+        )
+
+    def test_churn_counts_from_the_fork_baseline_commit_not_the_tag(self):
+        """Mirrors the real repository: the local v26.04 tag is a rewritten copy of
+        the release and is not an ancestor of upstream/main, so `git log A..B`
+        cannot walk from it. Anchoring churn at the tag produces a different
+        (inflated) count than anchoring it at the fork's baseline commit, which
+        upstream's real history line passes through."""
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        baseline_commit = record["baseline_commit"]
+
+        # Upstream branches off the fork's BASELINE commit (the rewritten, parentless
+        # copy) -- not off the local tag, which is a different, unrelated commit
+        # with the same tree.
+        self.git("checkout", "-q", "-b", "upstream-main", baseline_commit)
+        self.write("src/lib.rs", "fn upstream() { moved_on(); }\n")
+        self.commit("upstream edits src/lib.rs")
+
+        watched = {"src/lib.rs": "src/lib.rs"}
+        from_baseline = report.churn(self.root, baseline_commit, "upstream-main", watched)
+        from_tag = report.churn(self.root, tag_commit, "upstream-main", watched)
+
+        self.assertEqual(from_baseline["src/lib.rs"][0], 1)
+        self.assertEqual(from_tag["src/lib.rs"][0], 2)
+        self.assertNotEqual(
+            from_baseline["src/lib.rs"][0], from_tag["src/lib.rs"][0]
+        )
+
 
 class Cli(Fixture):
     """Subprocess-level tests. The helper tests never exercise the exit-code
