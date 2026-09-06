@@ -195,6 +195,34 @@ matcher or metric, not a looser reading of the number. Matching correctness is
 an empirical assumption on the same footing as matching speed, and is settled
 the same way: by running it.
 
+**Probe result (IM 7.1.2-31).** Case A is a `+5,+0` roll; case B is a
+`-evaluate multiply 1.35` brightness change at zero translation. Search windowed
+to the marker's known position ±12 px unless noted:
+
+| Metric | Template | A: known shift | B: brightness only |
+| --- | --- | --- | --- |
+| RMSE | marker | `+5,+0` PASS | `+0,+0` PASS |
+| RMSE | periodic grid | `+5,+0` PASS | **`+0,-20` FAIL** |
+| NCC | marker | `+5,+0` PASS | `+0,+0` PASS |
+| NCC | periodic grid | `+5,+0` PASS | `+0,+0` PASS |
+| SSIM | marker | `+5,+0` PASS | `+0,+0` PASS |
+| PHASH | periodic grid | **`-15,+0` FAIL** | `+0,+0` PASS |
+
+The review's sliding match reproduces, and localizes: it is the **periodic
+template** under RMSE, and it slid by `-20` px — exactly one grid period. A
+repeating pattern offers the matcher an equally good match every period, and a
+brightness change is enough to tip which one wins.
+
+The chosen matcher is therefore **NCC on the unique marker, windowed**. RMSE on
+the marker also passes both cases, but NCC is the only metric that additionally
+survives the periodic template, so it holds margin if the marker is ever
+partially occluded by the glass and the grid dominates the window. PHASH is
+rejected: it fails the translation case it exists to measure.
+
+This does not retire the check. The matcher runs against both synthetic cases at
+the start of every displacement run, on that run's own backdrop and window, and
+a failure aborts before any sweep number is reported.
+
 Separating face from bevel answers `prism-8e8a18` directly: whether refraction's
 milkiness is a range problem or a rendering one is a question about which column
 moves, read together with whether the feature displaced at all.
@@ -221,9 +249,26 @@ division is auditable. `normalized` is computed from `per_step`, not from
 both show a small `neighbor`, and only `cumulative` tells them apart.
 
 Lab rather than sRGB RMSE because the question is perceptual: how much visible
-change does a slider step buy. If `magick compare` does not honour
-`-colorspace Lab`, each capture is converted to Lab first and those are
-compared — equivalent, and explicit about when the conversion happens.
+change does a slider step buy.
+
+Measured on IM 7.1.2-31, on one pair of flat colors:
+
+| Route | RMSE |
+| --- | --- |
+| `compare -colorspace Lab a b` | `0.1198` |
+| convert each to Lab as MIFF, compare those | `0.119849` |
+| convert each to Lab as TIFF, compare those | **`0`** |
+| convert each to Lab as PNG, compare those | `0.245946` (the sRGB value) |
+
+`compare` honours `-colorspace Lab`, so the metric is taken that way directly
+and no intermediate file is written. The earlier draft's fallback — convert each
+capture to Lab, then compare the converted files — is **wrong** and is recorded
+here so it is not reintroduced: PNG cannot store Lab and magick converts back on
+write, silently yielding the sRGB answer, and the TIFF route silently reports
+`0` for a pair that plainly differs. A zero from a broken conversion is
+indistinguishable from the flat sweep this script is built to report, which
+makes it the worst available failure. If an intermediate is ever needed, MIFF is
+the only container of the three that survives the round-trip.
 
 **Edge cases.** The first row has no predecessor: its `step`, `neighbor`,
 `per_step` and `normalized` are written as `-`, and its `cumulative` is `0` by
