@@ -10,6 +10,16 @@ suppresses the `info!`-level "GL Renderer" / "GL Version" / "GL Vendor" lines
 that smithay's GLES backend emits at initialization. No renderer errors,
 fallbacks, or panics appear in the log for any of the six captures.
 
+**These figures cannot be reproduced with a current binary.** Both binaries
+below predate `f8bcb34c`, which added the ring of light: neither draws it, so
+the full-frame `assert_zero omitted_identity_ae` compared two ringless frames.
+Today the ring draws at the window edge under the default focus response and
+lands inside those frames — measured at `AE 3675` for its own contribution — so
+a re-run needs a BASE no older than `f8bcb34c`. The `focus` key cannot be pinned
+around it either, because it does not parse on a pre-`f8bcb34c` binary. The
+script header carries the constraint; `material-0af212` established it. The run
+recorded here remains valid on its own terms — both sides were ringless.
+
 ## Pinned revisions
 
 - Implementation source commit `ff2b922d` (HEAD at run time was `e94f9e42`,

@@ -178,12 +178,12 @@ KDL
             printf 'material "sweep-probe" {\n    glass {\n'
             printf '        backdrop-blur %s\n' "$BACKDROP_BLUR"
             emit_block "$glass_key" "$value" "${GLASS_BASELINE[@]}"
-            # The focus response defaults to RingLight, which drifts over time.
-            # It is drawn at the window edge - exactly the bevel band - so
-            # leaving it on made that column vary run to run by as much as the
-            # signal being measured, while the face column stayed byte-identical.
-            # Pinned off: this script measures glass optics, and the ring is a
-            # separate feature with its own parameters.
+            # The focus response defaults to RingLight, which is drawn at the
+            # window edge - exactly the bevel band. Pinned off because this
+            # script measures glass optics and the ring is a separate feature
+            # with its own parameters, not because the ring is unstable here:
+            # `animations { off; }` above already pins its drift phase, and two
+            # runs with the ring left on compare at AE 0 (material-0af212).
             printf '    }\n    response "default" {\n        focus "none"\n    }\n}\n'
             cat <<'KDL'
 window-rule {

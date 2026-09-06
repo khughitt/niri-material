@@ -9,6 +9,13 @@ attenuation keeps the text legible without any terminal background. Run
 
 Task: `material-cb348e`, piece of ops goal `ops-500adb`.
 
+**The captures below predate the ring of light** (`f8bcb34c`, 2026-09-05);
+`663202b1` does not draw it. Re-running the script today puts a ring at every
+window edge, which is where this spike's corner crops are, so new captures are
+not comparable with these. The script now also sets `animations { off; }` —
+without it the ring's drift phase advanced between runs and two runs of the same
+case differed by `AE 994` per frame (`material-0af212`).
+
 ## Question
 
 Today Prism paints kitty at `background_opacity` 0.98 focused and 0.44

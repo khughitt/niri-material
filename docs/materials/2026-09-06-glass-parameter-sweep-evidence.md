@@ -118,16 +118,34 @@ texture. The pair is suggestive and nothing more.
 Two independent runs of `VALUES="1 1.4 1.7 3"` produced byte-identical
 `sweep.tsv` files, and every ROI crop compared at `AE 0`.
 
-This required a fix the first runs exposed. With the focus response left at its
-default, two runs of the same sweep differed in the bevel band by Lab RMSE
-`0.077` — the same magnitude as the entire `ior 1` to `ior 3` signal — while the
-face band was byte-identical. The default response is `RingLight`, which drifts
-over time and is drawn at the window edge, exactly the bevel band. The script
-now pins `response "default" { focus "none" }`.
+### The ring was not the cause — correction
 
-Anyone comparing figures against an earlier capture set should check for that
-pin: numbers taken without it are not comparable, and the bevel column in
-particular was measuring the ring's phase as much as the glass.
+This document originally said the first runs varied because the focus response
+defaults to `RingLight`, "which drifts over time and is drawn at the window
+edge", and that pinning `response "default" { focus "none" }` fixed it. That
+explanation is wrong. `material-0af212` re-ran the experiment on `a0559ebf`:
+
+| variant, two independent runs | AE | `sweep.tsv` |
+| --- | --- | --- |
+| as shipped (ring pinned off) | 0 | identical |
+| ring left at its default | 0 | identical |
+| pre-pin script `d69fd99b` (ring on, backdrop marker present) | 0 | identical |
+
+The mechanism could not have been drift in any case: `drift_rate` returns `0.`
+when animations are off (`src/render_helpers/signal.rs:233-236`), and
+`animations { off; }` was already in the script during the run that varied.
+
+The commit that added the pin, `0b6b4ce3`, also removed a backdrop marker that
+was painted at the window edge, so the pin was never isolated from that change —
+and neither change is needed for reproducibility on this host. **The `0.077` did
+not reproduce and its cause is not established.** The pin stays because the ring
+is a separate feature that does not belong in a glass measurement, not because
+it fixes anything.
+
+The ring is nonetheless real and visible: with animations off it still draws,
+contributing `AE 3675` against the same frame with `focus "none"`. Comparisons
+across the pin are therefore not valid, even though comparisons across runs
+within either setting are.
 
 ## Checks
 

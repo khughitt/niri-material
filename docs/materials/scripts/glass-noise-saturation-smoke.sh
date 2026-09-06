@@ -6,6 +6,21 @@
 # binary. Exit 0 means every assertion held; any failure exits non-zero with
 # a FAIL line and the trap preserves that status.
 #
+# BASE must be no older than f8bcb34c. That commit added the ring of light,
+# which draws at the window edge under the default focus response and so lands
+# inside the full-frame captures omitted_identity_ae compares; a BASE from
+# before it renders no ring and cannot be byte-identical to IMPL (the ring's
+# own contribution here measures AE 3675). It also cannot be pinned away: the
+# `focus` key does not parse on a pre-f8bcb34c binary, so writing
+# `response "default" { focus "none" }` into this shared config would make
+# BASE fail validation instead. See material-0af212.
+#
+# The ring itself is stable here. `animations { off; }` below pins its drift
+# phase (`drift_rate` returns 0 when animations are off,
+# src/render_helpers/signal.rs), and two runs of this script produce metrics
+# identical to the last digit. That dependency is load-bearing: dropping the
+# animations line would make every full-frame assertion below flaky.
+#
 # Env: IMPL (implementation niri), BASE (pre-change niri), OUT (artifact dir).
 # Requires: weston, kitty, swaybg, jq, rg, ImageMagick.
 set -eu
@@ -192,7 +207,7 @@ for v in omitted_identity_ae written_neutral_vs_omitted_ae sat0_rg_ae sat0_rb_ae
     printf '%s=%s\n' "$v" "${!v}"
 done | tee "$OUT/metrics.txt"
 
-assert_zero omitted_identity_ae "$omitted_identity_ae"                    # omitted values: byte-identical to the pre-change binary
+assert_zero omitted_identity_ae "$omitted_identity_ae"                    # omitted values: byte-identical to the pre-change binary (BASE must be >= f8bcb34c; see the header)
 assert_zero written_neutral_vs_omitted_ae "$written_neutral_vs_omitted_ae"  # writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim itself is covered by the written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur unit test in src/layout/tile.rs)
 assert_zero sat0_rg_ae "$sat0_rg_ae"                                      # written saturation 0 renders grayscale with backdrop-blur off
 assert_zero sat0_rb_ae "$sat0_rb_ae"
