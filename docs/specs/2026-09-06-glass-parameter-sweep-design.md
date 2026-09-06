@@ -118,12 +118,20 @@ They are not derived from a generated `prism.kdl`: that file drifts (`ior` moved
 incomparable.
 
 The material also pins `response "default" { focus "none" }`. The focus response
-defaults to `RingLight`, which **drifts over time** and is drawn at the window
-edge — exactly the bevel band. Left on, it moved the bevel column between two
-runs of the same sweep by Lab RMSE `0.077`, the same magnitude as the entire
-`ior 1` to `ior 3` signal, while the face column stayed byte-identical. Pinned
-off, two independent runs produce byte-identical tables. The ring is a separate
-feature with its own parameters; this script measures glass optics.
+defaults to `RingLight`, drawn at the window edge — exactly the bevel band — and
+the ring is a separate feature with its own parameters, so it does not belong in
+a measurement of glass optics.
+
+An earlier version of this section said the pin was needed because the ring
+"drifts over time" and had moved the bevel column between two runs by Lab RMSE
+`0.077`. That is wrong, and `material-0af212` measured it: `animations { off; }`
+already pins the drift rate to zero (`drift_rate` returns `0.` when animations
+are off, `src/render_helpers/signal.rs:233-236`) and that line was present in the
+run that varied. Two runs with the ring left on compare at `AE 0` with identical
+`sweep.tsv`, and so do two runs of the pre-pin script (`d69fd99b`), which also
+carried the backdrop marker the same commit removed. The `0.077` did not
+reproduce and its cause is not established. The pin stays as a precaution, not
+as a fix.
 
 ### Two ROIs
 

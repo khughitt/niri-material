@@ -9,6 +9,21 @@
 # active / frosted variant inactive), zero-dark (kitty 0 over a dark dense
 # glass), zero-dark-split (dark glass active / lighter frosted dark inactive).
 #
+# `animations { off; }` pins the ring of light. The focus response defaults to
+# RingLight, whose drift phase advances with the clock unless the rate is zero
+# (`drift_rate` returns 0 when animations are off, src/render_helpers/signal.rs).
+# The ring is drawn at the window edge, which is where this spike's corner crops
+# are, so without it two runs of the same case differed by ~1000 px per frame -
+# measured at AE 994 full frame and Lab RMSE 0.015 on the bottom crop. With it
+# the ring is still drawn, just static, and every corner crop is byte-identical
+# across runs. Captures taken before this line was added are not comparable with
+# ones taken after.
+#
+# One residue remains and is not the compositor: after `focus-column-left`, the
+# full frame can differ by ~7 px in a single character cell inside the newly
+# focused terminal, where kitty has repainted its cursor. It is ~195 px in from
+# the window edge and outside every crop this script takes.
+#
 # Env: NIRI (default /usr/bin/niri), CASES (space-separated, default all),
 # SPIKE_WALLPAPER (backdrop image; default a generated checkerboard),
 # DARK_DIST / DARK_DIST_INACTIVE (dark attenuation distances, 30 / 70),
@@ -63,6 +78,7 @@ layout {
     border { off; }
     shadow { on; softness 5; spread 1; offset x=-5 y=5; color "#00000070"; }
 }
+animations { off; }
 hotkey-overlay { skip-at-startup; }
 window-rule { match app-id="^kitty$"; geometry-corner-radius 12; clip-to-geometry true; }
 spawn-at-startup "swaybg" "-m" "fill" "-i" "$WALL"
