@@ -2,30 +2,34 @@
 # Glass noise and saturation parameters smoke (material-1293e8): capture a
 # blank transparent kitty over a glass material on a headless Weston host and
 # assert that written noise/saturation render with backdrop-blur off and with
-# blur { off }, and that omitted values are byte-identical to the pre-change
-# binary. Exit 0 means every assertion held; any failure exits non-zero with
-# a FAIL line and the trap preserves that status.
+# blur { off }, and that omission renders the same as the neutral pair. Exit 0
+# means every assertion held; any failure exits non-zero with a FAIL line and
+# the trap preserves that status.
 #
-# BASE must be no older than f8bcb34c. That commit added the ring of light,
-# which draws at the window edge under the default focus response and so lands
-# inside the full-frame captures omitted_identity_ae compares; a BASE from
-# before it renders no ring and cannot be byte-identical to IMPL (the ring's
-# own contribution here measures AE 3675). It also cannot be pinned away: the
-# `focus` key does not parse on a pre-f8bcb34c binary, so writing
-# `response "default" { focus "none" }` into this shared config would make
-# BASE fail validation instead. See material-0af212.
+# The omitted fixture is captured twice, from two separate nested sessions,
+# and the pair must be byte-identical (omitted_determinism_ae). Every zero
+# assertion below is a full-frame or ROI equality on the same binary, so the
+# harness's own determinism is their precondition; this check states it
+# instead of assuming it. Until material-ea6c37 this slot compared IMPL
+# against a pre-change BASE binary to show omission was unchanged by
+# material-1293e8. That migration guard cannot run any more: the only BASE
+# that gives it meaning predates f8bcb34c (the ring of light), which draws at
+# the window edge inside these frames (AE 3675 on its own) and cannot be
+# pinned away because `focus` does not parse before it. The recorded run in
+# docs/materials/2026-09-05-material-glass-noise-saturation-params-evidence.md
+# stands as that guard's evidence.
 #
 # The ring itself is stable here. `animations { off; }` below pins its drift
 # phase (`drift_rate` returns 0 when animations are off,
 # src/render_helpers/signal.rs), and two runs of this script produce metrics
 # identical to the last digit. That dependency is load-bearing: dropping the
-# animations line would make every full-frame assertion below flaky.
+# animations line would make every full-frame assertion below flaky, and
+# omitted_determinism_ae is the assertion that would say so first.
 #
-# Env: IMPL (implementation niri), BASE (pre-change niri), OUT (artifact dir).
+# Env: IMPL (niri binary under test), OUT (artifact dir).
 # Requires: weston, kitty, swaybg, jq, rg, ImageMagick.
 set -eu
-IMPL=${IMPL:?implementation niri binary}
-BASE=${BASE:?pre-change niri binary}
+IMPL=${IMPL:?niri binary under test}
 OUT=${OUT:?artifact directory}
 mkdir -p "$OUT"
 # One short, unique runtime dir per run: nested niri panics on long socket
@@ -181,17 +185,17 @@ assert_greater() {
     awk -v a="$2" -v b="$3" 'BEGIN { exit !(a > b) }' || fail "$1 expected $2 > $3"
 }
 
-sha256sum "$IMPL" "$BASE" > "$OUT/binaries.sha256"
-"$BASE" --version > "$OUT/base.version"; "$IMPL" --version > "$OUT/impl.version"
+sha256sum "$IMPL" > "$OUT/binaries.sha256"
+"$IMPL" --version > "$OUT/impl.version"
 
-capture omitted-before   "$BASE" "" ""
+capture omitted-first    "$IMPL" "" ""
 capture omitted-after    "$IMPL" "" ""
 capture written-neutral  "$IMPL" $'noise 0\n        saturation 1' ""
 capture written-sat-0    "$IMPL" $'noise 0\n        saturation 0' ""
 capture written-noise-05 "$IMPL" $'noise 0.5\n        saturation 1' ""
 capture written-blur-off "$IMPL" $'noise 0.5\n        saturation 0' "off"
 
-ae "$OUT/omitted-before.png" "$OUT/omitted-after.png";   omitted_identity_ae=$METRIC
+ae "$OUT/omitted-first.png" "$OUT/omitted-after.png";    omitted_determinism_ae=$METRIC
 ae "$OUT/written-neutral.png" "$OUT/omitted-after.png";  written_neutral_vs_omitted_ae=$METRIC
 for ch in R G B; do magick "$OUT/written-sat-0-roi.png" -channel $ch -separate "$OUT/sat0-$ch.png"; done
 ae "$OUT/sat0-R.png" "$OUT/sat0-G.png";                   sat0_rg_ae=$METRIC
@@ -203,11 +207,11 @@ for ch in R G B; do magick "$OUT/written-blur-off-roi.png" -channel $ch -separat
 ae "$OUT/bluroff-R.png" "$OUT/bluroff-G.png";             bluroff_rg_ae=$METRIC
 ae "$OUT/written-blur-off.png" "$OUT/omitted-after.png";  bluroff_vs_omitted_ae=$METRIC
 
-for v in omitted_identity_ae written_neutral_vs_omitted_ae sat0_rg_ae sat0_rb_ae noise_roi_rmse neutral_sd noise05_sd bluroff_rg_ae bluroff_vs_omitted_ae; do
+for v in omitted_determinism_ae written_neutral_vs_omitted_ae sat0_rg_ae sat0_rb_ae noise_roi_rmse neutral_sd noise05_sd bluroff_rg_ae bluroff_vs_omitted_ae; do
     printf '%s=%s\n' "$v" "${!v}"
 done | tee "$OUT/metrics.txt"
 
-assert_zero omitted_identity_ae "$omitted_identity_ae"                    # omitted values: byte-identical to the pre-change binary (BASE must be >= f8bcb34c; see the header)
+assert_zero omitted_determinism_ae "$omitted_determinism_ae"              # two sessions of the omitted fixture are byte-identical: the precondition of every zero assertion below (see the header)
 assert_zero written_neutral_vs_omitted_ae "$written_neutral_vs_omitted_ae"  # writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim itself is covered by the written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur unit test in src/layout/tile.rs)
 assert_zero sat0_rg_ae "$sat0_rg_ae"                                      # written saturation 0 renders grayscale with backdrop-blur off
 assert_zero sat0_rb_ae "$sat0_rb_ae"
