@@ -301,6 +301,46 @@ def resolve_baseline(root, record):
     return record
 
 
+LOCAL_BEGIN = "<!-- BEGIN GENERATED: local -->"
+LOCAL_END = "<!-- END GENERATED: local -->"
+DRIFT_BEGIN = "<!-- BEGIN GENERATED: drift -->"
+DRIFT_END = "<!-- END GENERATED: drift -->"
+
+
+def splice(text, begin, end, body):
+    """Replace the content between two markers, leaving the markers in place."""
+    start = text.find(begin)
+    stop = text.find(end)
+    if start < 0 or stop < 0 or stop < start:
+        raise ReportError(f"{begin} / {end} not found in order")
+    return text[: start + len(begin)] + "\n" + body.rstrip("\n") + "\n" + text[stop:]
+
+
+def render_report(root, record, text):
+    """Splice the local block into a GIVEN document text.
+
+    The data comes from the index; the target text is the caller's choice. That
+    separation matters: regeneration splices into the WORKING TREE document, so an
+    unstaged edit to the feature table or the rebase log survives, while --check
+    splices into the STAGED document and compares. An earlier draft read the staged
+    document and wrote the result over the working tree, silently discarding
+    unstaged prose."""
+    body = render_local(record, inventory(root, record["tree"]))
+    return splice(text, LOCAL_BEGIN, LOCAL_END, body)
+
+
+def check(root, record):
+    """Findings, empty when the staged report is fresh. The drift block is not
+    checked: it needs a fetch, and a pre-commit hook must not touch the network."""
+    staged = read_index(root, REPORT_PATH)
+    if render_report(root, record, staged) != staged:
+        return [
+            f"{REPORT_PATH} is stale against the staged tree; "
+            f"run `just upstream-report` and stage the result"
+        ]
+    return []
+
+
 def run(root, args):
     """The whole job. Returns 0 for success and 1 for a finding; every operational
     failure raises and is caught by the boundary in main()."""
@@ -308,6 +348,16 @@ def run(root, args):
     if args.show_baseline:
         print(f"{record['tag']} {record['tag_commit']} tree {record['tree']}")
         print(f"patched {record['patched_commit']} carried {len(record['carried'])}")
+
+    if args.check:
+        findings = check(root, record)
+        for finding in findings:
+            print(f"upstream-report: {finding}", file=sys.stderr)
+        return 1 if findings else 0
+
+    target = root / REPORT_PATH
+    target.write_text(render_report(root, record, target.read_text()))
+    print(f"upstream-report: wrote {REPORT_PATH}")
     return 0
 
 
@@ -315,6 +365,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--show-baseline", action="store_true",
                         help="resolve and print the baseline, then exit")
+    parser.add_argument("--check", action="store_true",
+                        help="fail if the staged report is stale; write nothing")
     args = parser.parse_args(argv)
     # ONE error boundary. Every expected operational failure — a git error, a bad
     # baseline, malformed TOML, an unreadable file — exits 2. Exit 1 is reserved for
