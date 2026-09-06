@@ -156,21 +156,32 @@ anything else:
 
 2. Assert `git rev-parse <tag_commit>^{tree}` equals the recorded `tree`, and
    that `<tag>` resolves to `tag_commit`.
-3. Assert `<patched_commit>~<n>` equals `tag_commit`, where `n` is the length
-   of `carried`.
-4. Assert each carried commit's `git patch-id` matches the recorded one, in
-   order, at depths `n-1 .. 0` below `patched_commit`.
+3. Assert `<patched_commit>~<n>^{tree}` equals the recorded `tree`, where `n`
+   is the length of `carried`. This compares **trees, not commit identities**,
+   and it must: in this repository
+   `patched-26.04~2` is `8ed0da44` while `v26.04` is `aece2b0c` — different
+   commits carrying the identical tree `7b010d1b`. Requiring
+   `<patched_commit>~<n> == tag_commit` fails against the very fork this
+   design describes.
+4. Assert each carried commit's `git patch-id --stable` matches the recorded
+   one, in order, at depths `n-1 .. 0` below `patched_commit`.
 
-Three properties this shape buys, each in response to a way the simpler version
+Four properties this shape buys, each in response to a way the simpler version
 was wrong:
 
 - **The recorded tree is the upstream release tree, never the patched tree.**
   Those differ whenever any patch is carried, and the validation compares
   against the release. Recording the patched tree would make step 2 fail on
   every cycle where `carried` is non-empty.
-- **`tag_commit` is recorded and validated, because a tree cannot identify
-  history.** All history counting — upstream commits since the baseline, per
-  file churn — walks from `tag_commit`. A tree hash alone supports no `git log`.
+- **`tag_commit` is recorded and validated independently**, by asserting
+  `tag_commit^{tree} == tree`, because a tree cannot identify history. All
+  history counting — upstream commits since the baseline, per-file churn —
+  walks from `tag_commit`. A tree hash alone supports no `git log`.
+- **The fork side is anchored only by tree.** The rewritten history means the
+  fork's copy of the release commit is a different object with the same
+  content. Content is what the baseline actually asserts; commit identity is
+  not available to assert and is not needed. The two sides are validated
+  separately and meet at the tree hash.
 - **`carried` is validated by ordered patch identity, not merely by depth.**
   Counting to depth `n` proves only that something sits there. Patch-ids prove
   it is the patch we think it is, and survive the rewriting a rebase does to
@@ -217,11 +228,27 @@ stderr empty. The implementation must therefore:
 - Branch on **exit status**: `0` clean, `1` conflicts, **anything greater is an
   error** — a bad ref, a missing object, an unfetched upstream — and must fail
   the run loudly rather than be reported as "no conflicts."
-- Never infer cleanliness from an empty conflicted-file list. Exit `1` with no
-  parsed paths is a **legitimate conflict** that has no single owning path — a
-  directory/file conflict, for instance — not a tool error and not a pass. It
-  is reported as an unattributed conflict, and because it has no path it can
-  never be acknowledged; it always fails the run until a human resolves it.
+- Never infer cleanliness from an empty conflicted-file list. Git's own
+  documentation is explicit: *"Do NOT interpret an empty Conflicted file info
+  list as a clean merge; check the exit status. A merge can have conflicts
+  without having individual files conflict (there are a few types of directory
+  rename conflicts that fall into this category)."* Exit `1` with no parsed
+  paths is a **legitimate conflict**, not a tool error and not a pass. It is
+  reported as an unattributed conflict, and because it has no path it can never
+  be acknowledged: it fails the run until a human resolves it.
+
+  Note this is specifically **directory-rename** conflicts. File/directory
+  conflicts do produce an entry — with exactly one higher-order stage — so they
+  are not the case to guard against here.
+- **Do not classify conflicts.** The same documentation warns that the
+  conflicted-file list carries insufficient information to infer conflict type,
+  and that the informational-message section "is not designed to be machine
+  parseable." The tool collects paths and the exit status, and reports the
+  message text verbatim for a human. It derives nothing from it.
+- If batching is ever added via `--stdin`, note that the per-merge *Merge
+  status* integer inverts the process convention — `0` means conflicts and `1`
+  means clean — and that the process exit status then no longer reports
+  conflictedness at all.
 
 ## Document structure
 
@@ -245,13 +272,20 @@ stderr empty. The implementation must therefore:
   upstream can still rename a module we add files beside, or restructure a
   directory we occupy. They carry no merge cost today.
 - **B — seam edits to upstream files.** The 38. This is the only class where
-  "upstream candidate" is meaningful, and the only class that produces textual
-  conflicts.
+  "upstream candidate" is meaningful, and where conflicts are expected as a
+  matter of course.
 - **C — vendored tooling and project scaffolding.** `tools/tt`, `.githooks/`,
   `justfile`, `packaging/`. Fork-only by construction, but tracked because
   `tools/tt` has an external source of truth in ops.
-- **D — carried upstream patches.** The two #4147 commits. Retired the moment
-  upstream merges them; the rebase procedure checks for this explicitly.
+- **D — carried upstream patches.** The two #4147 commits. Retired when their
+  content is present in the release tag being moved to — which is not the same
+  moment upstream merges them, and the rebase procedure tests for the former.
+
+**Class is an inventory aid, not a conflict filter.** Conflict detection runs
+over the whole tree and is never scoped by class. A class-A file we add at a
+path upstream independently adds conflicts add/add; upstream can rename a
+directory out from under files in any class. The inventory says where our
+changes are, not where conflicts can be.
 
 ### Feature table
 
@@ -364,12 +398,21 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
    old one at this point; `--against` only replaces the upstream side of the
    comparison, so this answers "what will conflict if we move to this tag"
    before anything is touched.
-2. **Check whether #4147 is present in the selected target tag** — not merely
-   whether it merged into upstream `main`. A patch can be merged to `main` and
-   still be absent from the tag we are moving to, and dropping it then would
-   silently remove the IPC surface. Test presence by patch-id against
-   `git log <tag_commit>`, and keep the commits if the test does not pass.
-   If it does pass, drop them and remove class D from the document.
+2. **Check whether #4147's content is present in the selected target tag** —
+   not merely whether it merged into upstream `main`. A patch can be merged to
+   `main` and still be absent from the tag we are moving to, and dropping it
+   then would silently remove the IPC surface.
+
+   `git patch-id --stable` against `git log <new tag_commit>` is **evidence,
+   not the decision**. Upstream routinely squashes or revises a patch during
+   review, which changes its id while keeping its behaviour, so a miss does not
+   prove absence; and a patch that did land can later be reverted, so a hit
+   does not prove presence. Use the id scan to find candidates, then **read the
+   target tag's tree** for the IPC surface itself and decide from that. This
+   step is manual by design and needs no automation.
+
+   If the content is present, drop the commits and remove class D. Otherwise
+   cherry-pick them onto the new tag and re-record their patch-ids.
 3. Create `patched-<newtag>` from the new tag plus whatever step 2 decided.
    Record in the baseline file: the new `tag`, its `tag_commit`, **the tree of
    the release commit** (not of `patched-<newtag>`, which differs whenever
@@ -485,12 +528,17 @@ Unit tests, on fixture repositories built in `tmp` by the test itself:
   baseline tree. Asserts the report matches the hand-computed tree diff, and
   that a tampered baseline tree hash produces a hard error naming both hashes
   rather than any fallback.
-- **Baseline record.** Assert each validation fails independently: a `tree`
-  that is the patched tree rather than the release tree; a `tag` that no longer
-  resolves to `tag_commit`; a `carried` list of the right length but wrong
-  patch-ids; a `patched_commit` whose ancestor at depth `n` is not
-  `tag_commit`. Assert resolution succeeds in a clone with **no local branches
-  at all**, proving nothing depends on a branch name.
+- **Baseline record.** The central fixture reproduces this fork's shape: the
+  commit at `<patched_commit>~<n>` is a **different object from `tag_commit`
+  with an identical tree**. Assert validation *passes*. Then assert it fails
+  when that commit's tree differs, proving the check tests content and not
+  identity.
+
+  Assert each other validation fails independently: a `tree` that is the
+  patched tree rather than the release tree; a `tag` that no longer resolves to
+  `tag_commit`; a `tag_commit` whose tree is not `tree`; a `carried` list of
+  the right length but wrong patch-ids. Assert resolution succeeds in a clone
+  with **no local branches at all**, proving nothing depends on a branch name.
 - **Index freshness.** Stage a source change without regenerating; assert
   `--check` fails. Regenerate and stage; assert it passes. Assert a change
   present in the working tree but unstaged does not affect the verdict, and
@@ -498,9 +546,15 @@ Unit tests, on fixture repositories built in `tmp` by the test itself:
   commit rather than reporting a vacuous pass.
 - **Conflict and error handling.** A fixture with a known conflict asserts exit
   1 and the exact path set. A deliberately bad ref asserts the exit-status-`>1`
-  path fails loudly. A directory/file conflict fixture asserts exit 1 with an
-  empty path list is reported as an unattributed conflict — failing the run,
-  but distinguished in the output from a tool error.
+  path fails loudly.
+
+  A **directory-rename** fixture — verified while writing the test to actually
+  produce exit 1 with an empty conflicted-file list on the pinned git version,
+  not assumed to — asserts the unattributed-conflict path: the run fails, and
+  the output distinguishes it from a tool error. A second case pairs that
+  unattributed conflict with an ordinary conflict on an **acknowledged** path,
+  asserting the run still fails: a non-empty, fully acknowledged path list must
+  not be able to hide it.
 - **Self-reference.** Assert the report excludes itself, the baseline record,
   and the acknowledgment file from its inventory, and that running it twice is
   a fixpoint.
