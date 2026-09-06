@@ -88,6 +88,10 @@ done
 # period when brightness changes. The marker is the matcher's target and is
 # deliberately asymmetric and non-repeating; the grid is the RMSE target.
 GRID_PERIOD=20
+# Used only by the geometry probe, which renders opaque and without a material
+# so its bounding box is the window rect. Absent from the backdrop palette, so
+# nothing else in the frame can match it.
+GEOM_COLOR='#ff00ff'
 make_backdrop() {   # $1 out path, $2 marker x (optional), $3 marker y
     local dst=$1 mx=${2:-} my=${3:-} x y
     local args=(magick -size 1280x720 'xc:rgb(38,44,62)'
@@ -113,8 +117,48 @@ make_backdrop() {   # $1 out path, $2 marker x (optional), $3 marker y
 # (ior moved 1.02 to 1.24 within a week), which would make two runs of the same
 # sweep incomparable. distortion is 0 here, which is what makes the flat face
 # refract nothing - the shader perturbs the face normal only when distortion > 0.
-write_config() {   # $1 path, $2 wallpaper, $3 glass extra, $4 blur extra
-    cat > "$1" <<KDL
+# The swept key replaces its baseline line rather than being appended: KDL
+# rejects a duplicate single node, so emitting both is a parse error.
+GLASS_BASELINE=(
+    "ior 1.5"
+    "thickness 20"
+    "attenuation-color \"#dfe8ff\""
+    "attenuation-distance 60"
+    "chromatic-aberration 0"
+    "distortion 0 scale=0.5"
+    "anisotropic-blur 0"
+    "roughness 0"
+    "jelly-flex 0"
+    "jelly-ripple 0"
+    "bevel 12"
+    "offset-x 0"
+    "offset-y 0"
+)
+BLUR_BASELINE=(
+    "passes 1"
+    "offset 8"
+    "noise 0"
+    "saturation 1"
+)
+emit_block() {   # $1 swept key or empty, $2 swept value, $3.. baseline lines
+    local swept=$1 value=$2; shift 2
+    local line
+    for line in "$@"; do
+        [ -n "$swept" ] && [ "${line%% *}" = "$swept" ] && continue
+        printf '        %s\n' "$line"
+    done
+    [ -n "$swept" ] && printf '        %s %s\n' "$swept" "$value"
+    return 0
+}
+
+write_config() {   # $1 path, $2 wallpaper, $3 swept value, $4 with-material 0|1
+    local dst=$1 wall=$2 value=$3 with_material=$4
+    local glass_key='' blur_key=''
+    if [ "$with_material" = 1 ]; then
+        if [ "$BLOCK" = glass ]; then glass_key=$KEY; else blur_key=$KEY; fi
+    fi
+    {
+        cat <<KDL
 prefer-no-csd
 layout {
     gaps 40
@@ -127,35 +171,19 @@ layout {
 animations { off; }
 hotkey-overlay { skip-at-startup; }
 config-notification { disable-failed; }
-spawn-at-startup "swaybg" "-m" "fill" "-i" "$2"
+spawn-at-startup "swaybg" "-m" "fill" "-i" "$wall"
 blur {
-    passes 1
-    offset 8
-    noise 0
-    saturation 1
-    $4
-}
-material "sweep-probe" {
-    glass {
-        ior 1.5
-        thickness 20
-        attenuation-color "#dfe8ff"
-        attenuation-distance 60
-        chromatic-aberration 0
-        distortion 0 scale=0.5
-        anisotropic-blur 0
-        roughness 0
-        backdrop-blur $BACKDROP_BLUR
-        jelly-flex 0
-        jelly-ripple 0
-        bevel 12
-        offset-x 0
-        offset-y 0
-        $3
-    }
-}
+KDL
+        emit_block "$blur_key" "$value" "${BLUR_BASELINE[@]}"
+        printf '}\n'
+        if [ "$with_material" = 1 ]; then
+            printf 'material "sweep-probe" {\n    glass {\n'
+            printf '        backdrop-blur %s\n' "$BACKDROP_BLUR"
+            emit_block "$glass_key" "$value" "${GLASS_BASELINE[@]}"
+            printf '    }\n}\n'
+            cat <<'KDL'
 window-rule {
-    match app-id="^sweep-probe\$"
+    match app-id="^sweep-probe$"
     material "sweep-probe"
     geometry-corner-radius 0
     background-effect {
@@ -165,16 +193,19 @@ window-rule {
     }
 }
 KDL
+        fi
+    } > "$dst"
     # Assert the gate structurally rather than trusting it: with BLOCK=blur the
     # emitted config must enable backdrop blur and must not switch it off.
-    if [ "$BLOCK" = blur ]; then
-        grep -q 'backdrop-blur true' "$1" \
+    if [ "$BLOCK" = blur ] && [ "$with_material" = 1 ]; then
+        grep -q 'backdrop-blur true' "$dst" \
             || fail "blur sweep emitted a config without backdrop-blur true"
-        grep -qE '^[[:space:]]*off[[:space:]]*$' "$1" \
+        grep -qE '^[[:space:]]*off[[:space:]]*$' "$dst" \
             && fail "blur sweep emitted a config containing blur { off }"
     fi
     return 0
 }
+
 
 # --------------------------------------------------------- nested niri host
 
@@ -214,22 +245,40 @@ stop_nested() {
     systemctl --user stop "$UNIT" 2>/dev/null || true
     rm -f "$RT"/niri.*.sock "$RT/$HOST"; sleep 0.5
 }
-probe_count() { "$NIRI" msg -j windows | jq -r '.[] | select(.app_id=="sweep-probe") | .id' | wc -l; }
-spawn_probe() {
-    local _
-    "$NIRI" msg action spawn -- kitty --config NONE --class sweep-probe \
-        -o background_opacity=0 -o cursor_blink_interval=0 \
+probe_count() {   # $1 app-id
+    "$NIRI" msg -j windows | jq -r --arg a "$1" '.[] | select(.app_id==$a) | .id' | wc -l
+}
+spawn_probe() {   # $1 app-id, $2 background color, $3 opacity
+    local _ id=$1 bg=$2 op=$3
+    "$NIRI" msg action spawn -- kitty --config NONE --class "$id" \
+        -o "background=$bg" -o "background_opacity=$op" -o cursor_blink_interval=0 \
         sh -c 'printf "\033[?25l"; exec sleep 600'
-    for _ in $(seq 100); do [ "$(probe_count)" -ge 1 ] && break; sleep 0.1; done
-    [ "$(probe_count)" -eq 1 ] || fail "expected exactly one probe window"
+    for _ in $(seq 100); do [ "$(probe_count "$id")" -ge 1 ] && break; sleep 0.1; done
+    [ "$(probe_count "$id")" -eq 1 ] || fail "expected exactly one $id window"
     sleep 2
 }
-window_rect() {   # prints "x y w h" in logical px
-    "$NIRI" msg -j windows | jq -r '
-        .[] | select(.app_id=="sweep-probe") | .layout |
-        [ (.tile_pos_in_workspace_view[0] + .window_offset_in_tile[0]),
-          (.tile_pos_in_workspace_view[1] + .window_offset_in_tile[1]),
-          .window_size[0], .window_size[1] ] | @tsv' | head -1 | tr '\t' ' '
+shoot() {   # $1 destination png
+    local _
+    "$NIRI" msg action screenshot-screen --write-to-disk true --show-pointer false \
+        --path "$1"
+    for _ in $(seq 50); do [ -s "$1" ] && break; sleep 0.1; done
+    [ -s "$1" ] || fail "capture $1 was not written"
+}
+
+# The window rect is measured from a capture, not read from the IPC. The IPC
+# reports tile_pos_in_workspace_view as null for this window, and `null[0] + 0`
+# is 0 in jq, so that route silently yields a plausible-looking 0,0 instead of
+# failing. Measuring also lands the rect in screenshot pixel space directly,
+# which is the space the crops are applied in - the headless output reports a
+# Flipped180 transform, so logical coordinates are not guaranteed to match.
+measure_rect() {   # $1 capture of the opaque geometry probe; prints "x y w h"
+    local bbox
+    bbox=$(magick "$1" -fuzz 12% +transparent "$GEOM_COLOR" -format '%@' info:) \
+        || fail "bounding-box measurement failed on $1"
+    [[ $bbox =~ ^([0-9]+)x([0-9]+)\+([0-9]+)\+([0-9]+)$ ]] \
+        || fail "could not locate the geometry probe in $1 (got '$bbox')"
+    printf '%s %s %s %s\n' "${BASH_REMATCH[3]}" "${BASH_REMATCH[4]}" \
+        "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
 }
 
 CAP() { printf '%s/cap-%03d.png' "$OUT" "$1"; }
@@ -240,17 +289,18 @@ if [ "$TABLE_ONLY" != 1 ]; then
     printf '%s\n' "${VALUE_LIST[@]}" > "$OUT/values.txt"
     "$NIRI" --version > "$OUT/niri.version"
 
-    # Phase 0: learn the window geometry. The marker has to be painted into the
+    # Phase 0: measure the window rect. The marker has to be painted into the
     # wallpaper before niri starts, but where it must sit is only knowable once
-    # a window exists, so one throwaway session answers that first.
+    # a window exists, so one throwaway session answers that first. The probe
+    # is opaque and carries no material, so its bounding box is the window rect
+    # exactly; the glass optics would tint and refract its edges.
     make_backdrop "$OUT/backdrop-plain.png"
-    write_config "$OUT/geom.kdl" "$OUT/backdrop-plain.png" "" ""
+    write_config "$OUT/geom.kdl" "$OUT/backdrop-plain.png" "" 0
     start_nested "$OUT/geom.kdl"
-    spawn_probe
-    read -r WX WY WW WH <<< "$(window_rect)"
+    spawn_probe sweep-geom "$GEOM_COLOR" 1
+    shoot "$OUT/geom.png"
     stop_nested
-    [ -n "${WH:-}" ] || fail "could not read the probe window geometry"
-    WX=${WX%.*}; WY=${WY%.*}; WW=${WW%.*}; WH=${WH%.*}
+    read -r WX WY WW WH <<< "$(measure_rect "$OUT/geom.png")"
     echo "window ${WW}x${WH}+${WX}+${WY}" | tee "$OUT/geometry.txt"
 
     # The ROIs are fixed for the whole sweep. RMSE between crops taken at
@@ -264,9 +314,17 @@ if [ "$TABLE_ONLY" != 1 ]; then
         [ "${CHAMFER:-0}" -gt 0 ] \
             || fail "sweeping bevel with every value 0 leaves a zero-width band"
     fi
+    # The band straddles the window's left edge: OUTSET px of backdrop outside
+    # it, the chamfer and a little face inside. Clamped to the screen, because a
+    # window flush against the edge would otherwise produce a negative offset
+    # and magick would reject the crop.
     BAND=$((CHAMFER + 10))
-    BEVEL_X=$((WX - 5)); BEVEL_W=$((BAND + 5))
+    OUTSET=5
+    [ "$WX" -lt "$OUTSET" ] && OUTSET=$WX
+    BEVEL_X=$((WX - OUTSET)); BEVEL_W=$((BAND + OUTSET))
     BEVEL_Y=$((WY + WH / 4)); BEVEL_H=$((WH / 2))
+    [ "$BEVEL_W" -gt 0 ] && [ "$BEVEL_H" -gt 0 ] \
+        || fail "derived a degenerate bevel band: ${BEVEL_W}x${BEVEL_H}"
     ROI_BEVEL=${ROI_BEVEL:-${BEVEL_W}x${BEVEL_H}+${BEVEL_X}+${BEVEL_Y}}
     FACE_W=$((WW / 3)); FACE_H=$((WH / 3))
     ROI_FACE=${ROI_FACE:-${FACE_W}x${FACE_H}+$((WX + WW / 2 - FACE_W / 2))+$((WY + WH / 2 - FACE_H / 2))}
@@ -282,17 +340,10 @@ if [ "$TABLE_ONLY" != 1 ]; then
     for v in "${VALUE_LIST[@]}"; do
         kdl=$(printf '%s/cfg-%03d.kdl' "$OUT" "$i")
         png=$(CAP "$i")
-        if [ "$BLOCK" = glass ]; then
-            write_config "$kdl" "$OUT/backdrop.png" "$KEY $v" ""
-        else
-            write_config "$kdl" "$OUT/backdrop.png" "" "$KEY $v"
-        fi
+        write_config "$kdl" "$OUT/backdrop.png" "$v" 1
         start_nested "$kdl"
-        spawn_probe
-        "$NIRI" msg action screenshot-screen --write-to-disk true \
-            --show-pointer false --path "$png"
-        for _ in $(seq 50); do [ -s "$png" ] && break; sleep 0.1; done
-        [ -s "$png" ] || fail "capture for $KEY $v was not written"
+        spawn_probe sweep-probe none 0
+        shoot "$png"
         stop_nested
         i=$((i + 1))
     done
@@ -420,6 +471,7 @@ fi
 awk -F'\t' -v key="$KEY" -v disp="$DISPLACEMENT" -v dispfile="$DISP_FILE" '
 BEGIN {
     OFS = "\t"
+    nd = 0   # an uninitialized awk index is "", not 0, which would drop row 1
     if (disp == 1) {
         while ((getline line < dispfile) > 0) {
             split(line, a, ",")
