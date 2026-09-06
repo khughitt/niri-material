@@ -16,8 +16,13 @@
 #   VALUES        two or more ascending values, whitespace-separated(required)
 #   ROI_BEVEL     override the derived bevel-band crop
 #   ROI_FACE      override the derived face-interior crop
-#   DISPLACEMENT  1 to also track a backdrop marker through the bevel band
 #   TABLE_ONLY    1 to recompute the table from captures already in OUT
+#
+# The columns report WHERE the rendered image changes, not WHY. Neither region
+# is evidence of ray bending: Fresnel varies with ior everywhere coverage > 0,
+# and the focus filament refracts through ior too, so a bevel delta is
+# consistent with backdrop refraction being broken. Measuring bending needs a
+# separately validated instrument: material-343f27.
 #
 # Requires: weston, kitty, swaybg, jq, rg, ImageMagick 7.
 set -eu
@@ -25,7 +30,6 @@ set -eu
 OUT=${OUT:?artifact directory}
 BLOCK=${BLOCK:?glass or blur}
 KEY=${KEY:?KDL key to sweep}
-DISPLACEMENT=${DISPLACEMENT:-0}
 TABLE_ONLY=${TABLE_ONLY:-0}
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -83,17 +87,17 @@ done
 
 # ------------------------------------------------------------------ backdrop
 
-# The grid is periodic, which makes it a good RMSE target and a bad
-# template-matching one: under RMSE a periodic patch slides by exactly one
-# period when brightness changes. The marker is the matcher's target and is
-# deliberately asymmetric and non-repeating; the grid is the RMSE target.
+# A high-frequency field, so a change that displaces the backdrop registers
+# across the ROI rather than only where it crosses an edge. Periodic, which is
+# fine for RMSE and would be wrong for template matching - see the bending note
+# in the header.
 GRID_PERIOD=20
 # Used only by the geometry probe, which renders opaque and without a material
 # so its bounding box is the window rect. Absent from the backdrop palette, so
 # nothing else in the frame can match it.
 GEOM_COLOR='#ff00ff'
-make_backdrop() {   # $1 out path, $2 marker x (optional), $3 marker y
-    local dst=$1 mx=${2:-} my=${3:-} x y
+make_backdrop() {   # $1 out path
+    local dst=$1 x y
     local args=(magick -size 1280x720 'xc:rgb(38,44,62)'
                 -fill 'rgb(150,60,52)' -draw "rectangle 0,0 639,359"
                 -fill 'rgb(48,120,80)' -draw "rectangle 640,360 1279,719"
@@ -101,12 +105,6 @@ make_backdrop() {   # $1 out path, $2 marker x (optional), $3 marker y
                 -stroke 'rgb(226,226,226)' -strokewidth 1)
     for ((x = 0; x < 1280; x += GRID_PERIOD)); do args+=(-draw "line $x,0 $x,719"); done
     for ((y = 0; y < 720; y += GRID_PERIOD)); do args+=(-draw "line 0,$y 1279,$y"); done
-    if [ -n "$mx" ]; then
-        args+=(-stroke none -fill 'rgb(255,238,0)'
-               -draw "polygon $mx,$my $((mx+26)),$my $((mx+26)),$((my+9)) $((mx+9)),$((my+9)) $((mx+9)),$((my+30)) $mx,$((my+30))"
-               -fill 'rgb(16,0,110)'
-               -draw "circle $((mx+19)),$((my+22)) $((mx+23)),$((my+22))")
-    fi
     args+=("$dst")
     "${args[@]}" || fail "backdrop generation failed"
 }
@@ -180,7 +178,13 @@ KDL
             printf 'material "sweep-probe" {\n    glass {\n'
             printf '        backdrop-blur %s\n' "$BACKDROP_BLUR"
             emit_block "$glass_key" "$value" "${GLASS_BASELINE[@]}"
-            printf '    }\n}\n'
+            # The focus response defaults to RingLight, which drifts over time.
+            # It is drawn at the window edge - exactly the bevel band - so
+            # leaving it on made that column vary run to run by as much as the
+            # signal being measured, while the face column stayed byte-identical.
+            # Pinned off: this script measures glass optics, and the ring is a
+            # separate feature with its own parameters.
+            printf '    }\n    response "default" {\n        focus "none"\n    }\n}\n'
             cat <<'KDL'
 window-rule {
     match app-id="^sweep-probe$"
@@ -289,13 +293,11 @@ if [ "$TABLE_ONLY" != 1 ]; then
     printf '%s\n' "${VALUE_LIST[@]}" > "$OUT/values.txt"
     "$NIRI" --version > "$OUT/niri.version"
 
-    # Phase 0: measure the window rect. The marker has to be painted into the
-    # wallpaper before niri starts, but where it must sit is only knowable once
-    # a window exists, so one throwaway session answers that first. The probe
-    # is opaque and carries no material, so its bounding box is the window rect
-    # exactly; the glass optics would tint and refract its edges.
-    make_backdrop "$OUT/backdrop-plain.png"
-    write_config "$OUT/geom.kdl" "$OUT/backdrop-plain.png" "" 0
+    # Phase 0: measure the window rect, which the ROIs derive from. The probe is
+    # opaque and carries no material, so its bounding box is the window rect
+    # exactly; under the glass optics its edges would be tinted and refracted.
+    make_backdrop "$OUT/backdrop.png"
+    write_config "$OUT/geom.kdl" "$OUT/backdrop.png" "" 0
     start_nested "$OUT/geom.kdl"
     spawn_probe sweep-geom "$GEOM_COLOR" 1
     shoot "$OUT/geom.png"
@@ -329,12 +331,6 @@ if [ "$TABLE_ONLY" != 1 ]; then
     FACE_W=$((WW / 3)); FACE_H=$((WH / 3))
     ROI_FACE=${ROI_FACE:-${FACE_W}x${FACE_H}+$((WX + WW / 2 - FACE_W / 2))+$((WY + WH / 2 - FACE_H / 2))}
     printf 'bevel\t%s\nface\t%s\n' "$ROI_BEVEL" "$ROI_FACE" | tee "$OUT/roi.txt"
-
-    # The marker goes where the bevel band will cross it, so it is the feature
-    # the matcher tracks through the glass edge.
-    MARK_X=$((BEVEL_X + 2)); MARK_Y=$((BEVEL_Y + BEVEL_H / 2 - 15))
-    make_backdrop "$OUT/backdrop.png" "$MARK_X" "$MARK_Y"
-    printf '%s %s\n' "$MARK_X" "$MARK_Y" > "$OUT/marker.txt"
 
     i=0
     for v in "${VALUE_LIST[@]}"; do
@@ -407,78 +403,14 @@ for ((i = 0; i < n; i++)); do
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
         "${VALUE_LIST[i]}" "$step" "$bn" "$bc" "$fn" "$fc" >> "$OUT/raw.tsv"
 done
-
-# ------------------------------------------------------------- displacement
-
-DISP_FILE=$OUT/displacement.tsv
-if [ "$DISPLACEMENT" = 1 ]; then
-    [ -s "$OUT/marker.txt" ] || fail "DISPLACEMENT needs marker.txt in $OUT"
-    read -r MARK_X MARK_Y < "$OUT/marker.txt"
-    TPL_W=30; TPL_H=34; PAD=12
-    # Cut the template from the backdrop itself, so it is the marker as drawn
-    # rather than the marker as already refracted.
-    magick "$OUT/backdrop.png" -crop "${TPL_W}x${TPL_H}+$((MARK_X-2))+$((MARK_Y-2))" \
-        +repage "$OUT/tpl.png" || fail "template cut failed"
-    SEARCH="$((TPL_W + 2*PAD))x$((TPL_H + 2*PAD))+$((MARK_X-2-PAD))+$((MARK_Y-2-PAD))"
-
-    # NCC on the unique marker, windowed. RMSE also passes on this marker, but
-    # NCC is the only metric that also survives a periodic template, so it holds
-    # margin if the glass edge occludes the marker and the grid dominates.
-    search_at() {   # $1 haystack; result in POS as "x,y"
-        local out
-        set +e
-        out=$(magick compare -metric NCC -subimage-search "$1" "$OUT/tpl.png" \
-            "$OUT/search-out.png" 2>&1 >/dev/null)
-        set -e
-        POS=$(printf '%s' "$out" | grep -oE '@ [0-9]+,[0-9]+' | head -1 | cut -d' ' -f2)
-        [ -n "$POS" ] || fail "subimage search returned no position: $out"
-    }
-
-    # The matcher is validated on this run's own backdrop and window before any
-    # number is read as bending: a known translation must report itself, and a
-    # brightness-only change must report zero. A matcher that fails either is
-    # not evidence, and no looser reading of the number rescues it.
-    magick "$(CAP 0)" -crop "$SEARCH" +repage "$OUT/mv-base.png"
-    magick "$OUT/mv-base.png" -roll +5+0 "$OUT/mv-shift.png"
-    magick "$OUT/mv-base.png" -evaluate multiply 1.35 "$OUT/mv-bright.png"
-    search_at "$OUT/mv-base.png";   MV_BASE=$POS
-    search_at "$OUT/mv-shift.png";  MV_SHIFT=$POS
-    search_at "$OUT/mv-bright.png"; MV_BRIGHT=$POS
-    bx=${MV_BASE%,*}; by=${MV_BASE#*,}
-    sx=${MV_SHIFT%,*}; sy=${MV_SHIFT#*,}
-    rx=${MV_BRIGHT%,*}; ry=${MV_BRIGHT#*,}
-    [ "$((sx - bx)),$((sy - by))" = "5,0" ] \
-        || fail "matcher failed the translation case: expected 5,0 got $((sx-bx)),$((sy-by))"
-    [ "$((rx - bx)),$((ry - by))" = "0,0" ] \
-        || fail "matcher failed the brightness case: expected 0,0 got $((rx-bx)),$((ry-by))"
-    echo "matcher: translation and brightness cases PASS" >&2
-
-    : > "$DISP_FILE"
-    for ((i = 0; i < n; i++)); do
-        magick "$(CAP "$i")" -crop "$SEARCH" +repage "$OUT/search-$i.png" \
-            || fail "search-window crop failed on capture $i"
-        search_at "$OUT/search-$i.png"
-        printf '%s\n' "$POS" >> "$DISP_FILE"
-    done
-fi
-
 # ------------------------------------------------------------------- output
 # per_step divides the neighbour delta by the parameter step, because a caller
 # sampling densely in one region and coarsely in another gets smaller neighbour
 # deltas from the smaller step alone. normalized is computed from per_step for
 # the same reason, and is 0 for every row when every per_step is 0 - a flat
 # sweep is a supported outcome and must still produce a readable table.
-awk -F'\t' -v key="$KEY" -v disp="$DISPLACEMENT" -v dispfile="$DISP_FILE" '
-BEGIN {
-    OFS = "\t"
-    nd = 0   # an uninitialized awk index is "", not 0, which would drop row 1
-    if (disp == 1) {
-        while ((getline line < dispfile) > 0) {
-            split(line, a, ",")
-            dx[nd] = a[1] + 0; dy[nd] = a[2] + 0; nd++
-        }
-    }
-}
+awk -F'\t' -v key="$KEY" '
+BEGIN { OFS = "\t" }
 {
     val[NR] = $1; step[NR] = $2; bn[NR] = $3; bc[NR] = $4; fn[NR] = $5; fc[NR] = $6
     if (NR > 1) {
@@ -493,7 +425,6 @@ END {
     hdr = "key" OFS "value" OFS "step" OFS "bevel_neighbor" OFS "bevel_per_step" \
         OFS "bevel_cumulative" OFS "bevel_normalized" OFS "face_neighbor" \
         OFS "face_per_step" OFS "face_cumulative" OFS "face_normalized"
-    if (disp == 1) hdr = hdr OFS "marker_at" OFS "marker_shift"
     print hdr
     for (i = 1; i <= n; i++) {
         if (i == 1) {
@@ -511,11 +442,6 @@ END {
         row = key OFS val[i] OFS step[i] OFS bn_s OFS bps_s \
             OFS sprintf("%.6g", bc[i]) OFS bnorm OFS fn_s OFS fps_s \
             OFS sprintf("%.6g", fc[i]) OFS fnorm
-        if (disp == 1) {
-            at = dx[i-1] "," dy[i-1]
-            sh = (dx[i-1] - dx[0]) "," (dy[i-1] - dy[0])
-            row = row OFS at OFS sh
-        }
         print row
     }
 }' "$OUT/raw.tsv" | tee "$OUT/sweep.tsv" | column -t -s "$(printf '\t')"

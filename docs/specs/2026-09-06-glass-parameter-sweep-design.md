@@ -158,74 +158,47 @@ of ray bending, and the spec does not claim otherwise:
   (`lightShift`, `:342`), so it moves with IOR too.
 
 A non-zero `bevel` delta is therefore consistent with backdrop refraction being
-entirely broken. Bending is substantiated separately, by displacement rather
-than by difference: with `DISPLACEMENT=1` the script locates a fixed template in
-the bevel band of each capture and reports its offset relative to the first
-value. A backdrop feature that moves as IOR rises is direct evidence the ray
-bent; an unchanged offset under a rising RMSE says the change was Fresnel or
-filament. It is opt-in because the search costs more than the RMSE pair and most
-parameters do not bend anything.
+entirely broken. **The script does not report bending, and no column of its
+output should be read as bending.** Establishing why the image changes is
+deferred to `material-343f27`, which owes its own validated instrument.
 
-**The matcher is itself an assumption, and must be validated before its offset
-counts as evidence.** `magick compare -subimage-search` reports a best position
-under an image metric, not a tracked feature. On review, two similarly patterned
-patches differing only in brightness moved the reported RMSE match from `(2,2)`
-to `(12,2)`, both at a perfect score, with no translation present. A periodic
-backdrop makes this worse, not better — and the grid proposed above is periodic,
-so it cannot carry the marker.
+Two instruments were built and rejected during this task. Both are recorded
+because the reasons generalize, and a later attempt that repeats either will
+waste the same effort.
 
-Three requirements follow:
+**Template displacement.** `magick compare -subimage-search`, NCC on a unique
+asymmetric marker in a window constrained to its known position. The matcher
+passed its own synthetic self-checks on the real run — a known `+5,+0`
+translation reported `+5,+0`, and a `-evaluate multiply 1.35` brightness change
+at zero translation reported `+0,+0` — and still reported `0,0` displacement at
+every value from `ior 1` to `ior 3`, while `bevel_cumulative` rose to `0.0772`.
 
-- **A unique marker.** The backdrop carries one asymmetric, non-repeating
-  high-contrast marker positioned to sit inside the bevel band, distinct from
-  the periodic grid that fills the rest of the field. A pattern that repeats
-  every N px admits a match every N px.
-- **A constrained search region.** The search runs over a small window around
-  the marker's known position, sized to the largest displacement worth
-  reporting, rather than over the whole band. A matcher that cannot range far
-  cannot slide far.
-- **A validated matcher.** Before any sweep result is read as bending, the
-  matcher is checked on two synthetic cases built from one capture: a known
-  translation of `k` px, which must report `k`; and a brightness-only change at
-  zero translation, which must report `0`. Both run without a compositor.
+The immediate cause was placement: the template spanned x 35–65 while the
+chamfer was only x 40–52, so 18 of its 30 columns were raw backdrop or flat
+face, neither of which bends at `distortion 0`, and the non-bending majority
+pinned the match. The deeper cause is not fixable by moving the template.
+Refraction through the chamfer is a spatially varying **warp**, not a rigid
+translation, so a matcher that reports one offset is answering the wrong
+question; and the flat face, the only region where displacement would be rigid,
+does not bend at all at `distortion 0`. Widening the bevel or shrinking the
+template addresses the placement and leaves the warp.
 
-If the chosen matcher fails either case, the displacement column is not
-evidence and the spec's bending check does not hold — the fix is a different
-matcher or metric, not a looser reading of the number. Matching correctness is
-an empirical assumption on the same footing as matching speed, and is settled
-the same way: by running it.
+**Flat-versus-textured control.** Capture `ior 1` and `ior 3` over the textured
+backdrop and again over a flat one, on the reasoning that bending can only
+manifest where there is texture to displace, so the difference isolates it. The
+run gave a bevel delta of `0.0512` flat against `0.0772` textured.
 
-**Probe result (IM 7.1.2-31).** Case A is a `+5,+0` roll; case B is a
-`-evaluate multiply 1.35` brightness change at zero translation. Search windowed
-to the marker's known position ±12 px unless noted:
+That subtraction does not isolate bending. RMSE combines effects nonlinearly, so
+the difference of two RMSE values is not the magnitude of the effect present in
+one and absent from the other. The two backdrops also differ in mean color,
+which moves the Fresnel and attenuation response independently of any texture.
+The numbers are kept in the evidence document as exploratory only, and no
+conclusion about how much of the bevel delta is bending is drawn from them.
 
-| Metric | Template | A: known shift | B: brightness only |
-| --- | --- | --- | --- |
-| RMSE | marker | `+5,+0` PASS | `+0,+0` PASS |
-| RMSE | periodic grid | `+5,+0` PASS | **`+0,-20` FAIL** |
-| NCC | marker | `+5,+0` PASS | `+0,+0` PASS |
-| NCC | periodic grid | `+5,+0` PASS | `+0,+0` PASS |
-| SSIM | marker | `+5,+0` PASS | `+0,+0` PASS |
-| PHASH | periodic grid | **`-15,+0` FAIL** | `+0,+0` PASS |
-
-The review's sliding match reproduces, and localizes: it is the **periodic
-template** under RMSE, and it slid by `-20` px — exactly one grid period. A
-repeating pattern offers the matcher an equally good match every period, and a
-brightness change is enough to tip which one wins.
-
-The chosen matcher is therefore **NCC on the unique marker, windowed**. RMSE on
-the marker also passes both cases, but NCC is the only metric that additionally
-survives the periodic template, so it holds margin if the marker is ever
-partially occluded by the glass and the grid dominates the window. PHASH is
-rejected: it fails the translation case it exists to measure.
-
-This does not retire the check. The matcher runs against both synthetic cases at
-the start of every displacement run, on that run's own backdrop and window, and
-a failure aborts before any sweep number is reported.
-
-Separating face from bevel answers `prism-8e8a18` directly: whether refraction's
-milkiness is a range problem or a rendering one is a question about which column
-moves, read together with whether the feature displaced at all.
+Separating face from bevel still serves `prism-8e8a18`: whether refraction's
+milkiness tracks the face or the bevel is a useful question, and it is answerable
+from where the image changes. Whether the milkiness is a range problem or a
+rendering one is not answerable from this script.
 
 ### Metrics
 
