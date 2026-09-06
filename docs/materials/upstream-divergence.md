@@ -62,7 +62,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.gitignore` | B | M | +3/-1 |
 | `AGENTS.md` | C | A | +21/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
-| `justfile` | C | A | +47/-0 |
+| `justfile` | C | A | +52/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1003/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
