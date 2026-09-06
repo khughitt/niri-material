@@ -1,8 +1,9 @@
 # Glass parameter sweep script: design
 
 **Status:** designed, not yet implemented. Branch `harness/glass-parameter-sweep`.
-Revised after review: two ROIs, blur gating, per-step normalization, flex and
-ripple deferred to `material-36e968`.
+Revised twice after review: two fixed ROIs, blur gating, per-step
+normalization, displacement as the bending evidence, flex and ripple deferred
+to `material-36e968`.
 
 **Task:** `material-37cec9`
 
@@ -47,6 +48,7 @@ Env vars, following the model script's style:
 | `VALUES` | yes | two or more whitespace-separated values, ascending |
 | `ROI_BEVEL` | no | override the derived bevel-ring crop |
 | `ROI_FACE` | no | override the derived face-interior crop |
+| `DISPLACEMENT` | no | `1` to also locate a backdrop template inside the bevel band and report its offset |
 
 The caller supplies the values rather than a range and a count. Ranges worth
 sweeping are rarely uniform — refraction wants density near 1.4 to 1.7 and a
@@ -69,9 +71,8 @@ range. A sweep that reported them would report zeros and read as "no effect".
 Measuring them needs a motion stimulus and a capture phase pinned to the
 impulse: `material-36e968`.
 
-Sweeping `bevel` changes the geometry the bevel ROI is derived from. The script
-derives both ROIs per value rather than once per sweep, so the crop tracks the
-chamfer it is measuring.
+Sweeping `bevel` changes the chamfer the bevel ROI frames. The ROI is sized to
+cover the whole swept range and then held fixed — see "Two ROIs".
 
 ### Blur-block gating
 
@@ -113,29 +114,56 @@ incomparable.
 `slabSurface` (`material.frag:319-325`) sets `normal = vec3(0,0,1)` everywhere
 inside the inner face, and `tap` (`:334`) refracts against it with
 `refract(vec3(0,0,-1), vec3(0,0,1), 1.0/ior)`, whose `.xy` is identically zero.
-**Lateral refraction in the flat face is zero at every IOR.** The normal tilts
-only in the chamfer ring, where `di >= 0`.
+**With `distortion = 0`, lateral refraction in the flat face is zero at every
+IOR.** The qualification matters: `:392` perturbs the face normal whenever
+`mat_distortion > 0`, at which point the face bends too. The pinned baseline
+sets `distortion 0`, so the property holds for every sweep run against it — but
+it is a property of that baseline, not of the shader.
 
-Fresnel does vary across the face: `f0 = (ior-1)/(ior+1)` at `:454` changes
-brightness with IOR everywhere. A single face crop would therefore produce a
-non-zero curve while measuring no bending at all — and a `cumulative > 0` check
-would pass, hiding the fact.
+The normal tilts on its own only in the chamfer ring, where `di >= 0`. So the
+script reports two regions:
 
-So the script derives two crops per value from the window geometry reported by
-`niri msg -j windows`, and reports both:
+| ROI | Where |
+| --- | --- |
+| `bevel` | band straddling the window edge, covering the chamfer |
+| `face` | centered box well inside the inner face |
 
-| ROI | Where | Measures |
-| --- | --- | --- |
-| `bevel` | band straddling the window edge, chamfer-width wide | ray bending |
-| `face` | centered box well inside the inner face | Fresnel brightness, tint, noise |
+Both are **fixed for the whole sweep**: derived once, from the first capture's
+window geometry, and applied as the same screen coordinates to every value.
+RMSE between crops taken at different positions measures the crop, and between
+crops of different sizes it does not compute at all. When `bevel` is the swept
+key the band is sized from `max(VALUES)` so it covers the widest chamfer in the
+sweep; otherwise from the pinned `bevel`. A sweep whose band would be
+degenerate — sweeping `bevel` with every value `0` — is rejected rather than
+silently compared over an empty region. The window rect itself is constant
+across a sweep: every supported key is an optic rendered inside the rect, not a
+layout input.
 
-Deriving from reported geometry rather than a hardcoded crop keeps the ROIs
-correct when the layout, the window size or the swept `bevel` moves them. Both
-are overridable for a parameter that wants a different frame.
+Both ROIs are overridable for a parameter that wants a different frame.
 
-Separating them answers `prism-8e8a18` directly: whether refraction's milkiness
-is a range problem or a rendering one is a question about which of these two
-columns moves.
+### What the ROI metrics do and do not show
+
+The two columns are **regional image change**, nothing more. Neither is evidence
+of ray bending, and the spec does not claim otherwise:
+
+- Fresnel varies on the chamfer as well as the face — `f0 = (ior-1)/(ior+1)`
+  at `:454` is a function of IOR everywhere `coverage > 0`.
+- The focus filament refracts through `1.0 + (mat_ior-1.0) * mat_light_ior`
+  (`lightShift`, `:342`), so it moves with IOR too.
+
+A non-zero `bevel` delta is therefore consistent with backdrop refraction being
+entirely broken. Bending is substantiated separately, by displacement rather
+than by difference: with `DISPLACEMENT=1` the script locates a fixed template
+patch cut from the backdrop inside the bevel band of each capture
+(`magick compare -subimage-search`) and reports the offset relative to the first
+value. A backdrop feature that moves as IOR rises is direct evidence the ray
+bent; an unchanged offset under a rising RMSE says the change was Fresnel or
+filament. It is opt-in because the search costs more than the RMSE pair and
+most parameters do not bend anything.
+
+Separating face from bevel answers `prism-8e8a18` directly: whether refraction's
+milkiness is a range problem or a rendering one is a question about which column
+moves, read together with whether the feature displaced at all.
 
 ### Metrics
 
@@ -178,6 +206,14 @@ A TSV to stdout and `$OUT/sweep.tsv`, one row per value:
 key  value  step  bevel_neighbor  bevel_per_step  bevel_cumulative  bevel_normalized  face_neighbor  face_per_step  face_cumulative  face_normalized
 ```
 
+With `DISPLACEMENT=1`, two further columns carry the template's offset inside
+the bevel band and its shift relative to the first value.
+
+The table is computed in a pass that reads the captures back from disk, separate
+from the pass that produces them. That separation is what makes the
+zero-normalization case checkable against prepared images, and it lets a table
+be recomputed with different metrics without re-running the harness.
+
 Plus the per-value PNGs, both ROI crops, and the configs. `$OUT/SHA256SUMS`, the
 niri version and the pinned baseline are recorded as the model script does.
 
@@ -216,15 +252,26 @@ first consumer are the same thing.
 Checks that the run must satisfy:
 
 - every value produces a capture, and the table has one row per value
-- `bevel_cumulative` is non-zero — IOR demonstrably bends the ray, measured
-  where bending can occur rather than where it cannot
-- the two ROI columns are reported independently, so a face-only Fresnel change
-  cannot be read as bending
+- both ROIs are the same screen coordinates in every row of the run
+- `bevel_cumulative` is non-zero — the region responds to IOR at all
+- with `DISPLACEMENT=1`, the backdrop template's offset inside the bevel band
+  grows with IOR. This, not the RMSE, is the check that backdrop refraction
+  works; a rising RMSE beside a pinned offset is a failure to investigate, not
+  a pass
 - `niri.log` is free of material errors, shader fallbacks and panics
 - a second run of the same sweep reproduces the table
 
-A second run sweeping glass `noise` confirms the face ROI and the flat-sweep
-path on a parameter whose effect is confined to the face.
+A second run sweeping glass `noise` exercises the noise path in both regions.
+It does **not** exercise the flat-sweep path: `:535-539` adds noise to
+`glassColor` before multiplying by `coverage`, so noise lands on the chamfer as
+well as the face and distinct values always differ somewhere.
+
+The zero-normalization path is checked directly instead. The table stage reads
+the captures back from disk in a pass separate from capturing them, so it can be
+pointed at a prepared directory; running it over two copies of a single capture
+must yield `neighbor`, `per_step` and `cumulative` of `0` and `normalized` of
+`0` for every row, with no division error. Keeping the two stages separable is
+a requirement of the design, not an implementation detail.
 
 ## Non-goals
 
