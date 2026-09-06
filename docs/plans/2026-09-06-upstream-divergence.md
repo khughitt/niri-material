@@ -270,6 +270,7 @@ conflict), 2 an error (bad baseline, git failure, missing markers).
 Design: docs/specs/2026-09-06-upstream-divergence-design.md.
 """
 import argparse
+import collections
 import datetime
 import pathlib
 import subprocess
@@ -322,13 +323,53 @@ def patch_id(root, commit):
     return result.stdout.split()[0]
 
 
+def _hash(value):
+    return len(value) == 40 and all(c in "0123456789abcdef" for c in value)
+
+
 def load_baseline(root):
-    """The baseline record, as staged."""
+    """The baseline record, as staged, with every field's SHAPE validated.
+
+    Valid TOML is not a valid record. `carried = 1` parses fine and then explodes on
+    `len()` with a traceback and the wrong exit code; a truncated hash pasted from
+    the design doc validates against nothing. Both are caught here, as ReportError,
+    so they reach the error boundary and exit 2."""
     record = tomllib.loads(read_index(root, BASELINE_PATH))
+    if not isinstance(record, dict):
+        raise ReportError(f"{BASELINE_PATH}: not a table")
+
     missing = [key for key in REQUIRED_KEYS if key not in record]
     if missing:
         raise ReportError(f"{BASELINE_PATH}: missing {', '.join(missing)}")
-    record.setdefault("carried", [])
+    for key in REQUIRED_KEYS:
+        if not isinstance(record[key], str) or not record[key]:
+            raise ReportError(
+                f"{BASELINE_PATH}: {key} must be a non-empty string, "
+                f"got {record[key]!r}"
+            )
+    for key in ("tag_commit", "tree", "patched_commit"):
+        if not _hash(record[key]):
+            raise ReportError(
+                f"{BASELINE_PATH}: {key} must be a full 40-character hex hash, "
+                f"got {record[key]!r}"
+            )
+
+    carried = record.setdefault("carried", [])
+    if not isinstance(carried, list):
+        raise ReportError(
+            f"{BASELINE_PATH}: carried must be an array of tables, got {carried!r}"
+        )
+    for index, entry in enumerate(carried):
+        if not isinstance(entry, dict):
+            raise ReportError(
+                f"{BASELINE_PATH}: carried[{index}] must be a table, got {entry!r}"
+            )
+        for key in ("subject", "patch_id"):
+            if not isinstance(entry.get(key), str) or not entry[key]:
+                raise ReportError(
+                    f"{BASELINE_PATH}: carried[{index}].{key} must be a "
+                    f"non-empty string"
+                )
     return record
 
 
@@ -482,7 +523,7 @@ The document does not exist yet, so there is nothing to regenerate. From Task 5 
 
 **Interfaces:**
 - Consumes: `ReportError`, `git`, `read_index`, `resolve_baseline`, `SELF_PATHS` from Task 1.
-- Produces: `classify(status, path) -> str`; `inventory(root, tree) -> list[tuple[str, str, int, int]]` returning `(status, path, added, removed)` sorted by path; `render_local(record, rows) -> str`; constants `SCAFFOLD_PREFIXES`, `SCAFFOLD_FILES`.
+- Produces: `classify(status, path) -> str`; `Row = namedtuple("Row", "status path previous added removed")`; `inventory(root, tree) -> list[Row]` sorted by path; `render_local(record, rows) -> str`; constants `SCAFFOLD_PREFIXES`, `SCAFFOLD_FILES`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -525,22 +566,24 @@ class Inventory(Fixture):
     def test_inventory_reports_status_path_and_line_counts(self):
         tree = self.stage_divergence()
         rows = report.inventory(self.root, tree)
-        by_path = {path: (status, added, removed) for status, path, added, removed in rows}
-        self.assertEqual(by_path["src/lib.rs"][0], "M")
-        self.assertEqual(by_path["src/material.rs"][0], "A")
-        self.assertEqual(by_path["tools/tt"][0], "A")
-        self.assertEqual(by_path["src/material.rs"][1:], (1, 0))
+        by_path = {row.path: row for row in rows}
+        self.assertEqual(by_path["src/lib.rs"].status, "M")
+        self.assertEqual(by_path["src/material.rs"].status, "A")
+        self.assertEqual(by_path["tools/tt"].status, "A")
+        self.assertEqual(by_path["src/material.rs"].added, 1)
+        self.assertEqual(by_path["src/material.rs"].removed, 0)
+        self.assertIsNone(by_path["src/material.rs"].previous)
 
     def test_inventory_excludes_the_tools_own_files(self):
         tree = self.stage_divergence()
-        paths = [path for _, path, _, _ in report.inventory(self.root, tree)]
+        paths = [row.path for row in report.inventory(self.root, tree)]
         for own in report.SELF_PATHS:
             self.assertNotIn(own, paths)
 
     def test_inventory_reads_the_index_not_the_working_tree(self):
         tree = self.stage_divergence()
         (self.root / "src" / "unstaged.rs").write_text("fn unstaged() {}\n")
-        paths = [path for _, path, _, _ in report.inventory(self.root, tree)]
+        paths = [row.path for row in report.inventory(self.root, tree)]
         self.assertNotIn("src/unstaged.rs", paths)
 
     def test_rename_joins_both_diff_formats_on_the_new_path(self):
@@ -551,12 +594,15 @@ class Inventory(Fixture):
         self.git("mv", "src/lib.rs", "src/renamed.rs")
         self.git("add", "-A")
         rows = report.inventory(self.root, tree)
-        paths = [path for _, path, _, _ in rows]
-        self.assertIn("src/renamed.rs", paths)
-        self.assertFalse([p for p in paths if "=>" in p or "{" in p], paths)
-        status = {path: st for st, path, _, _ in rows}["src/renamed.rs"]
-        self.assertTrue(status.startswith("R"), status)
-        self.assertEqual(report.classify(status, "src/renamed.rs"), "B")
+        by_path = {row.path: row for row in rows}
+        self.assertIn("src/renamed.rs", by_path)
+        self.assertFalse([p for p in by_path if "=>" in p or "{" in p], list(by_path))
+        row = by_path["src/renamed.rs"]
+        self.assertTrue(row.status.startswith("R"), row.status)
+        self.assertEqual(report.classify(row.status, row.path), "B")
+        # The baseline path survives, so drift can ask upstream about the old name.
+        self.assertEqual(row.previous, "src/lib.rs")
+        self.assertEqual(report.seam_paths(rows)["src/renamed.rs"], "src/lib.rs")
 
     def test_disagreeing_diff_formats_are_an_error(self):
         tag_commit, tree, patched = self.baseline_repo()
@@ -572,8 +618,30 @@ class Inventory(Fixture):
 
     def test_inventory_is_sorted_by_path(self):
         tree = self.stage_divergence()
-        paths = [path for _, path, _, _ in report.inventory(self.root, tree)]
+        paths = [row.path for row in report.inventory(self.root, tree)]
         self.assertEqual(paths, sorted(paths))
+
+    def test_churn_follows_the_baseline_path_across_a_fork_rename(self):
+        """The fork renamed src/lib.rs; upstream kept editing it under the old name.
+        Asking upstream about the fork's new name returns zero and hides the churn."""
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+
+        # Upstream continues from the release, editing the file under its old name.
+        self.git("checkout", "-q", "-b", "upstream-main", tag_commit)
+        self.write("src/lib.rs", "fn upstream() { moved_on(); }\n")
+        self.commit("upstream edits src/lib.rs")
+
+        self.git("checkout", "-q", patched)
+        self.git("mv", "src/lib.rs", "src/renamed.rs")
+        self.git("add", "-A")
+
+        watched = report.seam_paths(report.inventory(self.root, tree))
+        self.assertEqual(watched["src/renamed.rs"], "src/lib.rs")
+        churns = report.churn(self.root, tag_commit, "upstream-main", watched)
+        count, letter, baseline, upstream_path = churns["src/renamed.rs"]
+        self.assertEqual(baseline, "src/lib.rs")
+        self.assertEqual(count, 1, "upstream churn must follow the baseline path")
 
     def test_local_block_counts_classes(self):
         tree = self.stage_divergence()
@@ -597,6 +665,9 @@ Add to `tools/upstream-report`, after `read_index`:
 ```python
 SCAFFOLD_PREFIXES = ("tools/", ".githooks/", "packaging/", ".agents/")
 SCAFFOLD_FILES = ("justfile", "AGENTS.md")
+
+# `previous` is the baseline path for a rename, else None.
+Row = collections.namedtuple("Row", "status path previous added removed")
 
 
 def classify(status, path):
@@ -670,8 +741,13 @@ def _numstat(root, tree):
 
 
 def inventory(root, tree):
-    """(status, path, added, removed) for every path differing between the baseline
-    tree and the index, excluding the tool's own files, sorted by path.
+    """Rows for every path differing between the baseline tree and the index,
+    excluding the tool's own files, sorted by path.
+
+    `previous` is the path the baseline knew, or None. It is carried all the way to
+    the drift analysis on purpose: upstream never saw our rename, so a seam file the
+    fork renamed must be looked up upstream under its OLD name. Dropping it reported
+    "0 upstream commits" for a file upstream was actively editing.
 
     A key present in one diff format and not the other is an ERROR, never a default.
     An earlier draft used `statuses.get(path, "M")`, and that silent fallback hid a
@@ -685,18 +761,18 @@ def inventory(root, tree):
             f"{sorted(set(statuses) ^ set(numbers))[:5]}"
         )
     rows = [
-        (statuses[path][0], path, numbers[path][0], numbers[path][1])
+        Row(statuses[path][0], path, statuses[path][1], *numbers[path])
         for path in statuses
         if path not in SELF_PATHS
     ]
-    return sorted(rows, key=lambda row: row[1])
+    return sorted(rows, key=lambda row: row.path)
 
 
 def render_local(record, rows):
     """The generated local block: derived from the index alone, no network."""
     counts = {"A": 0, "B": 0, "C": 0}
-    for status, path, _, _ in rows:
-        counts[classify(status, path)] += 1
+    for row in rows:
+        counts[classify(row.status, row.path)] += 1
 
     lines = [
         f"Baseline `{record['tag']}` (`{record['tag_commit'][:12]}`), "
@@ -708,11 +784,15 @@ def render_local(record, rows):
         "| Path | Class | Status | +/- |",
         "| --- | --- | --- | --- |",
     ]
-    for status, path, added, removed in rows:
-        kind = classify(status, path)
+    for row in rows:
+        kind = classify(row.status, row.path)
         if kind == "A":
             continue
-        lines.append(f"| `{path}` | {kind} | {status} | +{added}/-{removed} |")
+        renamed = f" (was `{row.previous}`)" if row.previous else ""
+        lines.append(
+            f"| `{row.path}`{renamed} | {kind} | {row.status} "
+            f"| +{row.added}/-{row.removed} |"
+        )
     lines.append("")
     lines.append(
         "Class A paths are counted, not listed: fork-only additions with no "
@@ -740,7 +820,7 @@ root = pathlib.Path(".")
 rec = r.resolve_baseline(root, r.load_baseline(root))
 rows = r.inventory(root, rec["tree"])
 from collections import Counter
-print(Counter(r.classify(st, p) for st, p, _, _ in rows))
+print(Counter(r.classify(row.status, row.path) for row in rows))
 PY
 ```
 
@@ -975,7 +1055,7 @@ git commit -m "feat(tools): generate and verify the local block from the index"
 
 **Interfaces:**
 - Consumes: everything from Tasks 1-3.
-- Produces: `merge_tree(root, base, upstream, fork) -> tuple[int, list[str], list[tuple[str, list[str], str]]]`; `load_acknowledged(root) -> set[str]`; `verdict(status, paths, messages, acknowledged) -> list[str]`; `churn(root, tag_commit, upstream, paths) -> dict[str, tuple[int, str]]`; `render_drift(...) -> str`.
+- Produces: `merge_tree(root, base, upstream, fork) -> tuple[int, list[str], list[tuple[str, list[str], str]]]`; `load_acknowledged(root) -> set[str]`; `verdict(status, paths, messages, acknowledged) -> list[str]`; `seam_paths(rows) -> dict[str, str]`; `_upstream_status(root, tag_commit, upstream) -> dict[str, tuple[str, str]]`; `churn(root, tag_commit, upstream, watched) -> dict[str, tuple[int, str, str, str]]`; `render_drift(...) -> str`.
 
 **Note on the informational-record format.** With `-z`, `merge-tree` emits: the tree OID, then conflicted-file-info entries `"<mode> <oid> <stage>\t<path>"`, then an empty field, then informational records of the form `"<n>"`, `n` paths, `"<kind>"`, `"<message>"`. The `kind` field is enumerated (`Auto-merging`, `CONFLICT (contents)`, …) and machine-readable; the free-text `message` is not, and is reported verbatim without being parsed. Verified on git 2.55.0 against this repository: 20 `Auto-merging` and 6 `CONFLICT (contents)` records.
 
@@ -1119,6 +1199,27 @@ Also add, to the same class, a fixture that actually exercises the empty-list ca
         )
         self.assertNotEqual(problems, [])
 
+    def test_a_directory_cannot_be_acknowledged_away(self):
+        """The notice names the DIRECTORY `old`, which has no conflicted-file entry.
+        Acknowledging it must not silence the conflict — otherwise one line in
+        upstream-conflicts.toml hides every future conflict under that directory."""
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        involved = {path for _, paths_, _ in messages for path in paths_}
+        self.assertIn("old", involved)
+        self.assertEqual(paths, [])
+        self.assertNotEqual(report.verdict(status, paths, messages, {"old"}), [])
+
+    def test_a_directory_cannot_be_acknowledged_beside_a_real_one(self):
+        base, ours, theirs = self.directory_rename_split()
+        status, paths, messages = report.merge_tree(self.root, base, ours, theirs)
+        messages = messages + [("CONFLICT (contents)", ["src/a.rs"], "…")]
+        problems = report.verdict(
+            status, paths + ["src/a.rs"], messages, {"old", "src/a.rs"}
+        )
+        self.assertNotEqual(problems, [])
+        self.assertTrue(any("not acknowledgeable" in p for p in problems), problems)
+
 
 class Cli(Fixture):
     """Subprocess-level tests. The helper tests never exercise the exit-code
@@ -1163,6 +1264,40 @@ class Cli(Fixture):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
         self.assertIn("upstream-report:", result.stderr)
+
+    def test_wrong_typed_config_exits_two_without_a_traceback(self):
+        """Valid TOML with the wrong shape. `carried = 1` parses, then explodes on
+        len() with a traceback and exit 1 unless the shape is validated."""
+        self.stage_working_document()
+        base = read = (self.root / report.BASELINE_PATH).read_text()
+        for broken in ("carried = 1", 'carried = "two"', "carried = [1, 2]"):
+            with self.subTest(broken=broken):
+                body = "\n".join(
+                    line for line in base.splitlines()
+                    if not line.startswith("[[carried]]")
+                    and not line.startswith("subject")
+                    and not line.startswith("patch_id")
+                )
+                self.write(report.BASELINE_PATH, body + "\n" + broken + "\n")
+                self.git("add", report.BASELINE_PATH)
+                result = self.cli("--check")
+                self.assertEqual(result.returncode, 2, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
+
+    def test_truncated_hash_exits_two(self):
+        """A short hash copied out of the design doc must not validate."""
+        self.stage_working_document()
+        text = (self.root / report.BASELINE_PATH).read_text()
+        lines = []
+        for line in text.splitlines():
+            if line.startswith("tree = "):
+                line = 'tree = "7b010d1b"'
+            lines.append(line)
+        self.write(report.BASELINE_PATH, "\n".join(lines) + "\n")
+        self.git("add", report.BASELINE_PATH)
+        result = self.cli("--check")
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("40-character", result.stderr)
 
     def test_missing_markers_exit_two(self):
         self.stage_working_document()
@@ -1243,60 +1378,106 @@ def merge_tree(root, base, upstream, fork):
 def load_acknowledged(root):
     """Paths whose conflicts we accept and resolve by hand each cycle."""
     record = tomllib.loads(read_index(root, CONFLICTS_PATH))
-    return {entry["path"] for entry in record.get("acknowledged", [])}
+    entries = record.get("acknowledged", [])
+    if not isinstance(entries, list):
+        raise ReportError(
+            f"{CONFLICTS_PATH}: acknowledged must be an array of tables, "
+            f"got {entries!r}"
+        )
+    paths = set()
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            raise ReportError(
+                f"{CONFLICTS_PATH}: acknowledged[{index}] needs a string path"
+            )
+        paths.add(entry["path"])
+    return paths
 
 
 def verdict(status, paths, messages, acknowledged):
-    """Findings. Acknowledgment is path-granular; the enumerated `kind` field is used
-    only to widen the failure set, never to narrow it, and conflict types are never
-    inferred."""
+    """Findings. The enumerated `kind` field is used only to WIDEN the failure set,
+    never to narrow it, and conflict types are never inferred.
+
+    Acknowledgment applies only to paths git listed in the conflicted-file info
+    section. A conflict notice naming something with no stage entry behind it — the
+    directory `old` in a rename split, for instance — is structural and is NEVER
+    acknowledgeable: an earlier draft merged those names into the acknowledgeable
+    set, so a single `path = "old"` entry silenced the whole directory-rename case
+    and returned a clean verdict."""
     if status == 0:
         return []
 
-    notices = [m for m in messages if m[0].startswith("CONFLICT")]
-    named = set(paths)
-    for _, involved, _ in notices:
-        named.update(involved)
-
+    backed = set(paths)
     problems = [
-        f"unacknowledged conflict: {path}" for path in sorted(named - acknowledged)
+        f"unacknowledged conflict: {path}" for path in sorted(backed - acknowledged)
     ]
-    if not named:
+
+    notices = [message for message in messages if message[0].startswith("CONFLICT")]
+    for kind, involved, text in notices:
+        unbacked = [path for path in involved if path not in backed]
+        if not involved or unbacked:
+            problems.append(
+                f"unattributed conflict, not acknowledgeable ({kind}): {text}"
+            )
+    if not notices and not backed:
         problems.append(
             "unattributed conflict: merge-tree exited 1 with no conflicted-file "
-            "entries and no conflict notices naming a path"
+            "entries and no conflict notices"
         )
-    for kind, involved, text in notices:
-        if not involved:
-            problems.append(f"unattributed conflict: {kind}: {text}")
     return problems
 
 
 def seam_paths(rows):
-    """Class-B paths from an inventory: where upstream movement can reach us."""
-    return [path for status, path, _, _ in rows if classify(status, path) == "B"]
+    """{fork path: baseline path} for class-B paths: where upstream movement can
+    reach us, and the name upstream still knows each one by."""
+    return {
+        row.path: (row.previous or row.path)
+        for row in rows
+        if classify(row.status, row.path) == "B"
+    }
 
 
-def churn(root, tag_commit, upstream, paths):
-    """path -> (upstream commits touching it since the baseline, upstream status).
+def _upstream_status(root, tag_commit, upstream):
+    """baseline path -> (status letter, upstream's current path).
 
-    Status is '' when the path still exists upstream unchanged in kind, or git's
-    R/D letter when upstream renamed or deleted it — the highest-risk signal, and
-    the one a path-keyed conflict list misses entirely."""
+    Renames are keyed by the OLD path, because that is the name the baseline — and
+    therefore our inventory — knows the file by."""
+    fields = _split_z(
+        git(root, "diff", "--name-status", "-M", "-z", f"{tag_commit}..{upstream}")
+    )
     result = {}
-    statuses = {}
-    for line in git(root, "diff", "--name-status", "-M",
-                    f"{tag_commit}..{upstream}").splitlines():
-        if not line:
-            continue
-        fields = line.split("\t")
-        statuses[fields[1]] = fields[0]
-    for path in paths:
+    index = 0
+    while index < len(fields):
+        status = fields[index]
+        if status[:1] in ("R", "C"):
+            result[fields[index + 1]] = (status, fields[index + 2])
+            index += 3
+        else:
+            result[fields[index + 1]] = (status, fields[index + 1])
+            index += 2
+    return result
+
+
+def churn(root, tag_commit, upstream, watched):
+    """{fork path: baseline path} -> fork path -> (commits, upstream status, baseline
+    path, upstream path).
+
+    Upstream history is walked under the BASELINE path, never the fork's current
+    one: upstream never saw our rename, so asking it about `src/new.rs` returns zero
+    commits while it is busily editing `src/old.rs`."""
+    statuses = _upstream_status(root, tag_commit, upstream)
+    result = {}
+    for path, baseline in watched.items():
         count = len(git(
-            root, "log", "--oneline", f"{tag_commit}..{upstream}", "--", path
+            root, "log", "--oneline", f"{tag_commit}..{upstream}", "--", baseline
         ).splitlines())
-        letter = statuses.get(path, "")
-        result[path] = (count, letter if letter[:1] in ("R", "D") else "")
+        letter, upstream_path = statuses.get(baseline, ("", baseline))
+        result[path] = (
+            count,
+            letter if letter[:1] in ("R", "D") else "",
+            baseline,
+            upstream_path,
+        )
     return result
 
 
@@ -1323,14 +1504,22 @@ def render_drift(record, upstream_ref, upstream_sha, fork_sha, when,
     # conflicting ones. Upstream churn in a seam file that still merges cleanly —
     # including a clean upstream rename or delete — is exactly the early warning
     # this block exists to give, and it is invisible in a conflict-only table.
-    lines.append("| Seam path | Upstream commits since baseline | Upstream status | Conflict | Acknowledged |")
-    lines.append("| --- | --- | --- | --- | --- |")
+    lines.append(
+        "| Seam path | Upstream name | Upstream commits since baseline "
+        "| Upstream status | Conflict | Acknowledged |"
+    )
+    lines.append("| --- | --- | --- | --- | --- | --- |")
     conflicting = set(paths)
     for path in sorted(churns):
-        count, letter = churns[path]
+        count, letter, baseline, upstream_path = churns[path]
+        # Show the fork's current path, but say which name upstream knows it by
+        # whenever either side has renamed it.
+        name = "same" if upstream_path == path else f"`{upstream_path}`"
         conflict = "yes" if path in conflicting else "-"
         mark = "yes" if path in acknowledged else ("**NO**" if path in conflicting else "-")
-        lines.append(f"| `{path}` | {count} | {letter or '-'} | {conflict} | {mark} |")
+        lines.append(
+            f"| `{path}` | {name} | {count} | {letter or '-'} | {conflict} | {mark} |"
+        )
 
     unlisted = sorted(conflicting - set(churns))
     if unlisted:
@@ -1340,15 +1529,16 @@ def render_drift(record, upstream_ref, upstream_sha, fork_sha, when,
             "changed the same path independently, or a directory moved): "
             + ", ".join(f"`{path}`" for path in unlisted)
         )
-    if messages:
+    notices = [m for m in messages if m[0].startswith("CONFLICT")]
+    if notices:
         lines.append("")
-        lines.append("Informational messages, verbatim and unparsed:")
+        lines.append("Conflict notices, verbatim and unparsed:")
         lines.append("")
-        lines.append("```")
-        for kind, involved, text in messages:
-            if kind.startswith("CONFLICT"):
-                lines.append(text)
-        lines.append("```")
+        # An INDENTED code block, not a fenced one. The report is markdown that
+        # gets embedded in other markdown — issue bodies, job summaries — and a
+        # nested fence breaks whichever fence encloses it.
+        for kind, involved, text in notices:
+            lines.append(f"    {text}")
     return "\n".join(lines)
 ```
 
@@ -1373,9 +1563,10 @@ and, in `run`'s regeneration path, after writing the local block:
         acknowledged = load_acknowledged(root)
         # Churn over every seam path plus anything that conflicted, so a cleanly
         # merging seam file that upstream is actively rewriting still shows up.
-        watched = sorted(
-            set(seam_paths(inventory(root, record["tree"]))) | set(paths)
-        )
+        watched = seam_paths(inventory(root, record["tree"]))
+        # A conflicting path outside the seam set is watched under its own name.
+        for path in paths:
+            watched.setdefault(path, path)
         body = render_drift(
             record, args.against, upstream_sha, fork_sha,
             datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d"),
@@ -1735,20 +1926,28 @@ jobs:
           set -e
           cat drift.err
 
-      # An error (2) is NOT a conflict finding (1). Fail loudly and open no issue:
-      # a broken fetch or a bad baseline must never be reported as drift.
+      # ANY status other than 0 or 1 is an error, not a conflict finding: 2 from the
+      # tool's own boundary, but also 137 from an OOM kill, 124 from a timeout, or a
+      # shell failure. Fail loudly and open no issue. Testing `== '2'` would let every
+      # other failure fall through to publication as though the analysis had run.
       - name: Fail on analysis error
-        if: github.event_name != 'pull_request' && steps.drift.outputs.status == '2'
+        if: >-
+          github.event_name != 'pull_request'
+          && steps.drift.outputs.status != '0'
+          && steps.drift.outputs.status != '1'
         run: |
-          echo "::error::upstream-report failed to run; this is not a drift finding"
-          cat drift.err
+          echo "::error::upstream-report exited ${{ steps.drift.outputs.status }};\
+            this is an analysis failure, not a drift finding"
+          cat drift.err || true
           exit 1
 
       # Publish on EVERY completed analysis, findings or not. The committed document
       # is a snapshot from the last local run; this workflow does not commit, so
       # without this the refreshed table exists only inside the dead runner.
       - name: Publish the report
-        if: github.event_name != 'pull_request' && steps.drift.outputs.status != '2'
+        if: >-
+          github.event_name != 'pull_request'
+          && contains(fromJSON('["0", "1"]'), steps.drift.outputs.status)
         run: |
           {
             echo "## Upstream drift"
@@ -1758,7 +1957,9 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
-        if: github.event_name != 'pull_request' && steps.drift.outputs.status != '2'
+        if: >-
+          github.event_name != 'pull_request'
+          && contains(fromJSON('["0", "1"]'), steps.drift.outputs.status)
         with:
           name: upstream-divergence
           path: docs/materials/upstream-divergence.md
@@ -1797,47 +1998,65 @@ Baseline resolution in this job works because `upstream-baseline.toml` pins SHAs
 
 - [ ] **Step 2: Validate the workflow parses**
 
-Checking raw substrings would fail on this workflow's own comment, which mentions
-`just check` in order to record that it is deliberately not run — so strip comments
-first and assert over the executable lines only.
+Validate the workflow with a real parser, not substring matching. Substring checks
+cannot work here: the file legitimately contains the string `just check` in a comment
+explaining why it is not run, and `just upstream-report` in the issue body it writes.
+
+`actionlint` is the right tool — it parses the YAML *and* checks Actions semantics
+(expression syntax, `needs`, context names, shell issues):
+
+```bash
+actionlint .github/workflows/upstream-drift.yml
+```
+
+Expected: no output, exit 0.
+
+If `actionlint` is not on PATH, fall back to a YAML parse plus structural assertions:
 
 ```bash
 python3 - <<'GUARD'
-import pathlib
-lines = pathlib.Path(".github/workflows/upstream-drift.yml").read_text().splitlines()
-code = "\n".join(l for l in lines if not l.lstrip().startswith("#"))
+import pathlib, sys
+try:
+    import yaml
+except ImportError:
+    sys.exit("install actionlint or PyYAML to validate the workflow")
 
-for needed in ("schedule:", "cron:", "issues: write", "fetch-depth: 0",
-               "upstream-report --check", "upstream-report --drift",
-               "upload-artifact", "GITHUB_STEP_SUMMARY"):
-    assert needed in code, needed
+doc = yaml.safe_load(pathlib.Path(".github/workflows/upstream-drift.yml").read_text())
 
-# The toolchain claim: no Rust, no apt, no tasks CLI, no just.
-for forbidden in ("just ", "cargo ", "apt-get", "tasks "):
-    assert forbidden not in code, forbidden
+# `on` is parsed by YAML 1.1 as the boolean True, not the string "on".
+triggers = doc.get(True, doc.get("on"))
+assert "schedule" in triggers, "no schedule trigger"
+assert doc["permissions"]["issues"] == "write", "issues: write missing"
 
-# A tab makes the file invalid YAML.
-assert not any("\t" in l for l in lines), "tab in workflow"
+steps = doc["jobs"]["drift"]["steps"]
+runs = "\n".join(step.get("run", "") for step in steps)
+uses = [step.get("uses", "") for step in steps]
 
-# The error/finding split must be explicit in the guards.
-assert "steps.drift.outputs.status == '2'" in code, "no error guard"
-assert "steps.drift.outputs.status == '1'" in code, "no finding guard"
+assert any("upload-artifact" in u for u in uses), "report is never published"
+assert "GITHUB_STEP_SUMMARY" in runs, "no job summary"
+assert "upstream-report --check" in runs
+assert "upstream-report --drift" in runs
+
+# The toolchain claim, checked against the COMMANDS rather than the whole file.
+for step in steps:
+    command = step.get("run", "")
+    for line in command.splitlines():
+        line = line.strip()
+        if line.startswith("#") or not line:
+            continue
+        assert not line.startswith("just "), line
+        assert not line.startswith("cargo "), line
+        assert not line.startswith("tasks "), line
+        assert "apt-get" not in line, line
 print("workflow invariants ok")
 GUARD
 ```
 
 Expected: `workflow invariants ok`.
 
-These are invariants, not YAML validation — the stdlib has no YAML parser. GitHub
-**silently ignores** a malformed workflow rather than reporting it, so confirm the
-file actually parses by pushing the branch and checking that the workflow appears:
-
-```bash
-git push -u origin docs/upstream-divergence
-gh workflow list | grep "upstream drift"
-```
-
-Expected: the workflow is listed. If it is absent, the YAML is malformed.
+Note the `on:` key: PyYAML follows YAML 1.1 and parses a bare `on` as the boolean
+`True`, so `doc["on"]` raises `KeyError` on a perfectly valid workflow. The check
+above reads `doc.get(True, ...)` first for that reason.
 
 - [ ] **Step 3: Add the index entry and the agent pointer**
 
@@ -1863,11 +2082,18 @@ A merge is the moment a status goes stale. Update the header of
 `docs/specs/2026-09-06-upstream-divergence-design.md`:
 
 ```markdown
-**Status:** implemented 2026-09-06 (`<the Task 7 commit>`); plan
+**Status:** implemented 2026-09-06; plan
 `../plans/2026-09-06-upstream-divergence.md`. The document it specifies is
-`../materials/upstream-divergence.md`; the baseline it pins is
-`../materials/upstream-baseline.toml`.
+`../materials/upstream-divergence.md`, the baseline it pins is
+`../materials/upstream-baseline.toml`, and the canary is
+`.github/workflows/upstream-drift.yml`.
 ```
+
+**No commit SHA here.** The header lives in the same commit that completes the work,
+and writing that commit's own hash into it is impossible — inserting the hash changes
+the hash. The date and the artifact links carry the same information and are stable.
+Other design docs in `docs/specs/` cite a SHA because their status was corrected in a
+*later* commit than the one it names; this one is not.
 
 Then correct the same claim where it propagated, in `docs/materials/README.md`:
 change `awaiting review` to `implemented`. Grep before committing:
@@ -1898,7 +2124,34 @@ git add docs/materials/upstream-divergence.md
 git commit -m "ci: add the weekly upstream drift canary"
 ```
 
-Three staged paths here are in the inventory — the workflow and `AGENTS.md` are class B (both already exist upstream or in the fork's seam set), and `tasks/` is class A — so the regeneration is required, not optional.
+- [ ] **Step 7: Confirm GitHub accepts the workflow**
+
+`actionlint` proves the file is well-formed, but only GitHub decides whether it
+registers the workflow, and a workflow it rejects is **silently ignored** rather than
+reported. This must happen after the commit — before it, there is nothing on the
+remote to register.
+
+```bash
+git push -u origin docs/upstream-divergence
+gh workflow run upstream-drift.yml --ref docs/upstream-divergence
+gh run list --workflow upstream-drift.yml --branch docs/upstream-divergence --limit 1
+```
+
+Expected: `workflow_dispatch` is accepted and a run appears for the branch. If
+`gh workflow run` reports the workflow does not exist, GitHub rejected the file —
+`gh workflow list` alone would not have told you, since it neither validates YAML nor
+scopes to a branch.
+
+Then read the run's summary and artifact to confirm the report actually published:
+
+```bash
+gh run view --log | sed -n '/Upstream drift/,+20p'
+```
+
+Note the schedule itself will not fire from this branch. Scheduled workflows run only
+from the file on the **default** branch, so weekly runs begin when this merges.
+
+Three staged paths in the previous step are in the inventory — the workflow and `AGENTS.md` are class B (both already exist upstream or in the fork's seam set), and `tasks/` is class A — so the regeneration is required, not optional.
 
 ---
 
