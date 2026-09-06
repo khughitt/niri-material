@@ -104,6 +104,12 @@ The backdrop is a generated high-frequency pattern (a grid over color patches),
 not the model script's three flat color bars: a flat field shows a bent ray
 landing on the same color it started from.
 
+The grid is periodic, which is what makes it a good RMSE target and a bad
+template-matching target. So the backdrop also carries one asymmetric,
+non-repeating marker placed where the bevel band will cross it, reserved for the
+displacement measurement. The two serve different metrics and must not be the
+same feature.
+
 Glass values are pinned in the script and recorded in the evidence document.
 They are not derived from a generated `prism.kdl`: that file drifts (`ior` moved
 1.02 to 1.24 within a week), which would make two runs of the same sweep
@@ -153,13 +159,41 @@ of ray bending, and the spec does not claim otherwise:
 
 A non-zero `bevel` delta is therefore consistent with backdrop refraction being
 entirely broken. Bending is substantiated separately, by displacement rather
-than by difference: with `DISPLACEMENT=1` the script locates a fixed template
-patch cut from the backdrop inside the bevel band of each capture
-(`magick compare -subimage-search`) and reports the offset relative to the first
+than by difference: with `DISPLACEMENT=1` the script locates a fixed template in
+the bevel band of each capture and reports its offset relative to the first
 value. A backdrop feature that moves as IOR rises is direct evidence the ray
 bent; an unchanged offset under a rising RMSE says the change was Fresnel or
-filament. It is opt-in because the search costs more than the RMSE pair and
-most parameters do not bend anything.
+filament. It is opt-in because the search costs more than the RMSE pair and most
+parameters do not bend anything.
+
+**The matcher is itself an assumption, and must be validated before its offset
+counts as evidence.** `magick compare -subimage-search` reports a best position
+under an image metric, not a tracked feature. On review, two similarly patterned
+patches differing only in brightness moved the reported RMSE match from `(2,2)`
+to `(12,2)`, both at a perfect score, with no translation present. A periodic
+backdrop makes this worse, not better — and the grid proposed above is periodic,
+so it cannot carry the marker.
+
+Three requirements follow:
+
+- **A unique marker.** The backdrop carries one asymmetric, non-repeating
+  high-contrast marker positioned to sit inside the bevel band, distinct from
+  the periodic grid that fills the rest of the field. A pattern that repeats
+  every N px admits a match every N px.
+- **A constrained search region.** The search runs over a small window around
+  the marker's known position, sized to the largest displacement worth
+  reporting, rather than over the whole band. A matcher that cannot range far
+  cannot slide far.
+- **A validated matcher.** Before any sweep result is read as bending, the
+  matcher is checked on two synthetic cases built from one capture: a known
+  translation of `k` px, which must report `k`; and a brightness-only change at
+  zero translation, which must report `0`. Both run without a compositor.
+
+If the chosen matcher fails either case, the displacement column is not
+evidence and the spec's bending check does not hold — the fix is a different
+matcher or metric, not a looser reading of the number. Matching correctness is
+an empirical assumption on the same footing as matching speed, and is settled
+the same way: by running it.
 
 Separating face from bevel answers `prism-8e8a18` directly: whether refraction's
 milkiness is a range problem or a rendering one is a question about which column
@@ -254,7 +288,10 @@ Checks that the run must satisfy:
 - every value produces a capture, and the table has one row per value
 - both ROIs are the same screen coordinates in every row of the run
 - `bevel_cumulative` is non-zero — the region responds to IOR at all
-- with `DISPLACEMENT=1`, the backdrop template's offset inside the bevel band
+- the matcher passes both synthetic cases — known translation `k` reports `k`,
+  brightness-only change reports `0` — *before* any displacement number is read
+  as bending. This runs first; it needs no compositor
+- with `DISPLACEMENT=1`, the backdrop marker's offset inside the bevel band
   grows with IOR. This, not the RMSE, is the check that backdrop refraction
   works; a rising RMSE beside a pinned offset is a failure to investigate, not
   a pass
@@ -268,10 +305,13 @@ well as the face and distinct values always differ somewhere.
 
 The zero-normalization path is checked directly instead. The table stage reads
 the captures back from disk in a pass separate from capturing them, so it can be
-pointed at a prepared directory; running it over two copies of a single capture
-must yield `neighbor`, `per_step` and `cumulative` of `0` and `normalized` of
-`0` for every row, with no division error. Keeping the two stages separable is
-a requirement of the design, not an implementation detail.
+pointed at a prepared directory. Run over two copies of a single capture, it
+must produce the first row's sentinels unchanged — `-` for `step`, `neighbor`,
+`per_step` and `normalized`, `0` for `cumulative` — and `0` for every one of
+those columns on the second and subsequent rows, with no division error. The
+sentinel contract and the zero contract apply to different rows and neither
+overrides the other. Keeping the two stages separable is a requirement of the
+design, not an implementation detail.
 
 ## Non-goals
 
