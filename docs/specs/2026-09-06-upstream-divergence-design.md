@@ -1,6 +1,6 @@
 # Upstream divergence document and sync strategy: design
 
-**Status:** approved 2026-09-06; not implemented. Plan to follow.
+**Status:** awaiting review 2026-09-06; not implemented.
 
 **Task:** `material-a9447f`.
 
@@ -41,7 +41,9 @@ The trees, however, are exact:
     patched-26.04~2^{tree} == v26.04^{tree} == 7b010d1b3ab29a1bee76b1554c6bc8eb09300ec6
 
 So the baseline is verifiable by tree hash even though ancestry is not. Every
-comparison in this design pins the baseline explicitly and compares trees.
+comparison in this design pins the baseline explicitly and compares trees. A
+tree hash cannot support `git log`, though, so the record also pins the release
+commit, and history counting walks from there.
 
 ### Branch shape
 
@@ -57,7 +59,9 @@ comparison in this design pins the baseline explicitly and compares trees.
 38 modified, 0 deleted.** `Cargo.toml` and `Cargo.lock` are untouched — the
 material system adds no dependency.
 
-The 38 modified upstream files are the entire rebase cost:
+The 38 modified upstream files are where textual rebase conflicts can
+arise. They are not the whole cost: an upstream change can break the fork
+semantically without touching any of them.
 
 - `src/` — 26 files
 - `niri-visual-tests/` — 4
@@ -99,9 +103,20 @@ release procedure rewrites both by hand.
 ### CI
 
 `.github/workflows/ci.yml` is already modified by the fork, so it is a seam
-file, not untouched upstream. It runs `just ci-test` and `cargo check` feature
-matrices. **It does not run `just check`** — format, clippy, tooling tests and
-`tasks check` are enforced only by the local pre-commit hook.
+file, not untouched upstream.
+
+It does not invoke `just check`, but most of what `check` runs is covered by
+CI's own jobs. `check_cmd` in the `justfile` is:
+
+    cargo fmt --all -- --check && cargo clippy --all --all-targets
+      && python3 -m unittest discover -s tools && tasks check
+
+and `ci.yml` runs the first two in its `rustfmt` (line 233) and `clippy`
+(line 218) jobs. The genuine CI gap is therefore narrow and specific: **the
+tooling tests and `tasks check`** — plus the freshness check this design adds.
+
+That narrowness is load-bearing. Closing the gap needs python3 and git only:
+no Rust toolchain, no apt dependencies, no `cargo` build.
 
 ## Decisions
 
@@ -109,12 +124,14 @@ matrices. **It does not run `just check`** — format, clippy, tooling tests and
    hand-written prose and machine-generated blocks. Prose explains *why* a
    divergence exists and whether it is a seam candidate; generated blocks carry
    every fact, so the factual half cannot drift.
-2. The baseline is identified by **tree hash**, asserted on every run. Merge-base
-   is never consulted.
+2. The baseline is identified by a **pinned record** — release tag, release
+   commit, release tree, patched-branch commit, and the patch-ids of the
+   carried commits — validated on every run and resolved by SHA, never by
+   branch name. Merge-base is never consulted.
 3. Drift is detected by `git merge-tree --merge-base=<baseline>`, whose
    guarantee is stated narrowly (below).
-4. Conflict **acknowledgments are hand-maintained in a separate file**.
-   Regenerating the report can never approve a new conflict.
+4. Conflict **acknowledgments are hand-maintained in a separate file**, keyed
+   by path alone. Regenerating the report can never approve a new conflict.
 5. Generated content splits into a **local block** (needs only local refs,
    enforced fresh on every commit) and a **drift block** (needs a fetch,
    refreshed weekly and at rebase time, carrying a staleness stamp).
@@ -128,19 +145,45 @@ matrices. **It does not run `just check`** — format, clippy, tooling tests and
 anything else:
 
 1. Read the baseline record from `docs/materials/upstream-baseline.toml`:
-   `tag`, `tag_commit`, `tree`, and `carried` (the list of commits applied on
-   top, currently the two #4147 commits).
-2. Assert `git rev-parse <tag>^{tree}` equals the recorded `tree`.
-3. Assert `patched-<tag>~<n>^{tree}` equals the recorded `tree`, where `n` is
-   the length of `carried`. This is what makes `carried` load-bearing rather
-   than documentation: it is the depth at which the baseline tree must appear.
+
+       tag            = "v26.04"
+       tag_commit     = "aece2b0c..."   # upstream release commit
+       tree           = "7b010d1b..."   # tree OF THE RELEASE, not of patched-*
+       patched_commit = "..."           # pinned SHA of the patched branch tip
+       [[carried]]
+       subject  = "..."
+       patch_id = "..."
+
+2. Assert `git rev-parse <tag_commit>^{tree}` equals the recorded `tree`, and
+   that `<tag>` resolves to `tag_commit`.
+3. Assert `<patched_commit>~<n>` equals `tag_commit`, where `n` is the length
+   of `carried`.
+4. Assert each carried commit's `git patch-id` matches the recorded one, in
+   order, at depths `n-1 .. 0` below `patched_commit`.
+
+Three properties this shape buys, each in response to a way the simpler version
+was wrong:
+
+- **The recorded tree is the upstream release tree, never the patched tree.**
+  Those differ whenever any patch is carried, and the validation compares
+  against the release. Recording the patched tree would make step 2 fail on
+  every cycle where `carried` is non-empty.
+- **`tag_commit` is recorded and validated, because a tree cannot identify
+  history.** All history counting — upstream commits since the baseline, per
+  file churn — walks from `tag_commit`. A tree hash alone supports no `git log`.
+- **`carried` is validated by ordered patch identity, not merely by depth.**
+  Counting to depth `n` proves only that something sits there. Patch-ids prove
+  it is the patch we think it is, and survive the rewriting a rebase does to
+  commit SHAs.
+
+Every ref is resolved through the **pinned SHAs**, never through branch names.
+A fresh CI checkout has no local `patched-26.04` branch, so name-based
+resolution would fail there; pinning also survives the branch rename each
+rebase performs.
 
 Any mismatch is a **hard error with a message naming both hashes**. There is no
 fallback to merge-base — a silent fallback here reintroduces exactly the
 5743-file lie this design exists to prevent.
-
-Storing the baseline as data rather than deriving it from the branch name also
-survives the branch rename that every rebase performs.
 
 ## What the canary does and does not prove
 
@@ -153,7 +196,9 @@ It does **not** prove:
 
 - **That a rebase will be clean.** A rebase replays 280 commits individually
   and can conflict at intermediate states that the final-tree merge never
-  visits. The canary is a lower bound on rebase pain, never an upper bound.
+  visits. The two results are not ordered: a rebase can hit conflicts the
+  canary missed, and can also resolve differently. The canary is a change
+  detector, not a measure of rebase cost.
 - **That the result compiles or behaves correctly.** Textual mergeability says
   nothing about semantics. An upstream signature change that our code calls
   correctly-but-differently merges cleanly and fails to build; a reordered
@@ -172,8 +217,11 @@ stderr empty. The implementation must therefore:
 - Branch on **exit status**: `0` clean, `1` conflicts, **anything greater is an
   error** — a bad ref, a missing object, an unfetched upstream — and must fail
   the run loudly rather than be reported as "no conflicts."
-- Never infer cleanliness from an empty conflicted-file list. Git can exit
-  non-zero with no parsed paths; that combination is an error, not a pass.
+- Never infer cleanliness from an empty conflicted-file list. Exit `1` with no
+  parsed paths is a **legitimate conflict** that has no single owning path — a
+  directory/file conflict, for instance — not a tool error and not a pass. It
+  is reported as an unattributed conflict, and because it has no path it can
+  never be acknowledged; it always fails the run until a human resolves it.
 
 ## Document structure
 
@@ -196,8 +244,9 @@ stderr empty. The implementation must therefore:
 - **A — additive fork-only files.** Lower textual conflict risk, not zero cost:
   upstream can still rename a module we add files beside, or restructure a
   directory we occupy. They carry no merge cost today.
-- **B — seam edits to upstream files.** The 38. The entire rebase cost lives
-  here, and this is the only class where "upstream candidate" is meaningful.
+- **B — seam edits to upstream files.** The 38. This is the only class where
+  "upstream candidate" is meaningful, and the only class that produces textual
+  conflicts.
 - **C — vendored tooling and project scaffolding.** `tools/tt`, `.githooks/`,
   `justfile`, `packaging/`. Fork-only by construction, but tracked because
   `tools/tt` has an external source of truth in ops.
@@ -238,22 +287,29 @@ staleness is visible rather than silent.
 tool. One entry per accepted conflict:
 
     [[acknowledged]]
-    path  = "src/render_helpers/blur.rs"
-    hunks = 2
-    note  = "we insert the material pass before blur; expected to conflict every cycle"
+    path = "src/render_helpers/blur.rs"
+    note = "we insert the material pass before blur; expected to conflict every cycle"
 
-The tool compares generated findings against this file and fails when it sees a
-path that is not acknowledged, **or an acknowledged path whose conflict-hunk
-count has risen**. Recording the count means a *new* conflict inside an
-already-acknowledged file still trips the alarm.
+The tool compares generated findings against this file and fails on any
+conflicting path that is not listed, and on any unattributed conflict.
+
+**Acknowledgment is path-granular, and that is the whole contract.** An earlier
+draft added a conflict-hunk count so that a *new* conflict inside an
+already-acknowledged file would still trip the alarm. That is dropped, because
+`merge-tree` does not supply hunk counts: the structured output reports
+conflicted paths and stage entries, so any count would have to be derived by
+re-parsing merged content, and rename, delete, and binary conflicts have no
+textual hunks to count at all. A count would also have been defeated by a new
+conflict that replaces or merges with an existing one, leaving the total
+unchanged.
 
 Two limitations, stated in the file's header comment because they are easy to
 forget:
 
-- A conflict that **moves** within a file, leaving the count unchanged, is not
-  detected. Path plus count is a coarse fingerprint, deliberately chosen over a
-  content digest, which would churn on every upstream commit and train the
-  reader to ignore it.
+- **A new conflict inside an already-acknowledged file is not detected.**
+  Acknowledging a path accepts every conflict in it, now and later. The
+  mitigation is the drift block's per-file upstream churn count, which rises
+  visibly when upstream works in a file we have accepted.
 - Acknowledgment is not approval of upstream's change. It records that we
   expect to resolve this conflict by hand each cycle.
 
@@ -262,9 +318,29 @@ forget:
 The two blocks are enforced differently because they have different inputs.
 
 **Local block.** `just check` (and therefore the pre-commit hook) runs
-`upstream-report --check`, which reads **the tree the index describes** — both
-the source files and the report itself — and fails if regenerating would change
-the report.
+`upstream-report --check`, which reads **the tree the index describes** and
+fails if regenerating would change the report. Everything the check consumes
+comes from the index, with no exceptions:
+
+- the source files the inventory describes,
+- `upstream-baseline.toml`,
+- `upstream-conflicts.toml`,
+- the report itself.
+
+Reading the baseline record from the working tree while reading sources from
+the index would let an unstaged baseline edit produce a report that validates
+locally and fails in CI. One tree in, one answer out.
+
+This fixes the regeneration order, which is otherwise easy to get wrong:
+
+1. Stage the source changes **and** any configuration change
+   (`upstream-baseline.toml`, `upstream-conflicts.toml`).
+2. Run `just upstream-report`, which generates from the index.
+3. Stage the regenerated report.
+4. Commit.
+
+Generating before staging configuration produces a report built from the old
+baseline, which then disagrees with the staged configuration.
 
 Keying on the index rather than on a branch or on `HEAD` is what lets one code
 path serve both callers. In the pre-commit hook the index is the tree about to
@@ -288,11 +364,17 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
    old one at this point; `--against` only replaces the upstream side of the
    comparison, so this answers "what will conflict if we move to this tag"
    before anything is touched.
-2. **Check whether #4147 merged upstream.** If it did, drop the two carried
-   commits and remove class D from the document. If not, cherry-pick them onto
-   the new tag.
+2. **Check whether #4147 is present in the selected target tag** — not merely
+   whether it merged into upstream `main`. A patch can be merged to `main` and
+   still be absent from the tag we are moving to, and dropping it then would
+   silently remove the IPC surface. Test presence by patch-id against
+   `git log <tag_commit>`, and keep the commits if the test does not pass.
+   If it does pass, drop them and remove class D from the document.
 3. Create `patched-<newtag>` from the new tag plus whatever step 2 decided.
-   Record its tree hash in the baseline file.
+   Record in the baseline file: the new `tag`, its `tag_commit`, **the tree of
+   the release commit** (not of `patched-<newtag>`, which differs whenever
+   anything is still carried), the new `patched_commit`, and the patch-ids of
+   whatever `carried` now holds.
 4. In a fresh `.worktrees/` worktree, rebase the material work with an
    **explicit old boundary**:
 
@@ -301,12 +383,29 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
    Without `--onto`, the rewritten ancestry reappears as a rebase that replays
    far more than the 280 material commits.
 
-   The branch contains 7 merge commits. **Flatten them**: they are internal
-   integration points with no upstream meaning, and `--rebase-merges` would
-   preserve structure that costs conflict-resolution effort for no benefit. If
-   a future merge encodes a resolution worth keeping, revisit this and say so
-   in the rebase log.
-5. `just gate`.
+   The branch contains 7 merge commits. **Flatten them, but audit them first.**
+   Flattening is the policy because the merge topology carries no upstream
+   meaning and `--rebase-merges` preserves structure at a real
+   conflict-resolution cost. What flattening must not do is discard the
+   *resolutions* those merges recorded, and this fork has substantive ones:
+
+       git show --remerge-diff 855ac7af
+
+   shows hand resolutions across `src/layout/tile.rs` (91 lines),
+   `src/render_helpers/material.rs`, and
+   `src/render_helpers/shaders/material.frag`, including the combination of
+   signal emission with noise and saturation processing. `f8bcb34c` carries
+   further resolutions in `niri-config/`.
+
+   So: before rebasing, run `git show --remerge-diff` over each merge in
+   `git log --merges patched-<oldtag>..materials-<oldtag>`, record every
+   non-empty result, and verify after the rebase that each resolution is
+   reproduced in the flattened history. Having no upstream significance does
+   not make a resolution disposable — it is the fork's own work.
+5. **Regenerate and stage the baseline record and the report**, then `just gate`.
+   This order is mandatory now that the gate enforces freshness: running the
+   gate against a stale baseline fails on the report rather than on the rebase,
+   which is a confusing way to learn nothing.
 6. **Nested GLES smoke** on the headless host, using the existing harnesses
    under `docs/materials/scripts/`.
 7. **Physical DRM acceptance**, separately, on real hardware with a human
@@ -314,14 +413,19 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
    `2026-08-27-v1-drm-acceptance-design.md` states that headless and nested
    hosts "cannot close the explicit real-hardware gate." A rebase can silently
    reorder render passes, so the render evidence is re-earned, not inherited.
-8. Update the document: new baseline record, regenerate both blocks, prune
-   acknowledgments that no longer apply, re-review the feature table's posture
-   column, and add one rebase-log line recording the tag, the conflicts
-   resolved, and the evidence runs.
+8. Finish the document: prune acknowledgments that no longer apply, re-review
+   the feature table's posture column, and add one rebase-log line recording
+   the tag, the conflicts resolved, the merge resolutions carried across, and
+   the evidence runs.
 9. Re-pin packaging: recompute the commit count since the pin, rewrite
    `pkgver` and the `source=` commit in `packaging/arch/PKGBUILD`, push before
    building.
-10. Keep the old branches as archives. Move `origin/HEAD`.
+10. Keep the old branches as archives. Then **change the repository's default
+    branch on GitHub** — `gh repo edit --default-branch materials-<newtag>` —
+    because the weekly workflow only schedules from the file on the default
+    branch, so a rebase that leaves the default behind silently stops the
+    drift check. Updating the local `origin/HEAD` symbolic ref is a separate,
+    purely local convenience and does not change anything on the server.
 
 ## Scheduled workflow contract
 
@@ -333,14 +437,32 @@ and does not grow.
 - **Checkout:** `fetch-depth: 0` with tags, then an explicit
   `git remote add upstream` / `git fetch upstream --tags`. A fetch failure
   **fails the job**; it must never be reported as a clean drift result.
+- **Refs:** baseline validation resolves the pinned SHAs from
+  `upstream-baseline.toml`, never branch names. `actions/checkout` fetches
+  history but creates no local `patched-26.04`, so a name-based lookup would
+  fail in CI even at `fetch-depth: 0`. Full history is fetched precisely so
+  those pinned commits are present.
 - **Permissions:** `contents: read`, `issues: write`.
 - **Reporting:** one deduplicated issue, found by a fixed marker string in the
-  body and updated in place rather than reopened per run. It fails the job when
-  a path appears that `upstream-conflicts.toml` does not acknowledge, or an
-  acknowledged path's hunk count rises.
-- **Also runs on pull requests:** `just check`, which `ci.yml` does not run.
-  Today those checks exist only in the local pre-commit hook, so a push from a
-  machine without `core.hooksPath` set bypasses them entirely.
+  body and updated in place rather than reopened per run. It fails the job on
+  any conflicting path that `upstream-conflicts.toml` does not acknowledge, and
+  on any unattributed conflict.
+- **Toolchain:** python3 and git only. The job must **not** run `just check`.
+  Two of `check_cmd`'s four commands need the Rust toolchain and apt
+  dependencies, and `tasks check` needs the `tasks` CLI installed — which would
+  contradict the reason this design keeps drift reporting on GitHub issues
+  rather than in `tasks/`.
+- **On pull requests** it runs only the genuinely missing lightweight checks:
+  `python3 -m unittest discover -s tools` and `upstream-report --check`.
+  Format and clippy are already covered by `ci.yml`'s `rustfmt` and `clippy`
+  jobs and are not duplicated.
+
+**`tasks check` stays local-only, and this is a deliberate gap.** Provisioning
+the `tasks` CLI in CI to validate task metadata is not worth the coupling for
+v1. The residual risk is narrow and worth naming: a push from a machine without
+`core.hooksPath` set can land task metadata that has drifted from its plan or
+spec, and nothing in CI will say so. It is caught at the next local `just
+check`. Revisit if that ever actually happens.
 
 ## Implementation surface
 
@@ -363,6 +485,12 @@ Unit tests, on fixture repositories built in `tmp` by the test itself:
   baseline tree. Asserts the report matches the hand-computed tree diff, and
   that a tampered baseline tree hash produces a hard error naming both hashes
   rather than any fallback.
+- **Baseline record.** Assert each validation fails independently: a `tree`
+  that is the patched tree rather than the release tree; a `tag` that no longer
+  resolves to `tag_commit`; a `carried` list of the right length but wrong
+  patch-ids; a `patched_commit` whose ancestor at depth `n` is not
+  `tag_commit`. Assert resolution succeeds in a clone with **no local branches
+  at all**, proving nothing depends on a branch name.
 - **Index freshness.** Stage a source change without regenerating; assert
   `--check` fails. Regenerate and stage; assert it passes. Assert a change
   present in the working tree but unstaged does not affect the verdict, and
@@ -370,12 +498,20 @@ Unit tests, on fixture repositories built in `tmp` by the test itself:
   commit rather than reporting a vacuous pass.
 - **Conflict and error handling.** A fixture with a known conflict asserts exit
   1 and the exact path set. A deliberately bad ref asserts the exit-status-`>1`
-  path fails loudly. A case with non-zero exit and an empty parsed path list
-  asserts an error, not a pass.
-- **Self-reference.** Assert the report excludes itself and the baseline record
-  from its inventory, and that running it twice is a fixpoint.
-- **Acknowledgments.** Assert an unacknowledged path fails; an acknowledged one
-  passes; an acknowledged path with a raised hunk count fails.
+  path fails loudly. A directory/file conflict fixture asserts exit 1 with an
+  empty path list is reported as an unattributed conflict — failing the run,
+  but distinguished in the output from a tool error.
+- **Self-reference.** Assert the report excludes itself, the baseline record,
+  and the acknowledgment file from its inventory, and that running it twice is
+  a fixpoint.
+- **Acknowledgments.** Assert an unacknowledged path fails and an acknowledged
+  one passes. Assert an unattributed conflict fails even when every named path
+  is acknowledged.
+- **Configuration comes from the index.** Edit `upstream-baseline.toml` in the
+  working tree without staging it; assert `--check` ignores the edit and
+  reports on the staged record. Stage it; assert the verdict changes. This is
+  the test that would have caught reading configuration from the working tree
+  while reading sources from the index.
 
 Acceptance for the document itself: its generated numbers match the
 hand-measured figures in the Current-build evidence section above, recomputed
