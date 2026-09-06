@@ -1,11 +1,12 @@
 ---
 id: material-0af212
 title: Ring-of-light drift may make existing capture-harness assertions flaky
-status: todo
+status: doing
 priority: 1
 size: s
+owner: harness/ring-drift
 created: 2026-09-06T11:29:23Z
-updated: 2026-09-06T11:29:23Z
+updated: 2026-09-06T11:41:31Z
 depends: []
 tags: [harness, bug]
 ---
