@@ -1503,6 +1503,12 @@ pub struct WindowLayout {
     /// Tile position within the current view of the workspace.
     ///
     /// This is the same "workspace view" as in gradients' `relative-to` in the niri config.
+    ///
+    /// Only set for floating windows. Tiled windows in the scrolling layout leave it unset, so
+    /// that resizing one tile does not have to report a new position for every tile to its
+    /// right. For a tiled window, compute the position from [`Self::pos_in_scrolling_layout`],
+    /// the [`Self::tile_size`] of the preceding columns and tiles, and
+    /// [`Workspace::scrolling_view_pos`].
     pub tile_pos_in_workspace_view: Option<(f64, f64)>,
     /// Location of the window's visual geometry within its tile.
     ///

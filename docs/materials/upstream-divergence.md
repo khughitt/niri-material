@@ -66,7 +66,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1003/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
-| `niri-ipc/src/lib.rs` | B | M | +156/-1 |
+| `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
 | `niri-visual-tests/src/cases/layout.rs` | B | M | +1/-0 |
 | `niri-visual-tests/src/cases/tile.rs` | B | M | +10/-4 |
@@ -86,7 +86,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/mod.rs` | B | M | +49/-7 |
 | `src/layout/monitor.rs` | B | M | +134/-23 |
 | `src/layout/scrolling.rs` | B | M | +45/-4 |
-| `src/layout/tests.rs` | B | M | +80/-4 |
+| `src/layout/tests.rs` | B | M | +109/-4 |
 | `src/layout/tile.rs` | B | M | +1117/-77 |
 | `src/layout/workspace.rs` | B | M | +29/-3 |
 | `src/niri.rs` | B | M | +205/-0 |
