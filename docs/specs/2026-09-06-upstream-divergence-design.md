@@ -389,6 +389,12 @@ instead would miss work on feature branches; comparing against `HEAD` would
 miss the staged changes being committed right now. There is deliberately no
 mode flag to get wrong.
 
+Class A paths are counted in the local block, not listed, so as a consequence
+editing an existing class-A file's contents can never make the report stale —
+only adding or removing one changes the count. Someone probing the freshness
+gate with a class-A content edit and finding it still passes has not found a
+bug; that is the class-A contract working as designed.
+
 **Drift block.** Never enforced locally — it needs a fetch, and a pre-commit
 hook must not touch the network. The scheduled workflow regenerates it against
 the checked-out commit and fails on findings.
@@ -417,11 +423,12 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
 
    If the content is present, drop the commits and remove class D. Otherwise
    cherry-pick them onto the new tag and re-record their patch-ids.
-3. Create `patched-<newtag>` from the new tag plus whatever step 2 decided.
-   Record in the baseline file: the new `tag`, its `tag_commit`, **the tree of
-   the release commit** (not of `patched-<newtag>`, which differs whenever
-   anything is still carried), the new `patched_commit`, and the patch-ids of
-   whatever `carried` now holds.
+3. Create `patched-<newtag>` from the new tag plus whatever step 2 decided, and
+   branch `materials-<newtag>` from it — step 4's rebase target, which no
+   earlier step otherwise creates. Record in the baseline file: the new `tag`,
+   its `tag_commit`, **the tree of the release commit** (not of
+   `patched-<newtag>`, which differs whenever anything is still carried), the
+   new `patched_commit`, and the patch-ids of whatever `carried` now holds.
 4. In a fresh `.worktrees/` worktree, rebase the material work with an
    **explicit old boundary**:
 

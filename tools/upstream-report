@@ -193,7 +193,9 @@ def render_local(record, rows):
     lines.append(
         "Class A paths are counted, not listed: fork-only additions with no "
         "upstream counterpart. Class C is listed because `tools/tt` has an "
-        "external source of truth in ops."
+        "external source of truth in ops. Because class A is counted, editing an "
+        "existing class-A file's contents can never make this block stale; only "
+        "adding or removing one can."
     )
     return "\n".join(lines)
 
@@ -241,7 +243,9 @@ def load_baseline(root):
                 f"got {record[key]!r}"
             )
 
-    carried = record.setdefault("carried", [])
+    if "carried" not in record:
+        raise ReportError(f"{BASELINE_PATH}: missing carried")
+    carried = record["carried"]
     if not isinstance(carried, list):
         raise ReportError(
             f"{BASELINE_PATH}: carried must be an array of tables, got {carried!r}"
@@ -368,16 +372,27 @@ def merge_tree(root, base, upstream, fork):
     index += 1  # the empty field separating the sections
 
     messages = []
-    while index + 1 < len(fields):
-        try:
-            count = int(fields[index])
-        except ValueError:
+    while index < len(fields):
+        field = fields[index]
+        if field == "" and index == len(fields) - 1:
+            # The trailing NUL of the whole stream splits into one legitimate
+            # empty field here. Anything else non-integer is malformed.
             break
+        try:
+            count = int(field)
+        except ValueError:
+            raise ReportError(
+                "git merge-tree: informational section: expected an integer "
+                f"count, got {field!r}"
+            )
         index += 1
         involved = fields[index:index + count]
         index += count
         if index + 1 >= len(fields):
-            break
+            raise ReportError(
+                "git merge-tree: informational section: record truncated after "
+                f"{count} involved path(s)"
+            )
         kind = fields[index]
         text = fields[index + 1]
         index += 2
@@ -452,13 +467,20 @@ def seam_paths(rows):
     }
 
 
-def _upstream_status(root, tag_commit, upstream):
+def _upstream_status(root, baseline_commit, upstream):
     """baseline path -> (status letter, upstream's current path).
 
     Renames are keyed by the OLD path, because that is the name the baseline — and
-    therefore our inventory — knows the file by."""
+    therefore our inventory — knows the file by.
+
+    `baseline_commit` must be `record["baseline_commit"]`, never
+    `record["tag_commit"]`, for consistency with `churn`, which calls this: the
+    recorded tag_commit is a rewritten copy of the release commit and is NOT on
+    upstream's history line, so it must not be used here even though a tree diff,
+    unlike `git log`, does not itself require ancestry to run."""
     fields = _split_z(
-        git(root, "diff", "--name-status", "-M", "-z", f"{tag_commit}..{upstream}")
+        git(root, "diff", "--name-status", "-M", "-z",
+            f"{baseline_commit}..{upstream}")
     )
     result = {}
     index = 0
@@ -473,18 +495,26 @@ def _upstream_status(root, tag_commit, upstream):
     return result
 
 
-def churn(root, tag_commit, upstream, watched):
+def churn(root, baseline_commit, upstream, watched):
     """{fork path: baseline path} -> fork path -> (commits, upstream status, baseline
     path, upstream path).
 
     Upstream history is walked under the BASELINE path, never the fork's current
     one: upstream never saw our rename, so asking it about `src/new.rs` returns zero
-    commits while it is busily editing `src/old.rs`."""
-    statuses = _upstream_status(root, tag_commit, upstream)
+    commits while it is busily editing `src/old.rs`.
+
+    `baseline_commit` must be `record["baseline_commit"]`, never
+    `record["tag_commit"]`: the recorded tag_commit is a rewritten copy of the
+    release commit and is NOT on upstream's history line, so `git log A..B`
+    cannot walk from it to upstream — it instead counts every commit reachable
+    from upstream that isn't reachable from that unrelated commit, which is
+    almost all of them (a 66x inflation was observed for src/layout/tile.rs:
+    133 vs the true 2)."""
+    statuses = _upstream_status(root, baseline_commit, upstream)
     result = {}
     for path, baseline in watched.items():
         count = len(git(
-            root, "log", "--oneline", f"{tag_commit}..{upstream}", "--", baseline
+            root, "log", "--oneline", f"{baseline_commit}..{upstream}", "--", baseline
         ).splitlines())
         letter, upstream_path = statuses.get(baseline, ("", baseline))
         result[path] = (
@@ -637,6 +667,13 @@ def main(argv=None):
     # ONE error boundary. Every expected operational failure — a git error, a bad
     # baseline, malformed TOML, an unreadable file — exits 2. Exit 1 is reserved for
     # findings, so CI can tell "the check found something" from "the check broke".
+    #
+    # `except Exception`, not the three named types alone: an unexpected exception
+    # (a UnicodeDecodeError from a non-UTF-8 byte in git output, an IndexError from
+    # the -z index arithmetic) must not fall through uncaught, because Python then
+    # exits 1 — the workflow's "unacknowledged conflicts" code — and publishes a
+    # traceback as a drift finding. KeyboardInterrupt and SystemExit are BaseException,
+    # not Exception, so they still propagate untouched.
     try:
         root = pathlib.Path(
             git(pathlib.Path.cwd(), "rev-parse", "--show-toplevel").strip()
@@ -644,6 +681,11 @@ def main(argv=None):
         return run(root, args)
     except (ReportError, tomllib.TOMLDecodeError, OSError) as error:
         print(f"upstream-report: {error}", file=sys.stderr)
+        return 2
+    except Exception as error:
+        # Not one of the three expected types: name the class so an unexpected
+        # failure stays diagnosable without a traceback reaching stderr.
+        print(f"upstream-report: {type(error).__name__}: {error}", file=sys.stderr)
         return 2
 
 
