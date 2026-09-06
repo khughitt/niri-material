@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-188 paths differ: 38 class B (seam), 135 class A (fork-only), 15 class C (scaffolding).
+189 paths differ: 38 class B (seam), 136 class A (fork-only), 15 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -60,7 +60,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.githooks/pre-push` | C | A | +6/-0 |
 | `.github/workflows/ci.yml` | B | M | +6/-2 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +21/-0 |
+| `AGENTS.md` | C | A | +25/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `justfile` | C | A | +52/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
