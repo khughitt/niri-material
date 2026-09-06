@@ -291,5 +291,113 @@ class Inventory(Fixture):
         self.assertIn("v1.0", body)
 
 
+class Splice(unittest.TestCase):
+    def document(self, body):
+        return f"# Doc\n\n{report.LOCAL_BEGIN}\n{body}\n{report.LOCAL_END}\n\ntail\n"
+
+    def test_splice_replaces_only_between_markers(self):
+        out = report.splice(self.document("old"), report.LOCAL_BEGIN, report.LOCAL_END, "new")
+        self.assertIn("# Doc", out)
+        self.assertIn("tail", out)
+        self.assertIn("new", out)
+        self.assertNotIn("old", out)
+
+    def test_splice_is_idempotent(self):
+        once = report.splice(self.document("old"), report.LOCAL_BEGIN, report.LOCAL_END, "new")
+        twice = report.splice(once, report.LOCAL_BEGIN, report.LOCAL_END, "new")
+        self.assertEqual(once, twice)
+
+    def test_missing_markers_are_an_error(self):
+        with self.assertRaises(report.ReportError):
+            report.splice("# Doc\nno markers\n", report.LOCAL_BEGIN, report.LOCAL_END, "new")
+
+    def test_markers_out_of_order_are_an_error(self):
+        text = f"{report.LOCAL_END}\n{report.LOCAL_BEGIN}\n"
+        with self.assertRaises(report.ReportError):
+            report.splice(text, report.LOCAL_BEGIN, report.LOCAL_END, "new")
+
+
+class Freshness(Fixture):
+    def stage_document(self, body="stale"):
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        self.write("src/lib.rs", "fn upstream() { changed(); }\n")
+        self.write(report.CONFLICTS_PATH, "acknowledged = []\n")
+        self.write(
+            report.REPORT_PATH,
+            f"# Upstream divergence\n\n{report.LOCAL_BEGIN}\n{body}\n{report.LOCAL_END}\n",
+        )
+        self.git("add", "-A")
+        return tree
+
+    def regenerate(self, record):
+        target = self.root / report.REPORT_PATH
+        target.write_text(report.render_report(self.root, record, target.read_text()))
+
+    def test_stale_report_is_a_finding(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.assertTrue(report.check(self.root, record))
+
+    def test_regenerated_and_staged_report_passes(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.regenerate(record)
+        self.git("add", report.REPORT_PATH)
+        self.assertEqual(report.check(self.root, record), [])
+
+    def test_unstaged_source_change_does_not_affect_the_verdict(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.regenerate(record)
+        self.git("add", report.REPORT_PATH)
+        (self.root / "src" / "lib.rs").write_text("fn upstream() { changed_again(); }\n")
+        self.assertEqual(report.check(self.root, record), [])
+
+    def test_unstaged_baseline_edit_is_ignored(self):
+        """Configuration comes from the index too. An edit left in the working tree
+        must not change the verdict — this is the test that catches reading config
+        from the working tree while reading sources from the index.
+
+        The baseline is RELOADED after the edit; reusing the record loaded before it
+        would pass even if load_baseline read the working tree."""
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.regenerate(record)
+        self.git("add", report.REPORT_PATH)
+        (self.root / report.BASELINE_PATH).write_text('tag = "bogus"\n')
+        reloaded = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.assertEqual(reloaded["tag"], "v1.0")
+        self.assertEqual(report.check(self.root, reloaded), [])
+
+    def test_fresh_checkout_with_empty_staging_area_validates_the_commit(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.regenerate(record)
+        self.git("add", report.REPORT_PATH)
+        self.commit("divergence")
+        # Nothing staged now; the index still describes the checked-out commit.
+        self.assertEqual(self.git("diff", "--cached", "--name-only").strip(), "")
+        self.assertEqual(report.check(self.root, record), [])
+
+    def test_generation_is_a_fixpoint(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        target = self.root / report.REPORT_PATH
+        once = report.render_report(self.root, record, target.read_text())
+        target.write_text(once)
+        self.git("add", report.REPORT_PATH)
+        self.assertEqual(report.render_report(self.root, record, once), once)
+
+    def test_regeneration_preserves_unstaged_prose(self):
+        """Editing the feature table and regenerating must not discard the edit."""
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        target = self.root / report.REPORT_PATH
+        target.write_text(target.read_text() + "\nhand-written prose\n")
+        self.regenerate(record)
+        self.assertIn("hand-written prose", target.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()
