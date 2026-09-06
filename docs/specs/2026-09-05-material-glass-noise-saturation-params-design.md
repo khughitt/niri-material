@@ -143,7 +143,10 @@ Nested GLES smoke on the headless Weston unit, never the desktop session:
 - the same material with `noise 0.5` measurably raises ROI variance against
   `noise 0`;
 - a material with both omitted and `backdrop-blur false` is byte-identical to
-  its pre-change capture.
+  its pre-change capture. (Recorded once, 2026-09-05; retired from the script
+  on 2026-09-06 by material-ea6c37 because no pre-change binary can be
+  compared against a post-ring-of-light one. The slot now asserts that two
+  sessions of the omitted fixture on the same binary are byte-identical.)
 
 The smoke reuses the capture and metric scripts retained from
 `2026-09-02-material-noise-saturation-evidence.md` where they still apply, and

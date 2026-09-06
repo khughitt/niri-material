@@ -10,15 +10,19 @@ suppresses the `info!`-level "GL Renderer" / "GL Version" / "GL Vendor" lines
 that smithay's GLES backend emits at initialization. No renderer errors,
 fallbacks, or panics appear in the log for any of the six captures.
 
-**These figures cannot be reproduced with a current binary.** Both binaries
-below predate `f8bcb34c`, which added the ring of light: neither draws it, so
-the full-frame `assert_zero omitted_identity_ae` compared two ringless frames.
-Today the ring draws at the window edge under the default focus response and
-lands inside those frames — measured at `AE 3675` for its own contribution — so
-a re-run needs a BASE no older than `f8bcb34c`. The `focus` key cannot be pinned
-around it either, because it does not parse on a pre-`f8bcb34c` binary. The
-script header carries the constraint; `material-0af212` established it. The run
-recorded here remains valid on its own terms — both sides were ringless.
+**The script's contract changed on 2026-09-06 (`material-ea6c37`).** The run
+below compared two binaries: `omitted_identity_ae` proved that omitting the new
+keys rendered byte-identically to the pre-change binary. Both binaries predate
+`f8bcb34c`, which added the ring of light; the ring draws at the window edge
+inside these full frames (`AE 3675` on its own) and the `focus` key does not
+parse before it, so no current binary can be compared against a pre-change
+BASE (`material-0af212` measured this). The migration guard therefore lives
+only in this record, and the script no longer takes `BASE`. Its first slot is
+now `omitted_determinism_ae`: the omitted fixture captured from two separate
+nested sessions of the same binary must be byte-identical, which makes the
+harness determinism that every other zero assertion relies on an explicit
+check. The remaining seven assertions are unchanged. The run recorded here
+remains valid on its own terms — both sides were ringless.
 
 ## Pinned revisions
 
@@ -105,7 +109,7 @@ All eight assertions held:
 
 | Assertion | Value | Meaning |
 | --- | --- | --- |
-| `omitted_identity_ae` = 0 | 0 | omitted values are byte-identical to the pre-change binary |
+| `omitted_identity_ae` = 0 | 0 | omitted values are byte-identical to the pre-change binary (retired 2026-09-06; the slot is now `omitted_determinism_ae`, see above) |
 | `written_neutral_vs_omitted_ae` = 0 | 0 | writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim is covered by the `written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur` unit test in `src/layout/tile.rs`) |
 | `sat0_rg_ae`, `sat0_rb_ae` = 0 | 0, 0 | written `saturation 0` renders grayscale with backdrop-blur off |
 | `noise_roi_rmse` > 0 | 8054.6 | written noise changes the ROI |
@@ -113,6 +117,39 @@ All eight assertions held:
 | `bluroff_rg_ae` = 0 | 0 | written values survive `blur { off }` |
 | `bluroff_vs_omitted_ae` > 0 | 141205 | (same) |
 | log gate | pass | no material error, fallback or panic in `niri.log` |
+
+## Re-run under the determinism contract (2026-09-06)
+
+Source `740d062f` with only this change's script and doc edits uncommitted
+(`niri 26.04 (740d062f-modified)`), binary
+`/mnt/ssd3/niri-material/target/debug/niri`, SHA-256
+`e25e6e1fef59453b92df6173d44b6fb046c6720019c097e0b00a1b5ebc6e32d4`, headless
+Weston 15.0.1, `IMPL` only:
+
+```
+omitted_determinism_ae=0
+written_neutral_vs_omitted_ae=0
+sat0_rg_ae=0
+sat0_rb_ae=0
+noise_roi_rmse=8054.6
+neutral_sd=0
+noise05_sd=0.119614
+bluroff_rg_ae=0
+bluroff_vs_omitted_ae=138824
+PASS
+```
+
+The seven carried-over metrics match the 2026-09-05 run to the last digit
+except `bluroff_vs_omitted_ae` (138824 against 141205), which counts pixels
+that differ between the blur-off fixture and the omitted one and now includes
+the ring of light in both frames; the assertion on it is only `> 0`.
+
+Negative control: the same script with `animations { off; }` replaced by an
+empty `animations { }` block fails first on `omitted_determinism_ae` (got
+`1780.32`) and also moves `written_neutral_vs_omitted_ae` to `1678.27`, while
+the ROI-only assertions stay at 0. The check therefore detects the ring drift
+it exists to detect, and it does so before any assertion about the parameters
+under test.
 
 ## Retained artifacts
 

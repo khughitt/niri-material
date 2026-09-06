@@ -692,6 +692,14 @@ Expected: the script prints `PASS: artifacts in ...` and `exit=0`. The assertion
 | Assertion | Meaning |
 | --- | --- |
 | `omitted_identity_ae` is 0 | omitted values are byte-identical to the pre-change binary |
+
+> **Correction (2026-09-06, material-ea6c37):** the BASE leg was retired after
+> this plan landed. The only pre-change BASE predates the ring of light
+> (`f8bcb34c`), which lands inside the full-frame compare and cannot be pinned
+> away on that binary, so the shipped script takes only `IMPL` and its first
+> assertion is now `omitted_determinism_ae` (two sessions of the omitted
+> fixture are byte-identical). The inlined script above is the version that
+> produced the recorded evidence.
 | `written_neutral_vs_omitted_ae` is 0 | writing the neutral pair is indistinguishable from omission when backdrop blur is off (the override claim is covered by the `written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur` unit test in `src/layout/tile.rs`) |
 | `sat0_rg_ae`, `sat0_rb_ae` are 0 | written `saturation 0` renders grayscale with backdrop-blur off |
 | `noise_roi_rmse` > 0 and `noise05_sd` > `neutral_sd` | written noise changes the ROI and raises its variance |
