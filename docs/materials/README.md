@@ -28,6 +28,9 @@ All future production rebases and material commits happen in this repository.
 - `../specs/2026-09-05-material-glass-noise-saturation-params-design.md`: optional per-material `noise` and `saturation` design; written values always apply.
 - `2026-09-05-material-glass-noise-saturation-params-evidence.md`: passing nested GLES evidence that written noise and saturation render with backdrop blur off and under `blur { off }`.
 - `scripts/glass-noise-saturation-smoke.sh`: headless harness for those captures.
+- `../specs/2026-09-06-glass-parameter-sweep-design.md`: parameter sweep script design; a measurement tool that reports where a glass parameter stops changing the render, not a gate.
+- `2026-09-06-glass-parameter-sweep-evidence.md`: sweep tables for `ior`, thickness, roughness, noise and saturation, and the global `blur` block, with a per-slider summary for Prism.
+- `scripts/glass-parameter-sweep.sh`: headless harness that renders one KDL parameter at N values and tabulates the neighbouring deltas.
 - `2026-09-04-focus-glass-spike.md`: passing focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.
 - `2026-09-05-focus-ring-light-spike.md`: focus ring light spike; an embedded, refracted ring of light wins over motes, rays, shadow, noise, and canopy, and the static gradient ring is invisible on the dark focus glass.
 - `2026-09-05-ring-light-focus-smoke.md`: ring of light focus response wakeup, capture and DRM acceptance evidence.
