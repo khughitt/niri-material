@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+# ops-check version 2
+"""Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
+
+Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
+command, so the pre-commit hook, `just check`, and CI all run it. Standard library only.
+Prints one `path:line: message` per finding on stderr and exits 1 when there are any;
+exits 2 when it cannot run at all.
+
+- References: in the root README.md, AGENTS.md, and CLAUDE.md, backticks around a path
+  are a claim that it exists. A path with a slash resolves against the repository root;
+  a bare filename must be a tracked file somewhere in the tree; a registered project
+  prefix right before the backticks (ops `bin/tt`) resolves against that project; a
+  `just recipe` must be a recipe in the justfile. Fenced and indented code is not
+  scanned. A destination or an example is written without backticks.
+- Conflicted copies: no tracked path may be a Dropbox conflicted copy.
+"""
+import os
+import pathlib
+import re
+import subprocess
+import sys
+import tomllib
+
+DOCS = ("README.md", "AGENTS.md", "CLAUDE.md")
+BACKTICKED = re.compile(r"`([^`\n]+)`")
+# A token is a path when it is one shell word made of path characters and either
+# carries a slash or is a filename with one of the extensions below. Git refs, URLs,
+# home and variable paths are words with slashes that are not paths in this tree; a
+# scoped npm package (`@scope/name`) is a name, not a path; a dotted Python module
+# (`atoms.core`) is a name, which is why the extensions are a list and not a shape.
+PATH = re.compile(r"^[\w.+-]+(?:/[\w.@+-]+)*/?$")
+EXTENSIONS = ("md", "py", "toml", "json", "jsonl", "ts", "tsx", "js", "mjs", "cjs", "rs", "sh", "zsh",
+              "yml", "yaml", "txt", "kdl", "css", "html", "svg", "png", "csv", "xlsx", "lock", "cfg", "ini")
+FILENAME = re.compile(r"^[\w-][\w.-]*\.(" + "|".join(EXTENSIONS) + r")$")
+NOT_PATHS = ("origin/", "upstream/", "refs/")
+RECIPE = re.compile(r"^just ([a-z][\w-]*)$")
+JUSTFILE_RECIPE = re.compile(r"^([a-z][\w-]*)\s*(?:\+?\*?[\w ]*)?:(?!=)", re.MULTILINE)
+FENCE = re.compile(r"^\s*(```|~~~)")
+
+
+def fail(message):
+    sys.stderr.write(f"ops-check: {message}\n")
+    sys.exit(2)
+
+
+def git(root, *args):
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    return result.stdout if result.returncode == 0 else None
+
+
+def repository_root(cwd):
+    top = git(cwd, "rev-parse", "--show-toplevel")
+    if top is None:
+        fail(f"{cwd} is not inside a git repository")
+    return pathlib.Path(top.strip())
+
+
+def registry(env):
+    """Registered project roots by prefix, from the tasks registry; empty when absent."""
+    config = pathlib.Path(env.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config")
+    path = config / "tasks" / "projects.toml"
+    if not path.is_file():
+        return {}
+    return {prefix: pathlib.Path(root) for prefix, root in tomllib.loads(path.read_text())["projects"].items()}
+
+
+def tracked(root):
+    return (git(root, "ls-files", "-z") or "").split("\0")[:-1]
+
+
+def recipes(root):
+    """Recipe names in the justfile, or None when there is no justfile to claim against."""
+    for name in ("justfile", "Justfile"):
+        if (root / name).is_file():
+            return name, set(JUSTFILE_RECIPE.findall((root / name).read_text()))
+    return None, None
+
+
+def prose_lines(text):
+    """(line number, line) for every line outside fenced and indented code."""
+    fence = None
+    for number, line in enumerate(text.splitlines(), 1):
+        opened = FENCE.match(line)
+        if fence is None and opened:
+            fence = opened.group(1)
+        elif fence is not None and opened and opened.group(1) == fence:
+            fence = None
+        elif fence is None and not line.startswith(("    ", "\t")):
+            yield number, line
+
+
+def classify(token):
+    """'recipe', 'path', 'filename', or None for a backticked token."""
+    if RECIPE.match(token):
+        return "recipe"
+    if PATH.match(token) and "/" in token and not token.startswith(NOT_PATHS):
+        return "path"
+    if FILENAME.match(token):
+        return "filename"
+    return None
+
+
+def references(root, projects, basenames, doc):
+    """Findings for one document: (path, line, message)."""
+    justfile, names = recipes(root)
+    text = (root / doc).read_text()
+    for number, line in prose_lines(text):
+        for found in BACKTICKED.finditer(line):
+            token = found.group(1)
+            kind = classify(token)
+            if kind is None:
+                continue
+            if kind == "recipe":
+                if names is not None and RECIPE.match(token).group(1) not in names:
+                    yield doc, number, f"`{token}` is not a recipe in {justfile}"
+                continue
+            if kind == "filename":
+                if token not in basenames:
+                    yield doc, number, f"`{token}` is not a tracked file"
+                continue
+            before = line[:found.start()].rstrip()
+            prefix = before.rsplit(None, 1)[-1] if before else None
+            if prefix in projects and line[found.start() - 1:found.start()] == " ":
+                if not (projects[prefix] / token).exists():
+                    yield doc, number, f"`{token}` does not exist in {prefix}"
+            elif not (root / token).exists():
+                yield doc, number, f"`{token}` does not exist"
+
+
+def findings(root, projects):
+    """Every finding in the repository at root, as (path, line, message); line 0 when
+    the finding is about a path rather than a place in a document."""
+    files = tracked(root)
+    basenames = {pathlib.PurePosixPath(f).name for f in files}
+    for doc in DOCS:
+        if (root / doc).is_file():
+            yield from references(root, projects, basenames, doc)
+    for path in files:
+        if "conflicted copy" in path:
+            yield path, 0, "Dropbox conflicted copy is tracked"
+
+
+def main():
+    root = repository_root(pathlib.Path(os.getcwd()))
+    count = 0
+    for path, line, message in findings(root, registry(os.environ)):
+        where = f"{path}:{line}" if line else path
+        sys.stderr.write(f"{where}: {message}\n")
+        count += 1
+    return 1 if count else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

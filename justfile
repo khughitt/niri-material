@@ -14,7 +14,7 @@ tt := "python3 tools/tt"
 # rustfmt and clippy jobs run, the selector's own tests, and the task tracker.
 fast_cmd := "python3 tools/test-affected"
 test_cmd := "cargo test --all --exclude niri-visual-tests"
-check_cmd := "cargo fmt --all -- --check && cargo clippy --all --all-targets && python3 -m unittest discover -s tools 2>&1 && tasks check && python3 tools/upstream-report --check"
+check_cmd := "python3 tools/ops-check && cargo fmt --all -- --check && cargo clippy --all --all-targets && python3 -m unittest discover -s tools 2>&1 && tasks check && python3 tools/upstream-report --check"
 
 # Affected-only: the inner loop.
 test-fast:
