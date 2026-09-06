@@ -102,11 +102,11 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
-| `tools/test_upstream_report.py` | C | A | +724/-0 |
+| `tools/test_upstream_report.py` | C | A | +840/-0 |
 | `tools/tt` | C | A | +276/-0 |
-| `tools/upstream-report` | C | A | +651/-0 |
+| `tools/upstream-report` | C | A | +693/-0 |
 
-Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops.
+Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can.
 <!-- END GENERATED: local -->
 
 ## Upstream drift
@@ -182,11 +182,14 @@ authoritative version, with the reasoning for each step, is
 1. `git fetch upstream --tags`, then `just upstream-report --drift --against <newtag>`.
    Never pass `--force` to this fetch: upstream's own `v26.04` tag object names a
    different commit than this fork's local tag (both carry the release tree), and
-   forcing the fetch would move the local tag and break baseline resolution.
+   forcing the fetch would move the local tag and break baseline resolution. Exit 1
+   here just means there are findings to read — unacknowledged conflicts against a
+   new tag is the expected, informative outcome at this stage, not a broken tool.
 2. Check whether #4147's content is present **in the target tag**, not merely merged
    to `main`. `git patch-id --stable` is evidence; read the tag's tree and decide.
-3. Create `patched-<newtag>`; record the release tree, release commit, new patched
-   commit, and carried patch-ids in `upstream-baseline.toml`.
+3. Create `patched-<newtag>` and branch `materials-<newtag>` from it; record the new
+   `tag`, the release tree, release commit, new patched commit, and carried
+   patch-ids in `upstream-baseline.toml`.
 4. Rebase in a fresh `.worktrees/` worktree with an explicit old boundary:
    `git rebase --onto patched-<newtag> patched-<oldtag> materials-<newtag>`.
    Flatten the merges — but first `git show --remerge-diff` each one in

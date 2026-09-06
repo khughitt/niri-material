@@ -33,6 +33,7 @@ jobs:
         run: python3 tools/upstream-report --check
 
       - name: Fetch upstream
+        if: github.event_name != 'pull_request'
         # A fetch failure fails the job. It must never be reported as clean drift.
         run: |
           git remote add upstream https://github.com/niri-wm/niri
@@ -92,7 +93,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           marker="<!-- upstream-drift-canary -->"
-          body="$marker
+          # Written flush-left to a file, not embedded in a quoted shell string: a
+          # quoted string here would render this whole issue body as an indented
+          # code block, and the intended fence would come out as literal text.
+          cat <<BODY >issue-body.md
+          $marker
           The weekly upstream drift canary found conflicts that
           \`docs/materials/upstream-conflicts.toml\` does not acknowledge.
 
@@ -104,13 +109,14 @@ jobs:
           artifact and rendered in the run summary.
 
           Run \`just upstream-report --drift\` locally, then either resolve the seam
-          or acknowledge the path with a note explaining why it conflicts."
-          existing=$(gh issue list --state open --search "$marker in:body" \
-            --json number --jq '.[0].number')
+          or acknowledge the path with a note explaining why it conflicts.
+          BODY
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "$marker in:body" --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
-            gh issue edit "$existing" --body "$body"
+            gh issue edit "$existing" --body-file issue-body.md
           else
             gh issue create --title "Upstream drift: unacknowledged conflicts" \
-              --body "$body"
+              --body-file issue-body.md
           fi
           exit 1

@@ -1,6 +1,8 @@
 """Unit tests for tools/upstream-report: `python3 -m unittest discover -s tools`."""
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 import os
 import pathlib
 import shutil
@@ -143,9 +145,15 @@ class Baseline(Fixture):
         self.git("checkout", "-q", patched)
         self.write("src/lib.rs", "fn drifted() {}\n")
         drifted = self.commit("drift the baseline tree")
+        # resolve_baseline checks the tree at patched_commit~depth, i.e. drifted~2
+        # here (depth == len(carried) == 2), not drifted itself.
+        found_tree = self.git("rev-parse", f"{drifted}~2^{{tree}}").strip()
         self.write_baseline(tag_commit, tree, drifted, self.carried_ids(patched, 2))
         with self.assertRaises(report.ReportError) as caught:
             report.resolve_baseline(self.root, report.load_baseline(self.root))
+        # Both hashes: the tree actually found AND the recorded tree it was
+        # checked against. Naming only one leaves a reader guessing which is which.
+        self.assertIn(found_tree[:8], str(caught.exception))
         self.assertIn(tree[:8], str(caught.exception))
 
     def test_tag_commit_tree_mismatch_fails(self):
@@ -167,6 +175,26 @@ class Baseline(Fixture):
         self.write_baseline(tag_commit, tree, patched, carried)
         with self.assertRaises(report.ReportError):
             report.resolve_baseline(self.root, report.load_baseline(self.root))
+
+    def test_missing_carried_key_fails(self):
+        """`carried` must be PRESENT, even as an empty array. `setdefault` would
+        silently accept an omitted key, and at the cycle where carried is
+        legitimately empty a misspelled `[[carrried]]` header would then validate
+        clean, since depth 0 is correct and the misspelled entries are never
+        checked."""
+        tag_commit, tree, patched = self.baseline_repo()
+        lines = [
+            'tag = "v1.0"',
+            f'tag_commit = "{tag_commit}"',
+            f'tree = "{tree}"',
+            f'patched_commit = "{patched}"',
+        ]
+        self.write(report.BASELINE_PATH, "\n".join(lines) + "\n")
+        self.git("add", report.BASELINE_PATH)
+        with self.assertRaises(report.ReportError) as caught:
+            report.load_baseline(self.root)
+        self.assertIn(report.BASELINE_PATH, str(caught.exception))
+        self.assertIn("carried", str(caught.exception))
 
     def test_resolution_needs_no_branches(self):
         """A fresh CI checkout has no local patched-26.04, so nothing may resolve by
@@ -440,6 +468,33 @@ class Conflicts(Fixture):
         with self.assertRaises(report.ReportError):
             report.merge_tree(self.root, base, ours, "no-such-ref")
 
+    def test_malformed_informational_section_raises(self):
+        """A non-integer field that is NOT the stream's final, empty terminator
+        must raise, not silently truncate. An earlier draft's `except ValueError:
+        break` returned empty `notices` here, which combined with a non-empty
+        `backed` set to make `verdict()` report no findings — a clean exit 0 on a
+        real conflict."""
+        class FakeResult:
+            returncode = 1
+            stderr = ""
+
+            def __init__(self, stdout):
+                self.stdout = stdout
+
+        # tree oid, empty (no conflicted-file entries), then a malformed
+        # informational record: "not-a-count" where an integer is expected, with
+        # more fields still to come, so it is not the stream's terminator.
+        fields = ["deadbeef", "", "not-a-count", "trailing"]
+        fake_stdout = "\0".join(fields)
+
+        original = report.subprocess.run
+        report.subprocess.run = lambda *a, **k: FakeResult(fake_stdout)
+        try:
+            with self.assertRaises(report.ReportError):
+                report.merge_tree(self.root, "base", "ours", "theirs")
+        finally:
+            report.subprocess.run = original
+
     def test_unacknowledged_path_is_a_finding(self):
         problems = report.verdict(
             1, ["src/a.rs"], [("CONFLICT (contents)", ["src/a.rs"], "…")], set()
@@ -709,6 +764,45 @@ class Cli(Fixture):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def build_conflicting_drift_fixture(self):
+        """A repo shaped for --drift: HEAD and an upstream branch both edit
+        src/lib.rs differently from their shared baseline tree, so a three-way
+        merge between them genuinely conflicts. upstream-conflicts.toml is left
+        empty, so the conflict is unacknowledged.
+
+        Returns the name of the conflicting branch.
+        """
+        tag_commit, tree, patched = self.baseline_repo()
+        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+
+        # Real fork work beyond the carried patches: HEAD, not patched_commit
+        # itself, is the "fork" side merge-tree compares.
+        self.git("checkout", "-q", patched)
+        self.write("src/lib.rs", "fn upstream() { fork_change(); }\n")
+        head_commit = self.commit("fork edits lib.rs")
+
+        self.git("checkout", "-q", "-b", "conflicting", tag_commit)
+        self.write("src/lib.rs", "fn upstream() { upstream_change(); }\n")
+        self.commit("upstream edits lib.rs")
+
+        self.git("checkout", "-q", head_commit)
+        self.write(report.CONFLICTS_PATH, "acknowledged = []\n")
+        self.write(
+            report.REPORT_PATH,
+            f"# Upstream divergence\n\n{report.LOCAL_BEGIN}\n{report.LOCAL_END}\n"
+            f"\n{report.DRIFT_BEGIN}\n{report.DRIFT_END}\n",
+        )
+        self.git("add", "-A")
+        return "conflicting"
+
+    def test_drift_conflict_exits_one(self):
+        """--drift is the single path the workflow files an issue on. An
+        unacknowledged conflict must exit 1 and name the conflicting path."""
+        branch = self.build_conflicting_drift_fixture()
+        result = self.cli("--drift", "--against", branch)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("src/lib.rs", result.stderr)
+
     def test_bad_upstream_ref_exits_two_not_one(self):
         """An unfetched or misspelled upstream is an ERROR. Reporting it as a finding
         would let CI open a 'conflicts found' issue for a broken fetch."""
@@ -718,6 +812,28 @@ class Cli(Fixture):
         result = self.cli("--drift", "--against", "no-such-remote/main")
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertNotIn("Traceback", result.stderr)
+
+    def test_unexpected_exception_exits_two_not_one(self):
+        """Anything outside (ReportError, tomllib.TOMLDecodeError, OSError) must
+        still exit 2: exit 1 is CI's "unacknowledged conflicts" signal, and an
+        uncaught exception exiting 1 would publish a traceback as a drift finding.
+        Monkeypatching cannot cross the subprocess boundary the other CLI tests
+        use, so this one calls report.main() directly, in-process."""
+        original_run = report.run
+
+        def fake_run(root, args):
+            raise IndexError("boom")
+
+        report.run = fake_run
+        try:
+            buffer = io.StringIO()
+            with contextlib.redirect_stderr(buffer):
+                result = report.main(["--check"])
+        finally:
+            report.run = original_run
+        self.assertEqual(result, 2)
+        self.assertNotIn("Traceback", buffer.getvalue())
+        self.assertIn("IndexError", buffer.getvalue())
 
 
 if __name__ == "__main__":
