@@ -606,6 +606,13 @@ JSON. Select exactly one `v1-parity-probe`. Compute its frame position from
 `layout.tile_pos_in_workspace_view + layout.window_offset_in_tile`, then apply
 the pinned pane formula:
 
+> **Correction (2026-09-06, material-82a359):** `tile_pos_in_workspace_view` is
+> set for floating windows only; for a tiled probe it is `null`, and `null[0] + 0`
+> is `0` in jq, so this derivation silently yields `0,0`. Derive a tiled window's
+> position from `pos_in_scrolling_layout`, the preceding `tile_size`s, and the
+> workspace's `scrolling_view_pos`, or measure the rect from a capture as
+> `glass-parameter-sweep.sh` does.
+
 ```text
 x = window_x - paneLip + paneShiftX
 y = window_y - paneLip + paneShiftY
