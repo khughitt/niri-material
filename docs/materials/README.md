@@ -34,6 +34,7 @@ All future production rebases and material commits happen in this repository.
 - `2026-09-02-material-signals-design.md`: implemented and verified per-window signal, IPC, and glass response design.
 - `2026-09-03-material-signals-smoke.md`: passing suites, IPC, redraw, GPU, package, and physical DRM evidence.
 - `material-config.md`: material and glass configuration reference.
+- `render-pipeline.md`: the material render pipeline, pass by pass, and which parameter acts where. Read before any rendering change.
 - `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
 - `scripts/focus-ring-light.sh`: headless harness for the focus ring light captures and the measured filament checks.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.

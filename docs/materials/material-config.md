@@ -30,6 +30,8 @@ window-rule {
 }
 ```
 
+`render-pipeline.md` shows the stage at which each parameter below acts.
+
 All `glass` parameters are optional. Colors use niri's normal color syntax;
 lengths are logical pixels.
 

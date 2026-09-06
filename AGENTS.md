@@ -2,7 +2,9 @@
 
 A fork of niri carrying the material rendering work. Tasks live in `tasks/`; the `tasks`
 skill applies. Designs and plans live under `docs/materials/`, `docs/specs/`, and
-`docs/plans/`.
+`docs/plans/`. Before changing anything under `src/render_helpers/` or the
+shaders, read `docs/materials/render-pipeline.md`: it is the pass order every
+rendering design assumes.
 
 ## Session protocol
 
