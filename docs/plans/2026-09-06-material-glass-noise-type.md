@@ -1,5 +1,7 @@
 # Glass Noise Type Implementation Plan
 
+**Status:** completed 2026-09-07. Desktop lightness acceptance remains pending.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the glass `noise` node an optional `type` property with three
@@ -23,7 +25,7 @@ bash, Weston headless GL, ImageMagick 7.
 
 ## Global Constraints
 
-- An omitted `type` and an explicit `type=white` render byte-identical to
+- An omitted `type` and an explicit `type="white"` render byte-identical to
   today's build; the `white` shader branch is the existing two lines,
   character for character.
 - `fine` is `centre - mean(8 neighbours)` scaled by `sqrt(8/9)` so its
@@ -84,7 +86,7 @@ Add to the test module of `niri-config/src/lib.rs`, directly after
             ("lightness", NoiseType::Lightness),
         ] {
             let parsed = do_parse(&format!(
-                "material \"frost\" {{ glass {{ noise 0.02 type={written}; }}; }}\n"
+                "material \"frost\" {{ glass {{ noise 0.02 type=\"{written}\"; }}; }}\n"
             ));
             let glass = parsed.materials[0].resolve().glass;
             assert_eq!(glass.noise, Some(0.02), "{written}");
@@ -94,13 +96,13 @@ Add to the test module of `niri-config/src/lib.rs`, directly after
 
     #[test]
     fn glass_noise_type_rejects_an_unknown_value() {
-        let err = do_parse_err("material \"frost\" { glass { noise 0.02 type=blue; }; }\n");
+        let err = do_parse_err("material \"frost\" { glass { noise 0.02 type=\"blue\"; }; }\n");
         assert!(err.contains("unknown NoiseType value: blue"), "{err}");
     }
 
     #[test]
     fn glass_noise_type_cannot_be_written_without_an_amount() {
-        let err = do_parse_err("material \"frost\" { glass { noise type=fine; }; }\n");
+        let err = do_parse_err("material \"frost\" { glass { noise type=\"fine\"; }; }\n");
         assert!(!err.is_empty());
     }
 
@@ -125,7 +127,7 @@ list; no import line is needed.
 
 - [x] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p niri-config glass_noise_type`
+Run: `just test`
 Expected: compile error, `NoiseType` not found.
 
 - [x] **Step 3: Add the enum, the struct and the field**
@@ -211,7 +213,7 @@ In `niri-config/src/lib.rs`, add `Noise` and `NoiseType` to the
 
 - [x] **Step 4: Run the config crate's tests**
 
-Run: `cargo test -p niri-config`
+Run: `just test`
 Expected: all pass, including the four new tests and the untouched
 `glass_noise_rejects_values_outside_zero_and_one` (the amount's range error
 text is unchanged because `Noise.amount` is the same `FloatOrInt<0, 1>`).
@@ -255,7 +257,7 @@ formatting with `cargo fmt --all` if it complains.
 git add niri-config/src/material.rs niri-config/src/lib.rs docs/materials/material-config.md
 git commit -m "feat(config): parse a type property on glass noise
 
-noise <amount> type=white|fine|lightness, resolved to
+noise <amount> type="white"|"fine"|"lightness", resolved to
 ResolvedGlass.noise_type with white as the omitted default. The amount
 keeps its Option and inheritance rule."
 ```
@@ -346,7 +348,7 @@ In `src/layout/tile.rs`'s test module, after
 
 - [x] **Step 3: Run both tests**
 
-Run: `cargo test --all --exclude niri-visual-tests noise_type`
+Run: `just test`
 Expected: PASS for both. They cannot fail once Task 1 has landed, because
 `ResolvedGlass` derives `PartialEq`, rides inside `MaterialRenderConfig`, and
 `apply_resolved` already bumps the commit on any config inequality. They are
@@ -497,7 +499,7 @@ white branch is unchanged."
 - Produces: `metrics.txt` with the names listed in Step 2, and the evidence
   document.
 
-- [ ] **Step 1: Copy the harness scaffolding**
+- [x] **Step 1: Copy the harness scaffolding**
 
 Copy `docs/materials/scripts/glass-noise-saturation-smoke.sh` to
 `docs/materials/scripts/glass-noise-type-smoke.sh`. Keep everything from
@@ -555,7 +557,7 @@ share() {   # $1 image, $2 fx expression over u; result in METRIC
 signed_diff() {   # $1 a, $2 b, $3 out
     magick "$1" "$2" -compose Mathematics -define compose:args=0,1,-1,0.5 -composite -colorspace Gray -depth 16 "$3" || fail "signed diff $3 failed"
 }
-ratio() {   # $1 numerator, $2 denominator, printed
+ratio() {   # $1 numerator variance, $2 denominator variance, printed
     awk -v a="$1" -v b="$2" 'BEGIN { if (b == 0) print "nan"; else print a / b }'
 }
 abs_diff() {   # $1 a, $2 b, $3 out
@@ -576,7 +578,7 @@ assert_close() {   # $1 name, $2 value, $3 reference, $4 relative tolerance
 }
 ```
 
-- [ ] **Step 2: Write the captures, metrics and assertions**
+- [x] **Step 2: Write the captures, metrics and assertions**
 
 Replace everything from `sha256sum "$IMPL"` to the final `echo "PASS…"` with:
 
@@ -587,9 +589,9 @@ sha256sum "$IMPL" > "$OUT/binaries.sha256"
 capture zero-first "$IMPL" $'noise 0\n        saturation 1' ""
 capture zero-after "$IMPL" $'noise 0\n        saturation 1' ""
 capture untyped    "$IMPL" $'noise 0.5\n        saturation 1' ""
-capture white      "$IMPL" $'noise 0.5 type=white\n        saturation 1' ""
-capture fine       "$IMPL" $'noise 0.5 type=fine\n        saturation 1' ""
-capture lightness  "$IMPL" $'noise 0.5 type=lightness\n        saturation 1' ""
+capture white      "$IMPL" $'noise 0.5 type="white"\n        saturation 1' ""
+capture fine       "$IMPL" $'noise 0.5 type="fine"\n        saturation 1' ""
+capture lightness  "$IMPL" $'noise 0.5 type="lightness"\n        saturation 1' ""
 
 ae "$OUT/zero-first.png" "$OUT/zero-after.png";  zero_determinism_ae=$METRIC
 ae "$OUT/untyped.png" "$OUT/white.png";          untyped_vs_white_ae=$METRIC
@@ -611,7 +613,9 @@ for t in white fine lightness; do
     magick "$OUT/$t-signed.png" -filter box -resize 25% "$OUT/$t-signed-down.png"
     sd "$OUT/$t-signed-down.png"; printf -v "${t}_down_sd" '%s' "$METRIC"
     down=${t}_down_sd; full=${t}_full_sd
-    printf -v "${t}_lowfreq_ratio" '%s' "$(ratio "${!down}" "${!full}")"
+    down_variance=$(awk -v v="${!down}" 'BEGIN { print v * v }')
+    full_variance=$(awk -v v="${!full}" 'BEGIN { print v * v }')
+    printf -v "${t}_lowfreq_ratio" '%s' "$(ratio "$down_variance" "$full_variance")"
     oklab_ab "$OUT/$t-roi.png" "$OUT/$t-ab.png"
     rmse "$OUT/$t-ab.png" "$OUT/zero-ab.png"; printf -v "${t}_ab_rmse" '%s' "$METRIC"
 done
@@ -632,11 +636,13 @@ assert_greater white_sd "$white_sd" "$zero_sd"                # every type rende
 assert_greater fine_sd "$fine_sd" "$zero_sd"
 assert_greater lightness_sd "$lightness_sd" "$zero_sd"
 assert_close fine_full_sd "$fine_full_sd" "$white_full_sd" 0.1                # the sqrt(8/9) scale holds: fine's grain has white's standard deviation at the same amount (the signed difference isolates the grain from static content)
-assert_less fine_lowfreq_ratio "$fine_lowfreq_ratio" "$white_lowfreq_ratio"   # fine has less low-frequency energy (expected ≈0.12 vs ≈0.25)
+assert_less fine_lowfreq_ratio "$fine_lowfreq_ratio" "$white_lowfreq_ratio"   # fine has less low-frequency variance (expected ≈0.0144 vs ≈0.0625)
 assert_less fine_top_band "$fine_top_band" "$white_top_band"                  # fine thins white's top band (expected ≈0.12 vs ≈0.20)
 assert_greater fine_below_median "$fine_below_median" "$white_below_median"   # and lifts the share below white's median (expected ≈0.53 vs ≈0.50)
 assert_less lightness_ab_rmse "$lightness_ab_rmse" "$white_ab_rmse"           # lightness holds Oklab chroma where white shifts it
 assert_less lightness_ab_rmse "$lightness_ab_rmse" "$fine_ab_rmse"
+one_code=$(magick xc: -format '%[fx:quantumrange/255]' info:) || fail "magick quantum range failed"
+assert_less lightness_ab_rmse_one_code "$lightness_ab_rmse" "$one_code"
 # fine_beyond_white is recorded, not asserted: a few percent of fine's pixels
 # exceed white's bound by design (expected ≈0.05).
 
@@ -649,13 +655,15 @@ echo "PASS: artifacts in $OUT"
 
 `chmod +x` the script.
 
-- [ ] **Step 3: Build the binary and run the smoke**
+- [x] **Step 3: Build the binary and run the smoke**
 
 Run:
 
 ```bash
 cargo build
-IMPL=target/debug/niri OUT=/mnt/ssd3/tmp/material-6e7352-smoke docs/materials/scripts/glass-noise-type-smoke.sh
+IMPL=/mnt/ssd3/tmp/material-6e7352-impl-098bcdca/niri \
+OUT=/mnt/ssd3/tmp/material-6e7352-smoke-20260907-1 \
+docs/materials/scripts/glass-noise-type-smoke.sh
 ```
 
 Expected: `PASS: artifacts in …` and a `metrics.txt` whose values sit near the
@@ -666,7 +674,7 @@ values, the threshold is wrong and the executor stops and reports the metrics
 rather than loosening the assertion; if the metrics are far off, the shader
 or the harness is wrong and the plan needs a revision.
 
-- [ ] **Step 4: Record the evidence**
+- [x] **Step 4: Record the evidence**
 
 Create `docs/materials/2026-09-06-material-glass-noise-type-evidence.md` in
 the form of `2026-09-05-material-glass-noise-saturation-params-evidence.md`:
@@ -699,7 +707,7 @@ expected-versus-measured gap if any.>
 
 Fill every angle-bracket field from the run; leave none.
 
-- [ ] **Step 5: Index and status**
+- [x] **Step 5: Index and status**
 
 In `docs/materials/README.md`, after the
 `scripts/glass-noise-saturation-smoke.sh` entry, add:
@@ -720,7 +728,7 @@ status line with:
 Desktop acceptance (the `lightness` gate) pending installation.
 ```
 
-- [ ] **Step 6: Gates and commit**
+- [x] **Step 6: Gates and commit**
 
 Run: `just check && just test`
 Expected: pass.
