@@ -74,8 +74,8 @@ belongs to.
 pub struct Noise {
     #[knuffel(argument)]
     pub amount: FloatOrInt<0, 1>,
-    #[knuffel(property, str)]
-    pub r#type: Option<NoiseType>,
+    #[knuffel(property(name = "type"), str)]
+    pub kind: Option<NoiseType>,
 }
 
 pub enum NoiseType { White, Fine, Lightness }
@@ -85,37 +85,44 @@ pub enum NoiseType { White, Fine, Lightness }
 
 `ResolvedGlass` gains `noise_type: NoiseType`. The existing
 `noise: Option<f64>` keeps its meaning and its inheritance rule; `resolve`
-copies `amount` through as before and takes `r#type.unwrap_or_default()`.
+copies `amount` through as before and takes `kind.unwrap_or_default()`.
 The type has no inheritance: the global `blur` block has no notion of it,
 so an omitted type is `White` regardless of `backdrop-blur` or `blur { off }`.
 
-`MaterialRenderConfig` gains `noise_type: NoiseType`;
-`resolve_material` in `src/layout/tile.rs` copies it from the resolved
-glass. `MaterialState` includes it in the commit-counter comparison the way
-it includes the amount, so a type change alone redraws the material.
+`MaterialRenderConfig` needs no new field: it already carries the whole
+`ResolvedMaterial`, whose `ResolvedGlass` reaches the render element as its
+`glass`, and `apply_resolved` bumps the commit counter on any inequality of
+that config. The type therefore rides along and a type change alone redraws
+the material with no further plumbing.
 
 ## Shader
 
-One new integer uniform, `mat_noise_type` (0 white, 1 fine, 2 lightness),
-set beside `mat_noise`. The noise branch becomes:
+One new uniform, `float mat_noise_type` (0 white, 1 fine, 2 lightness),
+set beside `mat_noise` from `ResolvedGlass.noise_type`. Discrete uniforms
+are floats in this shader already (`mat_samples`), so the branch compares
+against half-way points. The noise branch becomes:
 
 ```glsl
 if (mat_noise > 0.0) {
     vec2 seed = gl_FragCoord.xy + vec2(47.0, 113.0);
-    if (mat_noise_type == 0) {
+    if (mat_noise_type < 0.5) {
         glassColor += (hash12(seed) - 0.5) * mat_noise;
     } else {
         float g = fineGrain(seed) * mat_noise;
-        if (mat_noise_type == 1) {
+        if (mat_noise_type < 1.5) {
             glassColor += vec3(g);
         } else {
-            vec3 lab = linearToOklab(srgbToLinear(glassColor));
+            vec3 lab = linearToOklab(srgbToLinear(clamp(glassColor, 0.0, 1.0)));
             lab.x += g;
-            glassColor = linearToSrgb(oklabToLinear(lab));
+            glassColor = linearToSrgb(clamp(oklabToLinear(lab), 0.0, 1.0));
         }
     }
 }
 ```
+
+The clamps are where the gamut hedge in the Decision table comes from: a
+lightness pushed past the gamut yields negative linear values, and `pow` of
+a negative is undefined in GLSL.
 
 `fineGrain` samples `hash12` at the seed and its eight unit-offset
 neighbours, returns `(centre - mean) * sqrt(8.0 / 9.0)`, and is zero-mean.
