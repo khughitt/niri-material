@@ -1,6 +1,36 @@
 #!/bin/sh
-# core.hooksPath bypasses the hooks `git lfs install` wrote to .git/hooks, so Git LFS
-# runs here first; it reads the pushed refs from stdin, so nothing may consume it before.
-git lfs pre-push "$@" || exit
 # The full gate, recorded under its own target so the report can price the hook.
+#
+# git opens the connection and discovers refs before running us, because it needs the
+# remote shas for our stdin. A gate long enough to idle that socket out gets it closed
+# by the far end, and git takes SIGPIPE writing the pack: the push fails, silently,
+# after the gate has been paid for. An SSH keepalive on the host prevents it (design
+# §4.6). Refusing here costs nothing; discovering it after the gate costs the gate.
+# The pushed refs on stdin are the hook's own and a project's may read them, so
+# nothing here consumes them.
+url=$2
+host=
+case "$url" in
+    ssh://*) rest=${url#ssh://}; host=${rest%%/*} ;;
+    *://* | /* | .* | "") ;;
+    *:*) host=${url%%:*} ;;
+esac
+host=${host#*@}
+host=${host%%:*}
+if [ -n "$host" ] &&
+   [ "$(ssh -G "$host" </dev/null 2>/dev/null | awk '$1 == "serveraliveinterval" { print $2 }')" = 0 ]; then
+    cat >&2 <<MESSAGE
+pre-push: no SSH keepalive for $host. This gate can run long enough to idle the
+connection out, and the push would then fail with SIGPIPE after paying for it.
+Add to ~/.ssh/config, under this host:
+
+  ServerAliveInterval 60
+  ServerAliveCountMax 30
+MESSAGE
+    exit 1
+fi
+
+# core.hooksPath bypasses the hooks `git lfs install` wrote to .git/hooks, so Git LFS
+# runs here first; it reads the pushed refs from stdin, so nothing above consumes them.
+git lfs pre-push "$@" || exit
 exec just hook-pre-push

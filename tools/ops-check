@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 2
+# ops-check version 3
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -10,8 +10,9 @@ exits 2 when it cannot run at all.
 - References: in the root README.md, AGENTS.md, and CLAUDE.md, backticks around a path
   are a claim that it exists. A path with a slash resolves against the repository root;
   a bare filename must be a tracked file somewhere in the tree; a registered project
-  prefix right before the backticks (ops `bin/tt`) resolves against that project; a
-  `just recipe` must be a recipe in the justfile. Fenced and indented code is not
+  prefix right before the backticks (ops `bin/tt`) resolves against that project, and
+  since Markdown wraps freely a reference opening a line takes the prefix from the end
+  of the line above; a `just recipe` must be a recipe in the justfile. Fenced and indented code is not
   scanned. A destination or an example is written without backticks.
 - Conflicted copies: no tracked path may be a Dropbox conflicted copy.
 """
@@ -37,6 +38,8 @@ NOT_PATHS = ("origin/", "upstream/", "refs/")
 RECIPE = re.compile(r"^just ([a-z][\w-]*)$")
 JUSTFILE_RECIPE = re.compile(r"^([a-z][\w-]*)\s*(?:\+?\*?[\w ]*)?:(?!=)", re.MULTILINE)
 FENCE = re.compile(r"^\s*(```|~~~)")
+# The last word of a candidate prefix, without the punctuation that can precede it.
+WORD = re.compile(r"\w[\w-]*$")
 
 
 def fail(message):
@@ -101,10 +104,20 @@ def classify(token):
     return None
 
 
+def project_prefix(before, previous):
+    """The registered project a reference is qualified by, or None. Markdown wraps
+    freely, so a reference opening a line takes the previous prose line's last word;
+    a list item or heading is a new block and has text of its own before the backticks."""
+    candidate = previous if not before.strip() else before
+    found = WORD.search(candidate.rstrip())
+    return found.group(0) if found else None
+
+
 def references(root, projects, basenames, doc):
     """Findings for one document: (path, line, message)."""
     justfile, names = recipes(root)
     text = (root / doc).read_text()
+    previous = ""
     for number, line in prose_lines(text):
         for found in BACKTICKED.finditer(line):
             token = found.group(1)
@@ -119,13 +132,15 @@ def references(root, projects, basenames, doc):
                 if token not in basenames:
                     yield doc, number, f"`{token}` is not a tracked file"
                 continue
-            before = line[:found.start()].rstrip()
-            prefix = before.rsplit(None, 1)[-1] if before else None
-            if prefix in projects and line[found.start() - 1:found.start()] == " ":
+            before = line[:found.start()]
+            separated = not before.strip() or before[-1] == " "
+            prefix = project_prefix(before, previous) if separated else None
+            if prefix in projects:
                 if not (projects[prefix] / token).exists():
                     yield doc, number, f"`{token}` does not exist in {prefix}"
             elif not (root / token).exists():
                 yield doc, number, f"`{token}` does not exist"
+        previous = line
 
 
 def findings(root, projects):
