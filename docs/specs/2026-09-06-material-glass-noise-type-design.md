@@ -1,6 +1,9 @@
 # Glass noise type: design
 
-**Status:** design approved 2026-09-06; not implemented.
+**Status:** implemented on branch `glass-noise-type` at `098bcdca`;
+`just check` and `just test` passing; nested GLES evidence in
+[`2026-09-06-material-glass-noise-type-evidence.md`](../materials/2026-09-06-material-glass-noise-type-evidence.md).
+Desktop acceptance (the `lightness` gate) pending installation.
 
 **Task:** `material-6e7352`. Hub goal Prism `prism-d6b600`; Prism piece
 `prism-51f23b`, designed in Prism
@@ -28,7 +31,7 @@ without touching the backdrop's colour. Both need a native shader selector.
 The glass `noise` node gains an optional `type` property:
 
 ```kdl
-noise 0.02 type=fine
+noise 0.02 type="fine"
 ```
 
 | Value | Grain |
@@ -146,8 +149,8 @@ The `white` branch is the existing two lines unchanged, so an omitted or
 
 GPU-free:
 
-- config parse accepts `noise 0.02 type=white`, `type=fine` and
-  `type=lightness`; rejects `type=blue`; resolves an omitted type to
+- config parse accepts `noise 0.02 type="white"`, `type="fine"` and
+  `type="lightness"`; rejects `type="blue"`; resolves an omitted type to
   `White` and keeps the amount's `None`-means-inherit behaviour intact,
   including under `backdrop-blur false` and `blur { off }`;
 - `resolve_material` carries the type into `MaterialRenderConfig`;
@@ -172,7 +175,7 @@ and against each other on the text-free glass ROI:
   0.5, which is expected and not a failure;
 - `lightness` leaves per-pixel Oklab chroma unchanged within tolerance
   against amount 0, where `white` and `fine` shift it;
-- an omitted type and an explicit `type=white` are byte-identical on the
+- an omitted type and an explicit `type="white"` are byte-identical on the
   same binary.
 
 Results are recorded as
