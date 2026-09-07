@@ -70,7 +70,7 @@ bash, Weston headless GL, ImageMagick 7.
   - `ResolvedGlass.noise_type: NoiseType`, default `White`; `ResolvedGlass.noise`
     stays `Option<f64>`.
 
-- [ ] **Step 1: Write the failing parse tests**
+- [x] **Step 1: Write the failing parse tests**
 
 Add to the test module of `niri-config/src/lib.rs`, directly after
 `glass_saturation_rejects_values_outside_zero_and_three`:
@@ -123,12 +123,12 @@ The test module starts with `use super::*;`, so `NoiseType` is in scope as
 soon as Step 3 adds it to the crate root's `pub use crate::material::{…}`
 list; no import line is needed.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `cargo test -p niri-config glass_noise_type`
 Expected: compile error, `NoiseType` not found.
 
-- [ ] **Step 3: Add the enum, the struct and the field**
+- [x] **Step 3: Add the enum, the struct and the field**
 
 In `niri-config/src/material.rs`, after the `FocusResponse` enum and before
 the `response_from_str!` macro:
@@ -209,7 +209,7 @@ In `Material::resolve`, replace `noise: g.noise.map(|x| x.0),` with
 In `niri-config/src/lib.rs`, add `Noise` and `NoiseType` to the
 `pub use crate::material::{…}` list, keeping it alphabetical.
 
-- [ ] **Step 4: Run the config crate's tests**
+- [x] **Step 4: Run the config crate's tests**
 
 Run: `cargo test -p niri-config`
 Expected: all pass, including the four new tests and the untouched
@@ -220,7 +220,7 @@ If `glass_noise_type_cannot_be_written_without_an_amount` fails because
 knuffel accepted the node, that means the argument was made optional; it must
 stay a required `#[knuffel(argument)]`.
 
-- [ ] **Step 5: Document the grammar**
+- [x] **Step 5: Document the grammar**
 
 In `docs/materials/material-config.md`, after the `| noise | float | inherit | 0–1 | — |`
 row add:
@@ -243,13 +243,13 @@ and hue hold except where the result leaves the sRGB gamut and clamps. The
 type has no inheritance and an omitted type is `white`.
 ```
 
-- [ ] **Step 6: Run the repository gates**
+- [x] **Step 6: Run the repository gates**
 
 Run: `just check && just test`
 Expected: both pass. `just check` includes `cargo fmt --check` and clippy; fix
 formatting with `cargo fmt --all` if it complains.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add niri-config/src/material.rs niri-config/src/lib.rs docs/materials/material-config.md
