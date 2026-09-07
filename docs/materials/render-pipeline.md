@@ -143,7 +143,7 @@ finished glass color; they never read the background either.
 | `light-ior` | (pending, prism-0ea68f) | 6 |
 | `ring-inset`, `ring-width`, `ring-color`, `ring-drift-hz` | (pending, prism-28e29c) | 6 |
 | `saturation` | `glass.saturation` | 9 |
-| `noise` `type=` | `glass.noise`, `glass.noiseType` | 10 |
+| `noise` `type=` | `glass.noise`; `type=` (pending, prism-51f23b) | 10 |
 
 Prism's `glass.inactive.*` keys write the same native parameters into the
 unfocused material definition; `glass.focusSplit` decides whether that
