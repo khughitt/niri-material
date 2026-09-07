@@ -287,7 +287,7 @@ The pre-commit hook regenerates nothing itself; if it reports
   GLSL `float fineGrain(vec2 p)`, `vec3 linearToOklab(vec3 c)`,
   `vec3 oklabToLinear(vec3 lab)`.
 
-- [ ] **Step 1: Write the failing damage test**
+- [x] **Step 1: Write the failing damage test**
 
 In `src/render_helpers/material.rs`'s test module, after
 `postprocess_change_advances_the_commit_in_place`:
@@ -307,7 +307,7 @@ In `src/render_helpers/material.rs`'s test module, after
     }
 ```
 
-- [ ] **Step 2: Write the failing resolver test**
+- [x] **Step 2: Write the failing resolver test**
 
 In `src/layout/tile.rs`'s test module, after
 `written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur`:
@@ -344,7 +344,7 @@ In `src/layout/tile.rs`'s test module, after
     }
 ```
 
-- [ ] **Step 3: Run both tests**
+- [x] **Step 3: Run both tests**
 
 Run: `cargo test --all --exclude niri-visual-tests noise_type`
 Expected: PASS for both. They cannot fail once Task 1 has landed, because
@@ -353,7 +353,7 @@ Expected: PASS for both. They cannot fail once Task 1 has landed, because
 regression pins for behaviour the spec requires, not red-green steps; a
 failure here means Task 1 is incomplete.
 
-- [ ] **Step 4: Register and set the uniform**
+- [x] **Step 4: Register and set the uniform**
 
 In `src/render_helpers/shaders/mod.rs`, after
 `UniformName::new("mat_noise", UniformType::_1f),` add:
@@ -372,7 +372,7 @@ In `src/render_helpers/material.rs`, after
 `g` is the `let g = &self.glass;` binding at line 818 of the same function,
 already used by the `mat_ior` line a few lines below.
 
-- [ ] **Step 5: Change the shader**
+- [x] **Step 5: Change the shader**
 
 In `src/render_helpers/shaders/material.frag`, after `uniform float mat_noise;`:
 
@@ -458,14 +458,14 @@ with
 
 The `white` branch keeps the original seed and the original expression.
 
-- [ ] **Step 6: Build, run the unit tests and the gates**
+- [x] **Step 6: Build, run the unit tests and the gates**
 
 Run: `cargo build && just check && just test`
 Expected: the build succeeds (the shader is a string compiled at runtime, so
 `cargo build` only proves the Rust side; the shader compiles on the GPU in
 Task 3), clippy is clean, all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add src/render_helpers/shaders/mod.rs src/render_helpers/material.rs src/layout/tile.rs src/render_helpers/shaders/material.frag

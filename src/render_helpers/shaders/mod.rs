@@ -173,6 +173,7 @@ impl Shaders {
                 UniformName::new("mat_bg_prefilter_mix", UniformType::_1f),
                 UniformName::new("mat_backdrop_prefilter_mix", UniformType::_1f),
                 UniformName::new("mat_noise", UniformType::_1f),
+                UniformName::new("mat_noise_type", UniformType::_1f),
                 UniformName::new("mat_saturation", UniformType::_1f),
                 UniformName::new("mat_ior", UniformType::_1f),
                 UniformName::new("mat_thickness", UniformType::_1f),

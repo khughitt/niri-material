@@ -87,7 +87,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/monitor.rs` | B | M | +134/-23 |
 | `src/layout/scrolling.rs` | B | M | +45/-4 |
 | `src/layout/tests.rs` | B | M | +109/-4 |
-| `src/layout/tile.rs` | B | M | +1117/-77 |
+| `src/layout/tile.rs` | B | M | +1155/-77 |
 | `src/layout/workspace.rs` | B | M | +29/-3 |
 | `src/niri.rs` | B | M | +205/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
@@ -95,7 +95,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
 | `src/render_helpers/mod.rs` | B | M | +27/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +68/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +69/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
 | `src/tests/mod.rs` | B | M | +2/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |

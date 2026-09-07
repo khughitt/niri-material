@@ -84,7 +84,7 @@ runs only where the window is transparent or outside the window.
 | 7 | **Emissive: sweeps.** A diagonal Gaussian sweep per impulse whose response is `sweep`. The other impulse responses act earlier: `ripple` adds to the jelly activity of step 2, `flash` raises aberration and distortion for steps 2 and 3. Additive. | — | response `ping` / `done` / `error` |
 | 8 | **Encode.** `glass = linearToSrgb(transmitted + specular + emissive)`. | — | — |
 | 9 | **Saturation.** `mix(luma(glass), glass, saturation)` in sRGB. | — | `saturation` |
-| 10 | **Noise.** One white-noise hash per screen pixel, the same value added to all three channels, in sRGB. | — | `noise` |
+| 10 | **Noise.** `white` adds one hash value per screen pixel; `fine` adds high-pass achromatic hash grain; `lightness` applies that fine grain to Oklab L. All operate in the finished sRGB glass color. | — | `noise`, `noise type=` |
 | 11 | **Coverage.** Multiply by the slab coverage from step 1; the result is premultiplied. | — | — |
 | 12 | **Composite.** `out = win + (1 - win.a) * glass`, then `* niri_alpha` (window-rule opacity, applied exactly once). | — | window-rule `opacity` |
 
@@ -143,7 +143,7 @@ finished glass color; they never read the background either.
 | `light-ior` | (pending, prism-0ea68f) | 6 |
 | `ring-inset`, `ring-width`, `ring-color`, `ring-drift-hz` | (pending, prism-28e29c) | 6 |
 | `saturation` | `glass.saturation` | 9 |
-| `noise` | `glass.noise` | 10 |
+| `noise` `type=` | `glass.noise`, `glass.noiseType` | 10 |
 
 Prism's `glass.inactive.*` keys write the same native parameters into the
 unfocused material definition; `glass.focusSplit` decides whether that
