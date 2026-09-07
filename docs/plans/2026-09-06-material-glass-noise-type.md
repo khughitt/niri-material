@@ -48,12 +48,13 @@ bash, Weston headless GL, ImageMagick 7.
 ### Task 1: Parse and resolve the noise type property
 
 **Files:**
-- Modify: `niri-config/src/material.rs` (the `Glass` struct at ~line 406,
-  `ResolvedGlass` at ~448, `Material::resolve` at ~540, and the enum block
-  with `response_from_str!` at ~205-260)
+- Modify: `niri-config/src/material.rs` (the `Glass` struct at line 406,
+  `ResolvedGlass` at 468, its `Default` at 497, `Material::resolve` at 526,
+  `Distortion` at 396, and the enum block ending in `response_from_str!` at
+  206-260)
 - Modify: `niri-config/src/lib.rs:58-61` (the `pub use crate::material::{…}`
   list) and its test module after
-  `glass_saturation_rejects_values_outside_zero_and_three` (~line 1350)
+  `glass_saturation_rejects_values_outside_zero_and_three` (line 1341)
 - Modify: `docs/materials/material-config.md` (the parameter table at ~line
   49 and the noise paragraph at ~line 87)
 
@@ -271,7 +272,7 @@ The pre-commit hook regenerates nothing itself; if it reports
 - Modify: `src/render_helpers/shaders/mod.rs:175` (the `UniformName` list,
   after `mat_noise`)
 - Modify: `src/render_helpers/material.rs:840` (the `Uniform::new` list) and
-  its test module (`postprocess_change_advances_the_commit_in_place` at ~1253)
+  its test module (`postprocess_change_advances_the_commit_in_place` at 1255)
 - Modify: `src/layout/tile.rs` test module (after
   `written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur`,
   ~line 2452)
@@ -568,6 +569,11 @@ assert_less() {
     is_number "$2" && is_number "$3" || fail "$1 is not numeric: $2 vs $3"
     awk -v a="$2" -v b="$3" 'BEGIN { exit !(a < b) }' || fail "$1 expected $2 < $3"
 }
+assert_close() {   # $1 name, $2 value, $3 reference, $4 relative tolerance
+    is_number "$2" && is_number "$3" && is_number "$4" || fail "$1 is not numeric: $2 vs $3 (tol $4)"
+    awk -v a="$2" -v b="$3" -v t="$4" 'BEGIN { d = a - b; if (d < 0) d = -d; exit !(d <= t * b) }' \
+        || fail "$1 expected $2 within $4 of $3"
+}
 ```
 
 - [ ] **Step 2: Write the captures, metrics and assertions**
@@ -610,20 +616,22 @@ for t in white fine lightness; do
     rmse "$OUT/$t-ab.png" "$OUT/zero-ab.png"; printf -v "${t}_ab_rmse" '%s' "$METRIC"
 done
 
-for v in zero_determinism_ae untyped_vs_white_ae zero_sd \
-         white_sd fine_sd lightness_sd \
-         white_top_band fine_top_band white_below_median fine_below_median \
-         white_beyond_white fine_beyond_white \
-         white_lowfreq_ratio fine_lowfreq_ratio \
-         white_ab_rmse fine_ab_rmse lightness_ab_rmse; do
+for v in zero_determinism_ae untyped_vs_white_ae zero_sd; do
     printf '%s=%s\n' "$v" "${!v}"
 done | tee "$OUT/metrics.txt"
+for t in white fine lightness; do
+    for m in sd full_sd down_sd lowfreq_ratio top_band below_median beyond_white ab_rmse; do
+        v=${t}_$m
+        printf '%s=%s\n' "$v" "${!v}"
+    done
+done | tee -a "$OUT/metrics.txt"
 
 assert_zero zero_determinism_ae "$zero_determinism_ae"        # two sessions of the amount-0 fixture are byte-identical: the precondition of every difference below
 assert_zero untyped_vs_white_ae "$untyped_vs_white_ae"        # an omitted type is white, byte for byte
 assert_greater white_sd "$white_sd" "$zero_sd"                # every type renders grain
 assert_greater fine_sd "$fine_sd" "$zero_sd"
 assert_greater lightness_sd "$lightness_sd" "$zero_sd"
+assert_close fine_full_sd "$fine_full_sd" "$white_full_sd" 0.1                # the sqrt(8/9) scale holds: fine's grain has white's standard deviation at the same amount (the signed difference isolates the grain from static content)
 assert_less fine_lowfreq_ratio "$fine_lowfreq_ratio" "$white_lowfreq_ratio"   # fine has less low-frequency energy (expected ≈0.12 vs ≈0.25)
 assert_less fine_top_band "$fine_top_band" "$white_top_band"                  # fine thins white's top band (expected ≈0.12 vs ≈0.20)
 assert_greater fine_below_median "$fine_below_median" "$white_below_median"   # and lifts the share below white's median (expected ≈0.53 vs ≈0.50)
