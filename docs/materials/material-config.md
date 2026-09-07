@@ -47,6 +47,7 @@ lengths are logical pixels.
 | `anisotropic-blur` | float | 0 | 0–1 | — |
 | `roughness` | float | 0 | 0–1 | — |
 | `noise` | float | inherit | 0–1 | — |
+| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
 | `saturation` | float | inherit | 0–3 | — |
 | `backdrop-blur` | bool | false | true / false | — |
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
@@ -93,6 +94,15 @@ value inherits the global `blur` block's `noise` or `saturation` while
 material opt-out neutralise only inherited values. Per-window
 `background-effect` overrides remain independent and do not alter the
 material.
+
+`noise` takes an optional `type="..."` property naming its grain. `white` is the
+original per-pixel uniform hash added equally to the three channels. `fine`
+subtracts each pixel's eight-neighbour mean from that hash and rescales it, so
+the grain loses its low-frequency clumps and its hard extremes while keeping
+the same strength for the same amount; it is still achromatic. `lightness`
+applies the `fine` value to Oklab lightness instead, so the backdrop's chroma
+and hue hold except where the result leaves the sRGB gamut and clamps. The
+type has no inheritance and an omitted type is `white`.
 
 It is unrelated to `anisotropic-blur`, which smears the refraction itself along
 one axis and does not soften the backdrop.

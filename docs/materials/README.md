@@ -28,6 +28,9 @@ All future production rebases and material commits happen in this repository.
 - `../specs/2026-09-05-material-glass-noise-saturation-params-design.md`: optional per-material `noise` and `saturation` design; written values always apply.
 - `2026-09-05-material-glass-noise-saturation-params-evidence.md`: passing nested GLES evidence that written noise and saturation render with backdrop blur off and under `blur { off }`.
 - `scripts/glass-noise-saturation-smoke.sh`: headless harness for those captures.
+- `../specs/2026-09-06-material-glass-noise-type-design.md`: optional `type=` on glass `noise`: white, fine (high-pass bell-shaped hash grain) and lightness (the same grain on Oklab L).
+- `2026-09-06-material-glass-noise-type-evidence.md`: nested GLES evidence for the three types: each renders, fine has less low-frequency energy and a thinner top band than white, lightness holds Oklab chroma.
+- `scripts/glass-noise-type-smoke.sh`: headless harness for those captures.
 - `../specs/2026-09-06-glass-parameter-sweep-design.md`: parameter sweep script design; a measurement tool that reports where a glass parameter stops changing the render, not a gate.
 - `2026-09-06-glass-parameter-sweep-evidence.md`: sweep tables for `ior`, thickness, roughness, noise and saturation, and the global `blur` block, with a per-slider summary for Prism.
 - `scripts/glass-parameter-sweep.sh`: headless harness that renders one KDL parameter at N values and tabulates the neighbouring deltas.

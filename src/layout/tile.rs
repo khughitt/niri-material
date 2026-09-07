@@ -2453,6 +2453,44 @@ mod tests {
     }
 
     #[test]
+    fn noise_type_reaches_the_render_config_regardless_of_blur() {
+        let reference = MaterialRef {
+            name: String::from("frost"),
+            response: None,
+        };
+        let global_off = niri_config::Blur {
+            off: true,
+            ..Default::default()
+        };
+        for (noise_type, backdrop_blur, blur) in [
+            (
+                niri_config::NoiseType::Fine,
+                false,
+                niri_config::Blur::default(),
+            ),
+            (niri_config::NoiseType::Lightness, true, global_off),
+            (
+                niri_config::NoiseType::White,
+                true,
+                niri_config::Blur::default(),
+            ),
+        ] {
+            let options = options_for(
+                niri_config::ResolvedGlass {
+                    noise: Some(0.3),
+                    noise_type,
+                    backdrop_blur,
+                    ..Default::default()
+                },
+                blur,
+            );
+            let resolved = resolve_material(Some(&reference), &options).unwrap();
+            assert_eq!(resolved.material.glass.noise_type, noise_type);
+            assert_eq!(resolved.noise, 0.3);
+        }
+    }
+
+    #[test]
     fn a_name_the_config_does_not_define_resolves_to_nothing() {
         // Reachable only between a reload's layout update and its rule
         // recompute. Panicking here took the whole compositor down when a
