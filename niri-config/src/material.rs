@@ -238,6 +238,18 @@ pub enum FocusResponse {
     RingLight = 1,
 }
 
+/// The grain pattern `noise` renders with. `White` is the original per-pixel
+/// uniform hash; `Fine` is its high-pass, bell-shaped form; `Lightness`
+/// applies `Fine` to Oklab lightness so chroma and hue hold.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum NoiseType {
+    #[default]
+    White = 0,
+    Fine = 1,
+    Lightness = 2,
+}
+
 macro_rules! response_from_str {
     ($ty:ident, $($s:literal => $v:ident),+ $(,)?) => {
         impl std::str::FromStr for $ty {
@@ -257,6 +269,7 @@ response_from_str!(AccentResponse, "none" => None, "ring" => Ring);
 response_from_str!(AttentionResponse, "none" => None, "rim-orbit" => RimOrbit, "ring-pulse" => RingPulse);
 response_from_str!(ImpulseResponse, "none" => None, "ripple" => Ripple, "flash" => Flash, "sweep" => Sweep);
 response_from_str!(FocusResponse, "none" => None, "ring-light" => RingLight);
+response_from_str!(NoiseType, "white" => White, "fine" => Fine, "lightness" => Lightness);
 
 /// A `response "name" { ... }` block inside a material definition.
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -400,6 +413,19 @@ pub struct Distortion {
     pub scale: Option<FloatOrInt<0, 2>>,
 }
 
+/// `noise <amount> type=<type>`.
+///
+/// The type does nothing while the amount is zero, so it rides the node it
+/// depends on, as `distortion` carries `scale=`. An omitted type is `white`,
+/// which renders exactly as the node did before the property existed.
+#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
+pub struct Noise {
+    #[knuffel(argument)]
+    pub amount: FloatOrInt<0, 1>,
+    #[knuffel(property(name = "type"), str)]
+    pub kind: Option<NoiseType>,
+}
+
 /// Glass parameters as written in the config; every one is optional and an
 /// omitted parameter takes its `ResolvedGlass::default()` value.
 #[derive(knuffel::Decode, Debug, Clone, Default, PartialEq)]
@@ -420,8 +446,8 @@ pub struct Glass {
     pub anisotropic_blur: Option<FloatOrInt<0, 1>>,
     #[knuffel(child, unwrap(argument))]
     pub roughness: Option<FloatOrInt<0, 1>>,
-    #[knuffel(child, unwrap(argument))]
-    pub noise: Option<FloatOrInt<0, 1>>,
+    #[knuffel(child)]
+    pub noise: Option<Noise>,
     #[knuffel(child, unwrap(argument))]
     pub saturation: Option<FloatOrInt<0, 3>>,
     #[knuffel(child, unwrap(argument))]
@@ -491,6 +517,10 @@ pub struct ResolvedGlass {
     /// Post-optics saturation factor, with the same inheritance rule as
     /// `noise`.
     pub saturation: Option<f64>,
+    /// Grain pattern for `noise`. No inheritance: the global `blur` block
+    /// has no notion of it, so omission is `White` regardless of backdrop
+    /// blur.
+    pub noise_type: NoiseType,
     pub light_ior: f64,
 }
 
@@ -515,6 +545,7 @@ impl Default for ResolvedGlass {
             offset_y: 6.,
             noise: None,
             saturation: None,
+            noise_type: NoiseType::White,
             light_ior: 6.,
         }
     }
@@ -576,8 +607,9 @@ impl Material {
                 bevel: g.bevel.map_or(d.bevel, |x| x.0),
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
-                noise: g.noise.map(|x| x.0),
+                noise: g.noise.map(|x| x.amount.0),
                 saturation: g.saturation.map(|x| x.0),
+                noise_type: g.noise.and_then(|x| x.kind).unwrap_or_default(),
                 light_ior: g.light_ior.map_or(d.light_ior, |x| x.0),
             },
             responses,
