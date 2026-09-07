@@ -15,7 +15,8 @@ in `material.frag`, after saturation and before coverage, one
 three sRGB-encoded channels. The grain is therefore already achromatic. What
 it is not is fine: white noise carries as much energy at low spatial
 frequencies as at high, which the eye reads as clumps, and a uniform
-distribution spends a quarter of its samples at the extremes. Observed on
+distribution keeps its density flat right up to its hard bound, so the
+strongest speckles are exactly as common as the faintest. Observed on
 the desktop on 2026-09-05, it looks coarse even at Prism's default unfocused
 amplitude of 0.02.
 
@@ -34,7 +35,7 @@ noise 0.02 type=fine
 | --- | --- |
 | `white` | today's grain, character for character; the default when `type` is omitted |
 | `fine` | high-pass hash noise: the fragment's hash minus the mean of its eight neighbours' hashes |
-| `lightness` | the `fine` value applied to Oklab lightness; chroma and hue hold exactly |
+| `lightness` | the `fine` value applied to Oklab lightness; chroma and hue hold, except where the shifted colour leaves the sRGB gamut and clamps, near black and near white |
 
 An unknown value is a parse error, like every other glass parameter.
 
@@ -155,8 +156,13 @@ and against each other on the text-free glass ROI:
 - `fine` has less low-frequency energy than `white`: the variance of the
   ROI after a 4x4 box downsample, divided by its full-resolution variance,
   is lower for `fine`;
-- `fine` has lighter tails than `white` at matched standard deviation: its
-  peak absolute deviation from the amount-0 capture is smaller;
+- `fine` concentrates its deviations near zero where `white` does not: at
+  matched standard deviation, the share of ROI pixels whose absolute
+  deviation from the amount-0 capture lies in the top fifth of `white`'s
+  range (0.4 to 0.5 of the amount) is lower for `fine`, and so is its
+  median absolute deviation. `fine` is not bounded by `white`'s range: its
+  bell reaches 0.94 of the amount and a few percent of its pixels exceed
+  0.5, which is expected and not a failure;
 - `lightness` leaves per-pixel Oklab chroma unchanged within tolerance
   against amount 0, where `white` and `fine` shift it;
 - an omitted type and an explicit `type=white` are byte-identical on the
