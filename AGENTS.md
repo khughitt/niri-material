@@ -16,6 +16,14 @@ rendering design assumes.
 - Fresh clone: `git config core.hooksPath .githooks` installs the hooks. Pre-commit runs
   `just check`; pre-push runs `just gate`. They also run the Git LFS hooks, which
   `core.hooksPath` would otherwise bypass.
+- `.cargo/config.toml` and `target/` are per-machine and must not reach another
+  machine: both carry `user.com.dropbox.ignored=1`, so the shared tree holds neither.
+  Without a `.cargo/config.toml` cargo builds into `target/`, which is what a fresh
+  machine gets. To keep build output on a fast local disk, write your own
+  `.cargo/config.toml` with `build.target-dir` and mark it ignored
+  (`setfattr -n user.com.dropbox.ignored -v 1 .cargo`). A `target-dir` naming a path
+  that exists on one machine only fails `cargo fmt` before any gate can run, so no
+  commit is possible there.
 - Before removing a worktree, run `tt-report` so its fallback test-timing log is
   harvested.
 - `tools/tt` is a vendored copy of ops `bin/tt`: change it there and re-copy.
