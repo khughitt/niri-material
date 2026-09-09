@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-218 paths differ: 38 class B (seam), 164 class A (fork-only), 16 class C (scaffolding).
+220 paths differ: 38 class B (seam), 164 class A (fork-only), 18 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -62,7 +62,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.gitignore` | B | M | +3/-1 |
 | `AGENTS.md` | C | A | +33/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
-| `justfile` | C | A | +52/-0 |
+| `justfile` | C | A | +57/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1047/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
@@ -101,8 +101,10 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/ops-check` | C | A | +170/-0 |
+| `tools/package-pin` | C | A | +109/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
+| `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_upstream_report.py` | C | A | +840/-0 |
 | `tools/tt` | C | A | +276/-0 |
 | `tools/upstream-report` | C | A | +693/-0 |
@@ -201,8 +203,8 @@ authoritative version, with the reasoning for each step, is
 7. Physical DRM acceptance on real hardware, with a human watching scanout. Not
    interchangeable with step 6.
 8. Prune stale acknowledgments, re-review the posture column, add a rebase-log line.
-9. Re-pin packaging: recompute the commit count, rewrite `pkgver` and the `source=`
-   commit in `packaging/arch/PKGBUILD`, push before building.
+9. Re-pin packaging: push first, then `just package-pin <commit>`, which derives
+   `pkgver`, the `source=` commit and `NIRI_BUILD_COMMIT` from that commit.
 10. Keep the old branches as archives, then change the repository's default branch on
     GitHub (`gh repo edit --default-branch materials-<newtag>`) — the weekly workflow
     only schedules from the default branch. Moving local `origin/HEAD` does not do this.

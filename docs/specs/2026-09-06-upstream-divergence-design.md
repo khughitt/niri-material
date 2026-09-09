@@ -100,9 +100,14 @@ moment to start measuring it.
 
 ### Packaging
 
-`packaging/arch/PKGBUILD` carries a **static** `pkgver=26.04.r278.g5dbe182d`
-and a `source=` line pinning commit `5dbe182d`. Nothing computes these; the
-release procedure rewrites both by hand.
+`packaging/arch/PKGBUILD` carries a **static** `pkgver` and a `source=` line
+pinning one commit, so a build is reproducible from the recipe alone. They were
+rewritten by hand and drifted: the pinned `r278` was a count no rule produces.
+`just package-pin <commit>` now derives `pkgver`, the `source=` commit and
+`NIRI_BUILD_COMMIT` from the commit being packaged, and `check` refuses a
+PKGBUILD whose three values disagree. `r<N>` counts the commits this fork
+carries over `patched_commit` in the baseline record — `git describe` cannot
+serve, because no upstream tag is an ancestor of this history.
 
 ### CI
 
@@ -471,9 +476,9 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
    the feature table's posture column, and add one rebase-log line recording
    the tag, the conflicts resolved, the merge resolutions carried across, and
    the evidence runs.
-9. Re-pin packaging: recompute the commit count since the pin, rewrite
-   `pkgver` and the `source=` commit in `packaging/arch/PKGBUILD`, push before
-   building.
+9. Re-pin packaging: push first, then `just package-pin <commit>`, which
+   derives `pkgver`, the `source=` commit and `NIRI_BUILD_COMMIT` from the
+   commit being packaged.
 10. Keep the old branches as archives. Then **change the repository's default
     branch on GitHub** — `gh repo edit --default-branch materials-<newtag>` —
     because the weekly workflow only schedules from the file on the default
