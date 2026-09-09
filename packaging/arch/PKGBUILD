@@ -1,5 +1,5 @@
 pkgname=niri-material
-pkgver=26.04.r278.g5dbe182d
+pkgver=26.04.r273.g5dbe182d
 pkgrel=1
 pkgdesc="A scrollable-tiling Wayland compositor with native materials"
 arch=(x86_64)

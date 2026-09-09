@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""Pin packaging/arch/PKGBUILD on one commit, and derive every value that follows from it.
+
+    tools/package-pin [<commit>]     rewrite the pin (default HEAD)
+    tools/package-pin --check        verify the three values agree
+
+Three values in the PKGBUILD name the packaged commit: `pkgver`, the `#commit=` in
+`source=`, and `NIRI_BUILD_COMMIT` in build(). The release procedure rewrote them by
+hand and they drifted: the pinned r278 is the count no rule produces -- the fork holds
+273 commits over the baseline at that commit. So derive all three here, and let `check`
+refuse a PKGBUILD whose values disagree.
+
+`r<N>` is the number of commits this fork carries over `patched_commit` from
+docs/materials/upstream-baseline.toml -- the baseline tree with its carried patches
+applied, and the only ancestor a rewritten history can be counted from. `git describe`
+cannot serve: no upstream tag is an ancestor of this history.
+
+Standard library only. Exits 1 on a disagreement under --check, 2 when it cannot run.
+"""
+import pathlib
+import re
+import subprocess
+import sys
+import tomllib
+
+BASELINE = "docs/materials/upstream-baseline.toml"
+PKGBUILD = "packaging/arch/PKGBUILD"
+
+PKGVER = re.compile(r"^pkgver=(?P<value>\S+)$", re.MULTILINE)
+SOURCE_COMMIT = re.compile(r"(?<=#commit=)[0-9a-f]{40}")
+BUILD_COMMIT = re.compile(r"(?<=^  export NIRI_BUILD_COMMIT=)[0-9a-f]{8}$", re.MULTILINE)
+
+
+def git(root, *args):
+    result = subprocess.run(
+        ("git", "-C", str(root), *args), capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        sys.exit(f"package-pin: git {' '.join(args)}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def repository_root():
+    result = subprocess.run(
+        ("git", "rev-parse", "--show-toplevel"), capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        sys.exit("package-pin: not inside a git repository")
+    return pathlib.Path(result.stdout.strip())
+
+
+def pin_for(root, commit):
+    """The three values the PKGBUILD must carry for `commit`."""
+    baseline = tomllib.loads((root / BASELINE).read_text())
+    sha = git(root, "rev-parse", "--verify", f"{commit}^{{commit}}")
+    count = git(root, "rev-list", "--count", f"{baseline['patched_commit']}..{sha}")
+    return {
+        "pkgver": f"{baseline['tag'].lstrip('v')}.r{count}.g{sha[:8]}",
+        "source_commit": sha,
+        "build_commit": sha[:8],
+    }
+
+
+def read_pin(text):
+    pkgver = PKGVER.search(text)
+    source_commit = SOURCE_COMMIT.search(text)
+    build_commit = BUILD_COMMIT.search(text)
+    if not (pkgver and source_commit and build_commit):
+        sys.exit(f"package-pin: {PKGBUILD} is missing pkgver, #commit= or NIRI_BUILD_COMMIT")
+    return {
+        "pkgver": pkgver.group("value"),
+        "source_commit": source_commit.group(0),
+        "build_commit": build_commit.group(0),
+    }
+
+
+def write_pin(text, pin):
+    text = PKGVER.sub(f"pkgver={pin['pkgver']}", text, count=1)
+    text = SOURCE_COMMIT.sub(pin["source_commit"], text, count=1)
+    return BUILD_COMMIT.sub(pin["build_commit"], text, count=1)
+
+
+def main(argv):
+    root = repository_root()
+    path = root / PKGBUILD
+    text = path.read_text()
+
+    if argv[:1] == ["--check"]:
+        current = read_pin(text)
+        expected = pin_for(root, current["source_commit"])
+        if current != expected:
+            print(f"package-pin: {PKGBUILD} does not describe the commit it pins:", file=sys.stderr)
+            for field in sorted(current):
+                if current[field] != expected[field]:
+                    print(f"  {field}: {current[field]} -> {expected[field]}", file=sys.stderr)
+            print(f"  run `just package-pin {current['source_commit'][:8]}`", file=sys.stderr)
+            return 1
+        return 0
+
+    if len(argv) > 1:
+        sys.exit("usage: package-pin [<commit>] | package-pin --check")
+    pin = pin_for(root, argv[0] if argv else "HEAD")
+    if not git(root, "branch", "--remotes", "--contains", pin["source_commit"]):
+        sys.exit(f"package-pin: {pin['source_commit'][:8]} is on no remote branch; push it first")
+    path.write_text(write_pin(text, pin))
+    print(f"{PKGBUILD}: {pin['pkgver']}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
