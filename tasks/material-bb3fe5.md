@@ -5,8 +5,8 @@ status: todo
 priority: 2
 size: m
 created: 2026-09-06T22:27:52Z
-updated: 2026-09-10T09:34:08Z
-depends: [material-1135bc]
+updated: 2026-09-10T10:24:00Z
+depends: [material-397fcb]
 tags: [material, rendering]
 source: "mindful:thought:5778c060e57d47dd808e20347223cfd5"
 spec: docs/specs/2026-09-10-material-optics-design.md
