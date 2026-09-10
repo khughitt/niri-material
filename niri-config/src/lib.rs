@@ -55,6 +55,7 @@ pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
+pub use crate::material::optics::saturation::ResolvedSaturation;
 pub use crate::material::{
     AccentResponse, AttentionResponse, FocusResponse, Glass, ImpulseResponse, Material,
     MaterialRef, Noise, NoiseType, Positive, ResolvedGlass, ResolvedMaterial, ResolvedResponse,
@@ -1234,7 +1235,7 @@ mod tests {
                 offset_x: -8.,
                 offset_y: 4.,
                 noise: None,
-                saturation: None,
+                saturation: ResolvedSaturation::default(),
                 noise_type: NoiseType::White,
                 light_ior: 6.,
             }
@@ -1306,7 +1307,7 @@ mod tests {
         );
         let glass = parsed.materials[0].resolve().glass;
         assert_eq!(glass.noise, Some(0.02));
-        assert_eq!(glass.saturation, Some(0.85));
+        assert_eq!(glass.saturation.amount, Some(0.85));
     }
 
     #[test]
@@ -1314,19 +1315,34 @@ mod tests {
         let noise_only = do_parse(r##"material "frost" { glass { noise 0.5; }; }"##);
         let glass = noise_only.materials[0].resolve().glass;
         assert_eq!(glass.noise, Some(0.5));
-        assert_eq!(glass.saturation, None);
+        assert_eq!(glass.saturation.amount, None);
 
         let saturation_only = do_parse(r##"material "frost" { glass { saturation 0; }; }"##);
         let glass = saturation_only.materials[0].resolve().glass;
         assert_eq!(glass.noise, None);
-        assert_eq!(glass.saturation, Some(0.));
+        assert_eq!(glass.saturation.amount, Some(0.));
+    }
+
+    #[test]
+    fn saturation_resolves_through_its_optic() {
+        let written = do_parse(r##"material "frost" { glass { saturation 0.85; }; }"##);
+        assert_eq!(
+            written.materials[0].resolve().glass.saturation,
+            ResolvedSaturation { amount: Some(0.85) }
+        );
+        let omitted = do_parse(r##"material "frost" { glass {}; }"##);
+        assert_eq!(
+            omitted.materials[0].resolve().glass.saturation,
+            ResolvedSaturation::default()
+        );
+        assert_eq!(ResolvedSaturation::default().amount, None);
     }
 
     #[test]
     fn glass_noise_and_saturation_default_to_inherit() {
         let d = ResolvedGlass::default();
         assert_eq!(d.noise, None);
-        assert_eq!(d.saturation, None);
+        assert_eq!(d.saturation.amount, None);
     }
 
     #[test]

@@ -209,6 +209,7 @@ fn resolve_material(
     let saturation = material
         .glass
         .saturation
+        .amount
         .unwrap_or_else(|| inherited(options.blur.saturation, 1.)) as f32;
     Some(MaterialRenderConfig {
         material,
@@ -2436,7 +2437,7 @@ mod tests {
             let options = options_for(
                 niri_config::ResolvedGlass {
                     noise,
-                    saturation,
+                    saturation: niri_config::ResolvedSaturation { amount: saturation },
                     backdrop_blur,
                     ..Default::default()
                 },

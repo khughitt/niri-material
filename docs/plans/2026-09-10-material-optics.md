@@ -350,7 +350,7 @@ git commit -m "refactor(config): add material parameter metadata with bounds fro
 **Interfaces:**
 - Produces: `niri_config::material::optics::saturation::{Saturation, ResolvedSaturation, resolve, params}`; `ResolvedGlass.saturation: ResolvedSaturation { amount: Option<f64> }`; re-export `niri_config::ResolvedSaturation`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to the `tests` module of `niri-config/src/lib.rs`, next to `glass_noise_and_saturation_resolve_independently`:
 
@@ -371,12 +371,12 @@ Add to the `tests` module of `niri-config/src/lib.rs`, next to `glass_noise_and_
     }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config saturation_resolves_through_its_optic`
 Expected: FAIL to compile, `cannot find type ResolvedSaturation`.
 
-- [ ] **Step 3: Create the optic module**
+- [x] **Step 3: Create the optic module**
 
 `niri-config/src/material/optics/mod.rs`:
 
@@ -439,7 +439,7 @@ pub fn params() -> Vec<ParamSpec> {
 }
 ```
 
-- [ ] **Step 4: Route `Glass` and `ResolvedGlass` through it**
+- [x] **Step 4: Route `Glass` and `ResolvedGlass` through it**
 
 In `niri-config/src/material/mod.rs`:
 
@@ -460,11 +460,11 @@ In `niri-config/src/lib.rs`, extend the `pub use crate::material::{...}` list wi
 pub use crate::material::optics::saturation::ResolvedSaturation;
 ```
 
-- [ ] **Step 5: Update the existing config tests**
+- [x] **Step 5: Update the existing config tests**
 
 In `niri-config/src/lib.rs` tests: every `saturation: None,` inside a `ResolvedGlass { ... }` literal (around line 1237) becomes `saturation: ResolvedSaturation::default(),`; every `glass.saturation` comparison (lines near 1309, 1317, 1322, 1329) becomes `glass.saturation.amount`. `ResolvedGlass` literals that name `noise` and `noise_type` are untouched in this task.
 
-- [ ] **Step 6: Keep the niri crate compiling**
+- [x] **Step 6: Keep the niri crate compiling**
 
 `src/layout/tile.rs`, in `resolve_material`, change
 
@@ -489,12 +489,12 @@ In the `tile.rs` tests, the test `written_noise_and_saturation_resolve_independe
 
 `src/render_helpers/material.rs` does not read `glass.saturation` (it receives the tile's `f32`), so it needs no change here.
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config` then `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile`
 Expected: all pass, including `saturation_resolves_through_its_optic`.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 cargo fmt --all
