@@ -2025,7 +2025,7 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(ticks) = &ctx.signal_ticks {
             if let Some(deadline) =
-                self.signal_tick_deadline(location, ticks.view.get(), self.clock.now_unadjusted())
+                self.tick_deadline(location, ticks.view.get(), self.clock.now_unadjusted())
             {
                 ticks.report(deadline);
             }
@@ -2107,9 +2107,14 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    /// Next bucket boundary this tile needs a redraw for, if its effective
-    /// motion is sustained and its slab band is in view.
-    pub fn signal_tick_deadline(
+    /// Next instant this tile needs a redraw for its material: the earliest
+    /// of any optic's own change and the sustained-signal or focus-drift
+    /// bucket boundary, while the slab band is in view.
+    ///
+    /// The optic deadline does not sit behind the signal frame cache: an
+    /// unfocused, signal-free window has no cache, and an animated optic
+    /// must keep it redrawing all the same (design §3).
+    pub fn tick_deadline(
         &self,
         location: Point<f64, Logical>,
         view: Rectangle<f64, Logical>,
@@ -2117,11 +2122,21 @@ impl<W: LayoutElement> Tile<W> {
     ) -> Option<Duration> {
         use crate::render_helpers::signal::{slab_in_view, tick_deadline};
 
-        let cache = self.signal_frame_cache.borrow();
-        let (eff, inputs) = cache.as_ref()?;
-        let bevel = self.material.as_ref()?.material().glass.bevel;
-        let in_view = slab_in_view(location, self.tile_size(), bevel, view);
-        tick_deadline(eff, in_view, now, inputs.drift_hz)
+        let material = self.material.as_ref()?;
+        let glass = &material.material().glass;
+        if !slab_in_view(location, self.tile_size(), glass.bevel, view) {
+            return None;
+        }
+        let optic = optics::next_change(glass, &self.optic_frame(material, now));
+        let signal = self
+            .signal_frame_cache
+            .borrow()
+            .as_ref()
+            .and_then(|(eff, inputs)| tick_deadline(eff, true, now, inputs.drift_hz));
+        match (optic, signal) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
     }
 
     pub fn store_unmap_snapshot_if_empty(
@@ -2670,5 +2685,53 @@ mod tests {
         // Focused, `motion "full"`, animations on: the configured rate.
         tile.active = true;
         assert_eq!(tile.focus_drift_hz(&response), response.ring_drift_hz);
+    }
+
+    #[test]
+    fn static_optics_report_no_deadline_without_a_signal_cache() {
+        // An unfocused tile whose response lights nothing and that carries no
+        // signal has no signal frame cache. Optic deadlines are still
+        // evaluated; with only static optics registered they are None, and
+        // the call must not short-circuit on the missing cache.
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::None, clock);
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(false, true, view);
+        assert!(tile.signal_frame_cache.borrow().is_none());
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::ZERO),
+            None
+        );
+    }
+
+    #[test]
+    fn a_focused_drifting_tile_keeps_its_signal_deadline() {
+        // Start the fixture already focused: a focus *change* would begin a
+        // crossfade from 0, and `focus_drift_hz` is 0 until that crossfade
+        // has advanced, so a tile focused at the same instant reports no
+        // drift yet. An already-focused tile has focus value 1.
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        tile.active = true;
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, view);
+        assert!(tile.focus_crossfade.is_none());
+        assert!(tile.signal_frame_cache.borrow().is_some());
+        let deadline = tile.tick_deadline(Point::default(), view, Duration::ZERO);
+        assert!(deadline.is_some_and(|d| d > Duration::ZERO), "{deadline:?}");
+    }
+
+    #[test]
+    fn an_out_of_view_slab_reports_no_deadline() {
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        tile.active = true;
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, view);
+        assert!(tile
+            .tick_deadline(Point::default(), view, Duration::ZERO)
+            .is_some());
+        let far = Point::from((10_000., 10_000.));
+        assert_eq!(tile.tick_deadline(far, view, Duration::ZERO), None);
     }
 }

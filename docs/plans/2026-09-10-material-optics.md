@@ -1831,7 +1831,7 @@ git commit -m "feat(material): upload optic values from the registry and fingerp
 - Consumes: `optics::next_change`, `Tile::optic_frame` (Task 7).
 - Produces: `pub fn tick_deadline(&self, location: Point<f64, Logical>, view: Rectangle<f64, Logical>, now: Duration) -> Option<Duration>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to the `tile.rs` tests module, after `only_a_focused_tile_drifts`:
 
@@ -1880,12 +1880,12 @@ Add to the `tile.rs` tests module, after `only_a_focused_tile_drifts`:
     }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile::tests`
 Expected: FAIL to compile, `no method named tick_deadline`.
 
-- [ ] **Step 3: Replace the method**
+- [x] **Step 3: Replace the method**
 
 Replace `signal_tick_deadline` in `src/layout/tile.rs` with:
 
@@ -1925,12 +1925,12 @@ Replace `signal_tick_deadline` in `src/layout/tile.rs` with:
 
 At the call site in `Tile::render` (near line 2025) rename `self.signal_tick_deadline(` to `self.tick_deadline(`.
 
-- [ ] **Step 4: Run the tests, then the whole suite**
+- [x] **Step 4: Run the tests, then the whole suite**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile` then `just test`
 Expected: green.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
