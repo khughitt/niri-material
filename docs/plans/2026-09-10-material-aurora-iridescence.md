@@ -20,7 +20,7 @@
 - Every amount is `0–1` and defaults to `0`; a material that does not name the optic renders exactly as today. Uniforms use the prefix `mat_<optic>_` (the amount itself is `mat_<optic>`). Hook functions are `<optic>_<hook>`; transforming hooks return their input at the neutral, `emissive` returns `vec3(0.0)`, and the neutral check is the first line.
 - `ORDER` in `niri-config/src/material/optics/mod.rs` and `OPTICS` in `src/render_helpers/material/optics/mod.rs` must agree at every commit (a niri test pins them). Final render order: `iridescence`, `aurora`, `saturation`, `noise`. A config-side task therefore adds its module without registering it in `ORDER`; the renderer task registers both sides in one commit.
 - The parameter table in `docs/materials/material-config.md` is generated: after any `params()` change run `MATERIAL_DOCS_UPDATE=1 python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_table_matches_the_docs` and commit the regenerated block.
-- The shader compiles at runtime. After any `.frag` change, validate the assembled source offline: `glslangValidator -S frag <(printf '#version 100\n'; cat src/render_helpers/shaders/material/prelude.frag src/render_helpers/shaders/material/iridescence.frag src/render_helpers/shaders/material/aurora.frag src/render_helpers/shaders/material/saturation.frag src/render_helpers/shaders/material/noise.frag src/render_helpers/shaders/material/main.frag)` (omit files that do not exist yet) and expect exit 0.
+- The shader compiles at runtime. After any `.frag` change, validate the assembled source offline through a real file (`glslangValidator` cannot read a process substitution: "can't read input file"): write `#version 100` plus `prelude.frag`, each optic's `.frag` in `OPTICS` order, and `main.frag` to `target/material.frag` (the per-machine, Dropbox-ignored build dir) and run `glslangValidator -S frag target/material.frag`; expect exit 0. The exact command is in Tasks 2 and 5.
 - If the hook fails with a "no field" compile error the source contradicts, run `cargo clean -p niri-config -p niri` and retry (shared target dir across worktrees).
 - Live captures run on a headless Weston host started by the smoke itself, never on the desktop session. `NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material` holds the retained Tracy 0.13.1 tools under `material-roughness-b220152d/tools`.
 - Spec deviation, decided here: §7.3's loop circle radius of 40 noise units moves the field 105 px/s at the 0.004 scale (251 noise units per 600 s lap), which is not a slow field. The radius is a GLSL constant `AURORA_LOOP_RADIUS = 2.0` (about 5 px/s). Task 8 corrects §7.3 to the landed value.
@@ -334,7 +334,13 @@ so the hook runs before the `if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0
 
 - [ ] **Step 4: Validate the shader offline**
 
-Run: `glslangValidator -S frag <(printf '#version 100\n'; cat src/render_helpers/shaders/material/prelude.frag src/render_helpers/shaders/material/iridescence.frag src/render_helpers/shaders/material/saturation.frag src/render_helpers/shaders/material/noise.frag src/render_helpers/shaders/material/main.frag)`
+Run:
+
+```bash
+{ printf '#version 100\n'; cat src/render_helpers/shaders/material/prelude.frag src/render_helpers/shaders/material/iridescence.frag src/render_helpers/shaders/material/saturation.frag src/render_helpers/shaders/material/noise.frag src/render_helpers/shaders/material/main.frag; } > target/material.frag
+glslangValidator -S frag target/material.frag
+```
+
 Expected: exit 0, no errors.
 
 - [ ] **Step 5: Regenerate the table and write the docs**
@@ -1127,7 +1133,13 @@ pub fn params() -> Vec<ParamSpec> {
 
 - [ ] **Step 4: Validate the shader offline**
 
-Run: `glslangValidator -S frag <(printf '#version 100\n'; cat src/render_helpers/shaders/material/prelude.frag src/render_helpers/shaders/material/iridescence.frag src/render_helpers/shaders/material/aurora.frag src/render_helpers/shaders/material/saturation.frag src/render_helpers/shaders/material/noise.frag src/render_helpers/shaders/material/main.frag)`
+Run:
+
+```bash
+{ printf '#version 100\n'; cat src/render_helpers/shaders/material/prelude.frag src/render_helpers/shaders/material/iridescence.frag src/render_helpers/shaders/material/aurora.frag src/render_helpers/shaders/material/saturation.frag src/render_helpers/shaders/material/noise.frag src/render_helpers/shaders/material/main.frag; } > target/material.frag
+glslangValidator -S frag target/material.frag
+```
+
 Expected: exit 0.
 
 - [ ] **Step 5: Regenerate the table and write the docs**
@@ -1344,7 +1356,7 @@ values were tuned.
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config every_preset`
 Expected: PASS. Run: `just check`
-Expected: PASS, including `package-pin --check` (the pin is unaffected by `package()` edits).
+Expected: PASS. `package-pin --check` only verifies that `pkgver`, the `#commit=` source pin, and `NIRI_BUILD_COMMIT` agree with each other; the pin still names `31f7fbe2`, which has no `resources/materials/`, so `makepkg` would fail on the new install line until Task 9 repins on the merged, pushed head.
 
 - [ ] **Step 7: Commit**
 
@@ -1396,6 +1408,12 @@ git commit -m "feat(material): rainbow and aurora presets under resources/materi
 set -eu
 OUT=${OUT:?artifact directory}
 EVIDENCE=${NIRI_MATERIAL_WORK_ROOT:?evidence root with the retained Tracy tools}
+# A run owns its directory: traces are exported unconditionally and the
+# GPU medians files accumulate one line per round, so a rerun into a used
+# directory would mix measurements. Refuse anything but a fresh one.
+if [ -e "$OUT" ] && [ -n "$(ls -A "$OUT")" ]; then
+    echo "FAIL: OUT must be a fresh directory, $OUT is not empty" >&2; exit 1
+fi
 mkdir -p "$OUT"
 ROOT=$(git rev-parse --show-toplevel)
 # One short, unique runtime dir per run: nested niri panics on long socket
@@ -1445,7 +1463,46 @@ TICK='printf "\033[?25l"; while :; do date +%s%N; sleep 0.1; done'
 # lights no filament and no accent so the probe is signal-free; two windows
 # at proportion 0.4 both fit in view, so a second window can take focus
 # without scrolling the probe.
+#
+# GLASS_EXTRA is newline-separated glass lines. A line whose node name
+# matches a baseline line replaces it, as the sweep's emit_block does: KDL
+# rejects a duplicate single node (`ior 1.5` then `ior 1.7` fails
+# validation), so a preset body cannot simply be appended.
+GLASS_BASELINE=(
+    "ior 1.5"
+    "thickness 20"
+    "attenuation-color \"#dfe8ff\""
+    "attenuation-distance 60"
+    "chromatic-aberration 0"
+    "distortion 0 scale=0.5"
+    "anisotropic-blur 0"
+    "roughness 0"
+    "backdrop-blur false"
+    "jelly-flex 0"
+    "jelly-ripple 0"
+    "bevel 12"
+    "offset-x 6"
+    "offset-y 6"
+)
+emit_glass() {   # the baseline with GLASS_EXTRA's nodes replaced, then GLASS_EXTRA
+    local line key extra_keys=" "
+    while IFS= read -r line; do
+        line=${line#"${line%%[! ]*}"}
+        [ -n "$line" ] && extra_keys+="${line%% *} "
+    done <<< "$GLASS_EXTRA"
+    for line in "${GLASS_BASELINE[@]}"; do
+        key=${line%% *}
+        case $extra_keys in *" $key "*) continue ;; esac
+        printf '        %s\n' "$line"
+    done
+    while IFS= read -r line; do
+        line=${line#"${line%%[! ]*}"}
+        [ -n "$line" ] && printf '        %s\n' "$line"
+    done <<< "$GLASS_EXTRA"
+    return 0
+}
 write_config() {   # $1 path; reads GLASS_EXTRA, RESPONSE_EXTRA, TOP_EXTRA
+    local glass; glass=$(emit_glass)
     cat > "$1" <<KDL
 prefer-no-csd
 layout {
@@ -1462,21 +1519,7 @@ spawn-at-startup "swaybg" "-m" "fill" "-i" "$WALL"
 $TOP_EXTRA
 material "gos-probe" {
     glass {
-        ior 1.5
-        thickness 20
-        attenuation-color "#dfe8ff"
-        attenuation-distance 60
-        chromatic-aberration 0
-        distortion 0 scale=0.5
-        anisotropic-blur 0
-        roughness 0
-        backdrop-blur false
-        jelly-flex 0
-        jelly-ripple 0
-        bevel 12
-        offset-x 6
-        offset-y 6
-        $GLASS_EXTRA
+$glass
     }
     response "default" {
         focus "none"
@@ -1673,7 +1716,7 @@ col() {   # $1 csv, $2 header; prints the 1-based index
     [ -n "$idx" ] || fail "column '$2' not in $(head -1 "$1")"
     echo "$idx"
 }
-export_cpu() { [ -s "$OUT/$1.csv" ] || "$TOOLS/tracy-csvexport" --unwrap "$OUT/$1.tracy" > "$OUT/$1.csv"; }
+export_cpu() { "$TOOLS/tracy-csvexport" --unwrap "$OUT/$1.tracy" > "$OUT/$1.csv"; }
 trace_end() {   # $1 name; latest timestamp of any zone, ns
     local c; c=$(col "$OUT/$1.csv" ns_since_start)
     awk -F, -v c="$c" 'NR>1 { t=$c+0; if (t>end) end=t } END { printf "%d", end }' "$OUT/$1.csv"
@@ -1756,7 +1799,7 @@ capture() {   # $1 name, $2 glass extra
 capture plain ""
 capture zero "iridescence 0"
 capture on "iridescence 0.8"
-capture rainbow $'ior 1.7\n        chromatic-aberration 0.5\n        iridescence 0.8'
+capture rainbow $'ior 1.7\nchromatic-aberration 0.5\niridescence 0.8'   # the preset body; replaces the baseline ior and aberration
 
 ae "$OUT/plain.png" "$OUT/zero.png"; zero_vs_plain_ae=$METRIC
 for n in zero on; do
@@ -1810,17 +1853,16 @@ before the `blur:noise|...` line. (`aurora <v>` with no block takes the default 
 
 ```bash
 chmod +x docs/materials/scripts/glass-iridescence-smoke.sh
-OUT=/mnt/ssd3/niri-material/glass-iridescence-$(git rev-parse --short HEAD) \
-  docs/materials/scripts/glass-iridescence-smoke.sh
+RUN=/mnt/ssd3/niri-material/glass-iridescence-$(git rev-parse --short HEAD)-$(date +%Y%m%dT%H%M%S)
+OUT=$RUN docs/materials/scripts/glass-iridescence-smoke.sh
 ```
 
-Expected: `PASS: artifacts in ...`, `metrics.txt` with all eleven values. If a ROI assertion fails, open `on.png` and `on-chamfer.png` and check the crop sits on the right chamfer; adjust `chamfer_roi` in the lib (the spec-derived geometry is bevel 12 outside the window's right edge with offset-x 6) and rerun. If `gpu_median_ns` reports fewer than 14 samples, the ticking probe is not damaging at 10 Hz; check `niri.log` and the kitty command.
+Expected: `PASS: artifacts in ...`, `metrics.txt` with all eleven values. Every run gets its own directory (the lib refuses a non-empty one); a retry is a new `RUN`. If a ROI assertion fails, open `on.png` and `on-chamfer.png` and check the crop sits on the right chamfer; adjust `chamfer_roi` in the lib (the spec-derived geometry is bevel 12 outside the window's right edge with offset-x 6) and rerun. If `gpu_median_ns` reports fewer than 14 samples, the ticking probe is not damaging at 10 Hz; check `niri.log` and the kitty command.
 
 Then the tuning sweep for the preset value:
 
 ```bash
-NIRI=/mnt/ssd3/niri-material/glass-iridescence-$(git rev-parse --short HEAD)/niri \
-OUT=/mnt/ssd3/niri-material/glass-iridescence-$(git rev-parse --short HEAD)/sweep \
+NIRI=$RUN/niri OUT=$RUN/sweep \
 BLOCK=glass KEY=iridescence VALUES="0 0.2 0.4 0.6 0.8 1" \
   docs/materials/scripts/glass-parameter-sweep.sh
 ```
@@ -1941,7 +1983,7 @@ capture() {   # $1 name, $2 glass extra: one shot with ROIs
 
 capture plain ""
 capture zero "aurora 0 { drift-hz 4; }"
-capture preset $'attenuation-color "#cfe0ff"\n        aurora 0.5 { drift-hz 0; color "#3dffb0"; color "#7a5cff"; }'
+capture preset $'attenuation-color "#cfe0ff"\naurora 0.5 { drift-hz 0; color "#3dffb0"; color "#7a5cff"; }'   # the preset body pinned; replaces the baseline attenuation-color
 
 # Pinned: two shots 2 s apart are identical, and the field lights the face.
 session pinned "aurora 0.5 { drift-hz 0; }"
@@ -2027,17 +2069,16 @@ finish
 
 ```bash
 chmod +x docs/materials/scripts/glass-aurora-smoke.sh
-OUT=/mnt/ssd3/niri-material/glass-aurora-$(git rev-parse --short HEAD) \
-  docs/materials/scripts/glass-aurora-smoke.sh
+RUN=/mnt/ssd3/niri-material/glass-aurora-$(git rev-parse --short HEAD)-$(date +%Y%m%dT%H%M%S)
+OUT=$RUN docs/materials/scripts/glass-aurora-smoke.sh
 ```
 
-Expected: `PASS`, `metrics.txt` with all twenty-two values. Failure notes: `within_bucket_min_ae` non-zero means every consecutive shot pair straddled a boundary, which at 1 Hz means a shot took over a second; check `niri.log` timing and rerun. `redraws_20s_4hz` far above 80 means something else redraws (the focus thief's cursor, an animation); far below means the deadline is not firing for the unfocused tile, which contradicts the Task 5 tile test and is a bug in `tick_deadline`'s call site, not in the smoke.
+Expected: `PASS`, `metrics.txt` with all twenty-two values. Every run gets its own directory (the lib refuses a non-empty one); a retry is a new `RUN`. Failure notes: `within_bucket_min_ae` non-zero means every consecutive shot pair straddled a boundary, which at 1 Hz means a shot took over a second; check `niri.log` timing and rerun. `redraws_20s_4hz` far above 80 means something else redraws (the focus thief's cursor, an animation); far below means the deadline is not firing for the unfocused tile, which contradicts the Task 5 tile test and is a bug in `tick_deadline`'s call site, not in the smoke.
 
 Then the tuning sweep:
 
 ```bash
-NIRI=/mnt/ssd3/niri-material/glass-aurora-$(git rev-parse --short HEAD)/niri \
-OUT=/mnt/ssd3/niri-material/glass-aurora-$(git rev-parse --short HEAD)/sweep \
+NIRI=$RUN/niri OUT=$RUN/sweep \
 BLOCK=glass KEY=aurora VALUES="0 0.2 0.35 0.5 0.7 1" \
   docs/materials/scripts/glass-parameter-sweep.sh
 ```
@@ -2077,10 +2118,58 @@ tasks start material-1bcd1d
 git add docs/materials/scripts/glass-aurora-smoke.sh docs/materials/<date>-material-aurora-evidence.md resources/materials/aurora.kdl docs/specs/2026-09-10-material-optics-design.md docs/materials/material-config.md
 tasks done material-1bcd1d "Aurora smoke: neutral AE 0, bucket check live, <n>/20 s redraws at 4 Hz (<n> reduced, 0 pinned/off), draw cost <plain> / <zero> / <on> ms; aurora tuned at <v>"
 tasks done material-8db3b0 "Aurora optic landed: emissive hook on the 600 s clock, redraws track drift-hz (<rate>/s at 4 Hz), cost <on> ms vs <plain> ms plain (<pct>)"
-tasks done material-f0fc7b "Iridescence and aurora optics with the rainbow and aurora presets; particles deferred to material-1c5a30 and material-54bcac"
 git add tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
-git commit -m "test(material): aurora smoke and evidence; close the aurora and rainbow goal"
+git commit -m "test(material): aurora smoke and evidence"
 ```
 
-Then hand off to `superpowers:finishing-a-development-branch` for the merge into `materials-26.04`.
+Then hand off to `superpowers:finishing-a-development-branch` for the merge into `materials-26.04`, and finish with Task 9 there.
+
+---
+
+### Task 9: Repin the Arch package on the merged head
+
+**Files:**
+- Modify: `packaging/arch/PKGBUILD` (through `tools/package-pin`)
+
+**Interfaces:**
+- Consumes: the merged `materials-26.04` head carrying `resources/materials/` and the PKGBUILD install line from Task 6.
+
+The pin names the commit `makepkg` fetches from GitHub. `package-pin --check` only verifies the three derived values agree with each other, not that the pinned tree can build the `package()` function around it, so the pin must move to a commit that has `resources/materials/`. The commit must be on `origin/materials-26.04` before `makepkg` runs, and the pin points at the head before the pin commit itself.
+
+- [ ] **Step 1: Verify the merged head is pushed and carries the presets**
+
+Run, on `materials-26.04` in the main checkout after the merge:
+
+```bash
+git fetch origin
+git status -sb | head -1                       # expect: no ahead/behind against origin/materials-26.04
+git ls-tree --name-only HEAD resources/materials/   # expect: aurora.kdl rainbow.kdl
+rg -n 'resources/materials' packaging/arch/PKGBUILD  # expect: the install line from Task 6
+```
+
+If the branch is ahead, `git push` first. If `origin/materials-26.04` was rewritten since (see the pin rollout note: `filter-branch` has killed a pin before), re-fetch and confirm the intended commit is the one on origin.
+
+- [ ] **Step 2: Repin and verify**
+
+```bash
+just package-pin
+just check
+rg -n 'pkgver=|#commit=|NIRI_BUILD_COMMIT' packaging/arch/PKGBUILD
+```
+
+Expected: `package-pin` rewrites the three values to the current HEAD (a commit that includes Task 6); `just check` passes; the three lines name that commit's full and short hashes with an `r<N>` greater than 353.
+
+- [ ] **Step 3: Commit, close the goal, and push**
+
+```bash
+tasks start material-3be13f
+git add packaging/arch/PKGBUILD
+tasks done material-3be13f "PKGBUILD repinned on the merged head carrying resources/materials"
+tasks done material-f0fc7b "Iridescence and aurora optics with the rainbow and aurora presets, packaged; particles deferred to material-1c5a30 and material-54bcac"
+git add tasks/
+git commit -m "chore(packaging): pin the aurora and rainbow presets build"
+git push
+```
+
+Then the operator runs `makepkg -si` (the install needs sudo) and confirms with `niri validate -c <config using include "/usr/share/niri/materials/aurora.kdl">` that the installed build parses the presets, per the deployment rule.
