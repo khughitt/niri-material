@@ -838,7 +838,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_bg_prefilter_mix", bg_texture.mix),
             Uniform::new("mat_backdrop_prefilter_mix", backdrop_texture.mix),
             Uniform::new("mat_noise", self.noise),
-            Uniform::new("mat_noise_type", g.noise_type as u8 as f32),
+            Uniform::new("mat_noise_type", g.noise.kind as u8 as f32),
             Uniform::new("mat_saturation", self.saturation),
             Uniform::new("mat_ior", g.ior as f32),
             Uniform::new("mat_thickness", g.thickness as f32),
@@ -1278,7 +1278,7 @@ mod tests {
         let initial_commit = slot.as_ref().unwrap().commit.get();
 
         let mut changed = render_config("frost");
-        changed.material.glass.noise_type = niri_config::NoiseType::Fine;
+        changed.material.glass.noise.kind = niri_config::NoiseType::Fine;
         assert!(!apply_resolved(&mut slot, Some(&changed)));
         assert_eq!(slot.as_ref().unwrap().id(), &id_before);
         assert_ne!(slot.as_ref().unwrap().commit.get(), initial_commit);

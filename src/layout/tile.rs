@@ -205,6 +205,7 @@ fn resolve_material(
     let noise = material
         .glass
         .noise
+        .amount
         .unwrap_or_else(|| inherited(options.blur.noise, 0.)) as f32;
     let saturation = material
         .glass
@@ -2436,7 +2437,10 @@ mod tests {
         ] {
             let options = options_for(
                 niri_config::ResolvedGlass {
-                    noise,
+                    noise: niri_config::ResolvedNoise {
+                        amount: noise,
+                        ..Default::default()
+                    },
                     saturation: niri_config::ResolvedSaturation { amount: saturation },
                     backdrop_blur,
                     ..Default::default()
@@ -2478,15 +2482,17 @@ mod tests {
         ] {
             let options = options_for(
                 niri_config::ResolvedGlass {
-                    noise: Some(0.3),
-                    noise_type,
+                    noise: niri_config::ResolvedNoise {
+                        amount: Some(0.3),
+                        kind: noise_type,
+                    },
                     backdrop_blur,
                     ..Default::default()
                 },
                 blur,
             );
             let resolved = resolve_material(Some(&reference), &options).unwrap();
-            assert_eq!(resolved.material.glass.noise_type, noise_type);
+            assert_eq!(resolved.material.glass.noise.kind, noise_type);
             assert_eq!(resolved.noise, 0.3);
         }
     }
