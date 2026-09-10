@@ -570,13 +570,15 @@ pub struct InputFingerprint {
     pub jelly: JellyFingerprint,
     pub signal: SignalFingerprint,
     pub glass_signal: GlassSignalFingerprint,
+    /// Every optic's uniform values this frame, in `OPTICS` order. Static
+    /// optics repeat their values; an animated one changes them, which is
+    /// damage.
+    pub optics: Vec<Uniform<'static>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MaterialRenderConfig {
     pub material: ResolvedMaterial,
-    pub noise: f32,
-    pub saturation: f32,
 }
 
 #[derive(Debug)]
@@ -648,6 +650,7 @@ impl MaterialState {
         jelly: JellyUniforms,
         signal: SignalUniforms,
         glass_signal: GlassSignalInputs,
+        optics: Vec<Uniform<'static>>,
         scale: f64,
         alpha: f32,
         target: RenderTarget,
@@ -668,12 +671,11 @@ impl MaterialState {
             jelly,
             signal,
             glass_signal,
+            optics,
             jelly_seed: self.jelly_seed,
             scale,
             alpha,
             glass: self.config.material.glass,
-            noise: self.config.noise,
-            saturation: self.config.saturation,
             win_rect,
             win_src,
             mapping,
@@ -726,13 +728,13 @@ pub struct MaterialRenderElement {
     jelly: JellyUniforms,
     signal: SignalUniforms,
     glass_signal: GlassSignalInputs,
+    /// Optic uniforms for this frame, appended after the core uniforms.
+    optics: Vec<Uniform<'static>>,
     jelly_seed: [f32; 3],
     scale: f64,
     alpha: f32,
     /// Resolved parameters this element renders with.
     glass: ResolvedGlass,
-    noise: f32,
-    saturation: f32,
     /// Window sub-rect of the offscreen texture, normalized UV
     /// (`mat_win_rect`) — the buffer may be larger than the window.
     win_rect: [f32; 4],
@@ -820,7 +822,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
         let g = &self.glass;
         let f = &self.frame;
         let r = self.signal.impulse_resp;
-        let uniforms: Rc<[Uniform<'static>]> = Rc::new([
+        let mut uniforms: Vec<Uniform<'static>> = vec![
             Uniform::new("mat_win_rect", self.win_rect),
             Uniform::new("mat_geo_rect", f.geo_rect),
             Uniform::new("mat_slab_rect", f.slab_rect),
@@ -839,9 +841,6 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_backdrop_color", self.backdrop_color),
             Uniform::new("mat_bg_prefilter_mix", bg_texture.mix),
             Uniform::new("mat_backdrop_prefilter_mix", backdrop_texture.mix),
-            Uniform::new("mat_noise", self.noise),
-            Uniform::new("mat_noise_type", g.noise.kind as u8 as f32),
-            Uniform::new("mat_saturation", self.saturation),
             Uniform::new("mat_ior", g.ior as f32),
             Uniform::new("mat_thickness", g.thickness as f32),
             Uniform::new(
@@ -884,7 +883,9 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_sig_focus", self.signal.focus),
             Uniform::new("mat_sig_ring_color", self.signal.ring_color),
             Uniform::new("mat_light_ior", g.light_ior as f32),
-        ]);
+        ];
+        uniforms.extend(self.optics.iter().cloned());
+        let uniforms: Rc<[Uniform<'static>]> = uniforms.into();
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
             (String::from("niri_tex_bg"), bg_texture.low),
@@ -962,8 +963,6 @@ mod tests {
                 glass: ResolvedGlass::default(),
                 responses: vec![(String::from("default"), Default::default())],
             },
-            noise: 0.,
-            saturation: 1.,
         }
     }
 
@@ -1008,6 +1007,7 @@ mod tests {
             jelly: JellyFingerprint::default(),
             signal: SignalFingerprint::default(),
             glass_signal: GlassSignalFingerprint::default(),
+            optics: Vec::new(),
         }
     }
 
@@ -1255,22 +1255,39 @@ mod tests {
     }
 
     #[test]
-    fn postprocess_change_advances_the_commit_in_place() {
+    fn optic_config_change_advances_the_commit_in_place() {
         let mut slot = Some(MaterialState::new(render_config("frost")));
         let id_before = slot.as_ref().unwrap().id().clone();
         let initial_commit = slot.as_ref().unwrap().commit.get();
 
         let mut changed = render_config("frost");
-        changed.noise = 0.04;
+        changed.material.glass.noise.amount = Some(0.04);
         assert!(!apply_resolved(&mut slot, Some(&changed)));
         assert_eq!(slot.as_ref().unwrap().id(), &id_before);
         let noise_commit = slot.as_ref().unwrap().commit.get();
         assert_ne!(noise_commit, initial_commit);
 
-        changed.saturation = 0.8;
+        changed.material.glass.saturation.amount = Some(0.8);
         assert!(!apply_resolved(&mut slot, Some(&changed)));
         assert_eq!(slot.as_ref().unwrap().id(), &id_before);
         assert_ne!(slot.as_ref().unwrap().commit.get(), noise_commit);
+    }
+
+    #[test]
+    fn optic_values_are_damage() {
+        let state = MaterialState::new(render_config("frost"));
+        let background_id = Id::new();
+        let backdrop_id = Id::new();
+
+        let quiet = fingerprint(1, 1, &background_id, &backdrop_id);
+        let mut grained = quiet.clone();
+        grained.optics = vec![Uniform::new("mat_noise", 0.1f32)];
+
+        let first = state.advance_commit(RenderTarget::Output, quiet.clone());
+        let second = state.advance_commit(RenderTarget::Output, grained);
+        let third = state.advance_commit(RenderTarget::Output, quiet);
+        assert_ne!(first, second);
+        assert_ne!(second, third);
     }
 
     #[test]
