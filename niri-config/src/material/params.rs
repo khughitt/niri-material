@@ -178,10 +178,21 @@ pub fn render_param_table(specs: &[ParamSpec]) -> String {
     out
 }
 
+/// The core specs followed by every optic's, in render order: the whole
+/// docs table.
+pub fn all_params() -> Vec<ParamSpec> {
+    let mut specs = super::core_params();
+    specs.extend(super::optics::params());
+    specs
+}
+
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
+    use std::path::Path;
+
+    use crate::material::{Glass, Material};
     use crate::material::{Milli, Positive};
     use crate::FloatOrInt;
 
@@ -236,5 +247,104 @@ mod tests {
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
 ";
         assert_eq!(table, expected);
+    }
+
+    #[test]
+    fn material_parameter_table_matches_the_docs() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/materials/material-config.md");
+        let doc = std::fs::read_to_string(&path).unwrap();
+        let begin = "<!-- params:begin -->";
+        let end = "<!-- params:end -->";
+        let a = doc.find(begin).expect("begin marker") + begin.len();
+        let b = doc.find(end).expect("end marker");
+        let expected = format!("\n{}\n", render_param_table(&all_params()));
+        if std::env::var_os("MATERIAL_DOCS_UPDATE").is_some() {
+            std::fs::write(&path, format!("{}{}{}", &doc[..a], expected, &doc[b..])).unwrap();
+            return;
+        }
+        assert_eq!(
+            &doc[a..b],
+            expected,
+            "material-config.md parameter table is stale; rerun with MATERIAL_DOCS_UPDATE=1"
+        );
+    }
+
+    #[test]
+    fn material_parameter_specs_match_the_parser() {
+        /// Decodes one `glass { <line> }` node and resolves it. Scalar
+        /// bounds only: `Material::validate` is not run.
+        fn glass_with(line: &str) -> Result<crate::material::ResolvedGlass, String> {
+            let body = if line.is_empty() {
+                String::new()
+            } else {
+                format!("{line};")
+            };
+            let mut nodes: Vec<Glass> =
+                knuffel::parse("spec.kdl", &format!("glass {{ {body} }}\n"))
+                    .map_err(|err| format!("{:?}", miette::Report::new(err)))?;
+            let material = Material {
+                name: String::from("t"),
+                glass: nodes.remove(0),
+                responses: Vec::new(),
+            };
+            Ok(material.resolve().glass)
+        }
+
+        let neutral = glass_with("").unwrap();
+        for spec in all_params() {
+            let node = spec.node;
+            let write = spec.write;
+            let (bounds, default) = match spec.kind {
+                ParamKind::Float {
+                    default,
+                    min,
+                    max,
+                    min_exclusive,
+                    ..
+                } => (Some((min, max, min_exclusive)), Some(default)),
+                ParamKind::FloatOrInherit { min, max } => (Some((min, max, false)), None),
+                ParamKind::Enum { variants, .. } => {
+                    for variant in variants {
+                        glass_with(&write(variant))
+                            .unwrap_or_else(|e| panic!("{node} {variant}: {e}"));
+                    }
+                    assert!(glass_with(&write("nope")).is_err(), "{node} accepted nope");
+                    (None, None)
+                }
+                ParamKind::Bool { .. } => {
+                    for v in ["true", "false"] {
+                        glass_with(&write(v)).unwrap_or_else(|e| panic!("{node} {v}: {e}"));
+                    }
+                    (None, None)
+                }
+                ParamKind::Color { .. } => {
+                    glass_with(&write("#123456")).unwrap_or_else(|e| panic!("{node}: {e}"));
+                    (None, None)
+                }
+            };
+            let Some((min, max, min_exclusive)) = bounds else {
+                continue;
+            };
+            let read = spec
+                .read
+                .unwrap_or_else(|| panic!("{node}: float spec without read"));
+            for v in [min, max] {
+                if v == min && min_exclusive {
+                    continue;
+                }
+                let glass = glass_with(&write(&v.to_string()))
+                    .unwrap_or_else(|e| panic!("{node} {v}: {e}"));
+                assert_eq!(read(&glass), Some(v), "{node} {v} did not read back");
+            }
+            let below = if min_exclusive { min } else { min - 0.001 };
+            for v in [max + 0.001, below] {
+                let err = glass_with(&write(&v.to_string()))
+                    .err()
+                    .unwrap_or_else(|| panic!("{node} accepted {v}"));
+                assert!(err.contains("must be"), "{node} {v}: {err}");
+            }
+            assert_eq!(read(&neutral), default, "{node} omitted default");
+        }
     }
 }
