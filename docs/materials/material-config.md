@@ -125,6 +125,28 @@ inflated by `bevel - max(abs(offset-x), abs(offset-y))`, then translated by
 the offsets. Its inner corners follow the window's effective
 `geometry-corner-radius`; the outer corners add the drawn chamfer.
 
+## Optics
+
+The glass pipeline is a slab plus an ordered list of optics. Each optic owns
+its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
+changes nothing; omission can instead inherit where stated below.
+Contributors: see `adding-an-optic.md`.
+
+### saturation
+
+Stage 9. `saturation <amount>` mixes the encoded glass colour toward its
+luma. Its explicit neutral is 1; 0 is grayscale. An omitted amount inherits
+the global `blur` block's `saturation` while backdrop blur is effective and
+resolves to 1 otherwise.
+
+### noise
+
+Stage 10. `noise <amount> type=<type>` grains the encoded glass colour per
+screen pixel; `white`, `fine`, and `lightness` are described above. Its
+explicit neutral is amount 0. An omitted amount inherits the global `blur`
+block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
+the type never inherits.
+
 ## Signal responses
 
 Each material can map a window signal to glass effects with named `response`

@@ -150,7 +150,7 @@ Add `pub mod params;` near the top of `niri-config/src/material/mod.rs`, after t
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config params::tests`
 Expected: FAIL to compile with `cannot find trait Bounded` / `cannot find struct ParamSpec`.
 
-- [ ] **Step 4: Implement the module**
+- [x] **Step 4: Implement the module**
 
 Prepend to `niri-config/src/material/params.rs`, above the test module:
 
@@ -324,12 +324,12 @@ pub fn render_param_table(specs: &[ParamSpec]) -> String {
 
 `Color::to_array_unpremul` exists (`src/render_helpers/material.rs` uses it for `mat_attenuation_color`). If `Milli` and `Positive` are not `pub` at the crate root, `use super::{Milli, Positive}` inside the module still resolves: both are `pub struct`s in `material/mod.rs`.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config params::tests`
 Expected: 2 passed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cargo fmt --all
@@ -998,7 +998,7 @@ git commit -m "feat(config): generate the material parameter table and test it a
 - `pub struct OpticFrame<'a> { pub now: Duration, pub motion: SignalMotionPolicy, pub animations_off: bool, pub backdrop_blur: bool, pub blur: &'a Blur, pub seed: f32 }`
 - `pub fn values(&ResolvedGlass, &OpticFrame<'_>) -> Vec<Uniform<'static>>`, `pub fn next_change(&ResolvedGlass, &OpticFrame<'_>) -> Option<Duration>`, `pub fn uniform_names() -> Vec<UniformName<'static>>`.
 
-- [ ] **Step 1: Move the module into a directory**
+- [x] **Step 1: Move the module into a directory**
 
 ```bash
 mkdir -p src/render_helpers/material
@@ -1008,7 +1008,7 @@ cargo build -p niri
 
 Expected: builds unchanged.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `src/render_helpers/material/optics/saturation.rs` with tests only for now:
 
@@ -1149,7 +1149,7 @@ mod tests {
 
 Add `pub mod optics;` to `src/render_helpers/material/mod.rs` after its `use` block, and create `src/render_helpers/material/optics/mod.rs` declaring `pub mod noise; pub mod saturation;` for now.
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::material::optics`
 Expected: FAIL to compile, `cannot find type OpticFrame` / `SaturationOptic`.
@@ -1941,7 +1941,7 @@ git commit -m "feat(material): evaluate optic redraw deadlines independently of 
 
 ---
 
-### Task 9: Byte-identical evidence for the migration
+### Task 9: Decoded-pixel identity evidence for the migration
 
 **Files:**
 - Create: `docs/materials/2026-09-<dd>-material-optics-evidence.md` (dated the day of the run)
@@ -2081,7 +2081,7 @@ git commit -m "docs(materials): record the byte-identical optics migration evide
 - Create: `docs/materials/adding-an-optic.md`
 - Modify: `docs/materials/material-config.md` (`## Optics` section), `docs/materials/render-pipeline.md` (sources, §2, §3 rows 9 and 10), `docs/materials/README.md`, `docs/materials/upstream-divergence.md` (feature table paths), `docs/specs/2026-09-10-material-optics-design.md` (status)
 
-- [ ] **Step 1: Write the guide**
+- [x] **Step 1: Write the guide**
 
 `docs/materials/adding-an-optic.md`:
 
@@ -2226,7 +2226,7 @@ Then two registrations:
   recorded in an evidence doc.
 ````
 
-- [ ] **Step 2: Add the Optics section to the config reference**
+- [x] **Step 2: Add the Optics section to the config reference**
 
 In `docs/materials/material-config.md`, before `## Signal responses`, insert:
 
@@ -2254,7 +2254,7 @@ while backdrop blur is effective and is 0 otherwise; the type never
 inherits.
 ```
 
-- [ ] **Step 3: Update the pipeline doc**
+- [x] **Step 3: Update the pipeline doc**
 
 In `docs/materials/render-pipeline.md`:
 
@@ -2263,7 +2263,7 @@ In `docs/materials/render-pipeline.md`:
 - §3 rows 9 and 10: prefix the stage names with the optic: `**Saturation** (optic \`saturation\`)` and `**Noise** (optic \`noise\`)`, and append to each row's Parameters cell "; neutral 1" and "; neutral 0".
 - §3 intro: after the table, add: "Stages 2, 5, 6, and 9–10 are also the four optic hooks `normal`, `specular`, `emissive`, and `post` (`adding-an-optic.md`)."
 
-- [ ] **Step 4: Update the index, the divergence feature table, and the spec status**
+- [x] **Step 4: Update the index, the divergence feature table, and the spec status**
 
 `docs/materials/README.md`: add `- \`adding-an-optic.md\`: the recipe for a new pipeline stage.` under the material documentation list, and change the spec's index line from "not implemented" to "implemented".
 
@@ -2271,7 +2271,7 @@ In `docs/materials/render-pipeline.md`:
 
 `docs/specs/2026-09-10-material-optics-design.md`: change the status line to `**Status:** implemented on \`feat/material-397fcb\` (this plan: \`docs/plans/2026-09-10-material-optics.md\`); sections 1–6 landed, byte-identical evidence in \`docs/materials/<evidence file>\`. Sections 7–9 (the three optics, presets, Prism) are separate plans.`
 
-- [ ] **Step 5: Check and commit**
+- [x] **Step 5: Check and commit**
 
 ```bash
 git add docs
