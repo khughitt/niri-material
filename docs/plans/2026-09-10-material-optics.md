@@ -62,7 +62,7 @@
 **Interfaces:**
 - Produces: `pub trait Bounded { const MIN: f64; const MAX: f64; const MIN_EXCLUSIVE: bool; }` implemented for `FloatOrInt<MIN, MAX>`, `Milli<MIN_MILLI, MAX_MILLI>`, `Positive<MAX>`; `pub enum ParamKind`; `pub struct ParamSpec { node, kind, write: fn(&str) -> String, read: Option<fn(&ResolvedGlass) -> Option<f64>> }`; `ParamKind::float::<B>(default, unit)`, `ParamKind::inherit::<B>()`; `pub fn render_param_table(&[ParamSpec]) -> String`.
 
-- [ ] **Step 1: Move the module into a directory**
+- [x] **Step 1: Move the module into a directory**
 
 ```bash
 cd /mnt/ssd/Dropbox/niri-material/.worktrees/material-api
@@ -73,7 +73,7 @@ cargo build -p niri-config
 
 Expected: builds with no change (Rust resolves `material/mod.rs` the same as `material.rs`).
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Create `niri-config/src/material/params.rs` with only the tests and a module doc so the file compiles against nothing yet:
 
@@ -145,7 +145,7 @@ mod tests {
 
 Add `pub mod params;` near the top of `niri-config/src/material/mod.rs`, after the `use` block.
 
-- [ ] **Step 3: Run the tests to verify they fail**
+- [x] **Step 3: Run the tests to verify they fail**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config params::tests`
 Expected: FAIL to compile with `cannot find trait Bounded` / `cannot find struct ParamSpec`.
@@ -1154,7 +1154,7 @@ Add `pub mod optics;` to `src/render_helpers/material/mod.rs` after its `use` bl
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::material::optics`
 Expected: FAIL to compile, `cannot find type OpticFrame` / `SaturationOptic`.
 
-- [ ] **Step 4: Write the GLSL files**
+- [x] **Step 4: Write the GLSL files**
 
 `src/render_helpers/shaders/material/saturation.frag`:
 
@@ -1198,7 +1198,7 @@ vec3 noise_post(vec3 color, vec2 fragCoord) {
 
 These are the stage 9 and 10 bodies of `material.frag` (its lines 573–592) rewritten as early-return functions; the arithmetic is identical. `material.frag` itself is untouched until Task 6.
 
-- [ ] **Step 5: Write the registry**
+- [x] **Step 5: Write the registry**
 
 `src/render_helpers/material/optics/mod.rs`:
 
@@ -1380,12 +1380,12 @@ impl Optic for NoiseOptic {
 
 If `niri_config::signal::SignalMotionPolicy` is private at that path, check `niri-config/src/lib.rs` for the re-export of `signal` items and use that path; the type is declared in `niri-config/src/signal.rs` and `src/layout/tile.rs` reads it as `self.options.signal.motion`.
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::material::optics`
 Expected: 5 passed.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 cargo fmt --all
