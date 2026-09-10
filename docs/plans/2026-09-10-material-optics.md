@@ -514,7 +514,7 @@ git commit -m "refactor(config): move saturation into the first optic module"
 **Interfaces:**
 - Produces: `niri_config::material::optics::noise::{Noise, NoiseType, ResolvedNoise, resolve, params}`; `ResolvedGlass.noise: ResolvedNoise { amount: Option<f64>, kind: NoiseType }`; re-exports `niri_config::{Noise, NoiseType, ResolvedNoise}` (the first two keep their current paths).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to the `tests` module of `niri-config/src/lib.rs`:
 
@@ -540,12 +540,12 @@ Add to the `tests` module of `niri-config/src/lib.rs`:
     }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config noise_resolves_through_its_optic`
 Expected: FAIL to compile, `cannot find type ResolvedNoise`.
 
-- [ ] **Step 3: Create the optic module**
+- [x] **Step 3: Create the optic module**
 
 `niri-config/src/material/optics/noise.rs`. Move the `Noise` struct, the `NoiseType` enum, and their doc comments out of `material/mod.rs` verbatim, and replace the `response_from_str!(NoiseType, ...)` line there with a hand-written `FromStr` here so the module is self-contained:
 
@@ -642,7 +642,7 @@ pub fn params() -> Vec<ParamSpec> {
 
 The error string `unknown NoiseType value: {s}` is what the existing test `glass_noise_type_rejects_an_unknown_value` asserts.
 
-- [ ] **Step 4: Route `Glass` and `ResolvedGlass` through it**
+- [x] **Step 4: Route `Glass` and `ResolvedGlass` through it**
 
 In `niri-config/src/material/mod.rs`:
 
@@ -668,22 +668,22 @@ In `niri-config/src/lib.rs`: remove `Noise, NoiseType,` from the `pub use crate:
 pub use crate::material::optics::noise::{Noise, NoiseType, ResolvedNoise};
 ```
 
-- [ ] **Step 5: Update the existing config tests**
+- [x] **Step 5: Update the existing config tests**
 
 In `niri-config/src/lib.rs` tests: `noise: None,` and `noise_type: NoiseType::White,` in `ResolvedGlass` literals (around line 1236) become one line `noise: ResolvedNoise::default(),`; `glass.noise` comparisons become `glass.noise.amount`; `glass.noise_type` becomes `glass.noise.kind`; `ResolvedGlass::default().noise_type` becomes `ResolvedGlass::default().noise.kind`.
 
-- [ ] **Step 6: Keep the niri crate compiling**
+- [x] **Step 6: Keep the niri crate compiling**
 
 `src/layout/tile.rs` `resolve_material`: `.noise` → `.noise.amount` in the `let noise = material.glass.noise...` chain. In its tests: `noise,` in the `ResolvedGlass` literal of `written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur` becomes `noise: niri_config::ResolvedNoise { amount: noise, ..Default::default() },`; in `noise_type_reaches_the_render_config_regardless_of_blur`, `noise: Some(0.3), noise_type,` becomes `noise: niri_config::ResolvedNoise { amount: Some(0.3), kind: noise_type },` and the assertion `resolved.material.glass.noise_type` becomes `resolved.material.glass.noise.kind`.
 
 `src/render_helpers/material.rs:841`: `g.noise_type as u8 as f32` → `g.noise.kind as u8 as f32`. Test `noise_type_change_advances_the_commit_in_place`: `changed.material.glass.noise_type = niri_config::NoiseType::Fine;` → `changed.material.glass.noise.kind = niri_config::NoiseType::Fine;`.
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config` then `python3 tools/tt test-fast -- cargo test -p niri --lib`
 Expected: all pass.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 cargo fmt --all
