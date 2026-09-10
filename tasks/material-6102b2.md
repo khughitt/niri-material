@@ -5,8 +5,8 @@ status: todo
 priority: 2
 size: s
 created: 2026-09-10T09:33:23Z
-updated: 2026-09-10T09:33:23Z
-depends: [material-1135bc]
+updated: 2026-09-10T10:24:00Z
+depends: [material-397fcb]
 parent: material-f0fc7b
 tags: [material, rendering]
 spec: docs/specs/2026-09-10-material-optics-design.md

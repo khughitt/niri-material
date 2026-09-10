@@ -501,23 +501,24 @@ filed, both depending on the material tasks they map:
 
 ## 10. Tasks
 
-`material-397fcb` becomes a goal with two children:
+`material-397fcb` becomes a goal carrying the implementation plan
+`docs/plans/2026-09-10-material-optics.md`, one child per plan task: the
+parameter metadata module, the saturation and noise optics in
+`niri-config`, the generated table and parser test, the renderer registry,
+the shader split, the element and tile wiring, the independent tick
+deadline, the byte-identical evidence, and the contributor guide. The goal
+covers sections 1 to 6 and closes when the last step lands.
 
-1. **Optic trait, registry, assembly, and the saturation and noise
-   migration** (sections 1 to 5). Done when `just test` passes and the
-   byte-identical evidence is recorded.
-2. **Parameter table, drift test, and the contributor guide** (section 6
-   and `docs/materials/adding-an-optic.md`), plus the `render-pipeline.md`
-   and `README.md` updates.
-
-`material-bb3fe5` (ice) depends on child 1: the `cracks` optic, the `ice`
+`material-bb3fe5` (ice) depends on the goal: the `cracks` optic, the `ice`
 preset, the install plumbing for `resources/materials/`, its docs section,
-and a smoke recording its cost.
+and a smoke recording its cost. It gets its own plan once the API has
+landed.
 
 `material-f0fc7b` becomes a goal with two children, each depending on
-child 1: the `aurora` optic with the clock generalisation and its preset,
-and the `iridescence` optic with its preset. Each records cost; aurora also
-records its redraw rate against `drift-hz`.
+`material-397fcb`: the `aurora` optic with the clock generalisation and its
+preset, and the `iridescence` optic with its preset. Each records cost;
+aurora also records its redraw rate against `drift-hz` and carries the
+scheduling integration check of section 11.
 
 The two Prism pieces of section 9 depend on `material-bb3fe5` and
 `material-f0fc7b`.
