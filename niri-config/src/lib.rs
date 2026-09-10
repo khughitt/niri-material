@@ -55,6 +55,7 @@ pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
+pub use crate::material::optics::iridescence::{Iridescence, ResolvedIridescence};
 pub use crate::material::optics::noise::{Noise, NoiseType, ResolvedNoise};
 pub use crate::material::optics::saturation::ResolvedSaturation;
 pub use crate::material::{
@@ -1228,6 +1229,7 @@ mod tests {
                 distortion_scale: 1.5,
                 anisotropic_blur: 0.75,
                 roughness: 0.08,
+                iridescence: ResolvedIridescence::default(),
                 backdrop_blur: false,
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
@@ -1354,6 +1356,31 @@ mod tests {
         );
         assert_eq!(ResolvedNoise::default().kind, NoiseType::White);
         assert_eq!(ResolvedNoise::default().amount, None);
+    }
+
+    #[test]
+    fn iridescence_resolves_through_its_optic() {
+        let written = do_parse(r##"material "gem" { glass { iridescence 0.8; }; }"##);
+        assert_eq!(
+            written.materials[0].resolve().glass.iridescence,
+            ResolvedIridescence { amount: 0.8 }
+        );
+        let omitted = do_parse(r##"material "gem" { glass {}; }"##);
+        assert_eq!(
+            omitted.materials[0].resolve().glass.iridescence,
+            ResolvedIridescence::default()
+        );
+        assert_eq!(ResolvedIridescence::default().amount, 0.);
+    }
+
+    #[test]
+    fn glass_iridescence_rejects_values_outside_zero_and_one() {
+        for value in ["-0.01", "1.01"] {
+            let err = do_parse_err(&format!(
+                "material \"gem\" {{ glass {{ iridescence {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 0 and 1"), "{err}");
+        }
     }
 
     #[test]
