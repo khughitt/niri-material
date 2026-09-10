@@ -54,6 +54,7 @@ lengths are logical pixels.
 | `light-ior` | float | 6 | 1–12 | — |
 | `offset-x` | float | 6 | −64–64 | logical px |
 | `offset-y` | float | 6 | −64–64 | logical px |
+| `iridescence` | float | 0 | 0–1 | — |
 | `saturation` | float | inherit | 0–3 | — |
 | `noise` | float | inherit | 0–1 | — |
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
@@ -131,6 +132,17 @@ The glass pipeline is a slab plus an ordered list of optics. Each optic owns
 its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
 changes nothing; omission can instead inherit where stated below.
 Contributors: see `adding-an-optic.md`.
+
+### iridescence
+
+Stage 5. `iridescence <amount>` gives the Fresnel glint a thin-film hue
+from the view angle: `hue = fract(2.5 * (1 - cos))` through the cosine
+palette `0.5 + 0.5 * cos(2π (hue + (0, ⅓, ⅔)))`, and the glint becomes
+`mix(glint, glint * palette * 2, amount)`. It runs before the signal accent
+mix, so an accent still tints the result. Its explicit neutral is 0, and
+omission is 0; nothing inherits. The `rainbow` preset pairs it with
+`chromatic-aberration`, which is the dispersion the refracted image carries;
+iridescence colours the edge light.
 
 ### saturation
 

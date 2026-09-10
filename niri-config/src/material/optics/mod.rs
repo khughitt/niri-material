@@ -13,11 +13,12 @@ pub mod saturation;
 
 /// Render order of the optics, which is also the order of their rows in
 /// the parameter table.
-pub const ORDER: &[&str] = &["saturation", "noise"];
+pub const ORDER: &[&str] = &["iridescence", "saturation", "noise"];
 
 /// Every optic's parameter specs, in `ORDER`.
 pub fn params() -> Vec<ParamSpec> {
-    let mut specs = saturation::params();
+    let mut specs = iridescence::params();
+    specs.extend(saturation::params());
     specs.extend(noise::params());
     specs
 }
