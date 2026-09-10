@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn the glass pipeline into a slab plus an ordered list of self-contained optics, migrate saturation and noise into the first two optic modules with byte-identical rendering, and tie the parameter docs to the parser.
+**Goal:** Turn the glass pipeline into a slab plus an ordered list of self-contained optics, migrate saturation and noise into the first two optic modules with decoded-pixel-identical rendering, and tie the parameter docs to the parser.
 
 **Architecture:** An optic owns one file in `niri-config` (node struct, resolved struct, `resolve`, `params`), one file in `niri` (uniform list, per-frame values, next-change), and one GLSL file (its uniforms and `<name>_<hook>` functions). `OPTICS` in `src/render_helpers/material/optics/mod.rs` is the one ordered registry; the shader is assembled as prelude, optics, main; optic values join the damage fingerprint; optic deadlines join the redraw deadline independently of the signal cache. Typed `ParamSpec`s render the docs table and drive a parser test.
 
@@ -18,7 +18,7 @@
 - Every test run goes through the timing wrapper, as AGENTS.md requires: `just test` for the suite, and for the inner loop `python3 tools/tt test-fast -- cargo test -p <crate> [--lib] <filter>` with exactly one filter per invocation (cargo rejects a second positional filter).
 - `tools/upstream-report --check` compares the committed report against the staged tree and every fork path counts, so a commit that adds, moves, or removes a file must regenerate the report first: `python3 tools/upstream-report && git add docs/materials/upstream-divergence.md` after `git add` and before `git commit`. Every commit step below does this.
 - The KDL surface is unchanged: `material "name" { glass { ... } }`, `noise <amount> type=<type>`, `saturation <amount>`, every existing parameter name and range.
-- Rendering before and after the migration is byte-identical on the noise and saturation smoke fixtures (Task 9 proves it).
+- Rendering before and after the migration has identical decoded pixels on the noise and saturation smoke fixtures (Task 9 proves it); PNG container bytes may differ because of metadata.
 - Uniform names for optics use the prefix `mat_<optic>_`; the two migrated optics keep their existing names `mat_saturation`, `mat_noise`, `mat_noise_type`.
 - GLSL hook functions are named `<optic>_<hook>`; hooks are `normal`, `specular`, `emissive`, `post`. Transforming hooks return their input at the optic's neutral; `emissive` returns `vec3(0.0)`.
 - The shader compile path prepends `#version 100`; the prelude must not carry a version line.
@@ -2024,7 +2024,7 @@ arithmetic change before anything else.
 `docs/materials/2026-09-<dd>-material-optics-evidence.md`, with the date of the run in the file name and these sections filled from the run, no value left symbolic:
 
 ```markdown
-# Material optics: byte-identical migration evidence
+# Material optics: decoded-pixel-identical migration evidence
 
 **Design:** `../specs/2026-09-10-material-optics-design.md` §5.
 **Run:** <date>, headless Weston (`weston --backend=headless --renderer=gl`), nested niri.
@@ -2055,7 +2055,7 @@ Both scripts' own assertions held on both binaries (exit 0 each run).
 Add an index line to `docs/materials/README.md` under the material documentation list, after the `2026-09-10-material-optics-design.md` entry:
 
 ```markdown
-- `2026-09-<dd>-material-optics-evidence.md`: byte-identical captures before and after the saturation and noise optic migration.
+- `2026-09-<dd>-material-optics-evidence.md`: decoded-pixel-identical captures before and after the saturation and noise optic migration.
 ```
 
 - [x] **Step 6: Remove the before worktree**
@@ -2070,7 +2070,7 @@ rm -rf /mnt/ssd3/niri-material/target-before
 ```bash
 git add docs/materials
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
-git commit -m "docs(materials): record the byte-identical optics migration evidence"
+git commit -m "docs(materials): record decoded-pixel optics migration evidence"
 ```
 
 ---
@@ -2269,7 +2269,7 @@ In `docs/materials/render-pipeline.md`:
 
 `docs/materials/upstream-divergence.md` feature table (outside the generated markers): change `\`src/render_helpers/material.rs\`, \`shaders/material.frag\`` to `\`src/render_helpers/material/\`, \`shaders/material/\`` and `\`niri-config/src/material.rs\`` to `\`niri-config/src/material/\``.
 
-`docs/specs/2026-09-10-material-optics-design.md`: change the status line to `**Status:** implemented on \`feat/material-397fcb\` (this plan: \`docs/plans/2026-09-10-material-optics.md\`); sections 1–6 landed, byte-identical evidence in \`docs/materials/<evidence file>\`. Sections 7–9 (the three optics, presets, Prism) are separate plans.`
+`docs/specs/2026-09-10-material-optics-design.md`: change the status line to `**Status:** implemented on \`feat/material-397fcb\` (this plan: \`docs/plans/2026-09-10-material-optics.md\`); sections 1–6 landed, decoded-pixel identity evidence in \`docs/materials/<evidence file>\`. Sections 7–9 (the three optics, presets, Prism) are separate plans.`
 
 - [x] **Step 5: Check and commit**
 
@@ -2284,7 +2284,7 @@ git commit -m "docs(materials): add the adding-an-optic guide and record the opt
 
 ## Self-review
 
-**Spec coverage.** §1 hooks and neutral: Tasks 5, 6, 10 (the `normal`, `specular`, `emissive` hooks have no optic yet and are documented in the guide; their first call sites arrive with cracks, iridescence, and aurora). §2 file layout and registrations: Tasks 1–6. §3 trait, frame, registry, damage, scheduling: Tasks 5, 7, 8. §4 assembly: Task 6. §5 migration and byte-identical check: Tasks 2, 3, 7, 9. §6 typed specs, two tests, narrowed claim: Tasks 1, 4, 10. §10 task shape: the goal carries this plan's steps. §11 verification: unit tests in Tasks 2–8, layout tests in Task 8, evidence in Task 9; the aurora integration check belongs to the aurora plan.
+**Spec coverage.** §1 hooks and neutral: Tasks 5, 6, 10 (the `normal`, `specular`, `emissive` hooks have no optic yet and are documented in the guide; their first call sites arrive with cracks, iridescence, and aurora). §2 file layout and registrations: Tasks 1–6. §3 trait, frame, registry, damage, scheduling: Tasks 5, 7, 8. §4 assembly: Task 6. §5 migration and decoded-pixel identity check: Tasks 2, 3, 7, 9. §6 typed specs, two tests, narrowed claim: Tasks 1, 4, 10. §10 task shape: the goal carries this plan's steps. §11 verification: unit tests in Tasks 2–8, layout tests in Task 8, evidence in Task 9; the aurora integration check belongs to the aurora plan.
 
 **Review fixes (2026-09-10).** Scalar bounds are tested without cross-parameter validation (Task 4); captures are compared as decoded pixels with a non-zero exit on any difference (Task 9); the focused-deadline fixture starts focused so no crossfade gates the drift (Task 8); every commit regenerates the divergence report first; every test run goes through `tools/tt` with one filter.
 
