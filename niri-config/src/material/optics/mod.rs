@@ -7,6 +7,7 @@
 
 use super::params::ParamSpec;
 
+pub mod iridescence;
 pub mod noise;
 pub mod saturation;
 
