@@ -12,6 +12,7 @@ use knuffel::errors::DecodeError;
 use crate::appearance::Color;
 use crate::FloatOrInt;
 
+pub mod optics;
 pub mod params;
 
 /// A window-rule reference to a material definition by name.
@@ -451,7 +452,7 @@ pub struct Glass {
     #[knuffel(child)]
     pub noise: Option<Noise>,
     #[knuffel(child, unwrap(argument))]
-    pub saturation: Option<FloatOrInt<0, 3>>,
+    pub saturation: Option<optics::saturation::Saturation>,
     #[knuffel(child, unwrap(argument))]
     pub backdrop_blur: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -516,9 +517,7 @@ pub struct ResolvedGlass {
     /// written value applies regardless of either switch. The layout applies
     /// the rule, since only it knows the global block.
     pub noise: Option<f64>,
-    /// Post-optics saturation factor, with the same inheritance rule as
-    /// `noise`.
-    pub saturation: Option<f64>,
+    pub saturation: optics::saturation::ResolvedSaturation,
     /// Grain pattern for `noise`. No inheritance: the global `blur` block
     /// has no notion of it, so omission is `White` regardless of backdrop
     /// blur.
@@ -546,7 +545,7 @@ impl Default for ResolvedGlass {
             offset_x: 6.,
             offset_y: 6.,
             noise: None,
-            saturation: None,
+            saturation: optics::saturation::ResolvedSaturation::default(),
             noise_type: NoiseType::White,
             light_ior: 6.,
         }
@@ -610,7 +609,7 @@ impl Material {
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
                 noise: g.noise.map(|x| x.amount.0),
-                saturation: g.saturation.map(|x| x.0),
+                saturation: optics::saturation::resolve(g.saturation),
                 noise_type: g.noise.and_then(|x| x.kind).unwrap_or_default(),
                 light_ior: g.light_ior.map_or(d.light_ior, |x| x.0),
             },

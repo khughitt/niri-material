@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-238 paths differ: 38 class B (seam), 182 class A (fork-only), 18 class C (scaffolding).
+240 paths differ: 38 class B (seam), 184 class A (fork-only), 18 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -64,7 +64,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `justfile` | C | A | +57/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1047/-0 |
+| `niri-config/src/lib.rs` | B | M | +1063/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -87,7 +87,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/monitor.rs` | B | M | +134/-23 |
 | `src/layout/scrolling.rs` | B | M | +45/-4 |
 | `src/layout/tests.rs` | B | M | +109/-4 |
-| `src/layout/tile.rs` | B | M | +1155/-77 |
+| `src/layout/tile.rs` | B | M | +1156/-77 |
 | `src/layout/workspace.rs` | B | M | +29/-3 |
 | `src/niri.rs` | B | M | +205/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
