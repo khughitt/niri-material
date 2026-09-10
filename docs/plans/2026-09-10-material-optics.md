@@ -1407,7 +1407,7 @@ git commit -m "feat(material): add the optic registry with saturation and noise 
 - Consumes: `crate::render_helpers::material::optics::{OPTICS, uniform_names}`.
 - Produces: `pub(crate) fn material_source() -> String`, `pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>>` in `shaders/mod.rs`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `src/render_helpers/shaders/mod.rs`:
 
@@ -1467,12 +1467,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::shaders::tests`
 Expected: FAIL to compile, `cannot find function material_source`.
 
-- [ ] **Step 3: Split the shader file**
+- [x] **Step 3: Split the shader file**
 
 ```bash
 cd src/render_helpers/shaders
@@ -1515,7 +1515,7 @@ Add a header comment at the top of `prelude.frag`, before `precision highp float
 // the compile path prepends it.
 ```
 
-- [ ] **Step 4: Assemble from the registry**
+- [x] **Step 4: Assemble from the registry**
 
 In `src/render_helpers/shaders/mod.rs`, add after the `use` block:
 
@@ -1614,12 +1614,12 @@ This is the existing inline list with `mat_noise`, `mat_noise_type`, and `mat_sa
 
 The upload in `material/mod.rs` `draw()` still sends `mat_noise`, `mat_noise_type`, and `mat_saturation` by their unchanged names, so rendering is unchanged after this task; Task 7 moves those three uploads into the optic values.
 
-- [ ] **Step 5: Run the tests, then the whole suite**
+- [x] **Step 5: Run the tests, then the whole suite**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::shaders::tests` then `just test`
 Expected: 4 passed; full suite green.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cargo fmt --all

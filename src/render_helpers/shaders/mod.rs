@@ -9,6 +9,73 @@ use smithay::backend::renderer::gles::{
 use super::renderer::NiriRenderer;
 use super::shader_element::ShaderProgram;
 use crate::render_helpers::blur::BlurProgram;
+use crate::render_helpers::material::optics::{self, OPTICS};
+
+/// The material fragment shader: prelude, each optic's GLSL in `OPTICS`
+/// order, then main. A comment marker per part keeps compile-error line
+/// numbers locatable by hand.
+pub(crate) fn material_source() -> String {
+    let mut source = String::from(include_str!("material/prelude.frag"));
+    for entry in OPTICS {
+        source.push_str(&format!("\n// ---- optic: {}\n", entry.name));
+        source.push_str(entry.glsl);
+    }
+    source.push_str("\n// ---- main\n");
+    source.push_str(include_str!("material/main.frag"));
+    source
+}
+
+/// The material program's uniforms: the core list, then every optic's.
+pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>> {
+    let mut names = vec![
+        UniformName::new("mat_win_rect", UniformType::_4f),
+        UniformName::new("mat_geo_rect", UniformType::_4f),
+        UniformName::new("mat_slab_rect", UniformType::_4f),
+        UniformName::new("mat_area_size", UniformType::_2f),
+        UniformName::new("mat_chamfer", UniformType::_1f),
+        UniformName::new("mat_corner_radius", UniformType::_4f),
+        UniformName::new("mat_jelly_move", UniformType::_2f),
+        UniformName::new("mat_jelly_resize", UniformType::_2f),
+        UniformName::new("mat_jelly_activity", UniformType::_1f),
+        UniformName::new("mat_jelly_time", UniformType::_1f),
+        UniformName::new("mat_jelly_seed", UniformType::_3f),
+        UniformName::new("mat_bg_rect", UniformType::_4f),
+        UniformName::new("mat_backdrop_rect", UniformType::_4f),
+        UniformName::new("mat_ws_rect", UniformType::_4f),
+        UniformName::new("mat_ws_color", UniformType::_4f),
+        UniformName::new("mat_backdrop_color", UniformType::_4f),
+        UniformName::new("mat_bg_prefilter_mix", UniformType::_1f),
+        UniformName::new("mat_backdrop_prefilter_mix", UniformType::_1f),
+        UniformName::new("mat_ior", UniformType::_1f),
+        UniformName::new("mat_thickness", UniformType::_1f),
+        UniformName::new("mat_attenuation_color", UniformType::_4f),
+        UniformName::new("mat_attenuation_distance", UniformType::_1f),
+        UniformName::new("mat_chromatic_aberration", UniformType::_1f),
+        UniformName::new("mat_distortion", UniformType::_1f),
+        UniformName::new("mat_distortion_scale", UniformType::_1f),
+        UniformName::new("mat_samples", UniformType::_1f),
+        UniformName::new("mat_anisotropic_blur", UniformType::_1f),
+        UniformName::new("mat_jelly_ripple", UniformType::_1f),
+        UniformName::new("mat_sig_accent", UniformType::_4f),
+        UniformName::new("mat_sig_level", UniformType::_1f),
+        UniformName::new("mat_sig_breath", UniformType::_1f),
+        UniformName::new("mat_sig_light", UniformType::_3f),
+        UniformName::new("mat_sig_impulse_env", UniformType::_4f),
+        UniformName::new("mat_sig_impulse_prog", UniformType::_4f),
+        UniformName::new("mat_sig_impulse_rgb0", UniformType::_3f),
+        UniformName::new("mat_sig_impulse_rgb1", UniformType::_3f),
+        UniformName::new("mat_sig_impulse_rgb2", UniformType::_3f),
+        UniformName::new("mat_sig_impulse_rgb3", UniformType::_3f),
+        UniformName::new("mat_sig_impulse_resp", UniformType::_4i),
+        UniformName::new("mat_sig_response", UniformType::_3i),
+        UniformName::new("mat_sig_ring", UniformType::_2f),
+        UniformName::new("mat_sig_focus", UniformType::_2f),
+        UniformName::new("mat_sig_ring_color", UniformType::_3f),
+        UniformName::new("mat_light_ior", UniformType::_1f),
+    ];
+    names.extend(optics::uniform_names());
+    names
+}
 
 pub struct Shaders {
     pub border: Option<ShaderProgram>,
@@ -150,58 +217,12 @@ impl Shaders {
             })
             .ok();
 
+        let material_source = material_source();
+        let material_uniforms = material_uniform_names();
         let material = ShaderProgram::compile(
             renderer,
-            include_str!("material.frag"),
-            &[
-                UniformName::new("mat_win_rect", UniformType::_4f),
-                UniformName::new("mat_geo_rect", UniformType::_4f),
-                UniformName::new("mat_slab_rect", UniformType::_4f),
-                UniformName::new("mat_area_size", UniformType::_2f),
-                UniformName::new("mat_chamfer", UniformType::_1f),
-                UniformName::new("mat_corner_radius", UniformType::_4f),
-                UniformName::new("mat_jelly_move", UniformType::_2f),
-                UniformName::new("mat_jelly_resize", UniformType::_2f),
-                UniformName::new("mat_jelly_activity", UniformType::_1f),
-                UniformName::new("mat_jelly_time", UniformType::_1f),
-                UniformName::new("mat_jelly_seed", UniformType::_3f),
-                UniformName::new("mat_bg_rect", UniformType::_4f),
-                UniformName::new("mat_backdrop_rect", UniformType::_4f),
-                UniformName::new("mat_ws_rect", UniformType::_4f),
-                UniformName::new("mat_ws_color", UniformType::_4f),
-                UniformName::new("mat_backdrop_color", UniformType::_4f),
-                UniformName::new("mat_bg_prefilter_mix", UniformType::_1f),
-                UniformName::new("mat_backdrop_prefilter_mix", UniformType::_1f),
-                UniformName::new("mat_noise", UniformType::_1f),
-                UniformName::new("mat_noise_type", UniformType::_1f),
-                UniformName::new("mat_saturation", UniformType::_1f),
-                UniformName::new("mat_ior", UniformType::_1f),
-                UniformName::new("mat_thickness", UniformType::_1f),
-                UniformName::new("mat_attenuation_color", UniformType::_4f),
-                UniformName::new("mat_attenuation_distance", UniformType::_1f),
-                UniformName::new("mat_chromatic_aberration", UniformType::_1f),
-                UniformName::new("mat_distortion", UniformType::_1f),
-                UniformName::new("mat_distortion_scale", UniformType::_1f),
-                UniformName::new("mat_samples", UniformType::_1f),
-                UniformName::new("mat_anisotropic_blur", UniformType::_1f),
-                UniformName::new("mat_jelly_ripple", UniformType::_1f),
-                UniformName::new("mat_sig_accent", UniformType::_4f),
-                UniformName::new("mat_sig_level", UniformType::_1f),
-                UniformName::new("mat_sig_breath", UniformType::_1f),
-                UniformName::new("mat_sig_light", UniformType::_3f),
-                UniformName::new("mat_sig_impulse_env", UniformType::_4f),
-                UniformName::new("mat_sig_impulse_prog", UniformType::_4f),
-                UniformName::new("mat_sig_impulse_rgb0", UniformType::_3f),
-                UniformName::new("mat_sig_impulse_rgb1", UniformType::_3f),
-                UniformName::new("mat_sig_impulse_rgb2", UniformType::_3f),
-                UniformName::new("mat_sig_impulse_rgb3", UniformType::_3f),
-                UniformName::new("mat_sig_impulse_resp", UniformType::_4i),
-                UniformName::new("mat_sig_response", UniformType::_3i),
-                UniformName::new("mat_sig_ring", UniformType::_2f),
-                UniformName::new("mat_sig_focus", UniformType::_2f),
-                UniformName::new("mat_sig_ring_color", UniformType::_3f),
-                UniformName::new("mat_light_ior", UniformType::_1f),
-            ],
+            &material_source,
+            &material_uniforms,
             &[
                 "niri_tex_win",
                 "niri_tex_bg",
@@ -430,4 +451,64 @@ pub fn mat3_uniform(name: &str, mat: Mat3) -> Uniform<'_> {
             transpose: false,
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+    use crate::render_helpers::material::optics::OPTICS;
+
+    #[test]
+    fn optic_order_matches_the_config_crate() {
+        let renderer: Vec<&str> = OPTICS.iter().map(|entry| entry.name).collect();
+        assert_eq!(renderer, niri_config::material::optics::ORDER);
+    }
+
+    #[test]
+    fn every_optic_declares_its_uniforms_in_its_glsl() {
+        for entry in OPTICS {
+            for (name, _) in entry.uniforms {
+                assert!(
+                    entry.glsl.contains(&format!(" {name};")),
+                    "{}: {name} is not declared in its GLSL",
+                    entry.name
+                );
+            }
+            assert!(
+                entry.glsl.contains(&format!("{}_", entry.name)),
+                "{}: no hook function",
+                entry.name
+            );
+        }
+    }
+
+    #[test]
+    fn material_uniform_names_are_unique() {
+        let names = material_uniform_names();
+        let unique: HashSet<_> = names.iter().map(|n| n.name.clone()).collect();
+        assert_eq!(unique.len(), names.len());
+    }
+
+    #[test]
+    fn material_source_is_prelude_then_optics_in_order_then_main() {
+        let source = material_source();
+        let mut last = 0;
+        for marker in [
+            "// ---- optic: saturation",
+            "// ---- optic: noise",
+            "// ---- main",
+        ] {
+            let at = source
+                .find(marker)
+                .unwrap_or_else(|| panic!("{marker} missing"));
+            assert!(at > last, "{marker} out of order");
+            last = at;
+        }
+        assert_eq!(source.matches("void main()").count(), 1);
+        assert!(!source.starts_with("#version"));
+        assert!(source.contains("saturation_post(glassColor"));
+        assert!(source.contains("noise_post(glassColor"));
+    }
 }
