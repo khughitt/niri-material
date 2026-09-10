@@ -1,6 +1,10 @@
 # Material optics: design
 
-**Status:** designed 2026-09-10; not implemented.
+**Status:** implemented on `feat/material-397fcb` (plan:
+`../plans/2026-09-10-material-optics.md`); sections 1–6 landed, with
+decoded-pixel identity recorded in
+`../materials/2026-09-10-material-optics-evidence.md`. Sections 7–9 (the
+three optics, presets, and Prism mappings) remain separate plans.
 
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
@@ -18,7 +22,7 @@ signal responses are what make a window read as a pane of something, and
 every material anyone has asked for keeps them. Ice, aurora, rainbow, and
 particles all add a stage to the glass pipeline; none replaces the slab.
 
-What is wrong is the cost of a stage. Each parameter is hand-copied across
+Before this change, each parameter was hand-copied across
 six lists that must stay in lockstep: the knuffel `Glass` struct, the
 `ResolvedGlass` struct and its defaults, the field-by-field `resolve()`
 mapping in `niri-config/src/material.rs`, the `UniformName` registry in
@@ -29,7 +33,7 @@ table in `render-pipeline.md`, and Prism's renderer. The last parameter
 added, `noise type=` (one three-valued enum and one float uniform), touched
 13 files and about 1,700 lines (`f0370f52`). A second material *kind* would
 be worse: `Material.glass` is a required single child whose single-kind
-assumption is documented as load-bearing (`niri-config/src/material.rs`,
+assumption is documented as load-bearing (`niri-config/src/material/mod.rs`,
 "when a second material type is added, this field becomes a hand-written
 dispatcher"), and there is one `ProgramType::Material` program with one
 inline uniform list.
@@ -50,7 +54,7 @@ resolved values and defaults, its uniforms, one GLSL file holding its stage
 functions, and one section of the user docs. The material shape, the window
 rule, the `response` blocks, and every existing parameter name are
 unchanged. Only `saturation` and `noise` migrate into optic modules, to
-prove the pattern against a byte-identical rendering check; the slab, jelly,
+prove the pattern against a decoded-pixel-identical rendering check; the slab, jelly,
 refraction, tint, ring, and signal code stays where it is.
 
 Adding an optic is then a fixed recipe: four new files, three one-line
@@ -77,7 +81,7 @@ abstraction nothing else needs. Rejected: **drift guards only** (tests
 pinning the docs and a manifest to the structs). A contributor would still
 edit six places, and a new stage would still hit the single-program wall.
 Rejected: **migrating every existing parameter now**. Nothing new needs the
-slab or refraction parameters moved, and proving byte-identical rendering
+slab or refraction parameters moved, and proving decoded-pixel-identical rendering
 for seventeen parameters is a large diff for no new capability.
 
 ## 1. What an optic is
@@ -98,13 +102,15 @@ An optic defines one function per hook it acts at, named
 optic uses. The `normal`, `specular`, and `post` hooks transform a value
 and return it; the `emissive` hook is additive and returns a contribution.
 
-Every optic has a **neutral** configuration, the one a material that never
-names the optic resolves to, and the optic's docs section states it. At its
-neutral, a transforming hook returns its input unchanged and an emissive
+Every optic has an explicit **neutral** configuration, and its docs section
+states it. At that neutral, a transforming hook returns its input unchanged
+and an emissive
 hook returns `vec3(0.0)`, behind one uniform branch, so an unconfigured
 optic costs that branch and nothing else. The neutral is not always zero:
-`saturation`'s is 1 (0 is grayscale), `noise`'s is an amount of 0 or an
-inherited amount of 0, and the three new optics' is an amount of 0.
+`saturation`'s is 1 (0 is grayscale), `noise`'s is an amount of 0, and the
+three new optics' is an amount of 0. Omission is separate from neutrality:
+omitted saturation or noise may inherit a non-neutral global blur value while
+backdrop blur is effective.
 
 Every optic may read the shared inputs the prelude declares: the element
 position `p`, the slab geometry (`g_center`, `g_half`, `g_outer_r`), the
@@ -117,7 +123,7 @@ any optic should use for per-window variation), `mat_thickness`, and
 | File | Holds |
 | --- | --- |
 | `niri-config/src/material/optics/<name>.rs` | the knuffel node struct; the resolved struct with `Default`; `resolve(node) -> Resolved`; `validate(&self) -> Result<(), String>` when the optic has a cross-parameter rule; `pub fn params() -> Vec<ParamSpec>` |
-| `src/render_helpers/material/optics/<name>.rs` | `impl Optic for Resolved<Name>`: the uniform names, `values(&self, ctx)`, and `next_change(&self, ctx)` |
+| `src/render_helpers/material/optics/<name>.rs` | a marker type implementing `Optic`: its name, GLSL, tuple uniform declarations, `values(glass, ctx)`, and `next_change(glass, ctx)` |
 | `src/render_helpers/shaders/material/<name>.frag` | its `uniform` declarations and its `<name>_<hook>` functions |
 | `docs/materials/material-config.md` | one `### <name>` section under `## Optics` describing what the optic does and which stage it acts at; the parameter rows are generated (section 6) |
 
@@ -131,10 +137,9 @@ And three one-line registrations:
   `src/render_helpers/material/optics/mod.rs`;
 - one call per hook in `src/render_helpers/shaders/material/main.frag`.
 
-`niri-config/src/material.rs` keeps `Material`, `Glass`, `ResolvedGlass`,
-the response types, `MaterialRef`, and the core parameters. The file moves
-to `niri-config/src/material/mod.rs` so `optics/` can sit beside it; no
-item is renamed.
+`niri-config/src/material/mod.rs` keeps `Material`, `Glass`, `ResolvedGlass`,
+the response types, `MaterialRef`, and the core parameters. No item was
+renamed when the former `material.rs` moved there.
 
 The crate split is deliberate: `niri-config` parses and resolves, `niri`
 renders. An optic therefore has one file in each crate. The alternative,
@@ -144,16 +149,17 @@ into the config crate to save one file.
 ## 3. The renderer contract
 
 ```rust
-/// One pipeline stage, self-contained. Implemented on the resolved config
-/// type from niri-config; the trait is local to niri.
+/// One pipeline stage, implemented on a marker type local to niri.
 pub trait Optic {
+    const NAME: &'static str;
+    const GLSL: &'static str;
     /// The uniforms this optic's GLSL declares, in declaration order.
-    const UNIFORMS: &'static [UniformName<'static>];
+    const UNIFORMS: &'static [(&'static str, UniformType)];
     /// This frame's uniforms, one per entry of `UNIFORMS`, in the same order.
-    fn values(&self, ctx: &OpticFrame) -> Vec<Uniform<'static>>;
+    fn values(glass: &ResolvedGlass, ctx: &OpticFrame<'_>) -> Vec<Uniform<'static>>;
     /// The next instant `values` changes with no config change, or `None`
     /// for a static optic. The default is static.
-    fn next_change(&self, _ctx: &OpticFrame) -> Option<Duration> { None }
+    fn next_change(_glass: &ResolvedGlass, _ctx: &OpticFrame<'_>) -> Option<Duration> { None }
 }
 
 /// What an optic may depend on beyond its own configuration.
@@ -167,8 +173,9 @@ pub struct OpticFrame<'a> {
 }
 
 pub struct OpticEntry {
+    pub name: &'static str,
     pub glsl: &'static str,
-    pub uniforms: &'static [UniformName<'static>],
+    pub uniforms: &'static [(&'static str, UniformType)],
     pub values: fn(&ResolvedGlass, &OpticFrame) -> Vec<Uniform<'static>>,
     pub next_change: fn(&ResolvedGlass, &OpticFrame) -> Option<Duration>,
 }
@@ -197,9 +204,8 @@ Two things that a new parameter had to do by hand become automatic:
   visible, unfocused, signal-free aurora window keeps redrawing at its
   `drift-hz`. Section 11 names the integration check for that case.
 
-`MaterialRenderConfig` loses its `noise` and `saturation` fields. The
-inherit-or-neutral rule that `resolve_material` in `src/layout/tile.rs`
-applies today moves into the noise and saturation optics' `values`, which
+`MaterialRenderConfig` loses its `noise` and `saturation` fields. The noise
+and saturation optics' `values` own the inherit-or-neutral rule and
 read `ctx.backdrop_blur` and `ctx.blur`. The documented rule, "each
 parameter decides on its own", becomes literal. `backdrop_blur_enabled`
 stays in `tile.rs`: it settles the gate once per frame and the result
@@ -207,7 +213,7 @@ travels in `OpticFrame`.
 
 ## 4. Shader assembly
 
-`src/render_helpers/shaders/material.frag` splits into
+The former `src/render_helpers/shaders/material.frag` is split into
 `shaders/material/prelude.frag` (the precision header, the `varying`, the
 core uniforms, the shared globals, and the helper library: sRGB and Oklab
 conversions, simplex noise, `hash12`, `fineGrain`, the rounded-box SDF,
@@ -224,7 +230,7 @@ entry's `uniforms`. One program still serves every material; the order of
 Prism's rack.
 
 `compile_program` prepends `#version 100`, so the prelude must not carry its
-own version line; `material.frag` does not today.
+own version line; the prelude does not carry one.
 
 ## 5. Migration of saturation and noise
 
@@ -238,14 +244,16 @@ existing stage 9 and 10 code moved verbatim.
 
 `material-3fcba2` (stacked noise layers) is unaffected in scope: it widens
 the noise node and becomes a change inside the noise optic's two Rust files
-and one GLSL file. Its "single-node configs render byte-identical"
+and one GLSL file. Its "single-node configs render pixel-identically"
 requirement is the same check this migration uses.
 
-**Byte-identical.** Before and after the migration, the smoke scripts
+**Decoded-pixel identity.** Before and after the migration, the smoke scripts
 `docs/materials/scripts/glass-noise-saturation-smoke.sh` and
 `glass-noise-type-smoke.sh` are run on the headless Weston host with the
-same fixture, and every capture is compared with `cmp`. Any differing pixel
-fails the migration. The run is recorded in an
+same fixture, and every capture is decoded and compared with ImageMagick's
+`compare -metric AE`. The command's exit status fails the migration when any
+pixel differs; PNG container bytes are outside this guarantee. The run is
+recorded in an
 evidence doc under `docs/materials/`, dated the day of the run and named
 `material-optics-evidence`, with the binary and capture hashes, following
 the existing evidence docs.
@@ -259,7 +267,7 @@ types, and a test drives the parser with those ranges.
 
 ```rust
 pub enum ParamKind {
-    Float { default: f64, min: f64, max: f64, unit: &'static str },
+    Float { default: f64, min: f64, max: f64, min_exclusive: bool, unit: &'static str },
     /// A float whose omitted value inherits (noise and saturation).
     FloatOrInherit { min: f64, max: f64 },
     Color { default: Color },
@@ -270,10 +278,16 @@ pub enum ParamKind {
 pub struct ParamSpec {
     pub node: &'static str,  // "noise", "noise type=", "aurora drift-hz"
     pub kind: ParamKind,
+    pub write: fn(&str) -> String,
+    pub read: Option<fn(&ResolvedGlass) -> Option<f64>>,
 }
 
 /// The parse-time bounds of a scalar type, as the type declares them.
-pub trait Bounded { const MIN: f64; const MAX: f64; }
+pub trait Bounded {
+    const MIN: f64;
+    const MAX: f64;
+    const MIN_EXCLUSIVE: bool = false;
+}
 impl<const MIN: i32, const MAX: i32> Bounded for FloatOrInt<MIN, MAX> { /* MIN, MAX */ }
 impl<const MIN: i32, const MAX: i32> Bounded for Milli<MIN, MAX> { /* MIN / 1000, MAX / 1000 */ }
 impl<const MAX: i32> Bounded for Positive<MAX> { /* 0 exclusive, MAX */ }
@@ -309,8 +323,9 @@ field that exists. The parse test would then pass on a different node, so
 the node strings are the one hand-maintained fact, and the worked example in
 `adding-an-optic.md` says so.
 
-`just check` runs the crate's tests through `cargo clippy --all-targets`
-only; both tests run in `just test`, which the pre-push hook runs.
+`just check` compiles and lints test targets through `cargo clippy --all-targets`;
+it does not execute these metadata tests. Both run in `just test`, which the
+pre-push hook runs.
 
 The per-parameter prose under the table, the stage table in
 `render-pipeline.md`, and the Prism column there stay hand-written: they
@@ -506,7 +521,7 @@ filed, both depending on the material tasks they map:
 parameter metadata module, the saturation and noise optics in
 `niri-config`, the generated table and parser test, the renderer registry,
 the shader split, the element and tile wiring, the independent tick
-deadline, the byte-identical evidence, and the contributor guide. The goal
+deadline, the decoded-pixel identity evidence, and the contributor guide. The goal
 covers sections 1 to 6 and closes when the last step lands.
 
 `material-bb3fe5` (ice) depends on the goal: the `cracks` optic, the `ice`
@@ -538,7 +553,7 @@ The two Prism pieces of section 9 depend on `material-bb3fe5` and
   tile with `drift-hz 0` reports none. The aurora smoke repeats the check
   live: two captures of an unfocused, signal-free aurora window one bucket
   apart must differ, and two captures within one bucket must not.
-- The byte-identical migration check of section 5.
+- The decoded-pixel identity migration check of section 5.
 - A smoke per new optic on the headless host, in the form of the existing
   `docs/materials/scripts/*-smoke.sh`: amount 0 renders identically to the
   unconfigured material; the optic's claimed effect is measurable; frame

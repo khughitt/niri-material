@@ -29,8 +29,8 @@ the whole tree and is never scoped by class.
 
 | Feature | Where | Class | Posture | Status |
 | --- | --- | --- | --- | --- |
-| Material rendering and glass shader | `src/render_helpers/material.rs`, `shaders/material.frag` | A | fork-only | — |
-| Material and glass configuration | `niri-config/src/material.rs` | A | fork-only | — |
+| Material rendering and glass shader | `src/render_helpers/material/`, `shaders/material/` | A | fork-only | — |
+| Material and glass configuration | `niri-config/src/material/` | A | fork-only | — |
 | Per-window signals | `src/render_helpers/signal.rs`, `src/window/signal.rs` | A | fork-only | — |
 | Workspace IPC field | `niri-ipc/`, `src/ipc/`, `src/layout/workspace.rs` | D | carried | submitted #4147 |
 | Material pass ordering hook | `src/render_helpers/blur.rs`, `effect_buffer.rs` | B | seam | unfiled |
@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-248 paths differ: 38 class B (seam), 192 class A (fork-only), 18 class C (scaffolding).
+249 paths differ: 38 class B (seam), 193 class A (fork-only), 18 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |

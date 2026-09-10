@@ -1,4 +1,4 @@
-# Material optics: byte-identical migration evidence
+# Material optics: decoded-pixel-identical migration evidence
 
 **Design:** `../specs/2026-09-10-material-optics-design.md` §5.
 **Run:** 2026-09-10, headless Weston (`weston --backend=headless --renderer=gl`), nested niri.
