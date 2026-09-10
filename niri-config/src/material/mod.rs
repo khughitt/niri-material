@@ -12,6 +12,9 @@ use knuffel::errors::DecodeError;
 use crate::appearance::Color;
 use crate::FloatOrInt;
 
+pub mod optics;
+pub mod params;
+
 /// A window-rule reference to a material definition by name.
 ///
 /// The referenced definition may appear later in the file or in an include,
@@ -238,18 +241,6 @@ pub enum FocusResponse {
     RingLight = 1,
 }
 
-/// The grain pattern `noise` renders with. `White` is the original per-pixel
-/// uniform hash; `Fine` is its high-pass, bell-shaped form; `Lightness`
-/// applies `Fine` to Oklab lightness so chroma and hue hold.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[repr(u8)]
-pub enum NoiseType {
-    #[default]
-    White = 0,
-    Fine = 1,
-    Lightness = 2,
-}
-
 macro_rules! response_from_str {
     ($ty:ident, $($s:literal => $v:ident),+ $(,)?) => {
         impl std::str::FromStr for $ty {
@@ -269,7 +260,6 @@ response_from_str!(AccentResponse, "none" => None, "ring" => Ring);
 response_from_str!(AttentionResponse, "none" => None, "rim-orbit" => RimOrbit, "ring-pulse" => RingPulse);
 response_from_str!(ImpulseResponse, "none" => None, "ripple" => Ripple, "flash" => Flash, "sweep" => Sweep);
 response_from_str!(FocusResponse, "none" => None, "ring-light" => RingLight);
-response_from_str!(NoiseType, "white" => White, "fine" => Fine, "lightness" => Lightness);
 
 /// A `response "name" { ... }` block inside a material definition.
 #[derive(knuffel::Decode, Debug, Clone, PartialEq)]
@@ -413,19 +403,6 @@ pub struct Distortion {
     pub scale: Option<FloatOrInt<0, 2>>,
 }
 
-/// `noise <amount> type=<type>`.
-///
-/// The type does nothing while the amount is zero, so it rides the node it
-/// depends on, as `distortion` carries `scale=`. An omitted type is `white`,
-/// which renders exactly as the node did before the property existed.
-#[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
-pub struct Noise {
-    #[knuffel(argument)]
-    pub amount: FloatOrInt<0, 1>,
-    #[knuffel(property(name = "type"), str)]
-    pub kind: Option<NoiseType>,
-}
-
 /// Glass parameters as written in the config; every one is optional and an
 /// omitted parameter takes its `ResolvedGlass::default()` value.
 #[derive(knuffel::Decode, Debug, Clone, Default, PartialEq)]
@@ -447,9 +424,9 @@ pub struct Glass {
     #[knuffel(child, unwrap(argument))]
     pub roughness: Option<FloatOrInt<0, 1>>,
     #[knuffel(child)]
-    pub noise: Option<Noise>,
+    pub noise: Option<optics::noise::Noise>,
     #[knuffel(child, unwrap(argument))]
-    pub saturation: Option<FloatOrInt<0, 3>>,
+    pub saturation: Option<optics::saturation::Saturation>,
     #[knuffel(child, unwrap(argument))]
     pub backdrop_blur: Option<bool>,
     #[knuffel(child, unwrap(argument))]
@@ -509,18 +486,8 @@ pub struct ResolvedGlass {
     pub bevel: f64,
     pub offset_x: f64,
     pub offset_y: f64,
-    /// Post-optics noise amplitude. `None` means inherit: the global `blur`
-    /// block's value while backdrop blur is effective, neutral otherwise. A
-    /// written value applies regardless of either switch. The layout applies
-    /// the rule, since only it knows the global block.
-    pub noise: Option<f64>,
-    /// Post-optics saturation factor, with the same inheritance rule as
-    /// `noise`.
-    pub saturation: Option<f64>,
-    /// Grain pattern for `noise`. No inheritance: the global `blur` block
-    /// has no notion of it, so omission is `White` regardless of backdrop
-    /// blur.
-    pub noise_type: NoiseType,
+    pub noise: optics::noise::ResolvedNoise,
+    pub saturation: optics::saturation::ResolvedSaturation,
     pub light_ior: f64,
 }
 
@@ -543,12 +510,121 @@ impl Default for ResolvedGlass {
             bevel: 12.,
             offset_x: 6.,
             offset_y: 6.,
-            noise: None,
-            saturation: None,
-            noise_type: NoiseType::White,
+            noise: optics::noise::ResolvedNoise::default(),
+            saturation: optics::saturation::ResolvedSaturation::default(),
             light_ior: 6.,
         }
     }
+}
+
+/// Specs for the parameters that live on the core (everything that is not
+/// an optic), in the order the docs table lists them.
+pub fn core_params() -> Vec<params::ParamSpec> {
+    use params::{ParamKind, ParamSpec};
+
+    let d = ResolvedGlass::default();
+    vec![
+        ParamSpec {
+            node: "ior",
+            kind: ParamKind::float::<FloatOrInt<1, 3>>(d.ior, "—"),
+            write: |v| format!("ior {v}"),
+            read: Some(|g| Some(g.ior)),
+        },
+        ParamSpec {
+            node: "thickness",
+            kind: ParamKind::float::<FloatOrInt<0, 200>>(d.thickness, "logical px"),
+            write: |v| format!("thickness {v}"),
+            read: Some(|g| Some(g.thickness)),
+        },
+        ParamSpec {
+            node: "attenuation-color",
+            kind: ParamKind::Color {
+                default: d.attenuation_color,
+            },
+            write: |v| format!("attenuation-color \"{v}\""),
+            read: None,
+        },
+        ParamSpec {
+            node: "attenuation-distance",
+            kind: ParamKind::float::<Positive<65535>>(d.attenuation_distance, "logical px"),
+            write: |v| format!("attenuation-distance {v}"),
+            read: Some(|g| Some(g.attenuation_distance)),
+        },
+        ParamSpec {
+            node: "chromatic-aberration",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.chromatic_aberration, "—"),
+            write: |v| format!("chromatic-aberration {v}"),
+            read: Some(|g| Some(g.chromatic_aberration)),
+        },
+        ParamSpec {
+            node: "distortion",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.distortion, "—"),
+            write: |v| format!("distortion {v}"),
+            read: Some(|g| Some(g.distortion)),
+        },
+        ParamSpec {
+            node: "distortion scale=",
+            kind: ParamKind::float::<FloatOrInt<0, 2>>(d.distortion_scale, "—"),
+            write: |v| format!("distortion 0 scale={v}"),
+            read: Some(|g| Some(g.distortion_scale)),
+        },
+        ParamSpec {
+            node: "anisotropic-blur",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.anisotropic_blur, "—"),
+            write: |v| format!("anisotropic-blur {v}"),
+            read: Some(|g| Some(g.anisotropic_blur)),
+        },
+        ParamSpec {
+            node: "roughness",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.roughness, "—"),
+            write: |v| format!("roughness {v}"),
+            read: Some(|g| Some(g.roughness)),
+        },
+        ParamSpec {
+            node: "backdrop-blur",
+            kind: ParamKind::Bool {
+                default: d.backdrop_blur,
+            },
+            write: |v| format!("backdrop-blur {v}"),
+            read: None,
+        },
+        ParamSpec {
+            node: "jelly-flex",
+            kind: ParamKind::float::<Milli<0, 20>>(d.jelly_flex, "—"),
+            write: |v| format!("jelly-flex {v}"),
+            read: Some(|g| Some(g.jelly_flex)),
+        },
+        ParamSpec {
+            node: "jelly-ripple",
+            kind: ParamKind::float::<Milli<0, 500>>(d.jelly_ripple, "—"),
+            write: |v| format!("jelly-ripple {v}"),
+            read: Some(|g| Some(g.jelly_ripple)),
+        },
+        ParamSpec {
+            node: "bevel",
+            kind: ParamKind::float::<FloatOrInt<0, 128>>(d.bevel, "logical px"),
+            write: |v| format!("bevel {v}"),
+            read: Some(|g| Some(g.bevel)),
+        },
+        ParamSpec {
+            node: "light-ior",
+            kind: ParamKind::float::<FloatOrInt<1, 12>>(d.light_ior, "—"),
+            write: |v| format!("light-ior {v}"),
+            read: Some(|g| Some(g.light_ior)),
+        },
+        ParamSpec {
+            node: "offset-x",
+            kind: ParamKind::float::<FloatOrInt<-64, 64>>(d.offset_x, "logical px"),
+            write: |v| format!("offset-x {v}"),
+            read: Some(|g| Some(g.offset_x)),
+        },
+        ParamSpec {
+            node: "offset-y",
+            kind: ParamKind::float::<FloatOrInt<-64, 64>>(d.offset_y, "logical px"),
+            write: |v| format!("offset-y {v}"),
+            read: Some(|g| Some(g.offset_y)),
+        },
+    ]
 }
 
 impl Material {
@@ -607,9 +683,8 @@ impl Material {
                 bevel: g.bevel.map_or(d.bevel, |x| x.0),
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
-                noise: g.noise.map(|x| x.amount.0),
-                saturation: g.saturation.map(|x| x.0),
-                noise_type: g.noise.and_then(|x| x.kind).unwrap_or_default(),
+                noise: optics::noise::resolve(g.noise),
+                saturation: optics::saturation::resolve(g.saturation),
                 light_ior: g.light_ior.map_or(d.light_ior, |x| x.0),
             },
             responses,
