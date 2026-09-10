@@ -14,7 +14,9 @@
 
 - Branch `feat/material-397fcb`, worktree `.worktrees/material-api`; base commit `22d10019`. Run every command from the worktree.
 - Conventional commits; no AI-attribution or session trailers. `tasks done <id> "<what landed>"` goes in the same commit as the code for the task it closes.
-- Every commit passes the pre-commit hook (`just check`: ops-check, `cargo fmt --check`, `cargo clippy --all --all-targets`, tools unit tests, `tasks check`, `upstream-report --check`, `package-pin --check`). Run tests through `just`, not `cargo`, except the targeted `cargo test -p ... <name>` runs this plan names for the inner loop.
+- Every commit passes the pre-commit hook (`just check`: ops-check, `cargo fmt --check`, `cargo clippy --all --all-targets`, tools unit tests, `tasks check`, `upstream-report --check`, `package-pin --check`).
+- Every test run goes through the timing wrapper, as AGENTS.md requires: `just test` for the suite, and for the inner loop `python3 tools/tt test-fast -- cargo test -p <crate> [--lib] <filter>` with exactly one filter per invocation (cargo rejects a second positional filter).
+- `tools/upstream-report --check` compares the committed report against the staged tree and every fork path counts, so a commit that adds, moves, or removes a file must regenerate the report first: `python3 tools/upstream-report && git add docs/materials/upstream-divergence.md` after `git add` and before `git commit`. Every commit step below does this.
 - The KDL surface is unchanged: `material "name" { glass { ... } }`, `noise <amount> type=<type>`, `saturation <amount>`, every existing parameter name and range.
 - Rendering before and after the migration is byte-identical on the noise and saturation smoke fixtures (Task 9 proves it).
 - Uniform names for optics use the prefix `mat_<optic>_`; the two migrated optics keep their existing names `mat_saturation`, `mat_noise`, `mat_noise_type`.
@@ -145,7 +147,7 @@ Add `pub mod params;` near the top of `niri-config/src/material/mod.rs`, after t
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `cargo test -p niri-config params::tests`
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config params::tests`
 Expected: FAIL to compile with `cannot find trait Bounded` / `cannot find struct ParamSpec`.
 
 - [ ] **Step 4: Implement the module**
@@ -324,7 +326,7 @@ pub fn render_param_table(specs: &[ParamSpec]) -> String {
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cargo test -p niri-config params::tests`
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config params::tests`
 Expected: 2 passed.
 
 - [ ] **Step 6: Commit**
@@ -332,6 +334,7 @@ Expected: 2 passed.
 ```bash
 cargo fmt --all
 git add niri-config/src/material/mod.rs niri-config/src/material/params.rs
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "refactor(config): add material parameter metadata with bounds from the types"
 ```
 
@@ -370,7 +373,7 @@ Add to the `tests` module of `niri-config/src/lib.rs`, next to `glass_noise_and_
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cargo test -p niri-config saturation_resolves_through_its_optic`
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config saturation_resolves_through_its_optic`
 Expected: FAIL to compile, `cannot find type ResolvedSaturation`.
 
 - [ ] **Step 3: Create the optic module**
@@ -488,7 +491,7 @@ In the `tile.rs` tests, the test `written_noise_and_saturation_resolve_independe
 
 - [ ] **Step 7: Run the tests**
 
-Run: `cargo test -p niri-config` then `cargo test -p niri --lib layout::tile`
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config` then `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile`
 Expected: all pass, including `saturation_resolves_through_its_optic`.
 
 - [ ] **Step 8: Commit**
@@ -496,6 +499,7 @@ Expected: all pass, including `saturation_resolves_through_its_optic`.
 ```bash
 cargo fmt --all
 git add niri-config/src src/layout/tile.rs
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "refactor(config): move saturation into the first optic module"
 ```
 
@@ -538,7 +542,7 @@ Add to the `tests` module of `niri-config/src/lib.rs`:
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `cargo test -p niri-config noise_resolves_through_its_optic`
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config noise_resolves_through_its_optic`
 Expected: FAIL to compile, `cannot find type ResolvedNoise`.
 
 - [ ] **Step 3: Create the optic module**
@@ -676,7 +680,7 @@ In `niri-config/src/lib.rs` tests: `noise: None,` and `noise_type: NoiseType::Wh
 
 - [ ] **Step 7: Run the tests**
 
-Run: `cargo test -p niri-config` then `cargo test -p niri --lib`
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config` then `python3 tools/tt test-fast -- cargo test -p niri --lib`
 Expected: all pass.
 
 - [ ] **Step 8: Commit**
@@ -684,6 +688,7 @@ Expected: all pass.
 ```bash
 cargo fmt --all
 git add niri-config/src src/layout/tile.rs src/render_helpers/material.rs
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "refactor(config): move noise into its optic module"
 ```
 
@@ -692,20 +697,28 @@ git commit -m "refactor(config): move noise into its optic module"
 ### Task 4: Core parameter specs, the generated table, and the parser test
 
 **Files:**
-- Modify: `niri-config/src/material/mod.rs` (`core_params()`), `niri-config/src/material/params.rs` (`all_params()`), `niri-config/src/lib.rs` (two tests), `docs/materials/material-config.md` (markers, generated table)
+- Modify: `niri-config/src/material/mod.rs` (`core_params()`), `niri-config/src/material/params.rs` (`all_params()`, two tests), `docs/materials/material-config.md` (markers, generated table)
 
 **Interfaces:**
 - Produces: `niri_config::material::core_params() -> Vec<ParamSpec>`, `niri_config::material::params::all_params() -> Vec<ParamSpec>`; markers `<!-- params:begin -->` / `<!-- params:end -->` in `material-config.md`; env var `MATERIAL_DOCS_UPDATE=1` rewrites the table.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to the `tests` module of `niri-config/src/lib.rs`:
+The parser test decodes a bare `glass { }` node and resolves it through a
+`Material` it builds itself, so only the scalar decode runs. It must not go
+through `Config::parse_mem`: that path also runs `Material::validate`, whose
+cross-parameter rules reject valid scalar bounds on their own (`bevel 0`
+fails `ring-inset + ring-width <= bevel` for every response, and
+`offset-x 64` fails `offset must not exceed bevel` at the default bevel).
+The documented scalar ranges stay as they are; the cross-parameter rules
+keep their own tests.
+
+Add to the `tests` module of `niri-config/src/material/params.rs` (it gets
+`use std::path::Path;` and `use crate::material::{Glass, Material};`):
 
 ```rust
     #[test]
     fn material_parameter_table_matches_the_docs() {
-        use crate::material::params::{all_params, render_param_table};
-
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../docs/materials/material-config.md");
         let doc = std::fs::read_to_string(&path).unwrap();
@@ -727,17 +740,23 @@ Add to the `tests` module of `niri-config/src/lib.rs`:
 
     #[test]
     fn material_parameter_specs_match_the_parser() {
-        use crate::material::params::{all_params, ParamKind};
-
+        /// Decodes one `glass { <line> }` node and resolves it. Scalar
+        /// bounds only: `Material::validate` is not run.
         fn glass_with(line: &str) -> Result<ResolvedGlass, String> {
             let body = if line.is_empty() {
                 String::new()
             } else {
                 format!("{line};")
             };
-            Config::parse_mem(&format!("material \"t\" {{ glass {{ {body} }}; }}\n"))
-                .map(|config| config.materials[0].resolve().glass)
-                .map_err(|err| format!("{:?}", miette::Report::new(err)))
+            let mut nodes: Vec<Glass> =
+                knuffel::parse("spec.kdl", &format!("glass {{ {body} }}\n"))
+                    .map_err(|err| format!("{:?}", miette::Report::new(err)))?;
+            let material = Material {
+                name: String::from("t"),
+                glass: nodes.remove(0),
+                responses: Vec::new(),
+            };
+            Ok(material.resolve().glass)
         }
 
         let neutral = glass_with("").unwrap();
@@ -796,11 +815,11 @@ Add to the `tests` module of `niri-config/src/lib.rs`:
     }
 ```
 
-`Path` is already imported in `lib.rs` (`Config::parse` takes `&Path`); if the test module lacks it, add `use std::path::Path;` inside `mod tests`.
+`knuffel::parse::<Vec<Glass>>` decodes a document of top-level `glass` nodes; `Glass` derives `knuffel::Decode`, and its range errors (`value must be between ...`, `value must be greater than 0 and at most ...`) surface through the `miette::Report` text the test checks for `must be`.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p niri-config material_parameter_`
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_`
 Expected: FAIL to compile, `cannot find function all_params`.
 
 - [ ] **Step 3: Write `core_params` and `all_params`**
@@ -945,7 +964,7 @@ In `docs/materials/material-config.md`, replace the hand-written table (the line
 Then generate:
 
 ```bash
-MATERIAL_DOCS_UPDATE=1 cargo test -p niri-config material_parameter_table_matches_the_docs
+MATERIAL_DOCS_UPDATE=1 python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_table_matches_the_docs
 git diff docs/materials/material-config.md
 ```
 
@@ -953,14 +972,15 @@ Expected: the diff shows the table regenerated between the markers, with `satura
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cargo test -p niri-config material_parameter_`
-Expected: 2 passed. If `material_parameter_specs_match_the_parser` fails on one node, the spec's type and the `Glass` field's type disagree; fix the spec.
+Run: `python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_`
+Expected: 2 passed. If `material_parameter_specs_match_the_parser` fails on one node, the spec's type and the `Glass` field's type disagree; fix the spec. A failure mentioning `offset must not exceed bevel` or `ring-inset` means the test went through `Config::parse_mem`; it must decode `Glass` directly.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 cargo fmt --all
 git add niri-config/src docs/materials/material-config.md
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "feat(config): generate the material parameter table and test it against the parser"
 ```
 
@@ -1131,7 +1151,7 @@ Add `pub mod optics;` to `src/render_helpers/material/mod.rs` after its `use` bl
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `cargo test -p niri --lib render_helpers::material::optics`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::material::optics`
 Expected: FAIL to compile, `cannot find type OpticFrame` / `SaturationOptic`.
 
 - [ ] **Step 4: Write the GLSL files**
@@ -1362,7 +1382,7 @@ If `niri_config::signal::SignalMotionPolicy` is private at that path, check `nir
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `cargo test -p niri --lib render_helpers::material::optics`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::material::optics`
 Expected: 5 passed.
 
 - [ ] **Step 7: Commit**
@@ -1370,6 +1390,7 @@ Expected: 5 passed.
 ```bash
 cargo fmt --all
 git add src/render_helpers/material src/render_helpers/shaders/material
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "feat(material): add the optic registry with saturation and noise optics"
 ```
 
@@ -1448,7 +1469,7 @@ mod tests {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p niri --lib render_helpers::shaders::tests`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::shaders::tests`
 Expected: FAIL to compile, `cannot find function material_source`.
 
 - [ ] **Step 3: Split the shader file**
@@ -1595,7 +1616,7 @@ The upload in `material/mod.rs` `draw()` still sends `mat_noise`, `mat_noise_typ
 
 - [ ] **Step 5: Run the tests, then the whole suite**
 
-Run: `cargo test -p niri --lib render_helpers::shaders::tests` then `just test`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::shaders::tests` then `just test`
 Expected: 4 passed; full suite green.
 
 - [ ] **Step 6: Commit**
@@ -1603,6 +1624,7 @@ Expected: 4 passed; full suite green.
 ```bash
 cargo fmt --all
 git add src/render_helpers/shaders
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "refactor(material): assemble the glass shader from a prelude, the optics, and main"
 ```
 
@@ -1724,7 +1746,7 @@ Add `use crate::render_helpers::material::optics::{self, OpticFrame};` to the ti
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p niri --lib render_helpers::material::tests::optic_ layout::tile::tests`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::material::tests::optic_` then `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile::tests`
 Expected: FAIL to compile, `no field optics on InputFingerprint` and `cannot find optics`.
 
 - [ ] **Step 3: Change the render element**
@@ -1786,7 +1808,7 @@ In `src/layout/tile.rs`:
 
 - [ ] **Step 5: Run the tests, then the whole suite**
 
-Run: `cargo test -p niri --lib` then `just test`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib` then `just test`
 Expected: green. Clippy may flag `too_many_arguments` on `element`; the `#[allow]` is already present.
 
 - [ ] **Step 6: Commit**
@@ -1794,6 +1816,7 @@ Expected: green. Clippy may flag `too_many_arguments` on `element`; the `#[allow
 ```bash
 cargo fmt --all
 git add src/render_helpers/material src/layout/tile.rs
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "feat(material): upload optic values from the registry and fingerprint them"
 ```
 
@@ -1829,10 +1852,16 @@ Add to the `tile.rs` tests module, after `only_a_focused_tile_drifts`:
 
     #[test]
     fn a_focused_drifting_tile_keeps_its_signal_deadline() {
+        // Start the fixture already focused: a focus *change* would begin a
+        // crossfade from 0, and `focus_drift_hz` is 0 until that crossfade
+        // has advanced, so a tile focused at the same instant reports no
+        // drift yet. An already-focused tile has focus value 1.
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        tile.active = true;
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         tile.update_render_elements(true, true, view);
+        assert!(tile.focus_crossfade.is_none());
         assert!(tile.signal_frame_cache.borrow().is_some());
         let deadline = tile.tick_deadline(Point::default(), view, Duration::ZERO);
         assert!(deadline.is_some_and(|d| d > Duration::ZERO), "{deadline:?}");
@@ -1842,8 +1871,10 @@ Add to the `tile.rs` tests module, after `only_a_focused_tile_drifts`:
     fn an_out_of_view_slab_reports_no_deadline() {
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        tile.active = true;
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         tile.update_render_elements(true, true, view);
+        assert!(tile.tick_deadline(Point::default(), view, Duration::ZERO).is_some());
         let far = Point::from((10_000., 10_000.));
         assert_eq!(tile.tick_deadline(far, view, Duration::ZERO), None);
     }
@@ -1851,7 +1882,7 @@ Add to the `tile.rs` tests module, after `only_a_focused_tile_drifts`:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cargo test -p niri --lib layout::tile::tests::static_optics layout::tile::tests::a_focused_drifting layout::tile::tests::an_out_of_view`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile::tests`
 Expected: FAIL to compile, `no method named tick_deadline`.
 
 - [ ] **Step 3: Replace the method**
@@ -1896,7 +1927,7 @@ At the call site in `Tile::render` (near line 2025) rename `self.signal_tick_dea
 
 - [ ] **Step 4: Run the tests, then the whole suite**
 
-Run: `cargo test -p niri --lib layout::tile` then `just test`
+Run: `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile` then `just test`
 Expected: green.
 
 - [ ] **Step 5: Commit**
@@ -1904,6 +1935,7 @@ Expected: green.
 ```bash
 cargo fmt --all
 git add src/layout/tile.rs
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "feat(material): evaluate optic redraw deadlines independently of the signal cache"
 ```
 
@@ -1952,7 +1984,13 @@ done
 
 Expected: each run exits 0 (every in-script assertion held, including each script's own determinism check).
 
-- [ ] **Step 4: Compare every capture byte for byte**
+- [ ] **Step 4: Compare every capture pixel for pixel**
+
+The scripts' PNGs are not byte-stable across runs: ImageMagick writes a
+creation timestamp into the crops and analysis images it produces, so two
+files with identical pixels differ in bytes. Compare decoded pixels with the
+absolute-error metric, which counts differing pixels and exits non-zero when
+any differ:
 
 ```bash
 cd /mnt/ssd3/niri-material/evidence-optics
@@ -1960,14 +1998,21 @@ status=0
 for s in glass-noise-saturation-smoke glass-noise-type-smoke; do
   for f in before-$s/*.png; do
     g=after-$s/$(basename "$f")
-    if cmp -s "$f" "$g"; then echo "SAME $f"; else echo "DIFF $f"; status=1; fi
+    if [ ! -f "$g" ]; then echo "MISSING $g"; status=1; continue; fi
+    ae=$(magick compare -metric AE "$f" "$g" null: 2>&1 || true)
+    if [ "$ae" = "0" ]; then echo "SAME $ae $f"; else echo "DIFF $ae $f"; status=1; fi
   done
 done
 echo "status=$status"
 cd -
+exit $status
 ```
 
-Expected: every line `SAME`, `status=0`. A `DIFF` fails the migration: diff the two shader sources (`prelude` + optics + `main` against the base commit's `material.frag`) for an arithmetic change before anything else.
+Run it as a script file (`bash compare.sh`) so the final `exit` is the
+verdict. Expected: every line `SAME 0 ...`, `status=0`, exit 0. Any `DIFF`
+or `MISSING` fails the migration: diff the two shader sources (`prelude` +
+optics + `main` against the base commit's `material.frag`) for an
+arithmetic change before anything else.
 
 - [ ] **Step 5: Write the evidence doc**
 
@@ -1988,9 +2033,9 @@ Expected: every line `SAME`, `status=0`. A `DIFF` fails the migration: diff the 
 
 ## Captures
 
-Every PNG the two smokes produced, before against after, compared with `cmp`:
+Every PNG the two smokes produced, before against after, decoded and compared pixel for pixel (`magick compare -metric AE`; bytes differ by ImageMagick timestamps alone):
 
-| Smoke | Captures | Identical |
+| Smoke | Captures | Zero differing pixels |
 | --- | --- | --- |
 | glass-noise-saturation-smoke | <count> | <count> |
 | glass-noise-type-smoke | <count> | <count> |
@@ -2019,6 +2064,7 @@ rm -rf /mnt/ssd3/niri-material/target-before
 
 ```bash
 git add docs/materials
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "docs(materials): record the byte-identical optics migration evidence"
 ```
 
@@ -2159,7 +2205,7 @@ Then two registrations:
 
 ## 4. The docs
 
-- Run `MATERIAL_DOCS_UPDATE=1 cargo test -p niri-config material_parameter_table_matches_the_docs`
+- Run `MATERIAL_DOCS_UPDATE=1 python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_table_matches_the_docs`
   to regenerate the parameter table in `material-config.md`.
 - Add a `### <name>` section under `## Optics` in `material-config.md`: what
   it does, which stage it acts at, and its neutral.
@@ -2223,9 +2269,9 @@ In `docs/materials/render-pipeline.md`:
 - [ ] **Step 5: Check and commit**
 
 ```bash
-python3 tools/upstream-report
-just check
 git add docs
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
+just check
 git commit -m "docs(materials): add the adding-an-optic guide and record the optics stages"
 ```
 
@@ -2234,6 +2280,8 @@ git commit -m "docs(materials): add the adding-an-optic guide and record the opt
 ## Self-review
 
 **Spec coverage.** §1 hooks and neutral: Tasks 5, 6, 10 (the `normal`, `specular`, `emissive` hooks have no optic yet and are documented in the guide; their first call sites arrive with cracks, iridescence, and aurora). §2 file layout and registrations: Tasks 1–6. §3 trait, frame, registry, damage, scheduling: Tasks 5, 7, 8. §4 assembly: Task 6. §5 migration and byte-identical check: Tasks 2, 3, 7, 9. §6 typed specs, two tests, narrowed claim: Tasks 1, 4, 10. §10 task shape: the goal carries this plan's steps. §11 verification: unit tests in Tasks 2–8, layout tests in Task 8, evidence in Task 9; the aurora integration check belongs to the aurora plan.
+
+**Review fixes (2026-09-10).** Scalar bounds are tested without cross-parameter validation (Task 4); captures are compared as decoded pixels with a non-zero exit on any difference (Task 9); the focused-deadline fixture starts focused so no crossfade gates the drift (Task 8); every commit regenerates the divergence report first; every test run goes through `tools/tt` with one filter.
 
 **Placeholders.** The only angle-bracket values are the evidence doc's date and measured results in Task 9, which come from the run.
 
