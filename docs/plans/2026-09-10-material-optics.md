@@ -1950,7 +1950,7 @@ git commit -m "feat(material): evaluate optic redraw deadlines independently of 
 **Interfaces:**
 - Consumes: `docs/materials/scripts/glass-noise-saturation-smoke.sh` and `glass-noise-type-smoke.sh`, both taking `IMPL` (niri binary) and `OUT` (artifact dir) and starting their own headless Weston unit. Requires `weston`, `kitty`, `swaybg`, `jq`, `rg`, ImageMagick 7.
 
-- [ ] **Step 1: Build the before binary from the base commit**
+- [x] **Step 1: Build the before binary from the base commit**
 
 ```bash
 git worktree add /mnt/ssd3/niri-material/before-optics 22d10019
@@ -1963,14 +1963,14 @@ ls -la /mnt/ssd3/niri-material/target-before/release/niri
 
 A separate target dir avoids the stale-artifact sharing between worktrees.
 
-- [ ] **Step 2: Build the after binary**
+- [x] **Step 2: Build the after binary**
 
 ```bash
 cargo build --release -p niri
 ls -la /mnt/ssd3/niri-material/target/release/niri
 ```
 
-- [ ] **Step 3: Run both smokes against both binaries**
+- [x] **Step 3: Run both smokes against both binaries**
 
 ```bash
 E=/mnt/ssd3/niri-material/evidence-optics; mkdir -p $E
@@ -1984,7 +1984,7 @@ done
 
 Expected: each run exits 0 (every in-script assertion held, including each script's own determinism check).
 
-- [ ] **Step 4: Compare every capture pixel for pixel**
+- [x] **Step 4: Compare every capture pixel for pixel**
 
 The scripts' PNGs are not byte-stable across runs: ImageMagick writes a
 creation timestamp into the crops and analysis images it produces, so two
@@ -2019,7 +2019,7 @@ errors, then diff the two shader sources (`prelude` +
 optics + `main` against the base commit's `material.frag`) for an
 arithmetic change before anything else.
 
-- [ ] **Step 5: Write the evidence doc**
+- [x] **Step 5: Write the evidence doc**
 
 `docs/materials/2026-09-<dd>-material-optics-evidence.md`, with the date of the run in the file name and these sections filled from the run, no value left symbolic:
 
@@ -2058,14 +2058,14 @@ Add an index line to `docs/materials/README.md` under the material documentation
 - `2026-09-<dd>-material-optics-evidence.md`: byte-identical captures before and after the saturation and noise optic migration.
 ```
 
-- [ ] **Step 6: Remove the before worktree**
+- [x] **Step 6: Remove the before worktree**
 
 ```bash
 git worktree remove --force /mnt/ssd3/niri-material/before-optics
 rm -rf /mnt/ssd3/niri-material/target-before
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add docs/materials
