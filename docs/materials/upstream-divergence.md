@@ -48,11 +48,10 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-250 paths differ: 38 class B (seam), 194 class A (fork-only), 18 class C (scaffolding).
+250 paths differ: 38 class B (seam), 195 class A (fork-only), 17 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
-| `.agents/AGENTS.md` | C | A | +10/-0 |
 | `.githooks/post-checkout` | C | A | +3/-0 |
 | `.githooks/post-commit` | C | A | +3/-0 |
 | `.githooks/post-merge` | C | A | +3/-0 |
