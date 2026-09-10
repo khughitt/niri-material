@@ -56,8 +56,10 @@ refraction, tint, ring, and signal code stays where it is.
 Adding an optic is then a fixed recipe: four new files, three one-line
 registrations, and a docs section. The recipe is written down in
 `docs/materials/adding-an-optic.md` with the noise optic as the worked
-example, and the parameter table in `material-config.md` is rendered from the
-optics' own declarations so it cannot drift.
+example, and the parameter table in `material-config.md` is rendered from
+typed specs whose defaults and ranges come from the resolved types, with a
+test that drives the parser at those ranges, so the table, the specs, and
+the parser are checked against each other.
 
 Three optics are the first users: `cracks` for ice, `iridescence` for
 rainbow glass, and `aurora` for a slow colour field inside the glass. Each
@@ -87,14 +89,22 @@ named for the stage of `render-pipeline.md` they sit in:
 | --- | --- | --- | --- |
 | `normal` | 2, after distortion and ripple, before the taps | `vec3 <optic>_normal(vec3 n, vec2 p)` | the perturbed normal the refraction taps use |
 | `specular` | 5, after the Schlick term, before the signal accent mix | `vec3 <optic>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | the Fresnel glint |
-| `emissive` | 6, after the ring of light, before the sweeps | `vec3 <optic>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | light added inside the slab |
+| `emissive` | 6, after the ring of light, before the sweeps | `vec3 <optic>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | returns light to add; `main` accumulates it into `emissive` |
 | `post` | 9 and 10, on the encoded sRGB glass colour | `vec3 <optic>_post(vec3 color, vec2 fragCoord)` | the finished glass colour |
 
 An optic defines one function per hook it acts at, named
 `<optic>_<hook>`, in its own GLSL file. `main.frag` calls the functions in
 `OPTICS` order at each hook; a contributor adds one call per hook the new
-optic uses. A function returns its input unchanged when the optic's amount
-is zero, so an unconfigured optic costs one uniform branch.
+optic uses. The `normal`, `specular`, and `post` hooks transform a value
+and return it; the `emissive` hook is additive and returns a contribution.
+
+Every optic has a **neutral** configuration, the one a material that never
+names the optic resolves to, and the optic's docs section states it. At its
+neutral, a transforming hook returns its input unchanged and an emissive
+hook returns `vec3(0.0)`, behind one uniform branch, so an unconfigured
+optic costs that branch and nothing else. The neutral is not always zero:
+`saturation`'s is 1 (0 is grayscale), `noise`'s is an amount of 0 or an
+inherited amount of 0, and the three new optics' is an amount of 0.
 
 Every optic may read the shared inputs the prelude declares: the element
 position `p`, the slab geometry (`g_center`, `g_half`, `g_outer_r`), the
@@ -106,7 +116,7 @@ any optic should use for per-window variation), `mat_thickness`, and
 
 | File | Holds |
 | --- | --- |
-| `niri-config/src/material/optics/<name>.rs` | the knuffel node struct; the resolved struct with `Default`; `resolve(node) -> Resolved`; `validate(&self) -> Result<(), String>` when the optic has a cross-parameter rule; `pub const PARAMS: &[ParamSpec]` |
+| `niri-config/src/material/optics/<name>.rs` | the knuffel node struct; the resolved struct with `Default`; `resolve(node) -> Resolved`; `validate(&self) -> Result<(), String>` when the optic has a cross-parameter rule; `pub fn params() -> Vec<ParamSpec>` |
 | `src/render_helpers/material/optics/<name>.rs` | `impl Optic for Resolved<Name>`: the uniform names, `values(&self, ctx)`, and `next_change(&self, ctx)` |
 | `src/render_helpers/shaders/material/<name>.frag` | its `uniform` declarations and its `<name>_<hook>` functions |
 | `docs/materials/material-config.md` | one `### <name>` section under `## Optics` describing what the optic does and which stage it acts at; the parameter rows are generated (section 6) |
@@ -139,8 +149,8 @@ into the config crate to save one file.
 pub trait Optic {
     /// The uniforms this optic's GLSL declares, in declaration order.
     const UNIFORMS: &'static [UniformName<'static>];
-    /// This frame's values, one per entry of `UNIFORMS`, in the same order.
-    fn values(&self, ctx: &OpticFrame) -> Vec<OpticValue>;
+    /// This frame's uniforms, one per entry of `UNIFORMS`, in the same order.
+    fn values(&self, ctx: &OpticFrame) -> Vec<Uniform<'static>>;
     /// The next instant `values` changes with no config change, or `None`
     /// for a static optic. The default is static.
     fn next_change(&self, _ctx: &OpticFrame) -> Option<Duration> { None }
@@ -156,34 +166,36 @@ pub struct OpticFrame<'a> {
     pub seed: f32,                      // the window's jelly seed, component 0
 }
 
-/// A uniform value with equality, so optic values can be fingerprinted.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum OpticValue { F1(f32), F2([f32; 2]), F3([f32; 3]), F4([f32; 4]) }
-
 pub struct OpticEntry {
     pub glsl: &'static str,
     pub uniforms: &'static [UniformName<'static>],
-    pub values: fn(&ResolvedGlass, &OpticFrame) -> Vec<OpticValue>,
+    pub values: fn(&ResolvedGlass, &OpticFrame) -> Vec<Uniform<'static>>,
     pub next_change: fn(&ResolvedGlass, &OpticFrame) -> Option<Duration>,
 }
 
 pub static OPTICS: &[OpticEntry] = &[ /* in render order */ ];
 ```
 
-`OpticValue` converts to smithay's `UniformValue` at draw time. The enum is
-niri's because smithay's value type carries no equality and the values are
-compared every frame.
+`Uniform` and `UniformValue` are smithay's own types; at the pinned revision
+(`ff5fa7df`) both derive `PartialEq`, so optic values are fingerprinted as
+they are, with no value type of niri's own and no conversion at draw time.
 
 Two things that a new parameter had to do by hand become automatic:
 
-- **Damage.** `InputFingerprint` gains `optics: Vec<OpticValue>`, the
+- **Damage.** `InputFingerprint` gains `optics: Vec<Uniform<'static>>`, the
   concatenation of every optic's `values`. `MaterialState::advance_commit`
   already compares the fingerprint between frames, so an optic whose values
   change registers damage without touching the fingerprint type.
-- **Redraw scheduling.** `Tile::signal_tick_deadline` takes the minimum of
-  the signal deadline it computes today and every optic's `next_change`,
-  gated by the same `slab_in_view` check. An animated optic never touches
-  `signal.rs`.
+- **Redraw scheduling.** `Tile::signal_tick_deadline` today returns `None`
+  as soon as `signal_frame_cache` is empty, which is the normal state of a
+  window whose response lights no focus filament and that carries no
+  signal. Optic deadlines must not sit behind that gate. The method becomes
+  `tick_deadline`: it computes the optic deadline from `OPTICS` whenever the
+  tile has a material and its slab band is in view, computes the signal
+  deadline as today only when the cache is present, and returns the minimum
+  of whichever exist. An animated optic never touches `signal.rs`, and a
+  visible, unfocused, signal-free aurora window keeps redrawing at its
+  `drift-hz`. Section 11 names the integration check for that case.
 
 `MaterialRenderConfig` loses its `noise` and `saturation` fields. The
 inherit-or-neutral rule that `resolve_material` in `src/layout/tile.rs`
@@ -238,28 +250,67 @@ evidence doc under `docs/materials/`, dated the day of the run and named
 `material-optics-evidence`, with the binary and capture hashes, following
 the existing evidence docs.
 
-## 6. Docs that cannot drift
+## 6. Docs tied to the parser
+
+A hand-written row can agree with the table and disagree with the code. The
+parameter table is therefore rendered from typed specs whose defaults come
+from the resolved `Default` values and whose ranges come from the bound
+types, and a test drives the parser with those ranges.
 
 ```rust
-pub struct ParamSpec {
-    pub node: &'static str,     // "noise", "noise type=", "cracks scale="
-    pub ty: &'static str,       // "float", "color", "bool", "white / fine / lightness"
-    pub default: &'static str,  // "inherit", "0", "#dfe8ff"
-    pub range: &'static str,    // "0–1", "any color", "—"
-    pub unit: &'static str,     // "—", "logical px"
+pub enum ParamKind {
+    Float { default: f64, min: f64, max: f64, unit: &'static str },
+    /// A float whose omitted value inherits (noise and saturation).
+    FloatOrInherit { min: f64, max: f64 },
+    Color { default: Color },
+    Bool { default: bool },
+    Enum { default: &'static str, variants: &'static [&'static str] },
 }
+
+pub struct ParamSpec {
+    pub node: &'static str,  // "noise", "noise type=", "aurora drift-hz"
+    pub kind: ParamKind,
+}
+
+/// The parse-time bounds of a scalar type, as the type declares them.
+pub trait Bounded { const MIN: f64; const MAX: f64; }
+impl<const MIN: i32, const MAX: i32> Bounded for FloatOrInt<MIN, MAX> { /* MIN, MAX */ }
+impl<const MIN: i32, const MAX: i32> Bounded for Milli<MIN, MAX> { /* MIN / 1000, MAX / 1000 */ }
+impl<const MAX: i32> Bounded for Positive<MAX> { /* 0 exclusive, MAX */ }
 ```
 
-Each optic exports `PARAMS`; `niri-config/src/material/mod.rs` exports
-`CORE_PARAMS` for the fifteen parameters that stay on the core, in the order
-the table lists them today. `render_param_table()` renders both as the
-Markdown table `material-config.md` carries now, between
-`<!-- params:begin -->` and `<!-- params:end -->` markers. A test in
-`niri-config` reads the file relative to `CARGO_MANIFEST_DIR`, compares the
-block, and on mismatch fails with the expected block in its message. With
-`MATERIAL_DOCS_UPDATE=1` set, the same test rewrites the block instead.
+Each optic exports `pub fn params() -> Vec<ParamSpec>`, a function rather
+than a const so a default is read from `Resolved<Name>::default()` and a
+range from `<FieldType as Bounded>::MIN` and `MAX`, where `FieldType` is the
+bound type of the node struct's field. `niri-config/src/material/mod.rs`
+exports `core_params()` the same way for the fifteen parameters that stay
+on the core, in the order the table lists them today. `render_param_table()`
+renders both as the Markdown table `material-config.md` carries now, between
+`<!-- params:begin -->` and `<!-- params:end -->` markers.
+
+Two tests in `niri-config` tie the three things together:
+
+- **The table matches the specs.** The test reads the file relative to
+  `CARGO_MANIFEST_DIR`, compares the block, and on mismatch fails with the
+  expected block in its message. With `MATERIAL_DOCS_UPDATE=1` set, it
+  rewrites the block instead.
+- **The specs match the parser.** For every `Float` and `FloatOrInherit`
+  spec, the test writes a material whose node carries `min`, then `max`,
+  and asserts both parse and resolve to that value; then `max + 0.001` and
+  `min - 0.001` (skipping `min - 0.001` for `Positive`, whose lower bound is
+  exclusive and is tested with `0`) and asserts the parse fails with the
+  type's range error. For every `Enum` spec it parses each variant and one
+  unknown name. For every `Float` spec it also asserts that a material
+  omitting the node resolves to `default`. A spec whose field type was
+  changed without changing the spec, or whose default moved, fails here.
+
+What this does not catch: a spec that names the wrong node string for a
+field that exists. The parse test would then pass on a different node, so
+the node strings are the one hand-maintained fact, and the worked example in
+`adding-an-optic.md` says so.
+
 `just check` runs the crate's tests through `cargo clippy --all-targets`
-only; the table test runs in `just test`, which the pre-push hook runs.
+only; both tests run in `just test`, which the pre-push hook runs.
 
 The per-parameter prose under the table, the stage table in
 `render-pipeline.md`, and the Prism column there stay hand-written: they
@@ -479,12 +530,20 @@ The two Prism pieces of section 9 depend on `material-bb3fe5` and
   including the inherit-or-neutral rule for noise and saturation under all
   four combinations of written value and effective backdrop blur, and
   aurora's phase and boundary under each motion policy.
+- A layout test in `src/layout/tests.rs` for the scheduling gate of
+  section 3: a tile with an aurora material, unfocused, with a response that
+  lights no focus filament and no signal, whose slab band is in view,
+  reports a tick deadline equal to aurora's next bucket boundary; the same
+  tile with `drift-hz 0` reports none. The aurora smoke repeats the check
+  live: two captures of an unfocused, signal-free aurora window one bucket
+  apart must differ, and two captures within one bucket must not.
 - The byte-identical migration check of section 5.
 - A smoke per new optic on the headless host, in the form of the existing
   `docs/materials/scripts/*-smoke.sh`: amount 0 renders identically to the
   unconfigured material; the optic's claimed effect is measurable; frame
   cost is recorded.
-- The parameter table test of section 6 stays green.
+- Both section 6 tests stay green: the table matches the specs, and the
+  specs match the parser at every range bound and default.
 - `tools/upstream-report` is regenerated when files under seams change;
   `src/render_helpers/shaders/mod.rs` is a class B seam and its hunk
   changes.
