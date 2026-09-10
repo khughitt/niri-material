@@ -35,9 +35,10 @@ window-rule {
 All `glass` parameters are optional. Colors use niri's normal color syntax;
 lengths are logical pixels.
 
+<!-- params:begin -->
 | Parameter | Type | Default | Range | Unit |
 | --- | --- | --- | --- | --- |
-| `ior` | float | 1.5 | 1.0–3.0 | — |
+| `ior` | float | 1.5 | 1–3 | — |
 | `thickness` | float | 20 | 0–200 | logical px |
 | `attenuation-color` | color | `#dfe8ff` | any color | — |
 | `attenuation-distance` | float | 60 | > 0 through 65535 | logical px |
@@ -46,15 +47,18 @@ lengths are logical pixels.
 | `distortion` `scale=` | float | 0.5 | 0–2 | — |
 | `anisotropic-blur` | float | 0 | 0–1 | — |
 | `roughness` | float | 0 | 0–1 | — |
-| `noise` | float | inherit | 0–1 | — |
-| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
-| `saturation` | float | inherit | 0–3 | — |
 | `backdrop-blur` | bool | false | true / false | — |
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
 | `bevel` | float | 12 | 0–128 | logical px |
 | `light-ior` | float | 6 | 1–12 | — |
-| `offset-x` / `offset-y` | float | 6 | −64–64 | logical px |
+| `offset-x` | float | 6 | −64–64 | logical px |
+| `offset-y` | float | 6 | −64–64 | logical px |
+| `saturation` | float | inherit | 0–3 | — |
+| `noise` | float | inherit | 0–1 | — |
+| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
+
+<!-- params:end -->
 
 `jelly-flex` and `jelly-ripple` use thousandths only in their internal
 representation; their configuration values and ranges above are unchanged.
@@ -120,6 +124,28 @@ The slab uses `thickness` as its depth. Its frame is the window rectangle
 inflated by `bevel - max(abs(offset-x), abs(offset-y))`, then translated by
 the offsets. Its inner corners follow the window's effective
 `geometry-corner-radius`; the outer corners add the drawn chamfer.
+
+## Optics
+
+The glass pipeline is a slab plus an ordered list of optics. Each optic owns
+its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
+changes nothing; omission can instead inherit where stated below.
+Contributors: see `adding-an-optic.md`.
+
+### saturation
+
+Stage 9. `saturation <amount>` mixes the encoded glass colour toward its
+luma. Its explicit neutral is 1; 0 is grayscale. An omitted amount inherits
+the global `blur` block's `saturation` while backdrop blur is effective and
+resolves to 1 otherwise.
+
+### noise
+
+Stage 10. `noise <amount> type=<type>` grains the encoded glass colour per
+screen pixel; `white`, `fine`, and `lightness` are described above. Its
+explicit neutral is amount 0. An omitted amount inherits the global `blur`
+block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
+the type never inherits.
 
 ## Signal responses
 

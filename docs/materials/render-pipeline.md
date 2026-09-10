@@ -2,14 +2,18 @@
 
 What runs in what order when a glass window is drawn, what each stage
 samples, and which parameter acts at which stage. Read this before touching
-`src/render_helpers/material.rs`, `src/render_helpers/shaders/material.frag`,
+`src/render_helpers/material/mod.rs`, `src/render_helpers/material/optics/`,
+`src/render_helpers/shaders/material/prelude.frag`,
+`src/render_helpers/shaders/material/main.frag`, and one shader file per optic,
 or the postprocess and effect-buffer code; it is the frame every rendering
 design in this directory assumes.
 
 Sources: `src/niri.rs` (`fill_xray_elements`, `update_xray_render_elements`),
 `src/render_helpers/effect_buffer.rs`, `src/render_helpers/blur.rs`,
 `src/layout/tile.rs` (`Tile::render_inner`, `resolve_material`),
-`src/render_helpers/material.rs`, `src/render_helpers/shaders/material.frag`,
+`src/render_helpers/material/mod.rs`, `src/render_helpers/material/optics/`,
+`src/render_helpers/shaders/material/prelude.frag`,
+`src/render_helpers/shaders/material/main.frag`, and one shader file per optic,
 `src/render_helpers/background_effect.rs`, `src/render_helpers/xray.rs`,
 `src/render_helpers/framebuffer_effect.rs`,
 `src/render_helpers/shaders/postprocess.frag`.
@@ -51,10 +55,10 @@ inert and every visible effect comes from the material element.
 ## 2. The material element
 
 `resolve_material` (`tile.rs`) resolves the window rule's material once per
-frame and settles three gates in one place: `backdrop-blur && !blur.off`
-selects the blurred or sharp source; a written `noise` or `saturation` is
-kept, an omitted one inherits the global `blur` value only while backdrop
-blur is effective; the selected response block is attached.
+frame, settles the `backdrop-blur && !blur.off` source gate, and attaches the
+selected response block. The noise and saturation optics own their
+inherit-or-neutral rules and read the effective gate and global `blur` block
+through `OpticFrame`.
 
 The window body (the client surfaces, corner clipped, or the resize
 crossfade) is first rendered into the tile's offscreen. The material element
@@ -66,6 +70,12 @@ mix between them. Roughness zero binds level zero twice and samples once.
 
 Uniforms carry the slab frame, the corner radius, the jelly state, the
 signal state, and every glass parameter.
+
+The program is assembled at compile time from `prelude.frag`, each optic's
+GLSL in `OPTICS` order (`src/render_helpers/material/optics/mod.rs`), and
+`main.frag`. Each optic appends its uniforms and uploads their values through
+`Optic::values`; an animated optic's `next_change` joins the tile's redraw
+deadline.
 
 ## 3. Inside `material.frag`, per fragment
 
@@ -83,14 +93,17 @@ runs only where the window is transparent or outside the window.
 | 6 | **Emissive: ring of light.** Only inside the bevel mask (`smoothstep(0, 1, inner distance)`, zero on the face). The band's *sampling position* is refracted through the light-path index `1 + (ior - 1) * light-ior` to 60 % of the thickness, capped at half `ring-inset`; the band is a Gaussian at `ring-inset` of width `ring-width` plus a halo, per channel under aberration, times `att ^ 0.2`. Focus glow drifts around the perimeter; accent glow follows signal level and breath. Additive. | — | `light-ior`, `ring-inset`, `ring-width`, `ring-color`, `ring-drift-hz`, response `focus` / `accent` / `attention` |
 | 7 | **Emissive: sweeps.** A diagonal Gaussian sweep per impulse whose response is `sweep`. The other impulse responses act earlier: `ripple` adds to the jelly activity of step 2, `flash` raises aberration and distortion for steps 2 and 3. Additive. | — | response `ping` / `done` / `error` |
 | 8 | **Encode.** `glass = linearToSrgb(transmitted + specular + emissive)`. | — | — |
-| 9 | **Saturation.** `mix(luma(glass), glass, saturation)` in sRGB. | — | `saturation` |
-| 10 | **Noise.** `white` adds one hash value per screen pixel; `fine` adds high-pass achromatic hash grain; `lightness` applies that fine grain to Oklab L. All operate in the finished sRGB glass color. | — | `noise`, `noise type=` |
+| 9 | **Saturation** (optic `saturation`). `mix(luma(glass), glass, saturation)` in sRGB. | — | `saturation`; neutral 1 |
+| 10 | **Noise** (optic `noise`). `white` adds one hash value per screen pixel; `fine` adds high-pass achromatic hash grain; `lightness` applies that fine grain to Oklab L. All operate in the finished sRGB glass color. | — | `noise`, `noise type=`; neutral 0 |
 | 11 | **Coverage.** Multiply by the slab coverage from step 1; the result is premultiplied. | — | — |
 | 12 | **Composite.** `out = win + (1 - win.a) * glass`, then `* niri_alpha` (window-rule opacity, applied exactly once). | — | window-rule `opacity` |
 
 Steps 2 to 7 all act on or through the *normal* and the *sampled
 background*; they never read window pixels. Steps 9 and 10 act on the
 finished glass color; they never read the background either.
+
+Stages 2, 5, 6, and 9–10 are the four optic hooks `normal`, `specular`,
+`emissive`, and `post`; see `adding-an-optic.md`.
 
 ## 4. What the order settles
 
