@@ -27,6 +27,7 @@ use crate::render_helpers::background_effect::BackgroundEffectElement;
 use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
+use crate::render_helpers::material::optics::{self, OpticFrame};
 use crate::render_helpers::material::{
     apply_resolved, background_mapping, bevel_depth, glass_signal_inputs, jelly_state,
     material_frame, GlassSignalFingerprint, GlassSignalInputs, InputFingerprint, JellyFingerprint,
@@ -185,9 +186,8 @@ fn backdrop_blur_enabled(glass: &ResolvedGlass, blur: &niri_config::Blur) -> boo
 ///
 /// The global `blur { off }` switch is applied here, so every consumer
 /// downstream reads one already-gated value rather than re-deriving it.
-/// The same goes for `noise` and `saturation`: a written glass value wins,
-/// an omitted one inherits the global value only while backdrop blur is
-/// effective, and the renderer receives one final pair.
+/// The noise and saturation inherit rule lives in their optics, which read
+/// the gated value through `OpticFrame`.
 fn resolve_material(
     reference: Option<&MaterialRef>,
     options: &Options,
@@ -198,25 +198,7 @@ fn resolve_material(
     material.glass.backdrop_blur = backdrop_blur;
     let selected = material.response(reference.response.as_deref());
     material.responses = vec![(String::from("default"), selected)];
-    // A written value is a material optic and renders as written. Only an
-    // omitted value inherits, and only while backdrop blur is effective;
-    // otherwise it is neutral. Each parameter decides on its own.
-    let inherited = |global: f64, neutral: f64| if backdrop_blur { global } else { neutral };
-    let noise = material
-        .glass
-        .noise
-        .amount
-        .unwrap_or_else(|| inherited(options.blur.noise, 0.)) as f32;
-    let saturation = material
-        .glass
-        .saturation
-        .amount
-        .unwrap_or_else(|| inherited(options.blur.saturation, 1.)) as f32;
-    Some(MaterialRenderConfig {
-        material,
-        noise,
-        saturation,
-    })
+    Some(MaterialRenderConfig { material })
 }
 
 /// Routes one window render element through the clip-to-geometry path:
@@ -345,6 +327,7 @@ struct MaterialDynamics {
     signal_uniforms: SignalUniforms,
     glass_signal_fingerprint: GlassSignalFingerprint,
     glass_signal: GlassSignalInputs,
+    optics: Vec<smithay::backend::renderer::gles::Uniform<'static>>,
 }
 
 impl SignalCrossfade {
@@ -588,6 +571,18 @@ impl<W: LayoutElement> Tile<W> {
         ))
     }
 
+    /// What the optics may depend on this frame beyond their configuration.
+    fn optic_frame<'a>(&'a self, material: &MaterialState, now: Duration) -> OpticFrame<'a> {
+        OpticFrame {
+            now,
+            motion: self.options.signal.motion,
+            animations_off: self.options.animations.off,
+            backdrop_blur: material.material().glass.backdrop_blur,
+            blur: &self.options.blur,
+            seed: material.jelly_seed()[0],
+        }
+    }
+
     fn material_dynamics(
         &self,
         material: &MaterialState,
@@ -599,6 +594,7 @@ impl<W: LayoutElement> Tile<W> {
         let glass = &material.material().glass;
         let response = material.material().response(None);
         let now = self.clock.now_unadjusted();
+        let optics = optics::values(glass, &self.optic_frame(material, now));
         let signal = self.signal_frame_cache.borrow().clone();
         let (signal_fingerprint, glass_signal, signal_uniforms) = match &signal {
             Some((effective, inputs)) => {
@@ -636,6 +632,7 @@ impl<W: LayoutElement> Tile<W> {
             signal_uniforms,
             glass_signal_fingerprint: GlassSignalFingerprint::quantize(&glass_signal),
             glass_signal,
+            optics,
         }
     }
 
@@ -1697,6 +1694,7 @@ impl<W: LayoutElement> Tile<W> {
                                             jelly: dynamics.jelly_fingerprint,
                                             signal: dynamics.signal_fingerprint,
                                             glass_signal: dynamics.glass_signal_fingerprint,
+                                            optics: dynamics.optics.clone(),
                                         };
 
                                         let mat_elem = material.element(
@@ -1705,6 +1703,7 @@ impl<W: LayoutElement> Tile<W> {
                                             dynamics.jelly_uniforms,
                                             dynamics.signal_uniforms,
                                             dynamics.glass_signal,
+                                            dynamics.optics,
                                             self.scale,
                                             win_alpha,
                                             ctx.target,
@@ -1871,6 +1870,7 @@ impl<W: LayoutElement> Tile<W> {
                                     jelly: dynamics.jelly_fingerprint,
                                     signal: dynamics.signal_fingerprint,
                                     glass_signal: dynamics.glass_signal_fingerprint,
+                                    optics: dynamics.optics.clone(),
                                 };
 
                                 let elem = material.element(
@@ -1879,6 +1879,7 @@ impl<W: LayoutElement> Tile<W> {
                                     dynamics.jelly_uniforms,
                                     dynamics.signal_uniforms,
                                     dynamics.glass_signal,
+                                    dynamics.optics,
                                     self.scale,
                                     win_alpha,
                                     ctx.target,
@@ -2313,6 +2314,7 @@ mod tests {
     use super::*;
     use crate::animation::Clock;
     use crate::layout::tests::{TestWindow, TestWindowParams};
+    use crate::render_helpers::material::optics::{self, OpticFrame};
     use crate::window::ResolvedWindowRules;
 
     fn options_for(glass: niri_config::ResolvedGlass, blur: niri_config::Blur) -> Options {
@@ -2343,6 +2345,35 @@ mod tests {
                 ..Default::default()
             },
         )
+    }
+
+    /// The post-stage uniforms a tile would upload for the material "frost"
+    /// under `options`: what the renderer sees, after the inherit rule.
+    fn post_uniforms(options: &Options) -> Vec<smithay::backend::renderer::gles::Uniform<'static>> {
+        let reference = MaterialRef {
+            name: String::from("frost"),
+            response: None,
+        };
+        let resolved = resolve_material(Some(&reference), options).unwrap();
+        let frame = OpticFrame {
+            now: Duration::ZERO,
+            motion: options.signal.motion,
+            animations_off: options.animations.off,
+            backdrop_blur: resolved.material.glass.backdrop_blur,
+            blur: &options.blur,
+            seed: 0.,
+        };
+        optics::values(&resolved.material.glass, &frame)
+    }
+
+    fn uniform_f32(
+        uniforms: &[smithay::backend::renderer::gles::Uniform<'static>],
+        name: &str,
+    ) -> f32 {
+        match uniforms.iter().find(|u| u.name == name).unwrap().value {
+            smithay::backend::renderer::gles::UniformValue::_1f(v) => v,
+            ref other => panic!("{name}: {other:?}"),
+        }
     }
 
     #[test]
@@ -2382,10 +2413,6 @@ mod tests {
 
     #[test]
     fn material_postprocess_follows_effective_backdrop_blur() {
-        let reference = MaterialRef {
-            name: String::from("frost"),
-            response: None,
-        };
         for (material_blur, global_off, expected) in [
             (true, false, (0.07, 0.8)),
             (false, false, (0.0, 1.0)),
@@ -2395,17 +2422,19 @@ mod tests {
             options.blur.noise = 0.07;
             options.blur.saturation = 0.8;
 
-            let resolved = resolve_material(Some(&reference), &options).unwrap();
-            assert_eq!((resolved.noise, resolved.saturation), expected);
+            let uniforms = post_uniforms(&options);
+            assert_eq!(
+                (
+                    uniform_f32(&uniforms, "mat_noise"),
+                    uniform_f32(&uniforms, "mat_saturation")
+                ),
+                expected
+            );
         }
     }
 
     #[test]
     fn written_noise_and_saturation_resolve_independently_of_each_other_and_of_blur() {
-        let reference = MaterialRef {
-            name: String::from("frost"),
-            response: None,
-        };
         // Non-neutral globals so "inherited" and "neutral" are distinguishable
         // from "written", and so an explicit neutral value is visibly a choice.
         let global = niri_config::Blur {
@@ -2447,9 +2476,12 @@ mod tests {
                 },
                 blur,
             );
-            let resolved = resolve_material(Some(&reference), &options).unwrap();
+            let uniforms = post_uniforms(&options);
             assert_eq!(
-                (resolved.noise, resolved.saturation),
+                (
+                    uniform_f32(&uniforms, "mat_noise"),
+                    uniform_f32(&uniforms, "mat_saturation")
+                ),
                 expected,
                 "noise {noise:?} saturation {saturation:?} backdrop {backdrop_blur} off {}",
                 blur.off
@@ -2459,10 +2491,6 @@ mod tests {
 
     #[test]
     fn noise_type_reaches_the_render_config_regardless_of_blur() {
-        let reference = MaterialRef {
-            name: String::from("frost"),
-            response: None,
-        };
         let global_off = niri_config::Blur {
             off: true,
             ..Default::default()
@@ -2491,9 +2519,12 @@ mod tests {
                 },
                 blur,
             );
-            let resolved = resolve_material(Some(&reference), &options).unwrap();
-            assert_eq!(resolved.material.glass.noise.kind, noise_type);
-            assert_eq!(resolved.noise, 0.3);
+            let uniforms = post_uniforms(&options);
+            assert_eq!(
+                uniform_f32(&uniforms, "mat_noise_type"),
+                noise_type as u8 as f32
+            );
+            assert_eq!(uniform_f32(&uniforms, "mat_noise"), 0.3);
         }
     }
 

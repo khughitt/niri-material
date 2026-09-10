@@ -1639,7 +1639,7 @@ git commit -m "refactor(material): assemble the glass shader from a prelude, the
 - Consumes: `optics::{OpticFrame, values}` from Task 5.
 - Produces: `MaterialRenderConfig { material: ResolvedMaterial }` (no `noise`/`saturation`); `InputFingerprint.optics: Vec<Uniform<'static>>`; `MaterialState::element(..., glass_signal, optics: Vec<Uniform<'static>>, scale, ...)`; `MaterialDynamics.optics`; `Tile::optic_frame(&self, material: &MaterialState, now: Duration) -> OpticFrame<'_>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `src/render_helpers/material/mod.rs` tests, replace `postprocess_change_advances_the_commit_in_place` with:
 
@@ -1744,12 +1744,12 @@ and delete its now-unused `reference`. Make the same replacement in `written_noi
 
 Add `use crate::render_helpers::material::optics::{self, OpticFrame};` to the tile test module's imports (and to `tile.rs` itself in Step 3).
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib render_helpers::material::tests::optic_` then `python3 tools/tt test-fast -- cargo test -p niri --lib layout::tile::tests`
 Expected: FAIL to compile, `no field optics on InputFingerprint` and `cannot find optics`.
 
-- [ ] **Step 3: Change the render element**
+- [x] **Step 3: Change the render element**
 
 In `src/render_helpers/material/mod.rs`:
 
@@ -1780,7 +1780,7 @@ In `src/render_helpers/material/mod.rs`:
 
 6. Tests: `render_config` drops `noise: 0.,` and `saturation: 1.,`; `fingerprint2` adds `optics: Vec::new(),`.
 
-- [ ] **Step 4: Change the tile**
+- [x] **Step 4: Change the tile**
 
 In `src/layout/tile.rs`:
 
@@ -1806,12 +1806,12 @@ In `src/layout/tile.rs`:
 5. In `material_dynamics`, after `let now = self.clock.now_unadjusted();` add `let optics = optics::values(glass, &self.optic_frame(material, now));` and add `optics,` to the returned `MaterialDynamics`.
 6. At both render sites (the resize path near line 1690 and the normal path near line 1860): in the `InputFingerprint { ... }` literal add `optics: dynamics.optics.clone(),` after `glass_signal: dynamics.glass_signal_fingerprint,`; in the `material.element(...)` call add `dynamics.optics,` after `dynamics.glass_signal,`.
 
-- [ ] **Step 5: Run the tests, then the whole suite**
+- [x] **Step 5: Run the tests, then the whole suite**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri --lib` then `just test`
 Expected: green. Clippy may flag `too_many_arguments` on `element`; the `#[allow]` is already present.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cargo fmt --all
