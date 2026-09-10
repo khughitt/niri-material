@@ -23,6 +23,8 @@ use super::signal::{color_linear, ImpulseFrame, SignalFingerprint, SignalFrame};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::RenderTarget;
 
+pub mod optics;
+
 /// Per-fragment background composition inputs, mirroring `XrayElement`'s
 /// two-layer stack for the one workspace the element belongs to.
 #[derive(Debug, Clone, PartialEq)]
