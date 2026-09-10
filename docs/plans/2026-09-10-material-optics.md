@@ -1999,8 +1999,12 @@ for s in glass-noise-saturation-smoke glass-noise-type-smoke; do
   for f in before-$s/*.png; do
     g=after-$s/$(basename "$f")
     if [ ! -f "$g" ]; then echo "MISSING $g"; status=1; continue; fi
-    ae=$(magick compare -metric AE "$f" "$g" null: 2>&1 || true)
-    if [ "$ae" = "0" ]; then echo "SAME $ae $f"; else echo "DIFF $ae $f"; status=1; fi
+    if magick compare -metric AE "$f" "$g" null: >/dev/null 2>&1; then
+      echo "SAME $f"
+    else
+      echo "DIFF or ERROR $f"
+      status=1
+    fi
   done
 done
 echo "status=$status"
@@ -2009,8 +2013,9 @@ exit $status
 ```
 
 Run it as a script file (`bash compare.sh`) so the final `exit` is the
-verdict. Expected: every line `SAME 0 ...`, `status=0`, exit 0. Any `DIFF`
-or `MISSING` fails the migration: diff the two shader sources (`prelude` +
+verdict. Expected: every comparison prints `SAME ...`, `status=0`, exit 0.
+Any `DIFF or ERROR` or `MISSING` fails the migration: check for image-read
+errors, then diff the two shader sources (`prelude` +
 optics + `main` against the base commit's `material.frag`) for an
 arithmetic change before anything else.
 
