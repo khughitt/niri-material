@@ -32,12 +32,23 @@ pub fn resolve(node: Option<Noise>) -> ResolvedNoise {
 }
 
 pub fn params() -> Vec<ParamSpec> {
-    vec![ParamSpec {
-        node: "noise",
-        kind: ParamKind::inherit::<FloatOrInt<0, 1>>(),
-        write: |v| format!("noise {v}"),
-        read: Some(|g| g.noise.amount),
-    }]
+    vec![
+        ParamSpec {
+            node: "noise",
+            kind: ParamKind::inherit::<FloatOrInt<0, 1>>(),
+            write: |v| format!("noise {v}"),
+            read: Some(|g| g.noise.amount),
+        },
+        ParamSpec {
+            node: "noise type=",
+            kind: ParamKind::Enum {
+                default: "white",
+                variants: NoiseType::NAMES,
+            },
+            write: |v| format!("noise 0.5 type=\"{v}\""),
+            read: None,
+        },
+    ]
 }
 ```
 
@@ -50,13 +61,13 @@ hand-maintained fact, so spell it as the table should show it (`"noise type="`).
 Add `validate(&self) -> Result<(), String>` only for a real cross-parameter
 rule, and call it from `Material::validate`.
 
-Register the optic in `niri-config/src/material/`:
+Register the optic in niri-config:
 
-- `optics/mod.rs`: export the module, append its name to `ORDER`, and extend
+- `src/material/optics/mod.rs`: export the module, append its name to `ORDER`, and extend
   `params()` with its specs.
-- `mod.rs`: add the optional node to `Glass`, the resolved value to
+- `src/material/mod.rs`: add the optional node to `Glass`, the resolved value to
   `ResolvedGlass` and its default, and call `resolve` from `Material::resolve`.
-- `lib.rs`: re-export its public types.
+- `src/lib.rs`: re-export its public types.
 
 Keep parse, default, and validation-error tests beside the material tests in
 `niri-config/src/lib.rs`.
