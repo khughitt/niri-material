@@ -12,6 +12,8 @@ use knuffel::errors::DecodeError;
 use crate::appearance::Color;
 use crate::FloatOrInt;
 
+pub mod params;
+
 /// A window-rule reference to a material definition by name.
 ///
 /// The referenced definition may appear later in the file or in an include,
