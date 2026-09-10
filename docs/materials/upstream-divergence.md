@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-246 paths differ: 38 class B (seam), 190 class A (fork-only), 18 class C (scaffolding).
+247 paths differ: 38 class B (seam), 191 class A (fork-only), 18 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -95,7 +95,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
 | `src/render_helpers/mod.rs` | B | M | +27/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +69/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +150/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
 | `src/tests/mod.rs` | B | M | +2/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
