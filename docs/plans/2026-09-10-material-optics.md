@@ -15,7 +15,7 @@
 - Branch `feat/material-397fcb`, worktree `.worktrees/material-api`; base commit `22d10019`. Run every command from the worktree.
 - Conventional commits; no AI-attribution or session trailers. `tasks done <id> "<what landed>"` goes in the same commit as the code for the task it closes.
 - Every commit passes the pre-commit hook (`just check`: ops-check, `cargo fmt --check`, `cargo clippy --all --all-targets`, tools unit tests, `tasks check`, `upstream-report --check`, `package-pin --check`).
-- Every test run goes through the timing wrapper, as AGENTS.md requires: `just test` for the suite, and for the inner loop `python3 tools/tt test-fast -- cargo test -p <crate> [--lib] <filter>` with exactly one filter per invocation (cargo rejects a second positional filter).
+- Every test run goes through a `just` recipe, as AGENTS.md requires: use `just test` for the full suite. Focused commands shown below as `python3 tools/tt test-fast -- cargo test -p <crate> [--lib] <filter>` are inner invocations and must be run through a just recipe, with exactly one filter per invocation (cargo rejects a second positional filter).
 - `tools/upstream-report --check` compares the committed report against the staged tree and every fork path counts, so a commit that adds, moves, or removes a file must regenerate the report first: `python3 tools/upstream-report && git add docs/materials/upstream-divergence.md` after `git add` and before `git commit`. Every commit step below does this.
 - The KDL surface is unchanged: `material "name" { glass { ... } }`, `noise <amount> type=<type>`, `saturation <amount>`, every existing parameter name and range.
 - Rendering before and after the migration has identical decoded pixels on the noise and saturation smoke fixtures (Task 9 proves it); PNG container bytes may differ because of metadata.
@@ -146,6 +146,12 @@ mod tests {
 Add `pub mod params;` near the top of `niri-config/src/material/mod.rs`, after the `use` block.
 
 - [x] **Step 3: Run the tests to verify they fail**
+
+  Historical note: the worker added the implementation and tests together, so
+  the test-first order was missed. Tests were retained while production
+  definitions were removed to verify retrospective sensitivity (expected
+  missing `Bounded`/`ParamSpec`), then the source was restored and both tests
+  passed. This retrospective check does not repair the historical ordering.
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config params::tests`
 Expected: FAIL to compile with `cannot find trait Bounded` / `cannot find struct ParamSpec`.

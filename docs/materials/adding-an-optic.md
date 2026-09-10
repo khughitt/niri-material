@@ -130,7 +130,7 @@ pins them. Add one call per used hook to `shaders/material/main.frag`, in
 Regenerate the parameter table:
 
 ```sh
-MATERIAL_DOCS_UPDATE=1 python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_table_matches_the_docs
+MATERIAL_DOCS_UPDATE=1 just test
 ```
 
 Add an `## Optics` subsection to `material-config.md` stating the stage,
