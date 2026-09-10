@@ -702,7 +702,7 @@ git commit -m "refactor(config): move noise into its optic module"
 **Interfaces:**
 - Produces: `niri_config::material::core_params() -> Vec<ParamSpec>`, `niri_config::material::params::all_params() -> Vec<ParamSpec>`; markers `<!-- params:begin -->` / `<!-- params:end -->` in `material-config.md`; env var `MATERIAL_DOCS_UPDATE=1` rewrites the table.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 The parser test decodes a bare `glass { }` node and resolves it through a
 `Material` it builds itself, so only the scalar decode runs. It must not go
@@ -817,12 +817,12 @@ Add to the `tests` module of `niri-config/src/material/params.rs` (it gets
 
 `knuffel::parse::<Vec<Glass>>` decodes a document of top-level `glass` nodes; `Glass` derives `knuffel::Decode`, and its range errors (`value must be between ...`, `value must be greater than 0 and at most ...`) surface through the `miette::Report` text the test checks for `must be`.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_`
 Expected: FAIL to compile, `cannot find function all_params`.
 
-- [ ] **Step 3: Write `core_params` and `all_params`**
+- [x] **Step 3: Write `core_params` and `all_params`**
 
 In `niri-config/src/material/mod.rs`, after `impl Default for ResolvedGlass`:
 
@@ -952,7 +952,7 @@ pub fn all_params() -> Vec<ParamSpec> {
 }
 ```
 
-- [ ] **Step 4: Put the markers into the docs and generate the table**
+- [x] **Step 4: Put the markers into the docs and generate the table**
 
 In `docs/materials/material-config.md`, replace the hand-written table (the lines from `| Parameter | Type | Default | Range | Unit |` through `| \`offset-x\` / \`offset-y\` | float | 6 | −64–64 | logical px |`) with:
 
@@ -970,12 +970,12 @@ git diff docs/materials/material-config.md
 
 Expected: the diff shows the table regenerated between the markers, with `saturation`, `noise`, and `noise type=` now as the last three rows and `offset-x` and `offset-y` on separate rows.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `python3 tools/tt test-fast -- cargo test -p niri-config material_parameter_`
 Expected: 2 passed. If `material_parameter_specs_match_the_parser` fails on one node, the spec's type and the `Glass` field's type disagree; fix the spec. A failure mentioning `offset must not exceed bevel` or `ring-inset` means the test went through `Config::parse_mem`; it must decode `Glass` directly.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cargo fmt --all

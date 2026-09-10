@@ -35,9 +35,10 @@ window-rule {
 All `glass` parameters are optional. Colors use niri's normal color syntax;
 lengths are logical pixels.
 
+<!-- params:begin -->
 | Parameter | Type | Default | Range | Unit |
 | --- | --- | --- | --- | --- |
-| `ior` | float | 1.5 | 1.0–3.0 | — |
+| `ior` | float | 1.5 | 1–3 | — |
 | `thickness` | float | 20 | 0–200 | logical px |
 | `attenuation-color` | color | `#dfe8ff` | any color | — |
 | `attenuation-distance` | float | 60 | > 0 through 65535 | logical px |
@@ -46,15 +47,18 @@ lengths are logical pixels.
 | `distortion` `scale=` | float | 0.5 | 0–2 | — |
 | `anisotropic-blur` | float | 0 | 0–1 | — |
 | `roughness` | float | 0 | 0–1 | — |
-| `noise` | float | inherit | 0–1 | — |
-| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
-| `saturation` | float | inherit | 0–3 | — |
 | `backdrop-blur` | bool | false | true / false | — |
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
 | `bevel` | float | 12 | 0–128 | logical px |
 | `light-ior` | float | 6 | 1–12 | — |
-| `offset-x` / `offset-y` | float | 6 | −64–64 | logical px |
+| `offset-x` | float | 6 | −64–64 | logical px |
+| `offset-y` | float | 6 | −64–64 | logical px |
+| `saturation` | float | inherit | 0–3 | — |
+| `noise` | float | inherit | 0–1 | — |
+| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
+
+<!-- params:end -->
 
 `jelly-flex` and `jelly-ripple` use thousandths only in their internal
 representation; their configuration values and ranges above are unchanged.

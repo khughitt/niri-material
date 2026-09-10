@@ -517,6 +517,116 @@ impl Default for ResolvedGlass {
     }
 }
 
+/// Specs for the parameters that live on the core (everything that is not
+/// an optic), in the order the docs table lists them.
+pub fn core_params() -> Vec<params::ParamSpec> {
+    use params::{ParamKind, ParamSpec};
+
+    let d = ResolvedGlass::default();
+    vec![
+        ParamSpec {
+            node: "ior",
+            kind: ParamKind::float::<FloatOrInt<1, 3>>(d.ior, "—"),
+            write: |v| format!("ior {v}"),
+            read: Some(|g| Some(g.ior)),
+        },
+        ParamSpec {
+            node: "thickness",
+            kind: ParamKind::float::<FloatOrInt<0, 200>>(d.thickness, "logical px"),
+            write: |v| format!("thickness {v}"),
+            read: Some(|g| Some(g.thickness)),
+        },
+        ParamSpec {
+            node: "attenuation-color",
+            kind: ParamKind::Color {
+                default: d.attenuation_color,
+            },
+            write: |v| format!("attenuation-color \"{v}\""),
+            read: None,
+        },
+        ParamSpec {
+            node: "attenuation-distance",
+            kind: ParamKind::float::<Positive<65535>>(d.attenuation_distance, "logical px"),
+            write: |v| format!("attenuation-distance {v}"),
+            read: Some(|g| Some(g.attenuation_distance)),
+        },
+        ParamSpec {
+            node: "chromatic-aberration",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.chromatic_aberration, "—"),
+            write: |v| format!("chromatic-aberration {v}"),
+            read: Some(|g| Some(g.chromatic_aberration)),
+        },
+        ParamSpec {
+            node: "distortion",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.distortion, "—"),
+            write: |v| format!("distortion {v}"),
+            read: Some(|g| Some(g.distortion)),
+        },
+        ParamSpec {
+            node: "distortion scale=",
+            kind: ParamKind::float::<FloatOrInt<0, 2>>(d.distortion_scale, "—"),
+            write: |v| format!("distortion 0 scale={v}"),
+            read: Some(|g| Some(g.distortion_scale)),
+        },
+        ParamSpec {
+            node: "anisotropic-blur",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.anisotropic_blur, "—"),
+            write: |v| format!("anisotropic-blur {v}"),
+            read: Some(|g| Some(g.anisotropic_blur)),
+        },
+        ParamSpec {
+            node: "roughness",
+            kind: ParamKind::float::<FloatOrInt<0, 1>>(d.roughness, "—"),
+            write: |v| format!("roughness {v}"),
+            read: Some(|g| Some(g.roughness)),
+        },
+        ParamSpec {
+            node: "backdrop-blur",
+            kind: ParamKind::Bool {
+                default: d.backdrop_blur,
+            },
+            write: |v| format!("backdrop-blur {v}"),
+            read: None,
+        },
+        ParamSpec {
+            node: "jelly-flex",
+            kind: ParamKind::float::<Milli<0, 20>>(d.jelly_flex, "—"),
+            write: |v| format!("jelly-flex {v}"),
+            read: Some(|g| Some(g.jelly_flex)),
+        },
+        ParamSpec {
+            node: "jelly-ripple",
+            kind: ParamKind::float::<Milli<0, 500>>(d.jelly_ripple, "—"),
+            write: |v| format!("jelly-ripple {v}"),
+            read: Some(|g| Some(g.jelly_ripple)),
+        },
+        ParamSpec {
+            node: "bevel",
+            kind: ParamKind::float::<FloatOrInt<0, 128>>(d.bevel, "logical px"),
+            write: |v| format!("bevel {v}"),
+            read: Some(|g| Some(g.bevel)),
+        },
+        ParamSpec {
+            node: "light-ior",
+            kind: ParamKind::float::<FloatOrInt<1, 12>>(d.light_ior, "—"),
+            write: |v| format!("light-ior {v}"),
+            read: Some(|g| Some(g.light_ior)),
+        },
+        ParamSpec {
+            node: "offset-x",
+            kind: ParamKind::float::<FloatOrInt<-64, 64>>(d.offset_x, "logical px"),
+            write: |v| format!("offset-x {v}"),
+            read: Some(|g| Some(g.offset_x)),
+        },
+        ParamSpec {
+            node: "offset-y",
+            kind: ParamKind::float::<FloatOrInt<-64, 64>>(d.offset_y, "logical px"),
+            write: |v| format!("offset-y {v}"),
+            read: Some(|g| Some(g.offset_y)),
+        },
+    ]
+}
+
 impl Material {
     /// Resolves the definition, applying the design §4 default for every
     /// omitted parameter.
