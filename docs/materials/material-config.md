@@ -186,6 +186,27 @@ explicit neutral is amount 0. An omitted amount inherits the global `blur`
 block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
 the type never inherits.
 
+## Presets
+
+`resources/materials/` holds one file per preset material, named after the
+material it defines, installed to `/usr/share/niri/materials/`. `include`
+accepts an absolute path, so a preset is used with
+
+````markdown
+include "/usr/share/niri/materials/aurora.kdl"
+
+window-rule {
+    match app-id="^kitty$"
+    material "aurora"
+}
+````
+
+A preset is one material; the focus split is Prism's, as today. `rainbow`
+pairs `chromatic-aberration` with `iridescence`; `aurora` lights a cool slab
+with the `aurora` optic at `drift-hz 4`. The evidence docs named in
+`../specs/2026-09-10-material-optics-design.md` record how each preset's
+values were tuned.
+
 ## Signal responses
 
 Each material can map a window signal to glass effects with named `response`

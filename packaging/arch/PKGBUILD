@@ -85,6 +85,8 @@ package() {
     -t "$pkgdir/usr/share/xdg-desktop-portal/"
   install -vDm 644 resources/default-config.kdl README.md \
     -t "$pkgdir/usr/share/doc/niri/"
+  install -vDm 644 resources/materials/*.kdl \
+    -t "$pkgdir/usr/share/niri/materials/"
   install -vDm 644 bash-completions \
     "$pkgdir/usr/share/bash-completion/completions/niri"
   install -vDm 644 fish-completions \

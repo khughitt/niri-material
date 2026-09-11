@@ -768,6 +768,39 @@ mod tests {
         res
     }
 
+    #[test]
+    fn every_preset_parses_alone_and_through_an_absolute_include() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../resources/materials")
+            .canonicalize()
+            .unwrap();
+        let mut seen = Vec::new();
+        for entry in fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "kdl") {
+                continue;
+            }
+            let stem = path.file_stem().unwrap().to_str().unwrap().to_owned();
+            let alone = do_parse(&fs::read_to_string(&path).unwrap());
+            assert_eq!(alone.materials.len(), 1, "{stem}");
+            assert_eq!(alone.materials[0].name, stem);
+            // The documented use: an absolute `include` of the installed file.
+            let included = parse_files(&[(
+                "config.kdl",
+                &format!(
+                    "include \"{}\"\nwindow-rule {{ match app-id=\"^x$\"; material \"{stem}\"; }}\n",
+                    path.display()
+                ),
+            )])
+            .unwrap();
+            assert_eq!(included.materials[0].name, stem);
+            seen.push(stem);
+        }
+        seen.sort();
+        assert!(seen.contains(&String::from("aurora")), "{seen:?}");
+        assert!(seen.contains(&String::from("rainbow")), "{seen:?}");
+    }
+
     #[track_caller]
     fn parse_files_err(files: &[(&str, &str)]) -> String {
         let err = parse_files(files).expect_err("config should have failed to parse");
