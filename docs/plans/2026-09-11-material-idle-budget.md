@@ -2,8 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task.
 
-**Status:** prepared for review; execution has not started. Stop here until the
-user resumes execution. All unchecked steps describe future work.
+**Status:** Task 1 complete: fixture implemented, offline validated and reviewed
+on experiment `results/idle-budget` at `8db5dc8`. Tasks 2–3 remain paused; no
+release binaries or measurements were produced in this stage.
 
 **Goal:** verify quiescence after finite material motion and establish a
 repeatability-bounded idle board-power comparison in an isolated session.
@@ -23,7 +24,8 @@ Python stdlib, Bash, Just, and the task CLI. No new dependency or IPC interface.
 
 - Native base `1985dd02`, branch/worktree `material-265eb0` /
   `.worktrees/material-265eb0`. Present all native worktree paths with that prefix.
-- Preparation only: do not execute any step below until the user resumes.
+- Current authorization: implement and offline-validate Task 1 only. Do not
+  launch compositors or collect traces/power; Tasks 2–3 require a later resume.
 - Read `docs/materials/render-pipeline.md` before any rendering investigation.
 - Start the relevant execution child with `tasks start`; close it in the commit
   containing its result. Run `tasks check` before commits; use native Just gates.
@@ -78,7 +80,7 @@ blocks)` takes lists of four window medians reordered to ABBA. Results retain
 all input medians, delta, separate sham/ABBA/raw-repeat floors, the conservative
 combined floor, both precision verdicts, upper estimate, and integrity failures.
 
-- [ ] Add failing synthetic tests before implementing the analyzer. Include
+- [x] Add failing synthetic tests before implementing the analyzer. Include
   missing/duplicate planned cases, empty/truncated/gapped intervals, negative or
   nonfinite samples, and repeat-noise cancellation. Representative assertions:
 
@@ -105,7 +107,7 @@ self.assertFalse(r['sham_precision_ok'])
 self.assertFalse(r['precision_ok'])
 ```
 
-- [ ] Implement the minimum reducer and coverage validator, using the same
+- [x] Implement the minimum reducer and coverage validator, using the same
   formula in both tests and the documented protocol:
 
 ```python
@@ -146,7 +148,7 @@ def power_comparison(sham, blocks):
   The raw repeat floor deliberately vetoes drift that ABBA cancels; preserve
   both floors so a precision failure exposes which bound dominates.
 
-- [ ] Create `fixtures/idle-budget-trace-marker.patch` with exactly one inserted
+- [x] Create `fixtures/idle-budget-trace-marker.patch` with exactly one inserted
   line in `src/ipc/server.rs`, inside the `Request::Action` idle closure:
 
 ```rust
@@ -166,24 +168,27 @@ let _ = tx.send_blocking(());
   two entries to be the declared stimulus pair, and reject later actions.
   Add synthetic cases accepting setup markers plus the pair and rejecting
   missing/extra markers, a wrong final pair, or actions after the stimulus.
-  Preserve the base commit and patch hash. Build from a fresh `git archive HEAD`
-  extraction under per-machine `TRACE_SOURCE`, apply the patch there, and keep
+  Preserve the base commit and patch hash. Implement building from a fresh
+  `git archive HEAD` extraction under per-machine `TRACE_SOURCE`, apply the patch
+  there, and keep
   production source unchanged. Refuse a reused source directory. The build
   recipe takes `TRACE_SOURCE` and `CARGO_TARGET_DIR`; it records both base and
   patch identities beside the binary hash. Only the trace binary has this span.
-- [ ] Add Just recipes, all through native `tools/tt`: `test`, `build-tracy`,
-  `trace`, `power`, and `analyze directory`. `build-tracy` runs
+- [x] Add Just recipes, all through native `tools/tt`: `test`, `build-tracy`,
+  `build-power`, `trace`, `power`, and `analyze directory`. `build-tracy` runs
   `cargo build --release --features profile-with-tracy` from `TRACE_SOURCE`
   with a per-machine `CARGO_TARGET_DIR` and an explicit `NIRI_BUILD_COMMIT`
-  identifying the recorded base (the separate patch hash distinguishes this build). The power recipe accepts only the
-  uninstrumented, separately identified binary.
-- [ ] Implement the six configs from the design, validate all before launch,
+  identifying the recorded base (the separate patch hash distinguishes this
+  build). `build-power` records an unpatched release build from a fresh archive
+  with no profiling features; the power recipe accepts only that separately
+  identified uninstrumented binary.
+- [x] Implement the six configs from the design, validate all before launch,
   preserve input snapshots, and reject a used OUT. Pin a 3 s wait from the
   outward action's IPC completion to sending the return action for move and
   resize in every applicable case. Implement duration-aware
   Tracy capture with `timeout(duration + 60)` and an explicit observation
   interval. Do not use `trace_end - 20` for the 600-second gate.
-- [ ] In power mode, require dedicated-session preflight and complete GPU-client
+- [x] In power mode, require dedicated-session preflight and complete GPU-client
   visibility before launch; after mapping and throughout collection require
   the inventory to list the compositor and both kitty PIDs. Allow only recorded
   compositor, kitty, and wallpaper PIDs, with graphics/compute and device-user
@@ -195,7 +200,7 @@ let _ = tx.send_blocking(());
   return times for coverage and non-overlapping observation phases; reject gaps
   and contamination instead of silently dropping samples. Test with simulated
   query latency to prove it does not accumulate into the sampling period.
-- [ ] Run `just --justfile fixtures/idle-budget.just test`, syntax/config checks,
+- [x] Run `just --justfile fixtures/idle-budget.just test`, syntax/config checks,
   and a reviewer pass on interval alignment, zero-work false passes, power
   repeat floors, and cleanup. Include failure tests for truncated long coverage,
   absent GPU recording vs a valid empty observation window (with positive
@@ -209,13 +214,16 @@ trace-only marker patch, pinned tools.
 **Produces:** validated CPU/GPU traces, pixel-return evidence, and explicit
 per-case verdicts; this task may finish even if isolated power is unavailable.
 
-- [ ] Verify binary/source/GPU identity and record the inherited fingerprint,
+- [ ] Build the trace binary with Task 1's `build-tracy` recipe. Verify
+  binary/source/GPU identity and record the inherited fingerprint,
   unchanged-commit, transition, and Aurora deadline tests. Use native Just tests;
   add a focused regression only if a behavior is missing or fails.
 - [ ] Execute A/B after both move and resize, P/O after move, and C/D after
   settling: eight scenarios × three repetitions = 24 short observations. The
   owning compositor must receive no screenshot/config/input traffic inside
   observation windows. Observe `[stimulus_end + 3 s, stimulus_end + 23 s)`.
+  Budget roughly 50 minutes for this lane: captures reserve 86 s each for the
+  short observations and 666 s for the long hold, plus setup and exports.
 - [ ] Start the fresh compositor's first capture after mapping clients; issue
   the outward/return stimulus actions with the pinned 3 s wait, then no further
   IPC action until capture finishes. Retain the complete serial controller
@@ -251,7 +259,8 @@ per-case verdicts; this task may finish even if isolated power is unavailable.
 session. **Produces:** isolated repeated comparisons, precision/idle verdict,
 raw archive, and stable native documentation.
 
-- [ ] Present the concrete fixture, runtime estimate (about 72 minutes plus
+- [ ] Build the uninstrumented binary with Task 1's `build-power` recipe.
+  Present the concrete fixture, runtime estimate (about 72 minutes plus
   setup), output mode, client inventory, and restoration/exit behavior. Let the
   operator arrange a session with the desktop and other GPU clients closed.
   Do not issue logout, display-manager-stop, or VT-switch commands for them.
@@ -265,8 +274,8 @@ env -u DISPLAY -u WAYLAND_DISPLAY -u NIRI_SOCKET \
   dbus-run-session -- "$NIRI_BINARY" -c "$OUT/config.kdl"
 ```
 
-  The generated config starts the fixture controller inside that compositor.
-  Confirm the DRM backend in its log; never accept a nested fallback.
+  The fixture launcher connects its controller and owned clients to that
+  compositor. Confirm the DRM backend in its log; never accept a nested fallback.
   Require positive compositor/kitty PID visibility after mapping and throughout
   collection. Reject incomplete enumeration or any GPU client outside the
   recorded compositor/kitty/wallpaper allowlist.
@@ -298,8 +307,14 @@ env -u DISPLAY -u WAYLAND_DISPLAY -u NIRI_SOCKET \
 
 The design's scope, matrix, isolation boundary, proposed precision target,
 coverage rules, artifact locations, and failure handling map to Tasks 1–3.
-No experimental code or measurement is included in the preparation commit.
+The initial preparation commits contain no experimental code or measurements.
+Task 1 is complete on experiment `results/idle-budget` at `8db5dc8`: 19 fixture
+tests passed, all six nested and six physical-output configs validated, and
+independent review plus the startup-order re-review passed. Reproduction
+instructions are in that branch's `docs/results/2026-09-11-idle-budget.md`.
+Build recipes were exercised with a synthetic compiler; actual release builds,
+trace and power collection remain for Tasks 2–3.
 Execution children: `material-ec6229` (fixture), `material-4241c3` (traces), and
 `material-5f9dee` (isolated power), in dependency order.
-Review the three-second settle budget, 1.0 W resolution target, and dedicated
-session requirement before resuming. The execution task records remain open.
+The reviewed rules retain the three-second settle budget, 1.0 W resolution
+target, and dedicated-session requirement. Tasks 2–3 remain open and paused.

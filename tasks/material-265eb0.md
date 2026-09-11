@@ -6,7 +6,7 @@ priority: 2
 size: m
 owner: material-265eb0
 created: 2026-09-11T00:52:15Z
-updated: 2026-09-11T11:02:29Z
+updated: 2026-09-11T11:47:34Z
 depends: []
 parent: material-53f873
 tags: [quick-add, dynamics, performance]
@@ -15,7 +15,7 @@ spec: docs/specs/2026-09-11-material-idle-budget-design.md
 plan: docs/plans/2026-09-11-material-idle-budget.md
 ---
 
-Verify existing material dynamics become quiescent after finite move/resize stimuli, then establish repeatability-bounded isolated board-power cost for settled dynamics and low-rate Aurora. Existing fingerprint/deadline code already supports rest; the proposed roughly300s idle micro-movement is not implemented by this task. Preparation is complete only as a design/plan: execution requires user resume, and power collection requires an operator-provided dedicated DRM session with no other GPU clients. Proposed rules and precision target are in the attached spec. Reuse material-36e968 motion evidence and material-300b87 trace tools; coordinate redesign with material-6d4de5 and reporting with prism-d54be4.
+Verify existing material dynamics become quiescent after finite move/resize stimuli, then establish repeatability-bounded isolated board-power cost for settled dynamics and low-rate Aurora. Existing fingerprint/deadline code already supports rest; the proposed roughly300s idle micro-movement is not implemented by this task. Fixture preparation is complete on experiments results/idle-budget at 8db5dc8, with offline tests and review. Release builds and trace collection require user resume; power collection additionally requires an operator-provided dedicated DRM session with no other GPU clients. Proposed rules and precision target are in the attached spec. Reuse material-36e968 motion evidence and material-300b87 trace tools; coordinate redesign with material-6d4de5 and reporting with prism-d54be4.
 
 ## Notes
 
@@ -26,3 +26,4 @@ Verify existing material dynamics become quiescent after finite move/resize stim
 - 2026-09-11T10:57:38Z (material-265eb0): parked (waiting on user): Preparation review addressed in both docs: 3 s settling and inter-stimulus wait, startup marker accounting, separate power floors, visibility controls, and absolute sampling deadlines. Await explicit user resume before starting any execution child.
 - 2026-09-11T11:02:29Z (material-265eb0): Second preparation review: pixel-return uses the pre-stimulus settled image and takes the after image and post-observation geometry actions only after Tracy capture exits. Marker matching counts successful IPC calls only; validation rejections are retained separately, and unknown outcomes abort. Execution remains paused.
 - 2026-09-11T11:02:29Z (material-265eb0): parked (waiting on user): Both marker-journal clarifications are documented; await explicit user resume before starting execution children.
+- 2026-09-11T11:47:34Z (material-265eb0): parked (waiting on user): Fixture material-ec6229 complete at experiment 8db5dc8. Await user resume of material-4241c3 to build Tracy binary and collect traces; material-5f9dee still requires a later isolated-session checkpoint.
