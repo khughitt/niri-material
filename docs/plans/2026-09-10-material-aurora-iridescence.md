@@ -1,7 +1,7 @@
 # Material Aurora and Iridescence Implementation Plan
 
-**Status:** Tasks 1–8 are merged into `materials-26.04` on 2026-09-10; the
-Task 9 package repin remains pending.
+**Status:** completed and merged into `materials-26.04` on 2026-09-10; all
+nine tasks are done.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
