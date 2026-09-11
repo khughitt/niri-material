@@ -1,0 +1,15 @@
+// Aurora glass: a slow green-to-violet colour field inside a cool slab,
+// stepping four times a second on a ten-minute loop.
+//
+// include "/usr/share/niri/materials/aurora.kdl"
+// window-rule { match app-id="^kitty$"; material "aurora"; }
+material "aurora" {
+    glass {
+        attenuation-color "#cfe0ff"
+        aurora 0.5 {
+            drift-hz 4
+            color "#3dffb0"
+            color "#7a5cff"
+        }
+    }
+}

@@ -1,0 +1,12 @@
+// Rainbow glass: dispersion in the refracted image (chromatic-aberration)
+// and a thin-film hue on the edge light (iridescence).
+//
+// include "/usr/share/niri/materials/rainbow.kdl"
+// window-rule { match app-id="^kitty$"; material "rainbow"; }
+material "rainbow" {
+    glass {
+        ior 1.7
+        chromatic-aberration 0.5
+        iridescence 0.8
+    }
+}

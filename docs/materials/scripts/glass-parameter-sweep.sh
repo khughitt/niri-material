@@ -50,6 +50,7 @@ case $BLOCK:$KEY in
     glass:ior|glass:thickness|glass:attenuation-distance) ;;
     glass:chromatic-aberration|glass:distortion|glass:anisotropic-blur) ;;
     glass:roughness|glass:bevel|glass:light-ior|glass:noise|glass:saturation) ;;
+    glass:iridescence|glass:aurora) ;;
     blur:noise|blur:saturation|blur:passes|blur:offset) ;;
     glass:jelly-flex|glass:jelly-ripple)
         fail "$KEY needs a motion stimulus and is out of scope here (material-36e968)" ;;
@@ -213,17 +214,34 @@ KDL
 
 # --------------------------------------------------------- nested niri host
 
-NIRI_PID=
+WESTON_PID=; NIRI_PID=
 if [ "$TABLE_ONLY" != 1 ]; then
     NIRI=${NIRI:?niri binary}
     RT=$(mktemp -d "$XDG_RUNTIME_DIR/gps.XXXXXX")
     RUN=$(basename "$RT")
-    HOST=$RUN-host; UNIT=$RUN-weston
+    HOST=$RUN-host
+    remove_runtime_dir() {
+        python3 - "$RT" <<'PY'
+import shutil
+import sys
+
+shutil.rmtree(sys.argv[1])
+PY
+    }
+    stop_weston() {
+        if [ -n "$WESTON_PID" ]; then
+            kill "$WESTON_PID" 2>/dev/null || true
+            wait "$WESTON_PID" 2>/dev/null || true
+            WESTON_PID=
+        fi
+        for _ in $(seq 50); do [ ! -e "$XDG_RUNTIME_DIR/$HOST" ] && break; sleep 0.1; done
+        [ ! -e "$XDG_RUNTIME_DIR/$HOST" ] || fail "Weston socket $HOST still present"
+    }
     cleanup() {
         local rc=$?
         if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; fi
-        systemctl --user stop "$UNIT" 2>/dev/null || true
-        rm -rf "$RT"
+        stop_weston || rc=1
+        remove_runtime_dir || rc=1
         exit "$rc"
     }
     trap cleanup EXIT
@@ -231,10 +249,15 @@ fi
 
 start_nested() {   # $1 config
     local _
-    systemd-run --user --unit="$UNIT" --collect weston --backend=headless --renderer=gl \
-        --shell=kiosk-shell.so --width=1280 --height=720 --socket="$HOST" >/dev/null 2>&1
-    for _ in $(seq 100); do [ -S "$XDG_RUNTIME_DIR/$HOST" ] && break; sleep 0.1; done
-    [ -S "$XDG_RUNTIME_DIR/$HOST" ] || fail "no Weston socket"
+    weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
+        --width=1280 --height=720 --socket="$HOST" >> "$OUT/weston.log" 2>&1 &
+    WESTON_PID=$!
+    for _ in $(seq 100); do
+        [ -S "$XDG_RUNTIME_DIR/$HOST" ] && break
+        kill -0 "$WESTON_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+    [ -S "$XDG_RUNTIME_DIR/$HOST" ] || fail "no Weston socket (see $OUT/weston.log)"
     ln -sf "$XDG_RUNTIME_DIR/$HOST" "$RT/$HOST"
     "$NIRI" validate -c "$1" || fail "config $1 does not validate"
     XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$HOST "$NIRI" -c "$1" >> "$OUT/niri.log" 2>&1 &
@@ -246,7 +269,7 @@ start_nested() {   # $1 config
 }
 stop_nested() {
     kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; NIRI_PID=
-    systemctl --user stop "$UNIT" 2>/dev/null || true
+    stop_weston
     rm -f "$RT"/niri.*.sock "$RT/$HOST"; sleep 0.5
 }
 probe_count() {   # $1 app-id

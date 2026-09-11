@@ -32,7 +32,7 @@ All future production rebases and material commits happen in this repository.
 - `2026-09-06-material-glass-noise-type-evidence.md`: nested GLES evidence for the three types: each renders, fine has less low-frequency energy and a thinner top band than white, lightness holds Oklab chroma.
 - `scripts/glass-noise-type-smoke.sh`: headless harness for those captures.
 - `../specs/2026-09-06-glass-parameter-sweep-design.md`: parameter sweep script design; a measurement tool that reports where a glass parameter stops changing the render, not a gate.
-- `../specs/2026-09-10-material-optics-design.md`: implemented material optics API and generated parameter table; the three new optics, presets, and Prism mappings remain separate plans.
+- `../specs/2026-09-10-material-optics-design.md`: implemented material optics API and generated parameter table; iridescence, aurora, and their presets are merged into `materials-26.04`, while cracks, ice, and Prism mappings remain open.
 - `adding-an-optic.md`: the recipe for a new pipeline stage.
 - `2026-09-10-material-optics-evidence.md`: decoded-pixel-identical captures before and after the saturation and noise optic migration.
 - `2026-09-06-glass-parameter-sweep-evidence.md`: sweep tables for `ior`, thickness, roughness, noise and saturation, and the global `blur` block, with a per-slider summary for Prism.
