@@ -1,10 +1,13 @@
 # Material optics: design
 
-**Status:** merged into `materials-26.04` (plan:
-`../plans/2026-09-10-material-optics.md`); sections 1–6 landed, with
-decoded-pixel identity recorded in
-`../materials/2026-09-10-material-optics-evidence.md`. Sections 7–9 (the
-three optics, presets, and Prism mappings) remain separate plans.
+**Status:** sections 1–6 merged into `materials-26.04` (plan:
+`../plans/2026-09-10-material-optics.md`; evidence:
+`../materials/2026-09-10-material-optics-evidence.md`). §7.2, §7.3, and §8's
+`rainbow` and `aurora` presets are implemented on `material-f0fc7b`, with the
+merge pending (plan: `../plans/2026-09-10-material-aurora-iridescence.md`;
+evidence: `../materials/2026-09-10-material-iridescence-evidence.md`,
+`../materials/2026-09-10-material-aurora-evidence.md`). §7.1, `ice`, and §9
+remain open (`material-bb3fe5`, `prism-763054`, `prism-08c1de`).
 
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
@@ -400,9 +403,10 @@ error `aurora: expected two color nodes`. `drift-hz` follows the
 `aurora drift-hz must be 0 or at least 1`.
 
 Hook: `emissive`. Two octaves of simplex noise on `p * 0.004 + seed` give a
-field `n` in `0–1`; the lookup point also traces a circle of radius 40 noise
-units over the period, so the loop is seamless. The colour is
-`mix(color_a, color_b, n)` and the emissive term gains
+field `n` in `0–1`; the lookup point also traces a circle of radius 2 noise
+units (about 5 px/s at the 0.004 scale) over the period, so the loop is
+seamless; the landed constant is `AURORA_LOOP_RADIUS` in `aurora.frag`. The
+colour is `mix(color_a, color_b, n)` and the emissive term gains
 `amount * 0.35 * color * (0.5 + 0.5 * n2) * pow(att, vec3(0.2))`, where
 `n2` is a second, coarser octave; the `att` factor is the one the ring uses
 so the field sits inside the glass rather than on it.

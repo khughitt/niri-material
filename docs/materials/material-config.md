@@ -169,7 +169,9 @@ steps the phase `drift-hz` times per second in buckets anchored to the
 absolute clock, and a lit, visible aurora window redraws at that rate
 whether or not it is focused or carries a signal. `signal { motion
 "reduced" }` halves the rate; `motion "off"` and `animations { off }` pin
-the field at phase 0.
+the field at phase 0. In the llvmpipe smoke, amount 0.5 at 4 Hz cost 5.552 ms
+per material draw versus 4.308 ms plain (+28.9%); this software-renderer
+measurement does not establish physical-GPU cost.
 
 ### saturation
 
@@ -192,7 +194,7 @@ the type never inherits.
 material it defines, installed to `/usr/share/niri/materials/`. `include`
 accepts an absolute path, so a preset is used with
 
-````markdown
+````kdl
 include "/usr/share/niri/materials/aurora.kdl"
 
 window-rule {

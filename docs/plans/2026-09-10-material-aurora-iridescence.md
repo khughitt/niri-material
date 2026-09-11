@@ -1,5 +1,8 @@
 # Material Aurora and Iridescence Implementation Plan
 
+**Status:** Tasks 1–8 are implemented on `material-f0fc7b`; integration into
+`materials-26.04` and the Task 9 package repin remain pending.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add the `iridescence` and `aurora` optics to the glass pipeline through the optic recipe, ship the `rainbow` and `aurora` presets with their install plumbing, and record each optic's frame cost (and aurora's redraw rate against `drift-hz`) on the headless harness.

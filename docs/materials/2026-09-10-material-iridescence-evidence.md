@@ -36,9 +36,8 @@ measurements; they do not establish physical-GPU cost.
 
 The window measured `456x640+40+40` in screenshot space. The face ROI was
 `200x400+100+160`; the visible chamfer ROI was `20x400+36+160`. The
-headless output transform made the brief's proposed right-edge band nearly
-flat: its RGB RMSE was 257 Q16, against 964.178 for the visible left-edge band
-and 222.569 for the diagnostic face crop. The smoke therefore samples the
+brief's proposed right-edge band was nearly flat at 257 Q16 RGB RMSE; the
+visible left-edge band measured 964.178. The smoke therefore samples the
 visible chamfer at the measured window's left edge.
 
 ## Preset tuning
