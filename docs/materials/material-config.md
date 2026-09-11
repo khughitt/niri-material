@@ -171,7 +171,12 @@ whether or not it is focused or carries a signal. `signal { motion
 "reduced" }` halves the rate; `motion "off"` and `animations { off }` pin
 the field at phase 0. In the llvmpipe smoke, amount 0.5 at 4 Hz cost 5.552 ms
 per material draw versus 4.308 ms plain (+28.9%); this software-renderer
-measurement does not establish physical-GPU cost.
+measurement does not establish physical-GPU cost. The subsequent
+[RTX 3070 hardware checks](2026-09-11-material-hardware-evidence.md) measured
+9.728 µs for both plain and aurora median material draws in a small scene,
+but clock variation prevented resolving relative overhead. Idle redraws were
+exactly 4 Hz, 2 Hz with reduced motion, and zero when pinned or off; whole-board
+power variation prevented attributing a watt cost.
 
 ### saturation
 

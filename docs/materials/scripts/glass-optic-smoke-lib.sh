@@ -50,7 +50,7 @@ stop_weston() {
 }
 cleanup() {
     local rc=$?
-    if [ -n "$CAP_PID" ]; then kill "$CAP_PID" 2>/dev/null || true; fi
+    if [ -n "$CAP_PID" ]; then kill "$CAP_PID" 2>/dev/null || true; wait "$CAP_PID" 2>/dev/null || true; fi
     if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; fi
     stop_weston || rc=1
     remove_runtime_dir || rc=1
@@ -392,6 +392,19 @@ trace_end() {
 count_last20() {
     export_cpu "$1"
     local end c; end=$(trace_end "$1"); c=$(col "$OUT/$1.csv" ns_since_start)
+    # Idle-inhibit refresh is a one-second heartbeat even without damage.
+    # An empty/truncated/stalled trace must not masquerade as zero redraws.
+    awk -F, -v c="$c" -v end="$end" '
+        NR>1 && $1=="Niri::refresh_idle_inhibit" {
+            t=$c+0
+            if (t>=end-20e9) {
+                if (last && t-last>1.5e9) bad=1
+                if (!first) first=t
+                last=t; beats++
+            }
+        }
+        END { exit !(end>=30e9 && beats>=19 && last-first>=18e9 && !bad) }
+    ' "$OUT/$1.csv" || fail "$1: incomplete or stalled final 20 s trace"
     awk -F, -v c="$c" -v end="$end" \
         'NR>1 && $1=="Niri::redraw" { t=$c+0; if (t>=end-20e9) n++ } END { printf "%d", n+0 }' "$OUT/$1.csv"
 }
