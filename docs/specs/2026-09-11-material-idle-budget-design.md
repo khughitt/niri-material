@@ -1,7 +1,8 @@
 # Material idle GPU and power budget
 
-**Status:** prepared for review; execution has not started. The user requested
-preparation only. This document proposes measurement rules, not measured results.
+**Status:** Task 1 fixture implemented, offline validated and reviewed on
+experiment `results/idle-budget` at `8db5dc8`. Release builds and trace/power
+collection remain pending. This document proposes rules, not measured results.
 
 **Task:** `material-265eb0`, within `material-53f873`.
 **Plan:** [execution plan](../plans/2026-09-11-material-idle-budget.md).
@@ -52,6 +53,9 @@ Both lanes record actual GPU/driver identity, binary hashes, source commit and
 source differences, display mode/scale/VRR, window geometry, config hashes, tool
 versions, and owned process IDs. Resolve the display mode at preflight and hold
 it unchanged for the run. Reject llvmpipe/software rendering and missing identity.
+The initial fixture supports one NVIDIA GPU and one active output; reject other
+layouts. Device-user enumeration must have complete read visibility and fail
+explicitly if unavailable, without an interactive privilege prompt.
 The earlier trace and power scenes have different output geometry; compare
 cases within one lane, never their absolute costs across lanes.
 
@@ -220,9 +224,9 @@ budget contract belong in native `docs/materials/`. Raw traces, CSV, binaries,
 configs, inventory, logs, interval boundaries, and SHA-256 manifests stay on
 per-machine storage under `NIRI_MATERIAL_WORK_ROOT/material-265eb0/`.
 
-Preparation changes only design/plan/task records and generated documentation.
-No fixture implementation, experiment build, compositor launch, GPU sampling, logout, VT
-switch, or measurement is authorized during preparation. At resume, complete
-offline/trace work first; the isolated-session operator checkpoint precedes the
-power run. The parent closes only after its execution tasks and valid power
+Fixture implementation and offline validation (Task 1) are complete.
+Compositor launches, trace/power collection, logout, and VT switches remain
+unauthorized in this stage. Await a separate resume for
+trace collection; the isolated-session operator checkpoint precedes the power
+run. The parent closes only after its execution tasks and valid power
 conclusion are complete, or its scope is explicitly revised by the user.
