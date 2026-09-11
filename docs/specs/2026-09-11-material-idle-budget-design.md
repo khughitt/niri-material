@@ -81,8 +81,10 @@ stimulus changes its column width to 55% and back to 40%. Wait 3 s from the
 first action's IPC completion before sending the return action in both stimuli
 (including case A); record both actions and their timing. Restore and verify
 the original window geometry. Take geometry/pixel captures outside observation
-windows only. Keep pointer, terminal contents, signals, config, and focus stable
-during observation.
+windows only. The before image is the pre-stimulus settled capture; the after
+image and any post-observation geometry restore/verify actions must wait until
+the capture process has exited. Keep pointer, terminal contents, signals, config,
+and focus stable during observation.
 
 | Case | Settings | Trace expectation after settling |
 | --- | --- | --- |
@@ -144,8 +146,10 @@ Each trace observation uses a fresh compositor process and its first Tracy captu
 The non-ondemand `profile-with-tracy` build buffers events from process start,
 including setup IPC before capture connects. Record every IPC action from launch
 through capture completion in one serial controller journal, including helper
-spawn/focus/width actions. Match the complete ordered marker list to that journal
-by count and ordinal; its last two actions must be the declared outward/return
+spawn/focus/width actions. Count only successful IPC calls; record validation
+rejections separately because they produce no marker, and abort on an unknown
+call outcome. Match the complete ordered marker list to the successful entries
+by count and ordinal; their last two actions must be the declared outward/return
 stimulus pair, with the pinned 3 s wait. Reject missing/extra markers or later
 actions, and anchor `stimulus_end` on the last marker's end in Tracy time. Do not
 assume a connection discards setup events or use host IPC time as trace time.

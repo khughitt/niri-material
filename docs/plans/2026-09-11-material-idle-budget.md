@@ -159,8 +159,10 @@ let _ = tx.send_blocking(());
   The generic span remains one line: use a fresh compositor and its first
   capture for each observation, journaling every IPC action serially from
   process launch through capture completion, including all setup helpers.
+  Count only calls that returned IPC success; record validation rejections
+  separately (they emit no marker), and abort on an unknown call outcome.
   Non-ondemand Tracy includes pre-connect setup markers. Validate total marker
-  count against the complete journal, associate by ordinal, require the final
+  count against successful journal entries, associate by ordinal, require the final
   two entries to be the declared stimulus pair, and reject later actions.
   Add synthetic cases accepting setup markers plus the pair and rejecting
   missing/extra markers, a wrong final pair, or actions after the stimulus.
@@ -218,7 +220,7 @@ per-case verdicts; this task may finish even if isolated power is unavailable.
   the outward/return stimulus actions with the pinned 3 s wait, then no further
   IPC action until capture finishes. Retain the complete serial controller
   journal, including pre-connect setup actions. Require one `IdleBudget::action`
-  zone per journal entry in order; its last two entries must be the declared
+  zone per successful journal entry in order; the last two must be the declared
   stimulus pair. Reject missing/extra zones, a mismatched final pair, or later
   actions. Anchor `stimulus_end` to the last zone's end using
   `ns_since_start + exec_time_ns`. Connection time does not exclude buffered
@@ -232,7 +234,9 @@ per-case verdicts; this task may finish even if isolated power is unavailable.
   an entirely empty GPU channel.
 - [ ] Run one 600-second quiet B hold after movement, starting at
   `stimulus_end + 3 s`, with full heartbeat coverage and zero redraw/material-draw zones. Capture clean settled images
-  before/after the interval and compare decoded pixels at AE 0.
+  before/after the interval and compare decoded pixels at AE 0. The before image
+  is the pre-stimulus settled capture; the after image and any post-observation
+  geometry restore/verify actions run only after the capture process has exited.
 - [ ] Analyze all intervals and expected case inventory. Report active GPU-zone
   sums/durations alongside cadence, with DVFS limits. If any behavioral gate
   fails, retain evidence and file a concrete regression under this task; do not
