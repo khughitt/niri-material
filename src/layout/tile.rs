@@ -2618,12 +2618,17 @@ mod tests {
         assert_eq!(crossfade_origin(None, None), (0., None, 0.));
     }
 
-    /// A tile carrying the material "frost", whose only response selects
-    /// `focus`. Everything else is stock: `motion "full"`, animations on.
-    fn focus_tile(focus: niri_config::FocusResponse, clock: Clock) -> Tile<TestWindow> {
+    /// A tile carrying the material "frost" with the given glass, whose only
+    /// response selects `focus`. Everything else is stock: `motion "full"`,
+    /// animations on.
+    fn material_tile(
+        glass: niri_config::ResolvedGlass,
+        focus: niri_config::FocusResponse,
+        clock: Clock,
+    ) -> Tile<TestWindow> {
         let material = niri_config::ResolvedMaterial {
             name: String::from("frost"),
-            glass: niri_config::ResolvedGlass::default(),
+            glass,
             responses: vec![(
                 String::from("default"),
                 niri_config::ResolvedResponse {
@@ -2651,6 +2656,10 @@ mod tests {
             clock,
             Rc::new(options),
         )
+    }
+
+    fn focus_tile(focus: niri_config::FocusResponse, clock: Clock) -> Tile<TestWindow> {
+        material_tile(niri_config::ResolvedGlass::default(), focus, clock)
     }
 
     #[test]
@@ -2698,6 +2707,48 @@ mod tests {
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         tile.update_render_elements(false, true, view);
         assert!(tile.signal_frame_cache.borrow().is_none());
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::ZERO),
+            None
+        );
+    }
+
+    #[test]
+    fn an_unfocused_signal_free_aurora_tile_reports_its_next_bucket() {
+        // The scheduling gate of the optics design §3: no focus filament, no
+        // signal, so no signal frame cache, and still a deadline from the
+        // optic while the slab band is in view.
+        let clock = Clock::with_time(Duration::ZERO);
+        let lit = niri_config::ResolvedGlass {
+            aurora: niri_config::ResolvedAurora {
+                amount: 0.5,
+                drift_hz: 4.,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut tile = material_tile(lit, niri_config::FocusResponse::None, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(false, true, view);
+        assert!(!tile.active);
+        assert!(tile.signal_frame_cache.borrow().is_none());
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::ZERO),
+            Some(Duration::from_millis(250))
+        );
+        let far = Point::from((10_000., 10_000.));
+        assert_eq!(tile.tick_deadline(far, view, Duration::ZERO), None);
+
+        let pinned = niri_config::ResolvedGlass {
+            aurora: niri_config::ResolvedAurora {
+                amount: 0.5,
+                drift_hz: 0.,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut tile = material_tile(pinned, niri_config::FocusResponse::None, clock);
+        tile.update_render_elements(false, true, view);
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
             None

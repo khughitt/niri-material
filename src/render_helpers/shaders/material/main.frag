@@ -154,6 +154,9 @@ void main() {
             }
         }
 
+        // Emissive hooks, in OPTICS order (render-pipeline.md stage 6).
+        emissive += aurora_emissive(p, n, att, innerDist);
+
         float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
         for (int k = 0; k < 4; ++k) {
             int sel = k == 0 ? mat_sig_impulse_resp.x : k == 1 ? mat_sig_impulse_resp.y
