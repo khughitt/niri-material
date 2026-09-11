@@ -9,8 +9,9 @@ evidence: `../materials/2026-09-10-material-iridescence-evidence.md`,
 `../materials/2026-09-10-material-aurora-evidence.md`). §9 aurora/iridescence
 controls and Aurora/Rainbow profiles landed on Prism `main` at `3f44f34`
 (`prism-763054`, `prism-08c1de`). §7.1, `ice`, and its Prism pieces remain open
-(`material-bb3fe5`, `prism-b35d40`, `prism-fc791c`). Hardware acceptance remains
-tracked by `material-300b87`; the native implementation evidence used llvmpipe.
+(`material-bb3fe5`, `prism-b35d40`, `prism-fc791c`). Hardware pixel, cadence, and installed-session checks passed in
+`material-300b87`; [NVIDIA evidence](../materials/2026-09-11-material-hardware-evidence.md)
+records costs and their limits. The original implementation evidence used llvmpipe.
 
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
@@ -547,8 +548,9 @@ preset, and the `iridescence` optic with its preset. Each records cost;
 aurora also records its redraw rate against `drift-hz` and carries the
 scheduling integration check of section 11.
 
-The two Prism pieces of section 9 depend on `material-bb3fe5` and
-`material-f0fc7b`.
+The aurora/rainbow Prism pieces of section 9 are complete. The remaining
+Ice controls (`prism-b35d40`) depend on `material-bb3fe5`; its starter profile
+(`prism-fc791c`) follows those controls.
 
 ## 11. Verification
 
