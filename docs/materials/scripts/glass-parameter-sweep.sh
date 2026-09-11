@@ -43,9 +43,10 @@ case $BLOCK in
 esac
 
 # jelly-flex and jelly-ripple are absent on purpose: jelly activity comes from
-# motion residuals (render_helpers/material.rs) and the shader gates ripple
+# motion residuals (render_helpers/material/mod.rs) and the shader gates ripple
 # behind mat_jelly_activity > 0, so a settled window renders them identically at
-# every value. Measuring them needs a motion stimulus: material-36e968.
+# every value. Use the companion motion sweep from material-36e968:
+# docs/materials/2026-09-11-jelly-motion-sweep.md.
 case $BLOCK:$KEY in
     glass:ior|glass:thickness|glass:attenuation-distance) ;;
     glass:chromatic-aberration|glass:distortion|glass:anisotropic-blur) ;;
@@ -53,7 +54,7 @@ case $BLOCK:$KEY in
     glass:iridescence|glass:aurora) ;;
     blur:noise|blur:saturation|blur:passes|blur:offset) ;;
     glass:jelly-flex|glass:jelly-ripple)
-        fail "$KEY needs a motion stimulus and is out of scope here (material-36e968)" ;;
+        fail "$KEY needs a motion stimulus; see docs/materials/2026-09-11-jelly-motion-sweep.md" ;;
     *) fail "unsupported key for block $BLOCK: $KEY" ;;
 esac
 

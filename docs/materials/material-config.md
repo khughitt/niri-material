@@ -68,6 +68,11 @@ lengths are logical pixels.
 `jelly-flex` and `jelly-ripple` use thousandths only in their internal
 representation; their configuration values and ranges above are unchanged.
 
+The [NVIDIA motion sweep](2026-09-11-jelly-motion-sweep.md) resolves both jelly
+parameters during scripted column moves and verifies exact return to settled
+pixels. Its sample points cover the current ranges; it does not establish
+interactive-drag behavior or a new perceptual range.
+
 `light-ior` multiplies the bend applied to the focus filament's light path
 only; the background taps are unaffected. The light-path index is
 `1 + (ior - 1) * light-ior`.
