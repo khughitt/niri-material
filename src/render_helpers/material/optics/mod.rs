@@ -12,6 +12,7 @@ use niri_config::signal::SignalMotionPolicy;
 use niri_config::{Blur, ResolvedGlass};
 use smithay::backend::renderer::gles::{Uniform, UniformName, UniformType};
 
+pub mod aurora;
 pub mod iridescence;
 pub mod noise;
 pub mod saturation;
@@ -73,6 +74,7 @@ impl OpticEntry {
 /// The optics in render order.
 pub static OPTICS: &[OpticEntry] = &[
     OpticEntry::of::<iridescence::IridescenceOptic>(),
+    OpticEntry::of::<aurora::AuroraOptic>(),
     OpticEntry::of::<saturation::SaturationOptic>(),
     OpticEntry::of::<noise::NoiseOptic>(),
 ];

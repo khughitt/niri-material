@@ -497,6 +497,7 @@ mod tests {
         let mut last = 0;
         for marker in [
             "// ---- optic: iridescence",
+            "// ---- optic: aurora",
             "// ---- optic: saturation",
             "// ---- optic: noise",
             "// ---- main",
@@ -510,6 +511,7 @@ mod tests {
         assert_eq!(source.matches("void main()").count(), 1);
         assert!(!source.starts_with("#version"));
         assert!(source.contains("iridescence_specular(specular"));
+        assert!(source.contains("aurora_emissive(p, n, att, innerDist)"));
         assert!(source.contains("saturation_post(glassColor"));
         assert!(source.contains("noise_post(glassColor"));
     }

@@ -55,6 +55,10 @@ lengths are logical pixels.
 | `offset-x` | float | 6 | −64–64 | logical px |
 | `offset-y` | float | 6 | −64–64 | logical px |
 | `iridescence` | float | 0 | 0–1 | — |
+| `aurora` | float | 0 | 0–1 | — |
+| `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
+| `aurora` `color` | color | `#3dffb0` | any color | — |
+| `aurora` `color` | color | `#7a5cff` | any color | — |
 | `saturation` | float | inherit | 0–3 | — |
 | `noise` | float | inherit | 0–1 | — |
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
@@ -131,6 +135,7 @@ the offsets. Its inner corners follow the window's effective
 The glass pipeline is a slab plus an ordered list of optics. Each optic owns
 its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
 changes nothing; omission can instead inherit where stated below.
+Optics are listed in render order: `iridescence`, `aurora`, `saturation`, `noise`.
 Contributors: see `adding-an-optic.md`.
 
 ### iridescence
@@ -143,6 +148,28 @@ mix, so an accent still tints the result. Its explicit neutral is 0, and
 omission is 0; nothing inherits. The `rainbow` preset pairs it with
 `chromatic-aberration`, which is the dispersion the refracted image carries;
 iridescence colours the edge light.
+
+### aurora
+
+Stage 6. `aurora <amount> { drift-hz <hz>; color <a>; color <b>; }` adds a
+slow colour field inside the glass: two octaves of simplex noise on the
+element position (one noise unit is 250 px), offset by the window seed,
+mix the two colours, and a coarser octave sets the brightness; the light
+is weighted by `att ^ 0.2` like the ring, so it sits inside the slab. The
+first `color` node is the field's start (noise 0), the second its end
+(noise 1); both may be omitted, and any other count is the error
+`aurora: expected two color nodes`. Its explicit neutral is amount 0;
+nothing inherits.
+
+`drift-hz` is the field's clock, on the same rule as `ring-drift-hz`: `0`
+pins the field, otherwise at least 1, and the error is `aurora drift-hz
+must be 0 or at least 1`. The field's lookup point traces a small circle
+in noise space once per 600 s, so the loop closes seamlessly; the clock
+steps the phase `drift-hz` times per second in buckets anchored to the
+absolute clock, and a lit, visible aurora window redraws at that rate
+whether or not it is focused or carries a signal. `signal { motion
+"reduced" }` halves the rate; `motion "off"` and `animations { off }` pin
+the field at phase 0.
 
 ### saturation
 
