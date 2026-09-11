@@ -5,10 +5,10 @@ evidence in
 [`2026-09-06-glass-parameter-sweep-evidence.md`](../materials/2026-09-06-glass-parameter-sweep-evidence.md).
 
 Revised three times under review. What shipped: two fixed ROIs, blur gating,
-per-step normalization, the focus ring pinned off for reproducibility. Two
-acceptance criteria are **explicitly unmet** and are recorded as such below —
-bending evidence (deferred to `material-343f27`) and flex/ripple (deferred to
-`material-36e968`).
+per-step normalization, the focus ring pinned off for reproducibility. The static tool does not establish ray bending
+(`material-343f27` remains open) or measure motion. Flex/ripple now have a
+[separate motion sweep](../materials/2026-09-11-jelly-motion-sweep.md)
+(`material-36e968`), with measured progress alignment and repeat-noise checks.
 
 **Task:** `material-37cec9`
 
@@ -68,13 +68,15 @@ difference.
 | `glass` | `ior`, `thickness`, `attenuation-distance`, `chromatic-aberration`, `distortion`, `anisotropic-blur`, `roughness`, `bevel`, `light-ior`, `noise`, `saturation` |
 | `blur` | `noise`, `saturation`, `passes`, `offset` |
 
-`jelly-flex` and `jelly-ripple` are **not** supported. `material.rs:216` derives
-jelly activity from motion residuals and the shader gates ripple behind
-`mat_jelly_activity > 0.0` (`material.frag:398`), so on a settled window with
+`jelly-flex` and `jelly-ripple` are **not** supported by the static script.
+`jelly_state` in `src/render_helpers/material/mod.rs` derives jelly activity
+from motion residuals, and the shader gates ripple behind
+`mat_jelly_activity > 0.0`, so on a settled window with
 `animations { off; }` both render identically at every value across their whole
 range. A sweep that reported them would report zeros and read as "no effect".
-Measuring them needs a motion stimulus and a capture phase pinned to the
-impulse: `material-36e968`.
+The [motion companion](../materials/2026-09-11-jelly-motion-sweep.md)
+(`material-36e968`) supplies a scripted stimulus, timed bursts, and alignment
+by measured pane progress.
 
 Sweeping `bevel` changes the chamfer the bevel ROI frames. The ROI is sized to
 cover the whole swept range and then held fixed — see "Two ROIs".
@@ -358,4 +360,4 @@ design, not an implementation detail.
 - Choosing the bounds. The script reports; `prism-5758d3` decides.
 - Sweeping two parameters jointly. One key per run.
 - Asserting thresholds. No pass/fail on the numbers.
-- Flex and ripple. They need motion: `material-36e968`.
+- Flex and ripple. Measured separately by the motion companion (`material-36e968`).

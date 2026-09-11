@@ -164,7 +164,7 @@ within either setting are.
 | table stage over duplicate captures: sentinels then zeros | pass |
 | table stage positive control: unequal steps, equal image change | pass, `per_step` flattens what `neighbor` exaggerates |
 | **bending demonstrated** | **not met**, deferred to `material-343f27` |
-| **flex and ripple** | **not met**, out of scope, `material-36e968` |
+| **flex and ripple** | Outside this static run; subsequently measured by the [motion companion](2026-09-11-jelly-motion-sweep.md), `material-36e968` |
 
 # Part 2: the remaining Prism slider candidates
 
@@ -412,7 +412,8 @@ with `material-343f27`.
 | Noise | `[0, 1]` | near linear, mildly sublinear | whole range | keep |
 | Saturation | `[0, 3]` | linear and symmetric about `1`, clips past `2.5` | `0` to `2.5` | keep the shape; consider capping near `2.5` |
 
-`jelly-flex` and `jelly-ripple` remain out: `material-36e968`. None of these
+`jelly-flex` and `jelly-ripple` remain outside the static script; the
+[motion companion](2026-09-11-jelly-motion-sweep.md) covers them (`material-36e968`). None of these
 tables is evidence of ray bending: `material-343f27`.
 
 ## Checks
