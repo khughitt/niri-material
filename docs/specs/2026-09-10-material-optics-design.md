@@ -6,8 +6,11 @@
 `rainbow` and `aurora` presets are merged into `materials-26.04` (plan:
 `../plans/2026-09-10-material-aurora-iridescence.md`;
 evidence: `../materials/2026-09-10-material-iridescence-evidence.md`,
-`../materials/2026-09-10-material-aurora-evidence.md`). §7.1, `ice`, and §9
-remain open (`material-bb3fe5`, `prism-763054`, `prism-08c1de`).
+`../materials/2026-09-10-material-aurora-evidence.md`). §9 aurora/iridescence
+controls and Aurora/Rainbow profiles landed on Prism `main` at `3f44f34`
+(`prism-763054`, `prism-08c1de`). §7.1, `ice`, and its Prism pieces remain open
+(`material-bb3fe5`, `prism-b35d40`, `prism-fc791c`). Hardware acceptance remains
+tracked by `material-300b87`; the native implementation evidence used llvmpipe.
 
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
@@ -501,22 +504,27 @@ Prism's, as today.
 
 ## 9. Prism
 
-Nothing in this design changes what Prism emits today. Two Prism pieces are
-filed, both depending on the material tasks they map:
+Aurora and iridescence are integrated in Prism (`prism-763054`), with ordinary
+Aurora and Rainbow YAML profile snapshots (`prism-08c1de`). Both focus states
+have independent amounts, drift rate, and colors; bypasses are shared. Amounts
+default to zero. Aurora rate uses whole Hz from 0 to 30, with 0 pinning the field.
 
-- **Rack devices for the three optics.** `cracks` (category geometry, after
-  Distortion; mix `glass.cracks`, detail `glass.cracksScale`),
-  `iridescence` (optic, after Fringing; mix `glass.iridescence`), and
-  `aurora` (optic, after Tint; mix `glass.aurora`, details
-  `glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB`), with
-  their bypass keys and whichever `glass.inactive.*` twins the focus matrix
-  rule calls for. The sink renders the new nodes; the manifest binds the
-  keys; `probe-material` is updated. The deployment rule in
-  `.agents/AGENTS.md` applies: Prism emits a node only once the installed
-  niri parses it.
-- **Starter profiles** named Ice, Aurora, and Rainbow, carrying the preset
-  values of section 8, so loading a profile is the material choice. How
-  Prism ships a profile it did not save is a Prism design question.
+The rack follows shader order: `iridescence` (optic, after Tint; mix
+`glass.iridescence`), then `aurora` (optic; mix `glass.aurora`, details
+`glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB`). The sink emits
+the nodes and the manifest binds all focused/unfocused keys and bypasses. The
+existing capability probe renders the actual fragment, so it tests both new
+nodes without a separate probe grammar. Installed niri `7526af1d` accepts the
+probe and both profile fragments.
+
+The starter profiles use section 8's optics in both focus states and explicitly
+set noise to 0 and saturation to 1 to avoid host blur inheritance. They are full
+Prism snapshots, discovered by its existing profile loader and picker; the
+Prism README documents installation without overwriting edited profiles.
+
+Ice remains separate: `prism-b35d40` adds `cracks` (geometry, after Distortion;
+mix `glass.cracks`, detail `glass.cracksScale`) once `material-bb3fe5` lands.
+`prism-fc791c` then ships the Ice profile.
 
 ## 10. Tasks
 

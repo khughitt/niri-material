@@ -1,7 +1,11 @@
 # Material Aurora and Iridescence Implementation Plan
 
 **Status:** completed and merged into `materials-26.04` on 2026-09-10; all
-nine tasks are done.
+nine tasks are done. Installation and session restart were verified on 2026-09-11:
+CLI and running compositor both report `7526af1d`; installed Aurora/Rainbow
+includes validate. Prism controls and profiles landed at `3f44f34` in Prism
+(`prism-763054`, `prism-08c1de`). Hardware renderer acceptance is the separate
+follow-up `material-300b87`; the measurements below used llvmpipe.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
