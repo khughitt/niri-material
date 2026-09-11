@@ -5,7 +5,7 @@ status: todo
 priority: 2
 size: m
 created: 2026-09-11T10:28:52Z
-updated: 2026-09-11T10:30:13Z
+updated: 2026-09-11T10:57:07Z
 depends: [material-4241c3]
 parent: material-265eb0
 tags: [performance]
@@ -19,3 +19,4 @@ After user resume and trace validation, use an operator-provided dedicated DRM s
 ## Notes
 
 - 2026-09-11T10:30:13Z (material-265eb0): parked (waiting on user): Prepared only; await user resume, trace validation, and operator-arranged isolated DRM session before power collection.
+- 2026-09-11T10:57:07Z (material-265eb0): Preparation review: report sham_floor_w/sham_precision_ok, abba_floor_w, raw_repeat_floor_w, and combined floor_w/precision_ok. The conservative gate intentionally rejects raw repeat drift even when ABBA cancels it; require positive compositor/kitty PID visibility. No power run authorized yet.

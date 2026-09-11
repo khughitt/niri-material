@@ -5,7 +5,7 @@ status: todo
 priority: 2
 size: m
 created: 2026-09-11T10:27:54Z
-updated: 2026-09-11T10:30:13Z
+updated: 2026-09-11T10:57:07Z
 depends: [material-ec6229]
 parent: material-265eb0
 tags: [performance]
@@ -14,7 +14,7 @@ plan: docs/plans/2026-09-11-material-idle-budget.md
 step: "Task 2: Verify quiescence and bounded active cadence"
 ---
 
-After execution resumes and the fixture is validated, collect24 short trace observations and one600s quiet hold. Verify exact quiet redraw/material-draw zeros, two-second settling, heartbeat coverage, pixel return, and4/2Hz Aurora cadence; retain independently reviewable raw evidence. No board-power claim from the shared desktop.
+After execution resumes and the fixture is validated, collect 24 short trace observations and one 600 s quiet hold. Verify exact quiet redraw/material-draw zeros, three-second settling and inter-stimulus wait, heartbeat coverage, pixel return, and 4/2 Hz Aurora cadence. Match the complete startup/setup/stimulus IPC journal to trace markers and retain independently reviewable raw evidence. No board-power claim from the shared desktop.
 
 ## Notes
 

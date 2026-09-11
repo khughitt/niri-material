@@ -57,10 +57,14 @@ cases within one lane, never their absolute costs across lanes.
 
 For power, enumerate graphics and compute clients plus device users before
 launch and throughout collection; record names and PIDs, not only utilization.
-Permit only the fixture's compositor and transparent clients. An empty or
-unsupported process query is not proof of isolation: stop if process visibility
-is incomplete. Background GPU clients invalidate a block even if utilization
-looks low. The operator resolves contamination; the harness does not kill it.
+Permit only the recorded PIDs of the fixture's compositor, transparent kitty
+clients, and owned wallpaper client. After mapping, the inventory must positively
+list the compositor and both kitty PIDs; repeat this check throughout collection.
+Use graphics/compute process reporting plus device-user enumeration (for example,
+`nvidia-smi -q -d PIDS` and `fuser -v /dev/nvidia* /dev/dri/*`); compute-only
+queries cannot establish graphics visibility. An empty or unsupported query,
+missing owned PID, or incomplete device visibility invalidates the block.
+Background GPU clients invalidate a block even if utilization looks low. The operator resolves contamination; the harness does not kill it.
 
 ## Scene and cases
 
@@ -73,7 +77,9 @@ ring drift. The anchor must stay transparent and stationary during observation.
 Pin both movement and resize springs to damping-ratio 1, stiffness 100,
 epsilon .0001. Use the existing two-column layout at width proportion .4.
 A movement stimulus moves the probe column right and back left; a resize
-stimulus changes its column width to 55% and back to 40%. Restore and verify
+stimulus changes its column width to 55% and back to 40%. Wait 3 s from the
+first action's IPC completion before sending the return action in both stimuli
+(including case A); record both actions and their timing. Restore and verify
 the original window geometry. Take geometry/pixel captures outside observation
 windows only. Keep pointer, terminal contents, signals, config, and focus stable
 during observation.
@@ -85,7 +91,7 @@ during observation.
 | P: pinned field | B plus Aurora .5, drift-hz 0 | zero redraws/draws |
 | C: moving field | B plus Aurora .5, drift-hz 4 | 4 Hz |
 | D: reduced field | C plus signal motion reduced | 2 Hz |
-| O: motion off | C plus signal motion off | zero redraws/draws after native spring settles |
+| O: motion off | C plus signal motion off | zero redraws/draws within 3 s, including native spring settling |
 
 `signal motion off` controls optic/signal motion; it is not assumed to disable
 native window-movement springs. C and D deliberately retain a live stimulus and
@@ -100,11 +106,13 @@ universal budgets:
 1. Quiet states A/B/P/O: zero `Niri::redraw` zones and zero material GPU draw
    zones during a fully covered 20-second observation window. Check A/B after
    both movement and resize; check P/O after movement. Three repetitions each.
-   Start the window two seconds after the final stimulus. A later settle is a
-   failure of this proposed two-second fixture budget, not permission to move
-   the observation window until it passes.
-2. One additional B capture observes 600 quiet seconds after movement. This
-   detects delayed wakeups in the current implementation; it does not test a
+   Start the window three seconds after the final stimulus. The pinned critical
+   spring takes about 1.84 s at a 489 px displacement because its epsilon is an
+   absolute pixel distance; 3 s allows the final render and resize client round
+   trip. A later settle fails this proposed three-second fixture budget; do not
+   move the observation window until it passes.
+2. One additional B capture observes 600 quiet seconds starting 3 s after
+   movement. This detects delayed wakeups in the current implementation; it does not test a
    future 300-second micro-movement feature. Require zero redraws/material draws.
 3. C/D: count 79–81 / 39–41 redraws in each fully covered 20-second window,
    allowing one boundary frame; repeat three times. Record material draw count,
@@ -117,7 +125,8 @@ universal budgets:
    whole 600-second interval, not merely its last 20 seconds. Require a positive
    material GPU draw during the preceding stimulus in the same trace, proving
    the GPU channel was recording; an entirely empty GPU export is not a valid
-   zero-work result.
+   zero-work result. Case A's animations-off jump may supply just one material
+   draw; that satisfies the positive control without adding animation to A.
 5. Require exact settled-pixel equality for A/B at the same final geometry.
    Keep the existing fingerprint/unchanged-commit tests as complementary
    evidence. Zero material GPU draws implies no material uniform uploads in
@@ -130,6 +139,18 @@ universal budgets:
    Report the measured upper bound at the achieved resolution. C/D costs are
    descriptive results used to choose a later product watt budget; this task
    does not invent a universal allowed wattage for visible animation.
+
+Each trace observation uses a fresh compositor process and its first Tracy capture.
+The non-ondemand `profile-with-tracy` build buffers events from process start,
+including setup IPC before capture connects. Record every IPC action from launch
+through capture completion in one serial controller journal, including helper
+spawn/focus/width actions. Match the complete ordered marker list to that journal
+by count and ordinal; its last two actions must be the declared outward/return
+stimulus pair, with the pinned 3 s wait. Reject missing/extra markers or later
+actions, and anchor `stimulus_end` on the last marker's end in Tracy time. Do not
+assume a connection discards setup events or use host IPC time as trace time.
+For the GPU positive control, count draws from the outward marker's start to
+observation start; GPU work need not overlap the short CPU action span itself.
 
 The current mechanisms may already satisfy all behavioral gates. Only a
 reproduced regression justifies a renderer fix, with a separately scoped task
@@ -145,8 +166,11 @@ client inventory. A stable clock state is evidence to record, not proof that
 all confounders have disappeared.
 
 Each window lasts 90 s: 60 s warmup after config application and any stimulus,
-then 30 s observation. Sample at 1 Hz. Record monotonic request/return times
-around each query; reject failed/unsupported/nonfinite samples, non-increasing
+then 30 s observation. Schedule 1 Hz queries on absolute monotonic deadlines
+`t0 + k * 1 s`, not a one-second sleep after each query. Record missed deadlines
+and skip elapsed ticks rather than issuing catch-up bursts. Record monotonic
+request/return times around each query; use return times for interval assignment
+and coverage; reject failed/unsupported/nonfinite samples, non-increasing
 times, gaps over 1.5 s, or endpoint coverage worse than 1.5 s. Require at least
 29 observations per 30-second interval. Verify unchanged outputs and client
 inventory across each block. No captures or unrelated work run concurrently. Board power excludes CPU,
@@ -160,13 +184,25 @@ rerun selectively to obtain a desired sign.
 
 For window medians `(a1, b1, b2, a2)`, a block delta is
 `(b1 + b2 - a1 - a2) / 2`. Reorder BAAB labels before that calculation. Report
-all medians and deltas; overall delta is their median. Define the repeat floor
-as the maximum of: absolute sham deltas, the range of comparison block deltas,
-and every within-block A or B repeat difference. This guards against repeat
-variation canceling in paired differences. It is a descriptive bound, not a
-confidence interval. A positive delta is resolved only when it exceeds the
-floor; a conservative reported upper estimate is `max(0, delta + floor)`.
-The floor for a conclusion must also be at most the proposed 1.0 W target.
+all medians and deltas; overall delta is their median. Report these floors:
+
+- `sham_floor_w`: maximum of absolute sham block deltas and all within-sham
+  A or B repeat differences. Require this ≤1.0 W before interpreting comparisons.
+- `abba_floor_w`: maximum of absolute sham block deltas and the range of
+  comparison block deltas (the floor after linear drift cancellation).
+- `raw_repeat_floor_w`: maximum within-block A or B repeat difference across
+  both sham and comparison blocks.
+- `floor_w`: maximum of `sham_floor_w`, `abba_floor_w`, and
+  `raw_repeat_floor_w`; retain this conservative floor as the ≤1.0 W gate.
+
+The raw repeat floor deliberately keeps sensitivity to drift that ABBA/BAAB
+cancels from the delta: a same-case change over 1 W across a block fails precision
+even if drift cancellation is exact. Report both floors to distinguish raw repeat
+variation from residual block/sham noise; they diagnose sensitivity, not prove a
+DVFS or drift cause. These are descriptive bounds, not confidence intervals.
+A positive delta is resolved only when it exceeds `floor_w`; a conservative upper
+estimate is `max(0, delta + floor_w)`. Report sham and combined precision verdicts
+separately; neither a small delta nor a small cancelled floor overrides either gate.
 
 If isolation or precision cannot be achieved, keep the power execution task
 open with the exact blocker. Preserve valid trace results independently. Do

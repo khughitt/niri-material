@@ -33,7 +33,7 @@ Python stdlib, Bash, Just, and the task CLI. No new dependency or IPC interface.
 - Raw artifacts use fresh timestamped directories under
   `NIRI_MATERIAL_WORK_ROOT/material-265eb0/`; snapshot executable/source/config
   identities. Do not infer a binary's source from a checkout label.
-- Quiet observation: zero redraws and material GPU draws after two seconds;
+- Quiet observation: zero redraws and material GPU draws after three seconds;
   window length 20 s, plus one 600-second quiet hold. C/D cadence 79–81 / 39–41
   redraws per 20 s. Heartbeat endpoint/internal-gap tolerance 1.5 s.
 - Power: dedicated DRM session, no other GPU clients, uninstrumented binary;
@@ -75,7 +75,8 @@ traces, reusing its owned `CAP_PID`, ready/wait, and cleanup functions.
 exports, interval metadata, and optional power samples. `check_coverage(times,
 start, end)` takes seconds on one monotonic axis. `power_comparison(sham,
 blocks)` takes lists of four window medians reordered to ABBA. Results retain
-all input medians, delta, floor, upper estimate, and integrity failures.
+all input medians, delta, separate sham/ABBA/raw-repeat floors, the conservative
+combined floor, both precision verdicts, upper estimate, and integrity failures.
 
 - [ ] Add failing synthetic tests before implementing the analyzer. Include
   missing/duplicate planned cases, empty/truncated/gapped intervals, negative or
@@ -90,8 +91,18 @@ check_coverage(list(range(10, 31)), 10, 30)
 r = power_comparison([[20, 20, 20, 20]] * 3,
                      [[20, 22, 122, 120]] * 3)
 self.assertEqual(r['delta_w'], 2)
-self.assertGreaterEqual(r['floor_w'], 100)
+self.assertEqual(r['sham_floor_w'], 0)
+self.assertEqual(r['abba_floor_w'], 0)
+self.assertEqual(r['raw_repeat_floor_w'], 100)
+self.assertEqual(r['floor_w'], 100)
+self.assertTrue(r['sham_precision_ok'])
+self.assertFalse(r['precision_ok'])
 self.assertFalse(r['resolved_increase'])
+r = power_comparison([[20, 20, 120, 120]] * 3,
+                     [[20, 22, 22, 20]] * 3)
+self.assertEqual(r['sham_floor_w'], 100)
+self.assertFalse(r['sham_precision_ok'])
+self.assertFalse(r['precision_ok'])
 ```
 
 - [ ] Implement the minimum reducer and coverage validator, using the same
@@ -110,14 +121,19 @@ def power_comparison(sham, blocks):
     if any(len(v) != 4 or any(not isfinite(x) or x < 0 for x in v)
            for v in sham + blocks):
         raise ValueError('invalid window medians')
+    sham_deltas = [abs(block_delta(v)) for v in sham]
+    def repeats(vs):
+        return [abs(v[i] - v[j]) for v in vs for i, j in [(0, 3), (1, 2)]]
     ds = [block_delta(v) for v in blocks]
-    floor = max([abs(block_delta(v)) for v in sham]
-                + [max(ds) - min(ds)]
-                + [abs(v[i] - v[j]) for v in sham + blocks
-                   for i, j in [(0, 3), (1, 2)]])
+    sham_floor = max(sham_deltas + repeats(sham))
+    abba_floor = max(sham_deltas + [max(ds) - min(ds)])
+    raw_repeat_floor = max(repeats(sham + blocks))
+    floor = max(sham_floor, abba_floor, raw_repeat_floor)
     delta = median(ds)
-    return dict(delta_w=delta, floor_w=floor,
-                resolved_increase=delta > floor,
+    return dict(delta_w=delta, sham_floor_w=sham_floor,
+                abba_floor_w=abba_floor, raw_repeat_floor_w=raw_repeat_floor,
+                floor_w=floor, resolved_increase=delta > floor,
+                sham_precision_ok=sham_floor <= 1.0,
                 precision_ok=floor <= 1.0,
                 upper_w=max(0, delta + floor))
 ```
@@ -127,6 +143,8 @@ def power_comparison(sham, blocks):
   gaps ≤1.5 s. Trace zone counting uses `[start,end)` to avoid double-counting
   a boundary. Power windows additionally require at least 29 samples in 30 s.
   Check manifest cases and repetitions against the declared matrix exactly.
+  The raw repeat floor deliberately vetoes drift that ABBA cancels; preserve
+  both floors so a precision failure exposes which bound dominates.
 
 - [ ] Create `fixtures/idle-budget-trace-marker.patch` with exactly one inserted
   line in `src/ipc/server.rs`, inside the `Request::Action` idle closure:
@@ -138,6 +156,14 @@ state.do_action(action, false);
 let _ = tx.send_blocking(());
 ```
 
+  The generic span remains one line: use a fresh compositor and its first
+  capture for each observation, journaling every IPC action serially from
+  process launch through capture completion, including all setup helpers.
+  Non-ondemand Tracy includes pre-connect setup markers. Validate total marker
+  count against the complete journal, associate by ordinal, require the final
+  two entries to be the declared stimulus pair, and reject later actions.
+  Add synthetic cases accepting setup markers plus the pair and rejecting
+  missing/extra markers, a wrong final pair, or actions after the stimulus.
   Preserve the base commit and patch hash. Build from a fresh `git archive HEAD`
   extraction under per-machine `TRACE_SOURCE`, apply the patch there, and keep
   production source unchanged. Refuse a reused source directory. The build
@@ -150,15 +176,23 @@ let _ = tx.send_blocking(());
   identifying the recorded base (the separate patch hash distinguishes this build). The power recipe accepts only the
   uninstrumented, separately identified binary.
 - [ ] Implement the six configs from the design, validate all before launch,
-  preserve input snapshots, and reject a used OUT. Implement duration-aware
+  preserve input snapshots, and reject a used OUT. Pin a 3 s wait from the
+  outward action's IPC completion to sending the return action for move and
+  resize in every applicable case. Implement duration-aware
   Tracy capture with `timeout(duration + 60)` and an explicit observation
   interval. Do not use `trace_end - 20` for the 600-second gate.
 - [ ] In power mode, require dedicated-session preflight and complete GPU-client
-  visibility before launch; record one fixed output mode. Own and wait for every
-  sampler/capture child on success, failure, SIGINT, and SIGTERM. Do not change
-  user config or session state. Implement the 1 Hz sampler with monotonic query
-  start/return records and non-overlapping observation phases; reject gaps and
-  contamination instead of silently dropping samples.
+  visibility before launch; after mapping and throughout collection require
+  the inventory to list the compositor and both kitty PIDs. Allow only recorded
+  compositor, kitty, and wallpaper PIDs, with graphics/compute and device-user
+  coverage; a compute-only list cannot pass. Record one fixed output mode.
+  Own and wait for every sampler/capture child on success, failure, SIGINT, and SIGTERM. Do not change
+  user config or session state. Schedule 1 Hz sampling at absolute monotonic
+  deadlines `t0 + k * 1 s`, never sleep 1 s after a query. Record query start/return
+  times and missed deadlines; skip elapsed ticks without catch-up bursts. Use
+  return times for coverage and non-overlapping observation phases; reject gaps
+  and contamination instead of silently dropping samples. Test with simulated
+  query latency to prove it does not accumulate into the sampling period.
 - [ ] Run `just --justfile fixtures/idle-budget.just test`, syntax/config checks,
   and a reviewer pass on interval alignment, zero-work false passes, power
   repeat floors, and cleanup. Include failure tests for truncated long coverage,
@@ -179,20 +213,25 @@ per-case verdicts; this task may finish even if isolated power is unavailable.
 - [ ] Execute A/B after both move and resize, P/O after move, and C/D after
   settling: eight scenarios × three repetitions = 24 short observations. The
   owning compositor must receive no screenshot/config/input traffic inside
-  observation windows. Observe `[stimulus_end + 2 s, stimulus_end + 22 s)`.
-- [ ] Start capture after mapping clients; issue exactly the reset/final
-  stimulus actions, then no further action until observation ends. Require
-  exactly two `IdleBudget::action` marker zones from Task 1's trace binary;
-  anchor `stimulus_end` to the end of the second zone using
-  `ns_since_start + exec_time_ns`. Retain the corresponding controller action
-  sequence. Missing/extra markers reject the observation. Do not treat
-  controller IPC return time as a Tracy timestamp. The trace-only marker
-  neither changes rendering behavior nor schedules another frame.
-- [ ] Require at least one material GPU draw before the quiet interval in
-  every trace. This positive control proves GPU recording is live before a
-  zero-draw conclusion. Reject an entirely empty GPU channel.
-- [ ] Run one 600-second quiet B hold after movement, with full heartbeat
-  coverage and zero redraw/material-draw zones. Capture clean settled images
+  observation windows. Observe `[stimulus_end + 3 s, stimulus_end + 23 s)`.
+- [ ] Start the fresh compositor's first capture after mapping clients; issue
+  the outward/return stimulus actions with the pinned 3 s wait, then no further
+  IPC action until capture finishes. Retain the complete serial controller
+  journal, including pre-connect setup actions. Require one `IdleBudget::action`
+  zone per journal entry in order; its last two entries must be the declared
+  stimulus pair. Reject missing/extra zones, a mismatched final pair, or later
+  actions. Anchor `stimulus_end` to the last zone's end using
+  `ns_since_start + exec_time_ns`. Connection time does not exclude buffered
+  setup markers. Do not treat controller IPC return time as a Tracy timestamp.
+  The trace-only marker does not schedule another frame.
+- [ ] Require at least one material GPU draw during the preceding stimulus
+  in every trace, between the outward marker's start and observation start.
+  GPU work need not overlap the short CPU action span. This positive control
+  proves GPU recording is live before a zero-draw conclusion. Case A may contribute just one draw from its immediate
+  animations-off jump; do not add animation to strengthen that control. Reject
+  an entirely empty GPU channel.
+- [ ] Run one 600-second quiet B hold after movement, starting at
+  `stimulus_end + 3 s`, with full heartbeat coverage and zero redraw/material-draw zones. Capture clean settled images
   before/after the interval and compare decoded pixels at AE 0.
 - [ ] Analyze all intervals and expected case inventory. Report active GPU-zone
   sums/durations alongside cadence, with DVFS limits. If any behavioral gate
@@ -224,16 +263,21 @@ env -u DISPLAY -u WAYLAND_DISPLAY -u NIRI_SOCKET \
 
   The generated config starts the fixture controller inside that compositor.
   Confirm the DRM backend in its log; never accept a nested fallback.
-  Reject any incomplete GPU-client query or other graphics/compute client.
+  Require positive compositor/kitty PID visibility after mapping and throughout
+  collection. Reject incomplete enumeration or any GPU client outside the
+  recorded compositor/kitty/wallpaper allowlist.
 - [ ] Collect sham A/A, then A/B, B/C, B/D. For each, execute three blocks in
   ABBA, BAAB, ABBA order. Each window is 60 s warmup + 30 s observation at 1 Hz.
   Save all 48 windows, output/process inventory, clocks/P-state/temperature,
   raw power samples, and config-load completion events outside observation.
-- [ ] Analyze the sham floor before interpreting feature comparisons. A floor
+- [ ] Analyze `sham_floor_w` and require `sham_precision_ok` before interpreting
+  feature comparisons; also require each combined `precision_ok`. Either floor
   over 1.0 W, missing coverage, or external GPU work means insufficient precision
   or invalid evidence. Preserve the run and leave this child open; no repeated
   shared-desktop substitution and no selecting only favorable windows.
-- [ ] Report all window medians, block deltas, repeat floor, and upper estimate.
+- [ ] Report all window medians, block deltas, `sham_floor_w`, `abba_floor_w`,
+  `raw_repeat_floor_w`, combined `floor_w`, both precision verdicts, and upper
+  estimate. Explain that raw repeat drift can veto an ABBA-cancelled comparison.
   B must have no resolved positive idle increment over A at ≤1.0 W resolution.
   Report C/D costs descriptively; a product watt allowance remains a separate
   decision. Link any proven regression to the responsible task.
@@ -253,5 +297,5 @@ coverage rules, artifact locations, and failure handling map to Tasks 1–3.
 No experimental code or measurement is included in the preparation commit.
 Execution children: `material-ec6229` (fixture), `material-4241c3` (traces), and
 `material-5f9dee` (isolated power), in dependency order.
-Review the two-second settle budget, 1.0 W resolution target, and dedicated
+Review the three-second settle budget, 1.0 W resolution target, and dedicated
 session requirement before resuming. The execution task records remain open.
