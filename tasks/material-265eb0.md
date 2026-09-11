@@ -1,21 +1,24 @@
 ---
 id: material-265eb0
 title: Idle GPU and power budget for a never-static glass
-status: todo
+status: doing
 priority: 2
 size: m
+owner: material-265eb0
 created: 2026-09-11T00:52:15Z
-updated: 2026-09-11T09:04:58Z
+updated: 2026-09-11T10:30:13Z
 depends: []
 parent: material-53f873
 tags: [quick-add, dynamics, performance]
 source: "mindful:thought:3f94e656b70f4e5585c1cb60c166e4da"
+spec: docs/specs/2026-09-11-material-idle-budget-design.md
+plan: docs/plans/2026-09-11-material-idle-budget.md
 ---
 
-Idle micro-movement (~every 300s) and eased settling mean the compositor never fully stops redrawing. Measure idle draw rate and power with dynamics on vs. off, and define a settle state in which the shader is genuinely quiescent (no per-frame uniform churn, no redraw without a stimulus). The sprint's ease-to-rest item assumes this; nothing enforces it yet. Related: prism-ed6be0 (intermittent slow material draws), prism-d54be4 (per-parameter GPU cost estimates).
-
-Source: mindful:thought:3f94e656b70f4e5585c1cb60c166e4da
+Verify existing material dynamics become quiescent after finite move/resize stimuli, then establish repeatability-bounded isolated board-power cost for settled dynamics and low-rate Aurora. Existing fingerprint/deadline code already supports rest; the proposed roughly300s idle micro-movement is not implemented by this task. Preparation is complete only as a design/plan: execution requires user resume, and power collection requires an operator-provided dedicated DRM session with no other GPU clients. Proposed rules and precision target are in the attached spec. Reuse material-36e968 motion evidence and material-300b87 trace tools; coordinate redesign with material-6d4de5 and reporting with prism-d54be4.
 
 ## Notes
 
 - 2026-09-11T09:04:58Z (material-300b87): Aurora/iridescence hardware evidence (docs/materials/2026-09-11-material-hardware-evidence.md) records 18 idle traces: exact 0/4/2 Hz cadence, but whole-board run medians 13.720–28.960 W and varying clocks prevent attributable power deltas. Use an isolated workload for the broader budget; no optic regression established.
+- 2026-09-11T10:28:52Z (material-265eb0): Preparation only, per user: design and3-task execution plan written; no fixture code, build, compositor launch, or GPU sampling. Existing rest fingerprint/deadline mechanisms verified in source; proposed rules are2s settle,20s and600s covered quiet intervals, and1W isolated-power resolution target. Power stage needs operator-arranged dedicated DRM session (~72min). Execution remains paused for review.
+- 2026-09-11T10:30:13Z (material-265eb0): parked (waiting on user): Review docs/specs/2026-09-11-material-idle-budget-design.md and docs/plans/2026-09-11-material-idle-budget.md, especially2s settling,1W precision target, and dedicated-session requirement; execution explicitly paused at user request.
