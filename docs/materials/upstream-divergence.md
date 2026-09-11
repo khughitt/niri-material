@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-266 paths differ: 38 class B (seam), 211 class A (fork-only), 17 class C (scaffolding).
+269 paths differ: 39 class B (seam), 213 class A (fork-only), 17 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -60,10 +60,11 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +6/-2 |
 | `.gitignore` | B | M | +3/-1 |
 | `AGENTS.md` | C | A | +33/-0 |
+| `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `justfile` | C | A | +57/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1191/-0 |
+| `niri-config/src/lib.rs` | B | M | +1224/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -72,7 +73,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `niri-visual-tests/src/cases/window.rs` | B | M | +1/-0 |
 | `niri-visual-tests/src/test_window.rs` | B | M | +5/-0 |
 | `packaging/arch/.gitignore` | C | A | +6/-0 |
-| `packaging/arch/PKGBUILD` | C | A | +94/-0 |
+| `packaging/arch/PKGBUILD` | C | A | +96/-0 |
 | `src/backend/tty.rs` | B | M | +1/-0 |
 | `src/backend/winit.rs` | B | M | +1/-0 |
 | `src/cli.rs` | B | M | +41/-0 |
