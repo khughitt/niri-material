@@ -426,6 +426,8 @@ pub struct Glass {
     #[knuffel(child, unwrap(argument))]
     pub iridescence: Option<optics::iridescence::Iridescence>,
     #[knuffel(child)]
+    pub aurora: Option<optics::aurora::Aurora>,
+    #[knuffel(child)]
     pub noise: Option<optics::noise::Noise>,
     #[knuffel(child, unwrap(argument))]
     pub saturation: Option<optics::saturation::Saturation>,
@@ -481,6 +483,7 @@ pub struct ResolvedGlass {
     pub anisotropic_blur: f64,
     pub roughness: f64,
     pub iridescence: optics::iridescence::ResolvedIridescence,
+    pub aurora: optics::aurora::ResolvedAurora,
     /// Whether the material samples the blurred backdrop. Strength comes from
     /// the global `blur` block; `blur { off }` overrides this.
     pub backdrop_blur: bool,
@@ -508,6 +511,7 @@ impl Default for ResolvedGlass {
             anisotropic_blur: 0.,
             roughness: 0.,
             iridescence: optics::iridescence::ResolvedIridescence::default(),
+            aurora: optics::aurora::ResolvedAurora::default(),
             backdrop_blur: false,
             jelly_flex: 0.004,
             jelly_ripple: 0.06,
@@ -682,6 +686,7 @@ impl Material {
                 anisotropic_blur: g.anisotropic_blur.map_or(d.anisotropic_blur, |x| x.0),
                 roughness: g.roughness.map_or(d.roughness, |x| x.0),
                 iridescence: optics::iridescence::resolve(g.iridescence),
+                aurora: optics::aurora::resolve(g.aurora.as_ref()),
                 backdrop_blur: g.backdrop_blur.unwrap_or(d.backdrop_blur),
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
                 jelly_ripple: g.jelly_ripple.map_or(d.jelly_ripple, |x| x.0),
@@ -696,13 +701,17 @@ impl Material {
         }
     }
 
-    /// Checks the one rule that spans two parameters.
+    /// Checks the cross-parameter rule and each optic's validation rules.
     ///
     /// `material_frame` derives the uniform inflation as
     /// `bevel - max(|offset-x|, |offset-y|)`. A negative inflation would put
     /// the slab inside the window on one side, which has no meaning, so the
     /// offsets are bounded by the bevel rather than clamped silently.
     pub(crate) fn validate(&self) -> Result<(), String> {
+        // Optic rules run before resolution: `resolve` relies on them.
+        if let Some(aurora) = &self.glass.aurora {
+            aurora.validate()?;
+        }
         let d = ResolvedGlass::default();
         let bevel = self.glass.bevel.map_or(d.bevel, |x| x.0);
         let offset_x = self.glass.offset_x.map_or(d.offset_x, |x| x.0);
