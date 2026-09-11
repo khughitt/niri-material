@@ -173,6 +173,8 @@ assets = [
     { source = "resources/niri-portals.conf", dest = "/usr/share/xdg-desktop-portal/", mode = "644" },
     { source = "resources/niri.service", dest = "/usr/lib/systemd/user/", mode = "644" },
     { source = "resources/niri-shutdown.target", dest = "/usr/lib/systemd/user/", mode = "644" },
+    { source = "resources/materials/aurora.kdl", dest = "/usr/share/niri/materials/", mode = "644" },
+    { source = "resources/materials/rainbow.kdl", dest = "/usr/share/niri/materials/", mode = "644" },
 ]
 [package.metadata.generate-rpm.requires]
 alacritty = "*"
@@ -187,4 +189,6 @@ assets = [
     ["resources/niri-portals.conf", "/usr/share/xdg-desktop-portal/", "644"],
     ["resources/niri.service", "/usr/lib/systemd/user/", "644"],
     ["resources/niri-shutdown.target", "/usr/lib/systemd/user/", "644"],
+    ["resources/materials/aurora.kdl", "/usr/share/niri/materials/", "644"],
+    ["resources/materials/rainbow.kdl", "/usr/share/niri/materials/", "644"],
 ]

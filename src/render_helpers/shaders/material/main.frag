@@ -100,6 +100,8 @@ void main() {
             facing = max(dot(normalize(surfaceNormal.xy),
                              normalize(mat_sig_light.xy)), 0.0);
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
+        // Specular hooks, in OPTICS order (render-pipeline.md stage 5).
+        specular = iridescence_specular(specular, surfaceNormal, surfaceCosine);
         if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0)
             specular = mix(specular, specular * mat_sig_accent.rgb * 2.0,
                            mat_sig_light.z * mat_sig_accent.w);
@@ -151,6 +153,9 @@ void main() {
                 emissive += color * glow * band * mask * pow(att, vec3(0.2));
             }
         }
+
+        // Emissive hooks, in OPTICS order (render-pipeline.md stage 6).
+        emissive += aurora_emissive(p, n, att, innerDist);
 
         float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
         for (int k = 0; k < 4; ++k) {

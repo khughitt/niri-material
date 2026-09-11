@@ -241,45 +241,55 @@ pub fn drift_rate(hz: f64, policy: SignalMotionPolicy, animations_off: bool) -> 
     }
 }
 
-/// Buckets per drift period for a rate: the rate quantized to tenths of a
-/// hertz, at least one bucket. Config guarantees `hz == 0 || hz >= 1`
-/// before the reduced-motion halving, so this is at least 5.
-fn drift_buckets(hz: f64) -> Option<u128> {
+/// Buckets per period for a rate: `hz` steps per second over the period,
+/// rounded, at least one bucket. Config guarantees `hz == 0 || hz >= 1`
+/// before the reduced-motion halving, so the 10 s drift has at least 5.
+fn buckets_on(period: Duration, hz: f64) -> Option<u128> {
     if hz <= 0. {
         return None;
     }
-    Some(((hz * DRIFT_PERIOD.as_secs_f64()).round() as u128).max(1))
+    Some(((hz * period.as_secs_f64()).round() as u128).max(1))
 }
 
-/// Drift phase in radians, constant within each bucket. Buckets divide the
-/// 10 s period evenly and are anchored to period starts on the absolute
-/// clock, in integer nanoseconds, so no rounding accumulates over uptime
-/// and every drifting window on an output shares the same boundaries. The
+/// Phase in radians of a bucketed clock, constant within each bucket.
+/// Buckets divide `period` evenly and are anchored to period starts on the
+/// absolute clock, in integer nanoseconds, so no rounding accumulates over
+/// uptime and every window on an output shares the same boundaries. The
 /// seed offsets the phase, not the boundary. Pinned to 0 when the rate is
-/// 0 so a static filament fingerprints to a constant.
-pub fn drift(hz: f64, now: Duration, seed: f32) -> f32 {
-    let Some(n) = drift_buckets(hz) else {
+/// 0 so a static value fingerprints to a constant.
+pub fn phase_on(period: Duration, hz: f64, now: Duration, seed: f32) -> f32 {
+    let Some(n) = buckets_on(period, hz) else {
         return 0.;
     };
-    let period = DRIFT_PERIOD.as_nanos();
+    let period = period.as_nanos();
     let k = (now.as_nanos() % period) * n / period;
     let phase = (k as f32 / n as f32 + seed).fract();
     (phase * TAU).rem_euclid(TAU)
 }
 
-/// Next absolute-clock instant at which `drift` changes: the first
+/// Next absolute-clock instant at which `phase_on` changes: the first
 /// nanosecond of the next bucket, so it is strictly in the future and
-/// `drift` evaluated there is already the next bucket's value (ceiling
+/// `phase_on` evaluated there is already the next bucket's value (ceiling
 /// division; a floor would land one nanosecond early and re-arm the same
 /// deadline). The `as u64` cast is exact below 584 years of uptime.
-pub fn drift_next_boundary(hz: f64, now: Duration) -> Option<Duration> {
-    let n = drift_buckets(hz)?;
-    let period = DRIFT_PERIOD.as_nanos();
+pub fn next_boundary_on(period: Duration, hz: f64, now: Duration) -> Option<Duration> {
+    let n = buckets_on(period, hz)?;
+    let period = period.as_nanos();
     let start = now.as_nanos() - now.as_nanos() % period;
     let k = (now.as_nanos() - start) * n / period + 1;
     Some(Duration::from_nanos(
         (start + (period * k).div_ceil(n)) as u64,
     ))
+}
+
+/// Focus filament drift phase: `phase_on` over the 10 s `DRIFT_PERIOD`.
+pub fn drift(hz: f64, now: Duration, seed: f32) -> f32 {
+    phase_on(DRIFT_PERIOD, hz, now, seed)
+}
+
+/// Next instant `drift` changes: `next_boundary_on` over `DRIFT_PERIOD`.
+pub fn drift_next_boundary(hz: f64, now: Duration) -> Option<Duration> {
+    next_boundary_on(DRIFT_PERIOD, hz, now)
 }
 
 /// The filament's travelling brightness in `[-1, 1]`, mirrored exactly by
@@ -832,6 +842,52 @@ mod tests {
             drift_next_boundary(15., ms(0)),
             Some(Duration::from_nanos(66_666_667))
         );
+    }
+
+    #[test]
+    fn drift_is_the_ten_second_case_of_the_general_clock() {
+        for t in [0, 33, 66, 100, 9_999, 10_000, 12_345] {
+            assert_eq!(
+                drift(15., ms(t), 0.3),
+                phase_on(DRIFT_PERIOD, 15., ms(t), 0.3)
+            );
+            assert_eq!(
+                drift_next_boundary(15., ms(t)),
+                next_boundary_on(DRIFT_PERIOD, 15., ms(t))
+            );
+        }
+    }
+
+    #[test]
+    fn a_ten_minute_period_buckets_at_the_rate_per_second() {
+        let period = Duration::from_secs(600);
+        // 4 Hz over 600 s is 2400 buckets of 250 ms, anchored to the clock.
+        assert_eq!(next_boundary_on(period, 4., ms(0)), Some(ms(250)));
+        assert_eq!(next_boundary_on(period, 4., ms(250)), Some(ms(500)));
+        assert_eq!(next_boundary_on(period, 4., ms(251)), Some(ms(500)));
+        assert_eq!(next_boundary_on(period, 4., ms(599_990)), Some(ms(600_000)));
+        assert_eq!(next_boundary_on(period, 0., ms(100)), None);
+        // The phase advances one 2400th of a turn per bucket and is
+        // constant inside a bucket.
+        assert_eq!(phase_on(period, 4., ms(0), 0.), 0.);
+        assert_eq!(phase_on(period, 4., ms(249), 0.), 0.);
+        let one_bucket = TAU / 2400.;
+        assert!((phase_on(period, 4., ms(250), 0.) - one_bucket).abs() < 1e-6);
+        assert_eq!(phase_on(period, 0., ms(250), 0.3), 0.);
+        // Boundaries are strictly future and each one changes the phase.
+        for hz in [1., 4., 30.] {
+            let mut now = Duration::ZERO;
+            for _ in 0..100 {
+                let b = next_boundary_on(period, hz, now).unwrap();
+                assert!(b > now, "{hz} Hz at {now:?}");
+                assert_ne!(
+                    phase_on(period, hz, b, 0.1),
+                    phase_on(period, hz, now, 0.1),
+                    "{hz} Hz at {now:?}"
+                );
+                now = b;
+            }
+        }
     }
 
     #[test]
