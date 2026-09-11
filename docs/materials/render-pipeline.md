@@ -151,8 +151,8 @@ Stages 2, 5, 6, and 9–10 are the four optic hooks `normal`, `specular`,
 | `roughness` | `glass.roughness` | source selection before 3 |
 | `anisotropic-blur` | `glass.anisotropicBlur` | 3 |
 | `chromatic-aberration` | `glass.chromaticAberration` | 3, 6 |
-| `iridescence` | (pending, prism-763054) | 5 |
-| `aurora`, `drift-hz`, `color` × 2 | (pending, prism-763054) | 6 |
+| `iridescence` | `glass.iridescence` | 5 |
+| `aurora`, `drift-hz`, `color` × 2 | `glass.aurora`, `glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB` | 6 |
 | `attenuation-color` | `glass.attenuationColor` | 4 |
 | `attenuation-distance` | `glass.attenuationDistance` | 4 |
 | `light-ior` | (pending, prism-0ea68f) | 6 |
