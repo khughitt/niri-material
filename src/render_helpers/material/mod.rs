@@ -1735,8 +1735,9 @@ mod tests {
 
     #[test]
     fn glass_signal_inputs_sums_ripples_and_maxes_flash() {
-        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
         use niri_config::ImpulseResponse as R;
+
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
 
         let mut frame = SignalFrame {
             accent: None,
@@ -1793,8 +1794,9 @@ mod tests {
 
     #[test]
     fn rim_light_only_moves_under_rim_orbit() {
-        use crate::render_helpers::signal::SignalFrame;
         use niri_config::{AttentionResponse, ResolvedResponse};
+
+        use crate::render_helpers::signal::SignalFrame;
 
         let frame = SignalFrame {
             accent: Some([1., 0.5, 0.]),
@@ -1826,8 +1828,9 @@ mod tests {
 
     #[test]
     fn glass_signal_inputs_leaves_sweep_alone() {
-        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
         use niri_config::ImpulseResponse as R;
+
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
 
         let mut frame = SignalFrame {
             accent: None,
@@ -1962,8 +1965,9 @@ mod tests {
 
     #[test]
     fn signal_uniforms_carry_presence_focus_beam_and_selectors() {
-        use crate::render_helpers::signal::{color_linear, SignalFrame};
         use niri_config::{FocusResponse, ResolvedResponse};
+
+        use crate::render_helpers::signal::{color_linear, SignalFrame};
 
         let mut r = ResolvedResponse::default();
         let quiet = SignalUniforms::quiet(&r);
@@ -2026,8 +2030,9 @@ mod tests {
 
     #[test]
     fn inherited_impulse_color_fades_with_presence() {
-        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
         use niri_config::{ImpulseResponse as R, ResolvedResponse};
+
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
 
         let r = ResolvedResponse::default();
         let mut frame = SignalFrame {

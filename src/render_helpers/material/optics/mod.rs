@@ -137,11 +137,12 @@ pub(crate) fn next_change(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::animation::Clock;
     use niri_config::{
         NoiseSite, NoiseType, ResolvedIridescence, ResolvedNoise, ResolvedSaturation,
     };
+
+    use super::*;
+    use crate::animation::Clock;
 
     #[test]
     fn optic_settling_translates_deadline_and_suppresses_it_while_paused() {

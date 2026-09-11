@@ -55,6 +55,9 @@ rendering design assumes.
 
 ## Gates
 
+- Formatting uses nightly rustfmt, matching CI; stable ignores the import-grouping
+  settings. Install it with `rustup toolchain install nightly --profile minimal
+  --component rustfmt`, then format with `rustup run nightly cargo fmt --all`.
 - While editing Rust: `just test-one -p niri <name-filter>` or
   `just test-one -E 'test(foo) | test(bar)'` (nextest arguments). Then
   `just test-fast`, which selects changed workspace packages and their dependents

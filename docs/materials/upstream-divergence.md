@@ -61,10 +61,10 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
 | `.github/dependabot.yml` | B | D | +0/-24 |
-| `.github/workflows/ci.yml` | B | M | +25/-2 |
+| `.github/workflows/ci.yml` | B | M | +40/-4 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +91/-0 |
+| `AGENTS.md` | C | A | +94/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
@@ -103,7 +103,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/niri.rs` | B | M | +311/-1 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
-| `src/render_helpers/effect_buffer.rs` | B | M | +635/-15 |
+| `src/render_helpers/effect_buffer.rs` | B | M | +636/-15 |
 | `src/render_helpers/mod.rs` | B | M | +37/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
 | `src/render_helpers/shaders/mod.rs` | B | M | +470/-0 |

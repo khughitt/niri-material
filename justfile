@@ -28,7 +28,7 @@ tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fa
 tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full 2>&1"
 tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --check-paths"
 hygiene_cmd := "python3 tools/ops-check"
-check_before_cmd := hygiene_cmd + " && python3 tools/target-dir-check && cargo fmt --all -- --check && cargo clippy --all --all-targets"
+check_before_cmd := hygiene_cmd + " && python3 tools/target-dir-check && rustup run nightly cargo fmt --all -- --check && cargo clippy --all --all-targets"
 check_after_cmd := "tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
 check_cmd := check_before_cmd + " && " + tooling_fast_cmd + " && " + check_after_cmd
 full_check_cmd := check_before_cmd + " && " + tooling_full_cmd + " && " + check_after_cmd

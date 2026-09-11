@@ -430,10 +430,11 @@ impl SignalFingerprint {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::window::signal::{Folded, Impulse};
     use niri_config::{ResolvedResponse, SignalMotionPolicy as P};
     use niri_ipc::{ImpulseKind, SignalLevel as L, SignalMotion as M};
+
+    use super::*;
+    use crate::window::signal::{Folded, Impulse};
 
     fn ms(v: u64) -> Duration {
         Duration::from_millis(v)
