@@ -6,7 +6,7 @@ priority: 2
 size: m
 owner: material-265eb0
 created: 2026-09-11T00:52:15Z
-updated: 2026-09-11T10:30:13Z
+updated: 2026-09-11T10:57:38Z
 depends: []
 parent: material-53f873
 tags: [quick-add, dynamics, performance]
@@ -22,3 +22,5 @@ Verify existing material dynamics become quiescent after finite move/resize stim
 - 2026-09-11T09:04:58Z (material-300b87): Aurora/iridescence hardware evidence (docs/materials/2026-09-11-material-hardware-evidence.md) records 18 idle traces: exact 0/4/2 Hz cadence, but whole-board run medians 13.720–28.960 W and varying clocks prevent attributable power deltas. Use an isolated workload for the broader budget; no optic regression established.
 - 2026-09-11T10:28:52Z (material-265eb0): Preparation only, per user: design and3-task execution plan written; no fixture code, build, compositor launch, or GPU sampling. Existing rest fingerprint/deadline mechanisms verified in source; proposed rules are2s settle,20s and600s covered quiet intervals, and1W isolated-power resolution target. Power stage needs operator-arranged dedicated DRM session (~72min). Execution remains paused for review.
 - 2026-09-11T10:30:13Z (material-265eb0): parked (waiting on user): Review docs/specs/2026-09-11-material-idle-budget-design.md and docs/plans/2026-09-11-material-idle-budget.md, especially2s settling,1W precision target, and dedicated-session requirement; execution explicitly paused at user request.
+- 2026-09-11T10:57:07Z (material-265eb0): Preparation review supersedes the earlier 2 s proposal: both docs now use 3 s settling and inter-stimulus wait, full startup IPC marker accounting, separate sham/cancelled/raw power floors, GPU-client positive controls, and absolute sampler deadlines. Extracted reducer assertions and spring math checked offline; no fixture implementation or measurement.
+- 2026-09-11T10:57:38Z (material-265eb0): parked (waiting on user): Preparation review addressed in both docs: 3 s settling and inter-stimulus wait, startup marker accounting, separate power floors, visibility controls, and absolute sampling deadlines. Await explicit user resume before starting any execution child.
