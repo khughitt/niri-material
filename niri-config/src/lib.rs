@@ -55,6 +55,7 @@ pub use crate::gestures::Gestures;
 pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocusMode, Xkb};
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
+pub use crate::material::optics::aurora::{Aurora, ResolvedAurora};
 pub use crate::material::optics::iridescence::{Iridescence, ResolvedIridescence};
 pub use crate::material::optics::noise::{Noise, NoiseType, ResolvedNoise};
 pub use crate::material::optics::saturation::ResolvedSaturation;
@@ -1230,6 +1231,7 @@ mod tests {
                 anisotropic_blur: 0.75,
                 roughness: 0.08,
                 iridescence: ResolvedIridescence::default(),
+                aurora: ResolvedAurora::default(),
                 backdrop_blur: false,
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
@@ -1378,6 +1380,87 @@ mod tests {
         for value in ["-0.01", "1.01"] {
             let err = do_parse_err(&format!(
                 "material \"gem\" {{ glass {{ iridescence {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 0 and 1"), "{err}");
+        }
+    }
+
+    #[test]
+    fn aurora_resolves_through_its_optic() {
+        let written = do_parse(
+            r##"material "sky" { glass { aurora 0.5 { drift-hz 2; color "#ff0000"; color "#0000ff"; }; }; }"##,
+        );
+        let aurora = written.materials[0].resolve().glass.aurora;
+        assert_eq!(aurora.amount, 0.5);
+        assert_eq!(aurora.drift_hz, 2.);
+        assert_eq!(aurora.color_a, Color::from_rgba8_unpremul(0xff, 0, 0, 0xff));
+        assert_eq!(aurora.color_b, Color::from_rgba8_unpremul(0, 0, 0xff, 0xff));
+
+        let bare = do_parse(r##"material "sky" { glass { aurora 0.5; }; }"##);
+        assert_eq!(
+            bare.materials[0].resolve().glass.aurora,
+            ResolvedAurora {
+                amount: 0.5,
+                ..Default::default()
+            }
+        );
+
+        let omitted = do_parse(r##"material "sky" { glass {}; }"##);
+        assert_eq!(
+            omitted.materials[0].resolve().glass.aurora,
+            ResolvedAurora::default()
+        );
+        let d = ResolvedAurora::default();
+        assert_eq!(d.amount, 0.);
+        assert_eq!(d.drift_hz, 4.);
+        assert_eq!(
+            d.color_a,
+            Color::from_rgba8_unpremul(0x3d, 0xff, 0xb0, 0xff)
+        );
+        assert_eq!(
+            d.color_b,
+            Color::from_rgba8_unpremul(0x7a, 0x5c, 0xff, 0xff)
+        );
+    }
+
+    #[test]
+    fn aurora_takes_zero_or_two_colors() {
+        for colors in [
+            r##"color "#ff0000";"##,
+            r##"color "#ff0000"; color "#00ff00"; color "#0000ff";"##,
+        ] {
+            let err = do_parse_err(&format!(
+                r##"material "sky" {{ glass {{ aurora 0.5 {{ {colors} }}; }}; }}"##
+            ));
+            assert!(err.contains("aurora: expected two color nodes"), "{err}");
+        }
+    }
+
+    #[test]
+    fn aurora_drift_hz_is_zero_or_at_least_one() {
+        let err = do_parse_err(r##"material "sky" { glass { aurora 0.5 { drift-hz 0.5; }; }; }"##);
+        assert!(
+            err.contains("aurora drift-hz must be 0 or at least 1"),
+            "{err}"
+        );
+        for ok in ["0", "1", "7.5", "30"] {
+            let parsed = do_parse(&format!(
+                r##"material "sky" {{ glass {{ aurora 0.5 {{ drift-hz {ok}; }}; }}; }}"##
+            ));
+            assert_eq!(
+                parsed.materials[0].resolve().glass.aurora.drift_hz,
+                ok.parse::<f64>().unwrap()
+            );
+        }
+        let err = do_parse_err(r##"material "sky" { glass { aurora 0.5 { drift-hz 31; }; }; }"##);
+        assert!(err.contains("must be"), "{err}");
+    }
+
+    #[test]
+    fn glass_aurora_rejects_amounts_outside_zero_and_one() {
+        for value in ["-0.01", "1.01"] {
+            let err = do_parse_err(&format!(
+                "material \"sky\" {{ glass {{ aurora {value}; }}; }}\n"
             ));
             assert!(err.contains("value must be between 0 and 1"), "{err}");
         }
