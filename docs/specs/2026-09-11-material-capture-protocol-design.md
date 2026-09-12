@@ -1,7 +1,9 @@
 # Material performance-capture protocol: design
 
-**Status:** proposed. Nothing described here exists yet; `tools/capture-meta`,
-its tests, and the two adoptions are the deliverables.
+**Status:** implemented on `material-bae9c9` (this plan); `tools/capture-meta`
+and the optic smoke adoption are in this repository, the idle-budget adoption
+on `niri-experiments` `results/capture-protocol`. Thresholds are host-derived
+defaults pending the first dedicated-lane run (`material-265eb0`).
 
 **Task:** `material-bae9c9`, within `material-5d6b2c` (resource-aware rendering).
 First consumers: the idle-budget fixture (`material-265eb0`, experiment branch
@@ -87,19 +89,19 @@ The **lane** names the isolation the fixture claims, and preflight checks the cl
 
 The lock is `$XDG_RUNTIME_DIR/capture-meta.lock`, a small JSON file naming the
 owning PID (`--owner-pid`, default the calling shell's parent) and the run id.
-Acquisition is atomic: `preflight` creates the file with `O_CREAT|O_EXCL`; if it
-exists and names a live process, preflight refuses (exit 1) **without writing
-anything to its own run directory beyond the refusal**, so a refused run has a
-`capture.json` that says who held the lock. If the named process is dead the lock
-is stale: preflight takes the sibling directory lock `capture-meta.lock.d` with
-`flock`, re-checks liveness, replaces the file, and records `reclaimed: true`
-with the dead owner's PID. `settle` refuses when the file no longer names this
-run. `release` removes the file **only when it names this run's id and owner
-PID**; otherwise it exits 1 and leaves it — so a fixture whose preflight was
-refused can still call `release` from its cleanup trap without evicting the
-capture that refused it. The lock exists because several agent sessions share
-this machine and two captures in parallel would each pass preflight against the
-other's warm-up.
+Every lock operation holds `flock` on the sibling guard
+`capture-meta.lock.d`. Acquisition publishes a complete temporary lock with an
+atomic hard link; if the lock exists and names a live process, preflight refuses
+(exit 1) **without writing anything to its own run directory beyond the
+refusal**, so a refused run has a `capture.json` that says who held the lock. If
+the named process is dead, preflight re-checks liveness under the guard, replaces
+the stale lock, and records `reclaimed: true` with the dead owner's PID.
+`settle` refuses when the file no longer names this run. `release` removes the
+file **only when it names this run's id and owner PID**; otherwise it exits 1 and
+leaves it — so a fixture whose preflight was refused can still call `release`
+from its cleanup trap without evicting the capture that refused it. The lock
+exists because several agent sessions share this machine and two captures in
+parallel would each pass preflight against the other's warm-up.
 
 ### 2.2 `identity`
 
@@ -107,9 +109,12 @@ Runs once, after binaries are built or copied and configs are written, before th
 first sub-run. It writes the `provenance` section:
 
 - `source`: the checkout's `HEAD` commit, its branch, whether the tree is dirty,
-  and if dirty the SHA-256 of `git diff HEAD` — the diff itself is the fixture's
-  to retain. A dirty tree is recorded, not refused; refusing belongs to the
-  fixture (idle-budget builds from `git archive` precisely so it never happens).
+  and if dirty a SHA-256 fingerprint covering `git diff HEAD` plus each
+  untracked path and its content (or a symlink's target text). The untracked
+  paths are listed in the record; the diff and files themselves are the
+  fixture's to retain. A dirty tree is recorded, not refused; refusing belongs
+  to the fixture (idle-budget builds from `git archive` precisely so it never
+  happens).
 - `binaries`: path basename and SHA-256 of every `--binary`. The Tracy and
   release builds are separate entries, as the hardware evidence already treats
   them.
@@ -384,7 +389,7 @@ lives, and that sourcing the lib alone runs no preflight.
 
 ## 7. Acceptance
 
-- `tools/capture-meta` exists with the four sub-commands, exits as specified, and
+- `tools/capture-meta` exists with the five sub-commands, exits as specified, and
   its suite passes under `python3 -m unittest discover -s tools`.
 - A `capture.json` produced against the fake `nvidia-smi` validates against the
   §3 shape; `show` renders it.
@@ -396,9 +401,10 @@ lives, and that sourcing the lib alone runs no preflight.
   analyzer reading `capture.json`; no measurement run is claimed.
 - A smoke run directory's `SHA256SUMS` lists every file in the tree except
   itself — checked by the test above, not by a hardware run.
-- The performance guide (`material-233295`) and the evidence-doc convention gain
-  one line each pointing here; the hardware evidence doc's environment table is
-  noted as the hand-written predecessor of `show`.
+- The evidence-doc convention points here, the hardware evidence doc's
+  environment table is noted as the hand-written predecessor of `show`, and the
+  future performance guide task (`material-233295`) records that it must point
+  here.
 
 ## 8. Open questions and follow-ups
 
