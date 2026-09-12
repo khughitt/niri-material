@@ -99,5 +99,79 @@ class ShowTests(unittest.TestCase):
             self.assertEqual(cm.main(["show", directory]), 0)
 
 
+class FakeProc:
+    def __init__(self, ticks, load1=0.5, available_kib=80_000, total_kib=100_000):
+        self.ticks = list(ticks); self.i = 0
+        self._load1 = load1; self.available_kib = available_kib; self.total_kib = total_kib
+    def cpu_ticks(self):
+        busy, total = self.ticks[min(self.i, len(self.ticks) - 1)]; self.i += 1
+        return busy, total
+    def load1(self): return self._load1
+    def meminfo(self): return self.available_kib, self.total_kib
+
+
+class FakeGpu:
+    def __init__(self, queries, clients=None, static=None):
+        self.queries = list(queries); self.i = 0
+        self._clients = clients or {"compute": [], "graphics": ["niri"]}
+        self._static = static or {"name": "NVIDIA test", "uuid": "GPU-1", "driver": "610"}
+    def query(self):
+        value = self.queries[min(self.i, len(self.queries) - 1)]; self.i += 1
+        return dict(value)
+    def clients(self): return {k: list(v) for k, v in self._clients.items()}
+    def static(self): return dict(self._static)
+
+
+QUIET = {"util_pct": 0.0, "power_w": 18.4, "clock_mhz": 360, "pstate": "P8"}
+
+
+def quiet_samples(n=5, **overrides):
+    proc = FakeProc([(i * 2, i * 100) for i in range(n + 1)])
+    gpu = FakeGpu([dict(QUIET, **overrides)] * n)
+    return cm.sample_stream(proc, gpu, n, sleep=lambda s: None)
+
+
+class SamplingTests(unittest.TestCase):
+    def test_sample_stream_and_summary(self):
+        samples = quiet_samples(3)
+        self.assertEqual([round(s.cpu_busy_pct, 1) for s in samples], [2.0] * 3)
+        self.assertEqual(cm.summarize(samples)["mem_total_kib"], 100_000)
+
+    def test_summary_medians_iqr_and_clients(self):
+        proc = FakeProc([(0, 0), (2, 100), (4, 200), (6, 300)])
+        gpu = FakeGpu([dict(QUIET, power_w=18.0), dict(QUIET, power_w=19.0), dict(QUIET, power_w=25.0, pstate="P0")])
+        summary = cm.summarize(cm.sample_stream(proc, gpu, 3, sleep=lambda s: None))
+        self.assertEqual(summary["gpu_power_w"], 19.0)
+        self.assertEqual(summary["gpu_power_iqr_w"], 3.5)
+        self.assertEqual(summary["gpu_pstates"], ["P0", "P8"])
+
+
+class GpuEvidenceTests(unittest.TestCase):
+    XML = '<nvidia_smi_log><gpu><processes>{}</processes></gpu></nvidia_smi_log>'
+    ENTRY = '<process_info><type>{}</type><process_name>/usr/bin/{}</process_name></process_info>'
+    def test_clients_and_invalid_telemetry(self):
+        xml = self.XML.format(self.ENTRY.format("G", "niri") + self.ENTRY.format("C+G", "blender") + self.ENTRY.format("C", "python3"))
+        self.assertEqual(cm.parse_clients(xml), {"compute": ["blender", "python3"], "graphics": ["niri"]})
+        with self.assertRaises(cm.CannotRun): cm.parse_clients("<broken")
+        for text in ("nan", "inf", "N/A", ""):
+            with self.assertRaises(cm.CannotRun): cm.parse_number(text, "utilization.gpu")
+        good = {"util_pct": 0.0, "power_w": 18.4, "clock_mhz": 360.0, "pstate": "P8"}
+        for bad in ({"util_pct": 101.0}, {"power_w": 0.0}, {"clock_mhz": -1.0}, {"pstate": "X8"}):
+            with self.assertRaises(cm.CannotRun): cm.validate_telemetry({**good, **bad})
+
+
+class JudgementTests(unittest.TestCase):
+    def test_quiet_and_settle(self):
+        samples = quiet_samples()
+        self.assertEqual(cm.judge_quiet(cm.summarize(samples), samples, cm.DEFAULT_THRESHOLDS, "headless"), [])
+        samples = quiet_samples(3, power_w=24.1)
+        reasons = cm.judge_settled(cm.summarize(samples), samples, cm.summarize(quiet_samples()), cm.DEFAULT_THRESHOLDS, "headless")
+        self.assertIn("gpu_power_w 24.1 exceeds baseline 18.4 by more than 1.5", " ".join(reasons))
+    def test_threshold_validation(self):
+        self.assertEqual(cm.parse_thresholds(["cpu_busy_pct=20", "gpu_pstate=P5"])["cpu_busy_pct"], 20.0)
+        for pair in ("nonsense=1", "load1=nan", "load1=-1", "gpu_pstate=X8"):
+            with self.assertRaises(cm.CannotRun): cm.parse_thresholds([pair])
+
+
 if __name__ == "__main__":
     unittest.main()
