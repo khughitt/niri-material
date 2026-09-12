@@ -4,7 +4,10 @@ import importlib.util
 import json
 import os
 import pathlib
+import subprocess
+import sys
 import tempfile
+import textwrap
 import threading
 import unittest
 
@@ -520,6 +523,159 @@ class PreflightTests(unittest.TestCase):
                             "--seconds", "0", "--owner-pid", "1"])
             self.assertEqual(code, 2)
             self.assertFalse(run.exists())
+
+
+class SettleTests(unittest.TestCase):
+    def prepared(self, directory):
+        run = pathlib.Path(directory) / "r"; run.mkdir()
+        lock = run / "lock"
+        PreflightTests("test_quiet_headless_writes_run_environment_baseline_preflight").run_preflight(
+            run, lock=lambda: lock)
+        (run / "A.kdl").write_text("glass")
+        return run, lock
+
+    def test_settled_entry_carries_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            cm.settle(run, "A-move-1", [run / "A.kdl"], 3,
+                      FakeProc([(i * 2, i * 100) for i in range(9)]),
+                      FakeGpu([dict(QUIET, power_w=19.0)] * 3),
+                      sleep=lambda s: None, lock=lambda: lock)
+            entry = cm.load_record(run)["sub_runs"][0]
+            self.assertEqual(entry["name"], "A-move-1")
+            self.assertEqual(entry["verdict"], "settled")
+            self.assertEqual(entry["inputs"][0]["name"], "A.kdl")
+            self.assertEqual(entry["gpu_power_w"], 19.0)
+            self.assertRegex(entry["settled_at"], r"^\d{4}-")
+
+    def test_off_baseline_appends_refused_and_raises(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            with self.assertRaises(cm.Refused):
+                cm.settle(run, "B-move-1", [run / "A.kdl"], 3,
+                          FakeProc([(i * 2, i * 100) for i in range(9)]),
+                          FakeGpu([dict(QUIET, power_w=24.1)] * 3),
+                          sleep=lambda s: None, lock=lambda: lock)
+            entry = cm.load_record(run)["sub_runs"][-1]
+            self.assertEqual(entry["verdict"], "refused")
+            self.assertIn("gpu_power_w 24.1 exceeds baseline 18.4 by more than 1.5", entry["reason"])
+
+    def test_missing_input_and_foreign_lock_refuse(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            args = (3, FakeProc([(i * 2, i * 100) for i in range(9)]), FakeGpu([QUIET] * 3))
+            with self.assertRaises(cm.Refused):
+                cm.settle(run, "x", [run / "missing.kdl"], *args, sleep=lambda s: None, lock=lambda: lock)
+            lock.write_text(json.dumps({"owner_pid": 1, "run_id": "someone-else"}))
+            with self.assertRaises(cm.Refused):
+                cm.settle(run, "y", [run / "A.kdl"], *args, sleep=lambda s: None, lock=lambda: lock)
+
+    def test_same_run_id_with_wrong_owner_refuses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            lock.write_text(json.dumps({"owner_pid": os.getpid() + 1, "run_id": run.name}))
+            with self.assertRaises(cm.Refused):
+                cm.settle(run, "x", [run / "A.kdl"], 1, FakeProc([(0, 0), (1, 100)]),
+                          FakeGpu([QUIET]), sleep=lambda s: None, lock=lambda: lock)
+
+    def test_invalid_seconds_does_not_mutate_or_sample(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            before = (run / cm.RECORD).read_text()
+            for seconds in (0, -1, True):
+                with self.subTest(seconds=seconds), self.assertRaises(cm.CannotRun):
+                    cm.settle(run, "x", [run / "A.kdl"], seconds, None, None,
+                              sleep=lambda s: None, lock=lambda: lock)
+                self.assertEqual((run / cm.RECORD).read_text(), before)
+
+    def test_release_command_is_ownership_checked(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            saved = os.environ.get("XDG_RUNTIME_DIR"); os.environ["XDG_RUNTIME_DIR"] = str(run)
+            try:
+                lock.rename(run / cm.LOCK_NAME)
+                self.assertEqual(cm.main(["release", str(run)]), 0)
+                self.assertFalse((run / cm.LOCK_NAME).exists())
+                cm.acquire_lock(run / cm.LOCK_NAME, 1, "someone-else")
+                self.assertEqual(cm.main(["release", str(run)]), 1)
+                self.assertTrue((run / cm.LOCK_NAME).exists())
+            finally:
+                if saved is None: os.environ.pop("XDG_RUNTIME_DIR", None)
+                else: os.environ["XDG_RUNTIME_DIR"] = saved
+
+    def test_refused_before_acquire_does_not_release_foreign_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "r"; run.mkdir()
+            cm.write_section(run, "run", {"id": run.name})
+            cm.write_section(run, "preflight", {"verdict": "refused", "reasons": ["held"]})
+            saved = os.environ.get("XDG_RUNTIME_DIR"); os.environ["XDG_RUNTIME_DIR"] = directory
+            try:
+                foreign = pathlib.Path(directory) / cm.LOCK_NAME
+                cm.acquire_lock(foreign, 1, "someone-else")
+                self.assertEqual(cm.main(["release", str(run)]), 1)
+                self.assertEqual(cm.read_lock(foreign)["run_id"], "someone-else")
+            finally:
+                if saved is None: os.environ.pop("XDG_RUNTIME_DIR", None)
+                else: os.environ["XDG_RUNTIME_DIR"] = saved
+
+
+class EndToEndTest(unittest.TestCase):
+    def test_real_binary_against_fake_nvidia_smi(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); bins = root / "bin"; bins.mkdir()
+            fake = bins / "nvidia-smi"
+            fake.write_text(textwrap.dedent("""\
+                #!/bin/sh
+                case "$*" in
+                  *utilization.gpu*) echo "0, 18.40, 360, P8" ;;
+                  *name,uuid*) echo "NVIDIA test, GPU-1, 610.57.04" ;;
+                  *-q*-x*) echo '<nvidia_smi_log><gpu><processes><process_info><type>G</type><process_name>/usr/bin/niri</process_name></process_info></processes></gpu></nvidia_smi_log>' ;;
+                  *) exit 9 ;;
+                esac
+                """)); fake.chmod(0o755)
+            run = root / "material-x" / "headless-20260911T000000"; run.mkdir(parents=True)
+            runtime = root / "rt"; runtime.mkdir()
+            proc = root / "proc"; proc.mkdir()
+            (proc / "stat").write_text("cpu  100 0 50 9000 10 0 0 0 0 0\n")
+            (proc / "loadavg").write_text("0.42 0.40 0.39 1/900 1\n")
+            (proc / "meminfo").write_text("MemTotal:       100000 kB\nMemFree:         50000 kB\nMemAvailable:    80000 kB\n")
+            src = root / "src"; src.mkdir()
+            (root / "A.kdl").write_text("glass")
+            subprocess.run(["git", "-C", str(src), "init", "-q", "-b", "main"], check=True)
+            subprocess.run(["git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-q", "--allow-empty", "-m", "i"], check=True)
+            env = {**os.environ, "PATH": f"{bins}:{os.environ['PATH']}", "XDG_RUNTIME_DIR": str(runtime),
+                   "CAPTURE_META_PROC": str(proc), "XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-1"}
+            tool = str(pathlib.Path(__file__).with_name("capture-meta"))
+            ticks = 0
+            def cm_run(*args, sampling=False):
+                nonlocal ticks
+                process = subprocess.Popen([sys.executable, tool, *args], env=env,
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if sampling:
+                    ticks += 100
+                    threading.Timer(.2, lambda: (proc / "stat").write_text(
+                        f"cpu  100 0 50 {9010 + ticks} 0 0 0 0 0 0\n")).start()
+                stdout, stderr = process.communicate()
+                return process.returncode, stdout, stderr
+            self.assertEqual(cm_run("preflight", str(run), "--lane", "headless", "--task", "material-x",
+                                    "--fixture", "t.sh", "--seconds", "1", "--tool", "tracy=0.13.1",
+                                    sampling=True)[0], 0)
+            self.assertEqual(cm_run("identity", str(run), "--source", str(src), "--input", str(root / "A.kdl"))[0], 0)
+            self.assertEqual(cm_run("settle", str(run), "--sub-run", "A-1", "--input", str(root / "A.kdl"),
+                                    "--seconds", "1", sampling=True)[0], 0)
+            self.assertEqual(cm_run("release", str(run))[0], 0)
+            code, stdout, stderr = cm_run("show", str(run))
+            self.assertEqual(code, 0, stderr)
+            self.assertIn("A-1: settled", stdout)
+            record = json.loads((run / "capture.json").read_text())
+            self.assertFalse(record["provenance"]["source"]["dirty"])
+            self.assertEqual(record["environment"]["gpu"]["driver"], "610.57.04")
+            self.assertEqual(record["baseline"]["gpu_clients"]["graphics"], ["niri"])
+            self.assertEqual(record["baseline"]["load1"], 0.42)
+            self.assertEqual(record["baseline"]["mem_available_pct"], 80.0)
+            self.assertEqual(record["baseline"]["cpu_busy_pct"], 0.0)
+            self.assertFalse((runtime / cm.LOCK_NAME).exists())
 
 
 if __name__ == "__main__":
