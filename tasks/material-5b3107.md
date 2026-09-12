@@ -7,7 +7,7 @@ size: m
 complexity: high
 owner: material-5b3107
 created: 2026-09-06T00:38:34Z
-updated: 2026-09-12T20:26:18Z
+updated: 2026-09-12T20:35:43Z
 started: 2026-09-12T19:55:05Z
 depends: []
 tags: [rendering, design]
@@ -25,3 +25,5 @@ Several open questions are one architectural question: in what order the passes 
 - 2026-09-12T20:18:34Z (material-5b3107): Spec review accepted for planning, including transmitted chamfer grain and no mask. Preparing one sequential two-step plan using the existing children.
 - 2026-09-12T20:26:18Z (material-5b3107): Plan self-review derived 37/61/61 px one-code rest bounds, specified quantization-aware additive comparisons, and corrected the cap-binding threshold claim. Reused both existing children sequentially; no implementation or captures run.
 - 2026-09-12T20:26:18Z (material-5b3107): parked (waiting on user, review): Review docs/plans/2026-09-12-material-render-order.md; then execute the two existing children sequentially with executing-plans.
+- 2026-09-12T20:35:43Z (material-5b3107): Approved plan execution began inline. Task 1 is environment-blocked before shader edits by retained capture preflight render-order-readiness.pCbsOC; offline metrics prepared. Task 2 remains dependent on Task 1.
+- 2026-09-12T20:35:43Z (material-5b3107): parked (waiting on user, environment): Resume Task 1 after the capture host is quiet; preserve the required old-build additive failure and later wide-core positive face-strip gate.

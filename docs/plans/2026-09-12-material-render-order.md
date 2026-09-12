@@ -3,7 +3,11 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
 > to implement this plan task-by-task. Steps use checkboxes for tracking.
 
-**Status:** draft for review. Neither implementation step has started.
+**Status:** approved on 2026-09-12 for inline, sequential execution. Task 1
+has prepared the offline grain/additive metric tool and tests; capture
+preflight refused the busy host before baseline builds or shader edits.
+Neither rendering change is implemented. See the
+[execution evidence](../materials/2026-09-12-material-render-order-evidence.md).
 
 **Goal:** Move backdrop colour operations behind attenuation and interior
 light ahead of surface light, preserving the material composition contract.
@@ -571,10 +575,10 @@ to `within`. Final registry: `saturation, noise, aurora, iridescence`.
 
 ## Plan review and handoff
 
-Review this file before implementation, as the repository instructions
-require. Recommended execution is inline and sequential with
-`superpowers:executing-plans`; a parallel split would contend on shared
-shader and documentation files. No execution-mode question is needed.
+The user approved this file for inline, sequential execution with
+`superpowers:executing-plans`. Resume Task 1 after a default capture preflight
+passes; retain the old shader's actual additive gate failure before changing
+its rendering. Task 2 remains dependent on Task 1.
 
 Self-review covers every spec section: colour-space preservation and
 transmitted grain (Task 1), depth/attenuation and motion (Task 2), neutral

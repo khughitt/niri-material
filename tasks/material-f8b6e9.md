@@ -1,12 +1,14 @@
 ---
 id: material-f8b6e9
 title: "Behind hook: noise and saturation"
-status: todo
+status: doing
 priority: 2
 size: m
 complexity: high
+owner: material-5b3107
 created: 2026-09-06T00:32:53Z
-updated: 2026-09-12T20:26:18Z
+updated: 2026-09-12T20:36:44Z
+started: 2026-09-12T20:31:50Z
 depends: [material-a1d4bf]
 parent: material-5b3107
 tags: [rendering, noise]
@@ -15,8 +17,10 @@ plan: docs/plans/2026-09-12-material-render-order.md
 step: "Task 1: Behind hook: noise and saturation"
 ---
 
-Implement the reviewed behind hook for noise and saturation as Task 1 of the render-order plan. Preserve signed sRGB formulas, neutral branches, inheritance and opaque bypass; isolate additive-light effects with quantization-aware comparisons. Transmitted chamfer grain is accepted without a mask. Record face/bevel grain and frame cost and update stage/spec docs in the same implementation commit. Implementation waits for written-plan review.
+Implement the reviewed behind hook for noise and saturation as Task 1 of the render-order plan. Preserve signed sRGB formulas, neutral branches, inheritance and opaque bypass; isolate additive-light effects with quantization-aware comparisons. Transmitted chamfer grain is accepted without a mask. Record face/bevel grain and frame cost and update stage/spec docs in the same implementation commit. Plan approved for inline sequential execution; capture readiness and predecessor completion still gate implementation.
 
 ## Notes
 
 - 2026-09-12T20:26:18Z (material-5b3107): parked (waiting on user, review): Review the two-step render-order implementation plan before starting Task 1.
+- 2026-09-12T20:35:43Z (material-5b3107): Execution preflight refused: CPU 16.6% >10%, load1 5.53 >2, GPU 26% >5%, P3/P5/P8, power IQR 7.463 W >1 W, compute client BitwigStudio. Retained render-order-readiness.pCbsOC. This is NOT the old-build additive regression failure. Only offline grain/additive metric preparation is complete; no shader changes or baseline build.
+- 2026-09-12T20:35:43Z (material-5b3107): parked (waiting on user, environment): On a quiet host, rerun default capture preflight, snapshot baseline 522a09fe binaries, finish the smoke and retain its actual additive failure against the old shader before production edits. Offline metric CLI and synthetic tests are prepared.
