@@ -1,13 +1,14 @@
 ---
 id: material-bae9c9
 title: Consistent performance-capture protocol with provenance and environment metadata
-status: doing
+status: done
 priority: 2
 size: m
 owner: material-bae9c9
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-12T05:19:52Z
+updated: 2026-09-12T09:53:54Z
 started: 2026-09-12T00:33:57Z
+completed: 2026-09-12T09:53:54Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance, testing]
@@ -37,3 +38,5 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-09-12T04:57:03Z (material-bae9c9): Controller closeout correction: NVML currently fails with driver/library mismatch (library 615.71), so manual busy-host refusal acceptance remains open in parked child material-7f7aa3; host repair is outside this task.
 - 2026-09-12T04:58:41Z (material-bae9c9): Read-only diagnosis confirmed loaded NVIDIA kernel module 610.57.04 versus NVML library 615.71; material-7f7aa3 waits on that environment repair.
 - 2026-09-12T05:19:52Z (material-bae9c9): Implementation and clean scoped re-review complete: native cff6a865 with companion 9d7d43f; manual busy-host acceptance remains parked in material-7f7aa3.
+- 2026-09-12T09:53:54Z (material-bae9c9): Manual acceptance passed after reboot with NVIDIA 615.71.09: 5-second headless preflight exited 1 for load1 5.95, GPU utilization 8.0%, P0/P5, and power IQR 26.21 W; graphics clients included niri/noctalia/kitty. show and release exited 0; disposable run removed.
+- 2026-09-12T09:53:54Z (material-bae9c9): Capture protocol and both fixture adoptions implemented and reviewed; automated gates and real busy-host refusal acceptance passed
