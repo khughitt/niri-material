@@ -3,7 +3,9 @@
 **Status:** implemented on `material-bae9c9` (this plan); `tools/capture-meta`
 and the optic smoke adoption are in this repository, the idle-budget adoption
 on `niri-experiments` `results/capture-protocol`. Thresholds are host-derived
-defaults pending the first dedicated-lane run (`material-265eb0`).
+defaults pending the first dedicated-lane run (`material-265eb0`). The manual
+busy-host refusal check remains open as `material-7f7aa3` until this host's NVML
+driver/library mismatch is repaired.
 
 **Task:** `material-bae9c9`, within `material-5d6b2c` (resource-aware rendering).
 First consumers: the idle-budget fixture (`material-265eb0`, experiment branch
@@ -393,10 +395,10 @@ lives, and that sourcing the lib alone runs no preflight.
   its suite passes under `python3 -m unittest discover -s tools`.
 - A `capture.json` produced against the fake `nvidia-smi` validates against the
   §3 shape; `show` renders it.
-- Running `preflight --lane headless` on this host while the audio workstation
-  holds the GPU busy exits 1, names the failing threshold, and lists the
-  graphics clients — verified once by hand and recorded in the plan's completion
-  note, not automated.
+- Running `preflight --lane headless` on this host while naturally GPU-busy must
+  exit 1, name the failing threshold, and list the graphics clients. The closeout
+  attempt instead exited 2 on an NVML driver/library mismatch; `material-7f7aa3`
+  retains this manual acceptance check until the host is repaired.
 - Both adoptions land with their suites green, including the idle-budget
   analyzer reading `capture.json`; no measurement run is claimed.
 - A smoke run directory's `SHA256SUMS` lists every file in the tree except

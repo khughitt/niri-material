@@ -1,14 +1,13 @@
 ---
 id: material-bae9c9
 title: Consistent performance-capture protocol with provenance and environment metadata
-status: done
+status: doing
 priority: 2
 size: m
 owner: material-bae9c9
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-12T04:53:53Z
+updated: 2026-09-12T04:57:03Z
 started: 2026-09-12T00:33:57Z
-completed: 2026-09-12T04:53:53Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance, testing]
@@ -35,3 +34,4 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-09-12T04:53:14Z (material-bae9c9): Manual headless preflight on this host exited 2: nvidia-smi static GPU query returned no usable output; reasons/client names were unavailable, release exited 0, and the disposable run was removed.
 - 2026-09-12T04:53:15Z (material-bae9c9): Thresholds in DEFAULT_THRESHOLDS are from this host's idle RTX 3070; material-265eb0's first dedicated run should revisit them and update the spec.
 - 2026-09-12T04:53:53Z (material-bae9c9): capture-meta (preflight/identity/settle/release/show) with tests; optic smoke lib and idle-budget fixture adopt it; analyzer reads capture.json
+- 2026-09-12T04:57:03Z (material-bae9c9): Controller closeout correction: NVML currently fails with driver/library mismatch (library 615.71), so manual busy-host refusal acceptance remains open in parked child material-7f7aa3; host repair is outside this task.
