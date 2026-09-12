@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Record I/O and display for material performance captures."""
+import argparse
+import json
+import pathlib
+import sys
+
+SCHEMA = 1
+RECORD = "capture.json"
+
+
+class Refused(Exception):
+    """Exit 1: the run must not proceed."""
+
+
+class CannotRun(Exception):
+    """Exit 2: the helper could not do its job."""
+
+
+def load_record(run_dir):
+    path = pathlib.Path(run_dir) / RECORD
+    try:
+        if not path.exists():
+            return {}
+        record = json.loads(path.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise CannotRun(f"{path}: cannot read record: {error}") from error
+    if not isinstance(record, dict):
+        raise CannotRun(f"{path}: record root must be an object")
+    if record.get("schema") != SCHEMA:
+        raise CannotRun(f"{path}: schema {record.get('schema')!r}, expected {SCHEMA}")
+    return record
+
+
+def save_record(run_dir, record):
+    path = pathlib.Path(run_dir) / RECORD
+    record["schema"] = SCHEMA
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record, indent=2, sort_keys=False) + "\n")
+    except (OSError, TypeError, ValueError) as error:
+        raise CannotRun(f"{path}: cannot write record: {error}") from error
+
+
+def write_section(run_dir, name, value):
+    record = load_record(run_dir)
+    if name in record:
+        raise CannotRun(f"{RECORD} already has a {name!r} section; use a fresh run directory")
+    record[name] = value
+    save_record(run_dir, record)
+
+
+def append_sub_run(run_dir, entry):
+    record = load_record(run_dir)
+    sub_runs = record.get("sub_runs", [])
+    if not isinstance(sub_runs, list):
+        raise CannotRun(f"{RECORD}: sub_runs must be a list")
+    sub_runs.append(entry)
+    record["sub_runs"] = sub_runs
+    save_record(run_dir, record)
+
+
+def render(record):
+    lines = []
+    run = record.get("run", {})
+    lines.append(f"run {run.get('id')}  task {run.get('task')}  fixture {run.get('fixture')}  lane {run.get('lane')}")
+    lines.append(f"started {run.get('started')}  host {run.get('host')}")
+    env = record.get("environment")
+    if env:
+        gpu = env.get("gpu", {})
+        lines += ["", "environment",
+                  f"  kernel {env.get('kernel')}",
+                  f"  cpu {env.get('cpu')} ({env.get('cpu_threads')} threads)",
+                  f"  memory {env.get('memory_total_kib')} KiB",
+                  f"  gpu {gpu.get('name')} {gpu.get('driver')} {gpu.get('device')}",
+                  f"  session {env.get('session', {}).get('type')} {env.get('session', {}).get('display')}" ]
+        for tool, version in sorted(env.get("tools", {}).items()):
+            lines.append(f"  {tool} {version}")
+    baseline = record.get("baseline")
+    if baseline:
+        lines += ["", "baseline"] + [f"  {key} {value}" for key, value in baseline.items()]
+    preflight = record.get("preflight")
+    if preflight:
+        lines += ["", f"preflight {preflight.get('verdict')}"]
+        for reason in preflight.get("reasons", []):
+            lines.append(f"  {reason}")
+    provenance = record.get("provenance")
+    if provenance:
+        source = provenance.get("source", {})
+        lines += ["", "provenance",
+                  f"  source {source.get('commit')} {source.get('branch')}{' dirty' if source.get('dirty') else ''}"]
+        for binary in provenance.get("binaries", []):
+            lines.append(f"  binary {binary['name']} {binary['sha256']}")
+        for item in provenance.get("inputs", []):
+            lines.append(f"  input {item['name']} {item['sha256']}")
+        for key, value in provenance.get("config", {}).items():
+            lines.append(f"  {key}={value}")
+    sub_runs = record.get("sub_runs")
+    if sub_runs:
+        lines += ["", "sub-runs"]
+        for entry in sub_runs:
+            reason = f" ({entry['reason']})" if entry.get("reason") else ""
+            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}")
+    return "\n".join(lines) + "\n"
+
+
+def cmd_show(args):
+    record = load_record(args.run_dir)
+    if not record:
+        raise CannotRun(f"no {RECORD} in {args.run_dir}")
+    sys.stdout.write(render(record))
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="capture-meta")
+    subs = parser.add_subparsers(dest="command", required=True)
+    show = subs.add_parser("show")
+    show.add_argument("run_dir")
+    show.set_defaults(func=cmd_show)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        args.func(args)
+    except Refused as error:
+        print(f"capture-meta: refused: {error}", file=sys.stderr)
+        return 1
+    except CannotRun as error:
+        print(f"capture-meta: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
