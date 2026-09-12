@@ -10,6 +10,7 @@ import tempfile
 import textwrap
 import threading
 import unittest
+from unittest import mock
 
 for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
     del os.environ[_name]
@@ -355,6 +356,13 @@ class SamplingTests(unittest.TestCase):
 
 
 class GpuEvidenceTests(unittest.TestCase):
+    def test_failed_command_reports_stdout_when_stderr_is_empty(self):
+        result = subprocess.CompletedProcess([], 18,
+            stdout="Failed to initialize NVML: Driver/library version mismatch\n", stderr="")
+        with mock.patch.object(cm.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(cm.CannotRun, "Driver/library version mismatch"):
+                object.__new__(cm.GpuReader)._run("nvidia-smi", "--query-gpu=name")
+
     XML = '<nvidia_smi_log><gpu><processes>{}</processes></gpu></nvidia_smi_log>'
     ENTRY = '<process_info><type>{}</type><process_name>/usr/bin/{}</process_name></process_info>'
     def test_clients_and_invalid_telemetry(self):

@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-312 paths differ: 39 class B (seam), 253 class A (fork-only), 20 class C (scaffolding).
+313 paths differ: 39 class B (seam), 254 class A (fork-only), 20 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -100,12 +100,12 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/tests/mod.rs` | B | M | +2/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
-| `tools/capture-meta` | C | A | +758/-0 |
+| `tools/capture-meta` | C | A | +759/-0 |
 | `tools/ops-check` | C | A | +170/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
-| `tools/test_capture_meta.py` | C | A | +682/-0 |
+| `tools/test_capture_meta.py` | C | A | +690/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +121/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_upstream_report.py` | C | A | +840/-0 |

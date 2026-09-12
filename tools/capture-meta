@@ -214,7 +214,8 @@ class GpuReader:
         except OSError as error:
             raise CannotRun(f"{' '.join(command)}: {error}") from error
         if result.returncode != 0:
-            raise CannotRun(f"{' '.join(command)}: {result.stderr.strip()}")
+            error = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+            raise CannotRun(f"{' '.join(command)}: {error}")
         return result.stdout
 
     def query(self):

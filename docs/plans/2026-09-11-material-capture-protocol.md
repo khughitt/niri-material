@@ -1,7 +1,9 @@
 # Material performance-capture protocol: implementation plan
 
-**Status:** implemented on `material-bae9c9` and companion branch
-`niri-experiments/results/capture-protocol`; final controller review pending.
+**Status:** code implemented on `material-bae9c9` and companion branch
+`niri-experiments/results/capture-protocol`; manual busy-host refusal acceptance
+is parked as `material-7f7aa3` pending host NVML repair, and final controller
+review is pending.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
