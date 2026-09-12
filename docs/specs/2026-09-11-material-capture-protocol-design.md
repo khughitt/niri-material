@@ -250,18 +250,29 @@ the fixture's own repository and a rerun is **not** part of the adoption.
 
 **`docs/materials/scripts/glass-optic-smoke-lib.sh`** (this repository). Order
 matters, because the lib's own guard refuses a non-empty `OUT` and `preflight`
-writes into it: the lib is sourced first (freshness check, `mkdir -p "$OUT"`,
-cleanup trap), then the lib's tail calls `preflight --lane headless`, and
-`cleanup` gains `release`. The smoke then calls `build_binaries` and `identity`
-with both binaries, the lib, and the calling smoke script — no case config exists
-yet. `settle` is not called from the smokes at all: it goes into the lib's
+writes into it: each smoke sources the lib first (freshness check, `mkdir -p
+"$OUT"`, cleanup trap) and then calls `preflight --lane headless` itself, as its
+first statement after sourcing. The lib's top level never calls preflight: the
+idle-budget fixture sources the same lib in every mode, and a preflight there
+would break offline `prepare` and double-preflight `trace` and `power` against
+their own lock and record. The lib provides the call as a function
+(`capture_preflight <lane>`) so entry scripts spell it the same way, and its
+`cleanup` calls `release`, ignoring the status, since a refused run has nothing
+of its own to release. The smoke then calls `build_binaries` and `identity` with
+both binaries, the lib, and the calling smoke script — no case config exists
+yet.
+
+`settle` is not called from the smokes at all: it goes into the lib's
 `start_nested`, which every nested launch passes through with its config path in
 hand — `calibrate_probe_rect`'s geometry launch, the pixel `capture` functions,
 aurora's `session` (`pinned` and `moving` never touch `capture`), and `trace_run`.
-`start_nested "$niri" "$cfg"` runs `settle --sub-run "$(basename "$cfg" .kdl)"
---input "$cfg"` before launching, so every compositor launch has its preceding
-check and its config hash, and a smoke that adds a launch path later cannot
-forget it. `finish` is expanded to hash **every**
+The signature becomes `start_nested <niri> <config> [<sub-run name>]`; the name
+defaults to the config's basename, which is what the smokes mean (one config per
+launch), and callers whose observation is not its config pass the name
+explicitly. `start_nested` runs `settle --sub-run "$name" --input "$cfg"` before
+launching, so every compositor launch has its preceding check and its config
+hash, and a smoke that adds a launch path later cannot forget it. `finish` is
+expanded to hash **every**
 file under `OUT` except `SHA256SUMS` (the idle-budget fixture's `find … |
 sha256sum` form); today it hashes only `*.png` and `*.kdl`, which omits the
 traces, exports, binaries, and `capture.json` the contract requires. The loose
@@ -275,11 +286,11 @@ files (`kernel.txt`, `lscpu.txt`, `nvidia-smi.txt`, `source.commit`,
 fresh `OUT`, and measurements do not read the prepared directory — so every
 invocation records its own identity. In `runtime()` the order is: the
 fixture's freshness and location guards → source the smoke lib (which creates
-`OUT` and installs the trap the fixture then wraps) → `preflight`, because
-preflight writes `capture.json` and either guard would abort a run that had
-already written it. `trace` passes `--lane headless`, `power` `--lane
-dedicated`; `prepare` runs no preflight, since it launches nothing and must keep
-working offline on a busy machine. Preflight replaces the fixture's
+`OUT` and installs the trap the fixture then wraps) → an explicit
+`capture_preflight` in the fixture, because preflight writes `capture.json` and
+either guard would abort a run that had already written it. `trace` passes
+`headless`, `power` `dedicated`; `prepare` makes no preflight call, since it
+launches nothing and must keep working offline on a busy machine. Preflight replaces the fixture's
 `IDLE_BUDGET_DEDICATED_SESSION` gate, its `hardware.csv`/`hardware.json`, and
 its tool-version files.
 
@@ -301,10 +312,16 @@ test keeps passing without sidecars. The analyzer checks that the build-time
 identity in the sidecar and the capture-time binary hash agree in the two
 measurement modes.
 
-The trace lane launches through the lib's `start_nested`, so its 25 observations
-get `settle` for free with the shared change above. The power lane launches niri
-directly on DRM and calls `settle --sub-run "$name" --input "$OUT/$name.kdl"`
-itself before each of its 48 windows. The fixture's
+Observation names and config names differ in this fixture: a trace observation
+is `<case>-<stimulus>-<repetition>` and a power window is
+`<comparison>-<block>-<position>`, while the config is one of six `<case>.kdl`
+files reused across observations. The trace lane therefore launches with
+`start_nested "$NIRI" "$OUT/$case.kdl" "$name"`, keeping stimulus and repetition
+in the record rather than collapsing 25 observations into repeated `A`/`B`
+entries. The power lane launches niri directly on DRM and calls
+`settle --sub-run "$name" --input "$OUT/$case.kdl"` itself before each of its
+48 windows. The fixture's per-observation `<name>.config.sha256` becomes
+redundant with the sub-run's `inputs` entry and is dropped. The fixture's
 `preflight.json` (GPU process reporting and device-user inventory via `fuser`)
 is stricter than §2.1's client check and stays — it is the power lane's
 evidence, and `capture.json` records that it ran.
@@ -350,9 +367,11 @@ sites and a `finish` case asserting `SHA256SUMS` names every file but itself),
 the fixture by `fixtures/test_idle_budget.py` (call order per mode including
 preflight after lib initialization, the per-mode identity argument lists, the
 existing offline `prepare` validation unchanged, and the analyzer against
-`capture.json`-shaped synthetic evidence). The smoke lib test also asserts that
-`start_nested` calls `settle` with the config it is about to launch, since that
-is now the only place the check lives.
+`capture.json`-shaped synthetic evidence, plus a case that `prepare` sources
+the lib and makes no preflight or settle call). The smoke lib test also asserts
+that `start_nested` calls `settle` with the config it is about to launch and
+the explicit name when one is given, since that is now the only place the check
+lives, and that sourcing the lib alone runs no preflight.
 
 ## 7. Acceptance
 
