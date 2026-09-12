@@ -175,8 +175,9 @@ class ProcReader:
     def cpu_ticks(self):
         try:
             values = [int(v) for v in (self.root / "stat").read_text().splitlines()[0].split()[1:]]
+            if len(values) < 8: raise ValueError("expected CPU counters through steal")
             idle = values[3] + values[4]
-            total = sum(values)
+            total = sum(values[:8])
             return total - idle, total
         except (OSError, IndexError, ValueError) as error:
             raise CannotRun(f"cannot read CPU ticks: {error}") from error
@@ -406,7 +407,55 @@ def load_record(run_dir):
         raise CannotRun(f"{path}: record root must be an object")
     if record.get("schema") != SCHEMA:
         raise CannotRun(f"{path}: schema {record.get('schema')!r}, expected {SCHEMA}")
+    validate_record(record, path)
     return record
+
+
+def validate_record(record, path=RECORD):
+    def section(name):
+        if name not in record:
+            return None
+        value = record[name]
+        if not isinstance(value, dict):
+            raise CannotRun(f"{path}: {name} must be an object")
+        return value
+
+    run = section("run")
+    if run is not None and not isinstance(run.get("id"), str):
+        raise CannotRun(f"{path}: run.id must be a string")
+    environment = section("environment")
+    if environment is not None:
+        for name in ("gpu", "session", "tools"):
+            if not isinstance(environment.get(name), dict):
+                raise CannotRun(f"{path}: environment.{name} must be an object")
+        if any(not isinstance(key, str) or not isinstance(value, str)
+               for key, value in environment["tools"].items()):
+            raise CannotRun(f"{path}: environment.tools entries must be strings")
+    section("baseline")
+    preflight = section("preflight")
+    if preflight is not None:
+        for name, kind in (("reasons", list), ("thresholds", dict), ("lock", dict)):
+            if name in preflight and not isinstance(preflight[name], kind):
+                raise CannotRun(f"{path}: preflight.{name} must be a {kind.__name__}")
+    provenance = section("provenance")
+    if provenance is not None:
+        for name in ("source", "config"):
+            if not isinstance(provenance.get(name), dict):
+                raise CannotRun(f"{path}: provenance.{name} must be an object")
+        for name in ("binaries", "inputs"):
+            items = provenance.get(name)
+            if not isinstance(items, list):
+                raise CannotRun(f"{path}: provenance.{name} must be a list")
+            if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
+                   or not isinstance(item.get("sha256"), str) for item in items):
+                raise CannotRun(f"{path}: provenance.{name} entries need string name and sha256")
+    if "sub_runs" in record:
+        sub_runs = record["sub_runs"]
+        if not isinstance(sub_runs, list):
+            raise CannotRun(f"{path}: sub_runs must be a list")
+        if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
+               or not isinstance(item.get("verdict"), str) for item in sub_runs):
+            raise CannotRun(f"{path}: sub_runs entries need string name and verdict")
 
 
 def save_record(run_dir, record):
@@ -616,9 +665,32 @@ def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=
     for section in ("run", "baseline", "preflight"):
         if section not in record:
             raise CannotRun(f"settle needs a preflighted run; {RECORD} has no {section!r}")
-    if record["preflight"].get("verdict") != "quiet":
+    verdict = record["preflight"].get("verdict")
+    if not isinstance(verdict, str):
+        raise CannotRun(f"{RECORD}: preflight.verdict must be a string")
+    if verdict != "quiet":
         raise Refused("preflight was refused; nothing to settle into")
-    expected = record["preflight"].get("lock", {})
+    required = {"cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w"}
+    if (not required <= record["baseline"].keys()
+            or any(isinstance(record["baseline"][key], bool)
+                   or not isinstance(record["baseline"][key], (int, float))
+                   or not math.isfinite(record["baseline"][key]) for key in required)):
+        raise CannotRun(f"{RECORD}: baseline is missing settle metrics")
+    if record["run"].get("lane") not in ("headless", "dedicated"):
+        raise CannotRun(f"{RECORD}: run.lane must be headless or dedicated")
+    thresholds = record["preflight"].get("thresholds")
+    expected = record["preflight"].get("lock")
+    threshold_keys = {"settle_cpu_busy_pct", "settle_mem_pct", "settle_gpu_util_pct",
+                      "settle_gpu_power_w", "mem_available_pct_min", "gpu_pstate"}
+    if (not isinstance(thresholds, dict) or not threshold_keys <= thresholds.keys()
+            or not isinstance(expected, dict) or "owner_pid" not in expected
+            or isinstance(expected["owner_pid"], bool) or not isinstance(expected["owner_pid"], int)
+            or expected["owner_pid"] <= 0):
+        raise CannotRun(f"{RECORD}: quiet preflight needs thresholds and lock owner_pid")
+    if (any(isinstance(thresholds[key], bool) or not isinstance(thresholds[key], (int, float))
+            or not math.isfinite(thresholds[key]) for key in threshold_keys - {"gpu_pstate"})
+            or not isinstance(thresholds["gpu_pstate"], str)):
+        raise CannotRun(f"{RECORD}: settle thresholds are malformed")
     holder = read_lock(lock())
     if (holder is None or holder.get("run_id") != record["run"].get("id")
             or holder.get("owner_pid") != expected.get("owner_pid")):
@@ -626,8 +698,7 @@ def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=
     entry_inputs = hashed(inputs)
     samples = sample_stream(proc, gpu, seconds, sleep)
     summary = summarize(samples)
-    reasons = judge_settled(summary, samples, record["baseline"],
-                            record["preflight"]["thresholds"], record["run"]["lane"])
+    reasons = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
     entry = {"name": sub_run, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
              "inputs": entry_inputs, "verdict": "settled" if not reasons else "refused"}
     if reasons:

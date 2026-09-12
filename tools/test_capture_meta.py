@@ -180,6 +180,37 @@ class RecordTests(unittest.TestCase):
             with self.assertRaises(cm.CannotRun):
                 cm.load_record(run)
 
+    def test_malformed_sections_make_cli_consumers_exit_two_without_mutation(self):
+        cases = {
+            "show": ({"schema": 1, "provenance": {"binaries": [{}]}}, ["show"]),
+            "settle": ({"schema": 1, "run": {"id": "settle", "lane": "headless"},
+                        "baseline": {}, "preflight": {"verdict": "quiet", "thresholds": {},
+                                                       "lock": {"owner_pid": 1}}},
+                       ["settle", "--sub-run", "A", "--seconds", "1"]),
+            "release": ({"schema": 1, "run": {"task": "t"}}, ["release"]),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            runtime = root / "runtime"; runtime.mkdir()
+            lock = runtime / cm.LOCK_NAME
+            lock.write_text('{"owner_pid": 1, "run_id": "foreign"}')
+            fake = root / "nvidia-smi"; fake.write_text("#!/bin/sh\nexit 1\n"); fake.chmod(0o755)
+            tool = str(pathlib.Path(__file__).with_name("capture-meta"))
+            for name, (record, args) in cases.items():
+                run = root / name; run.mkdir()
+                path = run / cm.RECORD; path.write_text(json.dumps(record))
+                before_record = path.read_bytes(); before_lock = lock.read_bytes()
+                result = subprocess.run(
+                    [sys.executable, tool, args[0], str(run), *args[1:]],
+                    env={**os.environ, "XDG_RUNTIME_DIR": str(runtime),
+                         "PATH": f"{root}:{os.environ['PATH']}"},
+                    capture_output=True, text=True)
+                with self.subTest(command=name):
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    self.assertNotIn("Traceback", result.stderr)
+                    self.assertEqual(path.read_bytes(), before_record)
+                    self.assertEqual(lock.read_bytes(), before_lock)
+
 
 class IdentityTests(unittest.TestCase):
     def repo(self, root):
@@ -342,6 +373,22 @@ class SamplingTests(unittest.TestCase):
         samples = quiet_samples(3)
         self.assertEqual([round(s.cpu_busy_pct, 1) for s in samples], [2.0] * 3)
         self.assertEqual(cm.summarize(samples)["mem_total_kib"], 100_000)
+
+    def test_proc_reader_does_not_double_count_guest_ticks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            proc_root = pathlib.Path(directory)
+            stat = proc_root / "stat"
+            stat.write_text("cpu 0 0 0 0 0 0 0 0 0 0\n")
+            (proc_root / "loadavg").write_text("0.5 0.4 0.3 1/1 1\n")
+            (proc_root / "meminfo").write_text(
+                "MemTotal: 100000 kB\nMemAvailable: 80000 kB\n")
+
+            def advance(_):
+                stat.write_text("cpu 60 20 0 920 0 0 0 0 60 20\n")
+
+            sample = cm.sample_stream(cm.ProcReader(proc_root), FakeGpu([QUIET]), 1,
+                                      sleep=advance)[0]
+            self.assertEqual(sample.cpu_busy_pct, 8.0)
 
     def test_summary_medians_iqr_and_clients(self):
         proc = FakeProc([(0, 0), (2, 100), (4, 200), (6, 300)])
