@@ -81,7 +81,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             for name in ('a.png', 'b.kdl', 'c.tracy', 'capture.json', 'niri.log'):
                 (Path(out) / name).write_text(name)
             (Path(out) / 'sub').mkdir(); (Path(out) / 'sub' / 'd.csv').write_text('d')
-            script = ('rg() { return 1; }\n' + self.function('finish') + '\nOUT=$1; finish >/dev/null; cut -d" " -f3- "$OUT/SHA256SUMS" | sort')
+            script = ('rg() { return 1; }\n' + self.function('finish') + '\nOUT=$1; finish >/dev/null; cut -d" " -f3- "$OUT/SHA256SUMS" | LC_ALL=C sort')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.split(), ['./a.png', './b.kdl', './c.tracy', './capture.json', './niri.log', './sub/d.csv'])

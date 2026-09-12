@@ -1573,7 +1573,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             for name in ('a.png', 'b.kdl', 'c.tracy', 'capture.json', 'niri.log'):
                 (Path(out) / name).write_text(name)
             (Path(out) / 'sub').mkdir(); (Path(out) / 'sub' / 'd.csv').write_text('d')
-            script = ('rg() { return 1; }\n' + self.function('finish') + '\nOUT=$1; finish >/dev/null; cut -d" " -f3- "$OUT/SHA256SUMS" | sort')
+            script = ('rg() { return 1; }\n' + self.function('finish') + '\nOUT=$1; finish >/dev/null; cut -d" " -f3- "$OUT/SHA256SUMS" | LC_ALL=C sort')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.split(), ['./a.png', './b.kdl', './c.tracy', './capture.json', './niri.log', './sub/d.csv'])
@@ -1651,7 +1651,7 @@ start_nested() {   # $1 niri, $2 config, $3 sub-run name (defaults to the config
 
 ```bash
 finish() {
-    (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+    (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS)
     if rg -n 'material.*(error|fallback)|error compiling material shader|panic' "$OUT/niri.log"; then
 ```
 
