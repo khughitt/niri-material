@@ -4,8 +4,9 @@ title: Idle GPU and power budget for a never-static glass
 status: todo
 priority: 2
 size: m
+complexity: mid
 created: 2026-09-11T00:52:15Z
-updated: 2026-09-11T09:04:58Z
+updated: 2026-09-12T19:24:30Z
 depends: []
 parent: material-53f873
 tags: [quick-add, dynamics, performance]
@@ -19,3 +20,4 @@ Source: mindful:thought:3f94e656b70f4e5585c1cb60c166e4da
 ## Notes
 
 - 2026-09-11T09:04:58Z (material-300b87): Aurora/iridescence hardware evidence (docs/materials/2026-09-11-material-hardware-evidence.md) records 18 idle traces: exact 0/4/2 Hz cadence, but whole-board run medians 13.720–28.960 W and varying clocks prevent attributable power deltas. Use an isolated workload for the broader budget; no optic regression established.
+- 2026-09-12T19:24:30Z (materials-26.04): Complexity mid: Reviewed the newer spec and plan in .worktrees/material-265eb0/docs/ and verified the fixture files at experiment commit 9d7d43f. Remaining trace/power execution has explicit matrices, coverage checks, and precision rules; hardware isolation blocks readiness rather than increasing complexity. Reproduced renderer defects are separately scoped.
