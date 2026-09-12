@@ -6,7 +6,7 @@ priority: 2
 size: m
 owner: material-bae9c9
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-12T04:57:03Z
+updated: 2026-09-12T04:58:41Z
 started: 2026-09-12T00:33:57Z
 depends: []
 parent: material-5d6b2c
@@ -35,3 +35,4 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-09-12T04:53:15Z (material-bae9c9): Thresholds in DEFAULT_THRESHOLDS are from this host's idle RTX 3070; material-265eb0's first dedicated run should revisit them and update the spec.
 - 2026-09-12T04:53:53Z (material-bae9c9): capture-meta (preflight/identity/settle/release/show) with tests; optic smoke lib and idle-budget fixture adopt it; analyzer reads capture.json
 - 2026-09-12T04:57:03Z (material-bae9c9): Controller closeout correction: NVML currently fails with driver/library mismatch (library 615.71), so manual busy-host refusal acceptance remains open in parked child material-7f7aa3; host repair is outside this task.
+- 2026-09-12T04:58:41Z (material-bae9c9): Read-only diagnosis confirmed loaded NVIDIA kernel module 610.57.04 versus NVML library 615.71; material-7f7aa3 waits on that environment repair.
