@@ -12,6 +12,12 @@
 #
 # Env: OUT (artifact dir), NIRI_MATERIAL_WORK_ROOT (holds the retained Tracy
 # 0.13.1 tools under material-roughness-b220152d/tools).
+# Every run records provenance and machine quietness through tools/capture-meta
+# (docs/specs/2026-09-11-material-capture-protocol-design.md). The entry script
+# calls `capture_preflight headless` right after sourcing this lib and
+# `capture_identity` after build_binaries; start_nested settles before every
+# launch. This lib never preflights on its own: idle-budget sources it in a
+# mode that must stay offline.
 # Requires: weston, kitty, swaybg, jq, rg, flock, ss, ImageMagick 7 with
 # Oklab, cargo.
 set -eu
@@ -54,9 +60,35 @@ cleanup() {
     if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; fi
     stop_weston || rc=1
     remove_runtime_dir || rc=1
+    capture_meta release "$OUT" || true
     exit "$rc"
 }
 trap cleanup EXIT
+
+# --- capture record ---------------------------------------------------------
+# CAPTURE_META lets a test substitute a recording stub; unset, it is the tool.
+capture_meta() { ${CAPTURE_META:-python3 "$ROOT/tools/capture-meta"} "$@"; }
+# Entry scripts call this first thing after sourcing. The fixture name is the
+# calling script; the task id comes from CAPTURE_TASK, which every smoke sets.
+capture_preflight() {
+    capture_meta preflight "$OUT" --lane "$1" --task "${CAPTURE_TASK:?task id authorizing this run}" \
+        --fixture "$(basename "$0")" --owner-pid $$ --tool weston --tool kitty --tool "tracy=0.13.1" \
+        || fail "preflight refused; see $OUT/capture.json"
+}
+# After build_binaries: both binaries, this lib, and the calling script are the
+# static inputs. Extra --input/--config arguments pass through.
+capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the installed binary only
+    capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" ${NIRI_TRACY:+--binary "$NIRI_TRACY"} \
+        --input "$ROOT/docs/materials/scripts/glass-optic-smoke-lib.sh" --input "$0" "$@" \
+        || fail "identity refused"
+}
+# Before every nested launch: the sub-run is named after its config unless the
+# caller's observation is not its config (idle-budget reuses six configs).
+settle_before_launch() {
+    local cfg=$1 name=${2:-}
+    [ -n "$name" ] || name=$(basename "$cfg" .kdl)
+    capture_meta settle "$OUT" --sub-run "$name" --input "$cfg" || fail "settle refused before $name; see $OUT/capture.json"
+}
 
 # --- binaries ---------------------------------------------------------------
 # Two builds: the release build for captures and the Tracy build for counts
@@ -71,9 +103,6 @@ build_binaries() {
     (cd "$ROOT" && cargo build --release --features profile-with-tracy)
     cp "$target/release/niri" "$OUT/niri-tracy"
     NIRI=$OUT/niri; NIRI_TRACY=$OUT/niri-tracy
-    sha256sum "$NIRI" "$NIRI_TRACY" > "$OUT/binaries.sha256"
-    "$NIRI" --version > "$OUT/impl.version"
-    git -C "$ROOT" rev-parse HEAD > "$OUT/source.commit"
 }
 
 # --- configs ----------------------------------------------------------------
@@ -188,7 +217,8 @@ KDL
 }
 
 # --- nested host ------------------------------------------------------------
-start_nested() {
+start_nested() {   # $1 niri, $2 config, $3 sub-run name (defaults to the config's basename)
+    settle_before_launch "$2" "${3-}"
     weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
         --width=1280 --height=720 --socket="$HOST" >> "$OUT/weston.log" 2>&1 &
     WESTON_PID=$!
@@ -434,7 +464,7 @@ ns_to_ms() { awk -v n="$1" 'BEGIN { printf "%.3f", n/1e6 }'; }
 pct_delta() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%+.1f", (b-a)/a*100 }'; }
 
 finish() {
-    sha256sum "$OUT"/*.png "$OUT"/*.kdl >> "$OUT/SHA256SUMS"
+    (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
     if rg -n 'material.*(error|fallback)|error compiling material shader|panic' "$OUT/niri.log"; then
         fail "material error, fallback or panic in niri.log"
     fi
