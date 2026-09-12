@@ -7,7 +7,7 @@ size: m
 complexity: high
 owner: material-5b3107
 created: 2026-09-06T00:32:53Z
-updated: 2026-09-12T20:36:44Z
+updated: 2026-09-12T21:06:29Z
 started: 2026-09-12T20:31:50Z
 depends: [material-a1d4bf]
 parent: material-5b3107
@@ -24,3 +24,5 @@ Implement the reviewed behind hook for noise and saturation as Task 1 of the ren
 - 2026-09-12T20:26:18Z (material-5b3107): parked (waiting on user, review): Review the two-step render-order implementation plan before starting Task 1.
 - 2026-09-12T20:35:43Z (material-5b3107): Execution preflight refused: CPU 16.6% >10%, load1 5.53 >2, GPU 26% >5%, P3/P5/P8, power IQR 7.463 W >1 W, compute client BitwigStudio. Retained render-order-readiness.pCbsOC. This is NOT the old-build additive regression failure. Only offline grain/additive metric preparation is complete; no shader changes or baseline build.
 - 2026-09-12T20:35:43Z (material-5b3107): parked (waiting on user, environment): On a quiet host, rerun default capture preflight, snapshot baseline 522a09fe binaries, finish the smoke and retain its actual additive failure against the old shader before production edits. Offline metric CLI and synthetic tests are prepared.
+- 2026-09-12T21:06:29Z (material-5b3107): Retry after user closed Bitwig window: preflight render-order-readiness.03bDro still refused (CPU 18.3%, load 7.31, GPU 41%, P5, BitwigStudio compute client). Independent nvidia-smi query confirms live BitwigStudio PID 2467300 using 293 MiB; ps confirms its audio engine PID 2467825. No process terminated; no shader edits or regression capture.
+- 2026-09-12T21:06:29Z (material-5b3107): parked (waiting on user, environment): BitwigStudio PID 2467300 and its audio engine remain active. Resume after the app fully exits and default preflight passes; then obtain the old-build additive failure before shader edits.

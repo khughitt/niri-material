@@ -7,7 +7,7 @@ size: m
 complexity: high
 owner: material-5b3107
 created: 2026-09-06T00:38:34Z
-updated: 2026-09-12T20:35:43Z
+updated: 2026-09-12T21:06:29Z
 started: 2026-09-12T19:55:05Z
 depends: []
 tags: [rendering, design]
@@ -27,3 +27,5 @@ Several open questions are one architectural question: in what order the passes 
 - 2026-09-12T20:26:18Z (material-5b3107): parked (waiting on user, review): Review docs/plans/2026-09-12-material-render-order.md; then execute the two existing children sequentially with executing-plans.
 - 2026-09-12T20:35:43Z (material-5b3107): Approved plan execution began inline. Task 1 is environment-blocked before shader edits by retained capture preflight render-order-readiness.pCbsOC; offline metrics prepared. Task 2 remains dependent on Task 1.
 - 2026-09-12T20:35:43Z (material-5b3107): parked (waiting on user, environment): Resume Task 1 after the capture host is quiet; preserve the required old-build additive failure and later wide-core positive face-strip gate.
+- 2026-09-12T21:06:29Z (material-5b3107): Second capture readiness run 03bDro refused; independent process/GPU queries confirm BitwigStudio remains running after its window was closed. Task 1 remains gated before shader changes.
+- 2026-09-12T21:06:29Z (material-5b3107): parked (waiting on user, environment): Resume Task 1 when Bitwig has fully exited and the capture host passes default quietness checks.
