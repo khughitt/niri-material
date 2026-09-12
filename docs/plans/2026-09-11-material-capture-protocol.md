@@ -2,7 +2,7 @@
 
 **Status:** code implemented on `material-bae9c9` and companion branch
 `niri-experiments/results/capture-protocol`; manual busy-host refusal acceptance
-is parked as `material-7f7aa3` pending host NVML repair. Final review corrections
+passed after reboot with NVIDIA 615.71.09 (`material-7f7aa3`). Final review corrections
 are implemented and the scoped re-review found both findings addressed with no new
 blocking issues.
 
