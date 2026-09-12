@@ -321,7 +321,16 @@ in the record rather than collapsing 25 observations into repeated `A`/`B`
 entries. The power lane launches niri directly on DRM and calls
 `settle --sub-run "$name" --input "$OUT/$case.kdl"` itself before each of its
 48 windows. The fixture's per-observation `<name>.config.sha256` becomes
-redundant with the sub-run's `inputs` entry and is dropped. The fixture's
+redundant with the sub-run's `inputs` entry and is dropped — together with its
+reader: `idle-budget.py::scene_evidence(run, name, case)` compares that file
+against the retained `<case>.kdl` for every observation, and moves to
+`capture.json`. It must find exactly one `sub_runs[]` entry named `name`
+(none or several is an integrity failure), require its verdict to be `settled`,
+and compare the entry's recorded hash for `<case>.kdl` against the retained
+file. Both synthetic matrices in `fixtures/test_idle_budget.py` write
+`sub_runs[]` entries instead of `.config.sha256` files, and the suite gains
+cases for a missing observation, a duplicated one, a `refused` verdict, and a
+hash mismatch — each rejected by `analyze`. The fixture's
 `preflight.json` (GPU process reporting and device-user inventory via `fuser`)
 is stricter than §2.1's client check and stays — it is the power lane's
 evidence, and `capture.json` records that it ran.
