@@ -1,7 +1,9 @@
 # Material render order by depth
 
-**Status:** draft for user review; implementation and implementation plan have
-not started. Includes corrections from self-review against `8e3d890d`.
+**Status:** reviewed for planning on 2026-09-12, including transmitted
+chamfer grain without a mask. Implementation has not started. The
+[implementation plan](../plans/2026-09-12-material-render-order.md) is awaiting
+review. Source baseline: `8e3d890d`; reviewed spec revision: `522a09fe`.
 
 **Goal:** `material-5b3107`. Children: `material-f8b6e9` (behind: noise and
 saturation), `material-92edaf` (within: ring and aurora).
@@ -114,8 +116,11 @@ path from `0.6 * thickness` to `0.2 * thickness`. The cap still applies only
 to the shared shift; chromatic offsets remain outside it. The visible change
 is small: at the stock default glass the uncapped shift at `0.6` was about
 6.9 px against the 2.5 px cap, and at `0.2` it is about 2.3 px, just under
-the cap, so the default ring moves by roughly 0.2 px. The cap bites at the
-same dense settings it did before.
+the cap, so this example's shared shift changes by roughly 0.2 px. The cap
+still limits sufficiently dense settings. At fixed normal and index, it now
+requires three times the previous thickness to bind; it does not bind at
+every previously capped setting. Per-channel offsets also shrink with the
+shorter path.
 
 Rename `aurora_emissive` to `aurora_within` and evaluate its existing field
 at a refracted landing point using the same remaining path and existing
@@ -157,9 +162,8 @@ agreement test. This is internal ordering, not a KDL grammar change.
 
 ## Acceptance and review corrections
 
-These corrections are part of the proposed spec and require review before
-planning. They avoid promising properties the selected equations do not
-provide.
+These corrections were accepted for planning. They avoid promising
+properties the selected equations do not provide.
 
 ### Noise
 
@@ -225,7 +229,7 @@ spatial cutoff, neither proposed here.
 
 ## Children and documentation
 
-After this spec is reviewed, write and review the implementation plan.
+Review the implementation plan before executing either child.
 The goal remains open through implementation and evidence.
 
 1. **`material-f8b6e9`: behind hook: noise and saturation.** Move the two
@@ -244,7 +248,7 @@ placement claims. Search user-facing docs for the same claims, including
 "four hooks", finished-glass saturation/noise and ring face confinement.
 Keep old capture evidence historical, with links to its replacement.
 
-This draft does not relabel current pipeline documentation as implemented.
+This spec does not relabel current pipeline documentation as implemented.
 Parameter names, bounds, KDL, Prism, `postprocess.frag`, texture ownership
 and the optic recipe's overall shape remain unchanged. No compatibility
 layer, shared-texture variant or configurable pass graph is introduced.
