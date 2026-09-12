@@ -1679,7 +1679,7 @@ git commit -m "feat(material): optic smokes record captures through capture-meta
 - Modify: `niri-experiments/fixtures/idle-budget.sh` (`runtime()` lines 40–133; `start_scene` lines 175–203)
 - Modify: `niri-experiments/fixtures/jelly-motion.sh:7-15` — the other live consumer of the lib
 - Modify: `niri-experiments/fixtures/test_idle_budget.py` (`ShellTests`)
-- Modify: `niri-experiments/docs/results/2026-09-11-jelly-motion-sweep.sha256` (regenerated: it covers `fixtures/jelly-motion.sh`)
+- Leave unchanged: `niri-experiments/docs/results/2026-09-11-jelly-motion-sweep.sha256` is the immutable manifest of the accepted archived run.
 
 Work in a new worktree:
 
@@ -1781,9 +1781,11 @@ Replace, in order:
                      --input "$OUT/glass-optic-smoke-lib.sh" --input "$WALL")
     if [ "$mode" != prepare ]; then identity_inputs+=(--input "$OUT/identity.json" --input "$OUT/source.tar"); fi
     if [ "$mode" = trace ]; then identity_inputs+=(--input "$OUT/marker.patch"); fi
+    local capture_output=1280x720@60 capture_scale=1
+    if [ "$mode" = power ]; then capture_output=$POWER_MODE; capture_scale=$POWER_SCALE; fi
     capture_meta identity "$OUT" --source "$root" --binary "$NIRI" "${identity_inputs[@]}" \
         --config lane="$([ "$mode" = power ] && echo dedicated || echo headless)" \
-        --config output="${POWER_MODE:-1280x720@60}" --config scale="${POWER_SCALE:-1}" --config vrr=off \
+        --config output="$capture_output" --config scale="$capture_scale" --config vrr=off \
         || fail 'identity refused'
 ```
 
@@ -1807,12 +1809,7 @@ capture_identity --input "$fixture/diagnostic-grid.png" \
     --config binary=installed --config output=1280x720@60 --config scale=1 --config vrr=off
 ```
 
-and delete lines 13–15 (`source.commit`, `nvidia-smi.txt`, `lscpu.txt`) — `capture.json` carries them; keep `version.txt` and `source.diff` (the diff against the pinned `7526af1d` is a result, not environment). Regenerate `docs/results/2026-09-11-jelly-motion-sweep.sha256` with the same file list it holds today, through a temporary file — redirecting onto the manifest while `cut` reads it would truncate it first:
-
-```bash
-m=docs/results/2026-09-11-jelly-motion-sweep.sha256
-cut -d' ' -f3- "$m" | xargs sha256sum > "$m.tmp" && [ -s "$m.tmp" ] && mv "$m.tmp" "$m"
-```
+and delete lines 13–15 (`source.commit`, `nvidia-smi.txt`, `lscpu.txt`) — `capture.json` carries them; keep `version.txt` and `source.diff` (the diff against the pinned `7526af1d` is a result, not environment). Keep `docs/results/2026-09-11-jelly-motion-sweep.sha256` byte-for-byte unchanged: it authenticates the accepted archived run, including that run's captured fixture. A future capture generates a new run manifest containing the migrated fixture hash.
 
 (h) Add the caller-level check to `ShellTests`, so a future fixture that sources the lib cannot skip the protocol:
 
@@ -1844,7 +1841,7 @@ Expected: both pass; `IntegrationTests`/`PowerIntegrityTests` still pass because
 - [ ] **Step 5: Commit (in the experiments worktree)**
 
 ```bash
-git add fixtures/idle-budget.sh fixtures/jelly-motion.sh fixtures/test_idle_budget.py docs/results/2026-09-11-jelly-motion-sweep.sha256
+git add fixtures/idle-budget.sh fixtures/jelly-motion.sh fixtures/test_idle_budget.py
 git commit -m "feat(fixtures): idle-budget and jelly-motion record captures through capture-meta"
 ```
 
