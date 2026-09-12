@@ -111,7 +111,11 @@ filament shape, half-inset cap, focus drift, accent response and jelly gain.
 Use `lightShift` with the perturbed normal and the remaining geometric path
 `thickness * (1-d)`. At `d = 0.8`, this changes the ring's current lookup
 path from `0.6 * thickness` to `0.2 * thickness`. The cap still applies only
-to the shared shift; chromatic offsets remain outside it.
+to the shared shift; chromatic offsets remain outside it. The visible change
+is small: at the stock default glass the uncapped shift at `0.6` was about
+6.9 px against the 2.5 px cap, and at `0.2` it is about 2.3 px, just under
+the cap, so the default ring moves by roughly 0.2 px. The cap bites at the
+same dense settings it did before.
 
 Rename `aurora_emissive` to `aurora_within` and evaluate its existing field
 at a refracted landing point using the same remaining path and existing
