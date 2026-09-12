@@ -2,8 +2,8 @@
 
 **Status:** code implemented on `material-bae9c9` and companion branch
 `niri-experiments/results/capture-protocol`; manual busy-host refusal acceptance
-is parked as `material-7f7aa3` pending host NVML repair, and final controller
-review is pending.
+is parked as `material-7f7aa3` pending host NVML repair. Final review corrections
+are implemented; scoped re-review remains.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -519,7 +519,7 @@ class ProcReader:
         fields = (self.root / "stat").read_text().splitlines()[0].split()[1:]
         values = [int(v) for v in fields]
         idle = values[3] + values[4]            # idle + iowait
-        total = sum(values)
+        total = sum(values[:8])                 # through steal; guest is already in user/nice
         return total - idle, total
 
     def load1(self):
