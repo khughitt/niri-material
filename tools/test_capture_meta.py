@@ -177,6 +177,89 @@ class RecordTests(unittest.TestCase):
                 cm.load_record(run)
 
 
+class IdentityTests(unittest.TestCase):
+    def repo(self, root):
+        import subprocess
+        subprocess.run(["git", "-C", str(root), "init", "-q", "-b", "main"], check=True)
+        subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                       "--allow-empty", "-m", "init"], check=True)
+
+    def test_hashes_match_sha256sum_and_records_source(self):
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            # The run directory sits beside the checkout, not inside it: files written into the
+            # source tree would be untracked and correctly make the tree dirty.
+            root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir(); self.repo(root)
+            (run / "niri").write_bytes(b"binary"); (run / "A.kdl").write_text("glass")
+            cm.identity(run, source=root, binaries=[run / "niri"], inputs=[run / "A.kdl"],
+                        config=["preset=aurora", "glass.ior=1.24"])
+            prov = cm.load_record(run)["provenance"]
+            self.assertEqual(prov["binaries"], [{"name": "niri", "sha256": hashlib.sha256(b"binary").hexdigest()}])
+            self.assertEqual(prov["inputs"][0]["name"], "A.kdl")
+            self.assertEqual(len(prov["source"]["commit"]), 40)
+            self.assertEqual(prov["source"]["branch"], "main")
+            self.assertFalse(prov["source"]["dirty"])
+            self.assertEqual(prov["config"], {"preset": "aurora", "glass.ior": "1.24"})
+
+    def test_dirty_tree_records_diff_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir(); self.repo(root)
+            (root / "tracked.txt").write_text("v1\n")
+            import subprocess
+            subprocess.run(["git", "-C", str(root), "add", "tracked.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "t"], check=True)
+            (root / "tracked.txt").write_text("v2\n")
+            cm.identity(run, source=root, binaries=[], inputs=[], config=[])
+            source = cm.load_record(run)["provenance"]["source"]
+            self.assertTrue(source["dirty"])
+            self.assertEqual(len(source["diff_sha256"]), 64)
+
+    def test_untracked_source_file_makes_the_tree_dirty_and_enters_the_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); self.repo(root)
+            (root / "new_optic.rs").write_text("fn a() {}\n")
+            first = cm.source_facts(root)
+            self.assertTrue(first["dirty"])
+            self.assertEqual(first["untracked"], ["new_optic.rs"])
+            (root / "new_optic.rs").write_text("fn b() {}\n")
+            self.assertNotEqual(cm.source_facts(root)["diff_sha256"], first["diff_sha256"])
+            (root / ".gitignore").write_text("new_optic.rs\n")
+            still = cm.source_facts(root)
+            self.assertEqual(still["untracked"], [".gitignore"])
+
+    def test_untracked_source_handles_unusual_filenames(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); self.repo(root)
+            names = ["café.rs", "tab\toptic.rs", "line\noptic.rs"]
+            for name in names:
+                (root / name).write_text(name)
+            facts = cm.source_facts(root)
+            self.assertEqual(facts["untracked"], sorted(names))
+            self.assertEqual(len(facts["diff_sha256"]), 64)
+
+    def test_missing_path_refuses_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir(); self.repo(root)
+            with self.assertRaises(cm.Refused):
+                cm.identity(run, source=root, binaries=[run / "absent"], inputs=[], config=[])
+            self.assertEqual(cm.load_record(run), {})
+
+    def test_missing_input_cli_refuses_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory) / "absent-source"; run = pathlib.Path(directory) / "run"; run.mkdir()
+            self.assertEqual(cm.main(["identity", str(run), "--source", str(root),
+                                      "--input", str(run / "absent")]), 1)
+            self.assertEqual(cm.load_record(run), {})
+
+    def test_git_launch_failure_is_cannot_run_and_writes_nothing(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir()
+            with mock.patch.object(cm.subprocess, "run", side_effect=OSError("git unavailable")):
+                self.assertEqual(cm.main(["identity", str(run), "--source", str(root)]), 2)
+            self.assertEqual(cm.load_record(run), {})
+
+
 class ShowTests(unittest.TestCase):
     def test_render_lists_environment_provenance_and_verdicts(self):
         record = {"schema": 1,

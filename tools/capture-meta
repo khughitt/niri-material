@@ -5,6 +5,7 @@ import contextlib
 import dataclasses
 import datetime
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -435,6 +436,72 @@ def append_sub_run(run_dir, entry):
     save_record(run_dir, record)
 
 
+def sha256_file(path):
+    try:
+        with open(path, "rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+    except OSError as error:
+        raise CannotRun(f"cannot hash {path}: {error}") from error
+
+
+def git(checkout, *args):
+    try:
+        result = subprocess.run(("git", "-C", str(checkout), *args), capture_output=True, check=False)
+    except OSError as error:
+        raise CannotRun(f"git {' '.join(args)} in {checkout}: {error}") from error
+    if result.returncode != 0:
+        raise CannotRun(f"git {' '.join(args)} in {checkout}: {os.fsdecode(result.stderr).strip()}")
+    return result.stdout
+
+
+def source_facts(checkout):
+    """Describe HEAD and hash everything the working tree adds to it."""
+    commit = os.fsdecode(git(checkout, "rev-parse", "HEAD")).strip()
+    branch = os.fsdecode(git(checkout, "rev-parse", "--abbrev-ref", "HEAD")).strip()
+    diff = git(checkout, "diff", "HEAD")
+    untracked = sorted(os.fsdecode(path) for path in
+                       git(checkout, "ls-files", "--others", "--exclude-standard", "-z").split(b"\0") if path)
+    facts = {"commit": commit, "branch": branch, "dirty": bool(diff.strip()) or bool(untracked)}
+    if facts["dirty"]:
+        digest = hashlib.sha256(diff)
+        for rel in untracked:
+            digest.update(os.fsencode(rel) + b"\0")
+            digest.update(sha256_file(pathlib.Path(checkout) / rel).encode() + b"\0")
+        facts["diff_sha256"] = digest.hexdigest()
+        facts["untracked"] = untracked
+    return facts
+
+
+def hashed(paths):
+    paths = [pathlib.Path(path) for path in paths]
+    for path in paths:
+        if not path.is_file():
+            raise Refused(f"{path} does not exist; the fixture named it as a binary or input")
+    return [{"name": path.name, "sha256": sha256_file(path)} for path in paths]
+
+
+def parse_pairs(pairs, flag):
+    config = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise CannotRun(f"{flag} {pair!r}: expected KEY=VALUE")
+        config[key] = value
+    return config
+
+
+def identity(run_dir, source, binaries, inputs, config):
+    count = len(binaries)
+    files = hashed([*binaries, *inputs])
+    section = {"source": source_facts(source), "binaries": files[:count], "inputs": files[count:],
+               "config": parse_pairs(config, "--config")}
+    write_section(run_dir, "provenance", section)
+
+
+def cmd_identity(args):
+    identity(args.run_dir, args.source, args.binary, args.input, args.config)
+
+
 def now_rfc3339():
     return datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
 
@@ -601,6 +668,13 @@ def build_parser():
     pre.add_argument("--threshold", action="append", default=[])
     pre.add_argument("--tool", action="append", default=[])
     pre.set_defaults(func=cmd_preflight)
+    ident = subs.add_parser("identity")
+    ident.add_argument("run_dir")
+    ident.add_argument("--source", required=True)
+    ident.add_argument("--binary", action="append", default=[])
+    ident.add_argument("--input", action="append", default=[])
+    ident.add_argument("--config", action="append", default=[])
+    ident.set_defaults(func=cmd_identity)
     return parser
 
 
