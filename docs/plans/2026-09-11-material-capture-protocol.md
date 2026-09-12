@@ -1178,7 +1178,9 @@ class IdentityTests(unittest.TestCase):
     def test_hashes_match_sha256sum_and_records_source(self):
         import hashlib
         with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory); run = root / "run"; run.mkdir(); self.repo(root)
+            # The run directory sits beside the checkout, not inside it: files written into the
+            # source tree would be untracked and correctly make the tree dirty.
+            root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir(); self.repo(root)
             (run / "niri").write_bytes(b"binary"); (run / "A.kdl").write_text("glass")
             cm.identity(run, source=root, binaries=[run / "niri"], inputs=[run / "A.kdl"],
                         config=["preset=aurora", "glass.ior=1.24"])
@@ -1192,7 +1194,7 @@ class IdentityTests(unittest.TestCase):
 
     def test_dirty_tree_records_diff_hash(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory); run = root / "run"; run.mkdir(); self.repo(root)
+            root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir(); self.repo(root)
             (root / "tracked.txt").write_text("v1\n")
             import subprocess
             subprocess.run(["git", "-C", str(root), "add", "tracked.txt"], check=True)
@@ -1218,7 +1220,7 @@ class IdentityTests(unittest.TestCase):
 
     def test_missing_path_refuses_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = pathlib.Path(directory); run = root / "run"; run.mkdir(); self.repo(root)
+            root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir(); self.repo(root)
             with self.assertRaises(cm.Refused):
                 cm.identity(run, source=root, binaries=[run / "absent"], inputs=[], config=[])
             self.assertEqual(cm.load_record(run), {})
@@ -1413,9 +1415,10 @@ class EndToEndTest(unittest.TestCase):
             (proc / "stat").write_text("cpu  100 0 50 9000 10 0 0 0 0 0\n")     # constant ticks: 0 % busy
             (proc / "loadavg").write_text("0.42 0.40 0.39 1/900 1\n")
             (proc / "meminfo").write_text("MemTotal:       100000 kB\nMemFree:         50000 kB\nMemAvailable:    80000 kB\n")
+            src = root / "src"; src.mkdir()
             (root / "A.kdl").write_text("glass")
-            subprocess.run(["git", "-C", str(root), "init", "-q", "-b", "main"], check=True)
-            subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i"], check=True)
+            subprocess.run(["git", "-C", str(src), "init", "-q", "-b", "main"], check=True)
+            subprocess.run(["git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i"], check=True)
             env = {**os.environ, "PATH": f"{bins}:{os.environ['PATH']}", "XDG_RUNTIME_DIR": str(runtime),
                    "CAPTURE_META_PROC": str(proc), "XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-1"}
             tool = str(pathlib.Path(__file__).with_name("capture-meta"))
@@ -1423,13 +1426,14 @@ class EndToEndTest(unittest.TestCase):
                 return subprocess.run([sys.executable, tool, *args], env=env, capture_output=True, text=True)
             self.assertEqual(cm_run("preflight", str(run), "--lane", "headless", "--task", "material-x",
                                     "--fixture", "t.sh", "--seconds", "1", "--tool", "tracy=0.13.1").returncode, 0)
-            self.assertEqual(cm_run("identity", str(run), "--source", str(root), "--input", str(root / "A.kdl")).returncode, 0)
+            self.assertEqual(cm_run("identity", str(run), "--source", str(src), "--input", str(root / "A.kdl")).returncode, 0)
             self.assertEqual(cm_run("settle", str(run), "--sub-run", "A-1", "--input", str(root / "A.kdl"), "--seconds", "1").returncode, 0)
             self.assertEqual(cm_run("release", str(run)).returncode, 0)
             show = cm_run("show", str(run))
             self.assertEqual(show.returncode, 0, show.stderr)
             self.assertIn("A-1: settled", show.stdout)
             record = json.loads((run / "capture.json").read_text())
+            self.assertFalse(record["provenance"]["source"]["dirty"])
             self.assertEqual(record["environment"]["gpu"]["driver"], "610.57.04")
             self.assertEqual(record["baseline"]["gpu_clients"]["graphics"], ["niri"])
             self.assertEqual(record["baseline"]["mem_available_pct"], 80.0)
@@ -1803,16 +1807,27 @@ capture_identity --input "$fixture/diagnostic-grid.png" \
     --config binary=installed --config output=1280x720@60 --config scale=1 --config vrr=off
 ```
 
-and delete lines 13–15 (`source.commit`, `nvidia-smi.txt`, `lscpu.txt`) — `capture.json` carries them; keep `version.txt` and `source.diff` (the diff against the pinned `7526af1d` is a result, not environment). Regenerate `docs/results/2026-09-11-jelly-motion-sweep.sha256` with the same file list it holds today (`cut -d' ' -f3- docs/results/2026-09-11-jelly-motion-sweep.sha256 | xargs sha256sum > …`).
+and delete lines 13–15 (`source.commit`, `nvidia-smi.txt`, `lscpu.txt`) — `capture.json` carries them; keep `version.txt` and `source.diff` (the diff against the pinned `7526af1d` is a result, not environment). Regenerate `docs/results/2026-09-11-jelly-motion-sweep.sha256` with the same file list it holds today, through a temporary file — redirecting onto the manifest while `cut` reads it would truncate it first:
+
+```bash
+m=docs/results/2026-09-11-jelly-motion-sweep.sha256
+cut -d' ' -f3- "$m" | xargs sha256sum > "$m.tmp" && [ -s "$m.tmp" ] && mv "$m.tmp" "$m"
+```
 
 (h) Add the caller-level check to `ShellTests`, so a future fixture that sources the lib cannot skip the protocol:
 
 ```python
-    def test_every_lib_consumer_preflights_after_sourcing_and_before_launching(self):
+    def test_every_live_lib_consumer_preflights_after_sourcing_and_before_launching(self):
+        import re
         fixtures = Path(__file__).parent
         consumers = [p for p in fixtures.glob("*.sh") if "glass-optic-smoke-lib.sh" in p.read_text()]
-        self.assertEqual(sorted(p.name for p in consumers), ["idle-budget.sh", "jelly-motion.sh"])
-        for path in consumers:
+        # A fixture that pins the lib's hash before sourcing it is a frozen snapshot of a
+        # completed experiment: it refuses today's lib on purpose and is not migrated.
+        pinned = [p for p in consumers if re.search(r"[0-9a-f]{64}\s+\"?\$?\{?lib\}?\"?.*sha256sum -c", p.read_text())]
+        live = [p for p in consumers if p not in pinned]
+        self.assertEqual(sorted(p.name for p in pinned), ["aurora-iridescence-hardware.sh"])
+        self.assertEqual(sorted(p.name for p in live), ["idle-budget.sh", "jelly-motion.sh"])
+        for path in live:
             text = path.read_text()
             source = text.index("glass-optic-smoke-lib.sh")
             preflight = text.index("capture_preflight")
@@ -1966,7 +1981,8 @@ Expected: all OK (the previous 19 plus 2).
 In `docs/results/2026-09-11-idle-budget.md`, under the status paragraph add one sentence: "The fixture records provenance, environment, and between-observation quietness through the native `tools/capture-meta` (spec `docs/specs/2026-09-11-material-capture-protocol-design.md` in `niri-material`); `hardware.json`, `<name>.config.sha256`, and the `IDLE_BUDGET_DEDICATED_SESSION` gate are replaced by `capture.json`." Adjust the "Power execution" paragraph's sentence about `IDLE_BUDGET_DEDICATED_SESSION` to name the `dedicated` lane's preflight instead. Then regenerate the manifest:
 
 ```bash
-sha256sum fixtures/idle-budget.py fixtures/idle-budget.sh fixtures/idle-budget.just fixtures/idle-budget-trace-marker.patch fixtures/test_idle_budget.py docs/results/2026-09-11-idle-budget.md > docs/results/2026-09-11-idle-budget.sha256
+m=docs/results/2026-09-11-idle-budget.sha256
+sha256sum fixtures/idle-budget.py fixtures/idle-budget.sh fixtures/idle-budget.just fixtures/idle-budget-trace-marker.patch fixtures/test_idle_budget.py docs/results/2026-09-11-idle-budget.md > "$m.tmp" && [ -s "$m.tmp" ] && mv "$m.tmp" "$m"
 ```
 
 - [ ] **Step 6: Commit**
