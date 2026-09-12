@@ -1,8 +1,11 @@
 # Material idle GPU and power budget
 
 **Status:** Task 1 fixture implemented, offline validated and reviewed on
-experiment `results/idle-budget` at `8db5dc8`. Release builds and trace/power
-collection remain pending. This document proposes rules, not measured results.
+experiment `results/idle-budget` at `8db5dc8`, with capture-protocol adoption
+integrated at `9d7d43f`. Task 2 resumed on 2026-09-12; its real headless readiness
+preflight refused the busy host, so it is parked for a quiet window. Release
+builds and trace/power collection remain pending. This
+document proposes rules, not measured results.
 
 **Task:** `material-265eb0`, within `material-53f873`.
 **Plan:** [execution plan](../plans/2026-09-11-material-idle-budget.md).
@@ -224,9 +227,9 @@ budget contract belong in native `docs/materials/`. Raw traces, CSV, binaries,
 configs, inventory, logs, interval boundaries, and SHA-256 manifests stay on
 per-machine storage under `NIRI_MATERIAL_WORK_ROOT/material-265eb0/`.
 
-Fixture implementation and offline validation (Task 1) are complete.
-Compositor launches, trace/power collection, logout, and VT switches remain
-unauthorized in this stage. Await a separate resume for
-trace collection; the isolated-session operator checkpoint precedes the power
-run. The parent closes only after its execution tasks and valid power
+Fixture implementation and offline validation (Task 1) are complete. The user
+resumed Task 2 on 2026-09-12; trace collection must pass the capture protocol's
+headless preflight and per-sub-run settle checks. The isolated-session operator
+checkpoint still precedes the power run. Logout and VT switches remain outside
+the harness's authority. The parent closes only after its execution tasks and valid power
 conclusion are complete, or its scope is explicitly revised by the user.

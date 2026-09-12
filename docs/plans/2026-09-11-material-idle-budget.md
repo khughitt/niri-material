@@ -3,8 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task.
 
 **Status:** Task 1 complete: fixture implemented, offline validated and reviewed
-on experiment `results/idle-budget` at `8db5dc8`. Tasks 2–3 remain paused; no
-release binaries or measurements were produced in this stage.
+on experiment `results/idle-budget` at `8db5dc8`, with capture-protocol adoption
+integrated at `9d7d43f`. Task 2 resumed on 2026-09-12; its 20-second readiness
+preflight refused the busy host and it is parked for a quiet window. Task 3 still requires the operator's
+dedicated-session checkpoint. No release binaries or measurements have been produced.
 
 **Goal:** verify quiescence after finite material motion and establish a
 repeatability-bounded idle board-power comparison in an isolated session.
@@ -24,8 +26,9 @@ Python stdlib, Bash, Just, and the task CLI. No new dependency or IPC interface.
 
 - Native base `1985dd02`, branch/worktree `material-265eb0` /
   `.worktrees/material-265eb0`. Present all native worktree paths with that prefix.
-- Current authorization: implement and offline-validate Task 1 only. Do not
-  launch compositors or collect traces/power; Tasks 2–3 require a later resume.
+- Current authorization: the user resumed Task 2 on 2026-09-12. Build and collect
+  traces only after the capture protocol's readiness checks pass. Task 3 requires
+  the operator-arranged dedicated session before power collection.
 - Read `docs/materials/render-pipeline.md` before any rendering investigation.
 - Start the relevant execution child with `tasks start`; close it in the commit
   containing its result. Run `tasks check` before commits; use native Just gates.
@@ -317,4 +320,9 @@ trace and power collection remain for Tasks 2–3.
 Execution children: `material-ec6229` (fixture), `material-4241c3` (traces), and
 `material-5f9dee` (isolated power), in dependency order.
 The reviewed rules retain the three-second settle budget, 1.0 W resolution
-target, and dedicated-session requirement. Tasks 2–3 remain open and paused.
+target, and dedicated-session requirement. Task 2 is authorized but parked after
+readiness refusal: CPU 25.5%, load1 12.89, GPU 34.5%, mixed P5/P8, and power IQR
+5.64 W. The record is retained under
+`NIRI_MATERIAL_WORK_ROOT/material-265eb0/readiness-20260912-15msz4ks/`; release
+succeeded. Task 3 remains open pending trace validation and the dedicated-session
+checkpoint.
