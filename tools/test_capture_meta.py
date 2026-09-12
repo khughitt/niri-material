@@ -144,6 +144,9 @@ class SamplingTests(unittest.TestCase):
         self.assertEqual(summary["gpu_power_w"], 19.0)
         self.assertEqual(summary["gpu_power_iqr_w"], 3.5)
         self.assertEqual(summary["gpu_pstates"], ["P0", "P8"])
+        self.assertEqual(summary["gpu_clients"], {"compute": [], "graphics": ["niri"]})
+        self.assertEqual(summary["mem_available_pct"], 80.0)
+        self.assertEqual(summary["samples"], 3)
 
 
 class GpuEvidenceTests(unittest.TestCase):
@@ -159,6 +162,19 @@ class GpuEvidenceTests(unittest.TestCase):
         for bad in ({"util_pct": 101.0}, {"power_w": 0.0}, {"clock_mhz": -1.0}, {"pstate": "X8"}):
             with self.assertRaises(cm.CannotRun): cm.validate_telemetry({**good, **bad})
 
+    def test_missing_or_unsupported_inventory_cannot_run(self):
+        for body in ('<nvidia_smi_log><gpu></gpu></nvidia_smi_log>', self.XML.format("N/A"),
+                     '<nvidia_smi_log><gpu><processes/></gpu><gpu><processes/></gpu></nvidia_smi_log>',
+                     self.XML.format('<process_info><type>X</type><process_name>a</process_name></process_info>')):
+            with self.subTest(body=body), self.assertRaises(cm.CannotRun): cm.parse_clients(body)
+        self.assertEqual(cm.parse_clients(self.XML.format("")), {"compute": [], "graphics": []})
+
+    def test_malformed_gpu_sample_and_cpu_memory_cannot_run(self):
+        for queries in ([{"util_pct": 0.0}], [{"util_pct": 0.0, "power_w": 18.4, "clock_mhz": 360, "pstate": "P8", "extra": 1}]):
+            with self.assertRaises(cm.CannotRun): cm.sample_stream(FakeProc([(0, 0), (1, 100)]), FakeGpu(queries), 1, sleep=lambda s: None)
+        with self.assertRaises(cm.CannotRun): cm.sample_stream(FakeProc([(1, 100), (0, 90)]), FakeGpu([QUIET]), 1, sleep=lambda s: None)
+        with self.assertRaises(cm.CannotRun): cm.sample_stream(FakeProc([(0, 0), (1, 100)], total_kib=0), FakeGpu([QUIET]), 1, sleep=lambda s: None)
+
 
 class JudgementTests(unittest.TestCase):
     def test_quiet_and_settle(self):
@@ -167,8 +183,29 @@ class JudgementTests(unittest.TestCase):
         samples = quiet_samples(3, power_w=24.1)
         reasons = cm.judge_settled(cm.summarize(samples), samples, cm.summarize(quiet_samples()), cm.DEFAULT_THRESHOLDS, "headless")
         self.assertIn("gpu_power_w 24.1 exceeds baseline 18.4 by more than 1.5", " ".join(reasons))
+        dropped = quiet_samples(3)
+        for sample in dropped: sample.mem_available_kib = 70_000
+        self.assertIn("mem_available_pct", " ".join(cm.judge_settled(cm.summarize(dropped), dropped, cm.summarize(quiet_samples()), cm.DEFAULT_THRESHOLDS, "headless")))
+
+    def test_each_quiet_threshold_and_lane_client_refuses(self):
+        for key, value, needle in (("util_pct", 35.0, "gpu_util_pct"), ("pstate", "P0", "gpu_pstate")):
+            self.assertIn(needle, " ".join(cm.judge_quiet(cm.summarize(quiet_samples(5, **{key: value})), quiet_samples(5, **{key: value}), cm.DEFAULT_THRESHOLDS, "headless")))
+        for kwargs, needle in (({"load1": 4.5}, "load1"), ({"available_kib": 10_000}, "mem_available_pct")):
+            samples = quiet_samples(5)
+            for sample in samples: setattr(sample, "load1" if "load1" in kwargs else "mem_available_kib", kwargs.get("load1", kwargs.get("available_kib")))
+            self.assertIn(needle, " ".join(cm.judge_quiet(cm.summarize(samples), samples, cm.DEFAULT_THRESHOLDS, "headless")))
+        proc = FakeProc([(i * 2, i * 100) for i in range(6)])
+        gpu = FakeGpu([dict(QUIET, power_w=value) for value in (18.0, 19.0, 30.0, 30.0, 19.0)])
+        samples = cm.sample_stream(proc, gpu, 5, sleep=lambda s: None)
+        self.assertIn("gpu_power_iqr_w", " ".join(cm.judge_quiet(cm.summarize(samples), samples, cm.DEFAULT_THRESHOLDS, "headless")))
+        compute = quiet_samples(5)
+        for sample in compute: sample.gpu_clients = {"compute": ["python3"], "graphics": ["niri"]}
+        self.assertIn("compute", " ".join(cm.judge_quiet(cm.summarize(compute), compute, cm.DEFAULT_THRESHOLDS, "headless")))
+        self.assertEqual(cm.judge_quiet(cm.summarize(quiet_samples()), quiet_samples(), cm.DEFAULT_THRESHOLDS, "headless"), [])
+        self.assertIn("gpu_clients", " ".join(cm.judge_quiet(cm.summarize(quiet_samples()), quiet_samples(), cm.DEFAULT_THRESHOLDS, "dedicated")))
     def test_threshold_validation(self):
         self.assertEqual(cm.parse_thresholds(["cpu_busy_pct=20", "gpu_pstate=P5"])["cpu_busy_pct"], 20.0)
+        self.assertEqual(cm.parse_thresholds(["cpu_busy_pct=101", "gpu_power_iqr_w=2000"])["cpu_busy_pct"], 101.0)
         for pair in ("nonsense=1", "load1=nan", "load1=-1", "gpu_pstate=X8"):
             with self.assertRaises(cm.CannotRun): cm.parse_thresholds([pair])
 

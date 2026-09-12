@@ -148,14 +148,34 @@ def parse_clients(xml_text):
 
 def sample_stream(proc, gpu, seconds, sleep=time.sleep):
     samples = []
-    busy0, total0 = proc.cpu_ticks()
+    try:
+        busy0, total0 = proc.cpu_ticks()
+        if busy0 < 0 or total0 < 0 or busy0 > total0: raise ValueError("invalid initial CPU ticks")
+    except (CannotRun, TypeError, ValueError) as error:
+        raise error if isinstance(error, CannotRun) else CannotRun(str(error)) from error
     for _ in range(seconds):
         sleep(1)
-        busy1, total1 = proc.cpu_ticks(); delta = total1 - total0
-        cpu = 100.0 * (busy1 - busy0) / delta if delta else 0.0
-        busy0, total0 = busy1, total1
-        available, total = proc.meminfo(); q = gpu.query()
-        samples.append(Sample(cpu, proc.load1(), available, total, q["util_pct"], q["power_w"], q["clock_mhz"], q["pstate"], gpu.clients()))
+        try:
+            busy1, total1 = proc.cpu_ticks(); delta = total1 - total0
+            if busy1 < busy0 or total1 <= total0 or busy1 > total1: raise ValueError("invalid CPU tick delta")
+            available, mem_total = proc.meminfo()
+            if available < 0 or mem_total <= 0 or available > mem_total: raise ValueError("invalid memory sample")
+            q = gpu.query()
+            if not isinstance(q, dict) or set(q) != {"util_pct", "power_w", "clock_mhz", "pstate"}:
+                raise ValueError("malformed GPU telemetry sample")
+            q = validate_telemetry(q)
+            clients = gpu.clients()
+            if (not isinstance(clients, dict) or set(clients) != {"compute", "graphics"}
+                    or any(not isinstance(v, list) or any(not isinstance(c, str) or not c for c in v)
+                           for v in clients.values())):
+                raise ValueError("invalid GPU client sample")
+            load = proc.load1()
+            if not math.isfinite(load) or load < 0: raise ValueError("invalid load sample")
+            cpu = 100.0 * (busy1 - busy0) / delta
+            samples.append(Sample(cpu, load, available, mem_total, q["util_pct"], q["power_w"], q["clock_mhz"], q["pstate"], clients))
+            busy0, total0 = busy1, total1
+        except (CannotRun, KeyError, TypeError, ValueError, ZeroDivisionError) as error:
+            raise error if isinstance(error, CannotRun) else CannotRun(str(error)) from error
     return samples
 
 
@@ -171,10 +191,28 @@ def iqr(values):
 def summarize(samples):
     total = samples[0].mem_total_kib
     clients = {key: sorted({c for s in samples for c in s.gpu_clients[key]}) for key in ("compute", "graphics")}
-    return {"samples": len(samples), "cpu_busy_pct": round(median([s.cpu_busy_pct for s in samples]), 1), "load1": round(median([s.load1 for s in samples]), 2), "mem_available_kib": int(median([s.mem_available_kib for s in samples])), "mem_total_kib": total, "mem_available_pct": round(100.0 * median([s.mem_available_kib for s in samples]) / total, 1), "gpu_util_pct": round(median([s.gpu_util_pct for s in samples]), 1), "gpu_power_w": round(median([s.gpu_power_w for s in samples]), 3), "gpu_power_iqr_w": iqr([s.gpu_power_w for s in samples]), "gpu_clock_mhz": int(median([s.gpu_clock_mhz for s in samples])), "gpu_pstates": sorted({s.gpu_pstate for s in samples}), "gpu_clients": clients}
+    return {
+        "samples": len(samples),
+        "cpu_busy_pct": round(median([s.cpu_busy_pct for s in samples]), 1),
+        "load1": round(median([s.load1 for s in samples]), 2),
+        "mem_available_kib": int(median([s.mem_available_kib for s in samples])),
+        "mem_total_kib": total,
+        "mem_available_pct": round(100.0 * median([s.mem_available_kib for s in samples]) / total, 1),
+        "gpu_util_pct": round(median([s.gpu_util_pct for s in samples]), 1),
+        "gpu_power_w": round(median([s.gpu_power_w for s in samples]), 3),
+        "gpu_power_iqr_w": iqr([s.gpu_power_w for s in samples]),
+        "gpu_clock_mhz": int(median([s.gpu_clock_mhz for s in samples])),
+        "gpu_pstates": sorted({s.gpu_pstate for s in samples}),
+        "gpu_clients": clients,
+    }
 
 
-DEFAULT_THRESHOLDS = {"cpu_busy_pct": 10.0, "load1": 2.0, "mem_available_pct_min": 20.0, "gpu_util_pct": 5.0, "gpu_pstate": "P8", "gpu_power_iqr_w": 1.0, "settle_cpu_busy_pct": 5.0, "settle_mem_pct": 5.0, "settle_gpu_util_pct": 3.0, "settle_gpu_power_w": 1.5}
+DEFAULT_THRESHOLDS = {
+    "cpu_busy_pct": 10.0, "load1": 2.0, "mem_available_pct_min": 20.0,
+    "gpu_util_pct": 5.0, "gpu_pstate": "P8", "gpu_power_iqr_w": 1.0,
+    "settle_cpu_busy_pct": 5.0, "settle_mem_pct": 5.0,
+    "settle_gpu_util_pct": 3.0, "settle_gpu_power_w": 1.5,
+}
 
 
 def parse_thresholds(pairs):
@@ -186,7 +224,7 @@ def parse_thresholds(pairs):
             if not re.fullmatch(r"P\d{1,2}", value): raise CannotRun(f"invalid P-state {value!r}")
             result[key] = value; continue
         number = parse_number(value, f"threshold {key}")
-        if number < 0 or ("pct" in key and number > 100) or ("power" in key and number >= 2000): raise CannotRun(f"threshold {key} outside sensible range")
+        if number < 0: raise CannotRun(f"threshold {key} must be nonnegative")
         result[key] = number
     return result
 

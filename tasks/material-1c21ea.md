@@ -6,7 +6,7 @@ priority: 2
 size: m
 owner: material-bae9c9
 created: 2026-09-12T02:42:50Z
-updated: 2026-09-12T03:34:05Z
+updated: 2026-09-12T03:38:33Z
 started: 2026-09-12T03:31:33Z
 completed: 2026-09-12T03:34:05Z
 depends: [material-55ecdf]
@@ -19,3 +19,4 @@ step: "Task 2: Samplers, summary, and quietness judgement"
 ## Notes
 
 - 2026-09-12T03:34:05Z (material-bae9c9): Implemented samplers, summaries, threshold validation, and quietness judgement with tests
+- 2026-09-12T03:38:33Z (material-bae9c9): Review fixes: restore full Task 2 coverage and normalize malformed sample/threshold validation
