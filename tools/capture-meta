@@ -3,13 +3,16 @@
 import argparse
 import contextlib
 import dataclasses
+import datetime
 import fcntl
 import json
 import math
 import os
 import pathlib
+import platform
 import re
 import shutil
+import socket
 import statistics
 import subprocess
 import sys
@@ -432,6 +435,105 @@ def append_sub_run(run_dir, entry):
     save_record(run_dir, record)
 
 
+def now_rfc3339():
+    return datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def tool_versions(tools):
+    versions = {}
+    for spec in tools or []:
+        name, sep, version = spec.partition("=")
+        if not name:
+            raise CannotRun("tool name must not be empty")
+        if sep:
+            versions[name] = version
+            continue
+        try:
+            result = subprocess.run([name, "--version"], capture_output=True, text=True, check=False)
+        except OSError as error:
+            raise CannotRun(f"{name} --version: {error}") from error
+        first = (result.stdout or result.stderr).strip().splitlines()
+        versions[name] = first[0] if first else f"exit {result.returncode}"
+    return versions
+
+
+def cpu_model():
+    try:
+        for line in pathlib.Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                return line.partition(":")[2].strip()
+    except OSError as error:
+        raise CannotRun(f"cannot read CPU model: {error}") from error
+    return platform.processor() or "unknown"
+
+
+def environment(gpu, tools, proc):
+    _, total_kib = proc.meminfo()
+    return {
+        "kernel": platform.release(),
+        "cpu": cpu_model(),
+        "cpu_threads": os.cpu_count(),
+        "memory_total_kib": total_kib,
+        "gpu": {**gpu.static(), "device": os.environ.get("CAPTURE_META_RENDER_NODE", "/dev/dri/renderD128")},
+        "session": {"type": os.environ.get("XDG_SESSION_TYPE", ""),
+                    "display": os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY") or ""},
+        "tools": tool_versions(tools),
+    }
+
+
+def run_section(run_dir, lane, task, fixture):
+    return {"id": pathlib.Path(run_dir).resolve().name, "task": task, "fixture": fixture, "lane": lane,
+            "started": now_rfc3339(), "host": socket.gethostname()}
+
+
+def session_reasons(lane):
+    if lane != "dedicated":
+        return []
+    reasons = []
+    if os.environ.get("XDG_SESSION_TYPE") != "tty":
+        reasons.append(f"XDG_SESSION_TYPE is {os.environ.get('XDG_SESSION_TYPE')!r}, dedicated lane needs 'tty'")
+    for key in ("DISPLAY", "WAYLAND_DISPLAY"):
+        if os.environ.get(key):
+            reasons.append(f"{key} is set; dedicated lane must have no display")
+    return reasons
+
+
+def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tools, proc, gpu,
+              sleep=time.sleep, lock=lock_path):
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        raise CannotRun("seconds must be a positive integer")
+    _validate_owner(owner_pid, "preflight")
+    run_dir = pathlib.Path(run_dir)
+    run = run_section(run_dir, lane, task, fixture)
+    write_section(run_dir, "run", run)
+    lock_file = lock()
+    try:
+        lock_info = acquire_lock(lock_file, owner_pid, run["id"])
+    except Refused as error:
+        write_section(run_dir, "preflight", {"verdict": "refused", "reasons": [str(error)], "thresholds": thresholds})
+        raise
+    try:
+        write_section(run_dir, "environment", environment(gpu, tools, proc))
+        reasons = session_reasons(lane)
+        samples = sample_stream(proc, gpu, seconds, sleep)
+        summary = summarize(samples)
+        write_section(run_dir, "baseline", {"seconds": seconds, **summary})
+        reasons += judge_quiet(summary, samples, thresholds, lane)
+        write_section(run_dir, "preflight", {"verdict": "quiet" if not reasons else "refused",
+                                              "reasons": reasons, "thresholds": thresholds, "lock": lock_info})
+        if reasons:
+            raise Refused("; ".join(reasons))
+    except BaseException:
+        release_lock(lock_file, owner_pid, run["id"])
+        raise
+
+
+def cmd_preflight(args):
+    preflight(args.run_dir, args.lane, args.task, args.fixture, args.seconds,
+              args.owner_pid if args.owner_pid is not None else os.getppid(),
+              parse_thresholds(args.threshold), args.tool, ProcReader(), GpuReader())
+
+
 def render(record):
     lines = []
     run = record.get("run", {})
@@ -489,6 +591,16 @@ def build_parser():
     show = subs.add_parser("show")
     show.add_argument("run_dir")
     show.set_defaults(func=cmd_show)
+    pre = subs.add_parser("preflight")
+    pre.add_argument("run_dir")
+    pre.add_argument("--lane", choices=("headless", "dedicated"), required=True)
+    pre.add_argument("--task", required=True)
+    pre.add_argument("--fixture", required=True)
+    pre.add_argument("--seconds", type=int, default=20)
+    pre.add_argument("--owner-pid", type=int, default=None)
+    pre.add_argument("--threshold", action="append", default=[])
+    pre.add_argument("--tool", action="append", default=[])
+    pre.set_defaults(func=cmd_preflight)
     return parser
 
 

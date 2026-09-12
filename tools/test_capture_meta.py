@@ -325,5 +325,107 @@ class JudgementTests(unittest.TestCase):
             with self.assertRaises(cm.CannotRun): cm.parse_thresholds([pair])
 
 
+class PreflightTests(unittest.TestCase):
+    def run_preflight(self, run, lane="headless", gpu=None, proc=None, env=None, lock=None, **kw):
+        proc = proc or FakeProc([(i * 2, i * 100) for i in range(30)])
+        gpu = gpu or FakeGpu([QUIET] * 30)
+        saved = dict(os.environ)
+        os.environ.update(env or {})
+        try:
+            return cm.preflight(run, lane=lane, task="material-x", fixture="f.sh", seconds=3, owner_pid=os.getpid(),
+                                thresholds=cm.DEFAULT_THRESHOLDS, tools=kw.get("tools", ["tracy=0.13.1"]),
+                                proc=proc, gpu=gpu, sleep=lambda s: None, lock=lock or (lambda: run / "lock"))
+        finally:
+            os.environ.clear(); os.environ.update(saved)
+
+    def test_quiet_headless_writes_run_environment_baseline_preflight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "trace-20260911T000000"; run.mkdir()
+            self.run_preflight(run, env={"XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-1"})
+            record = cm.load_record(run)
+            self.assertEqual(record["run"]["id"], "trace-20260911T000000")
+            self.assertEqual(record["run"]["lane"], "headless")
+            self.assertEqual(record["run"]["task"], "material-x")
+            self.assertRegex(record["run"]["started"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
+            self.assertNotIn("/", record["run"]["host"])
+            self.assertEqual(record["environment"]["gpu"]["name"], "NVIDIA test")
+            self.assertEqual(record["environment"]["tools"]["tracy"], "0.13.1")
+            self.assertEqual(record["environment"]["session"], {"type": "wayland", "display": "wayland-1"})
+            self.assertEqual(record["baseline"]["samples"], 3)
+            self.assertEqual(record["preflight"]["verdict"], "quiet")
+            self.assertEqual(record["preflight"]["thresholds"], cm.DEFAULT_THRESHOLDS)
+            self.assertEqual(record["preflight"]["lock"]["owner_pid"], os.getpid())
+            self.assertTrue((run / "lock").exists())
+
+    def test_busy_machine_refuses_and_records_reasons_and_clients(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "r"; run.mkdir()
+            gpu = FakeGpu([dict(QUIET, util_pct=35.0)] * 5, clients={"compute": [], "graphics": ["niri", "BitwigStudio"]})
+            with self.assertRaises(cm.Refused):
+                self.run_preflight(run, gpu=gpu)
+            record = cm.load_record(run)
+            self.assertEqual(record["preflight"]["verdict"], "refused")
+            self.assertIn("gpu_util_pct 35.0 exceeds 5.0", record["preflight"]["reasons"])
+            self.assertIn("BitwigStudio", record["baseline"]["gpu_clients"]["graphics"])
+            self.assertFalse((run / "lock").exists())
+
+    def test_dedicated_requires_tty_and_no_clients(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "r"; run.mkdir()
+            with self.assertRaises(cm.Refused):
+                self.run_preflight(run, lane="dedicated", env={"XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "w"})
+            self.assertIn("XDG_SESSION_TYPE", " ".join(cm.load_record(run)["preflight"]["reasons"]))
+            run2 = pathlib.Path(directory) / "r2"; run2.mkdir()
+            with self.assertRaises(cm.Refused):
+                self.run_preflight(run2, lane="dedicated", env={"XDG_SESSION_TYPE": "tty"},
+                                   gpu=FakeGpu([QUIET] * 5, clients={"compute": [], "graphics": ["niri"]}))
+            run3 = pathlib.Path(directory) / "r3"; run3.mkdir()
+            saved = {k: os.environ.pop(k, None) for k in ("DISPLAY", "WAYLAND_DISPLAY")}
+            try:
+                self.run_preflight(run3, lane="dedicated", env={"XDG_SESSION_TYPE": "tty"},
+                                   gpu=FakeGpu([QUIET] * 5, clients={"compute": [], "graphics": []}))
+            finally:
+                os.environ.update({k: v for k, v in saved.items() if v is not None})
+            self.assertEqual(cm.load_record(run3)["preflight"]["verdict"], "quiet")
+
+    def test_held_lock_refuses_without_sampling(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "r"; run.mkdir()
+            lock = run / "lock"
+            cm.acquire_lock(lock, os.getpid(), "other-run")
+            with self.assertRaises(cm.Refused):
+                self.run_preflight(run, lock=lambda: lock)
+            record = cm.load_record(run)
+            self.assertEqual(record["preflight"]["verdict"], "refused")
+            self.assertIn("other-run", " ".join(record["preflight"]["reasons"]))
+            self.assertNotIn("baseline", record)
+            self.assertEqual(cm.read_lock(lock)["run_id"], "other-run")
+
+    def test_invalid_seconds_or_pid_does_not_mutate_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for seconds, owner_pid in ((0, 1), (-1, 1), (1, 0), (1, -1), (1, True)):
+                run = pathlib.Path(directory) / f"r-{seconds}-{owner_pid}"; run.mkdir()
+                with self.subTest(seconds=seconds, owner_pid=owner_pid), self.assertRaises(cm.CannotRun):
+                    cm.preflight(run, "headless", "t", "f", seconds, owner_pid, cm.DEFAULT_THRESHOLDS,
+                                 [], FakeProc([(0, 0), (1, 100)]), FakeGpu([QUIET]), sleep=lambda _: None,
+                                 lock=lambda: run / "lock")
+                self.assertEqual(cm.load_record(run), {})
+
+    def test_missing_tool_cannot_run_and_releases_lock(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory); missing = "capture-meta-tool-that-does-not-exist"
+            with self.assertRaises(cm.CannotRun):
+                self.run_preflight(run, tools=[missing])
+            self.assertFalse((run / "lock").exists())
+
+    def test_cli_validation_returns_two_without_mutating_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "run"
+            code = cm.main(["preflight", str(run), "--lane", "headless", "--task", "t", "--fixture", "f",
+                            "--seconds", "0", "--owner-pid", "1"])
+            self.assertEqual(code, 2)
+            self.assertFalse(run.exists())
+
+
 if __name__ == "__main__":
     unittest.main()
