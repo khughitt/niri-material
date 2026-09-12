@@ -59,6 +59,33 @@ using 293 MiB. The process table also showed its active audio engine PID
 result. No process was terminated. The capture lock was released; Task 1
 remains parked before the old-build additive capture and shader edits.
 
+## Bitwig exited; remaining desktop GPU activity
+
+The next direct compute-client query returned no clients. Two further
+20-second preflights retained the same thresholds and released their locks:
+
+| Artifact under `$NIRI_MATERIAL_WORK_ROOT` | Start, local time | CPU | Load | GPU | P-states | Power IQR |
+| --- | --- | --- | --- | --- | --- | --- |
+| `render-order-readiness.ZVFSho` | 2026-09-12 17:07:36 | 7.4% | 5.06 | 32% | P0/P3/P5/P8 | 21.633 W |
+| `render-order-readiness.TFm260` | 2026-09-12 17:09:23 | 6.3% | 1.91 | 23.5% | P5/P8 | 0.537 W |
+
+Both report no compute clients. The second run followed a settling interval:
+CPU, load and power variance now pass. It still exits **1, preflight
+refused** for GPU utilization above 5% and P-state not remaining P8.
+
+SHA-256 of each retained `capture.json`, in table order:
+
+```text
+eeca0df08c0646f3140e01fbe4165d900a8e9d678156624ef0fc6f977883f5fb
+2676565f614fa59d3bb2309ff0d1fb3594f8f8bdf4633dea3f055bea684a3e7e
+```
+
+A separate three-sample `nvidia-smi pmon -c 3 -s u` diagnostic observed
+GPU activity in niri and Noctalia; this short sample does not attribute the
+whole preflight median to either process. Desktop applications were left
+running. These are still readiness refusals, not old-shader additive
+regression failures. Task 1 remains parked before shader edits.
+
 ## Offline preparation
 
 Added `glass-render-order-metrics.py` beside the existing smoke scripts:
