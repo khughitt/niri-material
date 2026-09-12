@@ -3,8 +3,9 @@ id: material-5d6b2c
 title: "Resource-aware rendering: know the cost of every visual decision"
 status: todo
 priority: 2
+complexity: high
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-11T23:34:15Z
+updated: 2026-09-12T19:24:30Z
 depends: []
 tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
@@ -17,3 +18,7 @@ Children: a concise performance guide, a consistent capture protocol with proven
 Related: material-265eb0 (idle GPU and power budget), prism-ed6be0 (intermittent slow draws), prism-d54be4 (per-parameter cost estimates for the Prism UI), ops-side observation tooling filed from the same seed.
 
 Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
+
+## Notes
+
+- 2026-09-12T19:24:30Z (materials-26.04): Complexity high: The goal still includes an unresolved per-element cost model and exploratory visibility, settling, and visual-cost trade-offs; the landed capture tooling supplies measurement infrastructure only.
