@@ -1,14 +1,21 @@
 ---
 id: material-1c21ea
 title: "Samplers, summary, and quietness judgement"
-status: todo
+status: done
 priority: 2
 size: m
+owner: material-bae9c9
 created: 2026-09-12T02:42:50Z
-updated: 2026-09-12T02:43:03Z
+updated: 2026-09-12T03:34:05Z
+started: 2026-09-12T03:31:33Z
+completed: 2026-09-12T03:34:05Z
 depends: [material-55ecdf]
 parent: material-bae9c9
 tags: [performance, testing]
 plan: docs/plans/2026-09-11-material-capture-protocol.md
 step: "Task 2: Samplers, summary, and quietness judgement"
 ---
+
+## Notes
+
+- 2026-09-12T03:34:05Z (material-bae9c9): Implemented samplers, summaries, threshold validation, and quietness judgement with tests
