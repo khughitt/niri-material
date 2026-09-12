@@ -42,6 +42,23 @@ reviewed baseline, and obtain the actual additive regression before shader
 implementation. Task 2 must still retain a positive wide-core face-strip
 test; a reach upper bound alone would accept the old mask.
 
+## Retry after closing the Bitwig window
+
+Run start: `2026-09-12T17:05:22-04:00`. Retained artifact:
+`$NIRI_MATERIAL_WORK_ROOT/render-order-readiness.03bDro/capture.json`.
+SHA-256: `5a3905985deb6aee3b93c16604d0da1858de469a46f5d2819c1f5dd17bb6435a`.
+The same 20-second command and default thresholds returned **1, preflight
+refused**: CPU 18.3%, load 7.31, GPU utilization 41%, performance state P5,
+and a BitwigStudio compute client. Power IQR was 0.838 W, below its 1 W
+threshold this time.
+
+An independent `nvidia-smi --query-compute-apps=pid,process_name,used_gpu_memory
+--format=csv,noheader` query confirmed live BitwigStudio PID `2467300`,
+using 293 MiB. The process table also showed its active audio engine PID
+`2467825`. This was a remaining application process, not a stale probe
+result. No process was terminated. The capture lock was released; Task 1
+remains parked before the old-build additive capture and shader edits.
+
 ## Offline preparation
 
 Added `glass-render-order-metrics.py` beside the existing smoke scripts:
