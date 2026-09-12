@@ -170,10 +170,18 @@ class GpuEvidenceTests(unittest.TestCase):
         self.assertEqual(cm.parse_clients(self.XML.format("")), {"compute": [], "graphics": []})
 
     def test_malformed_gpu_sample_and_cpu_memory_cannot_run(self):
-        for queries in ([{"util_pct": 0.0}], [{"util_pct": 0.0, "power_w": 18.4, "clock_mhz": 360, "pstate": "P8", "extra": 1}]):
-            with self.assertRaises(cm.CannotRun): cm.sample_stream(FakeProc([(0, 0), (1, 100)]), FakeGpu(queries), 1, sleep=lambda s: None)
-        with self.assertRaises(cm.CannotRun): cm.sample_stream(FakeProc([(1, 100), (0, 90)]), FakeGpu([QUIET]), 1, sleep=lambda s: None)
-        with self.assertRaises(cm.CannotRun): cm.sample_stream(FakeProc([(0, 0), (1, 100)], total_kib=0), FakeGpu([QUIET]), 1, sleep=lambda s: None)
+        malformed = [{"util_pct": 0.0}, {**QUIET, "extra": 1}]
+        for query in malformed:
+            with self.assertRaises(cm.CannotRun):
+                cm.sample_stream(FakeProc([(0, 0), (1, 100)]), FakeGpu([query]), 1, sleep=lambda s: None)
+        for clients in ({"compute": [], "graphics": None}, {"compute": [], "graphics": [None]}):
+            with self.assertRaises(cm.CannotRun):
+                cm.sample_stream(FakeProc([(0, 0), (1, 100)]), FakeGpu([QUIET], clients=clients), 1, sleep=lambda s: None)
+        for ticks in ([(1, 100), (0, 90)], [(0, 100), (100, 150)]):
+            with self.assertRaises(cm.CannotRun):
+                cm.sample_stream(FakeProc(ticks), FakeGpu([QUIET]), 1, sleep=lambda s: None)
+        with self.assertRaises(cm.CannotRun):
+            cm.sample_stream(FakeProc([(0, 0), (1, 100)], total_kib=-1), FakeGpu([QUIET]), 1, sleep=lambda s: None)
 
 
 class JudgementTests(unittest.TestCase):
