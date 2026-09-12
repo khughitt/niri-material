@@ -19,6 +19,9 @@ binary on an RTX 3070. No production renderer changes are part of this task.
 | Controlled host | Weston 15.0.1, headless GL, 1280×720 |
 | Test surface | Transparent kitty, 456×640, flat warm backdrop |
 
+This table was written by hand; runs after `material-bae9c9` paste
+`tools/capture-meta show` instead.
+
 Both Weston and nested niri explicitly reported `NVIDIA GeForce RTX 3070`.
 The fixture rejects a software renderer. Captures use a copy of the installed
 binary; timing uses a matching-source release build with Tracy instrumentation.

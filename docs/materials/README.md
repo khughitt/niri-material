@@ -12,6 +12,11 @@ All future production rebases and material commits happen in this repository.
 
 ## Material documentation
 
+Every measurement run writes `capture.json` through `tools/capture-meta`; paste
+`tools/capture-meta show <run-dir>` into the evidence doc's environment section
+rather than retyping it (protocol:
+`../specs/2026-09-11-material-capture-protocol-design.md`).
+
 - `2026-08-22-repository-split.md`: repository ownership and provenance.
 - `2026-08-22-v1-design.md`: accepted v1 material architecture.
 - `2026-08-24-glass-config-surface-design.md`: implemented and accepted v1 configuration surface.

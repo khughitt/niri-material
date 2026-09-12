@@ -1,5 +1,8 @@
 # Material performance-capture protocol: implementation plan
 
+**Status:** implemented on `material-bae9c9` and companion branch
+`niri-experiments/results/capture-protocol`; final controller review pending.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship `tools/capture-meta`, the helper every material performance capture calls to refuse a busy machine, record provenance, and re-check quietness between sub-runs, and adopt it in the optic smoke lib and the idle-budget fixture.
@@ -77,7 +80,7 @@ def release_lock(path, owner_pid, run_id) -> bool
 **Interfaces:**
 - Produces: `SCHEMA`, `Refused`, `CannotRun`, `load_record`, `write_section`, `append_sub_run`, `render(record) -> str`, `main(argv) -> int` with sub-command dispatch table `COMMANDS`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 """Unit tests for tools/capture-meta: `python3 -m unittest discover -s tools`."""
@@ -160,12 +163,12 @@ class ShowTests(unittest.TestCase):
             self.assertEqual(cm.main(["show", directory]), 0)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cd .worktrees/material-bae9c9 && python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: `FileNotFoundError` loading `tools/capture-meta` (module missing).
 
-- [ ] **Step 3: Write the skeleton**
+- [x] **Step 3: Write the skeleton**
 
 ```python
 #!/usr/bin/env python3
@@ -319,12 +322,12 @@ if __name__ == "__main__":
 
 `chmod +x tools/capture-meta`. Later tasks add sub-parsers to `build_parser` and their `cmd_*` functions; keep that pattern.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: 5 tests OK.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/capture-meta tools/test_capture_meta.py
@@ -342,7 +345,7 @@ git commit -m "feat(tools): capture-meta record I/O and show"
 **Interfaces:**
 - Produces: `Sample`, `ProcReader`, `GpuReader`, `sample_stream`, `summarize`, `DEFAULT_THRESHOLDS`, `parse_thresholds(pairs) -> dict`, `judge_quiet`, `judge_settled`, `median`, `iqr`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tools/test_capture_meta.py`:
 
@@ -479,12 +482,12 @@ class JudgementTests(unittest.TestCase):
             cm.parse_thresholds(["nonsense=1"])
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: `AttributeError: module 'capture_meta' has no attribute 'sample_stream'`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `tools/capture-meta` after the record functions (imports: `dataclasses`, `math`, `re`, `statistics`, `subprocess`, `time`, `xml.etree.ElementTree as ET`, `os`, `shutil`):
 
@@ -720,12 +723,12 @@ def judge_settled(summary, samples, baseline, thresholds, lane):
     return reasons + client_reasons(samples, lane)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: all OK (15 tests). If `test_settle_tolerances` complains about the memory message, check that `summarize` rounds `mem_available_pct` to one decimal and the baseline is `80.0`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/capture-meta tools/test_capture_meta.py
@@ -744,7 +747,7 @@ git commit -m "feat(tools): capture-meta samplers and quietness judgement"
 - Produces: `lock_path() -> Path` (`$XDG_RUNTIME_DIR/capture-meta.lock`; `CannotRun` when the variable is unset), `pid_alive(pid) -> bool`, `guarded(path)` (context manager holding `flock(LOCK_EX)` on the sibling `<path>.d` directory), `acquire_lock(path, owner_pid, run_id, alive=pid_alive) -> dict`, `read_lock(path) -> dict | None` (`CannotRun` on unreadable contents), `release_lock(path, owner_pid, run_id) -> bool`.
 - Every read, create, reclaim, and release of the lock file happens under `guarded(path)`. Publication is atomic: the JSON is written to `<path>.tmp.<pid>` and `os.link`ed to `path` (link fails with `EEXIST` if someone else published first), so no reader can ever see a half-written lock. Corrupt or empty contents are `CannotRun`, never evidence that the owner is dead.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 class LockTests(unittest.TestCase):
@@ -815,12 +818,12 @@ class LockTests(unittest.TestCase):
             self.assertEqual(codes, [0] + [1] * 7)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.LockTests -v`
 Expected: `AttributeError ... acquire_lock`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 import fcntl  # add to imports
@@ -921,12 +924,12 @@ def release_lock(path, owner_pid, run_id):
         return True
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.LockTests -v`
 Expected: 5 OK. The race test must show `[0, 1, 1, 1, 1, 1, 1, 1]`; if two zeros appear, an operation is running outside `guarded()`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/capture-meta tools/test_capture_meta.py
@@ -946,7 +949,7 @@ git commit -m "feat(tools): capture-meta atomic ownership-checked lock"
 - Produces: `environment(gpu, tools) -> dict`, `run_section(run_dir, lane, task, fixture) -> dict`, `preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tools, proc, gpu, sleep, lock=lock_path) -> None` (raises `Refused` after writing the refusal), `cmd_preflight(args)`.
 - `--tool NAME` runs `NAME --version` and keeps the first line; `--tool NAME=VERSION` records the given string.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 class PreflightTests(unittest.TestCase):
@@ -1026,12 +1029,12 @@ class PreflightTests(unittest.TestCase):
             self.assertEqual(cm.read_lock(lock)["run_id"], "other-run")
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.PreflightTests -v`
 Expected: `AttributeError ... preflight`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 import datetime, platform, socket  # add to imports
@@ -1142,12 +1145,12 @@ Add to `build_parser`:
     pre.set_defaults(func=cmd_preflight)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: all OK. If `test_held_lock_refuses_without_sampling` fails on `baseline`, make sure the lock is acquired *before* sampling.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/capture-meta tools/test_capture_meta.py
@@ -1165,7 +1168,7 @@ git commit -m "feat(tools): capture-meta preflight with lanes and lock"
 **Interfaces:**
 - Produces: `sha256_file(path) -> str`, `source_facts(checkout) -> dict(commit, branch, dirty, diff_sha256?)`, `identity(run_dir, source, binaries, inputs, config) -> None`, `cmd_identity`. `Refused` when any binary/input path is missing.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 class IdentityTests(unittest.TestCase):
@@ -1226,12 +1229,12 @@ class IdentityTests(unittest.TestCase):
             self.assertEqual(cm.load_record(run), {})
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.IdentityTests -v`
 Expected: `AttributeError ... identity`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 import hashlib  # add to imports
@@ -1311,12 +1314,12 @@ Parser:
     ident.set_defaults(func=cmd_identity)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.IdentityTests -v`
 Expected: 4 OK.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/capture-meta tools/test_capture_meta.py
@@ -1334,7 +1337,7 @@ git commit -m "feat(tools): capture-meta identity"
 **Interfaces:**
 - Produces: `settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep, lock) -> None`, `cmd_settle`, `cmd_release`. `settle` appends to `sub_runs[]` and raises `Refused` on an off-baseline verdict, a missing input, or a lock that no longer names this run.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 class SettleTests(unittest.TestCase):
@@ -1441,12 +1444,12 @@ class EndToEndTest(unittest.TestCase):
             self.assertFalse((runtime / "capture-meta.lock").exists())
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.SettleTests tools.test_capture_meta.EndToEndTest -v`
 Expected: `AttributeError ... settle`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=lock_path):
@@ -1504,12 +1507,12 @@ Parser:
     rel.set_defaults(func=cmd_release)
 ```
 
-- [ ] **Step 4: Run the whole suite**
+- [x] **Step 4: Run the whole suite**
 
 Run: `just check`
 Expected: the tooling suite reports `OK` with the previous 70 tests plus the new ones (about 97); fmt, clippy, `tasks check`, and the two `--check` tools pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/capture-meta tools/test_capture_meta.py
@@ -1528,7 +1531,7 @@ git commit -m "feat(tools): capture-meta settle and release, end-to-end test"
 **Interfaces:**
 - Produces (bash): `capture_meta "$@"` (runs `${CAPTURE_META:-python3 "$ROOT/tools/capture-meta"} "$@"`; tests set `CAPTURE_META` to a stub), `capture_preflight <lane>`, `capture_identity [extra --input/--config args]...`, `settle_before_launch <config> [<name>]`, `start_nested <niri> <config> [<name>]`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tools/test_glass_optic_smoke.py`:
 
@@ -1582,12 +1585,12 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             self.assertTrue(source < pre < build < ident, smoke)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_glass_optic_smoke -v`
 Expected: four failures (`settle_before_launch` not found, etc.).
 
-- [ ] **Step 3: Modify the lib**
+- [x] **Step 3: Modify the lib**
 
 Header comment: add after the `# Env:` paragraph:
 
@@ -1649,7 +1652,7 @@ finish() {
     if rg -n 'material.*(error|fallback)|error compiling material shader|panic' "$OUT/niri.log"; then
 ```
 
-- [ ] **Step 4: Modify the smokes**
+- [x] **Step 4: Modify the smokes**
 
 In both smokes, immediately after the `. …/glass-optic-smoke-lib.sh` line add `capture_preflight headless`, and immediately after `build_binaries` add `capture_identity` with the pinned scene facts, e.g. for aurora:
 
@@ -1659,12 +1662,12 @@ capture_identity --config preset=aurora --config output=1280x720 --config scale=
 
 Each smoke sets `CAPTURE_TASK` near its top (`: "${CAPTURE_TASK:=material-bae9c9}"` is wrong — the task is whoever runs the smoke; use `: "${CAPTURE_TASK:?task id authorizing this run}"` so the caller must export it). Update the smoke's usage comment to mention `CAPTURE_TASK`.
 
-- [ ] **Step 5: Run tests**
+- [x] **Step 5: Run tests**
 
 Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_glass_optic_smoke -v && bash -n docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/glass-aurora-smoke.sh docs/materials/scripts/glass-iridescence-smoke.sh`
 Expected: 6 OK; `bash -n` silent.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/glass-aurora-smoke.sh docs/materials/scripts/glass-iridescence-smoke.sh tools/test_glass_optic_smoke.py
@@ -1693,7 +1696,7 @@ cd .worktrees/material-bae9c9
 **Interfaces:**
 - Consumes: `capture_preflight`, `capture_identity`, `start_nested <niri> <cfg> <name>`, `capture_meta` from Task 7 via the sourced lib.
 
-- [ ] **Step 1: Write the failing shell test**
+- [x] **Step 1: Write the failing shell test**
 
 Add to `ShellTests` in `fixtures/test_idle_budget.py`:
 
@@ -1753,12 +1756,12 @@ runtime "$TEST_MODE"
 
 Also update `test_runtime_validates_identity_before_reaching_launch_boundary` (line 319): set `"CAPTURE_META": "true"` in its env (the `true` builtin accepts any arguments and exits 0; the lib's wrapper must therefore be defined so `CAPTURE_META` is word-split, as in Task 7), drop `"IDLE_BUDGET_DEDICATED_SESSION": "YES"` and the `nvidia-smi` stub from its env/scripts (they are gone from the fixture), keep `"XDG_SESSION_TYPE": "tty"`. Note the stub must not be a shell function: `runtime()` sources the lib after the test script runs, and the lib's definition would replace a function stub.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `just --justfile fixtures/idle-budget.just test`
 Expected: the new test fails (`capture-calls` missing) and the identity-boundary test may fail on the `nvidia-smi` stub removal until Step 3.
 
-- [ ] **Step 3: Modify `runtime()`**
+- [x] **Step 3: Modify `runtime()`**
 
 Replace, in order:
 
@@ -1833,12 +1836,12 @@ and delete lines 13–15 (`source.commit`, `nvidia-smi.txt`, `lscpu.txt`) — `c
             self.assertLess(text.index("capture_identity") if "capture_identity" in text else text.index("capture_meta identity"), launch, path.name)
 ```
 
-- [ ] **Step 4: Run the shell tests**
+- [x] **Step 4: Run the shell tests**
 
 Run: `just --justfile fixtures/idle-budget.just test` and `just --justfile fixtures/jelly-motion.just test`
 Expected: both pass; `IntegrationTests`/`PowerIntegrityTests` still pass because the analyzer is unchanged until Task 9. (`bash -n fixtures/jelly-motion.sh` is silent.)
 
-- [ ] **Step 5: Commit (in the experiments worktree)**
+- [x] **Step 5: Commit (in the experiments worktree)**
 
 ```bash
 git add fixtures/idle-budget.sh fixtures/jelly-motion.sh fixtures/test_idle_budget.py
@@ -1857,7 +1860,7 @@ git commit -m "feat(fixtures): idle-budget and jelly-motion record captures thro
 **Interfaces:**
 - Produces: `capture_record(run) -> dict` (reads `capture.json`, requires `schema == 1`), `sub_run_entry(record, name) -> dict` (exactly one match, verdict `settled`, else `ValueError`), `scene_evidence(run, name, case)` with the same return as today.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `IntegrationTests.trace_run`, replace the `hardware.json` line and the per-observation `.config.sha256` line with a `capture.json` writer. Add a helper on the class:
 
@@ -1905,12 +1908,12 @@ Add new cases to `IntegrationTests`:
             check(lambda r: r.update(schema=2), "capture.json schema")
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `just --justfile fixtures/idle-budget.just test`
 Expected: `FileNotFoundError: … hardware.json` from `analyze`, and the new test fails.
 
-- [ ] **Step 3: Migrate the analyzer**
+- [x] **Step 3: Migrate the analyzer**
 
 Replace `scene_evidence`'s first two checks and add helpers:
 
@@ -1968,12 +1971,12 @@ In `analyze`, replace the `session-type.txt` and `hardware.json` reads:
 
 and keep `"hardware": hardware` in the result (its keys are now `name`/`uuid`/`driver`/`device`).
 
-- [ ] **Step 4: Run the suite**
+- [x] **Step 4: Run the suite**
 
 Run: `just --justfile fixtures/idle-budget.just test`
 Expected: all OK (the previous 19 plus 2).
 
-- [ ] **Step 5: Update the results doc and manifest**
+- [x] **Step 5: Update the results doc and manifest**
 
 In `docs/results/2026-09-11-idle-budget.md`, under the status paragraph add one sentence: "The fixture records provenance, environment, and between-observation quietness through the native `tools/capture-meta` (spec `docs/specs/2026-09-11-material-capture-protocol-design.md` in `niri-material`); `hardware.json`, `<name>.config.sha256`, and the `IDLE_BUDGET_DEDICATED_SESSION` gate are replaced by `capture.json`." Adjust the "Power execution" paragraph's sentence about `IDLE_BUDGET_DEDICATED_SESSION` to name the `dedicated` lane's preflight instead. Then regenerate the manifest:
 
@@ -1982,7 +1985,7 @@ m=docs/results/2026-09-11-idle-budget.sha256
 sha256sum fixtures/idle-budget.py fixtures/idle-budget.sh fixtures/idle-budget.just fixtures/idle-budget-trace-marker.patch fixtures/test_idle_budget.py docs/results/2026-09-11-idle-budget.md > "$m.tmp" && [ -s "$m.tmp" ] && mv "$m.tmp" "$m"
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add fixtures/idle-budget.py fixtures/test_idle_budget.py docs/results/2026-09-11-idle-budget.md docs/results/2026-09-11-idle-budget.sha256
@@ -1999,13 +2002,13 @@ git commit -m "feat(idle-budget): analyzer reads capture.json for hardware, iden
 - Modify: `docs/specs/2026-09-11-material-capture-protocol-design.md:3-4` (status)
 - Modify: `tasks/material-bae9c9.md` via the CLI only
 
-- [ ] **Step 1: Pointers**
+- [x] **Step 1: Pointers**
 
 In `docs/materials/README.md`, where evidence documents are described, add: "Every measurement run writes `capture.json` through `tools/capture-meta`; paste `tools/capture-meta show <run-dir>` into the evidence doc's environment section rather than retyping it (protocol: `../specs/2026-09-11-material-capture-protocol-design.md`)."
 
 In the hardware evidence doc's "Environment and identity" section, add after the table: "This table was written by hand; runs after `material-bae9c9` paste `tools/capture-meta show` instead."
 
-- [ ] **Step 2: The one manual check (operator, this host)**
+- [x] **Step 2: The one manual check (operator, this host)**
 
 With the desktop running normally and any GPU-busy application open, from the worktree:
 
@@ -2018,7 +2021,7 @@ python3 tools/capture-meta show "$d"
 
 Expected: exit 1 when the GPU is busy, with the failing threshold in `reasons` and the client list in `baseline.gpu_clients.graphics`; exit 0 when quiet. Record the observed exit code, reasons, and the two or three client names in a `tasks note material-bae9c9 "…"`. Then `python3 tools/capture-meta release "$d"` and remove `$d`. This is the spec §7 hand check; it is not automated and not evidence of anything but the refusal path.
 
-- [ ] **Step 3: Spec status and task**
+- [x] **Step 3: Spec status and task**
 
 Change the spec's status line to: "**Status:** implemented on `material-bae9c9` (this plan); `tools/capture-meta` and the optic smoke adoption are in this repository, the idle-budget adoption on `niri-experiments` `results/capture-protocol`. Thresholds are host-derived defaults pending the first dedicated-lane run (`material-265eb0`)." Then:
 
@@ -2033,7 +2036,7 @@ git commit -m "docs(material): capture protocol landed; point evidence docs at c
 
 `tasks done` will refuse while the plan's step children are open; close each step child as its task commits land (Tasks 1–10), then run the `done` above.
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run, as three separate commands so each exit status is seen: `just check`; then in the experiments worktree with `MATERIAL_ROOT` exported, `just --justfile fixtures/idle-budget.just test`; then `just --justfile fixtures/jelly-motion.just test`.
 Expected: `OK` from each suite; `just check` also passes fmt, clippy, and `tasks check`. Then hand the branch to `superpowers:finishing-a-development-branch`.
