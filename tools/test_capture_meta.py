@@ -45,6 +45,18 @@ class LockTests(unittest.TestCase):
                 cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
             self.assertFalse(cm.release_lock(path, 222, "run-b"))
 
+    def test_binary_corrupt_lock_is_never_reclaimed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            corrupt = b"\xff"
+            path.write_bytes(corrupt)
+            with self.assertRaises(cm.CannotRun):
+                cm.read_lock(path)
+            with self.assertRaises(cm.CannotRun):
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
+            self.assertFalse(cm.release_lock(path, 222, "run-b"))
+            self.assertEqual(path.read_bytes(), corrupt)
+
     def test_guard_serializes_acquire_against_a_concurrent_holder(self):
         import fcntl
         with tempfile.TemporaryDirectory() as directory:

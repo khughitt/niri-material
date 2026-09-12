@@ -76,6 +76,8 @@ def _read_lock(path):
         text = path.read_text()
     except FileNotFoundError:
         return None
+    except UnicodeError as error:
+        raise CannotRun(f"lock {path} is unreadable ({error}); remove it by hand if no capture is running") from error
     except OSError as error:
         raise CannotRun(f"lock {path}: {error}") from error
     try:
