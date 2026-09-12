@@ -157,7 +157,8 @@ def sample_stream(proc, gpu, seconds, sleep=time.sleep):
         sleep(1)
         try:
             busy1, total1 = proc.cpu_ticks(); delta = total1 - total0
-            if busy1 < busy0 or total1 <= total0 or busy1 > total1: raise ValueError("invalid CPU tick delta")
+            if busy1 < busy0 or total1 <= total0 or busy1 > total1 or busy1 - busy0 > delta:
+                raise ValueError("invalid CPU tick delta")
             available, mem_total = proc.meminfo()
             if available < 0 or mem_total <= 0 or available > mem_total: raise ValueError("invalid memory sample")
             q = gpu.query()
