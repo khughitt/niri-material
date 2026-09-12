@@ -12,11 +12,15 @@
 # in a later bucket and must differ. Redraw rates come from Tracy counts of
 # `Niri::redraw` in the final 20 s of a 30 s capture with both windows idle.
 #
-# Env: OUT (artifact dir), NIRI_MATERIAL_WORK_ROOT.
+# Env: OUT (artifact dir), NIRI_MATERIAL_WORK_ROOT, CAPTURE_TASK (task id
+# authorizing this run).
 set -eu
+: "${CAPTURE_TASK:?task id authorizing this run}"
 HERE=$(dirname "$(readlink -f "$0")")
 . "$HERE/glass-optic-smoke-lib.sh"
+capture_preflight headless
 build_binaries
+capture_identity --config preset=aurora --config output=1280x720 --config scale=1 --config vrr=off
 calibrate_probe_rect "$NIRI" 1
 
 session() {   # $1 name, $2 glass extra; leaves the session running, probe unfocused

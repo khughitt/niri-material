@@ -1,0 +1,830 @@
+#!/usr/bin/env python3
+"""Record I/O and display for material performance captures."""
+import argparse
+import contextlib
+import dataclasses
+import datetime
+import fcntl
+import hashlib
+import json
+import math
+import os
+import pathlib
+import platform
+import re
+import shutil
+import socket
+import statistics
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+SCHEMA = 1
+RECORD = "capture.json"
+LOCK_NAME = "capture-meta.lock"
+
+
+class Refused(Exception):
+    """Exit 1: the run must not proceed."""
+
+
+class CannotRun(Exception):
+    """Exit 2: the helper could not do its job."""
+
+
+def lock_path():
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime:
+        raise CannotRun("XDG_RUNTIME_DIR is unset; the lock has nowhere to live")
+    return pathlib.Path(runtime) / LOCK_NAME
+
+
+def _validate_owner(owner_pid, run_id):
+    if (isinstance(owner_pid, bool) or not isinstance(owner_pid, int) or owner_pid <= 0
+            or not isinstance(run_id, str) or not run_id):
+        raise CannotRun("lock owner_pid must be a positive integer and run_id a nonempty string")
+
+
+def pid_alive(pid):
+    _validate_owner(pid, "pid-check")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as error:
+        raise CannotRun(f"cannot check pid {pid}: {error}") from error
+    return True
+
+
+@contextlib.contextmanager
+def guarded(path):
+    path = pathlib.Path(path)
+    guard = path.with_name(path.name + ".d")
+    try:
+        guard.mkdir(exist_ok=True)
+        fd = os.open(guard, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+    except OSError as error:
+        raise CannotRun(f"lock guard {guard}: {error}") from error
+
+
+def _read_lock(path):
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    except UnicodeError as error:
+        raise CannotRun(f"lock {path} is unreadable ({error}); remove it by hand if no capture is running") from error
+    except OSError as error:
+        raise CannotRun(f"lock {path}: {error}") from error
+    try:
+        holder = json.loads(text)
+    except (json.JSONDecodeError, UnicodeError) as error:
+        raise CannotRun(f"lock {path} is unreadable ({error}); remove it by hand if no capture is running") from error
+    if not isinstance(holder, dict):
+        raise CannotRun(f"lock {path} has no owner_pid/run_id; remove it by hand if no capture is running")
+    try:
+        _validate_owner(holder.get("owner_pid"), holder.get("run_id"))
+    except CannotRun as error:
+        raise CannotRun(f"lock {path} has no owner_pid/run_id; remove it by hand if no capture is running") from error
+    return holder
+
+
+def read_lock(path):
+    path = pathlib.Path(path)
+    with guarded(path):
+        return _read_lock(path)
+
+
+def _publish_lock(path, owner_pid, run_id):
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        tmp.write_text(json.dumps({"owner_pid": owner_pid, "run_id": run_id}))
+        os.link(tmp, path)
+    except OSError as error:
+        raise CannotRun(f"cannot publish lock {path}: {error}") from error
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError as error:
+            raise CannotRun(f"cannot remove temporary lock {tmp}: {error}") from error
+
+
+def acquire_lock(path, owner_pid, run_id, alive=pid_alive):
+    _validate_owner(owner_pid, run_id)
+    path = pathlib.Path(path)
+    with guarded(path):
+        holder = _read_lock(path)
+        if holder is None:
+            _publish_lock(path, owner_pid, run_id)
+            return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": False}
+        if alive(holder["owner_pid"]):
+            raise Refused(f"lock {path} held by pid {holder['owner_pid']} for run {holder['run_id']}")
+        try:
+            path.unlink()
+        except OSError as error:
+            raise CannotRun(f"cannot reclaim lock {path}: {error}") from error
+        _publish_lock(path, owner_pid, run_id)
+        return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": True,
+                "previous_owner_pid": holder["owner_pid"]}
+
+
+def release_lock(path, owner_pid, run_id):
+    _validate_owner(owner_pid, run_id)
+    path = pathlib.Path(path)
+    with guarded(path):
+        try:
+            holder = _read_lock(path)
+        except CannotRun:
+            return False
+        if holder is None:
+            return True
+        if holder["owner_pid"] != owner_pid or holder["run_id"] != run_id:
+            return False
+        try:
+            path.unlink()
+        except OSError as error:
+            raise CannotRun(f"cannot release lock {path}: {error}") from error
+        return True
+
+
+@dataclasses.dataclass
+class Sample:
+    cpu_busy_pct: float
+    load1: float
+    mem_available_kib: int
+    mem_total_kib: int
+    gpu_util_pct: float
+    gpu_power_w: float
+    gpu_clock_mhz: int
+    gpu_pstate: str
+    gpu_clients: dict
+
+
+class ProcReader:
+    def __init__(self, root=None):
+        self.root = pathlib.Path(root or os.environ.get("CAPTURE_META_PROC", "/proc"))
+
+    def cpu_ticks(self):
+        try:
+            values = [int(v) for v in (self.root / "stat").read_text().splitlines()[0].split()[1:]]
+            if len(values) < 8: raise ValueError("expected CPU counters through steal")
+            idle = values[3] + values[4]
+            total = sum(values[:8])
+            return total - idle, total
+        except (OSError, IndexError, ValueError) as error:
+            raise CannotRun(f"cannot read CPU ticks: {error}") from error
+
+    def load1(self):
+        try:
+            value = float((self.root / "loadavg").read_text().split()[0])
+            if not math.isfinite(value) or value < 0: raise ValueError("invalid load")
+            return value
+        except (OSError, IndexError, ValueError) as error:
+            raise CannotRun(f"cannot read load average: {error}") from error
+
+    def meminfo(self):
+        try:
+            info = {}
+            for line in (self.root / "meminfo").read_text().splitlines():
+                key, _, rest = line.partition(":")
+                info[key] = int(rest.split()[0])
+            return info["MemAvailable"], info["MemTotal"]
+        except (OSError, IndexError, KeyError, ValueError) as error:
+            raise CannotRun(f"cannot read memory info: {error}") from error
+
+
+class GpuReader:
+    QUERY = ("nvidia-smi", "--query-gpu=utilization.gpu,power.draw,clocks.gr,pstate", "--format=csv,noheader,nounits")
+    STATIC = ("nvidia-smi", "--query-gpu=name,uuid,driver_version", "--format=csv,noheader")
+
+    def __init__(self):
+        if shutil.which("nvidia-smi") is None:
+            raise CannotRun("nvidia-smi not found; no GPU sampler for this host")
+
+    def _run(self, *command):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+        except OSError as error:
+            raise CannotRun(f"{' '.join(command)}: {error}") from error
+        if result.returncode != 0:
+            error = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+            raise CannotRun(f"{' '.join(command)}: {error}")
+        return result.stdout
+
+    def query(self):
+        rows = [r.strip() for r in self._run(*self.QUERY).strip().splitlines()]
+        if len(rows) != 1:
+            raise CannotRun(f"exactly one GPU expected, nvidia-smi listed {len(rows)}")
+        fields = [x.strip() for x in rows[0].split(",")]
+        if len(fields) != 4:
+            raise CannotRun("nvidia-smi telemetry CSV is malformed")
+        util, power, clock, pstate = fields
+        return validate_telemetry({"util_pct": parse_number(util, "utilization.gpu"),
+                                   "power_w": parse_number(power, "power.draw"),
+                                   "clock_mhz": parse_number(clock, "clocks.gr"), "pstate": pstate})
+
+    def clients(self): return parse_clients(self._run("nvidia-smi", "-q", "-x"))
+
+    def static(self):
+        fields = [x.strip() for x in self._run(*self.STATIC).strip().split(",")]
+        if len(fields) != 3 or not all(fields):
+            raise CannotRun("nvidia-smi static CSV is malformed")
+        name, uuid, driver = fields
+        return {"name": name, "uuid": uuid, "driver": driver}
+
+
+def parse_number(text, field):
+    try: value = float(text)
+    except (TypeError, ValueError) as error:
+        raise CannotRun(f"nvidia-smi {field}: {text!r} is not a number") from error
+    if not math.isfinite(value): raise CannotRun(f"nvidia-smi {field}: {text!r} is not finite")
+    return value
+
+
+def validate_telemetry(q):
+    try:
+        if not math.isfinite(q["util_pct"]) or not 0.0 <= q["util_pct"] <= 100.0: raise ValueError("utilization outside 0-100")
+        if not math.isfinite(q["power_w"]) or not 0.0 < q["power_w"] < 2000.0: raise ValueError("power outside plausible range")
+        if not math.isfinite(q["clock_mhz"]) or not 0 < q["clock_mhz"] < 10000: raise ValueError("clock outside plausible range")
+    except (KeyError, TypeError, ValueError) as error:
+        raise CannotRun(str(error)) from error
+    if not isinstance(q.get("pstate"), str) or not re.fullmatch(r"P\d{1,2}", q["pstate"]): raise CannotRun(f"invalid pstate {q.get('pstate')!r}")
+    q["clock_mhz"] = int(q["clock_mhz"])
+    return q
+
+
+def parse_clients(xml_text):
+    try: root = ET.fromstring(xml_text)
+    except (ET.ParseError, TypeError, UnicodeError) as error: raise CannotRun(f"malformed nvidia-smi XML: {error}") from error
+    gpus = root.findall("gpu")
+    if len(gpus) != 1: raise CannotRun(f"exactly one GPU expected, found {len(gpus)}")
+    processes = gpus[0].find("processes")
+    if processes is None or (processes.text or "").strip(): raise CannotRun("incomplete process inventory")
+    clients = {"compute": [], "graphics": []}
+    for info in processes.findall("process_info"):
+        kind = (info.findtext("type") or "").strip()
+        name = pathlib.PurePath((info.findtext("process_name") or "").strip()).name
+        if kind not in ("G", "C", "C+G", "G+C") or not name: raise CannotRun("malformed process entry")
+        clients["graphics" if kind == "G" else "compute"].append(name)
+    return clients
+
+
+def sample_stream(proc, gpu, seconds, sleep=time.sleep):
+    samples = []
+    try:
+        busy0, total0 = proc.cpu_ticks()
+        if busy0 < 0 or total0 < 0 or busy0 > total0: raise ValueError("invalid initial CPU ticks")
+    except (CannotRun, TypeError, ValueError) as error:
+        raise error if isinstance(error, CannotRun) else CannotRun(str(error)) from error
+    for _ in range(seconds):
+        sleep(1)
+        try:
+            busy1, total1 = proc.cpu_ticks(); delta = total1 - total0
+            if busy1 < busy0 or total1 <= total0 or busy1 > total1 or busy1 - busy0 > delta:
+                raise ValueError("invalid CPU tick delta")
+            available, mem_total = proc.meminfo()
+            if available < 0 or mem_total <= 0 or available > mem_total: raise ValueError("invalid memory sample")
+            q = gpu.query()
+            if not isinstance(q, dict) or set(q) != {"util_pct", "power_w", "clock_mhz", "pstate"}:
+                raise ValueError("malformed GPU telemetry sample")
+            q = validate_telemetry(q)
+            clients = gpu.clients()
+            if (not isinstance(clients, dict) or set(clients) != {"compute", "graphics"}
+                    or any(not isinstance(v, list) or any(not isinstance(c, str) or not c for c in v)
+                           for v in clients.values())):
+                raise ValueError("invalid GPU client sample")
+            load = proc.load1()
+            if not math.isfinite(load) or load < 0: raise ValueError("invalid load sample")
+            cpu = 100.0 * (busy1 - busy0) / delta
+            samples.append(Sample(cpu, load, available, mem_total, q["util_pct"], q["power_w"], q["clock_mhz"], q["pstate"], clients))
+            busy0, total0 = busy1, total1
+        except (CannotRun, KeyError, TypeError, ValueError, ZeroDivisionError) as error:
+            raise error if isinstance(error, CannotRun) else CannotRun(str(error)) from error
+    return samples
+
+
+def median(values): return float(statistics.median(values))
+
+
+def iqr(values):
+    if len(values) < 2: return 0.0
+    q = statistics.quantiles(sorted(values), n=4, method="inclusive")
+    return round(q[2] - q[0], 3)
+
+
+def summarize(samples):
+    total = samples[0].mem_total_kib
+    clients = {key: sorted({c for s in samples for c in s.gpu_clients[key]}) for key in ("compute", "graphics")}
+    return {
+        "samples": len(samples),
+        "cpu_busy_pct": round(median([s.cpu_busy_pct for s in samples]), 1),
+        "load1": round(median([s.load1 for s in samples]), 2),
+        "mem_available_kib": int(median([s.mem_available_kib for s in samples])),
+        "mem_total_kib": total,
+        "mem_available_pct": round(100.0 * median([s.mem_available_kib for s in samples]) / total, 1),
+        "gpu_util_pct": round(median([s.gpu_util_pct for s in samples]), 1),
+        "gpu_power_w": round(median([s.gpu_power_w for s in samples]), 3),
+        "gpu_power_iqr_w": iqr([s.gpu_power_w for s in samples]),
+        "gpu_clock_mhz": int(median([s.gpu_clock_mhz for s in samples])),
+        "gpu_pstates": sorted({s.gpu_pstate for s in samples}),
+        "gpu_clients": clients,
+    }
+
+
+DEFAULT_THRESHOLDS = {
+    "cpu_busy_pct": 10.0, "load1": 2.0, "mem_available_pct_min": 20.0,
+    "gpu_util_pct": 5.0, "gpu_pstate": "P8", "gpu_power_iqr_w": 1.0,
+    "settle_cpu_busy_pct": 5.0, "settle_mem_pct": 5.0,
+    "settle_gpu_util_pct": 3.0, "settle_gpu_power_w": 1.5,
+}
+
+
+def parse_thresholds(pairs):
+    result = dict(DEFAULT_THRESHOLDS)
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or key not in result: raise CannotRun(f"unknown threshold {key!r}")
+        if key == "gpu_pstate":
+            if not re.fullmatch(r"P\d{1,2}", value): raise CannotRun(f"invalid P-state {value!r}")
+            result[key] = value; continue
+        number = parse_number(value, f"threshold {key}")
+        if number < 0: raise CannotRun(f"threshold {key} must be nonnegative")
+        result[key] = number
+    return result
+
+
+def client_reasons(samples, lane):
+    reasons = []
+    compute = sorted({c for s in samples for c in s.gpu_clients["compute"]})
+    if compute: reasons.append(f"compute clients present: {', '.join(compute)}")
+    if lane == "dedicated":
+        graphics = sorted({c for s in samples for c in s.gpu_clients["graphics"]})
+        if graphics: reasons.append(f"gpu_clients present on the dedicated lane: {', '.join(graphics)}")
+    return reasons
+
+
+def judge_quiet(summary, samples, thresholds, lane):
+    reasons = []
+    for key in ("cpu_busy_pct", "load1", "gpu_util_pct"):
+        if summary[key] > thresholds[key]: reasons.append(f"{key} {summary[key]} exceeds {thresholds[key]}")
+    floor = thresholds["mem_available_pct_min"]
+    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples): reasons.append(f"mem_available_pct below {floor}")
+    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]: reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
+    if summary["gpu_power_iqr_w"] > thresholds["gpu_power_iqr_w"]: reasons.append(f"gpu_power_iqr_w {summary['gpu_power_iqr_w']} exceeds {thresholds['gpu_power_iqr_w']}")
+    return reasons + client_reasons(samples, lane)
+
+
+def judge_settled(summary, samples, baseline, thresholds, lane):
+    reasons = []
+    for key, limit in (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", "settle_mem_pct"), ("gpu_util_pct", "settle_gpu_util_pct"), ("gpu_power_w", "settle_gpu_power_w")):
+        delta = summary[key] - baseline[key]
+        if abs(delta) > thresholds[limit]:
+            verb = "exceeds" if delta > 0 else "falls below"
+            reasons.append(f"{key} {summary[key]} {verb} baseline {baseline[key]} by more than {thresholds[limit]}")
+    floor = thresholds["mem_available_pct_min"]
+    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples): reasons.append(f"mem_available_pct below floor {floor}")
+    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]: reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
+    return reasons + client_reasons(samples, lane)
+
+
+def load_record(run_dir):
+    path = pathlib.Path(run_dir) / RECORD
+    try:
+        if not path.exists():
+            return {}
+        record = json.loads(path.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise CannotRun(f"{path}: cannot read record: {error}") from error
+    if not isinstance(record, dict):
+        raise CannotRun(f"{path}: record root must be an object")
+    if record.get("schema") != SCHEMA:
+        raise CannotRun(f"{path}: schema {record.get('schema')!r}, expected {SCHEMA}")
+    validate_record(record, path)
+    return record
+
+
+def validate_record(record, path=RECORD):
+    def section(name):
+        if name not in record:
+            return None
+        value = record[name]
+        if not isinstance(value, dict):
+            raise CannotRun(f"{path}: {name} must be an object")
+        return value
+
+    run = section("run")
+    if run is not None and not isinstance(run.get("id"), str):
+        raise CannotRun(f"{path}: run.id must be a string")
+    environment = section("environment")
+    if environment is not None:
+        for name in ("gpu", "session", "tools"):
+            if not isinstance(environment.get(name), dict):
+                raise CannotRun(f"{path}: environment.{name} must be an object")
+        if any(not isinstance(key, str) or not isinstance(value, str)
+               for key, value in environment["tools"].items()):
+            raise CannotRun(f"{path}: environment.tools entries must be strings")
+    section("baseline")
+    preflight = section("preflight")
+    if preflight is not None:
+        for name, kind in (("reasons", list), ("thresholds", dict), ("lock", dict)):
+            if name in preflight and not isinstance(preflight[name], kind):
+                raise CannotRun(f"{path}: preflight.{name} must be a {kind.__name__}")
+    provenance = section("provenance")
+    if provenance is not None:
+        for name in ("source", "config"):
+            if not isinstance(provenance.get(name), dict):
+                raise CannotRun(f"{path}: provenance.{name} must be an object")
+        for name in ("binaries", "inputs"):
+            items = provenance.get(name)
+            if not isinstance(items, list):
+                raise CannotRun(f"{path}: provenance.{name} must be a list")
+            if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
+                   or not isinstance(item.get("sha256"), str) for item in items):
+                raise CannotRun(f"{path}: provenance.{name} entries need string name and sha256")
+    if "sub_runs" in record:
+        sub_runs = record["sub_runs"]
+        if not isinstance(sub_runs, list):
+            raise CannotRun(f"{path}: sub_runs must be a list")
+        if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
+               or not isinstance(item.get("verdict"), str) for item in sub_runs):
+            raise CannotRun(f"{path}: sub_runs entries need string name and verdict")
+
+
+def save_record(run_dir, record):
+    path = pathlib.Path(run_dir) / RECORD
+    record["schema"] = SCHEMA
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(record, indent=2, sort_keys=False) + "\n")
+    except (OSError, TypeError, ValueError) as error:
+        raise CannotRun(f"{path}: cannot write record: {error}") from error
+
+
+def write_section(run_dir, name, value):
+    record = load_record(run_dir)
+    if name in record:
+        raise CannotRun(f"{RECORD} already has a {name!r} section; use a fresh run directory")
+    record[name] = value
+    save_record(run_dir, record)
+
+
+def append_sub_run(run_dir, entry):
+    record = load_record(run_dir)
+    sub_runs = record.get("sub_runs", [])
+    if not isinstance(sub_runs, list):
+        raise CannotRun(f"{RECORD}: sub_runs must be a list")
+    sub_runs.append(entry)
+    record["sub_runs"] = sub_runs
+    save_record(run_dir, record)
+
+
+def sha256_file(path):
+    try:
+        with open(path, "rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+    except OSError as error:
+        raise CannotRun(f"cannot hash {path}: {error}") from error
+
+
+def git(checkout, *args):
+    try:
+        result = subprocess.run(("git", "-C", str(checkout), *args), capture_output=True, check=False)
+    except OSError as error:
+        raise CannotRun(f"git {' '.join(args)} in {checkout}: {error}") from error
+    if result.returncode != 0:
+        raise CannotRun(f"git {' '.join(args)} in {checkout}: {os.fsdecode(result.stderr).strip()}")
+    return result.stdout
+
+
+def source_facts(checkout):
+    """Describe HEAD and hash everything the working tree adds to it."""
+    commit = os.fsdecode(git(checkout, "rev-parse", "HEAD")).strip()
+    branch = os.fsdecode(git(checkout, "rev-parse", "--abbrev-ref", "HEAD")).strip()
+    diff = git(checkout, "diff", "HEAD")
+    untracked = sorted(os.fsdecode(path) for path in
+                       git(checkout, "ls-files", "--others", "--exclude-standard", "-z").split(b"\0") if path)
+    facts = {"commit": commit, "branch": branch, "dirty": bool(diff.strip()) or bool(untracked)}
+    if facts["dirty"]:
+        digest = hashlib.sha256(diff)
+        for rel in untracked:
+            digest.update(os.fsencode(rel) + b"\0")
+            path = pathlib.Path(checkout) / rel
+            try:
+                content_hash = (hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+                                if path.is_symlink() else sha256_file(path))
+            except OSError as error:
+                raise CannotRun(f"cannot hash symlink {path}: {error}") from error
+            digest.update(content_hash.encode() + b"\0")
+        facts["diff_sha256"] = digest.hexdigest()
+        facts["untracked"] = untracked
+    return facts
+
+
+def hashed(paths):
+    paths = [pathlib.Path(path) for path in paths]
+    for path in paths:
+        if not path.is_file():
+            raise Refused(f"{path} does not exist; the fixture named it as a binary or input")
+    return [{"name": path.name, "sha256": sha256_file(path)} for path in paths]
+
+
+def parse_pairs(pairs, flag):
+    config = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise CannotRun(f"{flag} {pair!r}: expected KEY=VALUE")
+        config[key] = value
+    return config
+
+
+def identity(run_dir, source, binaries, inputs, config):
+    count = len(binaries)
+    files = hashed([*binaries, *inputs])
+    section = {"source": source_facts(source), "binaries": files[:count], "inputs": files[count:],
+               "config": parse_pairs(config, "--config")}
+    write_section(run_dir, "provenance", section)
+
+
+def cmd_identity(args):
+    identity(args.run_dir, args.source, args.binary, args.input, args.config)
+
+
+def now_rfc3339():
+    return datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def tool_versions(tools):
+    versions = {}
+    for spec in tools or []:
+        name, sep, version = spec.partition("=")
+        if not name:
+            raise CannotRun("tool name must not be empty")
+        if sep:
+            versions[name] = version
+            continue
+        try:
+            result = subprocess.run([name, "--version"], capture_output=True, text=True, check=False)
+        except OSError as error:
+            raise CannotRun(f"{name} --version: {error}") from error
+        first = (result.stdout or result.stderr).strip().splitlines()
+        versions[name] = first[0] if first else f"exit {result.returncode}"
+    return versions
+
+
+def cpu_model():
+    try:
+        for line in pathlib.Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                return line.partition(":")[2].strip()
+    except OSError as error:
+        raise CannotRun(f"cannot read CPU model: {error}") from error
+    return platform.processor() or "unknown"
+
+
+def environment(gpu, tools, proc):
+    _, total_kib = proc.meminfo()
+    return {
+        "kernel": platform.release(),
+        "cpu": cpu_model(),
+        "cpu_threads": os.cpu_count(),
+        "memory_total_kib": total_kib,
+        "gpu": {**gpu.static(), "device": os.environ.get("CAPTURE_META_RENDER_NODE", "/dev/dri/renderD128")},
+        "session": {"type": os.environ.get("XDG_SESSION_TYPE", ""),
+                    "display": os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY") or ""},
+        "tools": tool_versions(tools),
+    }
+
+
+def run_section(run_dir, lane, task, fixture):
+    return {"id": pathlib.Path(run_dir).resolve().name, "task": task, "fixture": fixture, "lane": lane,
+            "started": now_rfc3339(), "host": socket.gethostname()}
+
+
+def session_reasons(lane):
+    if lane != "dedicated":
+        return []
+    reasons = []
+    if os.environ.get("XDG_SESSION_TYPE") != "tty":
+        reasons.append(f"XDG_SESSION_TYPE is {os.environ.get('XDG_SESSION_TYPE')!r}, dedicated lane needs 'tty'")
+    for key in ("DISPLAY", "WAYLAND_DISPLAY"):
+        if os.environ.get(key):
+            reasons.append(f"{key} is set; dedicated lane must have no display")
+    return reasons
+
+
+def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tools, proc, gpu,
+              sleep=time.sleep, lock=lock_path):
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        raise CannotRun("seconds must be a positive integer")
+    _validate_owner(owner_pid, "preflight")
+    run_dir = pathlib.Path(run_dir)
+    run = run_section(run_dir, lane, task, fixture)
+    write_section(run_dir, "run", run)
+    lock_file = lock()
+    try:
+        lock_info = acquire_lock(lock_file, owner_pid, run["id"])
+    except Refused as error:
+        write_section(run_dir, "preflight", {"verdict": "refused", "reasons": [str(error)], "thresholds": thresholds})
+        raise
+    try:
+        write_section(run_dir, "environment", environment(gpu, tools, proc))
+        reasons = session_reasons(lane)
+        samples = sample_stream(proc, gpu, seconds, sleep)
+        summary = summarize(samples)
+        write_section(run_dir, "baseline", {"seconds": seconds, **summary})
+        reasons += judge_quiet(summary, samples, thresholds, lane)
+        write_section(run_dir, "preflight", {"verdict": "quiet" if not reasons else "refused",
+                                              "reasons": reasons, "thresholds": thresholds, "lock": lock_info})
+        if reasons:
+            raise Refused("; ".join(reasons))
+    except BaseException:
+        release_lock(lock_file, owner_pid, run["id"])
+        raise
+
+
+def cmd_preflight(args):
+    preflight(args.run_dir, args.lane, args.task, args.fixture, args.seconds,
+              args.owner_pid if args.owner_pid is not None else os.getppid(),
+              parse_thresholds(args.threshold), args.tool, ProcReader(), GpuReader())
+
+
+def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=lock_path):
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        raise CannotRun("seconds must be a positive integer")
+    run_dir = pathlib.Path(run_dir)
+    record = load_record(run_dir)
+    for section in ("run", "baseline", "preflight"):
+        if section not in record:
+            raise CannotRun(f"settle needs a preflighted run; {RECORD} has no {section!r}")
+    verdict = record["preflight"].get("verdict")
+    if not isinstance(verdict, str):
+        raise CannotRun(f"{RECORD}: preflight.verdict must be a string")
+    if verdict != "quiet":
+        raise Refused("preflight was refused; nothing to settle into")
+    required = {"cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w"}
+    if (not required <= record["baseline"].keys()
+            or any(isinstance(record["baseline"][key], bool)
+                   or not isinstance(record["baseline"][key], (int, float))
+                   or not math.isfinite(record["baseline"][key]) for key in required)):
+        raise CannotRun(f"{RECORD}: baseline is missing settle metrics")
+    if record["run"].get("lane") not in ("headless", "dedicated"):
+        raise CannotRun(f"{RECORD}: run.lane must be headless or dedicated")
+    thresholds = record["preflight"].get("thresholds")
+    expected = record["preflight"].get("lock")
+    threshold_keys = {"settle_cpu_busy_pct", "settle_mem_pct", "settle_gpu_util_pct",
+                      "settle_gpu_power_w", "mem_available_pct_min", "gpu_pstate"}
+    if (not isinstance(thresholds, dict) or not threshold_keys <= thresholds.keys()
+            or not isinstance(expected, dict) or "owner_pid" not in expected
+            or isinstance(expected["owner_pid"], bool) or not isinstance(expected["owner_pid"], int)
+            or expected["owner_pid"] <= 0):
+        raise CannotRun(f"{RECORD}: quiet preflight needs thresholds and lock owner_pid")
+    if (any(isinstance(thresholds[key], bool) or not isinstance(thresholds[key], (int, float))
+            or not math.isfinite(thresholds[key]) for key in threshold_keys - {"gpu_pstate"})
+            or not isinstance(thresholds["gpu_pstate"], str)):
+        raise CannotRun(f"{RECORD}: settle thresholds are malformed")
+    holder = read_lock(lock())
+    if (holder is None or holder.get("run_id") != record["run"].get("id")
+            or holder.get("owner_pid") != expected.get("owner_pid")):
+        raise Refused(f"lock no longer names this run ({record['run'].get('id')}); holder: {holder}")
+    entry_inputs = hashed(inputs)
+    samples = sample_stream(proc, gpu, seconds, sleep)
+    summary = summarize(samples)
+    reasons = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
+    entry = {"name": sub_run, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
+             "inputs": entry_inputs, "verdict": "settled" if not reasons else "refused"}
+    if reasons:
+        entry["reason"] = "; ".join(reasons)
+    append_sub_run(run_dir, entry)
+    if reasons:
+        raise Refused(entry["reason"])
+
+
+def cmd_settle(args):
+    settle(args.run_dir, args.sub_run, args.input, args.seconds, ProcReader(), GpuReader())
+
+
+def cmd_release(args):
+    record = load_record(args.run_dir)
+    run = record.get("run")
+    if not run:
+        return
+    owner = record.get("preflight", {}).get("lock", {}).get("owner_pid")
+    if owner is None:
+        if read_lock(lock_path()) is not None:
+            raise Refused(f"lock is not this run's ({run.get('id')}); left in place")
+        return
+    if not release_lock(lock_path(), owner, run["id"]):
+        raise Refused(f"lock is not this run's ({run['id']}); left in place")
+
+
+def render(record):
+    lines = []
+    run = record.get("run", {})
+    lines.append(f"run {run.get('id')}  task {run.get('task')}  fixture {run.get('fixture')}  lane {run.get('lane')}")
+    lines.append(f"started {run.get('started')}  host {run.get('host')}")
+    env = record.get("environment")
+    if env:
+        gpu = env.get("gpu", {})
+        lines += ["", "environment",
+                  f"  kernel {env.get('kernel')}",
+                  f"  cpu {env.get('cpu')} ({env.get('cpu_threads')} threads)",
+                  f"  memory {env.get('memory_total_kib')} KiB",
+                  f"  gpu {gpu.get('name')} {gpu.get('driver')} {gpu.get('device')}",
+                  f"  session {env.get('session', {}).get('type')} {env.get('session', {}).get('display')}" ]
+        for tool, version in sorted(env.get("tools", {}).items()):
+            lines.append(f"  {tool} {version}")
+    baseline = record.get("baseline")
+    if baseline:
+        lines += ["", "baseline"] + [f"  {key} {value}" for key, value in baseline.items()]
+    preflight = record.get("preflight")
+    if preflight:
+        lines += ["", f"preflight {preflight.get('verdict')}"]
+        for reason in preflight.get("reasons", []):
+            lines.append(f"  {reason}")
+    provenance = record.get("provenance")
+    if provenance:
+        source = provenance.get("source", {})
+        lines += ["", "provenance",
+                  f"  source {source.get('commit')} {source.get('branch')}{' dirty' if source.get('dirty') else ''}"]
+        for binary in provenance.get("binaries", []):
+            lines.append(f"  binary {binary['name']} {binary['sha256']}")
+        for item in provenance.get("inputs", []):
+            lines.append(f"  input {item['name']} {item['sha256']}")
+        for key, value in provenance.get("config", {}).items():
+            lines.append(f"  {key}={value}")
+    sub_runs = record.get("sub_runs")
+    if sub_runs:
+        lines += ["", "sub-runs"]
+        for entry in sub_runs:
+            reason = f" ({entry['reason']})" if entry.get("reason") else ""
+            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}")
+    return "\n".join(lines) + "\n"
+
+
+def cmd_show(args):
+    record = load_record(args.run_dir)
+    if not record:
+        raise CannotRun(f"no {RECORD} in {args.run_dir}")
+    sys.stdout.write(render(record))
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="capture-meta")
+    subs = parser.add_subparsers(dest="command", required=True)
+    show = subs.add_parser("show")
+    show.add_argument("run_dir")
+    show.set_defaults(func=cmd_show)
+    pre = subs.add_parser("preflight")
+    pre.add_argument("run_dir")
+    pre.add_argument("--lane", choices=("headless", "dedicated"), required=True)
+    pre.add_argument("--task", required=True)
+    pre.add_argument("--fixture", required=True)
+    pre.add_argument("--seconds", type=int, default=20)
+    pre.add_argument("--owner-pid", type=int, default=None)
+    pre.add_argument("--threshold", action="append", default=[])
+    pre.add_argument("--tool", action="append", default=[])
+    pre.set_defaults(func=cmd_preflight)
+    ident = subs.add_parser("identity")
+    ident.add_argument("run_dir")
+    ident.add_argument("--source", required=True)
+    ident.add_argument("--binary", action="append", default=[])
+    ident.add_argument("--input", action="append", default=[])
+    ident.add_argument("--config", action="append", default=[])
+    ident.set_defaults(func=cmd_identity)
+    st = subs.add_parser("settle")
+    st.add_argument("run_dir")
+    st.add_argument("--sub-run", required=True)
+    st.add_argument("--input", action="append", default=[])
+    st.add_argument("--seconds", type=int, default=10)
+    st.set_defaults(func=cmd_settle)
+    rel = subs.add_parser("release")
+    rel.add_argument("run_dir")
+    rel.set_defaults(func=cmd_release)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        args.func(args)
+    except Refused as error:
+        print(f"capture-meta: refused: {error}", file=sys.stderr)
+        return 1
+    except CannotRun as error:
+        print(f"capture-meta: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
