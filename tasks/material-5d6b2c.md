@@ -1,0 +1,19 @@
+---
+id: material-5d6b2c
+title: "Resource-aware rendering: know the cost of every visual decision"
+status: todo
+priority: 2
+created: 2026-09-11T23:34:15Z
+updated: 2026-09-11T23:34:15Z
+depends: []
+tags: [quick-add, performance]
+source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
+---
+
+Goal: make the GPU/CPU/memory cost of every material rendering decision explicit, so trade-offs are chosen rather than stumbled into. The aim is not to sacrifice high-quality visuals; it is to know what each decision costs and to find the places where a slight visual change buys a large performance gain.
+
+Children: a concise performance guide, a consistent capture protocol with provenance/environment metadata, explicit per-element estimation and evaluation, and two low-power explorations (skip rendering for invisible windows; inactivity settle mode).
+
+Related: material-265eb0 (idle GPU and power budget), prism-ed6be0 (intermittent slow draws), prism-d54be4 (per-parameter cost estimates for the Prism UI), ops-side observation tooling filed from the same seed.
+
+Source: mindful:thought:a476e6bcd1fd4297b70824758235d821

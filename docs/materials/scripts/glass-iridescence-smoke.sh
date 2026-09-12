@@ -9,11 +9,15 @@
 # the zero capture measures added chroma. Cost is the GPU median of the
 # material draw for plain, zero, and on, three rounds in rotated order.
 #
-# Env: OUT (artifact dir), NIRI_MATERIAL_WORK_ROOT.
+# Env: OUT (artifact dir), NIRI_MATERIAL_WORK_ROOT, CAPTURE_TASK (task id
+# authorizing this run).
 set -eu
+: "${CAPTURE_TASK:?task id authorizing this run}"
 HERE=$(dirname "$(readlink -f "$0")")
 . "$HERE/glass-optic-smoke-lib.sh"
+capture_preflight headless
 build_binaries
+capture_identity --config preset=iridescence --config output=1280x720 --config scale=1 --config vrr=off
 calibrate_probe_rect "$NIRI" 0
 
 capture() {
