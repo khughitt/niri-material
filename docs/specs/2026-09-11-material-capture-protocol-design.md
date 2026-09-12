@@ -51,7 +51,7 @@ nothing else in the run directory.
 ```
 tools/capture-meta preflight <run-dir> --lane headless|dedicated --task ID --fixture NAME [--seconds N] [--owner-pid PID] [--threshold KEY=VALUE]...
 tools/capture-meta identity  <run-dir> --source <checkout> --binary PATH... --input PATH... [--config KEY=VALUE]...
-tools/capture-meta settle    <run-dir> --sub-run NAME [--seconds N]
+tools/capture-meta settle    <run-dir> --sub-run NAME [--input PATH]... [--seconds N]
 tools/capture-meta release   <run-dir>
 tools/capture-meta show      <run-dir>
 ```
@@ -87,11 +87,19 @@ The **lane** names the isolation the fixture claims, and preflight checks the cl
 
 The lock is `$XDG_RUNTIME_DIR/capture-meta.lock`, a small JSON file naming the
 owning PID (`--owner-pid`, default the calling shell's parent) and the run id.
-`preflight` refuses while the file names a live process; a dead owner's lock is
-reclaimed and the reclamation recorded. `settle` refuses when the lock is no
-longer this run's. `release` removes it; fixtures call it from their cleanup
-trap. The lock exists because several agent sessions share this machine and two
-captures in parallel would each pass preflight against the other's warm-up.
+Acquisition is atomic: `preflight` creates the file with `O_CREAT|O_EXCL`; if it
+exists and names a live process, preflight refuses (exit 1) **without writing
+anything to its own run directory beyond the refusal**, so a refused run has a
+`capture.json` that says who held the lock. If the named process is dead the lock
+is stale: preflight takes the sibling directory lock `capture-meta.lock.d` with
+`flock`, re-checks liveness, replaces the file, and records `reclaimed: true`
+with the dead owner's PID. `settle` refuses when the file no longer names this
+run. `release` removes the file **only when it names this run's id and owner
+PID**; otherwise it exits 1 and leaves it — so a fixture whose preflight was
+refused can still call `release` from its cleanup trap without evicting the
+capture that refused it. The lock exists because several agent sessions share
+this machine and two captures in parallel would each pass preflight against the
+other's warm-up.
 
 ### 2.2 `identity`
 
@@ -105,9 +113,12 @@ first sub-run. It writes the `provenance` section:
 - `binaries`: path basename and SHA-256 of every `--binary`. The Tracy and
   release builds are separate entries, as the hardware evidence already treats
   them.
-- `inputs`: basename and SHA-256 of every `--input`: configs, the fixture script
-  itself, the shared helper it sourced, patches, wallpapers. This is
-  `inputs.sha256` and `binaries.sha256` as structured data.
+- `inputs`: basename and SHA-256 of every `--input` that exists before the first
+  sub-run: the fixture script itself, the shared helper it sourced, patches,
+  wallpapers, build sidecars, and any config already written. Configs a fixture
+  generates per case do not exist yet at this point; they are recorded by
+  `settle --input` (§2.3). Together the two are `inputs.sha256` and
+  `binaries.sha256` as structured data.
 - `config`: free `KEY=VALUE` facts the fixture asserts about the scene — pinned
   glass values, preset name, output mode, scale, VRR. Glass derived from the
   live `prism.kdl` moved from IOR 1.02 to 1.24 within one week of the ring light
@@ -115,10 +126,14 @@ first sub-run. It writes the `provenance` section:
 
 ### 2.3 `settle`
 
-Runs between sub-runs (cases, rounds, matrix cells), after the previous
-compositor has exited and before the next starts. It samples for `--seconds`
-(default 10), compares against the preflight `baseline`, and appends one entry to
-`sub_runs[]` with the sample summary and a verdict. Refuses (exit 1) when the
+Runs before every sub-run (case, round, matrix cell), after the previous
+compositor has exited, after the sub-run's own inputs are written, and before its
+compositor starts. It samples for `--seconds` (default 10), compares against the
+preflight `baseline`, and appends one entry to `sub_runs[]` with the sample
+summary, a verdict, and the basename and SHA-256 of every `--input` — the case
+config, and anything else generated for this sub-run alone. The first sub-run
+calls `settle` too, so its inputs are recorded and the record has one entry per
+sub-run, not one fewer. Refuses (exit 1) when the
 machine has not returned to baseline within tolerance; the fixture then stops,
 and the run directory shows exactly which sub-run was reached and why the rest
 are absent. It never waits and retries on its own: how long to wait is the
@@ -131,12 +146,15 @@ average, available memory from `/proc/meminfo`, GPU utilization %, GPU power W,
 GPU graphics clock MHz, GPU P-state, GPU client list) taken once per second.
 
 The baseline is the per-field median over the preflight window. **Quiet** means:
-CPU busy median ≤ 10 %, load average ≤ 2.0, GPU utilization median ≤ 5 %,
-P-state P8 in every sample, no compute client in any sample (no client of any
-kind on the dedicated lane), and GPU power inter-quartile range ≤ 1.0 W. A
-`settle` passes when its medians are within tolerance of the baseline: CPU ± 5
-points, GPU utilization ± 3 points, GPU power ± 1.5 W, and the same P-state and
-client constraints.
+CPU busy median ≤ 10 %, load average ≤ 2.0, available memory ≥ 20 % of
+`MemTotal` in every sample, GPU utilization median ≤ 5 %, P-state P8 in every
+sample, no compute client in any sample (no client of any kind on the dedicated
+lane), and GPU power inter-quartile range ≤ 1.0 W. A `settle` passes when its
+medians are within tolerance of the baseline: CPU ± 5 points, available memory
+within 5 % of `MemTotal` of the baseline and still above the floor, GPU
+utilization ± 3 points, GPU power ± 1.5 W, and the same P-state and client
+constraints. The memory floor is a fraction rather than a byte count because
+the same rule must hold on a 16 GiB laptop and this 125 GiB host.
 
 These numbers are defaults, overridable with `--threshold KEY=VALUE`, and every
 run records the thresholds it was judged against. They come from what an idle
@@ -175,7 +193,7 @@ that exists (exit 2), so a fixture cannot half-rerun into a directory.
     "tools": {"weston": "15.0.1", "kitty": "…", "tracy": "0.13.1", "nvidia-smi": "…"}
   },
   "baseline": {"seconds": 20, "samples": 20,
-               "cpu_busy_pct": 1.4, "load1": 0.6, "mem_available_kib": 51234567,
+               "cpu_busy_pct": 1.4, "load1": 0.6, "mem_available_kib": 51234567, "mem_available_pct": 78.1,
                "gpu_util_pct": 0, "gpu_power_w": 18.4, "gpu_power_iqr_w": 0.3,
                "gpu_clock_mhz": 360, "gpu_pstate": "P8",
                "gpu_clients": {"compute": [], "graphics": ["niri", "kitty", "noctalia-shell"]}},
@@ -190,7 +208,8 @@ that exists (exit 2), so a fixture cannot half-rerun into a directory.
   },
   "sub_runs": [
     {"name": "gpu-plain-1", "settled_at": "…", "seconds": 10,
-     "cpu_busy_pct": 1.9, "gpu_util_pct": 0, "gpu_power_w": 18.6, "gpu_pstate": "P8",
+     "cpu_busy_pct": 1.9, "mem_available_pct": 77.8, "gpu_util_pct": 0, "gpu_power_w": 18.6, "gpu_pstate": "P8",
+     "inputs": [{"name": "gpu-plain-1.kdl", "sha256": "…"}],
      "verdict": "settled"},
     {"name": "gpu-aurora-1", "settled_at": "…", "verdict": "refused",
      "reason": "gpu_power_w 24.1 exceeds baseline 18.4 by more than 1.5"}
@@ -212,7 +231,7 @@ The existing convention becomes a rule:
 ```
 $NIRI_MATERIAL_WORK_ROOT/<task-id>/<lane-or-kind>-<YYYYMMDDTHHMMSS>/
     capture.json          written by capture-meta (§3)
-    SHA256SUMS            written last by the fixture, covers everything else
+    SHA256SUMS            written last by the fixture; covers every other file in the tree
     <fixture files…>      configs, traces, exports, images, manifest.json, analysis.json
 ```
 
@@ -230,28 +249,46 @@ Two fixtures adopt the helper in this task; each adoption is a small change in
 the fixture's own repository and a rerun is **not** part of the adoption.
 
 **`docs/materials/scripts/glass-optic-smoke-lib.sh`** (this repository): call
-`preflight --lane headless` before `build_binaries`, `identity` after it (binaries
-and every `.kdl` written by `write_config`, plus the lib and the calling smoke
-script), and `settle --sub-run "$name"` at the top of `trace_run`. `finish` keeps
-writing `SHA256SUMS`. The loose files (`kernel.txt`, `lscpu.txt`,
-`nvidia-smi.txt`, `source.commit`, `installed.version`, `binaries.sha256`) are
-removed from the lib, since `capture.json` carries every fact they held; the
-`tracy.version` and `metrics.txt` outputs stay because they are results, not
-environment.
+`preflight --lane headless` before `build_binaries`; `identity` after it with
+both binaries, the lib, and the calling smoke script (the smokes write their
+case configs inside `capture` and `trace_run`, so no config exists yet);
+`settle --sub-run "$name" --input "$OUT/$name.kdl"` inside `write_config`'s two
+callers — in `trace_run` after the config is written and before `start_nested`,
+and in each smoke's pixel `capture` function at the same point — since every
+nested compositor launch is a sub-run. `finish` is expanded to hash **every**
+file under `OUT` except `SHA256SUMS` (the idle-budget fixture's `find … |
+sha256sum` form); today it hashes only `*.png` and `*.kdl`, which omits the
+traces, exports, binaries, and `capture.json` the contract requires. The loose
+files (`kernel.txt`, `lscpu.txt`, `nvidia-smi.txt`, `source.commit`,
+`installed.version`, `binaries.sha256`) are removed from the lib, since
+`capture.json` carries every fact they held; the `tracy.version` and
+`metrics.txt` outputs stay because they are results, not environment.
 
-**`fixtures/idle-budget.sh`** (`niri-experiments`, `results/idle-budget`): the
-`prepare` step calls `identity`; `trace` calls `preflight --lane headless` and
-`power` calls `preflight --lane dedicated`, replacing the fixture's own
-`IDLE_BUDGET_DEDICATED_SESSION`, `hardware.csv`/`hardware.json`, and tool-version
-files; each of the 25 trace observations and 48 power windows calls `settle`
-before it starts its compositor. The fixture's `preflight.json` (GPU process
-reporting and device-user inventory via `fuser`) is stricter than §2.1's client
-check and stays — it is the power lane's evidence, and `capture.json` records
-that it ran. The fixture keeps its `identity.json` build sidecar and passes it as an
-`--input`, so the build-time identity and the capture-time binary hash are both
-in the record and must agree. The offline test suite
-gains a case that runs `prepare` against a stub `capture-meta` and asserts the
-call order.
+**`fixtures/idle-budget.sh`** (`niri-experiments`, `results/idle-budget`):
+`prepare`, `trace`, and `power` are independent invocations, each into its own
+fresh `OUT`, and measurements do not read the prepared directory — so every
+invocation records its own identity. `trace` calls `preflight --lane headless`
+and `power` calls `preflight --lane dedicated` at the top of `runtime()`,
+replacing the fixture's `IDLE_BUDGET_DEDICATED_SESSION` gate, its
+`hardware.csv`/`hardware.json`, and its tool-version files; all three modes call
+`identity` after the six configs are written and validated (today's
+`inputs.sha256` point), with the snapshotted binary, its `identity.json` build
+sidecar, source archive, patch, and configs as inputs — the build-time identity
+and the capture-time binary hash are then both in the record and the analyzer
+checks they agree. Each of the 25 trace observations and 48 power windows calls
+`settle --input` with its case config before its compositor starts. The fixture's
+`preflight.json` (GPU process reporting and device-user inventory via `fuser`)
+is stricter than §2.1's client check and stays — it is the power lane's
+evidence, and `capture.json` records that it ran.
+
+Removing `hardware.json` is a migration, not a deletion: `idle-budget.py
+analyze` reads it for both lanes and rejects a software renderer from it. The
+analyzer's hardware and identity reads move to `capture.json`
+(`environment.gpu`, `provenance.binaries`), and every synthetic evidence
+directory in `fixtures/test_idle_budget.py` gains a `capture.json` in place of
+`hardware.json`; the software-renderer rejection and the missing-evidence cases
+are re-pointed, not dropped. The suite also gains a case that runs each mode
+against a stub `capture-meta` and asserts the call order and arguments.
 
 The fixture points at the helper through the native checkout it already knows
 (`MATERIAL_ROOT/tools/capture-meta`).
@@ -266,10 +303,13 @@ queries) so the tests feed recorded sample streams and never touch hardware.
 Cases: quiet baseline passes; each threshold refuses when exceeded, naming the
 field; a compute client refuses even with quiet numbers; a graphics client is
 recorded, not refused, on the headless lane and refused on the dedicated lane;
-`dedicated` refuses under a Wayland session; a held lock refuses, a stale lock
-from a dead PID is reclaimed and recorded, `release` removes it; `identity`
+an available-memory sample under the floor refuses; `dedicated` refuses under a
+Wayland session; a held lock refuses, a stale lock from a dead PID is reclaimed
+and recorded, two processes racing for the lock admit exactly one, `release`
+by the owner removes it, `release` by a refused run leaves it and exits 1; `identity`
 hashes match `sha256sum` and a dirty tree records the diff hash; `settle` within
-tolerance appends a `settled` entry, outside tolerance appends `refused` with the
+tolerance appends a `settled` entry with its inputs' hashes, outside tolerance
+(including a memory drop past 5 % of `MemTotal`) appends `refused` with the
 reason and exits 1; rewriting an existing section exits 2 and leaves the file
 unchanged; `show` renders a schema-1 record and refuses an unknown schema.
 
@@ -277,8 +317,10 @@ One integration test runs the real binary against a fake `nvidia-smi` on `PATH`
 and asserts the exit code and `capture.json` end to end.
 
 The two adoptions are verified by their own repositories' offline suites: the
-smoke lib by `tools/test_glass_optic_smoke.py` (already exists; gains the three
-call sites), the fixture by `fixtures/test_idle_budget.py`.
+smoke lib by `tools/test_glass_optic_smoke.py` (already exists; gains the call
+sites and a `finish` case asserting `SHA256SUMS` names every file but itself),
+the fixture by `fixtures/test_idle_budget.py` (call order per mode, and the
+analyzer against `capture.json`-shaped synthetic evidence).
 
 ## 7. Acceptance
 
@@ -290,7 +332,10 @@ call sites), the fixture by `fixtures/test_idle_budget.py`.
   holds the GPU busy exits 1, names the failing threshold, and lists the
   graphics clients — verified once by hand and recorded in the plan's completion
   note, not automated.
-- Both adoptions land with their suites green; no measurement run is claimed.
+- Both adoptions land with their suites green, including the idle-budget
+  analyzer reading `capture.json`; no measurement run is claimed.
+- A smoke run directory's `SHA256SUMS` lists every file in the tree except
+  itself — checked by the test above, not by a hardware run.
 - The performance guide (`material-233295`) and the evidence-doc convention gain
   one line each pointing here; the hardware evidence doc's environment table is
   noted as the hand-written predecessor of `show`.
