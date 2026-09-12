@@ -56,8 +56,8 @@ tools/capture-meta release   <run-dir>
 tools/capture-meta show      <run-dir>
 ```
 
-Exit codes follow `package-pin`: 0 passed, 1 refused (the machine is not quiet, or
-an identity fact is missing), 2 cannot run (no `nvidia-smi`, unwritable
+Exit codes follow `package-pin`: 0 passed, 1 refused (the machine is not quiet, a
+named `--binary` or `--input` path does not exist, or the lock is held), 2 cannot run (no `nvidia-smi`, unwritable
 directory, malformed existing `capture.json`). A fixture treats 1 and 2 alike:
 stop before the sub-run.
 
@@ -248,14 +248,20 @@ legacy and lists it by name only.
 Two fixtures adopt the helper in this task; each adoption is a small change in
 the fixture's own repository and a rerun is **not** part of the adoption.
 
-**`docs/materials/scripts/glass-optic-smoke-lib.sh`** (this repository): call
-`preflight --lane headless` before `build_binaries`; `identity` after it with
-both binaries, the lib, and the calling smoke script (the smokes write their
-case configs inside `capture` and `trace_run`, so no config exists yet);
-`settle --sub-run "$name" --input "$OUT/$name.kdl"` inside `write_config`'s two
-callers — in `trace_run` after the config is written and before `start_nested`,
-and in each smoke's pixel `capture` function at the same point — since every
-nested compositor launch is a sub-run. `finish` is expanded to hash **every**
+**`docs/materials/scripts/glass-optic-smoke-lib.sh`** (this repository). Order
+matters, because the lib's own guard refuses a non-empty `OUT` and `preflight`
+writes into it: the lib is sourced first (freshness check, `mkdir -p "$OUT"`,
+cleanup trap), then the lib's tail calls `preflight --lane headless`, and
+`cleanup` gains `release`. The smoke then calls `build_binaries` and `identity`
+with both binaries, the lib, and the calling smoke script — no case config exists
+yet. `settle` is not called from the smokes at all: it goes into the lib's
+`start_nested`, which every nested launch passes through with its config path in
+hand — `calibrate_probe_rect`'s geometry launch, the pixel `capture` functions,
+aurora's `session` (`pinned` and `moving` never touch `capture`), and `trace_run`.
+`start_nested "$niri" "$cfg"` runs `settle --sub-run "$(basename "$cfg" .kdl)"
+--input "$cfg"` before launching, so every compositor launch has its preceding
+check and its config hash, and a smoke that adds a launch path later cannot
+forget it. `finish` is expanded to hash **every**
 file under `OUT` except `SHA256SUMS` (the idle-budget fixture's `find … |
 sha256sum` form); today it hashes only `*.png` and `*.kdl`, which omits the
 traces, exports, binaries, and `capture.json` the contract requires. The loose
@@ -267,16 +273,38 @@ files (`kernel.txt`, `lscpu.txt`, `nvidia-smi.txt`, `source.commit`,
 **`fixtures/idle-budget.sh`** (`niri-experiments`, `results/idle-budget`):
 `prepare`, `trace`, and `power` are independent invocations, each into its own
 fresh `OUT`, and measurements do not read the prepared directory — so every
-invocation records its own identity. `trace` calls `preflight --lane headless`
-and `power` calls `preflight --lane dedicated` at the top of `runtime()`,
-replacing the fixture's `IDLE_BUDGET_DEDICATED_SESSION` gate, its
-`hardware.csv`/`hardware.json`, and its tool-version files; all three modes call
-`identity` after the six configs are written and validated (today's
-`inputs.sha256` point), with the snapshotted binary, its `identity.json` build
-sidecar, source archive, patch, and configs as inputs — the build-time identity
-and the capture-time binary hash are then both in the record and the analyzer
-checks they agree. Each of the 25 trace observations and 48 power windows calls
-`settle --input` with its case config before its compositor starts. The fixture's
+invocation records its own identity. In `runtime()` the order is: the
+fixture's freshness and location guards → source the smoke lib (which creates
+`OUT` and installs the trap the fixture then wraps) → `preflight`, because
+preflight writes `capture.json` and either guard would abort a run that had
+already written it. `trace` passes `--lane headless`, `power` `--lane
+dedicated`; `prepare` runs no preflight, since it launches nothing and must keep
+working offline on a busy machine. Preflight replaces the fixture's
+`IDLE_BUDGET_DEDICATED_SESSION` gate, its `hardware.csv`/`hardware.json`, and
+its tool-version files.
+
+All three modes call `identity` after the six configs are written and validated
+(today's `inputs.sha256` point), but with mode-specific arguments, because
+`prepare` deliberately accepts a plain executable and copies no build sidecars,
+and the applied marker patch exists only for trace builds:
+
+| Mode | `--binary` | `--input` |
+| --- | --- | --- |
+| `prepare` | snapshotted `niri` | six configs, fixture files, lib, wallpaper |
+| `power` | snapshotted `niri` | the above + `identity.json`, `source.tar` |
+| `trace` | snapshotted `niri` | the above + `marker.patch` |
+
+`identity` refuses a missing path (exit 1), so the fixture's per-mode argument
+list is what enforces "measurement modes require build evidence; trace
+additionally requires the applied patch", and the offline `prepare` validation
+test keeps passing without sidecars. The analyzer checks that the build-time
+identity in the sidecar and the capture-time binary hash agree in the two
+measurement modes.
+
+The trace lane launches through the lib's `start_nested`, so its 25 observations
+get `settle` for free with the shared change above. The power lane launches niri
+directly on DRM and calls `settle --sub-run "$name" --input "$OUT/$name.kdl"`
+itself before each of its 48 windows. The fixture's
 `preflight.json` (GPU process reporting and device-user inventory via `fuser`)
 is stricter than §2.1's client check and stays — it is the power lane's
 evidence, and `capture.json` records that it ran.
@@ -319,8 +347,12 @@ and asserts the exit code and `capture.json` end to end.
 The two adoptions are verified by their own repositories' offline suites: the
 smoke lib by `tools/test_glass_optic_smoke.py` (already exists; gains the call
 sites and a `finish` case asserting `SHA256SUMS` names every file but itself),
-the fixture by `fixtures/test_idle_budget.py` (call order per mode, and the
-analyzer against `capture.json`-shaped synthetic evidence).
+the fixture by `fixtures/test_idle_budget.py` (call order per mode including
+preflight after lib initialization, the per-mode identity argument lists, the
+existing offline `prepare` validation unchanged, and the analyzer against
+`capture.json`-shaped synthetic evidence). The smoke lib test also asserts that
+`start_nested` calls `settle` with the config it is about to launch, since that
+is now the only place the check lives.
 
 ## 7. Acceptance
 
