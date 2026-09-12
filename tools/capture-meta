@@ -466,7 +466,13 @@ def source_facts(checkout):
         digest = hashlib.sha256(diff)
         for rel in untracked:
             digest.update(os.fsencode(rel) + b"\0")
-            digest.update(sha256_file(pathlib.Path(checkout) / rel).encode() + b"\0")
+            path = pathlib.Path(checkout) / rel
+            try:
+                content_hash = (hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+                                if path.is_symlink() else sha256_file(path))
+            except OSError as error:
+                raise CannotRun(f"cannot hash symlink {path}: {error}") from error
+            digest.update(content_hash.encode() + b"\0")
         facts["diff_sha256"] = digest.hexdigest()
         facts["untracked"] = untracked
     return facts

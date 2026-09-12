@@ -237,6 +237,18 @@ class IdentityTests(unittest.TestCase):
             self.assertEqual(facts["untracked"], sorted(names))
             self.assertEqual(len(facts["diff_sha256"]), 64)
 
+    def test_untracked_symlink_hashes_its_target_text(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); self.repo(root)
+            (root / "a.rs").write_text("same\n"); (root / "b.rs").write_text("same\n")
+            link = root / "optic.rs"; link.symlink_to("a.rs")
+            first = cm.source_facts(root)["diff_sha256"]
+            link.unlink(); link.symlink_to("b.rs")
+            second = cm.source_facts(root)["diff_sha256"]
+            link.unlink(); link.symlink_to("missing.rs")
+            broken = cm.source_facts(root)["diff_sha256"]
+            self.assertEqual(len({first, second, broken}), 3)
+
     def test_missing_path_refuses_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory) / "src"; root.mkdir(); run = pathlib.Path(directory) / "run"; run.mkdir(); self.repo(root)
