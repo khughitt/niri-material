@@ -24,6 +24,7 @@
 - The smoke lib's top level never calls preflight; entry scripts do (spec §5).
 - No hardware capture run is part of this plan (spec §7). Tests run offline with fake readers or a fake `nvidia-smi` on `PATH`.
 - Test files in `tools/` scrub `GIT_*` from the environment at import (see `tools/test_package_pin.py`) because the pre-commit hook runs the suite.
+- Run tests through the tracked front doors, never bare and never piped into `tail` (a pipe without `pipefail` hides the exit status): a single tooling module runs as `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v` (or `tools.test_glass_optic_smoke`), the repository gate is `just check`, and the experiments suite is `just --justfile fixtures/idle-budget.just test` with `MATERIAL_ROOT` exported. `tt` records the run and preserves the exit status. Read the last lines from the terminal; do not truncate them away.
 - Commit messages: conventional commits, no attribution trailers. Run `tasks note material-bae9c9 "<one line>"` when scope shifts; `tasks check` before each commit is part of the hook.
 - The pre-commit hook regenerates nothing: when it says `upstream-divergence.md is stale`, run `just upstream-report` and stage the result.
 
@@ -161,7 +162,7 @@ class ShowTests(unittest.TestCase):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd .worktrees/material-bae9c9 && python3 -m unittest tools.test_capture_meta -v 2>&1 | tail -5`
+Run: `cd .worktrees/material-bae9c9 && python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: `FileNotFoundError` loading `tools/capture-meta` (module missing).
 
 - [ ] **Step 3: Write the skeleton**
@@ -320,7 +321,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m unittest tools.test_capture_meta -v 2>&1 | tail -8`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: 5 tests OK.
 
 - [ ] **Step 5: Commit**
@@ -403,6 +404,34 @@ class SamplingTests(unittest.TestCase):
         self.assertEqual(summary["samples"], 3)
 
 
+class GpuEvidenceTests(unittest.TestCase):
+    XML = '<nvidia_smi_log><gpu><processes>{}</processes></gpu></nvidia_smi_log>'
+    ENTRY = '<process_info><type>{}</type><process_name>/usr/bin/{}</process_name></process_info>'
+
+    def test_mixed_type_counts_as_compute_and_graphics_stays_graphics(self):
+        xml = self.XML.format(self.ENTRY.format("G", "niri") + self.ENTRY.format("C+G", "blender") + self.ENTRY.format("C", "python3"))
+        self.assertEqual(cm.parse_clients(xml), {"compute": ["blender", "python3"], "graphics": ["niri"]})
+
+    def test_missing_or_unsupported_inventory_cannot_run(self):
+        for body in ('<nvidia_smi_log><gpu></gpu></nvidia_smi_log>',
+                     self.XML.format("N/A"),
+                     '<nvidia_smi_log><gpu><processes/></gpu><gpu><processes/></gpu></nvidia_smi_log>',
+                     self.XML.format('<process_info><type>X</type><process_name>a</process_name></process_info>')):
+            with self.subTest(body=body), self.assertRaises(cm.CannotRun):
+                cm.parse_clients(body)
+        self.assertEqual(cm.parse_clients(self.XML.format("")), {"compute": [], "graphics": []})
+
+    def test_nonfinite_and_out_of_range_telemetry_cannot_run(self):
+        for text in ("nan", "inf", "N/A", "[Not Supported]", ""):
+            with self.subTest(text=text), self.assertRaises(cm.CannotRun):
+                cm.parse_number(text, "utilization.gpu")
+        good = {"util_pct": 0.0, "power_w": 18.4, "clock_mhz": 360.0, "pstate": "P8"}
+        self.assertEqual(cm.validate_telemetry(dict(good))["clock_mhz"], 360)
+        for bad in ({"util_pct": 101.0}, {"power_w": 0.0}, {"clock_mhz": -1.0}, {"pstate": "X8"}):
+            with self.subTest(bad=bad), self.assertRaises(cm.CannotRun):
+                cm.validate_telemetry({**good, **bad})
+
+
 class JudgementTests(unittest.TestCase):
     def judge(self, lane="headless", **kw):
         samples = quiet_samples(5, **{k: v for k, v in kw.items() if k in QUIET})
@@ -452,12 +481,12 @@ class JudgementTests(unittest.TestCase):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m unittest tools.test_capture_meta -v 2>&1 | tail -5`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: `AttributeError: module 'capture_meta' has no attribute 'sample_stream'`.
 
 - [ ] **Step 3: Implement**
 
-Add to `tools/capture-meta` after the record functions (imports: `dataclasses`, `statistics`, `subprocess`, `time`, `xml.etree.ElementTree as ET`, `os`, `shutil`):
+Add to `tools/capture-meta` after the record functions (imports: `dataclasses`, `math`, `re`, `statistics`, `subprocess`, `time`, `xml.etree.ElementTree as ET`, `os`, `shutil`):
 
 ```python
 @dataclasses.dataclass
@@ -474,21 +503,26 @@ class Sample:
 
 
 class ProcReader:
-    """The three /proc facts a sample needs."""
+    """The three /proc facts a sample needs. CAPTURE_META_PROC points the reader at a
+    directory of fake stat/loadavg/meminfo files so the end-to-end test does not depend
+    on the test machine being quiet; unset, it is /proc."""
+
+    def __init__(self, root=None):
+        self.root = pathlib.Path(root or os.environ.get("CAPTURE_META_PROC", "/proc"))
 
     def cpu_ticks(self):
-        fields = pathlib.Path("/proc/stat").read_text().splitlines()[0].split()[1:]
+        fields = (self.root / "stat").read_text().splitlines()[0].split()[1:]
         values = [int(v) for v in fields]
         idle = values[3] + values[4]            # idle + iowait
         total = sum(values)
         return total - idle, total
 
     def load1(self):
-        return float(pathlib.Path("/proc/loadavg").read_text().split()[0])
+        return float((self.root / "loadavg").read_text().split()[0])
 
     def meminfo(self):
         info = {}
-        for line in pathlib.Path("/proc/meminfo").read_text().splitlines():
+        for line in (self.root / "meminfo").read_text().splitlines():
             key, _, rest = line.partition(":")
             info[key] = int(rest.split()[0])
         return info["MemAvailable"], info["MemTotal"]
@@ -516,21 +550,63 @@ class GpuReader:
         if len(rows) != 1:
             raise CannotRun(f"exactly one GPU expected, nvidia-smi listed {len(rows)}")
         util, power, clock, pstate = [x.strip() for x in rows[0].split(",")]
-        return {"util_pct": float(util), "power_w": float(power), "clock_mhz": int(clock), "pstate": pstate}
+        return validate_telemetry({"util_pct": parse_number(util, "utilization.gpu"),
+                                   "power_w": parse_number(power, "power.draw"),
+                                   "clock_mhz": parse_number(clock, "clocks.gr"), "pstate": pstate})
 
     def clients(self):
         # Local tool output, not untrusted input: the stdlib parser is fine here.
-        root = ET.fromstring(self._run("nvidia-smi", "-q", "-x"))
-        clients = {"compute": [], "graphics": []}
-        for info in root.iter("process_info"):
-            kind = (info.findtext("type") or "").strip()
-            name = pathlib.PurePath((info.findtext("process_name") or "?").strip()).name
-            clients["compute" if kind.startswith("C") else "graphics"].append(name)
-        return clients
+        return parse_clients(self._run("nvidia-smi", "-q", "-x"))
 
     def static(self):
         name, uuid, driver = [x.strip() for x in self._run(*self.STATIC).strip().split(",")]
         return {"name": name, "uuid": uuid, "driver": driver}
+
+
+def parse_number(text, field):
+    """nvidia-smi prints `N/A`, `[Not Supported]`, or nothing when a field is unavailable;
+    none of those is a measurement, and a NaN would slip past every `>` below."""
+    try:
+        value = float(text)
+    except ValueError as error:
+        raise CannotRun(f"nvidia-smi {field}: {text!r} is not a number") from error
+    if not math.isfinite(value):
+        raise CannotRun(f"nvidia-smi {field}: {text!r} is not finite")
+    return value
+
+
+def validate_telemetry(q):
+    if not 0.0 <= q["util_pct"] <= 100.0:
+        raise CannotRun(f"utilization {q['util_pct']} outside 0-100")
+    if not 0.0 < q["power_w"] < 2000.0:
+        raise CannotRun(f"power {q['power_w']} W outside the plausible range")
+    if not 0 < q["clock_mhz"] < 10000:
+        raise CannotRun(f"graphics clock {q['clock_mhz']} MHz outside the plausible range")
+    if not re.fullmatch(r"P\d{1,2}", q["pstate"]):
+        raise CannotRun(f"pstate {q['pstate']!r} is not a P-state")
+    q["clock_mhz"] = int(q["clock_mhz"])
+    return q
+
+
+def parse_clients(xml_text):
+    """One GPU with a complete process inventory. `<processes>` absent, or carrying text
+    like `N/A`, means the driver did not report — that is CannotRun, never an empty list.
+    Mixed types (`C+G`, `G+C`) count as compute: they have compute work by definition."""
+    root = ET.fromstring(xml_text)
+    gpus = root.findall("gpu")
+    if len(gpus) != 1:
+        raise CannotRun(f"exactly one GPU expected in nvidia-smi -q -x, found {len(gpus)}")
+    processes = gpus[0].find("processes")
+    if processes is None or (processes.text or "").strip():
+        raise CannotRun("nvidia-smi -q -x has no complete process inventory")
+    clients = {"compute": [], "graphics": []}
+    for info in processes.findall("process_info"):
+        kind = (info.findtext("type") or "").strip()
+        name = pathlib.PurePath((info.findtext("process_name") or "").strip()).name
+        if kind not in ("G", "C", "C+G", "G+C") or not name:
+            raise CannotRun(f"nvidia-smi process entry malformed: type={kind!r} name={name!r}")
+        clients["graphics" if kind == "G" else "compute"].append(name)
+    return clients
 
 
 def sample_stream(proc, gpu, seconds, sleep=time.sleep):
@@ -646,8 +722,8 @@ def judge_settled(summary, samples, baseline, thresholds, lane):
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m unittest tools.test_capture_meta -v 2>&1 | tail -5`
-Expected: all OK (12 tests). If `test_settle_tolerances` complains about the memory message, check that `summarize` rounds `mem_available_pct` to one decimal and the baseline is `80.0`.
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
+Expected: all OK (15 tests). If `test_settle_tolerances` complains about the memory message, check that `summarize` rounds `mem_available_pct` to one decimal and the baseline is `80.0`.
 
 - [ ] **Step 5: Commit**
 
@@ -665,7 +741,8 @@ git commit -m "feat(tools): capture-meta samplers and quietness judgement"
 - Modify: `tools/test_capture_meta.py`
 
 **Interfaces:**
-- Produces: `lock_path() -> Path` (`$XDG_RUNTIME_DIR/capture-meta.lock`; `CannotRun` when the variable is unset), `pid_alive(pid) -> bool`, `acquire_lock(path, owner_pid, run_id, alive=pid_alive) -> dict`, `read_lock(path) -> dict | None`, `release_lock(path, owner_pid, run_id) -> bool`.
+- Produces: `lock_path() -> Path` (`$XDG_RUNTIME_DIR/capture-meta.lock`; `CannotRun` when the variable is unset), `pid_alive(pid) -> bool`, `guarded(path)` (context manager holding `flock(LOCK_EX)` on the sibling `<path>.d` directory), `acquire_lock(path, owner_pid, run_id, alive=pid_alive) -> dict`, `read_lock(path) -> dict | None` (`CannotRun` on unreadable contents), `release_lock(path, owner_pid, run_id) -> bool`.
+- Every read, create, reclaim, and release of the lock file happens under `guarded(path)`. Publication is atomic: the JSON is written to `<path>.tmp.<pid>` and `os.link`ed to `path` (link fails with `EEXIST` if someone else published first), so no reader can ever see a half-written lock. Corrupt or empty contents are `CannotRun`, never evidence that the owner is dead.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -676,12 +753,40 @@ class LockTests(unittest.TestCase):
             path = pathlib.Path(directory) / "capture-meta.lock"
             info = cm.acquire_lock(path, owner_pid=111, run_id="run-a", alive=lambda pid: True)
             self.assertEqual(info, {"path": str(path), "owner_pid": 111, "run_id": "run-a", "reclaimed": False})
+            self.assertEqual(sorted(p.name for p in path.parent.iterdir()), ["capture-meta.lock", "capture-meta.lock.d"])  # no tmp left behind
             self.assertEqual(cm.read_lock(path)["run_id"], "run-a")
             self.assertFalse(cm.release_lock(path, owner_pid=222, run_id="run-b"))   # not ours: left in place
             self.assertTrue(path.exists())
             self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a"))
             self.assertFalse(path.exists())
             self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a"))    # nothing to release is fine
+
+    def test_half_written_or_corrupt_lock_is_never_reclaimed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            path.write_text("")                       # a writer that died between create and publish, or a torn write
+            with self.assertRaises(cm.CannotRun):
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
+            self.assertEqual(path.read_text(), "")
+            path.write_text("{not json")
+            with self.assertRaises(cm.CannotRun):
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
+            self.assertFalse(cm.release_lock(path, 222, "run-b"))       # not provably ours: left alone
+
+    def test_guard_serializes_acquire_against_a_concurrent_holder(self):
+        import fcntl, os, threading, time
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            guard = path.with_name(path.name + ".d"); guard.mkdir()
+            fd = os.open(guard, os.O_RDONLY); fcntl.flock(fd, fcntl.LOCK_EX)
+            done = threading.Event(); result = {}
+            def worker():
+                result["info"] = cm.acquire_lock(path, 333, "run-c", alive=lambda pid: True); done.set()
+            threading.Thread(target=worker, daemon=True).start()
+            self.assertFalse(done.wait(0.3))          # blocked behind the guard
+            fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd)
+            self.assertTrue(done.wait(3.0))
+            self.assertEqual(result["info"]["run_id"], "run-c")
 
     def test_held_by_live_pid_refuses_stale_is_reclaimed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -712,7 +817,7 @@ class LockTests(unittest.TestCase):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m unittest tools.test_capture_meta.LockTests -v 2>&1 | tail -4`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.LockTests -v`
 Expected: `AttributeError ... acquire_lock`.
 
 - [ ] **Step 3: Implement**
@@ -740,66 +845,86 @@ def pid_alive(pid):
     return True
 
 
-def read_lock(path):
+import contextlib  # add to imports
+
+
+@contextlib.contextmanager
+def guarded(path):
+    """Every lock-file operation runs under flock on the sibling directory, so create,
+    publish, reclaim, and release never interleave."""
+    guard = pathlib.Path(path).with_name(pathlib.Path(path).name + ".d")
+    guard.mkdir(exist_ok=True)
+    fd = os.open(guard, os.O_RDONLY)
     try:
-        return json.loads(pathlib.Path(path).read_text())
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)                        # closing releases the flock
+
+
+def read_lock(path):
+    """None when absent; the holder dict when readable; CannotRun otherwise. Unreadable
+    contents are a torn or foreign write, not proof of anything about the owner."""
+    path = pathlib.Path(path)
+    try:
+        text = path.read_text()
     except FileNotFoundError:
         return None
-    except (json.JSONDecodeError, OSError):
-        return {"owner_pid": None, "run_id": None, "corrupt": True}
+    except OSError as error:
+        raise CannotRun(f"lock {path}: {error}") from error
+    try:
+        holder = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise CannotRun(f"lock {path} is unreadable ({error}); remove it by hand if no capture is running") from error
+    if not isinstance(holder, dict) or not isinstance(holder.get("owner_pid"), int) or not holder.get("run_id"):
+        raise CannotRun(f"lock {path} has no owner_pid/run_id; remove it by hand if no capture is running")
+    return holder
 
 
-def _create_lock(path, owner_pid, run_id):
-    fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-    with os.fdopen(fd, "w") as handle:
-        json.dump({"owner_pid": owner_pid, "run_id": run_id}, handle)
+def _publish_lock(path, owner_pid, run_id):
+    """Write beside, then hard-link into place: the link is atomic and fails if a lock exists."""
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    tmp.write_text(json.dumps({"owner_pid": owner_pid, "run_id": run_id}))
+    try:
+        os.link(tmp, path)
+    finally:
+        tmp.unlink()
 
 
 def acquire_lock(path, owner_pid, run_id, alive=pid_alive):
-    """Atomic create; a stale lock (dead owner) is replaced under the sibling directory lock."""
     path = pathlib.Path(path)
-    try:
-        _create_lock(path, owner_pid, run_id)
-        return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": False}
-    except FileExistsError:
-        pass
-    holder = read_lock(path)
-    if holder is None:                      # vanished between the two calls: try once more
-        _create_lock(path, owner_pid, run_id)
-        return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": False}
-    if holder.get("owner_pid") is not None and alive(holder["owner_pid"]):
-        raise Refused(f"lock {path} held by pid {holder['owner_pid']} for run {holder['run_id']}")
-    guard = path.with_name(path.name + ".d")
-    guard.mkdir(exist_ok=True)
-    guard_fd = os.open(guard, os.O_RDONLY)
-    try:
-        fcntl.flock(guard_fd, fcntl.LOCK_EX)
-        holder = read_lock(path)            # re-check under the guard
-        if holder is not None and holder.get("owner_pid") is not None and alive(holder["owner_pid"]):
+    with guarded(path):
+        holder = read_lock(path)
+        if holder is None:
+            _publish_lock(path, owner_pid, run_id)
+            return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": False}
+        if alive(holder["owner_pid"]):
             raise Refused(f"lock {path} held by pid {holder['owner_pid']} for run {holder['run_id']}")
-        if holder is not None:
-            path.unlink()
-        _create_lock(path, owner_pid, run_id)
-    finally:
-        os.close(guard_fd)
-    return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": True,
-            "previous_owner_pid": None if holder is None else holder.get("owner_pid")}
+        path.unlink()
+        _publish_lock(path, owner_pid, run_id)
+        return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": True,
+                "previous_owner_pid": holder["owner_pid"]}
 
 
 def release_lock(path, owner_pid, run_id):
-    holder = read_lock(pathlib.Path(path))
-    if holder is None:
+    path = pathlib.Path(path)
+    with guarded(path):
+        try:
+            holder = read_lock(path)
+        except CannotRun:
+            return False                    # not provably ours; leave it
+        if holder is None:
+            return True
+        if holder["owner_pid"] != owner_pid or holder["run_id"] != run_id:
+            return False
+        path.unlink()
         return True
-    if holder.get("owner_pid") != owner_pid or holder.get("run_id") != run_id:
-        return False
-    pathlib.Path(path).unlink()
-    return True
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m unittest tools.test_capture_meta.LockTests -v 2>&1 | tail -4`
-Expected: 3 OK. The race test must show `[0, 1, 1, 1, 1, 1, 1, 1]`; if two zeros appear, `O_EXCL` is not being used.
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.LockTests -v`
+Expected: 5 OK. The race test must show `[0, 1, 1, 1, 1, 1, 1, 1]`; if two zeros appear, an operation is running outside `guarded()`.
 
 - [ ] **Step 5: Commit**
 
@@ -903,7 +1028,7 @@ class PreflightTests(unittest.TestCase):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m unittest tools.test_capture_meta.PreflightTests -v 2>&1 | tail -4`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.PreflightTests -v`
 Expected: `AttributeError ... preflight`.
 
 - [ ] **Step 3: Implement**
@@ -1019,7 +1144,7 @@ Add to `build_parser`:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m unittest tools.test_capture_meta -v 2>&1 | tail -4`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta -v`
 Expected: all OK. If `test_held_lock_refuses_without_sampling` fails on `baseline`, make sure the lock is acquired *before* sampling.
 
 - [ ] **Step 5: Commit**
@@ -1078,6 +1203,19 @@ class IdentityTests(unittest.TestCase):
             self.assertTrue(source["dirty"])
             self.assertEqual(len(source["diff_sha256"]), 64)
 
+    def test_untracked_source_file_makes_the_tree_dirty_and_enters_the_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory); self.repo(root)
+            (root / "new_optic.rs").write_text("fn a() {}\n")
+            first = cm.source_facts(root)
+            self.assertTrue(first["dirty"])
+            self.assertEqual(first["untracked"], ["new_optic.rs"])
+            (root / "new_optic.rs").write_text("fn b() {}\n")
+            self.assertNotEqual(cm.source_facts(root)["diff_sha256"], first["diff_sha256"])
+            (root / ".gitignore").write_text("new_optic.rs\n")
+            still = cm.source_facts(root)           # .gitignore itself is now the untracked file
+            self.assertEqual(still["untracked"], [".gitignore"])
+
     def test_missing_path_refuses_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory); run = root / "run"; run.mkdir(); self.repo(root)
@@ -1088,7 +1226,7 @@ class IdentityTests(unittest.TestCase):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m unittest tools.test_capture_meta.IdentityTests -v 2>&1 | tail -4`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.IdentityTests -v`
 Expected: `AttributeError ... identity`.
 
 - [ ] **Step 3: Implement**
@@ -1110,12 +1248,22 @@ def git(checkout, *args):
 
 
 def source_facts(checkout):
+    """HEAD plus everything the working tree adds to it: the tracked diff and every
+    untracked, non-ignored file. `git diff HEAD` alone would call a checkout with a new
+    source file clean, and that file would never enter the hash."""
     commit = git(checkout, "rev-parse", "HEAD").strip()
     branch = git(checkout, "rev-parse", "--abbrev-ref", "HEAD").strip()
     diff = git(checkout, "diff", "HEAD")
-    facts = {"commit": commit, "branch": branch, "dirty": bool(diff.strip())}
+    untracked = sorted(line for line in
+                       git(checkout, "ls-files", "--others", "--exclude-standard").splitlines() if line)
+    facts = {"commit": commit, "branch": branch, "dirty": bool(diff.strip()) or bool(untracked)}
     if facts["dirty"]:
-        facts["diff_sha256"] = hashlib.sha256(diff.encode()).hexdigest()
+        digest = hashlib.sha256(diff.encode())
+        for rel in untracked:
+            digest.update(rel.encode() + b"\0")
+            digest.update(sha256_file(pathlib.Path(checkout) / rel).encode() + b"\0")
+        facts["diff_sha256"] = digest.hexdigest()
+        facts["untracked"] = untracked
     return facts
 
 
@@ -1163,8 +1311,8 @@ Parser:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `python3 -m unittest tools.test_capture_meta.IdentityTests -v 2>&1 | tail -4`
-Expected: 3 OK.
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.IdentityTests -v`
+Expected: 4 OK.
 
 - [ ] **Step 5: Commit**
 
@@ -1255,16 +1403,21 @@ class EndToEndTest(unittest.TestCase):
                   *utilization.gpu*) echo "0, 18.40, 360, P8" ;;
                   *name,uuid*) echo "NVIDIA test, GPU-1, 610.57.04" ;;
                   *-q*-x*) echo '<nvidia_smi_log><gpu><processes><process_info><type>G</type><process_name>/usr/bin/niri</process_name></process_info></processes></gpu></nvidia_smi_log>' ;;
+                  # A complete inventory is required: an empty <processes/> would still pass; a missing element exits 2.
                   *) exit 9 ;;
                 esac
                 """)); fake.chmod(0o755)
             run = root / "material-x" / "headless-20260911T000000"; run.mkdir(parents=True)
             runtime = root / "rt"; runtime.mkdir()
+            proc = root / "proc"; proc.mkdir()
+            (proc / "stat").write_text("cpu  100 0 50 9000 10 0 0 0 0 0\n")     # constant ticks: 0 % busy
+            (proc / "loadavg").write_text("0.42 0.40 0.39 1/900 1\n")
+            (proc / "meminfo").write_text("MemTotal:       100000 kB\nMemFree:         50000 kB\nMemAvailable:    80000 kB\n")
             (root / "A.kdl").write_text("glass")
             subprocess.run(["git", "-C", str(root), "init", "-q", "-b", "main"], check=True)
             subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "i"], check=True)
             env = {**os.environ, "PATH": f"{bins}:{os.environ['PATH']}", "XDG_RUNTIME_DIR": str(runtime),
-                   "XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-1"}
+                   "CAPTURE_META_PROC": str(proc), "XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-1"}
             tool = str(pathlib.Path(__file__).with_name("capture-meta"))
             def cm_run(*args):
                 return subprocess.run([sys.executable, tool, *args], env=env, capture_output=True, text=True)
@@ -1279,12 +1432,14 @@ class EndToEndTest(unittest.TestCase):
             record = json.loads((run / "capture.json").read_text())
             self.assertEqual(record["environment"]["gpu"]["driver"], "610.57.04")
             self.assertEqual(record["baseline"]["gpu_clients"]["graphics"], ["niri"])
+            self.assertEqual(record["baseline"]["mem_available_pct"], 80.0)
+            self.assertEqual(record["baseline"]["cpu_busy_pct"], 0.0)
             self.assertFalse((runtime / "capture-meta.lock").exists())
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m unittest tools.test_capture_meta.SettleTests tools.test_capture_meta.EndToEndTest -v 2>&1 | tail -4`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_capture_meta.SettleTests tools.test_capture_meta.EndToEndTest -v`
 Expected: `AttributeError ... settle`.
 
 - [ ] **Step 3: Implement**
@@ -1347,8 +1502,8 @@ Parser:
 
 - [ ] **Step 4: Run the whole suite**
 
-Run: `python3 -m unittest discover -s tools 2>&1 | tail -3`
-Expected: `OK` with the previous 70 tests plus the new ones (about 95).
+Run: `just check`
+Expected: the tooling suite reports `OK` with the previous 70 tests plus the new ones (about 97); fmt, clippy, `tasks check`, and the two `--check` tools pass.
 
 - [ ] **Step 5: Commit**
 
@@ -1425,7 +1580,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python3 -m unittest tools.test_glass_optic_smoke -v 2>&1 | tail -6`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_glass_optic_smoke -v`
 Expected: four failures (`settle_before_launch` not found, etc.).
 
 - [ ] **Step 3: Modify the lib**
@@ -1458,8 +1613,8 @@ capture_preflight() {
 }
 # After build_binaries: both binaries, this lib, and the calling script are the
 # static inputs. Extra --input/--config arguments pass through.
-capture_identity() {
-    capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" --binary "$NIRI_TRACY" \
+capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the installed binary only
+    capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" ${NIRI_TRACY:+--binary "$NIRI_TRACY"} \
         --input "$ROOT/docs/materials/scripts/glass-optic-smoke-lib.sh" --input "$0" "$@" \
         || fail "identity refused"
 }
@@ -1502,7 +1657,7 @@ Each smoke sets `CAPTURE_TASK` near its top (`: "${CAPTURE_TASK:=material-bae9c9
 
 - [ ] **Step 5: Run tests**
 
-Run: `python3 -m unittest tools.test_glass_optic_smoke -v 2>&1 | tail -4 && bash -n docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/glass-aurora-smoke.sh docs/materials/scripts/glass-iridescence-smoke.sh`
+Run: `python3 tools/tt material-bae9c9-tools -- python3 -m unittest tools.test_glass_optic_smoke -v && bash -n docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/glass-aurora-smoke.sh docs/materials/scripts/glass-iridescence-smoke.sh`
 Expected: 6 OK; `bash -n` silent.
 
 - [ ] **Step 6: Commit**
@@ -1518,7 +1673,9 @@ git commit -m "feat(material): optic smokes record captures through capture-meta
 
 **Files:**
 - Modify: `niri-experiments/fixtures/idle-budget.sh` (`runtime()` lines 40–133; `start_scene` lines 175–203)
+- Modify: `niri-experiments/fixtures/jelly-motion.sh:7-15` — the other live consumer of the lib
 - Modify: `niri-experiments/fixtures/test_idle_budget.py` (`ShellTests`)
+- Modify: `niri-experiments/docs/results/2026-09-11-jelly-motion-sweep.sha256` (regenerated: it covers `fixtures/jelly-motion.sh`)
 
 Work in a new worktree:
 
@@ -1594,7 +1751,7 @@ Also update `test_runtime_validates_identity_before_reaching_launch_boundary` (l
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `just --justfile fixtures/idle-budget.just test 2>&1 | tail -5`
+Run: `just --justfile fixtures/idle-budget.just test`
 Expected: the new test fails (`capture-calls` missing) and the identity-boundary test may fail on the `nvidia-smi` stub removal until Step 3.
 
 - [ ] **Step 3: Modify `runtime()`**
@@ -1639,16 +1796,41 @@ and delete `sha256sum "$OUT/$case.kdl" > "$OUT/$name.config.sha256"` (line 199).
 
 (f) Delete line 270, `printf '%s\n' "$XDG_SESSION_TYPE" > "$OUT/session-type.txt"`; the analyzer reads `capture.json`'s `environment.session.type` instead (Task 9). Until Task 9 lands, the analyzer still reads `session-type.txt`, so the power synthetic test in Task 9 Step 1 removes that file together.
 
+(g) **`fixtures/jelly-motion.sh`** sources the same live lib and calls `start_nested` at lines 53 and 61; after Task 7 its first launch would be refused for lack of a preflight. Migrate it: after line 7 (`. docs/materials/scripts/glass-optic-smoke-lib.sh`) insert `CAPTURE_TASK=material-36e968 capture_preflight headless` (the task its `tt` targets already name); after line 10 (the installed-binary hash check) insert
+
+```bash
+capture_identity --input "$fixture/diagnostic-grid.png" \
+    --config binary=installed --config output=1280x720@60 --config scale=1 --config vrr=off
+```
+
+and delete lines 13–15 (`source.commit`, `nvidia-smi.txt`, `lscpu.txt`) — `capture.json` carries them; keep `version.txt` and `source.diff` (the diff against the pinned `7526af1d` is a result, not environment). Regenerate `docs/results/2026-09-11-jelly-motion-sweep.sha256` with the same file list it holds today (`cut -d' ' -f3- docs/results/2026-09-11-jelly-motion-sweep.sha256 | xargs sha256sum > …`).
+
+(h) Add the caller-level check to `ShellTests`, so a future fixture that sources the lib cannot skip the protocol:
+
+```python
+    def test_every_lib_consumer_preflights_after_sourcing_and_before_launching(self):
+        fixtures = Path(__file__).parent
+        consumers = [p for p in fixtures.glob("*.sh") if "glass-optic-smoke-lib.sh" in p.read_text()]
+        self.assertEqual(sorted(p.name for p in consumers), ["idle-budget.sh", "jelly-motion.sh"])
+        for path in consumers:
+            text = path.read_text()
+            source = text.index("glass-optic-smoke-lib.sh")
+            preflight = text.index("capture_preflight")
+            launch = min(i for i in (text.find("start_nested"), text.find("start_drm")) if i >= 0)
+            self.assertTrue(source < preflight < launch, path.name)
+            self.assertLess(text.index("capture_identity") if "capture_identity" in text else text.index("capture_meta identity"), launch, path.name)
+```
+
 - [ ] **Step 4: Run the shell tests**
 
-Run: `just --justfile fixtures/idle-budget.just test 2>&1 | tail -5`
-Expected: the shell tests pass; `IntegrationTests`/`PowerIntegrityTests` still pass because the analyzer is unchanged until Task 9.
+Run: `just --justfile fixtures/idle-budget.just test` and `just --justfile fixtures/jelly-motion.just test`
+Expected: both pass; `IntegrationTests`/`PowerIntegrityTests` still pass because the analyzer is unchanged until Task 9. (`bash -n fixtures/jelly-motion.sh` is silent.)
 
 - [ ] **Step 5: Commit (in the experiments worktree)**
 
 ```bash
-git add fixtures/idle-budget.sh fixtures/test_idle_budget.py
-git commit -m "feat(idle-budget): record captures through capture-meta per mode"
+git add fixtures/idle-budget.sh fixtures/jelly-motion.sh fixtures/test_idle_budget.py docs/results/2026-09-11-jelly-motion-sweep.sha256
+git commit -m "feat(fixtures): idle-budget and jelly-motion record captures through capture-meta"
 ```
 
 ---
@@ -1713,7 +1895,7 @@ Add new cases to `IntegrationTests`:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `just --justfile fixtures/idle-budget.just test 2>&1 | tail -5`
+Run: `just --justfile fixtures/idle-budget.just test`
 Expected: `FileNotFoundError: … hardware.json` from `analyze`, and the new test fails.
 
 - [ ] **Step 3: Migrate the analyzer**
@@ -1776,7 +1958,7 @@ and keep `"hardware": hardware` in the result (its keys are now `name`/`uuid`/`d
 
 - [ ] **Step 4: Run the suite**
 
-Run: `just --justfile fixtures/idle-budget.just test 2>&1 | tail -5`
+Run: `just --justfile fixtures/idle-budget.just test`
 Expected: all OK (the previous 19 plus 2).
 
 - [ ] **Step 5: Update the results doc and manifest**
@@ -1840,5 +2022,5 @@ git commit -m "docs(material): capture protocol landed; point evidence docs at c
 
 - [ ] **Step 4: Verify**
 
-Run: `python3 -m unittest discover -s tools 2>&1 | tail -3 && tasks check --pretty && (cd /mnt/ssd/Dropbox/niri-experiments/.worktrees/material-bae9c9 && MATERIAL_ROOT=$PWD/../../../niri-material/.worktrees/material-bae9c9 just --justfile fixtures/idle-budget.just test 2>&1 | tail -3)`
-Expected: `OK` in both suites, `tasks check` ok. Then hand the branch to `superpowers:finishing-a-development-branch`.
+Run, as three separate commands so each exit status is seen: `just check`; then in the experiments worktree with `MATERIAL_ROOT` exported, `just --justfile fixtures/idle-budget.just test`; then `just --justfile fixtures/jelly-motion.just test`.
+Expected: `OK` from each suite; `just check` also passes fmt, clippy, and `tasks check`. Then hand the branch to `superpowers:finishing-a-development-branch`.
