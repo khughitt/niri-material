@@ -607,6 +607,53 @@ def cmd_preflight(args):
               parse_thresholds(args.threshold), args.tool, ProcReader(), GpuReader())
 
 
+def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=lock_path):
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        raise CannotRun("seconds must be a positive integer")
+    run_dir = pathlib.Path(run_dir)
+    record = load_record(run_dir)
+    for section in ("run", "baseline", "preflight"):
+        if section not in record:
+            raise CannotRun(f"settle needs a preflighted run; {RECORD} has no {section!r}")
+    if record["preflight"].get("verdict") != "quiet":
+        raise Refused("preflight was refused; nothing to settle into")
+    expected = record["preflight"].get("lock", {})
+    holder = read_lock(lock())
+    if (holder is None or holder.get("run_id") != record["run"].get("id")
+            or holder.get("owner_pid") != expected.get("owner_pid")):
+        raise Refused(f"lock no longer names this run ({record['run'].get('id')}); holder: {holder}")
+    entry_inputs = hashed(inputs)
+    samples = sample_stream(proc, gpu, seconds, sleep)
+    summary = summarize(samples)
+    reasons = judge_settled(summary, samples, record["baseline"],
+                            record["preflight"]["thresholds"], record["run"]["lane"])
+    entry = {"name": sub_run, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
+             "inputs": entry_inputs, "verdict": "settled" if not reasons else "refused"}
+    if reasons:
+        entry["reason"] = "; ".join(reasons)
+    append_sub_run(run_dir, entry)
+    if reasons:
+        raise Refused(entry["reason"])
+
+
+def cmd_settle(args):
+    settle(args.run_dir, args.sub_run, args.input, args.seconds, ProcReader(), GpuReader())
+
+
+def cmd_release(args):
+    record = load_record(args.run_dir)
+    run = record.get("run")
+    if not run:
+        return
+    owner = record.get("preflight", {}).get("lock", {}).get("owner_pid")
+    if owner is None:
+        if read_lock(lock_path()) is not None:
+            raise Refused(f"lock is not this run's ({run.get('id')}); left in place")
+        return
+    if not release_lock(lock_path(), owner, run["id"]):
+        raise Refused(f"lock is not this run's ({run['id']}); left in place")
+
+
 def render(record):
     lines = []
     run = record.get("run", {})
@@ -681,6 +728,15 @@ def build_parser():
     ident.add_argument("--input", action="append", default=[])
     ident.add_argument("--config", action="append", default=[])
     ident.set_defaults(func=cmd_identity)
+    st = subs.add_parser("settle")
+    st.add_argument("run_dir")
+    st.add_argument("--sub-run", required=True)
+    st.add_argument("--input", action="append", default=[])
+    st.add_argument("--seconds", type=int, default=10)
+    st.set_defaults(func=cmd_settle)
+    rel = subs.add_parser("release")
+    rel.add_argument("run_dir")
+    rel.set_defaults(func=cmd_release)
     return parser
 
 
