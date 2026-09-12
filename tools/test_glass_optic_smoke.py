@@ -1,10 +1,15 @@
 """A quiet window needs a complete trace before zero redraws mean anything."""
 import csv
+import os
 import re
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+
+# Git exports repository variables into hooks, where they override subprocess cwd.
+for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
+    del os.environ[_name]
 
 
 class TraceCoverageTest(unittest.TestCase):

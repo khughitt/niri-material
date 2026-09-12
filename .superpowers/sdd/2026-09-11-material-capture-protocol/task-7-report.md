@@ -24,3 +24,9 @@ the two native entry scripts so the offline prepare consumer can source the libr
 the shared launch path performs every settle. No build or hardware capture was run.
 
 Concerns: none.
+
+## Review round 1
+
+Added the required import-time `GIT_*` environment scrub using the established tooling-test
+pattern. The focused suite passed with an inherited synthetic `GIT_WORK_TREE`, confirming
+that subprocess tests do not retain hook-exported Git repository overrides.
