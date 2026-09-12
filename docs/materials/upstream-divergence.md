@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-319 paths differ: 39 class B (seam), 260 class A (fork-only), 20 class C (scaffolding).
+322 paths differ: 39 class B (seam), 262 class A (fork-only), 21 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -107,6 +107,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_meta.py` | C | A | +737/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +121/-0 |
+| `tools/test_glass_render_order_metrics.py` | C | A | +87/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_upstream_report.py` | C | A | +840/-0 |
 | `tools/tt` | C | A | +276/-0 |

@@ -1,9 +1,11 @@
 # Material render order by depth
 
 **Status:** reviewed for planning on 2026-09-12, including transmitted
-chamfer grain without a mask. Implementation has not started. The
-[implementation plan](../plans/2026-09-12-material-render-order.md) is awaiting
-review. Source baseline: `8e3d890d`; reviewed spec revision: `522a09fe`.
+chamfer grain without a mask. The
+[implementation plan](../plans/2026-09-12-material-render-order.md) is approved
+for inline execution. Offline comparison tooling is prepared; capture
+preflight blocked Task 1 before shader edits. Neither rendering change is
+implemented. Source baseline: `8e3d890d`; reviewed spec revision: `522a09fe`.
 
 **Goal:** `material-5b3107`. Children: `material-f8b6e9` (behind: noise and
 saturation), `material-92edaf` (within: ring and aurora).
@@ -229,7 +231,7 @@ spatial cutoff, neither proposed here.
 
 ## Children and documentation
 
-Review the implementation plan before executing either child.
+Execute the approved implementation plan sequentially.
 The goal remains open through implementation and evidence.
 
 1. **`material-f8b6e9`: behind hook: noise and saturation.** Move the two
