@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Record I/O and display for material performance captures."""
 import argparse
+import contextlib
 import dataclasses
+import fcntl
 import json
 import math
 import os
@@ -16,6 +18,7 @@ import xml.etree.ElementTree as ET
 
 SCHEMA = 1
 RECORD = "capture.json"
+LOCK_NAME = "capture-meta.lock"
 
 
 class Refused(Exception):
@@ -24,6 +27,126 @@ class Refused(Exception):
 
 class CannotRun(Exception):
     """Exit 2: the helper could not do its job."""
+
+
+def lock_path():
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime:
+        raise CannotRun("XDG_RUNTIME_DIR is unset; the lock has nowhere to live")
+    return pathlib.Path(runtime) / LOCK_NAME
+
+
+def _validate_owner(owner_pid, run_id):
+    if (isinstance(owner_pid, bool) or not isinstance(owner_pid, int) or owner_pid <= 0
+            or not isinstance(run_id, str) or not run_id):
+        raise CannotRun("lock owner_pid must be a positive integer and run_id a nonempty string")
+
+
+def pid_alive(pid):
+    _validate_owner(pid, "pid-check")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as error:
+        raise CannotRun(f"cannot check pid {pid}: {error}") from error
+    return True
+
+
+@contextlib.contextmanager
+def guarded(path):
+    path = pathlib.Path(path)
+    guard = path.with_name(path.name + ".d")
+    try:
+        guard.mkdir(exist_ok=True)
+        fd = os.open(guard, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+    except OSError as error:
+        raise CannotRun(f"lock guard {guard}: {error}") from error
+
+
+def _read_lock(path):
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise CannotRun(f"lock {path}: {error}") from error
+    try:
+        holder = json.loads(text)
+    except (json.JSONDecodeError, UnicodeError) as error:
+        raise CannotRun(f"lock {path} is unreadable ({error}); remove it by hand if no capture is running") from error
+    if not isinstance(holder, dict):
+        raise CannotRun(f"lock {path} has no owner_pid/run_id; remove it by hand if no capture is running")
+    try:
+        _validate_owner(holder.get("owner_pid"), holder.get("run_id"))
+    except CannotRun as error:
+        raise CannotRun(f"lock {path} has no owner_pid/run_id; remove it by hand if no capture is running") from error
+    return holder
+
+
+def read_lock(path):
+    path = pathlib.Path(path)
+    with guarded(path):
+        return _read_lock(path)
+
+
+def _publish_lock(path, owner_pid, run_id):
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        tmp.write_text(json.dumps({"owner_pid": owner_pid, "run_id": run_id}))
+        os.link(tmp, path)
+    except OSError as error:
+        raise CannotRun(f"cannot publish lock {path}: {error}") from error
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError as error:
+            raise CannotRun(f"cannot remove temporary lock {tmp}: {error}") from error
+
+
+def acquire_lock(path, owner_pid, run_id, alive=pid_alive):
+    _validate_owner(owner_pid, run_id)
+    path = pathlib.Path(path)
+    with guarded(path):
+        holder = _read_lock(path)
+        if holder is None:
+            _publish_lock(path, owner_pid, run_id)
+            return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": False}
+        if alive(holder["owner_pid"]):
+            raise Refused(f"lock {path} held by pid {holder['owner_pid']} for run {holder['run_id']}")
+        try:
+            path.unlink()
+        except OSError as error:
+            raise CannotRun(f"cannot reclaim lock {path}: {error}") from error
+        _publish_lock(path, owner_pid, run_id)
+        return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "reclaimed": True,
+                "previous_owner_pid": holder["owner_pid"]}
+
+
+def release_lock(path, owner_pid, run_id):
+    _validate_owner(owner_pid, run_id)
+    path = pathlib.Path(path)
+    with guarded(path):
+        try:
+            holder = _read_lock(path)
+        except CannotRun:
+            return False
+        if holder is None:
+            return True
+        if holder["owner_pid"] != owner_pid or holder["run_id"] != run_id:
+            return False
+        try:
+            path.unlink()
+        except OSError as error:
+            raise CannotRun(f"cannot release lock {path}: {error}") from error
+        return True
 
 
 @dataclasses.dataclass

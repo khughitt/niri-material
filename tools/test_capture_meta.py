@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import tempfile
+import threading
 import unittest
 
 for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
@@ -16,6 +17,100 @@ spec = importlib.util.spec_from_loader(
         "capture_meta", str(pathlib.Path(__file__).with_name("capture-meta"))))
 cm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cm)
+
+
+class LockTests(unittest.TestCase):
+    def test_acquire_release_and_ownership_check(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            info = cm.acquire_lock(path, owner_pid=111, run_id="run-a", alive=lambda pid: True)
+            self.assertEqual(info, {"path": str(path), "owner_pid": 111, "run_id": "run-a", "reclaimed": False})
+            self.assertEqual(sorted(p.name for p in path.parent.iterdir()), ["capture-meta.lock", "capture-meta.lock.d"])
+            self.assertEqual(cm.read_lock(path)["run_id"], "run-a")
+            self.assertFalse(cm.release_lock(path, owner_pid=222, run_id="run-b"))
+            self.assertTrue(path.exists())
+            self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a"))
+            self.assertFalse(path.exists())
+            self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a"))
+
+    def test_half_written_or_corrupt_lock_is_never_reclaimed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            path.write_text("")
+            with self.assertRaises(cm.CannotRun):
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
+            self.assertEqual(path.read_text(), "")
+            path.write_text("{not json")
+            with self.assertRaises(cm.CannotRun):
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
+            self.assertFalse(cm.release_lock(path, 222, "run-b"))
+
+    def test_guard_serializes_acquire_against_a_concurrent_holder(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            guard = path.with_name(path.name + ".d"); guard.mkdir()
+            fd = os.open(guard, os.O_RDONLY); fcntl.flock(fd, fcntl.LOCK_EX)
+            done = threading.Event(); result = {}
+            def worker():
+                result["info"] = cm.acquire_lock(path, 333, "run-c", alive=lambda pid: True); done.set()
+            threading.Thread(target=worker, daemon=True).start()
+            self.assertFalse(done.wait(0.3))
+            fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd)
+            self.assertTrue(done.wait(3.0))
+            self.assertEqual(result["info"]["run_id"], "run-c")
+
+    def test_held_by_live_pid_refuses_stale_is_reclaimed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            cm.acquire_lock(path, 111, "run-a", alive=lambda pid: True)
+            with self.assertRaises(cm.Refused) as ctx:
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: True)
+            self.assertIn("run-a", str(ctx.exception))
+            info = cm.acquire_lock(path, 222, "run-b", alive=lambda pid: pid != 111)
+            self.assertEqual(info["reclaimed"], True)
+            self.assertEqual(info["previous_owner_pid"], 111)
+            self.assertEqual(cm.read_lock(path)["owner_pid"], 222)
+
+    def test_two_processes_racing_admit_exactly_one(self):
+        import subprocess
+        import sys
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            code = ("import sys, importlib.util, importlib.machinery, pathlib\n"
+                    "spec = importlib.util.spec_from_loader('cm', importlib.machinery.SourceFileLoader('cm', sys.argv[1]))\n"
+                    "cm = importlib.util.module_from_spec(spec); spec.loader.exec_module(cm)\n"
+                    "try:\n    cm.acquire_lock(pathlib.Path(sys.argv[2]), int(sys.argv[3]), sys.argv[3], alive=lambda p: True)\n"
+                    "except cm.Refused:\n    sys.exit(1)\n")
+            tool = str(pathlib.Path(__file__).with_name("capture-meta"))
+            procs = [subprocess.Popen([sys.executable, "-c", code, tool, str(path), str(1000 + i)]) for i in range(8)]
+            codes = sorted(p.wait() for p in procs)
+            self.assertEqual(codes, [0] + [1] * 7)
+
+    def test_public_read_waits_for_guard(self):
+        import fcntl
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            path.write_text('{"owner_pid": 111, "run_id": "run-a"}')
+            guard = path.with_name(path.name + ".d"); guard.mkdir()
+            fd = os.open(guard, os.O_RDONLY); fcntl.flock(fd, fcntl.LOCK_EX)
+            done = threading.Event()
+            threading.Thread(target=lambda: (cm.read_lock(path), done.set()), daemon=True).start()
+            self.assertFalse(done.wait(0.3))
+            fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd)
+            self.assertTrue(done.wait(3.0))
+
+    def test_rejects_invalid_owner_fields(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "capture-meta.lock"
+            for pid, run_id in ((0, "run"), (-1, "run"), (True, "run"), (1, ""), (1, None)):
+                with self.subTest(pid=pid, run_id=run_id), self.assertRaises(cm.CannotRun):
+                    cm.acquire_lock(path, pid, run_id)
+            for holder in ({"owner_pid": 0, "run_id": "run"}, {"owner_pid": True, "run_id": "run"},
+                           {"owner_pid": 1, "run_id": ""}, {"owner_pid": 1, "run_id": 2}):
+                path.write_text(json.dumps(holder))
+                with self.subTest(holder=holder), self.assertRaises(cm.CannotRun):
+                    cm.read_lock(path)
 
 
 class RecordTests(unittest.TestCase):
