@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 3
+# ops-check version 4
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -15,6 +15,8 @@ exits 2 when it cannot run at all.
   of the line above; a `just recipe` must be a recipe in the justfile. Fenced and indented code is not
   scanned. A destination or an example is written without backticks.
 - Conflicted copies: no tracked path may be a Dropbox conflicted copy.
+- Agent scratch: no tracked path may lie under a `.agents/` directory. The global ignore
+  keeps one out of `git add`; only `git add -f` gets past it, and only the index shows that.
 """
 import os
 import pathlib
@@ -154,6 +156,8 @@ def findings(root, projects):
     for path in files:
         if "conflicted copy" in path:
             yield path, 0, "Dropbox conflicted copy is tracked"
+        if path.startswith(".agents/") or "/.agents/" in path:
+            yield path, 0, "agent scratch under .agents/ is tracked"
 
 
 def main():
