@@ -2,10 +2,10 @@
 id: material-5d6b2c
 title: "Resource-aware rendering: know the cost of every visual decision"
 status: todo
-priority: 2
+priority: 1
 complexity: high
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-12T19:24:30Z
+updated: 2026-09-16T12:00:25Z
 depends: []
 tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
