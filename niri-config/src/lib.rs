@@ -1029,15 +1029,12 @@ mod tests {
     }
 
     #[test]
-    fn ring_must_fit_in_bevel() {
-        let err = parse_files_err(&[(
+    fn ring_may_extend_past_the_bevel() {
+        parse_files(&[(
             "config.kdl",
-            r#"material "tg" { glass { bevel 4; }; response "default" { ring-inset 3; ring-width 2; }; }"#,
-        )]);
-        assert!(
-            err.contains("ring-inset + ring-width must not exceed bevel"),
-            "{err}"
-        );
+            r#"material "tg" { glass { bevel 4; offset-x 0; offset-y 0; }; response "default" { ring-inset 3; ring-width 2; }; }"#,
+        )])
+        .unwrap();
     }
 
     #[test]

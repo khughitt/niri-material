@@ -57,11 +57,11 @@ lengths are logical pixels.
 | `saturation` | float | inherit | 0–3 | — |
 | `noise` | float | inherit | 0–1 | — |
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
-| `iridescence` | float | 0 | 0–1 | — |
 | `aurora` | float | 0 | 0–1 | — |
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
 | `aurora` `color` | color | `#7a5cff` | any color | — |
+| `iridescence` | float | 0 | 0–1 | — |
 
 <!-- params:end -->
 
@@ -73,24 +73,20 @@ parameters during scripted column moves and verifies exact return to settled
 pixels. Its sample points cover the current ranges; it does not establish
 interactive-drag behavior or a new perceptual range.
 
-`light-ior` multiplies the bend applied to the focus filament's light path
-only; the background taps are unaffected. The light-path index is
+`light-ior` multiplies the bend applied to ring and aurora interior-light
+paths only; the background taps are unaffected. The light-path index is
 `1 + (ior - 1) * light-ior`.
 
-The knob is much narrower than its range suggests. The filament's shared
-refracted shift is capped at half `ring-inset` — 2.5 px at the default
-inset of 5 — so the core always stays inside the bevel, and the shift grows
-roughly as `sin(45deg - asin(sin 45deg / n)) * 0.6 * thickness`. At
-`light-ior 1`, the minimum, that is already about 3.5 px on the stock
-default glass (`ior 1.5`, `thickness 20`) and about 4.6 px on thick glass
-near `ior 1.24` with `thickness 43.3`. Both are past the cap, so on such
-glass *every* `light-ior` value saturates it: the knob no longer positions
-the filament's core, and only widens the chromatic split — which does
-nothing at all when `chromatic-aberration` is 0.
-
-`light-ior` only positions the core on very low-index glass near `ior 1.02`
-(the calibration the spike used), where the light-path product lands near
-0.12 at the default 6.
+Only the ring's shared refracted shift is capped at half `ring-inset` — 2.5 px
+at the default inset of 5. Aurora uses the same index without that ring cap.
+The ring shift grows roughly as
+`sin(45deg - asin(sin 45deg / n)) * 0.2 * thickness`. At
+`light-ior 1`, the minimum, it is about 1.16 px on the stock default glass
+(`ior 1.5`, `thickness 20`) and about 1.54 px on thick glass near `ior 1.24`
+with `thickness 43.3`, both below the cap. At the default `light-ior 6`, the
+stock glass is about 2.3 px, still just below it. The cap remains a safety
+limit for sufficiently dense or high-`light-ior` settings; it does not make
+every value saturate or reduce the knob to chromatic split alone.
 
 `backdrop-blur` makes the glass refract the blurred backdrop rather than the
 sharp one, which is what produces a frosted appearance: blur and refraction
@@ -143,7 +139,7 @@ the offsets. Its inner corners follow the window's effective
 The glass pipeline is a slab plus an ordered list of optics. Each optic owns
 its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
 changes nothing; omission can instead inherit where stated below.
-Optics are listed in render order: `saturation`, `noise`, `iridescence`, `aurora`.
+Optics are listed in render order: `saturation`, `noise`, `aurora`, `iridescence`.
 Contributors: see `adding-an-optic.md`.
 
 ### saturation
@@ -165,7 +161,7 @@ the type never inherits.
 
 ### iridescence
 
-Stage 5. `iridescence <amount>` gives the Fresnel glint a thin-film hue
+Stage 6. `iridescence <amount>` gives the Fresnel glint a thin-film hue
 from the view angle: `hue = fract(2.5 * (1 - cos))` through the cosine
 palette `0.5 + 0.5 * cos(2π (hue + (0, ⅓, ⅔)))`, and the glint becomes
 `mix(glint, glint * palette * 2, amount)`. It runs before the signal accent
@@ -176,7 +172,7 @@ iridescence colours the edge light.
 
 ### aurora
 
-Stage 6. `aurora <amount> { drift-hz <hz>; color <a>; color <b>; }` adds a
+Within stage. `aurora <amount> { drift-hz <hz>; color <a>; color <b>; }` adds a
 slow colour field inside the glass: two octaves of simplex noise on the
 element position (one noise unit is 250 px), offset by the window seed,
 mix the two colours, and a coarser octave sets the brightness; the light
@@ -289,9 +285,9 @@ rate is quantized to tenths of a hertz so the steps divide the 10 s drift
 period evenly). `accent "ring"` lets a
 window signal light and tint the same band on any window. Both together show
 the drifting filament in the accent color. The band sits `ring-inset` px
-inward from the slab's outer edge, is refracted through the glass, and is
-masked to the bevel, so it never lights the window face. Every resolved
-response must satisfy `ring-inset + ring-width <= bevel` and `ring-width > 0`.
+inward from the slab's outer edge, is refracted through the glass at its
+remaining interior depth, and may show through a translucent window face.
+`ring-width` must be positive.
 The filament shows through the slab's exterior band and through translucent
 window pixels; an opaque window shows a full ring only when
 `bevel >= 2 * max(|offset-x|, |offset-y|) + ring-inset + ring-width`.
@@ -355,7 +351,6 @@ The whole configuration is rejected with these validation errors:
 - response blocks without `default`: `material <name>: missing response
   "default"`;
 - duplicate response names: `duplicate response: <name>`;
-- a ring outside the bevel: `ring-inset + ring-width must not exceed bevel`;
 - a zero or negative ring width: `ring-width must be positive`;
 - a drift rate strictly between 0 and 1: `ring-drift-hz must be 0 or at
   least 1`;

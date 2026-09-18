@@ -75,8 +75,8 @@ impl OpticEntry {
 pub static OPTICS: &[OpticEntry] = &[
     OpticEntry::of::<saturation::SaturationOptic>(),
     OpticEntry::of::<noise::NoiseOptic>(),
-    OpticEntry::of::<iridescence::IridescenceOptic>(),
     OpticEntry::of::<aurora::AuroraOptic>(),
+    OpticEntry::of::<iridescence::IridescenceOptic>(),
 ];
 
 /// Every optic's uniform names, in `OPTICS` order, for the program.

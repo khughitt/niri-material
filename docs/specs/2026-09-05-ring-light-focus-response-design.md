@@ -8,6 +8,13 @@ to the bevel band, with two workspace-transition capture-timing failures
 recorded there. Supersedes the
 static gradient focus ring for material windows; the spike that chose it is
 [`2026-09-05-focus-ring-light-spike.md`](../materials/2026-09-05-focus-ring-light-spike.md).
+Its bevel-only placement, `0.6 * thickness` lookup and
+`ring-inset + ring-width <= bevel` validation are superseded by the implemented
+[within render-order change](2026-09-12-material-render-order-design.md);
+its current acceptance record is the
+[render-order evidence](../materials/2026-09-12-material-render-order-evidence.md).
+The historical captures below retain measurements of the pre-within
+implementation and are not current placement or validation evidence.
 
 **Task:** `material-26dd8a`, piece of `material-d1f471`.
 
