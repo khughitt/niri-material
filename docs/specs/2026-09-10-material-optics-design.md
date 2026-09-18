@@ -15,9 +15,12 @@ records costs and their limits. The original implementation evidence used llvmpi
 
 **Render-order update:** Task 1 of the
 [depth-order design](2026-09-12-material-render-order-design.md) adds `behind`
-and moves saturation/noise there in the working implementation; candidate
-GLES acceptance is pending. `within` remains planned for Task 2. The original
-implementation evidence above predates this ordering.
+and moves saturation/noise there; it is committed at `e33aa968` with its
+pixel, signal, and strict-cost acceptance recorded in the linked design.
+Task 2 adds `within`; its implementation and linked within pixel and cost
+matrices passed, as did the older aurora strict cost-only rotation. Final
+software gates passed; review and commit remain. The original implementation
+evidence above predates this ordering.
 
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
@@ -99,27 +102,29 @@ for seventeen parameters is a large diff for no new capability.
 
 ## 1. What an optic is
 
-An optic acts at one or more of five hook points in the fragment shader,
-named for the stage of `render-pipeline.md` they sit in:
+An optic acts at one or more of six hook points in the fragment shader,
+called in this order and named for the stage of `render-pipeline.md` they sit
+in:
 
 | Hook | Pipeline stage | Signature | Acts on |
 | --- | --- | --- | --- |
 | `normal` | 2, after distortion and ripple, before the taps | `vec3 <optic>_normal(vec3 n, vec2 p)` | the perturbed normal the refraction taps use |
 | `behind` | 3a–3b, after averaged taps, before attenuation | `vec3 <optic>_behind(vec3 color, vec2 fragCoord)` | the averaged linear backdrop |
-| `specular` | 5, after the Schlick term, before the signal accent mix | `vec3 <optic>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | the Fresnel glint |
-| `emissive` | 6, after the ring of light, before the sweeps | `vec3 <optic>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | returns light to add; `main` accumulates it into `emissive` |
+| `within` | 5, after attenuation and before surface light | `vec3 <optic>_within(vec2 p, vec3 n, vec3 att, float innerDist)` | returns attenuated interior light; `main` accumulates it into `within` |
+| `specular` | 6, after the Schlick term, before the signal accent mix | `vec3 <optic>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | the Fresnel glint |
+| `emissive` | 7, after surface light, before encoding | `vec3 <optic>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | returns light to add; `main` accumulates it into `emissive` |
 | `post` | 9, reserved after final sRGB encoding | `vec3 <optic>_post(vec3 color, vec2 fragCoord)` | the finished glass colour |
 
 An optic defines one function per hook it acts at, named
 `<optic>_<hook>`, in its own GLSL file. `main.frag` calls the functions in
 `OPTICS` order at each hook; a contributor adds one call per hook the new
 optic uses. The `normal`, `behind`, `specular`, and `post` hooks transform a value
-and return it; the `emissive` hook is additive and returns a contribution.
+and return it; the `within` and `emissive` hooks are additive and return a
+contribution.
 
 Every optic has an explicit **neutral** configuration, and its docs section
 states it. At that neutral, a transforming hook returns its input unchanged
-and an emissive
-hook returns `vec3(0.0)`, behind one uniform branch, so an unconfigured
+and a within or emissive hook returns `vec3(0.0)`, behind one uniform branch, so an unconfigured
 optic costs that branch and nothing else. The neutral is not always zero:
 `saturation`'s is 1 (0 is grayscale), `noise`'s is an amount of 0, and the
 three new optics' is an amount of 0. Omission is separate from neutrality:

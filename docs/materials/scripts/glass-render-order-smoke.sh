@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Behind-order pixel and cost checks. MODE=red retains the old shader's
-# measured additive failure; MODE=verify runs the focused candidate checks.
+# Render-order pixel and cost checks. The within phase reuses this lifecycle;
+# it adds no parallel Weston/capture framework.
 # The existing noise-type, noise/saturation and signal smokes run separately.
 set -eu
 : "${PHASE:?behind or within}" "${BASE_NIRI:?baseline release binary}"
 : "${BASE_NIRI_TRACY:?baseline Tracy binary}" "${CAPTURE_TASK:?task id}"
 MODE=${MODE:-verify}
 SCOPE=${SCOPE:-all}
-case "$PHASE:$MODE" in behind:red|behind:verify) ;; *) echo 'unsupported phase/mode' >&2; exit 2 ;; esac
+case "$PHASE:$MODE" in behind:red|behind:verify|within:verify) ;; *) echo 'unsupported phase/mode' >&2; exit 2 ;; esac
 validate_scope() {
     case $SCOPE in pixels) ;; cost|all)
         if [ -n "${CAPTURE_META:-}" ]; then
@@ -73,6 +73,10 @@ assert_clean_log() {
     fi
 }
 
+validate_config() { # binary, config
+    "$1" validate -c "$2" >/dev/null 2>&1 || { "$1" validate -c "$2"; fail "invalid config: $2"; }
+}
+
 capture() { # name, glass, binary, focus response, client kind, rule opacity
     local name=$1 glass=$2 binary=${3:-$NIRI} focus=${4:-none} client=${5:-transparent} opacity=${6:-1.0}
     GLASS_EXTRA=$'offset-x 0\noffset-y 0\n'"$glass"
@@ -81,6 +85,7 @@ capture() { # name, glass, binary, focus response, client kind, rule opacity
         sed -i 's/focus "none"/focus "ring-light"/' "$OUT/$name.kdl"
     fi
     sed -i "/^window-rule {/a\\    opacity $opacity" "$OUT/$name.kdl"
+    validate_config "$binary" "$OUT/$name.kdl"
     start_nested "$binary" "$OUT/$name.kdl"
     spawn_client "$binary" "$client"
     sleep 2
@@ -271,13 +276,20 @@ saturation 0" "$NIRI" none opaque "$opacity"
 }
 
 gpu_case() { # baseline|neutral|active, round
-    local binary glass cooldown_name
-    case $1 in
+    local binary glass cooldown_name FOCUS_RESPONSE=none RESPONSE_EXTRA=
+    if [ "${PHASE:-behind}" = within ]; then
+        case $1 in
+            baseline) binary=$BASE_NIRI_TRACY; FOCUS_RESPONSE=ring-light; RESPONSE_EXTRA=$'ring-inset 5\nring-width 2.6'; glass=$'noise 0\nsaturation 1\naurora 0.5 { drift-hz 0; }' ;;
+            neutral) binary=$NIRI_TRACY; glass=$'noise 0\nsaturation 1\naurora 0 { drift-hz 0; }' ;;
+            active) binary=$NIRI_TRACY; FOCUS_RESPONSE=ring-light; RESPONSE_EXTRA=$'ring-inset 5\nring-width 2.6'; glass=$'noise 0\nsaturation 1\naurora 0.5 { drift-hz 0; }' ;;
+            *) fail "unknown GPU case $1" ;;
+        esac
+    else case $1 in
         baseline) binary=$BASE_NIRI_TRACY; glass=$'noise 0.5 type="fine"\nsaturation 0' ;;
         neutral) binary=$NIRI_TRACY; glass=$'noise 0\nsaturation 1' ;;
         active) binary=$NIRI_TRACY; glass=$'noise 0.5 type="fine"\nsaturation 0' ;;
         *) fail "unknown GPU case $1" ;;
-    esac
+    esac; fi
     local NIRI_TRACY=$binary GLASS_EXTRA=$'offset-x 0\noffset-y 0\n'"$glass"
     cooldown_name="gpu-$1-$2"
     printf '%s %s cooldown start (30s)\n' "$(date --iso-8601=seconds)" "$cooldown_name" \
@@ -319,13 +331,207 @@ behind_matrix() {
     cost_matrix
 }
 
+reach_case() { # name, on, off, inset, width, thickness, bevel, scatter
+    local rc=0
+    python3 "$HERE/glass-render-order-metrics.py" reach "$OUT/$2.png" "$OUT/$3.png" \
+        --window "$PX" "$PY" "$PW" "$PH" --bevel "$7" --thickness "$6" \
+        --inset "$4" --width "$5" --scatter "$8" > "$OUT/$1-reach.json" || rc=$?
+    cat "$OUT/$1-reach.json"
+    [ "$rc" -eq 0 ] || fail "$1 exceeded its derived rest reach bound"
+}
+
+profile_reach() { # name, on, off, inset, width, thickness, bevel, scatter, x, y, w, h
+    local rc=0
+    python3 "$HERE/glass-render-order-metrics.py" reach "$OUT/$2.png" "$OUT/$3.png" \
+        --window "$PX" "$PY" "$PW" "$PH" --bevel "$7" --thickness "$6" \
+        --inset "$4" --width "$5" --scatter "$8" --profile "$9" "${10}" "${11}" "${12}" \
+        > "$OUT/$1-reach.json" || rc=$?
+    cat "$OUT/$1-reach.json"
+    [ "$rc" -eq 0 ] || fail "$1 profile/reach measurement failed"
+}
+
+attenuation_ratio() { # hex channel, thickness, optical distance at the flat normal
+    awk -v channel="$1" -v thickness="$2" -v distance="$3" \
+        'BEGIN { print exp(log(channel / 255) * thickness * 0.2 / distance) }'
+}
+
+attenuation_reach() { # name, dense on/off, white on/off, inset, width, thickness, bevel, x, y, w, h
+    local r g b rc=0
+    r=$(attenuation_ratio 34 "$8" 30); g=$(attenuation_ratio 36 "$8" 30); b=$(attenuation_ratio 54 "$8" 30)
+    python3 "$HERE/glass-render-order-metrics.py" reach "$OUT/$2.png" "$OUT/$3.png" \
+        --window "$PX" "$PY" "$PW" "$PH" --bevel "$9" --thickness "$8" \
+        --inset "$6" --width "$7" --attenuation-only --attenuation-images "$OUT/$2.png" "$OUT/$3.png" \
+        "$OUT/$4.png" "$OUT/$5.png" --attenuation-rect "${10}" "${11}" "${12}" "${13}" \
+        --attenuation-ratio "$r" "$g" "$b" > "$OUT/$1-attenuation.json" || rc=$?
+    cat "$OUT/$1-attenuation.json"
+    [ "$rc" -eq 0 ] || fail "$1 attenuation interval gate failed"
+}
+
+assert_changed() { # name, on, off, crop; requires at least one delta > 1 code
+    local changed
+    changed=$(magick \( "$OUT/$2.png" -crop "$4" +repage \) \
+        \( "$OUT/$3.png" -crop "$4" +repage \) -compose difference -composite \
+        -separate +channel -evaluate-sequence max -threshold 0.4% \
+        -format '%[fx:mean*w*h]' info:)
+    assert_greater "$1 changed pixels" "$changed" 0
+    printf '%s_changed_pixels=%s\n' "$1" "$changed" >> "$OUT/metrics.txt"
+}
+
+within_ring() { # name, glass, inset, width, thickness, bevel, scatter
+    RESPONSE_EXTRA="ring-color \"#ffffff\"
+ring-inset $3
+ring-width $4"
+    capture "$1-off" "$2" "$NIRI" none
+    capture "$1-on" "$2" "$NIRI" ring-light
+    RESPONSE_EXTRA=
+    reach_case "$1" "$1-on" "$1-off" "$3" "$4" "$5" "$6" "$7"
+}
+
+within_pinned_ring() {
+    local common=$'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nthickness 20\nbevel 12'
+    within_ring within-pinned "$common"$'\nchromatic-aberration 0' 5 2.6 20 12 0
+    profile_reach within-pinned within-pinned-on within-pinned-off 5 2.6 20 12 0 \
+        "$((PX + PW / 2))" "$((PY - 12))" 1 40
+    within_ring within-pinned-aberration "$common"$'\nchromatic-aberration 0.6' 5 2.6 20 12 0
+}
+
+within_dense_ring() {
+    within_ring within-dense $'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nthickness 80\nbevel 12\nattenuation-color "#222436"\nattenuation-distance 30' 5 2.6 80 12 0
+    assert_changed within-dense-face within-dense-on within-dense-off "8x400+$PX+$((PY + 120))"
+}
+
+within_wide_ring() {
+    within_ring within-wide $'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nthickness 20\nbevel 32' 5 20 20 32 0
+    assert_changed within-wide-face within-wide-on within-wide-off "8x400+$PX+$((PY + 120))"
+}
+
+within_rough_ring() {
+    within_ring within-rough $'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nroughness 0.5\nthickness 20\nbevel 12' 5 2.6 20 12 0.5
+    profile_reach within-rough within-rough-on within-rough-off 5 2.6 20 12 0.5 \
+        "$((PX + PW / 2))" "$((PY - 12))" 1 40
+    local pinned_fwhm rough_fwhm pinned_peak rough_peak
+    pinned_fwhm=$(jq -r .profile_fwhm "$OUT/within-pinned-reach.json")
+    rough_fwhm=$(jq -r .profile_fwhm "$OUT/within-rough-reach.json")
+    pinned_peak=$(jq -r .profile_peak_delta "$OUT/within-pinned-reach.json")
+    rough_peak=$(jq -r .profile_peak_delta "$OUT/within-rough-reach.json")
+    assert_greater 'rough ring FWHM' "$rough_fwhm" "$pinned_fwhm"
+    awk -v rough="$rough_peak" -v pinned="$pinned_peak" 'BEGIN { exit !(rough < pinned) }' \
+        || fail "rough ring peak $rough_peak is not lower than pinned $pinned_peak"
+    printf 'pinned_ring_fwhm=%s\nrough_ring_fwhm=%s\npinned_ring_peak=%s\nrough_ring_peak=%s\n' \
+        "$pinned_fwhm" "$rough_fwhm" "$pinned_peak" "$rough_peak" >> "$OUT/metrics.txt"
+}
+
+within_face_ring() {
+    within_ring within-face $'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nthickness 20\nbevel 12' 20 2.6 20 12 0
+    assert_changed within-face-strip within-face-on within-face-off "8x400+$PX+$((PY + 120))"
+}
+
+within_aurora() {
+    local common
+    # All static captures share 200 px: 20 and 80 leave the left chamfer
+    # below the >1-code gate, while this also keeps the distortion pair matched.
+    common=$'noise 0\nsaturation 1\niridescence 0\naurora 0.5 { drift-hz 0; }\nior 1.5\nthickness 200\nbevel 12\ndistortion 0'
+    capture within-aurora-light-ior-1 "$common"$'\nlight-ior 1' "$NIRI" none
+    capture within-aurora-light-ior-6 "$common"$'\nlight-ior 6' "$NIRI" none
+    roi within-aurora-light-ior-1 "$(face_roi)" face
+    roi within-aurora-light-ior-6 "$(face_roi)" face
+    ae "$OUT/within-aurora-light-ior-1-face.png" "$OUT/within-aurora-light-ior-6-face.png"
+    assert_zero "aurora flat-face landing identity" "$METRIC"
+    assert_changed aurora-chamfer within-aurora-light-ior-1 within-aurora-light-ior-6 \
+        "20x400+$((PX - 4))+$((PY + 120))"
+    capture within-aurora-distortion "${common/distortion 0/distortion 0.4}"$'\nlight-ior 6' "$NIRI" none
+    assert_changed aurora-distortion-face within-aurora-distortion within-aurora-light-ior-6 \
+        "200x400+$((PX + 60))+$((PY + 120))"
+}
+
+within_aurora_motion() {
+    local glass i
+    glass=$'noise 0\nsaturation 1\niridescence 0\naurora 0.5 { drift-hz 1; }\nior 1.5\nthickness 20\nbevel 12\ndistortion 0.4\njelly-flex 0.004\njelly-ripple 0'
+    GLASS_EXTRA=$'offset-x 0\noffset-y 0\n'"$glass"
+    write_config "$OUT/aurora-motion.kdl"
+    validate_config "$NIRI" "$OUT/aurora-motion.kdl"
+    start_nested "$NIRI" "$OUT/aurora-motion.kdl"
+    spawn_client "$NIRI" transparent
+    sleep 2
+    msg "$NIRI" action set-column-width +100
+    for i in 1 2 3; do
+        printf '%s aurora-motion-%s\n' "$(date --iso-8601=seconds)" "$i" >> "$OUT/metrics.txt"
+        msg "$NIRI" -j windows >> "$OUT/aurora-motion-geometry.txt"
+        shot "$NIRI" "aurora-motion-$i"
+    done
+    stop_nested
+    assert_clean_log
+}
+
+within_attenuation() {
+    local white dense aurora_white aurora_dense
+    white=$'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nthickness 80\nbevel 12\nattenuation-color "#ffffff"\nattenuation-distance 30'
+    dense=$'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nthickness 80\nbevel 12\nattenuation-color "#222436"\nattenuation-distance 30'
+    within_ring within-white "$white" 20 2.6 80 12 0
+    within_ring within-dense-attenuation "$dense" 20 2.6 80 12 0
+    attenuation_reach within-ring within-dense-attenuation-on within-dense-attenuation-off \
+        within-white-on within-white-off 20 2.6 80 12 "$((PX + 60))" "$((PY + 7))" 200 3
+    aurora_white=$'noise 0\nsaturation 1\niridescence 0\naurora 0.5 { drift-hz 0; }\nior 1.5\nthickness 80\nbevel 12\ndistortion 0\nattenuation-color "#ffffff"\nattenuation-distance 30'
+    aurora_dense=$'noise 0\nsaturation 1\niridescence 0\naurora 0.5 { drift-hz 0; }\nior 1.5\nthickness 80\nbevel 12\ndistortion 0\nattenuation-color "#222436"\nattenuation-distance 30'
+    capture within-aurora-white-off "${aurora_white/aurora 0.5/aurora 0}" "$NIRI" none
+    capture within-aurora-white-on "$aurora_white" "$NIRI" none
+    capture within-aurora-dense-off "${aurora_dense/aurora 0.5/aurora 0}" "$NIRI" none
+    capture within-aurora-dense-on "$aurora_dense" "$NIRI" none
+    attenuation_reach within-aurora within-aurora-dense-on within-aurora-dense-off \
+        within-aurora-white-on within-aurora-white-off 5 2.6 80 12 "$((PX + 60))" "$((PY + 120))" 200 400
+}
+
+within_opaque() {
+    local neutral active
+    neutral=$'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }'
+    active=$'noise 0.5 type="fine"\nsaturation 0\niridescence 0.8\naurora 0.5 { drift-hz 0; }'
+    RESPONSE_EXTRA=$'ring-inset 20\nring-width 2.6'
+    capture within-opaque-off "$neutral" "$NIRI" none opaque 1.0
+    capture within-opaque-on "$active" "$NIRI" ring-light opaque 1.0
+    RESPONSE_EXTRA=
+    roi within-opaque-off "8x400+$PX+$((PY + 120))" ring
+    roi within-opaque-on "8x400+$PX+$((PY + 120))" ring
+    ae "$OUT/within-opaque-off-ring.png" "$OUT/within-opaque-on-ring.png"
+    assert_zero "within opaque glyph identity" "$METRIC"
+    roi within-opaque-off "$(face_roi)" glyph
+    roi within-opaque-on "$(face_roi)" glyph
+    ae "$OUT/within-opaque-off-glyph.png" "$OUT/within-opaque-on-glyph.png"
+    assert_zero "within opaque face identity" "$METRIC"
+}
+
+within_additive() {
+    additive_case aurora 'aurora 0 { drift-hz 0; }' 'aurora 0.5 { drift-hz 0; }' none
+    RESPONSE_EXTRA=$'ring-inset 5\nring-width 2.6'
+    additive_case ring '' '' ring-light
+    RESPONSE_EXTRA=
+    additive_case iridescence 'iridescence 0' 'iridescence 0.8' none
+}
+
+within_matrix() {
+    neutral_identity
+    within_pinned_ring
+    within_dense_ring
+    within_wide_ring
+    within_rough_ring
+    within_face_ring
+    within_aurora
+    within_aurora_motion
+    within_attenuation
+    within_opaque
+    within_additive
+}
+
 run_scope() {
     if [ "$MODE" = red ]; then
         [ "$SCOPE" != cost ] || fail 'MODE=red has no cost scope'
         additive_case aurora 'aurora 0 { drift-hz 0; }' 'aurora 0.5 { drift-hz 0; }' none
         return
     fi
-    case $SCOPE in pixels) pixel_matrix ;; cost) cost_matrix ;; all) behind_matrix ;; esac
+    if [ "${PHASE:-behind}" = within ]; then
+        case $SCOPE in pixels) within_matrix ;; cost) cost_matrix ;; all) within_matrix; cost_matrix ;; esac
+    else
+        case $SCOPE in pixels) pixel_matrix ;; cost) cost_matrix ;; all) behind_matrix ;; esac
+    fi
 }
 run_scope
 finish

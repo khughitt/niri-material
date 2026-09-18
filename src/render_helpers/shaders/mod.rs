@@ -47,6 +47,7 @@ pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>> {
         UniformName::new("mat_bg_prefilter_mix", UniformType::_1f),
         UniformName::new("mat_backdrop_prefilter_mix", UniformType::_1f),
         UniformName::new("mat_ior", UniformType::_1f),
+        UniformName::new("mat_scatter", UniformType::_1f),
         UniformName::new("mat_thickness", UniformType::_1f),
         UniformName::new("mat_attenuation_color", UniformType::_4f),
         UniformName::new("mat_attenuation_distance", UniformType::_1f),
@@ -498,8 +499,8 @@ mod tests {
         for marker in [
             "// ---- optic: saturation",
             "// ---- optic: noise",
-            "// ---- optic: iridescence",
             "// ---- optic: aurora",
+            "// ---- optic: iridescence",
             "// ---- main",
         ] {
             let at = source
@@ -511,13 +512,25 @@ mod tests {
         assert_eq!(source.matches("void main()").count(), 1);
         assert!(!source.starts_with("#version"));
         assert!(source.contains("iridescence_specular(specular"));
-        assert!(source.contains("aurora_emissive(p, n, att, innerDist)"));
+        assert!(source.contains("uniform float mat_scatter;"));
+        assert!(source.contains("aurora_within(p, n, att, innerDist)"));
+        assert!(source.contains("filamentBand(q0, inset, width, mat_scatter)"));
+        assert!(material_uniform_names()
+            .iter()
+            .any(|name| { name.name == "mat_scatter" && name.type_ == UniformType::_1f }));
         let main = source.split_once("void main()").unwrap().1;
         let averaged = main.find("sampled = acc / count;").unwrap();
         let saturation = main.find("sampled = saturation_behind(").unwrap();
         let noise = main.find("sampled = noise_behind(").unwrap();
         let attenuation = main.find("vec3 transmitted = sampled * att;").unwrap();
+        let within = main.find("vec3 within = vec3(0.0);").unwrap();
+        let specular = main.find("vec3 specular =").unwrap();
         assert!(averaged < saturation && saturation < noise && noise < attenuation);
+        assert!(attenuation < within && within < specular);
+        assert!(main.contains("float depth = mat_thickness * 0.2;"));
+        assert!(!main.contains("float mask"));
+        assert!(!main.contains("* mask"));
+        assert!(!main.contains("aurora_emissive"));
         assert!(!main.contains("saturation_post("));
         assert!(!main.contains("noise_post("));
     }

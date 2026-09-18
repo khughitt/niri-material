@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-323 paths differ: 39 class B (seam), 263 class A (fork-only), 21 class C (scaffolding).
+324 paths differ: 39 class B (seam), 264 class A (fork-only), 21 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -64,7 +64,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `justfile` | C | A | +57/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1224/-0 |
+| `niri-config/src/lib.rs` | B | M | +1221/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -95,7 +95,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
 | `src/render_helpers/mod.rs` | B | M | +27/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +160/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +173/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
 | `src/tests/mod.rs` | B | M | +2/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
@@ -106,8 +106,8 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_meta.py` | C | A | +737/-0 |
-| `tools/test_glass_optic_smoke.py` | C | A | +331/-0 |
-| `tools/test_glass_render_order_metrics.py` | C | A | +87/-0 |
+| `tools/test_glass_optic_smoke.py` | C | A | +632/-0 |
+| `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_upstream_report.py` | C | A | +840/-0 |
 | `tools/tt` | C | A | +276/-0 |

@@ -3,17 +3,21 @@
 **Status:** reviewed for planning on 2026-09-12, including transmitted
 chamfer grain without a mask. The
 [implementation plan](../plans/2026-09-12-material-render-order.md) is approved
-for inline execution. Behind hooks and signed transfer helpers are implemented
-in the working tree; candidate pixel and signal checks have passed. Strict
+for inline execution. Behind hooks and signed transfer helpers are committed
+at `e33aa968`; candidate pixel and signal checks have passed. Strict
 GPU cost passed on 2026-09-18 in a retained TTY matrix: nine P8-only settled
 sub-runs, with all three case medians at 0.020 ms and +0.0% candidate
-differences. Within remains unimplemented. The old-build baseline records the
-required additive-light failure, with a user-authorized GPU quietness waiver
-for baseline and candidate pixels only; timing remained strict. Source baseline: `8e3d890d`; reviewed spec
+differences. The within implementation, its linked GLES pixel matrix, and its
+strict within-cost matrix have passed in the working tree. The older ring pixel
+matrix also passed under its documented outer-settle, pixel-only limitation.
+The older aurora visual, cadence, and strict cost-only evidence passed, as did
+the final software gates; review and commit remain. The old-build baseline records the required additive-light failure,
+with a user-authorized GPU quietness waiver for baseline and candidate pixels
+only; timing remained strict. Source baseline: `8e3d890d`; reviewed spec
 revision: `522a09fe`. **Amended and approved 2026-09-17:** the within section
 gains ring scatter, face placement and a motion deferral after a default-glass
 capture showed the ring reading as a plated bezel. The user selected SDD
-execution; Task 2 remains unimplemented and has not started.
+execution.
 
 **Goal:** `material-5b3107`. Children: `material-f8b6e9` (behind: noise and
 saturation), `material-92edaf` (within: ring and aurora).

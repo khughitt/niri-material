@@ -9,6 +9,12 @@ slice: signal model, IPC, envelope solver, configuration, and the first glass re
 contract fixed here. Tracked by `material-a54d89`; follow-ups are the
 `signals` tagged idea tasks that depend on it.
 
+**Historical rendering note:** the signal model, IPC, and motion contract
+remain current. This document's original ring-placement statements are
+superseded by the depth-ordered
+[render-order design](../specs/2026-09-12-material-render-order-design.md)
+and its [acceptance evidence](2026-09-12-material-render-order-evidence.md).
+
 ## Context
 
 Before this slice, native glass rendered a window's material from static

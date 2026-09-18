@@ -7,6 +7,11 @@ are recorded but **not verified by measurement** and are called out where they
 belong: the filament's face confinement *under a running resize*, and its
 zero-chamfer branch.
 
+**Historical record:** these measurements use the pre-within filament
+placement. Their cadence and fixture observations remain retained history, but
+their placement and inset-validation conclusions are superseded by the
+[render-order evidence](2026-09-12-material-render-order-evidence.md).
+
 Measured against `166cd3e6` ("feat(material): cap the focus filament's
 refracted shift"), the head of the ring-light implementation; no Rust source
 has changed since, so the binaries below differ only in their embedded version

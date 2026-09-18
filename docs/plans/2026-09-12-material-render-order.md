@@ -5,7 +5,7 @@
 
 **Status:** approved on 2026-09-12 for inline, sequential execution. Task 1's
 behind hooks, signed transfer helpers, registry order and documentation are
-implemented in the working tree. Candidate pixel and signal checks passed;
+committed at `e33aa968`. Candidate pixel and signal checks passed;
 the retained TTY strict-cost matrix passed on 2026-09-18: nine P8-only settled
 sub-runs, three samples per case, and +0.0% candidate differences. The old
 P-state refusals remain historical.
@@ -13,11 +13,12 @@ The old-build additive gate failed on measured pixels as required, using
 hashed baseline binaries at `522a09fe`. GPU quietness was relaxed with user
 authorization for baseline and candidate pixel scopes only; timing remained
 strict and used no waiver. No performance pass threshold is claimed.
-Task 2 is not implemented; its 2026-09-17 amendment (ring scatter, face
-placement, motion deferral to `material-0e130e`) is approved. The user
-selected SDD execution; Task 1 awaits final evidence review and commit before
-Task 1 acceptance is complete and closes in this commit; Task 2 does not start
-yet. See the
+Task 2 implementation, linked within pixel matrix, and strict within-cost
+matrix passed in the working tree. Its 2026-09-17 amendment (ring scatter,
+face placement, motion deferral to `material-0e130e`) is approved. Older ring
+pixel evidence passed with its explicit outer-settle limitation; older aurora
+visual/cadence/strict-cost evidence passed. The user selected SDD execution;
+Task 2 remains open until review and commit complete. See the
 [execution evidence](../materials/2026-09-12-material-render-order-evidence.md).
 
 **Goal:** Move backdrop colour operations behind attenuation and interior
@@ -469,7 +470,7 @@ to `within`; a new `uniform float mat_scatter` uploaded from
 the `ring-inset + ring-width <= bevel` validation. Final registry:
 `saturation, noise, aurora, iridescence`.
 
-- [ ] **1. Claim, snapshot and add the failing checks.** Run `tasks start
+- [x] **1. Claim, snapshot and add the failing checks.** Run `tasks start
   material-92edaf`; snapshot Task 1's release/Tracy binaries. Update the
   existing shader-source assertions to expect within accumulation before
   specular, `aurora_within`, a `0.2` ring lookup path, no ring mask, the
@@ -499,7 +500,7 @@ the `ring-inset + ring-width <= bevel` validation. Final registry:
   old-source assertion failure. An old masked ring can pass an upper bound;
   that alone is not a regression test for removing the mask.
 
-- [ ] **2. Move the ring to within.** Immediately after `transmitted`, create
+- [x] **2. Move the ring to within.** Immediately after `transmitted`, create
   `vec3 within = vec3(0.0)` and move the existing ring block there. Preserve
   its selectors and `slabChamfer > 0.0` guard. Remove the `mask` declaration,
   mask branch and multiplication. Change the lookup depth, the band
@@ -541,7 +542,7 @@ the `ring-inset + ring-width <= bevel` validation. Final registry:
   application before channel offsets, `light-ior`, drift, colour and jelly
   gain.
 
-- [ ] **3. Refract aurora and finish the sums.** Rename its function, preserve
+- [x] **3. Refract aurora and finish the sums.** Rename its function, preserve
   the neutral branch, and change the field's coordinate construction:
 
   ```glsl
@@ -570,7 +571,7 @@ the `ring-inset + ring-width <= bevel` validation. Final registry:
   Reorder both registries and `params()` to the final order; update the
   assembly test and stage comments. Reserve `post` without active calls.
 
-- [ ] **4. Run the within acceptance matrix.** Implement these cases in the
+- [x] **4. Run the within acceptance matrix.** Implement these cases in the
   new smoke's `within` phase, using the derived bounds already written above:
 
   | Case | Required observation |
@@ -616,7 +617,7 @@ the `ring-inset + ring-width <= bevel` validation. Final registry:
   timings to record the cost of moving ring and aurora. No new cadence or
   damage-tracking implementation belongs in this task.
 
-- [ ] **5. Verify, update statuses and close the child.** Run
+- [x] **5. Verify, update statuses and close the child.** Run
   `MATERIAL_DOCS_UPDATE=1 just test` and `just check`. Update pipeline,
   optic recipe (six hooks), config prose, optics spec and this spec/plan
   with actual implementation status and evidence. Mark the old
@@ -653,9 +654,10 @@ the `ring-inset + ring-width <= bevel` validation. Final registry:
 ## Plan review and handoff
 
 The user approved this file for inline, sequential execution with
-`superpowers:executing-plans`. Resume Task 1 after a default capture preflight
-passes; retain the old shader's actual additive gate failure before changing
-its rendering. Task 2 remains dependent on Task 1.
+`superpowers:executing-plans`. Task 1 completed at `e33aa968` after its
+measured additive failure, pixel/signal acceptance and strict cost evidence.
+Task 2's implementation, runtime acceptance, and final software gates are
+complete; review and commit remain.
 
 Self-review covers every spec section: colour-space preservation and
 transmitted grain (Task 1), depth/attenuation and motion (Task 2), neutral

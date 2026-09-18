@@ -1,14 +1,17 @@
 # Material render order: execution evidence
 
-**Status:** behind implementation is prepared in the working tree and its
+**Status:** behind implementation is committed at `e33aa968` and its
 candidate pixel matrix plus formula regressions passed under the explicitly
 approved GPU waiver for pixel scopes. Signal behavior and strict frame-cost
 acceptance passed on 2026-09-18. The old-build baseline records the required
-measured additive failure and identical repeat images. Task 1 closes in this
-commit; Task 2 is unimplemented.
+measured additive failure and identical repeat images. Task 2 implementation,
+its linked within pixel matrix and strict within cost passed; older ring pixel
+acceptance passed with an outer-settle-only limitation. Older aurora visual,
+cadence, and strict cost-only evidence passed. Final software gates and review
+passed; review and commit remain.
 
-**Tasks:** `material-5b3107`, `material-f8b6e9`; Task 2 (`material-92edaf`)
-remains dependent on Task 1.
+**Tasks:** `material-5b3107`; Task 1 (`material-f8b6e9`) completed at
+`e33aa968`. Task 2 (`material-92edaf`) awaits review and commit.
 
 ## Capture readiness, 2026-09-12
 
@@ -567,3 +570,76 @@ ns; active `20480, 20480, 20480` ns. Their recorded medians are all 0.020 ms;
 neutral and active are both `+0.0%` versus baseline. This records the measured
 cost without inventing a pass threshold. No waiver, retry, or further capture
 is implied.
+
+## Within and older-optic acceptance, 2026-09-18
+
+Task 2 uses the retained V12 candidate bundle at
+`$NIRI_MATERIAL_WORK_ROOT/render-order-within-pixels.V12xVh`: its release is
+`29e7df7477e88a3eb5630e53cfd925fd53279e77f1b517e584f621e05653a912` and
+Tracy binary
+`c867e490f008143d498c4b78e38218f8c71ebf40542fec5d100529b6869346c9`.
+Its originating build record is
+`c28210be107eac9edaf4e6b3bd8c26a0c456737335be983e42c4805d887a8bac`; the
+original V12 source patch is
+`71ea7cdfce90f5755e1a44a3647d7a3ba6e1926cb2b5a01ed13aea781a1dd1c1`,
+against `e33aa968`. This is dirty-build provenance, not a clean-build claim.
+
+| Evidence | Result | Record SHA-256 |
+| --- | --- | --- |
+| `$NIRI_MATERIAL_WORK_ROOT/render-order-within-pixels.eS4KzB/run` | Neutral identity; ring bounds 37/37/61/61/56/59; rough FWHM 4→6 and peak 104→61; face and static aurora pixel gates passed before the known motion-KDL stop. | `e4a9c71d6b57149e1959b79b4255f0d2ef48b65619fc82bd91dc72d59064294b` |
+| `$NIRI_MATERIAL_WORK_ROOT/render-order-within-resume.C2DA1f/run` | Reviewed motion repair; attenuation, opaque AE-zero, and three additive checks passed. Its complete `SHA256SUMS` was verified. | `78b8c73103da74fd36defb2adb0e03071c314fbd1c07ae752d912d54448ed9ec` |
+| `$NIRI_MATERIAL_WORK_ROOT/render-order-within-cost.A43SyN/run` | Strict within cost: 45 manifest entries, nine settled P8-only sub-runs; all-median 20,480 ns and +0.0%. | `71e53209ea056e89db0bf9e0e7b08ce7d32781334b0d19f9a36d642a8f4fa05e` |
+| `$NIRI_MATERIAL_WORK_ROOT/render-order-old-ring.FH88OR/evidence` | Older-ring pixel evidence passed; 218 manifest files. Outer record only: no per-nested-config capture-meta settle and no strict-cost claim. | capture `27c8e12587fbc639898233b96ebf6ff2c4bafe40ba9df77fab7543518db5ed5d`; manifest `99e8ab805c701281ed2c20dcda8d2b527342b412a3950a8b77de87ce75ece3c2` |
+| `$NIRI_MATERIAL_WORK_ROOT/render-order-aurora-strict.xGIUBC/run` | Visual assertions and five cadence traces passed; the first three cost traces completed, then strict settle before `gpu-zero-2` refused P5/P8 only. | `e6244f3e075d22682691fafeff0bb41a82603a8319945c68235dad649c26a042` |
+| `$NIRI_MATERIAL_WORK_ROOT/render-order-aurora-cost-resume.BYb5Fq/run` | Strict cost-only continuation: 49 manifest entries; quiet preflight plus ten P8-only settles (geometry and nine rotations); all raw medians 20,480 ns and all case differences +0.0%. | capture `77617c9541fca3ccac665834c446ef1bd6840e099e0d3df3866ec7c998cb0d42`; manifest `c8db6c3364168d76c97755378e948e662f3520f44d76a976ccf8b8253d86ded7` |
+
+The static aurora light-IOR fixture originally had a one-code chamfer delta
+at thickness 20. Its thickness-80 diagnostic at
+`$NIRI_MATERIAL_WORK_ROOT/render-order-aurora-depth.WzKHWH/run` retained the
+same failing left-chamfer threshold (artifact manifest
+`5e0c8d759491583e6b92c8ec9dbb791cc0be370fe55681a34649e91d604aefe6`),
+while thickness 200 at
+`$NIRI_MATERIAL_WORK_ROOT/render-order-aurora-depth200.MZzHGt/run` passed the
+unchanged threshold with 341 changed pixels, flat-face identity, and stable
+repeats (record
+`a62720ae5a91e5f261bdec8f51f261924b440189aad482dfdb5371c94ffe7ccc`; manifest
+`34c9caea0a5c9dad75dbd3f38bfc0d227b5749ca076ca0b526c9c845716e470e`).
+**Ruling:** retain thickness 200 for all three static aurora configs—light-IOR
+1, light-IOR 6, and distortion—so distortion compares against its matched
+IOR-6 reference. Motion remains thickness 20.
+
+The first full within run rejected `jelly-flex 1`, outside the parser's
+0–0.02 range. **Ruling:** the motion fixture uses the established valid,
+nonzero default `0.004`; it introduces no oscillator or cadence change.
+
+Older-ring rest, selector and crossfade gates passed with a 46 px bound and
+no pixel outside its slab bound. Pinned and drifting move/resize frames retain
+screenshot-request timestamps, adjacent IPC target layouts, and whole-frame
+paired-host deltas. Rendered animated slab geometry and interior reach are
+unavailable and are not inferred or gated; the tiny zero-chamfer fixture
+remains `NOT VERIFIED BY RENDER`. Those frames are handed to
+`material-0e130e`, which owns motion judgment rather than this task.
+
+The stock-inset capture is retained at
+`$NIRI_MATERIAL_WORK_ROOT/render-order-within-pixels.eS4KzB/run/within-pinned-on.png`;
+the face-placement comparison is
+`within-face-on.png` in the same directory. It is evidence for a user-facing
+tuning decision, not an automatic default change. Defaults remain unchanged.
+Follow-up `material-9306b5` records the observed inset-5 luminous rim/inward
+halo and the deliberately extreme inset-20 face-separated control; it depends
+on this task and requires user visual judgment before any default change.
+
+The older aurora run's saved cadence counts are plain 0, pinned 0, 4 Hz 80,
+reduced 40 and off 0 redraws in the final 20 seconds. **Ruling:** the reviewed
+fixed 30-second logged cooldown before every cost trace reuses the accepted
+cost pacing; thresholds, cadence, rotations and retry policy are unchanged.
+The original xGIUBC refusal remains evidence. The strict, no-`CAPTURE_META`
+cost-only continuation
+`$NIRI_MATERIAL_WORK_ROOT/render-order-aurora-cost-resume.BYb5Fq/run`
+completed successfully: its quiet preflight and all ten settles (geometry
+plus nine rotations) were P8-only, and all nine raw medians were 20,480 ns.
+Plain, zero, and on all have a 20,480 ns median, so zero and on are each
++0.0% versus plain. Controller independently recomputed the nine medians
+from the first 14 `MaterialRenderElement::draw` samples in each 20–28 s
+window using `csv.DictReader` and `statistics.median`; those calculations
+match the retained median files exactly.

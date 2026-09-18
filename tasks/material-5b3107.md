@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-5b3107
 created: 2026-09-06T00:38:34Z
-updated: 2026-09-18T12:24:08Z
+updated: 2026-09-18T22:16:29Z
 started: 2026-09-12T19:55:05Z
 depends: []
 tags: [rendering, design]
@@ -55,3 +55,6 @@ Several open questions are one architectural question: in what order the passes 
 - 2026-09-18T09:27:10Z (material-5b3107): parked (waiting on user, quiet; headless, 20 min): Prepare isolated GPU session, then finish material-f8b6e9 strict cost and commit for review before Task 2.
   provenance: {"harness_session":"codex:01a09717-78d8-7ce2-bee2-b5502cbe3649","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-18T12:24:08Z (material-5b3107): Task 1 acceptance and closeout are recorded in the Task 1 commit; Task 2 remains unimplemented and is next only after that commit.
+- 2026-09-18T22:16:29Z (material-5b3107): resumed
+  provenance: {"harness_session":"codex:01a0b1cd-b9d7-71f1-85bb-a5aa09a40df4","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-18T22:16:29Z (material-5b3107): Task 1 is committed e33aa968. Task 2 source/offline review complete; current runtime acceptance passed ring bounds and found an under-resolved aurora fixture. Controlled thickness200 candidate/old-baseline comparison passes; fixture correction and remaining acceptance in progress.
