@@ -3,9 +3,17 @@
 **Status:** reviewed for planning on 2026-09-12, including transmitted
 chamfer grain without a mask. The
 [implementation plan](../plans/2026-09-12-material-render-order.md) is approved
-for inline execution. Offline comparison tooling is prepared; capture
-preflight blocked Task 1 before shader edits. Neither rendering change is
-implemented. Source baseline: `8e3d890d`; reviewed spec revision: `522a09fe`.
+for inline execution. Behind hooks and signed transfer helpers are implemented
+in the working tree; candidate pixel and signal checks have passed. Strict
+GPU cost passed on 2026-09-18 in a retained TTY matrix: nine P8-only settled
+sub-runs, with all three case medians at 0.020 ms and +0.0% candidate
+differences. Within remains unimplemented. The old-build baseline records the
+required additive-light failure, with a user-authorized GPU quietness waiver
+for baseline and candidate pixels only; timing remained strict. Source baseline: `8e3d890d`; reviewed spec
+revision: `522a09fe`. **Amended and approved 2026-09-17:** the within section
+gains ring scatter, face placement and a motion deferral after a default-glass
+capture showed the ring reading as a plated bezel. The user selected SDD
+execution; Task 2 remains unimplemented and has not started.
 
 **Goal:** `material-5b3107`. Children: `material-f8b6e9` (behind: noise and
 saturation), `material-92edaf` (within: ring and aurora).
@@ -28,10 +36,10 @@ refraction, but does not reproduce B's multi-tap smear of interior light.
 **C. Masks only — rejected.** Multiplying noise by one minus the bevel mask
 and leaving the ring unchanged does not establish the requested depth order.
 
-## Current order and implementation evidence
+## Historical baseline order and implementation evidence
 
-The source baseline is `8e3d890d`. The current
-[pipeline](../materials/render-pipeline.md) matches
+At source baseline `8e3d890d`, the
+[pipeline](../materials/render-pipeline.md) matched the then-current
 `src/render_helpers/shaders/material/main.frag`:
 
 ```text
@@ -41,7 +49,7 @@ opaque window bypass → slab geometry → perturbed normal → averaged taps
 → sRGB encode → saturation → noise → coverage → window composition
 ```
 
-The ring uses `lightShift` at `0.6 * thickness`, with the shared shift capped
+The ring still uses `lightShift` at `0.6 * thickness`, with the shared shift capped
 at half `ring-inset`. Chromatic offsets are added after that cap. Its
 display-fragment mask is zero on the face. `aurora_emissive` currently
 receives the normal but evaluates its field at the unrefracted position.
@@ -130,6 +138,49 @@ light-path index `1 + (ior - 1) * light-ior`. Aurora needs neither a
 silhouette cap nor new per-channel field evaluations. Preserve its field
 scale, phase, colours, intensity and cadence policy.
 
+**Amendment, 2026-09-17.** A capture of the default glass showed the ring
+reading as a plated bezel: a uniform band with a hard inner edge, unchanged
+by roughness or tint. Mask removal answers the hard edge. Two further
+changes make the ring behave as light inside the volume rather than paint
+on the chamfer; the third records what this child does not do.
+
+*Scatter.* Frosted glass diffuses interior light as it diffuses the
+backdrop. Upload `mat_scatter = roughness * clamp(ior * 2 - 2, 0, 1)`, the
+normalised prefilter selection `effect_buffer.rs` already computes, and
+widen both Gaussians of `filamentBand` with it, conserving each term's
+integral so scattered light spreads without brightening:
+
+```text
+w_c  = width + 6 * scatter
+w_h  = 9 + 18 * scatter
+band = (width / w_c) * exp(-2 ((d - inset) / w_c)^2)
+     + 0.3 * (9 / w_h) * exp(-2 ((d - inset - 2) / w_h)^2)
+```
+
+At `scatter 0` this is the existing band exactly. The widening constants are
+art-directed, not derived from the pyramid: its top level averages the
+whole source, which no filament width should match. The per-channel
+aberration bands use the same widths. `filamentBand` takes the scatter as
+an argument so the prelude stays free of a new uniform read.
+
+*Face placement.* Drop the `ring-inset + ring-width <= bevel` validation in
+`niri-config`, both error sites and the test that expects them. Its
+rationale, keeping text untouched, is served by the opaque bypass, not by
+the constraint; on a translucent face the ring showing through the window
+is the embedded look this child exists to produce. `ring-inset` keeps its
+0–128 range and `ring-width` stays positive. The half-inset cap still
+applies to the shared shift, so a larger inset also permits a larger shift.
+The defaults (`ring-inset 5`, `ring-width 2.6`) do not change here; whether
+the stock ring should move onto the face is a tuning judgment for the
+captures, filed as a follow-up if so.
+
+*Motion.* This child changes no motion. The focus drift stays as it is, and
+the request for subtle movement is judged by `material-0e130e`, which owns
+the one-shot focus pulse and the visibility/activity gating of sustained
+attention motion; that task is scoped against the ring this child lands,
+not the masked one. Motion captures here record reach and deltas under the
+existing drift only.
+
 Each within contribution owns its fixed depth and applies attenuation
 exactly once; `main` adds the returned linear contribution to `within`.
 The ring follows that same rule inline. No configurable depth or generic
@@ -141,9 +192,8 @@ identity guarantee: removing the ring mask and moving either landing point
 changes which radiance is evaluated. Dense-glass comparisons must separate
 the unchanged attenuation law from those spatial changes.
 
-Evaluate the ring child's subtle-movement request with the existing focus
-drift and new motion-refraction captures before considering any extra
-animation. No new oscillator, cadence source or parameter is proposed.
+No new oscillator, cadence source or motion parameter is proposed; the
+subtle-movement request is deferred to `material-0e130e` as stated above.
 
 ### Hook recipe
 
@@ -207,8 +257,15 @@ offsets. At two halo widths its halo term is still `0.3 * exp(-8)`.
 
 **Recommended gate:** pin the rest fixture and a visible-difference
 threshold of one 8-bit channel code; derive its reach bound from both
-Gaussian widths, maximum enabled gain, output encoding and maximum
-per-channel displacement. Record maximum delta and changed-pixel count
+Gaussian widths at the fixture's scatter, maximum enabled gain, output
+encoding and maximum per-channel displacement. Two fixtures join the
+matrix for the amendment: a roughness fixture (`roughness 0.5` on the
+pinned glass, so `scatter 0.5`) whose bound uses the widened widths, and a
+face fixture (`ring-inset 20` under `bevel 12`), which the old validation
+refuses, whose ring must change face pixels inside the structural chamfer
+under a translucent client. The unnormalised gain stays in the derivation;
+integral conservation only lowers the peaks, so the bound remains
+conservative. Record maximum delta and changed-pixel count
 beyond the proposed reference contour as well. The implementation plan must
 write down that fixture and calculated bound before capturing. An exact
 finite-support gate would require truncating the Gaussian or adding a
@@ -239,15 +296,18 @@ The goal remains open through implementation and evidence.
    grain/saturation smoke assertions and record face/bevel evidence.
 2. **`material-92edaf`: within hook: ring and aurora.** Move interior light
    ahead of surface terms, remove the ring mask, reconcile lookup depth,
-   refract aurora, replace rest face-zero assertions and record motion.
-   Evaluate existing motion before proposing more.
+   scatter the band with roughness, drop the inset-within-bevel
+   validation, refract aurora, replace rest face-zero assertions and
+   record motion under the existing drift. Motion policy is
+   `material-0e130e`'s.
 
 Each child updates `render-pipeline.md`, `adding-an-optic.md`, relevant
 `material-config.md` text and the optics spec status in its landing change.
 The behind child marks the older noise/saturation composition order as
 superseded; the within child does the same for ring confinement and aurora
 placement claims. Search user-facing docs for the same claims, including
-"four hooks", finished-glass saturation/noise and ring face confinement.
+"four hooks", finished-glass saturation/noise, ring face confinement and
+the `ring-inset + ring-width <= bevel` rule.
 Keep old capture evidence historical, with links to its replacement.
 
 This spec does not relabel current pipeline documentation as implemented.

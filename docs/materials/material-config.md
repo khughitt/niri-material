@@ -54,14 +54,14 @@ lengths are logical pixels.
 | `light-ior` | float | 6 | 1–12 | — |
 | `offset-x` | float | 6 | −64–64 | logical px |
 | `offset-y` | float | 6 | −64–64 | logical px |
+| `saturation` | float | inherit | 0–3 | — |
+| `noise` | float | inherit | 0–1 | — |
+| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
 | `iridescence` | float | 0 | 0–1 | — |
 | `aurora` | float | 0 | 0–1 | — |
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
 | `aurora` `color` | color | `#7a5cff` | any color | — |
-| `saturation` | float | inherit | 0–3 | — |
-| `noise` | float | inherit | 0–1 | — |
-| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
 
 <!-- params:end -->
 
@@ -99,9 +99,12 @@ strength — the amount of blur comes from the global `blur` block's `passes` an
 `offset`, shared with every other blur consumer. Setting `blur { off }`
 disables it along with all other blur, regardless of this parameter.
 
-`noise` and `saturation` are applied after the glass optics: saturation
-first, then screen-space noise. A written value is a material optic and
-applies regardless of `backdrop-blur` and of `blur { off }`. An omitted
+`saturation` then `noise` transform the averaged backdrop before attenuation,
+through the `behind` hook. Their formulas run in sRGB (Oklab for lightness
+grain) and return linear light. Additive glint, ring, aurora and sweeps are
+not postprocessed; the chamfer still transmits attenuated grain. A written
+value is a material optic and applies regardless of `backdrop-blur` and of
+`blur { off }`. An omitted
 value inherits the global `blur` block's `noise` or `saturation` while
 `backdrop-blur` is effective and is neutral otherwise (`noise 0`,
 `saturation 1`); each parameter decides on its own, so `blur { off }` and
@@ -140,8 +143,25 @@ the offsets. Its inner corners follow the window's effective
 The glass pipeline is a slab plus an ordered list of optics. Each optic owns
 its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
 changes nothing; omission can instead inherit where stated below.
-Optics are listed in render order: `iridescence`, `aurora`, `saturation`, `noise`.
+Optics are listed in render order: `saturation`, `noise`, `iridescence`, `aurora`.
 Contributors: see `adding-an-optic.md`.
+
+### saturation
+
+Stage 3a (`behind`). `saturation <amount>` mixes the encoded averaged backdrop
+toward its luma, then returns linear light before attenuation. Its explicit
+neutral is 1; 0 makes the backdrop grayscale, but tint and additive light can
+still colour the result. An omitted amount inherits
+the global `blur` block's `saturation` while backdrop blur is effective and
+resolves to 1 otherwise.
+
+### noise
+
+Stage 3b (`behind`). `noise <amount> type=<type>` grains the averaged backdrop
+per screen pixel before attenuation; `white`, `fine`, and `lightness` are
+described above. Its explicit neutral is amount 0. An omitted amount inherits the global `blur`
+block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
+the type never inherits.
 
 ### iridescence
 
@@ -182,21 +202,6 @@ measurement does not establish physical-GPU cost. The subsequent
 but clock variation prevented resolving relative overhead. Idle redraws were
 exactly 4 Hz, 2 Hz with reduced motion, and zero when pinned or off; whole-board
 power variation prevented attributing a watt cost.
-
-### saturation
-
-Stage 9. `saturation <amount>` mixes the encoded glass colour toward its
-luma. Its explicit neutral is 1; 0 is grayscale. An omitted amount inherits
-the global `blur` block's `saturation` while backdrop blur is effective and
-resolves to 1 otherwise.
-
-### noise
-
-Stage 10. `noise <amount> type=<type>` grains the encoded glass colour per
-screen pixel; `white`, `fine`, and `lightness` are described above. Its
-explicit neutral is amount 0. An omitted amount inherits the global `blur`
-block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
-the type never inherits.
 
 ## Presets
 

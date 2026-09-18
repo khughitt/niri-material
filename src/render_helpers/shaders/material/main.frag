@@ -76,6 +76,10 @@ void main() {
             sampled = acc / count;
         }
 
+        // Behind hooks act once on the averaged linear backdrop.
+        sampled = saturation_behind(sampled, gl_FragCoord.xy);
+        sampled = noise_behind(sampled, gl_FragCoord.xy);
+
         // Beer-Lambert over the view-lengthened slab path: the
         // orthographic incident ray is (0, 0, -1); the structural normal's
         // z is its cosine, so the chamfer tints more strongly than the
@@ -174,9 +178,7 @@ void main() {
         }
 
         vec3 glassColor = linearToSrgb(transmitted + specular + emissive);
-        // Post hooks, in OPTICS order (render-pipeline.md stages 9 and 10).
-        glassColor = saturation_post(glassColor, gl_FragCoord.xy);
-        glassColor = noise_post(glassColor, gl_FragCoord.xy);
+        // Post hooks are reserved here for future screen-space film effects.
         glassed = vec4(glassColor, 1.0) * coverage;
     }
 
