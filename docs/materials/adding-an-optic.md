@@ -80,9 +80,17 @@ their older names. Define one function for each hook the optic uses:
 | Hook | Signature | Neutral return |
 | --- | --- | --- |
 | `normal` | `vec3 <name>_normal(vec3 n, vec2 p)` | `n` |
+| `behind` | `vec3 <name>_behind(vec3 color, vec2 fragCoord)` | `color` |
 | `specular` | `vec3 <name>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | `specular` |
 | `emissive` | `vec3 <name>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | `vec3(0.0)` |
 | `post` | `vec3 <name>_post(vec3 color, vec2 fragCoord)` | `color` |
+
+`behind` transforms the averaged linear backdrop once, outside the tap loop,
+before attenuation. Saturation and noise encode internally to preserve their
+sRGB formulas and return linear light; neutral returns before conversion.
+`post` is the empty site after final encoding, reserved for screen-space film.
+The `within` hook is still planned; ring and aurora retain their current
+emissive placement until Task 2 of the render-order plan.
 
 The file is concatenated after `prelude.frag`, which provides `snoise`,
 `snoiseFractal`, `hash12`, `fineGrain`, the colour conversions,

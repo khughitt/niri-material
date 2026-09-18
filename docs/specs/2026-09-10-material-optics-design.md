@@ -13,6 +13,12 @@ controls and Aurora/Rainbow profiles landed on Prism `main` at `3f44f34`
 `material-300b87`; [NVIDIA evidence](../materials/2026-09-11-material-hardware-evidence.md)
 records costs and their limits. The original implementation evidence used llvmpipe.
 
+**Render-order update:** Task 1 of the
+[depth-order design](2026-09-12-material-render-order-design.md) adds `behind`
+and moves saturation/noise there in the working implementation; candidate
+GLES acceptance is pending. `within` remains planned for Task 2. The original
+implementation evidence above predates this ordering.
+
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
 the Prism project and depend on the material tasks; they are listed in
@@ -93,20 +99,21 @@ for seventeen parameters is a large diff for no new capability.
 
 ## 1. What an optic is
 
-An optic acts at one or more of four hook points in the fragment shader,
+An optic acts at one or more of five hook points in the fragment shader,
 named for the stage of `render-pipeline.md` they sit in:
 
 | Hook | Pipeline stage | Signature | Acts on |
 | --- | --- | --- | --- |
 | `normal` | 2, after distortion and ripple, before the taps | `vec3 <optic>_normal(vec3 n, vec2 p)` | the perturbed normal the refraction taps use |
+| `behind` | 3a–3b, after averaged taps, before attenuation | `vec3 <optic>_behind(vec3 color, vec2 fragCoord)` | the averaged linear backdrop |
 | `specular` | 5, after the Schlick term, before the signal accent mix | `vec3 <optic>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | the Fresnel glint |
 | `emissive` | 6, after the ring of light, before the sweeps | `vec3 <optic>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | returns light to add; `main` accumulates it into `emissive` |
-| `post` | 9 and 10, on the encoded sRGB glass colour | `vec3 <optic>_post(vec3 color, vec2 fragCoord)` | the finished glass colour |
+| `post` | 9, reserved after final sRGB encoding | `vec3 <optic>_post(vec3 color, vec2 fragCoord)` | the finished glass colour |
 
 An optic defines one function per hook it acts at, named
 `<optic>_<hook>`, in its own GLSL file. `main.frag` calls the functions in
 `OPTICS` order at each hook; a contributor adds one call per hook the new
-optic uses. The `normal`, `specular`, and `post` hooks transform a value
+optic uses. The `normal`, `behind`, `specular`, and `post` hooks transform a value
 and return it; the `emissive` hook is additive and returns a contribution.
 
 Every optic has an explicit **neutral** configuration, and its docs section
@@ -246,8 +253,11 @@ own version line; the prelude does not carry one.
 NoiseType }` and `saturation: ResolvedSaturation { amount: Option<f64> }`.
 The KDL nodes, `noise <amount> type=<type>` and `saturation <amount>`, are
 unchanged, and the `Noise` node struct moves into the optic module. The
-optics act at the `post` hook, saturation first, and their GLSL is the
-existing stage 9 and 10 code moved verbatim.
+original migration put both optics at `post`, saturation first, moving the
+then-existing stage 9 and 10 code verbatim. The depth-order update now puts
+them at `behind`, with linear input/output and internal encoding to preserve
+their sRGB formulas. Neutral returns precede conversion. Registry and
+parameter order are `saturation, noise, iridescence, aurora` until Task 2.
 
 `material-3fcba2` (stacked noise layers) is unaffected in scope: it widens
 the noise node and becomes a change inside the noise optic's two Rust files

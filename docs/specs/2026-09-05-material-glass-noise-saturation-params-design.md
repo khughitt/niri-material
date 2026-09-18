@@ -10,6 +10,13 @@ acceptance PASS 2026-09-05.
 
 **Task:** `material-1293e8`
 
+**Render-order update:** The working implementation of
+[material-f8b6e9](2026-09-12-material-render-order-design.md) supersedes the
+post placement described below: saturation/noise now transform the averaged
+backdrop before attenuation. Parameters, inheritance and grain formulas are
+preserved. Candidate capture acceptance is pending; historical evidence here
+was collected with the old order.
+
 ## Context
 
 Native commit `7c702e58` composes `noise` and `saturation` in `material.frag`

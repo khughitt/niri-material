@@ -1,0 +1,331 @@
+#!/usr/bin/env bash
+# Behind-order pixel and cost checks. MODE=red retains the old shader's
+# measured additive failure; MODE=verify runs the focused candidate checks.
+# The existing noise-type, noise/saturation and signal smokes run separately.
+set -eu
+: "${PHASE:?behind or within}" "${BASE_NIRI:?baseline release binary}"
+: "${BASE_NIRI_TRACY:?baseline Tracy binary}" "${CAPTURE_TASK:?task id}"
+MODE=${MODE:-verify}
+SCOPE=${SCOPE:-all}
+case "$PHASE:$MODE" in behind:red|behind:verify) ;; *) echo 'unsupported phase/mode' >&2; exit 2 ;; esac
+validate_scope() {
+    case $SCOPE in pixels) ;; cost|all)
+        if [ -n "${CAPTURE_META:-}" ]; then
+            echo "FAIL: SCOPE=$SCOPE requires the strict capture-meta tool" >&2
+            return 2
+        fi
+        ;; *) echo "FAIL: SCOPE must be pixels, cost or all" >&2; return 2 ;; esac
+}
+validate_scope || exit $?
+HERE=$(dirname "$(readlink -f "$0")")
+. "$HERE/glass-optic-smoke-lib.sh"
+capture_preflight headless
+
+select_binaries() {
+    if [ "$MODE" = red ]; then
+        NIRI=$BASE_NIRI; NIRI_TRACY=$BASE_NIRI_TRACY
+    elif [ -n "${CANDIDATE_NIRI:-}${CANDIDATE_NIRI_TRACY:-}${CANDIDATE_BUILD_RECORD:-}" ]; then
+        : "${CANDIDATE_NIRI:?retained candidate release binary}"
+        : "${CANDIDATE_NIRI_TRACY:?retained candidate Tracy binary}"
+        : "${CANDIDATE_BUILD_RECORD:?retained candidate capture.json}"
+        [ -x "$CANDIDATE_NIRI" ] || fail "candidate release binary is not executable: $CANDIDATE_NIRI"
+        [ -x "$CANDIDATE_NIRI_TRACY" ] || fail "candidate Tracy binary is not executable: $CANDIDATE_NIRI_TRACY"
+        [ -f "$CANDIDATE_BUILD_RECORD" ] || fail "candidate build record is missing: $CANDIDATE_BUILD_RECORD"
+        NIRI=$CANDIDATE_NIRI; NIRI_TRACY=$CANDIDATE_NIRI_TRACY
+    else
+        build_binaries
+    fi
+}
+select_binaries
+IDENTITY_EXTRA=()
+if [ -n "${CANDIDATE_BUILD_RECORD:-}" ]; then
+    IDENTITY_EXTRA+=(--input "$CANDIDATE_BUILD_RECORD" \
+        --config "candidate-build-run=$(basename "$(dirname "$CANDIDATE_BUILD_RECORD")")")
+fi
+if [ -n "${CAPTURE_META:-}" ]; then
+    IDENTITY_EXTRA+=(--input "$CAPTURE_META" --config gpu-quietness=pixel-only-waiver)
+fi
+capture_identity --binary "$BASE_NIRI" --binary "$BASE_NIRI_TRACY" \
+    --input "$HERE/glass-render-order-metrics.py" \
+    --config phase="$PHASE" --config mode="$MODE" --config scope="$SCOPE" \
+    --config output=1280x720 --config scale=1 "${IDENTITY_EXTRA[@]}"
+case $SCOPE in pixels|all) calibrate_probe_rect "$NIRI" 0 ;; esac
+WARM_WALL=$WALL
+
+spawn_client() { # binary, transparent|opaque
+    case $2 in
+        transparent) spawn_probe "$1" "$IDLE" ;;
+        opaque)
+            msg "$1" action spawn -- kitty --config NONE --class gos-probe \
+                -o background='#222436' -o foreground='#ffffff' -o background_opacity=1 \
+                -o cursor_blink_interval=0 sh -c \
+                'i=0; while [ "$i" -lt 40 ]; do printf "opaque glyphs: ████████████████████████████████\n"; i=$((i + 1)); done; exec sleep 600'
+            for _ in $(seq 100); do [ "$(windows_with "$1" gos-probe)" -ge 1 ] && break; sleep 0.1; done
+            [ "$(windows_with "$1" gos-probe)" -eq 1 ] || fail "expected exactly one opaque probe window"
+            ;;
+        *) fail "unknown client kind $2" ;;
+    esac
+}
+
+assert_clean_log() {
+    if rg -n 'material.*(error|fallback)|error compiling material shader|panic' "$OUT/niri.log"; then
+        fail "material error, fallback or panic in niri.log"
+    fi
+}
+
+capture() { # name, glass, binary, focus response, client kind, rule opacity
+    local name=$1 glass=$2 binary=${3:-$NIRI} focus=${4:-none} client=${5:-transparent} opacity=${6:-1.0}
+    GLASS_EXTRA=$'offset-x 0\noffset-y 0\n'"$glass"
+    write_config "$OUT/$name.kdl"
+    if [ "$focus" = ring-light ]; then
+        sed -i 's/focus "none"/focus "ring-light"/' "$OUT/$name.kdl"
+    fi
+    sed -i "/^window-rule {/a\\    opacity $opacity" "$OUT/$name.kdl"
+    start_nested "$binary" "$OUT/$name.kdl"
+    spawn_client "$binary" "$client"
+    sleep 2
+    probe_rect "$binary"
+    shot "$binary" "$name"
+    sleep 0.3
+    shot "$binary" "$name-repeat"
+    ae "$OUT/$name.png" "$OUT/$name-repeat.png"
+    assert_zero "$name repeat capture" "$METRIC"
+    stop_nested
+    assert_clean_log
+}
+
+metric_grain() { # output name, on, off, x, y, width, height
+    python3 "$HERE/glass-render-order-metrics.py" grain "$OUT/$2.png" "$OUT/$3.png" \
+        --rect "$4" "$5" "$6" "$7" > "$OUT/$1.json"
+    jq -r .sd "$OUT/$1.json"
+}
+
+midrange_share() { # image name, crop geometry; share with at least one unclipped channel
+    local out
+    out=$(magick "$OUT/$1.png" -crop "$2" +repage -alpha off \
+        -fx '(r>0&&r<1)||(g>0&&g<1)||(b>0&&b<1)?1:0' -format '%[fx:mean]' info:) \
+        || fail "midrange pixel check failed on $1"
+    is_number "$out" || fail "midrange pixel share of $1 is not numeric: $out"
+    METRIC=$out
+}
+
+assert_informative_grain() { # name, on, off, x, y, width, height
+    local sd share one_code_normalized=0.00392156862745098 # 1 / 255; grain_sd is normalized
+    sd=$(metric_grain "$1" "$2" "$3" "$4" "$5" "$6" "$7")
+    assert_greater "$1 signed grain SD" "$sd" "$one_code_normalized"
+    midrange_share "$2" "$6"x"$7"+"$4"+"$5"; share=$METRIC
+    assert_positive "$1 midrange pixel share" "$share"
+    printf '%s_sd=%s\n%s_midrange_share=%s\n' "$1" "$sd" "$1" "$share" >> "$OUT/metrics.txt"
+}
+
+uniform_rgb_error() { # image name, x, y, width, height, expected r, g, b
+    local values rmin rmax gmin gmax bmin bmax
+    values=$(magick "$OUT/$1.png" -crop "$4"x"$5"+"$2"+"$3" +repage -alpha off \
+        -format '%[fx:minima.r*255] %[fx:maxima.r*255] %[fx:minima.g*255] %[fx:maxima.g*255] %[fx:minima.b*255] %[fx:maxima.b*255]' info:) \
+        || fail "uniform RGB check failed on $1"
+    read -r rmin rmax gmin gmax bmin bmax <<< "$values"
+    for value in $values; do is_number "$value" || fail "uniform RGB extrema of $1 are not numeric: $values"; done
+    METRIC=$(awk -v rmin="$rmin" -v rmax="$rmax" -v gmin="$gmin" -v gmax="$gmax" \
+        -v bmin="$bmin" -v bmax="$bmax" -v r="$6" -v g="$7" -v b="$8" '
+        function abs(x) { return x < 0 ? -x : x }
+        BEGIN {
+            e=abs(rmin-r); if (abs(rmax-r)>e) e=abs(rmax-r)
+            if (abs(gmin-g)>e) e=abs(gmin-g); if (abs(gmax-g)>e) e=abs(gmax-g)
+            if (abs(bmin-b)>e) e=abs(bmin-b); if (abs(bmax-b)>e) e=abs(bmax-b)
+            print e
+        }')
+}
+
+assert_uniform_rgb() { # metric name, image, x, y, width, height, expected r, g, b
+    uniform_rgb_error "$2" "$3" "$4" "$5" "$6" "$7" "$8" "$9"
+    awk -v e="$METRIC" 'BEGIN { exit !(e <= 1) }' \
+        || fail "$1 expected uniform RGB ($7,$8,$9) within one code, max error $METRIC"
+    printf '%s_max_code_error=%s\n' "$1" "$METRIC" >> "$OUT/metrics.txt"
+}
+
+retain_failure() {
+    (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS)
+}
+
+additive_case() { # name, light-off glass, light-on glass, light-on focus
+    local name=$1 off=$2 on=$3 focus=${4:-none} common x y w h
+    for noise in 0 0.5; do
+        common="noise $noise type=\"fine\"
+saturation 1"
+        capture "$name-n$noise-off" "$common
+$off" "$NIRI" none
+        capture "$name-n$noise-on" "$common
+$on" "$NIRI" "$focus"
+    done
+    case $name in
+        ring|iridescence) x=$((PX - 4)); y=$((PY + 120)); w=20; h=400 ;;
+        *) x=$((PX + 60)); y=$((PY + 120)); w=200; h=400 ;;
+    esac
+    local rc=0
+    python3 "$HERE/glass-render-order-metrics.py" additive \
+        "$OUT/$name-n0.5-on.png" "$OUT/$name-n0.5-off.png" \
+        "$OUT/$name-n0-on.png" "$OUT/$name-n0-off.png" \
+        --rect "$x" "$y" "$w" "$h" \
+        > "$OUT/$name-additive.json" || rc=$?
+    cat "$OUT/$name-additive.json"
+    printf '%s\n' "$rc" > "$OUT/$name-additive-exit-status"
+    if [ "$rc" -ne 0 ]; then retain_failure; return "$rc"; fi
+}
+
+neutral_identity() {
+    local neutral=$'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }'
+    capture neutral-baseline "$neutral" "$BASE_NIRI" none
+    capture neutral-candidate "$neutral" "$NIRI" none
+    ae "$OUT/neutral-baseline.png" "$OUT/neutral-candidate.png"
+    assert_zero "neutral baseline/candidate decoded identity" "$METRIC"
+    printf 'neutral_baseline_candidate_ae=%s\n' "$METRIC" >> "$OUT/metrics.txt"
+}
+
+grain_preservation() {
+    local type common base_sd candidate_sd
+    common=$'ior 1\nattenuation-color "#ffffff"\nattenuation-distance 60\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }'
+    for type in white fine lightness; do
+        capture "grain-$type-base-off" "$common
+noise 0 type=\"$type\"" "$BASE_NIRI" none
+        capture "grain-$type-base-on" "$common
+noise 0.02 type=\"$type\"" "$BASE_NIRI" none
+        capture "grain-$type-candidate-off" "$common
+noise 0 type=\"$type\"" "$NIRI" none
+        capture "grain-$type-candidate-on" "$common
+noise 0.02 type=\"$type\"" "$NIRI" none
+        base_sd=$(metric_grain "grain-$type-base" "grain-$type-base-on" "grain-$type-base-off" \
+            "$((PX + 60))" "$((PY + 120))" 200 400)
+        candidate_sd=$(metric_grain "grain-$type-candidate" "grain-$type-candidate-on" \
+            "grain-$type-candidate-off" "$((PX + 60))" "$((PY + 120))" 200 400)
+        assert_about "$type face grain SD" "$candidate_sd" "$base_sd" 0.1
+        printf 'grain_%s_base_sd=%s\ngrain_%s_candidate_sd=%s\n' \
+            "$type" "$base_sd" "$type" "$candidate_sd" >> "$OUT/metrics.txt"
+    done
+}
+
+additive_matrix() {
+    additive_case aurora 'aurora 0 { drift-hz 0; }' 'aurora 0.5 { drift-hz 0; }' none
+    additive_case ring '' '' ring-light
+    additive_case iridescence 'iridescence 0' 'iridescence 0.8' none
+}
+
+dense_grain() {
+    local type common face_sd bevel_sd
+    common=$'ior 1\nthickness 80\nattenuation-color "#222436"\nattenuation-distance 30\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }'
+    for type in white fine lightness; do
+        capture "dense-$type-off" "$common
+noise 0 type=\"$type\"" "$NIRI" none
+        capture "dense-$type-on" "$common
+noise 0.02 type=\"$type\"" "$NIRI" none
+        face_sd=$(metric_grain "dense-$type-face" "dense-$type-on" "dense-$type-off" \
+            "$((PX + 60))" "$((PY + 120))" 200 400)
+        bevel_sd=$(metric_grain "dense-$type-bevel" "dense-$type-on" "dense-$type-off" \
+            "$((PX - 4))" "$((PY + 120))" 20 400)
+        printf 'dense_%s_face_sd=%s\ndense_%s_bevel_sd=%s\n' \
+            "$type" "$face_sd" "$type" "$bevel_sd" >> "$OUT/metrics.txt"
+    done
+}
+
+signed_transfer_probes() {
+    local type stem common
+    magick -size 1280x720 xc:black "$OUT/black.png"
+    magick -size 1280x720 xc:'rgb(2,2,2)' "$OUT/near-black.png"
+    magick -size 1280x720 xc:'rgb(230,20,70)' "$OUT/saturated.png"
+    for WALL in "$OUT/black.png" "$OUT/near-black.png"; do
+        stem=$(basename "$WALL" .png)
+        common=$'ior 1\nattenuation-color "#ffffff"\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }'
+        capture "$stem-control" "$common
+noise 0" "$NIRI" none
+        for type in white fine lightness; do
+            capture "$stem-$type" "$common
+noise 1 type=\"$type\"" "$NIRI" none
+            assert_informative_grain "${stem}_${type}" "$stem-$type" "$stem-control" \
+                "$((PX + 60))" "$((PY + 120))" 200 400
+        done
+    done
+    WALL=$OUT/saturated.png
+    capture saturated-s3 $'ior 1\nattenuation-color "#ffffff"\nnoise 0\nsaturation 3\niridescence 0\naurora 0 { drift-hz 0; }' "$NIRI" none
+    # luma(rgb(230,20,70)) = 68.256; saturation 3 yields
+    # (553.488,-76.512,73.488), clamped by the output to (255,0,73/74).
+    assert_uniform_rgb saturated_s3 saturated-s3 "$((PX + 60))" "$((PY + 120))" \
+        200 400 255 0 73.488
+    WALL=$WARM_WALL
+}
+
+opaque_bypass() {
+    local opacity common
+    common=$'ior 1\nattenuation-color "#ffffff"\niridescence 0\naurora 0 { drift-hz 0; }'
+    for opacity in 1.0 0.7; do
+        capture "opaque-$opacity-off" "$common
+noise 0
+saturation 1" "$NIRI" none opaque "$opacity"
+        capture "opaque-$opacity-on" "$common
+noise 0.5 type=\"fine\"
+saturation 0" "$NIRI" none opaque "$opacity"
+        roi "opaque-$opacity-off" "$(face_roi)" face
+        roi "opaque-$opacity-on" "$(face_roi)" face
+        ae "$OUT/opaque-$opacity-off-face.png" "$OUT/opaque-$opacity-on-face.png"
+        assert_zero "opaque client and glyph identity at opacity $opacity" "$METRIC"
+        printf 'opaque_%s_ae=%s\n' "${opacity/./_}" "$METRIC" >> "$OUT/metrics.txt"
+    done
+}
+
+gpu_case() { # baseline|neutral|active, round
+    local binary glass cooldown_name
+    case $1 in
+        baseline) binary=$BASE_NIRI_TRACY; glass=$'noise 0.5 type="fine"\nsaturation 0' ;;
+        neutral) binary=$NIRI_TRACY; glass=$'noise 0\nsaturation 1' ;;
+        active) binary=$NIRI_TRACY; glass=$'noise 0.5 type="fine"\nsaturation 0' ;;
+        *) fail "unknown GPU case $1" ;;
+    esac
+    local NIRI_TRACY=$binary GLASS_EXTRA=$'offset-x 0\noffset-y 0\n'"$glass"
+    cooldown_name="gpu-$1-$2"
+    printf '%s %s cooldown start (30s)\n' "$(date --iso-8601=seconds)" "$cooldown_name" \
+        | tee -a "$OUT/cost-cooldown.log" >&2
+    sleep 30
+    printf '%s %s cooldown complete\n' "$(date --iso-8601=seconds)" "$cooldown_name" \
+        | tee -a "$OUT/cost-cooldown.log" >&2
+    trace_run "$cooldown_name" "$TICK" 0
+    assert_clean_log
+    gpu_median_ns "$OUT/gpu-$1-$2.tracy" >> "$OUT/gpu-$1.medians"
+}
+
+cost_matrix() {
+    local c baseline_ns neutral_ns active_ns
+    tools_ready; reserve_tracy_port
+    for c in baseline neutral active; do gpu_case "$c" 1; done
+    for c in neutral active baseline; do gpu_case "$c" 2; done
+    for c in active baseline neutral; do gpu_case "$c" 3; done
+    baseline_ns=$(median3 "$OUT/gpu-baseline.medians")
+    neutral_ns=$(median3 "$OUT/gpu-neutral.medians")
+    active_ns=$(median3 "$OUT/gpu-active.medians")
+    printf 'gpu_baseline_ms=%s\ngpu_neutral_ms=%s\ngpu_active_ms=%s\n' \
+        "$(ns_to_ms "$baseline_ns")" "$(ns_to_ms "$neutral_ns")" "$(ns_to_ms "$active_ns")" >> "$OUT/metrics.txt"
+    printf 'gpu_neutral_vs_baseline_pct=%s\ngpu_active_vs_baseline_pct=%s\n' \
+        "$(pct_delta "$baseline_ns" "$neutral_ns")" "$(pct_delta "$baseline_ns" "$active_ns")" >> "$OUT/metrics.txt"
+}
+
+pixel_matrix() {
+    neutral_identity
+    grain_preservation
+    additive_matrix
+    dense_grain
+    signed_transfer_probes
+    opaque_bypass
+}
+
+behind_matrix() {
+    pixel_matrix
+    cost_matrix
+}
+
+run_scope() {
+    if [ "$MODE" = red ]; then
+        [ "$SCOPE" != cost ] || fail 'MODE=red has no cost scope'
+        additive_case aurora 'aurora 0 { drift-hz 0; }' 'aurora 0.5 { drift-hz 0; }' none
+        return
+    fi
+    case $SCOPE in pixels) pixel_matrix ;; cost) cost_matrix ;; all) behind_matrix ;; esac
+}
+run_scope
+finish

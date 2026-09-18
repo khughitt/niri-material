@@ -496,10 +496,10 @@ mod tests {
         let source = material_source();
         let mut last = 0;
         for marker in [
-            "// ---- optic: iridescence",
-            "// ---- optic: aurora",
             "// ---- optic: saturation",
             "// ---- optic: noise",
+            "// ---- optic: iridescence",
+            "// ---- optic: aurora",
             "// ---- main",
         ] {
             let at = source
@@ -512,7 +512,13 @@ mod tests {
         assert!(!source.starts_with("#version"));
         assert!(source.contains("iridescence_specular(specular"));
         assert!(source.contains("aurora_emissive(p, n, att, innerDist)"));
-        assert!(source.contains("saturation_post(glassColor"));
-        assert!(source.contains("noise_post(glassColor"));
+        let main = source.split_once("void main()").unwrap().1;
+        let averaged = main.find("sampled = acc / count;").unwrap();
+        let saturation = main.find("sampled = saturation_behind(").unwrap();
+        let noise = main.find("sampled = noise_behind(").unwrap();
+        let attenuation = main.find("vec3 transmitted = sampled * att;").unwrap();
+        assert!(averaged < saturation && saturation < noise && noise < attenuation);
+        assert!(!main.contains("saturation_post("));
+        assert!(!main.contains("noise_post("));
     }
 }

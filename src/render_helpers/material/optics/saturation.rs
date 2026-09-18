@@ -1,4 +1,4 @@
-//! `saturation`: stage 9, neutral at 1. Applies the inherit-or-neutral rule.
+//! `saturation`: behind, stage 3a, neutral at 1. Applies the inherit-or-neutral rule.
 
 use niri_config::ResolvedGlass;
 use smithay::backend::renderer::gles::{Uniform, UniformType};

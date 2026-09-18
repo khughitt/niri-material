@@ -9,6 +9,13 @@ Desktop acceptance (the `lightness` gate) pending installation.
 `prism-51f23b`, designed in Prism
 `docs/specs/2026-09-06-glass-noise-type-design.md`.
 
+**Render-order update:** The working implementation of
+[material-f8b6e9](2026-09-12-material-render-order-design.md) supersedes the
+post placement described below: saturation/noise now transform the averaged
+backdrop before attenuation. Parameters, inheritance and grain formulas are
+preserved. Candidate capture acceptance is pending; historical evidence here
+was collected with the old order.
+
 ## Context
 
 Glass composes `noise` after its optics

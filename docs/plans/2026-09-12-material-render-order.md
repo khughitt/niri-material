@@ -3,10 +3,21 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
 > to implement this plan task-by-task. Steps use checkboxes for tracking.
 
-**Status:** approved on 2026-09-12 for inline, sequential execution. Task 1
-has prepared the offline grain/additive metric tool and tests; capture
-preflight refused the busy host before baseline builds or shader edits.
-Neither rendering change is implemented. See the
+**Status:** approved on 2026-09-12 for inline, sequential execution. Task 1's
+behind hooks, signed transfer helpers, registry order and documentation are
+implemented in the working tree. Candidate pixel and signal checks passed;
+the retained TTY strict-cost matrix passed on 2026-09-18: nine P8-only settled
+sub-runs, three samples per case, and +0.0% candidate differences. The old
+P-state refusals remain historical.
+The old-build additive gate failed on measured pixels as required, using
+hashed baseline binaries at `522a09fe`. GPU quietness was relaxed with user
+authorization for baseline and candidate pixel scopes only; timing remained
+strict and used no waiver. No performance pass threshold is claimed.
+Task 2 is not implemented; its 2026-09-17 amendment (ring scatter, face
+placement, motion deferral to `material-0e130e`) is approved. The user
+selected SDD execution; Task 1 awaits final evidence review and commit before
+Task 1 acceptance is complete and closes in this commit; Task 2 does not start
+yet. See the
 [execution evidence](../materials/2026-09-12-material-render-order-evidence.md).
 
 **Goal:** Move backdrop colour operations behind attenuation and interior
@@ -49,7 +60,10 @@ reviewed at `522a09fe`, including transmitted chamfer grain without a mask.
   Runtime GLSL requires actual GLES capture proof, not only Rust compilation.
 - Captures run serially under the existing capture preflight, identity,
   settling, hashing and release protocol. Preserve refusal records; never
-  bypass readiness thresholds to obtain a passing capture.
+  bypass readiness thresholds to obtain a passing capture. The user explicitly
+  authorized a pixel-only GPU quietness waiver for the old-build baseline on
+  2026-09-16; that exception is recorded in the evidence. On 2026-09-17 the
+  user requested a pause before the next exclusive CPU/GPU capture period.
 - Commit conventionally, without attribution trailers. Update the relevant
   spec status and user docs with each delivered child; regenerate the staged
   upstream report before committing. No installation or desktop restart is
@@ -67,8 +81,11 @@ All entries below begin at `.worktrees/material-5b3107/`.
 | `.worktrees/material-5b3107/src/render_helpers/shaders/material/noise.frag` | Linear-boundary noise hook, unchanged grain formulas. |
 | `.worktrees/material-5b3107/src/render_helpers/shaders/material/aurora.frag` | Refracted within hook. |
 | `.worktrees/material-5b3107/src/render_helpers/material/optics/mod.rs` | Renderer registry order. |
+| `.worktrees/material-5b3107/src/render_helpers/material/mod.rs` | Upload `mat_scatter` beside the existing glass uniforms. |
+| `.worktrees/material-5b3107/niri-config/src/material/mod.rs` | Remove the inset-within-bevel validation (both error sites). |
+| `.worktrees/material-5b3107/niri-config/src/lib.rs` | Flip the test that expects that error into one that accepts the config. |
 | `.worktrees/material-5b3107/niri-config/src/material/optics/mod.rs` | Matching `ORDER` and `params()` aggregation order. |
-| `.worktrees/material-5b3107/src/render_helpers/shaders/mod.rs` | Existing source-assembly regression test. |
+| `.worktrees/material-5b3107/src/render_helpers/shaders/mod.rs` | Existing source-assembly regression test; `mat_scatter` registry entry. |
 | `.worktrees/material-5b3107/src/render_helpers/material/optics/{noise,saturation,aurora}.rs` | Stage comments only; preserve values and cadence tests. |
 | `.worktrees/material-5b3107/docs/materials/scripts/glass-render-order-smoke.sh` | New focused smoke using the existing optic capture library. |
 | `.worktrees/material-5b3107/docs/materials/scripts/glass-render-order-metrics.py` | New small metric program: signed grain, quantization intervals, ring reach. No capture orchestration. |
@@ -80,6 +97,7 @@ All entries below begin at `.worktrees/material-5b3107/`.
 | `.worktrees/material-5b3107/docs/materials/scripts/glass-aurora-smoke.sh` | Existing neutral, cadence and cost regression run. |
 | `.worktrees/material-5b3107/docs/materials/{render-pipeline,adding-an-optic,material-config}.md` | Current behavior and generated parameter-table order. |
 | `.worktrees/material-5b3107/docs/specs/2026-09-10-material-optics-design.md` | Landed hook contract/status. |
+| `.worktrees/material-5b3107/docs/specs/2026-09-05-ring-light-focus-response-design.md` | Mark bevel confinement and the inset validation superseded. |
 | `.worktrees/material-5b3107/docs/specs/2026-09-12-material-render-order-design.md` | Partial/completed implementation status and evidence links. |
 | `.worktrees/material-5b3107/docs/materials/2026-09-12-material-render-order-evidence.md` | Create in Task 1; append Task 2 results, identities and capture limitations. |
 
@@ -142,7 +160,7 @@ non-finite results and empty selections. Provide three explicit subcommands:
 ```text
 grain ON OFF --rect X Y W H
 additive NOISE_LIGHT NOISE_DARK ZERO_LIGHT ZERO_DARK --rect X Y W H
-reach ON OFF --window X Y W H --bevel B --thickness T --inset I --width W
+reach ON OFF --window X Y W H --bevel B --thickness T --inset I --width W [--scatter S]
 ```
 
 `grain` reports the population standard deviation of signed sRGB luma
@@ -151,7 +169,9 @@ residuals using weights `(0.2126, 0.7152, 0.0722)`, not absolute residuals.
 the four images must be aligned and fully covered, with transparent client
 background. `reach` reports the bound, reference contour, maximum channel
 delta and changed-pixel count outside both, plus maximum visible interior
-reach. A visible pixel differs by **more than one** 8-bit channel code;
+reach. `--scatter` defaults to `0` and feeds `ring_bound`; the roughness
+fixture passes `0.5`, without which its gate is the pinned 37 px, not
+56 px. A visible pixel differs by **more than one** 8-bit channel code;
 one-code changes are accepted quantization-scale differences, not byte
 identity. Do not label the resulting count "all changed pixels".
 
@@ -212,7 +232,9 @@ Pin `ior 1.5`, `light-ior 6`, `thickness 20`, `bevel 12`, `ring-inset 5`,
 zero jelly activity, aurora/noise disabled and saturation neutral. Run
 aberration `0` and `0.6`. Also run dense `thickness 80` with attenuation
 colour `#222436`, distance `30`; and a wide-core case `ring-width 20`,
-`bevel 32`, thickness `20`. These satisfy inset + width <= bevel.
+`bevel 32`, thickness `20`. Two amendment fixtures: roughness `0.5` on
+the pinned glass (`scatter 0.5`), and a face case `ring-inset 20` under
+`bevel 12` at thickness `20`, which the old validation refuses.
 
 For a conservative bound allow both focus and maximal accent: colour
 channels <= 1, rest gain `G <= 0.7 + 1.0 = 1.7`, attenuation <= 1.
@@ -222,11 +244,13 @@ The sRGB encoding slope is at most `12.92`; set linear tail budget
 ```python
 from math import ceil, log, sqrt
 
-def ring_bound(thickness, inset, width):
+def ring_bound(thickness, inset, width, scatter=0.0):
     epsilon = 0.5 / (255 * 12.92)
     gain = 1.7
-    core = inset + width * sqrt(0.5 * log(2 * gain / epsilon))
-    halo = inset + 2 + 9 * sqrt(0.5 * log(0.6 * gain / epsilon))
+    core_width = width + 6 * scatter
+    halo_width = 9 + 18 * scatter
+    core = inset + core_width * sqrt(0.5 * log(2 * gain / epsilon))
+    halo = inset + 2 + halo_width * sqrt(0.5 * log(0.6 * gain / epsilon))
     shift = 0.5 * inset + 2 * (0.2 * thickness)
     return ceil(max(core, halo) + shift)
 ```
@@ -238,8 +262,11 @@ The rounded-box distance changes by no more than the displacement. Beyond
 this radius, the continuous encoded contribution is below half a code;
 rounding two captures permits at most one code of difference.
 
+The widths follow the spec's scatter rule; the unnormalised gain stays,
+so integral conservation only makes the bound more conservative.
 Calculated before capture: **37 px** for the pinned fixture, **61 px** for
-dense glass, **61 px** for the wide core. The requested reference contour is
+dense glass, **61 px** for the wide core, **56 px** for the roughness
+fixture and **59 px** for the face fixture. The requested reference contour is
 **27.5 px** in all three. For the older ring smoke's pinned thickness 41.7
 and default width, the conservative bound is **46 px**. Use its actual
 validated width and colours, and reject a gain/configuration outside the
@@ -263,7 +290,7 @@ helpers. Produces `vec3 saturation_behind(vec3 color, vec2 fragCoord)` and
 registry order is `saturation, noise, iridescence, aurora`. Captures expose
 the three metric commands specified above; implement `reach` in Task 2.
 
-- [ ] **1. Claim and pin the baseline.** Run `tasks start material-f8b6e9`.
+- [x] **1. Claim and pin the baseline.** Run `tasks start material-f8b6e9`.
   Verify `522a09fe` is an ancestor and source files still match the reviewed
   order. Snapshot the two baseline binaries with provenance. Re-read the
   transfer functions and every caller before changing their shared math:
@@ -272,7 +299,7 @@ the three metric commands specified above; implement `reach` in Task 2.
   rg -n 'srgbToLinear|linearToSrgb|noise_post|saturation_post' src/render_helpers
   ```
 
-- [ ] **2. Add the measurement and assembly regressions first.** Extend the
+- [x] **2. Add the measurement and assembly regressions first.** Extend the
   existing assembly test to expect the interim registry and the two behind
   calls between averaged sampling and `vec3 transmitted`. Retain the
   existing uniform/registry checks. Add the `grain` and `additive` metric
@@ -310,7 +337,7 @@ the three metric commands specified above; implement `reach` in Task 2.
   binary and retain its nonzero exit and measured failure; a geometry or
   protocol refusal is not the expected regression failure.
 
-- [ ] **3. Make the transfer helpers defined for signed channels.** Change
+- [x] **3. Make the transfer helpers defined for signed channels.** Change
   only the unused power branch bases in the material prelude:
 
   ```glsl
@@ -323,7 +350,7 @@ the three metric commands specified above; implement `reach` in Task 2.
   Do not modify the independent postprocess shader. Negative inputs select
   their existing signed linear branches; above-one inputs remain above one.
 
-- [ ] **4. Move saturation and noise.** Replace the saturation function:
+- [x] **4. Move saturation and noise.** Replace the saturation function:
 
   ```glsl
   vec3 saturation_behind(vec3 color, vec2 fragCoord) {
@@ -353,7 +380,7 @@ the three metric commands specified above; implement `reach` in Task 2.
   Reorder `OPTICS`, `ORDER` **and `params()`** to the interim order. Update
   the existing assembly markers and stage comments accordingly.
 
-- [ ] **5. Run the behind acceptance matrix.** Add these cases to the new
+- [x] **5. Run the behind acceptance matrix.** Add these cases to the new
   smoke's `behind` phase, using the shared geometry and metric contract:
 
   | Case | Required observation |
@@ -384,7 +411,7 @@ the three metric commands specified above; implement `reach` in Task 2.
   baseline/neutral/active noise+saturation using the shared three-round
   protocol. Record the new smoke command and all exit statuses in evidence.
 
-- [ ] **6. Verify and document the delivered stage.** Run:
+- [x] **6. Verify and document the delivered stage.** Run:
 
   ```bash
   MATERIAL_DOCS_UPDATE=1 just test
@@ -407,7 +434,8 @@ the three metric commands specified above; implement `reach` in Task 2.
   cost, signed grain, additive comparison, opaque identity and protocol
   limits in the new evidence file. No unmeasured result is marked passed.
 
-- [ ] **7. Close the child in its commit.** Only after acceptance passes:
+- [x] **7. Close the child in its commit.** Acceptance passed; this commit
+  records the Task 1 closeout before Task 2 starts:
 
   ```bash
   tasks done material-f8b6e9 'Behind hook implemented; colour-space, additive-light and capture checks recorded'
@@ -435,19 +463,32 @@ and current docs. Run the existing aurora smoke without changing its cadence.
 **Interfaces:** Consumes Task 1's linear `sampled`, behind hooks, `att` and
 metric/capture program. Produces `vec3 aurora_within(vec2 p, vec3 n, vec3 att,
 float innerDist)` returning attenuated linear light, with inline ring added
-to `within`. Final registry: `saturation, noise, aurora, iridescence`.
+to `within`; a new `uniform float mat_scatter` uploaded from
+`roughness * clamp(ior * 2 - 2, 0, 1)` in `material/mod.rs`; and
+`filamentBand(vec2 q, float inset, float width, float scatter)`. Removes
+the `ring-inset + ring-width <= bevel` validation. Final registry:
+`saturation, noise, aurora, iridescence`.
 
 - [ ] **1. Claim, snapshot and add the failing checks.** Run `tasks start
   material-92edaf`; snapshot Task 1's release/Tracy binaries. Update the
   existing shader-source assertions to expect within accumulation before
-  specular, `aurora_within`, a `0.2` ring lookup path and no ring mask.
-  Add `reach` to the metric program using the bound above and rounded-box
-  distance at pixel centres. Extend the same metric regression test:
+  specular, `aurora_within`, a `0.2` ring lookup path, no ring mask, the
+  `mat_scatter` uniform, its `_1f` entry in `material_uniform_names()`
+  and the four-argument `filamentBand`. Flip the
+  `niri-config` test at the `ring-inset + ring-width must not exceed bevel`
+  assertion into one that accepts `bevel 4; offset-x 0; offset-y 0;
+  ring-inset 3; ring-width 2` (the inherited offsets are `6`, and the
+  offset check stays), and add a unit test for the scatter expression at `roughness 0.5, ior
+  1.5` (0.5) and `ior 1.0` (0). Add `reach` to the metric program using the
+  bound above and rounded-box distance at pixel centres. Extend the same
+  metric regression test:
 
   ```python
   self.assertEqual(metrics.ring_bound(20, 5, 2.6), 37)
   self.assertEqual(metrics.ring_bound(80, 5, 2.6), 61)
   self.assertEqual(metrics.ring_bound(20, 5, 20), 61)
+  self.assertEqual(metrics.ring_bound(20, 5, 2.6, 0.5), 56)
+  self.assertEqual(metrics.ring_bound(20, 20, 2.6), 59)
   ```
 
   Exercise the actual reach selection with synthetic aligned images: a
@@ -461,17 +502,44 @@ to `within`. Final registry: `saturation, noise, aurora, iridescence`.
 - [ ] **2. Move the ring to within.** Immediately after `transmitted`, create
   `vec3 within = vec3(0.0)` and move the existing ring block there. Preserve
   its selectors and `slabChamfer > 0.0` guard. Remove the `mask` declaration,
-  mask branch and multiplication. Change only the lookup depth and sum:
+  mask branch and multiplication. Change the lookup depth, the band
+  widths and the sum:
 
   ```glsl
   float depth = mat_thickness * 0.2;
-  // Existing capped base, per-channel bands and signal glow remain here.
+  // Existing capped base, per-channel bands and signal glow remain here,
+  // each filamentBand call gaining mat_scatter as its last argument.
   within += color * glow * band * pow(att, vec3(0.2));
   ```
 
-  Reuse the current ring code for every expression between those lines;
-  do not reconstruct or retune it. Preserve cap application before channel
-  offsets, `light-ior`, Gaussian halo/core, drift, colour and jelly gain.
+  In the prelude, widen `filamentBand` per the spec's scatter rule with
+  integral conservation:
+
+  ```glsl
+  float filamentBand(vec2 q, float inset, float width, float scatter) {
+      float d = -sdRoundedBox(q - g_center, g_half, g_outer_r);
+      float coreWidth = width + 6.0 * scatter;
+      float haloWidth = 9.0 + 18.0 * scatter;
+      float core = (d - inset) / coreWidth;
+      float halo = (d - inset - 2.0) / haloWidth;
+      return (width / coreWidth) * exp(-2.0 * core * core)
+           + 0.3 * (9.0 / haloWidth) * exp(-2.0 * halo * halo);
+  }
+  ```
+
+  Declare `uniform float mat_scatter;` in the prelude beside `mat_ior`,
+  register it as `UniformName::new("mat_scatter", UniformType::_1f)` in
+  `material_uniform_names()` (`src/render_helpers/shaders/mod.rs`), and
+  upload it from `material/mod.rs` next to the other glass uniforms,
+  computed by the same expression `PrefilterState::selection` uses; do not
+  read the pyramid selection back from the effect buffer. Upload without
+  registration is a silent no-op, which is why step 1's assembly check
+  asserts the registry entry.
+  Remove both `ring-inset + ring-width must not exceed bevel` error sites
+  and the `ring_fits` binding in `niri-config`. Reuse the current ring code
+  for every other expression; do not reconstruct or retune it. Preserve cap
+  application before channel offsets, `light-ior`, drift, colour and jelly
+  gain.
 
 - [ ] **3. Refract aurora and finish the sums.** Rename its function, preserve
   the neutral branch, and change the field's coordinate construction:
@@ -510,6 +578,8 @@ to `within`. Final registry: `saturation, noise, aurora, iridescence`.
   | Ring/aurora disabled, noise/saturation neutral | Baseline decoded identity and deterministic repeat. |
   | Pinned ring on/off, aberration 0 and 0.6 | No delta >1 code deeper than 37 px; report deltas beyond 27.5 px. |
   | Dense and wide-core ring fixtures | Their 61 px gates pass; ring changes visible pixels, including a face strip just inside the structural chamfer. This positive gate fails against the old bevel mask. |
+  | Roughness fixture, `roughness 0.5`, ring on/off, `reach --scatter 0.5` | 56 px gate passes; the band's measured full width at half maximum exceeds the pinned fixture's, and its peak on/off delta is lower. Both fail against the unwidened band. |
+  | Face fixture, `ring-inset 20`, `bevel 12`, translucent client | Config accepted; 59 px gate passes; ring changes face pixels between the chamfer and 20 px in. The old build refuses the config. |
   | Aurora pinned, `light-ior 1` vs `6`, distortion 0, otherwise identical | Face unchanged (flat normal); chamfer changes. This fails when aurora still ignores its supplied normal. |
   | Aurora with distortion 0.4 and jelly motion | Capture refracted motion and interior appearance; preserve field phase/cadence. Record alignment limits instead of inventing a motion equality gate. |
   | Ring focus/accent selector combinations | Keep the existing selector and colour-share checks; replace only face-zero assertions. |
@@ -519,8 +589,11 @@ to `within`. Final registry: `saturation, noise, aurora, iridescence`.
   Run ring motion via the existing move/resize commands in the older ring
   smoke, with pinned ring drift first, then its existing nonzero drift.
   Record reach, maximum interior delta, timing and geometry for each frame.
-  Judge whether the existing drift/refraction satisfies subtle movement;
-  record that judgment and any follow-up rather than adding an oscillator.
+  Record the frames for `material-0e130e`, which judges motion; add no
+  oscillator and no motion judgment here. Record, separately, whether the
+  default inset reads as embedded on the pinned fixture; if the stock ring
+  wants to move onto the face, file a tuning follow-up rather than change
+  the default in this task.
 
   For dense attenuation proof, keep thickness, geometry, normal and signal
   state fixed and change only attenuation colour. Subtract ring-off from
@@ -551,8 +624,12 @@ to `within`. Final registry: `saturation, noise, aurora, iridescence`.
   confinement/depth contract partially superseded. Search the user docs:
 
   ```bash
-  rg -n 'aurora_emissive|four hook|five hook|zero on the face|confined to the bevel|0\.6.*thickness|60 %' docs
+  rg -n 'aurora_emissive|four hook|five hook|zero on the face|confined to the bevel|0\.6.*thickness|60 %|ring-inset \+ ring-width|never lights the window face' docs
   ```
+
+  `material-config.md`'s ring prose, the `focus-ring-light.sh` header
+  comment and the 2026-09-05 spec's bevel-confinement contract all state
+  the inset rule; rewrite the first two and mark the third superseded.
 
   Update current statements, link historical captures to the replacement,
   and retain all measurements that are merely recorded. Then:

@@ -1,4 +1,4 @@
-//! `noise`: stage 10, neutral at amount 0. Applies the inherit-or-neutral
+//! `noise`: behind, stage 3b, neutral at amount 0. Applies the inherit-or-neutral
 //! rule to the amount; the grain type never inherits.
 
 use niri_config::ResolvedGlass;
