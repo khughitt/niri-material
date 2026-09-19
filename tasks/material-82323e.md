@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-09-19T00:26:01Z
-updated: 2026-09-19T02:26:43Z
+updated: 2026-09-19T02:38:45Z
 started: 2026-09-19T00:56:02Z
 depends: [material-92edaf]
 parent: material-a76720
@@ -29,3 +29,4 @@ Produce a reviewed design, not implementation, for material-0e130e against the n
   provenance: {"harness_session":"claude-code:98707379-59de-42cc-a5df-87b6c16dc4f5","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-19T01:52:57Z (material-82323e): Review round 1 applied: staged install/apply/restart rollout with rollback (§5), sweep duration snapshotted at start plus a cut rule for policy changes mid-lap, idle timer armed in Niri::new, saturating phase for the presentation-time clock, §7 boundary and periodicity tests made approximate, crossfade cost corrected to 400 ms.
 - 2026-09-19T02:26:43Z (material-82323e): Review round 2 applied: prism migrate over base/profile/wallpaper stores with a backup and doctor hint (§5, rollback restores it first); threshold reload recomputes input_idle in both directions (§3, §7); Decisions qualify the always-completes rule with the cut.
+- 2026-09-19T02:38:45Z (material-82323e): Review round 3 applied: driftHz 0 -> sweepMs 0, positive -> 1500; a file holding both keys keeps its sweepMs; validation claim corrected to base plus active contexts. Spec approved; writing the plan.

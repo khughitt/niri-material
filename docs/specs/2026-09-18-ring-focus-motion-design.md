@@ -1,6 +1,6 @@
 # Bounded focus and attention ring motion: design
 
-**Status:** draft for review; nothing implemented.
+**Status:** reviewed 2026-09-18 (three review rounds); nothing implemented. Plan follows.
 
 **Task:** `material-82323e`, piece of `material-a76720`. Wakes
 `material-0e130e` (implementation) and `material-743692` (Prism contract).
@@ -230,20 +230,25 @@ Under this design:
 - `glass.ring.driftHz` is replaced by `glass.ring.sweepMs` (integer, `0` to
   `10000`, default `1500`), in the same profile and reset slots; the sink
   emits `ring-sweep-ms` in every response block it writes.
-- Persisted settings live in three stores that Prism validates in full on
-  every resolve (`resolveLayered` rejects an unknown key in base, in every
-  profile, and in every wallpaper context, active or not), so a stored
-  `driftHz` blocks every `apply` under the new definitions and a stored
-  `sweepMs` blocks every `apply` under the old ones. The migration is an
-  explicit command, `prism migrate`, driven by the definition: the
-  `glass.ring.sweepMs` entry declares `replaces: glass.ring.driftHz`. The
-  command walks base and every context file, and for each occurrence of a
-  replaced key removes it and writes the replacing key at its default (the
-  old value is a bucket rate and carries no meaning for a duration). Before
-  rewriting anything it copies every file it will touch into a timestamped
-  directory under Prism's state dir, then reports each file and key changed
-  and the backup location. `doctor` reports a pending migration (an orphan
-  key that a definition replaces) and names the command. The old key never
+- Persisted settings live in three stores: base, profile contexts, and
+  wallpaper contexts. Every resolve validates base and the *active* contexts
+  in full (`resolveLayered` rejects an unknown key in any layer it is given),
+  so a stored `driftHz` in base or an active context blocks every `apply`
+  under the new definitions, one in an inactive context blocks the `apply`
+  that follows its activation, and a stored `sweepMs` does the same under
+  the old definitions. The migration is an explicit command, `prism migrate`,
+  driven by the definition: the `glass.ring.sweepMs` entry declares
+  `replaces: glass.ring.driftHz`. The command walks base and every context
+  file, active or not, and for each occurrence of a replaced key removes it
+  and writes the replacing key: `driftHz 0` becomes `sweepMs 0`, because
+  zero meant "pin it still" and `0` still means exactly that; any positive
+  rate becomes the default `1500`, because a bucket rate has no duration
+  equivalent. When the file already holds `sweepMs`, that value is kept,
+  `driftHz` is removed, and the report says so. Before rewriting anything
+  the command copies every file it will touch into a timestamped directory
+  under Prism's state dir, then reports each file and key changed and the
+  backup location. `doctor` reports a pending migration (an orphan key that
+  a definition replaces) and names the command. The old key never
   reaches generated config, so `niri validate` accepts the new Prism's output
   against the new build and rejects the old Prism's output with the parse
   error above.
@@ -327,10 +332,12 @@ Deterministic, in `just test`:
   errors with the replacement message.
 - Prism `test/niri-render.test.js`: `ring-sweep-ms` in both materials,
   default and override, and no `ring-drift-hz` anywhere in generated output.
-  A migration test: base, a profile, and a wallpaper context each holding
-  `driftHz` come out holding `sweepMs` at its default, the backup holds the
-  originals byte for byte, the report names all three, and a second run
-  changes nothing. `doctor` names the command while a replaced key remains.
+  A migration test: base, a profile, and an inactive wallpaper context each
+  holding `driftHz` come out holding `sweepMs` (`0` stays `0`; a positive
+  rate becomes `1500`); a file holding both keys keeps its `sweepMs` and
+  loses `driftHz`; the backup holds the originals byte for byte; the report
+  names every file and the kept collision; a second run changes nothing.
+  `doctor` names the command while a replaced key remains.
 
 Headless (`docs/materials/scripts/material-signals-smoke.sh cases`, on the
 headless verification host, never the desktop session), Tracy redraw counts
