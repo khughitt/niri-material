@@ -14,11 +14,11 @@
 #
 # Cases:
 #   baseline          the spike's stills and bursts (static gradient ring)
-#   rest-confinement  at rest the filament changes no face pixel, and the
-#                     band is present and untinted; writes the shared `off`
+#   rest-confinement  at rest the filament stays within its derived reach,
+#                     and the band is present and untinted; writes the shared `off`
 #                     reference frame the later cases compare against
 #   accent-midfade    the presence crossfade carries straight color
-#   resize-flex       under jelly the filament breathes and still lights no face
+#   resize-flex       under jelly the filament breathes; motion evidence is recorded
 #   selectors         accent and focus select independently
 #   tiny              recorded as not verified by render (no client is small
 #                     enough to drive the shader's zero-chamfer gate)
@@ -57,7 +57,8 @@ if [ -z "$WALL" ]; then WALL=$WORK/checker.png; magick -size 160x90 pattern:chec
 # pinned here and the written config is checked for them.
 PIN_IOR=1.02; PIN_THICKNESS=41.7; PIN_BEVEL=11
 PIN_OFFSET=1                              # the prism block's offset-x/offset-y
-RING_INSET=5                              # the `ring-inset` default the band centres on
+RING_INSET=5
+RING_WIDTH=2.6
 # The layout below (1280x720 host, gaps 54, two columns at proportion 0.5)
 # puts the focused right window at this rect; `wait_geometry` refuses to
 # measure if it ever moves.
@@ -114,22 +115,36 @@ DARK_INACTIVE=$(printf '%s\n' "$DARK_ACTIVE" | sed \
     -e 's/attenuation-distance .*/attenuation-distance 70/')
 # The measurement flavour of the same glass: a neutral attenuation color so
 # the exponent scales all channels equally and the filament's hue survives,
-# and no chromatic aberration so the per-channel bands are identical.
-measurable() { printf '%s\n' "$1" | sed -e 's/attenuation-color .*/attenuation-color "#888888"/' -e 's/chromatic-aberration .*/chromatic-aberration 0/'; }
+# no chromatic aberration, and no roughness so the derived rest bound is exact.
+measurable() { printf '%s\n' "$1" | sed -e 's/attenuation-color .*/attenuation-color "#888888"/' -e 's/chromatic-aberration .*/chromatic-aberration 0/' -e 's/roughness .*/roughness 0/'; }
 MEAS_ACTIVE=$(measurable "$DARK_ACTIVE")
 MEAS_INACTIVE=$(measurable "$DARK_INACTIVE")
 
-# The material block ends on its own closing brace; the response goes inside.
+# Replace Prism's inherited default response, then append the pinned one.
 with_response() {   # $1 = material block, $2 = response body
-    printf '%s\n' "$1" | sed '$d'
-    printf '    response "default" { %s }\n}\n' "$2"
+    printf '%s\n' "$1" | sed '/^    response "default" {$/,/^    }$/d' | sed '$d'
+    printf '    response "default" {\n        ring-color "#ccccff"\n        ring-inset %s\n        ring-width %s\n        %s\n    }\n}\n' \
+        "$RING_INSET" "$RING_WIDTH" "$2"
 }
-assert_pinned_glass() {   # $1 = written config; both materials must carry the pinned geometry
+assert_pinned_geometry() {   # $1 = written config; both materials carry the calibrated slab
     local k n
     for k in "ior $PIN_IOR" "thickness $PIN_THICKNESS" "bevel $PIN_BEVEL" \
              "offset-x $PIN_OFFSET" "offset-y $PIN_OFFSET"; do
         n=$(sed 's/^ *//' "$1" | grep -cxF "$k" || true)
         [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 lines of '$k', found $n" >&2; exit 1; }
+    done
+}
+assert_rest_glass() { # $1 = written config; measurement scenes are unscattered
+    assert_pinned_geometry "$1"
+    local n
+    n=$(sed 's/^ *//' "$1" | grep -cxF 'roughness 0' || true)
+    [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 lines of 'roughness 0', found $n" >&2; exit 1; }
+}
+assert_pinned_response() { # $1 = written config, $2 = expected drift hz
+    local k n
+    for k in 'ring-color "#ccccff"' "ring-inset $RING_INSET" "ring-width $RING_WIDTH" "ring-drift-hz $2;"; do
+        n=$(grep -cF "$k" "$1" || true)
+        [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 response bodies containing '$k', found $n" >&2; exit 1; }
     done
 }
 validate() { "$NIRI" validate -c "$1" >/dev/null 2>&1 || { "$NIRI" validate -c "$1"; exit 1; }; }
@@ -157,18 +172,24 @@ write_baseline_config() {   # $1 = path
         echo 'animations { slowdown 6.0; }'
         printf '%s\n%s\n' "$DARK_ACTIVE" "$DARK_INACTIVE"
     } > "$1"
-    assert_pinned_glass "$1"; validate "$1"
+    assert_pinned_geometry "$1"; validate "$1"
 }
 # The measurement config: no gradient ring, the measurable glass, and the
 # case's response on both materials.
 write_capture_config() {   # $1 = path, $2 = response body, $3 = animations body
+    local drift=0
+    case $2 in
+        *'ring-drift-hz 0;'*) ;;
+        *'ring-drift-hz 1;'*) drift=1 ;;
+        *) echo "FAIL: response must pin ring-drift-hz to 0 or 1" >&2; exit 1 ;;
+    esac
     {
         layout_block 'focus-ring { off; }'
         printf 'animations { %s }\n' "$3"
         with_response "$MEAS_ACTIVE" "$2"
         with_response "$MEAS_INACTIVE" "$2"
     } > "$1"
-    assert_pinned_glass "$1"; validate "$1"
+    assert_rest_glass "$1"; assert_pinned_response "$1" "$drift"; validate "$1"
 }
 RESP_ON='ring-drift-hz 0;'
 RESP_OFF='focus "none"; accent "none"; ring-drift-hz 0;'
@@ -219,6 +240,9 @@ win_layout() {   # $1 = window id
     msg -j windows | jq -r --argjson id "$1" '.[] | select(.id==$id) | .layout
         | "\(.pos_in_scrolling_layout[0]) \(.pos_in_scrolling_layout[1]) \(.window_size[0]) \(.window_size[1]) \(.window_offset_in_tile[0] | floor) \(.window_offset_in_tile[1] | floor)"'
 }
+window_layout_json() { # $1 = window id; target layout, not animated render geometry
+    msg -j windows | jq -c --argjson id "$1" '.[] | select(.id==$id) | .layout'
+}
 wait_geometry() {   # $1 = window id: the layout is final within ten seconds or the run stops
     local want="2 1 $WIN_W $WIN_H 0 0" got out
     for _ in $(seq 100); do got=$(win_layout "$1"); [ "$got" = "$want" ] && break; sleep 0.1; done
@@ -268,6 +292,42 @@ emissive_lum() { awk -v e="$1" 'BEGIN { split(e, c, " "); printf "%.4f", 0.2126 
 face_ae() {   # $1 a, $2 b: count of differing pixels over the face region
     # `compare` reports the metric on stderr as "count (normalised)".
     magick compare -metric AE \( "$1" -crop "$FACE_CROP" +repage \) \( "$2" -crop "$FACE_CROP" +repage \) null: 2>&1 | awk '{ print $1 }'
+}
+reach() { # $1 label, $2 on, $3 off
+    local rc=0
+    python3 "$HERE/glass-render-order-metrics.py" reach "$2" "$3" \
+        --window "$WIN_X" "$WIN_Y" "$WIN_W" "$WIN_H" --bevel "$PIN_BEVEL" \
+        --thickness "$PIN_THICKNESS" --inset "$RING_INSET" --width "$RING_WIDTH" \
+        --scatter 0 --offset-x "$PIN_OFFSET" --offset-y "$PIN_OFFSET" --corner-radius 12 \
+        > "$WORK/$1-reach.json" || rc=$?
+    cat "$WORK/$1-reach.json" >> "$WORK/checks.txt"
+    [ "$rc" -eq 0 ] || die "$1 exceeded its derived rest reach bound"
+}
+motion_record() { # label, on, off, on slot/id, off slot/id; records, never measures reach
+    local label=$1 on=$2 off=$3 on_slot=$4 on_id=$5 off_slot=$6 off_id=$7
+    local on_geometry off_geometry changed
+    use_slot "$on_slot"; on_geometry=$(window_layout_json "$on_id")
+    use_slot "$off_slot"; off_geometry=$(window_layout_json "$off_id")
+    changed=$(magick compare -metric AE "$on" "$off" null: 2>&1 || true)
+    info "$label on target layout" "$on_geometry" "raw IPC target layout adjacent to screenshot request"
+    info "$label off target layout" "$off_geometry" "raw IPC target layout adjacent to screenshot request"
+    info "$label animated slab geometry" "unavailable" "IPC target layout is not the renderer's animated window geometry; no interior reach is measured"
+    info "$label whole-frame AE" "$changed" "whole-frame paired-host delta only; not an interior metric or gate"
+}
+motion_pair_burst() { # label, on slot/id, off slot/id
+    local label=$1 on_slot=$2 on_id=$3 off_slot=$4 off_id=$5 d i t0 t1 on off
+    d=$WORK/$label; mkdir -p "$d"
+    t0=$(date +%s.%N)
+    for i in $(seq 1 "$BURST"); do
+        on=$d/on-f$(printf %02d "$i").png; off=$d/off-f$(printf %02d "$i").png
+        use_slot "$on_slot"; info "$label-f$(printf %02d "$i") on screenshot request" "$(date --iso-8601=seconds)" "paired hosts are not lockstep"; shot_request "$on"
+        use_slot "$off_slot"; info "$label-f$(printf %02d "$i") off screenshot request" "$(date --iso-8601=seconds)" "paired hosts are not lockstep"; shot_request "$off"
+        shot_wait "$on"; shot_wait "$off"
+        motion_record "$label-f$(printf %02d "$i")" "$on" "$off" \
+            "$on_slot" "$on_id" "$off_slot" "$off_id"
+    done
+    t1=$(date +%s.%N)
+    echo "$label: $BURST paired frames in $(echo "$t1 - $t0" | bc) s" >> "$WORK/timing.txt"
 }
 face_max() {   # $1 a, $2 b: max per-channel difference over the face region, 0..255
     magick \( "$1" -crop "$FACE_CROP" +repage \) \( "$2" -crop "$FACE_CROP" +repage \) -compose difference -composite -format '%[fx:int(255*maxima)]' info:
@@ -337,8 +397,8 @@ case_baseline() {
     burst baseline-move right
     stop_nested 1
 }
-# At rest the filament lights the bevel and nothing else, and its color is the
-# untinted ring color. Writes the shared `off` reference frame.
+# At rest the filament stays within its derived reach and its color is the
+# explicitly pinned ring color. Writes the shared `off` reference frame.
 case_rest_confinement() {
     write_capture_config "$WORK/rest-on.kdl"  "$RESP_ON"  'slowdown 6.0;'
     write_capture_config "$WORK/rest-off.kdl" "$RESP_OFF" 'slowdown 6.0;'
@@ -347,7 +407,7 @@ case_rest_confinement() {
     local e f l
     e=$(emissive "$(px on)" "$(px off)" "$FIL_X" "$FIL_Y")
     f=$(red_fraction "$e"); l=$(emissive_lum "$e")
-    check "rest-confinement face AE"          "$(face_ae "$(px on)" "$(px off)")" 'v == 0'            "0"
+    reach rest-confinement "$(px on)" "$(px off)"
     check "rest-confinement red share"        "$f" 'v >= 0.24 && v <= 0.31'                           "0.24 to 0.31"
     check "rest-confinement emissive luminance" "$l" 'v > 0.01'                                       "> 0.01"
     printf '%s\n' "$l" > "$WORK/rest-lum.txt"
@@ -374,7 +434,7 @@ case_accent_midfade() {
     check "accent-midfade red share settled"      "$settled" 'v >= 0.90'              ">= 0.90"
 }
 # Under a slowed resize the jelly breath should brighten the filament while the
-# face still takes no light from it. Only the rest comparison is gated. The two
+# face comparison is recorded, not gated. Only the rest comparison is gated. The two
 # hosts run on independent clocks -- one `niri msg` process spawn separates the
 # two resizes, and another the two screenshots -- so mid-resize they sit at
 # different points in the animation: the layout is about a pixel apart and each
@@ -386,17 +446,19 @@ case_resize_flex() {
     local lum_rest; lum_rest=$(rest_lum)
     write_capture_config "$WORK/flex-on.kdl"  "$RESP_ON"  'slowdown 50;'
     write_capture_config "$WORK/flex-off.kdl" "$RESP_OFF" 'slowdown 50;'
-    start_nested 1 "$WORK/flex-on.kdl";  open_scene >/dev/null; settle
-    start_nested 2 "$WORK/flex-off.kdl"; open_scene >/dev/null; settle
+    local right_on right_off
+    start_nested 1 "$WORK/flex-on.kdl";  right_on=$(open_scene); settle
+    start_nested 2 "$WORK/flex-off.kdl"; right_off=$(open_scene); settle
     use_slot 1; shot "$(px flex-rest-on)"
     use_slot 2; shot "$(px flex-rest-off)"
-    check "resize-flex rest face AE" "$(face_ae "$(px flex-rest-on)" "$(px flex-rest-off)")" 'v == 0' "0"
+    reach resize-flex-rest "$(px flex-rest-on)" "$(px flex-rest-off)"
     use_slot 1; msg action set-column-width +200
     use_slot 2; msg action set-column-width +200
     sleep 3                              # jelly at high flex; the 20 s resize is far from settled
     use_slot 1; shot_request "$(px flex-on)"
     use_slot 2; shot_request "$(px flex-off)"
     shot_wait "$(px flex-on)"; shot_wait "$(px flex-off)"
+    motion_pair_burst resize-flex-motion 1 "$right_on" 2 "$right_off"
     stop_nested 1; stop_nested 2
     local lum ratio
     lum=$(emissive_lum "$(emissive "$(px flex-on)" "$(px flex-off)" "$FIL_X" "$FIL_Y")")
@@ -406,6 +468,28 @@ case_resize_flex() {
     info "resize-flex face pixels differing"     "$(face_ae "$(px flex-on)" "$(px flex-off)")" "not gated: the two clients re-render their text at different points in the resize"
     info "resize-flex face max channel delta"    "$(face_max "$(px flex-on)" "$(px flex-off)")" "not gated: same cause"
     info "resize-flex emissive luminance vs rest ($lum_rest)" "${ratio}x" "not gated: sampled across the skew"
+}
+case_ring_motion() {
+    require_off
+    local right_on right_off label on off
+    for label in pinned moving; do
+        if [ "$label" = pinned ]; then
+            on=$RESP_ON; off=$RESP_OFF
+        else
+            on='ring-drift-hz 1;'; off='focus "none"; accent "none"; ring-drift-hz 1;'
+        fi
+        write_capture_config "$WORK/ring-motion-$label-on.kdl" "$on" 'slowdown 6.0;'
+        write_capture_config "$WORK/ring-motion-$label-off.kdl" "$off" 'slowdown 6.0;'
+        start_nested 1 "$WORK/ring-motion-$label-on.kdl"; right_on=$(open_scene); sleep 1
+        start_nested 2 "$WORK/ring-motion-$label-off.kdl"; right_off=$(open_scene); sleep 1
+        use_slot 1; msg action move-column-left
+        use_slot 2; msg action move-column-left
+        motion_pair_burst "ring-motion-$label-move" 1 "$right_on" 2 "$right_off"
+        use_slot 1; msg action set-column-width +200
+        use_slot 2; msg action set-column-width +200
+        motion_pair_burst "ring-motion-$label-resize" 1 "$right_on" 2 "$right_off"
+        stop_nested 1; stop_nested 2
+    done
 }
 # `accent` and `focus` select independently: the accent tints the band only
 # where it is selected, the focus draws it only where it is selected.
@@ -420,7 +504,7 @@ case_selectors() {
         sleep 2; settle
         shot "$(px "sel-$name")"
         stop_nested 1
-        check "selectors $name face AE" "$(face_ae "$(px "sel-$name")" "$(px off)")" 'v == 0' "0"
+        reach "selectors-$name" "$(px "sel-$name")" "$(px off)"
         e=$(emissive "$(px "sel-$name")" "$(px off)" "$FIL_X" "$FIL_Y")
         record "selectors $name emissive at ($FIL_X,$FIL_Y) = $e"
         case $name in
@@ -442,8 +526,7 @@ SEL
 #   if ((showAccent || showFocus) && slabChamfer > 0.0)
 # is only reached with slabChamfer == 0 when the slab is at most 2 px on one
 # axis, because `max_chamfer = max(min(half_ext) - 1, 0)` is otherwise
-# positive and a chamfer of 0 is unconfigurable with a filament
-# (`ring-inset + ring-width <= bevel` with `ring-width > 0`). No client on
+# positive. No client on
 # this host produces such a window: kitty and foot have a one-cell minimum
 # and weston-simple-egl is fixed at 250 px. `niri-visual-tests` renders with
 # `xray: None`, so materials do not draw there either.
@@ -455,13 +538,14 @@ sha256sum "$NIRI" > "$WORK/SHA256SUMS"
 "$NIRI" --version >> "$WORK/SHA256SUMS"
 git -C "$REPO" rev-parse HEAD >> "$WORK/SHA256SUMS"
 : > "$LOG"
-for c in ${CASES:-baseline rest-confinement accent-midfade resize-flex selectors tiny}; do
+for c in ${CASES:-baseline rest-confinement accent-midfade resize-flex ring-motion selectors tiny}; do
     record "== $c"
     case $c in
         baseline)         case_baseline ;;
         rest-confinement) case_rest_confinement ;;
         accent-midfade)   case_accent_midfade ;;
         resize-flex)      case_resize_flex ;;
+        ring-motion)      case_ring_motion ;;
         selectors)        case_selectors ;;
         tiny)             case_tiny ;;
         *) echo "FAIL: unknown case $c" >&2; exit 1 ;;

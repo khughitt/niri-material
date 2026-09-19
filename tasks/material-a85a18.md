@@ -9,4 +9,13 @@ depends: []
 tags: []
 ---
 
-Task 5 of material-26dd8a capped the filament's shared refracted shift at half ring-inset so the core stays in the bevel for any ior; once saturated, light-ior only widens the chromatic split. Decide whether the cap, a bevel-relative depth, or an auto light-ior is the intended model, with captures at ior 1.02, 1.24, 1.5. Scope includes whether light-ior should be removed or replaced, since the cap saturates on stock default glass and Prism's ior 1.24 at every value; take one capture at ior 1.24 / bevel 9 once the deterministic flex probe (material-22d78f) exists so the owner's own glass has evidence.
+The render-order change shortened the filament's remaining path from 0.6 to
+0.2 of thickness. The half-`ring-inset` cap remains a high-shift safety limit,
+but no longer saturates stock glass or Prism's `ior 1.24` at every
+`light-ior` value: at `light-ior 1` those examples are roughly 1.16 px and
+1.54 px, respectively, against the default 2.5 px cap. Revisit the cap only
+where a dense or high-`light-ior` setting actually reaches it. Decide whether
+the cap, a bevel-relative depth, or an auto light-ior is the intended model,
+with captures at ior 1.02, 1.24, and 1.5. Take one capture at ior 1.24 /
+bevel 9 once the deterministic flex probe (material-22d78f) exists so the
+owner's own glass has evidence.

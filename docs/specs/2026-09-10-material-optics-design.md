@@ -13,6 +13,16 @@ controls and Aurora/Rainbow profiles landed on Prism `main` at `3f44f34`
 `material-300b87`; [NVIDIA evidence](../materials/2026-09-11-material-hardware-evidence.md)
 records costs and their limits. The original implementation evidence used llvmpipe.
 
+**Render-order update:** Task 1 of the
+[depth-order design](2026-09-12-material-render-order-design.md) adds `behind`
+and moves saturation/noise there; it is committed at `e33aa968` with its
+pixel, signal, and strict-cost acceptance recorded in the linked design.
+Task 2 adds `within`; its implementation and linked within pixel and cost
+matrices passed, as did the older aurora strict cost-only rotation, and it is
+committed at `e79b226b`. Final software gates passed; the whole-branch review
+found only the scoped documentation reconciliation recorded in the parent
+closeout. The original implementation evidence above predates this ordering.
+
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
 the Prism project and depend on the material tasks; they are listed in
@@ -93,26 +103,29 @@ for seventeen parameters is a large diff for no new capability.
 
 ## 1. What an optic is
 
-An optic acts at one or more of four hook points in the fragment shader,
-named for the stage of `render-pipeline.md` they sit in:
+An optic acts at one or more of six hook points in the fragment shader,
+called in this order and named for the stage of `render-pipeline.md` they sit
+in:
 
 | Hook | Pipeline stage | Signature | Acts on |
 | --- | --- | --- | --- |
 | `normal` | 2, after distortion and ripple, before the taps | `vec3 <optic>_normal(vec3 n, vec2 p)` | the perturbed normal the refraction taps use |
-| `specular` | 5, after the Schlick term, before the signal accent mix | `vec3 <optic>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | the Fresnel glint |
-| `emissive` | 6, after the ring of light, before the sweeps | `vec3 <optic>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | returns light to add; `main` accumulates it into `emissive` |
-| `post` | 9 and 10, on the encoded sRGB glass colour | `vec3 <optic>_post(vec3 color, vec2 fragCoord)` | the finished glass colour |
+| `behind` | 3a–3b, after averaged taps, before attenuation | `vec3 <optic>_behind(vec3 color, vec2 fragCoord)` | the averaged linear backdrop |
+| `within` | 5, after attenuation and before surface light | `vec3 <optic>_within(vec2 p, vec3 n, vec3 att, float innerDist)` | returns attenuated interior light; `main` accumulates it into `within` |
+| `specular` | 6, after the Schlick term, before the signal accent mix | `vec3 <optic>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | the Fresnel glint |
+| `emissive` | 7, after surface light, before encoding | `vec3 <optic>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | returns light to add; `main` accumulates it into `emissive` |
+| `post` | 9, reserved after final sRGB encoding | `vec3 <optic>_post(vec3 color, vec2 fragCoord)` | the finished glass colour |
 
 An optic defines one function per hook it acts at, named
 `<optic>_<hook>`, in its own GLSL file. `main.frag` calls the functions in
 `OPTICS` order at each hook; a contributor adds one call per hook the new
-optic uses. The `normal`, `specular`, and `post` hooks transform a value
-and return it; the `emissive` hook is additive and returns a contribution.
+optic uses. The `normal`, `behind`, `specular`, and `post` hooks transform a value
+and return it; the `within` and `emissive` hooks are additive and return a
+contribution.
 
 Every optic has an explicit **neutral** configuration, and its docs section
 states it. At that neutral, a transforming hook returns its input unchanged
-and an emissive
-hook returns `vec3(0.0)`, behind one uniform branch, so an unconfigured
+and a within or emissive hook returns `vec3(0.0)`, behind one uniform branch, so an unconfigured
 optic costs that branch and nothing else. The neutral is not always zero:
 `saturation`'s is 1 (0 is grayscale), `noise`'s is an amount of 0, and the
 three new optics' is an amount of 0. Omission is separate from neutrality:
@@ -246,8 +259,13 @@ own version line; the prelude does not carry one.
 NoiseType }` and `saturation: ResolvedSaturation { amount: Option<f64> }`.
 The KDL nodes, `noise <amount> type=<type>` and `saturation <amount>`, are
 unchanged, and the `Noise` node struct moves into the optic module. The
-optics act at the `post` hook, saturation first, and their GLSL is the
-existing stage 9 and 10 code moved verbatim.
+original migration put both optics at `post`, saturation first, moving the
+then-existing stage 9 and 10 code verbatim. The depth-order update now puts
+them at `behind`, with linear input/output and internal encoding to preserve
+their sRGB formulas. Neutral returns precede conversion. Registry and
+parameter order were `saturation, noise, iridescence, aurora` at the Task 1
+checkpoint. Task 2, committed at `e79b226b`, changes the current order to
+`saturation, noise, aurora, iridescence`.
 
 `material-3fcba2` (stacked noise layers) is unaffected in scope: it widens
 the noise node and becomes a change inside the noise optic's two Rust files
@@ -510,13 +528,15 @@ Aurora and Rainbow YAML profile snapshots (`prism-08c1de`). Both focus states
 have independent amounts, drift rate, and colors; bypasses are shared. Amounts
 default to zero. Aurora rate uses whole Hz from 0 to 30, with 0 pinning the field.
 
-The rack follows shader order: `iridescence` (optic, after Tint; mix
-`glass.iridescence`), then `aurora` (optic; mix `glass.aurora`, details
-`glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB`). The sink emits
-the nodes and the manifest binds all focused/unfocused keys and bypasses. The
-existing capability probe renders the actual fragment, so it tests both new
-nodes without a separate probe grammar. Installed niri `7526af1d` accepts the
-probe and both profile fragments.
+The previously landed Prism rack follows its historical external UI order:
+`iridescence` (optic, after Tint; mix `glass.iridescence`), then `aurora`
+(optic; mix `glass.aurora`, details `glass.auroraDriftHz`,
+`glass.auroraColorA`, `glass.auroraColorB`). Task 2's renderer-registry order
+does not change that out-of-scope Prism UI. The sink emits the nodes and the
+manifest binds all focused/unfocused keys and bypasses. The existing capability
+probe renders the actual fragment, so it tests both new nodes without a
+separate probe grammar. Installed niri `7526af1d` accepts the probe and both
+profile fragments.
 
 The starter profiles use section 8's optics in both focus states and explicitly
 set noise to 0 and saturation to 1 to avoid host blur inheritance. They are full

@@ -735,11 +735,6 @@ impl Material {
             }
         }
         let resolved = self.resolve();
-        let ring_fits = resolved
-            .responses
-            .iter()
-            .all(|(_, response)| response.ring_inset + response.ring_width <= bevel);
-
         if resolved
             .responses
             .iter()
@@ -758,22 +753,9 @@ impl Material {
             return Err(String::from("ring-drift-hz must be 0 or at least 1"));
         }
 
-        // Prefer the explicitly configured response error when both it and
-        // the inherited glass offset exceed the bevel.
-        if !self.responses.is_empty() && !ring_fits {
-            return Err(String::from(
-                "ring-inset + ring-width must not exceed bevel",
-            ));
-        }
         if offset_x.abs().max(offset_y.abs()) > bevel {
             return Err(String::from("offset must not exceed bevel"));
         }
-        if !ring_fits {
-            return Err(String::from(
-                "ring-inset + ring-width must not exceed bevel",
-            ));
-        }
-
         Ok(())
     }
 }

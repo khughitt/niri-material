@@ -95,8 +95,15 @@ TOP_EXTRA=
 
 # Cost: three rounds, order rotated.
 gpu_case() {   # $1 case, $2 round
+    local cooldown_name
     case $1 in plain) GLASS_EXTRA= ;; zero) GLASS_EXTRA="aurora 0 { drift-hz 4; }" ;; on) GLASS_EXTRA="aurora 0.5 { drift-hz 4; }" ;; esac
-    trace_run "gpu-$1-$2" "$TICK" 0
+    cooldown_name="gpu-$1-$2"
+    printf '%s %s cooldown start (30s)\n' "$(date --iso-8601=seconds)" "$cooldown_name" \
+        | tee -a "$OUT/cost-cooldown.log" >&2
+    sleep 30
+    printf '%s %s cooldown complete\n' "$(date --iso-8601=seconds)" "$cooldown_name" \
+        | tee -a "$OUT/cost-cooldown.log" >&2
+    trace_run "$cooldown_name" "$TICK" 0
     gpu_median_ns "$OUT/gpu-$1-$2.tracy" >> "$OUT/gpu-$1.medians"
 }
 for c in plain zero on; do gpu_case "$c" 1; done

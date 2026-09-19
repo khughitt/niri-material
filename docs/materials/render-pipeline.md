@@ -88,22 +88,20 @@ runs only where the window is transparent or outside the window.
 | 1 | **Slab geometry** (`slabSurface`). Signed distance to the slab silhouette gives anti-aliased coverage and the structural normal: flat on the face, sloped on the chamfer with run `bevel` and rise `min(bevel, thickness)`. The inner face (chamfer's inner edge) trails the jelly shear and resize. | — | `bevel`, `offset-x`, `offset-y`, `thickness`, window corner radius, `jelly-flex` (through the move and resize residuals) |
 | 2 | **Normal perturbation.** Fractal simplex noise on element position bends the normal; then, while a spring runs, two-octave simplex ripple scaled by jelly activity. | — | `distortion`, `distortion scale=`, `jelly-ripple` |
 | 3 | **Refraction taps** (`tap`). Refract the orthographic ray at the perturbed normal with `ior`, displace by `thickness`, and sample the composed background there, in linear light. Composition per tap: background buffer over the workspace color, over the backdrop buffer over the backdrop color; outside the workspace rect, the backdrop alone. One tap when both smear controls are zero; otherwise up to eight jittered taps, per channel under aberration. | `niri_tex_bg[_high]`, `niri_tex_backdrop[_high]` | `ior`, `thickness`, `backdrop-blur`, `roughness`, `anisotropic-blur`, `chromatic-aberration` |
+| 3a | **Behind: saturation.** Encode the averaged linear sample, apply `mix(luma(encoded), encoded, saturation)`, then decode. Neutral returns before conversion. | — | `saturation`; neutral 1 |
+| 3b | **Behind: noise.** Grain the averaged backdrop once, using the existing sRGB white/fine formulas or Oklab lightness formula, then return linear light. Grain stays screen-seeded; lightness keeps its gamut clamp. | — | `noise`, `noise type=`; neutral 0 |
 | 4 | **Beer-Lambert attenuation.** `attenuation-color ^ (optical distance / attenuation-distance)`, where optical distance is `thickness / cos(structural normal)`, floored at a quarter, so the chamfer tints more than the face. | — | `attenuation-color`, `attenuation-distance`, `thickness` |
-| 5 | **Fresnel glint.** Schlick from `ior` on the structural normal, weighted toward the signal light direction; accent-tinted under `attention "rim-orbit"`. Additive. Then the `iridescence` optic hues the glint from the view angle, before the accent mix. | — | `ior`, `iridescence` (optic `iridescence`; neutral 0), response `attention`, signal accent |
-| 6 | **Emissive: ring of light.** Only inside the bevel mask (`smoothstep(0, 1, inner distance)`, zero on the face). The band's *sampling position* is refracted through the light-path index `1 + (ior - 1) * light-ior` to 60 % of the thickness, capped at half `ring-inset`; the band is a Gaussian at `ring-inset` of width `ring-width` plus a halo, per channel under aberration, times `att ^ 0.2`. Focus glow drifts around the perimeter; accent glow follows signal level and breath. Additive. Then the `aurora` optic adds its colour field, weighted by the same `att ^ 0.2`. | — | `light-ior`, `ring-inset`, `ring-width`, `ring-color`, `ring-drift-hz`, response `focus` / `accent` / `attention`, `aurora`, `aurora drift-hz`, `aurora color` (optic `aurora`; neutral 0) |
+| 5 | **Within: ring and aurora.** The ring and aurora land through the light-path index at the remaining 20 % of thickness, then each contributes `att ^ 0.2`. The ring has no face mask; roughness scatters its Gaussian core and halo with integral conservation. | — | `light-ior`, `roughness`, `ring-inset`, `ring-width`, `ring-color`, `ring-drift-hz`, response `focus` / `accent` / `attention`, `aurora`, `aurora drift-hz`, `aurora color` (optic `aurora`; neutral 0) |
+| 6 | **Fresnel glint.** Schlick from `ior` on the structural normal, weighted toward the signal light direction; accent-tinted under `attention "rim-orbit"`. Additive. Then the `iridescence` optic hues the glint from the view angle, before the accent mix. | — | `ior`, `iridescence` (optic `iridescence`; neutral 0), response `attention`, signal accent |
 | 7 | **Emissive: sweeps.** A diagonal Gaussian sweep per impulse whose response is `sweep`. The other impulse responses act earlier: `ripple` adds to the jelly activity of step 2, `flash` raises aberration and distortion for steps 2 and 3. Additive. | — | response `ping` / `done` / `error` |
-| 8 | **Encode.** `glass = linearToSrgb(transmitted + specular + emissive)`. | — | — |
-| 9 | **Saturation** (optic `saturation`). `mix(luma(glass), glass, saturation)` in sRGB. | — | `saturation`; neutral 1 |
-| 10 | **Noise** (optic `noise`). `white` adds one hash value per screen pixel; `fine` adds high-pass achromatic hash grain; `lightness` applies that fine grain to Oklab L. All operate in the finished sRGB glass color. | — | `noise`, `noise type=`; neutral 0 |
-| 11 | **Coverage.** Multiply by the slab coverage from step 1; the result is premultiplied. | — | — |
-| 12 | **Composite.** `out = win + (1 - win.a) * glass`, then `* niri_alpha` (window-rule opacity, applied exactly once). | — | window-rule `opacity` |
+| 8 | **Encode.** `glass = linearToSrgb(transmitted + within + specular + emissive)`. | — | — |
+| 9 | **Post (film).** Reserved for screen-space effects on encoded glass; currently empty. | — | — |
+| 10 | **Coverage.** Multiply by the slab coverage from step 1; the result is premultiplied. | — | — |
+| 11 | **Composite.** `out = win + (1 - win.a) * glass`, then `* niri_alpha` (window-rule opacity, applied exactly once). | — | window-rule `opacity` |
 
-Steps 2 to 7 all act on or through the *normal* and the *sampled
-background*; they never read window pixels. Steps 9 and 10 act on the
-finished glass color; they never read the background either.
-
-Stages 2, 5, 6, and 9–10 are the four optic hooks `normal`, `specular`,
-`emissive`, and `post`; see `adding-an-optic.md`.
+Stages 2 to 7 operate on the normal, sampled backdrop, or additive light;
+they never read window pixels. The six hook sites are `normal`, `behind`,
+`within`, `specular`, `emissive`, and `post`; see `adding-an-optic.md`.
 
 ## 4. What the order settles
 
@@ -111,20 +109,17 @@ Stages 2, 5, 6, and 9–10 are the four optic hooks `normal`, `specular`,
   glass refracts; `roughness` prefilters that image. Neither is a pass over
   the glass. A frosted look is a refraction of a blurred backdrop, not a
   blur of a refraction.
-- **Noise and saturation are the last color operations.** They apply to the
-  face, the chamfer, the Fresnel glint, and the ring alike, after
-  attenuation and after emissive terms. Grain on the bevel or on the ring
-  is a consequence of step 10's position, not of the noise itself. Moving
-  noise before step 3 (onto the sampled background) would leave the edge
-  optics and the ring clean and make the grain refract with the image;
-  masking it by inner distance would leave the face grainy and the bevel
-  clean.
-- **The ring is emissive, not refracted content.** Only where the band is
-  *looked up* is refracted (step 6); its light is added after attenuation
-  and is confined to the bevel by the mask. To read as embedded in the
-  glass it would have to be sampled as part of the background in step 3, or
-  the mask and landing depth (a constant 0.6 of thickness) would have to
-  change. Today it competes with the chamfer because it lives only there.
+- **Noise and saturation belong to the transmitted backdrop.** They run
+  once after the averaged taps and before attenuation. The chamfer can still
+  transmit grain, attenuated more strongly than on the face. Glint, ring,
+  aurora and sweeps are added afterward, so their light is not grained or
+  desaturated. Grain remains screen-seeded; it does not refract with the image.
+  No bevel mask is applied to noise. Neutral hooks return before conversion;
+  signed white/fine grain retains the transfer helpers' signed linear branch.
+- **Interior light is evaluated within the slab.** Ring and aurora use the
+  perturbed normal at refracted landing points, a fixed remaining path of
+  `0.2 * thickness`, and one `att ^ 0.2` factor. The ring may show through
+  translucent face pixels; opaque pixels still bypass the shader.
 - **Distortion and ripple never reach the window.** They perturb the normal
   before the taps, so a flat opaque terminal shows them only through its
   transparency and in the slab band outside it.
@@ -148,17 +143,17 @@ Stages 2, 5, 6, and 9–10 are the four optic hooks `normal`, `specular`,
 | `distortion`, `scale=` | `glass.distortion`, `glass.distortionScale` | 2 |
 | `ior` | `glass.ior` | 3, 5, 6 |
 | `backdrop-blur` | `glass.backdropBlur` | source selection before 3 |
-| `roughness` | `glass.roughness` | source selection before 3 |
+| `roughness` | `glass.roughness` | source selection before 3; 5 scattering |
 | `anisotropic-blur` | `glass.anisotropicBlur` | 3 |
-| `chromatic-aberration` | `glass.chromaticAberration` | 3, 6 |
-| `iridescence` | `glass.iridescence` | 5 |
-| `aurora`, `drift-hz`, `color` × 2 | `glass.aurora`, `glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB` | 6 |
+| `chromatic-aberration` | `glass.chromaticAberration` | 3, 5 |
+| `iridescence` | `glass.iridescence` | 6 |
+| `aurora`, `drift-hz`, `color` × 2 | `glass.aurora`, `glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB` | 5 |
 | `attenuation-color` | `glass.attenuationColor` | 4 |
 | `attenuation-distance` | `glass.attenuationDistance` | 4 |
-| `light-ior` | (pending, prism-0ea68f) | 6 |
-| `ring-inset`, `ring-width`, `ring-color`, `ring-drift-hz` | (pending, prism-28e29c) | 6 |
-| `saturation` | `glass.saturation` | 9 |
-| `noise` `type=` | `glass.noise`; `type=` (pending, prism-51f23b) | 10 |
+| `light-ior` | (pending, prism-0ea68f) | 5 |
+| `ring-inset`, `ring-width`, `ring-color`, `ring-drift-hz` | (pending, prism-28e29c) | 5 |
+| `saturation` | `glass.saturation` | 3a |
+| `noise` `type=` | `glass.noise`; `type=` (pending, prism-51f23b) | 3b |
 
 Prism's `glass.inactive.*` keys write the same native parameters into the
 unfocused material definition; `glass.focusSplit` decides whether that
@@ -173,7 +168,8 @@ second definition exists.
 - `2026-09-01-material-roughness-design.md`: the prefilter pyramids.
 - `../specs/2026-09-02-material-noise-saturation-design.md` and
   `../specs/2026-09-05-material-glass-noise-saturation-params-design.md`:
-  the position of steps 9 and 10 and the inherit rule.
-- `../specs/2026-09-05-ring-light-focus-response-design.md`: step 6.
+  the original post placement and the unchanged inherit rule. Current behind
+  placement: `../specs/2026-09-12-material-render-order-design.md`.
+- `../specs/2026-09-05-ring-light-focus-response-design.md`: step 5.
 - `2026-09-02-material-signals-design.md`: the signal inputs to steps 5
   to 7.

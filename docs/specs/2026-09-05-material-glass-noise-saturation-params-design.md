@@ -10,6 +10,13 @@ acceptance PASS 2026-09-05.
 
 **Task:** `material-1293e8`
 
+**Render-order update:** [Task 1](2026-09-12-material-render-order-design.md)
+committed the superseding placement at `e33aa968`: saturation/noise now
+transform the averaged backdrop before attenuation. Its pixel, signal, and
+strict-cost acceptance passed. Parameters, inheritance and grain formulas are
+preserved; historical evidence here was collected with the old order. Task 2
+then committed the completed `within` placement at `e79b226b`.
+
 ## Context
 
 Native commit `7c702e58` composes `noise` and `saturation` in `material.frag`

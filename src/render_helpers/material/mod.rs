@@ -117,6 +117,10 @@ fn tap_count(anisotropic_blur: f64, chromatic_aberration: f64) -> u8 {
     (8. * strength).ceil().clamp(2., 8.) as u8
 }
 
+fn scatter(roughness: f64, ior: f64) -> f32 {
+    (roughness * (ior * 2. - 2.).clamp(0., 1.)) as f32
+}
+
 /// Glass-specific interpretation of a `SignalFrame` (design §6). The one
 /// place glass selectors are read.
 #[derive(Debug, Clone, PartialEq)]
@@ -842,6 +846,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_bg_prefilter_mix", bg_texture.mix),
             Uniform::new("mat_backdrop_prefilter_mix", backdrop_texture.mix),
             Uniform::new("mat_ior", g.ior as f32),
+            Uniform::new("mat_scatter", scatter(g.roughness, g.ior)),
             Uniform::new("mat_thickness", g.thickness as f32),
             Uniform::new(
                 "mat_attenuation_color",
@@ -955,6 +960,12 @@ mod tests {
 
     use super::*;
     use crate::render_helpers::RenderTarget;
+
+    #[test]
+    fn scatter_matches_prefilter_selection() {
+        assert_eq!(scatter(0.5, 1.5), 0.5);
+        assert_eq!(scatter(0.5, 1.0), 0.0);
+    }
 
     fn render_config(name: &str) -> MaterialRenderConfig {
         MaterialRenderConfig {
