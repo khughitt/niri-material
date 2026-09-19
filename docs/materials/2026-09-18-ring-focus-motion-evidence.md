@@ -1,12 +1,12 @@
 # Bounded focus and attention ring motion: execution evidence
 
-**Status:** implemented on `material-82323e` through `4aad1587` (Task 1
-`c0b2e151`, Task 2 `6504197d`, Task 3 `6f5f4f27`, fixtures `f2ffe8b3`);
-every redraw-count case of the signals smoke passed on 2026-09-19 under the
-binary built from `4aad1587`. The four review clips are not yet recorded:
-both clip runs were refused by the capture preflight on host load (below).
-The sweep duration (`ring-sweep-ms 1500`) awaits those clips and the
-owner's review; this record does not grade them.
+**Status:** implemented on `material-82323e` (Task 1 `c0b2e151`, Task 2
+`6504197d`, Task 3 `6f5f4f27`, fixtures `f2ffe8b3`); every redraw-count case
+of the signals smoke passed on 2026-09-19 under the binary built from
+`4aad1587`, and the four review clips were recorded the same day under the
+release binary built from `079ed613` (below). The sweep duration
+(`ring-sweep-ms 1500`) awaits the owner's reading of those clips; this
+record does not grade it.
 
 **Design:** [2026-09-18-ring-focus-motion-design.md](../specs/2026-09-18-ring-focus-motion-design.md).
 **Plan:** `docs/plans/2026-09-18-ring-focus-motion.md`. **Task:**
@@ -82,46 +82,76 @@ Reading the two new gated cases:
 
 No case was skipped.
 
-## Review clips: preflight refused, 2026-09-19
+## Review clips, 2026-09-19
 
 `docs/materials/scripts/ring-motion-clips.sh` records the four sequences of
 the design's §7 under the capture protocol (`tools/capture-meta` preflight,
-identity, settle per launch, release), from a release build on `sweep.kdl`
-(`ring-sweep-ms 1500`, `focus-ring { off }`, gaps 24) and `idle-5s.kdl`
-(`idle-after-ms 5000`): `gain-from-rest`, `alt-tab-three`, `loss-mid-lap`,
-`idle-freeze-resume`. Each clip is a burst of full-frame screenshots as fast
-as the async screenshot path allows, with every frame's request instant in
-`frames.txt` and a `.gif` and `-sheet.png` for review.
-
-Two launches, unchanged thresholds, both **refused** at preflight before any
-capture; the lock was released each time and nothing was recorded:
-
-| Artifact under `$NIRI_MATERIAL_WORK_ROOT/ring-motion-clips-4aad1587` | Start, local time | CPU | Load | P-states | Power IQR |
-| --- | --- | --- | --- | --- | --- |
-| `ring-clips-1242643-1789816273` | 2026-09-19 07:11:13 | 11.3% | 5.43 | P0/P5/P8 | 5.11 W |
-| `ring-clips-1284851-1789816649` | 2026-09-19 07:17:29 | — | 6.65 | P5/P8 | 8.265 W |
-
-SHA-256 of each retained `capture.json`, in table order:
-
-```text
-16ac8118c4192d05c0060e17dd9fe43dbf2cf209d02b661fec6172ac76b4fd99
-ab1843e134417dffa9d7a637be5f4bca23925f51c756904f446e4b3ea53addf8
-```
-
-The first refusal followed the 25-minute smoke directly; the second came
-after a five-minute wait during which the load average rose to 7.87 with the
-GPU at P0, so the load is the desktop in use (graphics clients: Xwayland,
-firefox, kitty, niri, noctalia, qs), not the smoke's tail. The redraw
-counts above are not affected: the signals smoke does not preflight and its
-counts are zone counts, not timings. The clip step is parked as quiet work;
-its rerun is
+identity, settle before every launch, release), from a release build on
+`sweep.kdl` (`ring-sweep-ms 1500`, `focus-ring { off }`, gaps 24, startup
+hotkey overlay skipped) and `idle-5s.kdl` (the same with
+`idle-after-ms 5000`). Each clip is a burst of full-frame screenshots as
+fast as the async screenshot path allows (about 10/s here), every frame's
+request instant in `frames.txt`, with a `.gif` and a `-sheet.png` for
+review. Command, from `.worktrees/material-82323e`:
 
 ```bash
 CAPTURE_TASK=material-ee451d NIRI_MATERIAL_WORK_ROOT=$NIRI_MATERIAL_WORK_ROOT \
     docs/materials/scripts/ring-motion-clips.sh
 ```
 
-and lands its clip directories and `capture.json` here when it runs. The
-clips are for the owner's judgment of the 1500 ms starting value and the
-ease-out; `material-9306b5` tunes the ring's appearance against the settled
-pattern the lap lands on.
+The recorded run is `$NIRI_MATERIAL_WORK_ROOT/ring-motion-clips-079ed613/ring-clips-3278563-1789856906`
+(host `titan`, headless lane, started 2026-09-19 18:28:26 local; exit 0).
+Release binary SHA-256
+`0ef259b34eac9eecc7a08013429d95a36718c26d38b835838caeeacd19e34c02`.
+Preflight `quiet`: load1 0.64, CPU 1.1 %, GPU P8 throughout, power IQR
+0.12 W. Every settle `settled` with the GPU at P8 for all ten samples. The
+nested `niri.log` holds only the per-frame "error showing screenshot
+notification" warning (no notification service in the nested session).
+
+| Clip | Sequence (design §7) | Frames | Span | Settle CPU / power IQR |
+| --- | --- | --- | --- | --- |
+| `gain-from-rest` | focus moves to a window at rest: one lap, then rest | 25 | 2.5 s | 1.0 % / 0.305 W |
+| `alt-tab-three` | three focus changes 0.4 s apart: each gain starts from rest or is skipped mid-lap | 39 | 4 s | 1.3 % / 0.357 W |
+| `loss-mid-lap` | focus leaves 0.5 s into a lap: the lap runs out on the unfocused window | 24 | 2.5 s | 1.1 % / 0.09 W |
+| `idle-freeze` | `idle-after-ms 5000`, a pulsing window, no input: attention frozen | 30 | 3 s | 1.1 % / 0.418 W |
+| `idle-resume` | one `wlrctl pointer move 1 0` inside the instance: attention resumes | 30 | 3 s | (same settle) |
+
+SHA-256 of `capture.json` and the review gifs:
+
+```text
+ebdeb4a66f95b962508f7902af0741502ecd6795c2699ce65928a4915a767f57  capture.json
+f1a6283ba5eeddcf23f6fa8ed5013612e540e09ad5a6106b968456b4177ad7cc  gain-from-rest.gif
+9e208c28315ee3c653566b1e166e4042698df332cfa4522f63ce0a7b9f71c4c3  alt-tab-three.gif
+1c51f746e3a12f53c00d86c7d0735cac5007461251e26306c1b5d384e071387c  loss-mid-lap.gif
+1227c98a10a39cc52afbe5a5aa9630d9ba80e00f4179441c3a519cb02fb671db  idle-freeze.gif
+ef196d53495beb671d89ac2a1efdaea4442275976af399ba105e34307e2255c2  idle-resume.gif
+```
+
+The clips are for the owner's judgment of the 1500 ms starting value and
+the ease-out; `material-9306b5` tunes the ring's appearance against the
+settled pattern the lap lands on.
+
+### Runs before the recorded one
+
+Preflight refused twice on 2026-09-19 morning on desktop load
+(`ring-motion-clips-4aad1587/ring-clips-1242643-1789816273`, load1 5.43,
+GPU P0/P5/P8, power IQR 5.11 W; `…/ring-clips-1284851-1789816649`, load1
+6.65, IQR 8.265 W) and once in the evening at load1 2.12 against the 2.0
+limit (`ring-motion-clips-079ed613/ring-clips-3254819-1789855169`), where
+the whole load was one orphaned test process from another project; it was
+stopped by hand and the sweep for such leftovers is filed as `ops-38be00`.
+
+Two fixture defects surfaced on the first recording runs and are fixed in
+the script that produced the recorded run:
+
+- the nested niri showed its startup hotkey overlay over the middle of every
+  frame (`ring-clips-3258158-1789855913`, `…-3267144-1789856387`,
+  `…-3270108-1789856468` hold complete but obscured clips); the fixture now
+  sets `hotkey-overlay { skip-at-startup; }`;
+- Weston's GL renderer holds the GPU at P0, and after its unit stops the
+  GPU steps down through P5 to P8 over about two seconds, so the next
+  sequence's settle saw a P5 sample and refused (`…-3273560-1789856628`,
+  and the third settle of the runs above); `stop_nested` now waits for the
+  step-down before returning.
+
+Each refused run released its lock and recorded nothing past the refusal.

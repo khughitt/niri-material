@@ -1,6 +1,6 @@
 # Bounded focus and attention ring motion: design
 
-**Status:** implemented on `material-82323e` (`c0b2e151`, `6504197d`, `6f5f4f27`); redraw-count evidence in [2026-09-18-ring-focus-motion-evidence.md](../materials/2026-09-18-ring-focus-motion-evidence.md), every case passing; the four review clips await a quiet host, and the sweep duration awaits the owner's clip review (`material-9306b5` tunes appearance).
+**Status:** implemented on `material-82323e` (`c0b2e151`, `6504197d`, `6f5f4f27`); evidence in [2026-09-18-ring-focus-motion-evidence.md](../materials/2026-09-18-ring-focus-motion-evidence.md): every redraw-count case passing and the four review clips of §7 recorded on 2026-09-19. The sweep duration awaits the owner's clip review (`material-9306b5` tunes appearance).
 
 **Task:** `material-82323e`, piece of `material-a76720`. Wakes
 `material-0e130e` (implementation) and `material-743692` (Prism contract).
