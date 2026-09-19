@@ -62,9 +62,11 @@ Settled with the owner during design:
   nondeterministic.
 - **`ring-drift-hz` is retired; `ring-sweep-ms` replaces it; the sweep runs on
   the animation loop.** The crossfade already redraws every frame on focus
-  gain for about the same window, so the lap rides that path with no bucket
-  timers and no deadline arm. A stale `ring-drift-hz` is a parse error naming
-  the replacement, never a silent reinterpretation. Keeping the Hz as a bucket
+  gain (400 ms by default, the `material-signal` easing); the lap rides the
+  same path and extends that per-frame window to its own duration, 1500 ms by
+  default, once per focus gain and then never. No bucket timers and no
+  deadline arm. A stale `ring-drift-hz` is a parse error naming the
+  replacement, never a silent reinterpretation. Keeping the Hz as a bucket
   rate or as an opt-in perpetual mode was rejected: the first is visibly
   steppy over a short lap, the second leaves every existing Prism profile on
   perpetual redraw.
@@ -75,14 +77,23 @@ Settled with the owner during design:
 ## 1. The focus sweep
 
 **Phase.** `signal::sweep_phase(started, now, duration) -> f32` is pure:
-with `t = now − started`, the phase is `2π · ease(t / duration)` for
-`t < duration` and `0` otherwise, where `ease(x) = 1 − (1 − x)³`. `travel` is
-2π-periodic in its phase, so the lap's end (`2π`) and rest (`0`) are the same
-pattern. The per-window seed does not enter: the settled pattern is phase 0
-for every window today (`phase_on` returns 0 at rate 0) and stays so.
+with `t = now.saturating_sub(started)`, the phase is `2π · ease(t / duration)`
+for `t < duration` and `0` otherwise, where `ease(x) = 1 − (1 − x)³`. The
+phase approaches `2π` as `t` approaches `duration` and is `0` from `duration`
+on; `travel` is 2π-periodic in its phase, so the lap's end and rest are the
+same pattern. The subtraction saturates because `Niri::redraw` sets the
+unadjusted clock to the predicted presentation time and `clear()` re-fetches
+real time on the next iteration, so a sweep started during a redraw can be
+sampled at a `now` before its `started`; that sample is `t = 0`, phase `0`,
+which is rest, so nothing jumps. `Animation::value_at` makes the same choice.
+The per-window seed does not enter: the settled pattern is phase 0 for every
+window today (`phase_on` returns 0 at rate 0) and stays so.
 
-**State.** `Tile` gains `focus_sweep: Option<Duration>`, the start instant on
-the unadjusted clock, and loses `focus_drift_hz`. `FrameInputs.drift_hz`
+**State.** `Tile` gains `focus_sweep: Option<FocusSweep>` with
+`started: Duration` (unadjusted clock) and `duration: Duration`, and loses
+`focus_drift_hz`. The duration is snapshotted from the response when the
+sweep starts, so a config reload that changes `ring-sweep-ms` mid-lap does
+not move the phase; the new value applies to the next lap. `FrameInputs.drift_hz`
 becomes `FrameInputs.sweep: f32` (the phase, computed by the tile);
 `SignalFrame.drift` becomes `SignalFrame.sweep` and still lands in
 `mat_sig_focus.y`. `solve` no longer computes a phase. The fingerprint's
@@ -92,9 +103,17 @@ every frame during the lap and is constant at rest.
 **Start rule.** In `Tile::update_render_elements`, when `is_active` turns on
 for a tile whose response has `focus ring-light`, `ring-sweep-ms > 0`, the
 policy is `full` and animations are on, and `focus_sweep` is `None` or
-finished (`now ≥ started + duration`), set `focus_sweep = Some(now)`. Any
-other transition leaves it alone. A finished sweep is cleared in
-`advance_animations` like a finished crossfade.
+finished (`now ≥ started + duration`), set `focus_sweep` with `started = now`
+and the response's duration. Any other transition leaves it alone. A finished
+sweep is cleared in `advance_animations` like a finished crossfade.
+
+**Cut rule.** A lap in progress is cut to rest (`focus_sweep = None`) when
+the sweep is no longer permitted: the policy becomes `reduced` or `off`,
+`animations { off }` is set, or the response no longer has `focus ring-light`.
+The cut happens where the tile absorbs the config change (`refresh_material`
+and the options update), not in the start rule. The phase jumps to 0, which
+is what niri's `animations { off }` does to every other animation, and it is
+the policy the user just asked for.
 
 **Redraw.** `are_transitions_ongoing` reports an unfinished sweep under the
 existing `signal_render_visible` guard, exactly as the focus crossfade is
@@ -131,6 +150,11 @@ gate is evidence rather than assumption.
 **Activity.** `Niri` gains `last_activity: Duration`, `input_idle: bool`, and
 `idle_timer: Option<RegistrationToken>`.
 
+- `Niri::new` initializes `last_activity` to the current monotonic time,
+  `input_idle` to false, and arms the timer when the threshold is nonzero, so
+  a compositor that receives no input after startup goes idle at the
+  threshold like any other quiet period. Without this, a window set to
+  breathe at login would animate until the first keypress.
 - `notify_activity` records `last_activity`. If `input_idle` was set it clears
   it and calls `queue_redraw_all`, so every output redraws once and re-arms
   its attention timers from the absolute clock. If no idle timer is armed and
@@ -206,8 +230,35 @@ Under this design:
 - `idle-after-ms` is not a Prism control: Prism does not own the `signal`
   block. Placement (`ring-inset`, `ring-width`) stays in `prism-d8ee06`;
   `light-ior` stays in `prism-0ea68f`.
-- The native build must be installed before the new Prism output is applied
-  live, as `prism-0ea68f` already records.
+
+**Rollout.** The two sides reject each other's config: the old compositor
+rejects `ring-sweep-ms`, the new one rejects `ring-drift-hz`. Prism's `apply`
+validates with the *installed* binary (`niri validate`) and reloads the
+*running* one (`niri msg action load-config-file`), so installing the new
+build alone leaves a running compositor that cannot take the new output, and
+restarting alone brings up a compositor that cannot take the old file. The
+sequence, in this order:
+
+1. Install the new niri build. The running compositor is untouched;
+   `niri validate` now speaks the new contract.
+2. Update Prism and apply. Validation passes against the installed binary and
+   the file is written. The reload request succeeds as a request, but the
+   running (old) compositor rejects the file, keeps its in-memory config, and
+   shows its reload-error notification. From here until step 3 the file on
+   disk is ahead of the running compositor and every further apply reports
+   the same; this is expected and bounded to the restart.
+3. Restart the compositor (log out and in). The new build loads the new file.
+
+Soft failure: a new build restarted on an unmigrated file does not crash. It
+runs on the default config with the error notification (`main.rs`
+`config_errored`), so no material renders until step 2 is done; running
+step 2 then recovers the running compositor through its reload, with no
+second restart.
+
+Rollback: reinstall the previous build and the previous Prism, apply (the
+old sink emits `ring-drift-hz`; the running new compositor rejects it and
+holds its config, as in step 2), and restart. The pair must move together
+in both directions; there is no version that accepts both keys, by decision.
 
 ## 6. Ownership and data flow
 
@@ -216,27 +267,35 @@ Under this design:
 - `src/render_helpers/signal.rs`: `sweep_phase`; `effective` takes
   `input_active`; `tick_deadline` loses its drift arm; `FrameInputs` and
   `SignalFrame` rename the phase field.
-- `src/layout/tile.rs`: `focus_sweep` start, phase, clearing, and the
+- `src/layout/tile.rs`: `focus_sweep` start, cut, phase, clearing, and the
   transition report; `signal_for_frame` computes the phase.
 - `src/layout/*.rs`: thread `input_active` beside `is_active`.
-- `src/niri.rs`: activity timestamp, idle timer, `set_input_active`.
+- `src/niri.rs`: activity timestamp and idle timer, initialized in
+  `Niri::new`; `set_input_active`.
 - `main.frag`: unchanged; the phase still arrives in `mat_sig_focus.y`.
 
 ## 7. Verification
 
 Deterministic, in `just test`:
 
-- `sweep_phase`: 0 at start, monotonic, `2π` at `duration`, `0` after;
-  `travel(a, 2π) == travel(a, 0)` for sampled angles.
+- `sweep_phase`: 0 at start, monotonic on `[0, duration)`, within `1e-3` of
+  `2π` one nanosecond before `duration`, exactly `0` at and after `duration`,
+  and `0` for `now < started` (the saturating case). `travel(a, φ)` within
+  `1e-5` of `travel(a, φ + 2π)` for sampled angles and phases.
 - Start rule: gain from rest starts; gain mid-lap does not restart; loss does
   not start; `ring-sweep-ms 0`, `reduced`, `off`, and `animations off` never
-  start.
+  start. The started sweep carries the response's duration at that moment:
+  changing `ring-sweep-ms` mid-lap leaves the phase where it was.
+- Cut rule: a policy change to `reduced` or `off`, `animations off`, or a
+  response without `focus ring-light` mid-lap clears the sweep and the next
+  frame reads phase 0.
 - Settled focus (§2): no deadline, constant fingerprint, no transition.
 - `effective` with `input_active = false`: motion `Static`, level and accent
   and impulses unchanged.
 - Idle timer: activity inside the threshold re-arms without flipping; past
   the threshold flips and queues one redraw; activity clears and queues one
-  redraw; threshold `0` never flips. The timer logic is a pure function of
+  redraw; threshold `0` never flips; a fresh `Niri` with no input flips at
+  the threshold. The timer logic is a pure function of
   `(last_activity, now, threshold)` so it is testable without an event loop.
 - Config: both new fields parse, default, bound, and inherit; `ring-drift-hz`
   errors with the replacement message.
@@ -272,6 +331,8 @@ ease from these; `1500` is the starting value, not a finding.
 - `2026-09-05-ring-light-focus-response-design.md` status header: drift
   superseded by this design.
 - The smoke scripts that pass `ring-drift-hz` in fixture configs.
+- The rollout sequence and rollback (§5) beside the package-pin rollout
+  notes, so the next install follows it.
 
 ## 9. Decomposition
 
@@ -289,7 +350,7 @@ are reviewed. The plan's steps, in order:
 
 Prism: one task under `material-743692`'s coordination replacing `driftHz`
 with `sweepMs` and migrating profiles (§5), dependent on step 1 landing and
-the native build being installed. `material-743692` itself closes when that
+following the §5 rollout order when applied live. `material-743692` itself closes when that
 task and `prism-d8ee06` have landed and validated against both materials.
 
 ## Alternatives rejected
