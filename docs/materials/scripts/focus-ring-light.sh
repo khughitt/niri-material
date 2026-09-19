@@ -10,7 +10,7 @@
 # "none"; }`), so refraction, attenuation, Fresnel, and jelly are identical in
 # both and only the filament differs. Rest scenes are deterministic, so the
 # disabled render is taken at rest in its own nested instance, and every case
-# pins `ring-drift-hz 0` so the clock never enters a comparison.
+# pins `ring-sweep-ms 0` so the clock never enters a comparison.
 #
 # Cases:
 #   baseline          the spike's stills and bursts (static gradient ring)
@@ -140,9 +140,9 @@ assert_rest_glass() { # $1 = written config; measurement scenes are unscattered
     n=$(sed 's/^ *//' "$1" | grep -cxF 'roughness 0' || true)
     [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 lines of 'roughness 0', found $n" >&2; exit 1; }
 }
-assert_pinned_response() { # $1 = written config, $2 = expected drift hz
+assert_pinned_response() { # $1 = written config, $2 = expected sweep ms
     local k n
-    for k in 'ring-color "#ccccff"' "ring-inset $RING_INSET" "ring-width $RING_WIDTH" "ring-drift-hz $2;"; do
+    for k in 'ring-color "#ccccff"' "ring-inset $RING_INSET" "ring-width $RING_WIDTH" "ring-sweep-ms $2;"; do
         n=$(grep -cF "$k" "$1" || true)
         [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 response bodies containing '$k', found $n" >&2; exit 1; }
     done
@@ -177,11 +177,11 @@ write_baseline_config() {   # $1 = path
 # The measurement config: no gradient ring, the measurable glass, and the
 # case's response on both materials.
 write_capture_config() {   # $1 = path, $2 = response body, $3 = animations body
-    local drift=0
+    local sweep=0
     case $2 in
-        *'ring-drift-hz 0;'*) ;;
-        *'ring-drift-hz 1;'*) drift=1 ;;
-        *) echo "FAIL: response must pin ring-drift-hz to 0 or 1" >&2; exit 1 ;;
+        *'ring-sweep-ms 0;'*) ;;
+        *'ring-sweep-ms 10000;'*) sweep=10000 ;;
+        *) echo "FAIL: response must set ring-sweep-ms to 0 or 10000" >&2; exit 1 ;;
     esac
     {
         layout_block 'focus-ring { off; }'
@@ -189,10 +189,10 @@ write_capture_config() {   # $1 = path, $2 = response body, $3 = animations body
         with_response "$MEAS_ACTIVE" "$2"
         with_response "$MEAS_INACTIVE" "$2"
     } > "$1"
-    assert_rest_glass "$1"; assert_pinned_response "$1" "$drift"; validate "$1"
+    assert_rest_glass "$1"; assert_pinned_response "$1" "$sweep"; validate "$1"
 }
-RESP_ON='ring-drift-hz 0;'
-RESP_OFF='focus "none"; accent "none"; ring-drift-hz 0;'
+RESP_ON='ring-sweep-ms 0;'
+RESP_OFF='focus "none"; accent "none"; ring-sweep-ms 0;'
 
 start_nested() {   # $1 = slot, $2 = config
     local slot=$1 cfg=$2 host unit
@@ -252,7 +252,7 @@ wait_geometry() {   # $1 = window id: the layout is final within ten seconds or 
 }
 # Two windows over the split glass with the right one focused: the scene every
 # measured case renders. Prints the focused window's id. Rest is a separate
-# step: the baseline case runs the drifting default and never comes to rest.
+# step: the baseline case runs the default focus sweep before coming to rest.
 open_scene() {
     spawn_kitty left;  wait_kitty 1
     spawn_kitty right; wait_kitty 2
@@ -476,7 +476,10 @@ case_ring_motion() {
         if [ "$label" = pinned ]; then
             on=$RESP_ON; off=$RESP_OFF
         else
-            on='ring-drift-hz 1;'; off='focus "none"; accent "none"; ring-drift-hz 1;'
+            # The longest lap, so the bursts a few seconds after focus land
+            # inside it: the sweep runs on the unadjusted clock, so
+            # `slowdown` does not stretch it.
+            on='ring-sweep-ms 10000;'; off='focus "none"; accent "none"; ring-sweep-ms 10000;'
         fi
         write_capture_config "$WORK/ring-motion-$label-on.kdl" "$on" 'slowdown 6.0;'
         write_capture_config "$WORK/ring-motion-$label-off.kdl" "$off" 'slowdown 6.0;'
@@ -497,7 +500,7 @@ case_selectors() {
     require_off
     local name resp right e
     while read -r name resp; do
-        write_capture_config "$WORK/sel-$name.kdl" "$resp ring-drift-hz 0;" 'slowdown 6.0;'
+        write_capture_config "$WORK/sel-$name.kdl" "$resp ring-sweep-ms 0;" 'slowdown 6.0;'
         start_nested 1 "$WORK/sel-$name.kdl"
         right=$(open_scene); settle
         msg set-window-signal --id "$right" --source demo --accent '#ff0000'

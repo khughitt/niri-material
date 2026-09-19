@@ -41,6 +41,8 @@ struct TestWindowInner {
     animate_next_configure: Cell<bool>,
     animation_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
     rules: ResolvedWindowRules,
+    /// The folded signal `LayoutElement::signal` reports; set by tile tests.
+    signal: RefCell<Option<crate::window::signal::Folded>>,
 }
 
 #[derive(Debug, Clone)]
@@ -93,7 +95,12 @@ impl TestWindow {
             animate_next_configure: Cell::new(false),
             animation_snapshot: RefCell::new(None),
             rules: params.rules.unwrap_or_default(),
+            signal: RefCell::new(None),
         }))
+    }
+
+    pub(crate) fn set_signal(&self, signal: Option<crate::window::signal::Folded>) {
+        *self.0.signal.borrow_mut() = signal;
     }
 
     fn communicate(&self) -> bool {
@@ -284,7 +291,7 @@ impl LayoutElement for TestWindow {
     }
 
     fn signal(&self, _now: Duration) -> Option<crate::window::signal::Folded> {
-        None
+        self.0.signal.borrow().clone()
     }
 }
 

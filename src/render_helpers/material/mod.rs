@@ -272,7 +272,7 @@ pub struct SignalUniforms {
     pub impulse_resp: [i32; 4],
     pub response: [i32; 3],
     pub ring: [f32; 2],
-    /// Crossfaded focus and bucketed drift phase.
+    /// Crossfaded focus and sweep phase.
     pub focus: [f32; 2],
     /// Filament base color, linear RGB.
     pub ring_color: [f32; 3],
@@ -346,7 +346,7 @@ impl SignalUniforms {
                 response.focus as i32,
             ],
             ring: [response.ring_inset as f32, response.ring_width as f32],
-            focus: [frame.focus, frame.drift],
+            focus: [frame.focus, frame.sweep],
             ring_color: color_linear(response.ring_color),
         }
     }
@@ -1603,7 +1603,7 @@ mod tests {
             impulses: Default::default(),
             presence: 0.,
             focus: 0.,
-            drift: 0.,
+            sweep: 0.,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Ripple as u8,
@@ -1660,7 +1660,7 @@ mod tests {
             impulses: Default::default(),
             presence: 1.,
             focus: 0.,
-            drift: 0.,
+            sweep: 0.,
         };
         let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
         let mut r = ResolvedResponse::default();
@@ -1688,7 +1688,7 @@ mod tests {
             impulses: Default::default(),
             presence: 0.,
             focus: 0.,
-            drift: 0.,
+            sweep: 0.,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Sweep as u8,
@@ -1808,7 +1808,7 @@ mod tests {
     }
 
     #[test]
-    fn signal_uniforms_carry_presence_focus_drift_and_selectors() {
+    fn signal_uniforms_carry_presence_focus_sweep_and_selectors() {
         use crate::render_helpers::signal::{color_linear, SignalFrame};
         use niri_config::{FocusResponse, ResolvedResponse};
 
@@ -1826,7 +1826,7 @@ mod tests {
             impulses: Default::default(),
             presence: 0.25,
             focus: 0.75,
-            drift: 1.5,
+            sweep: 1.5,
         };
         let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
         let u = SignalUniforms::from_frame(&frame, &g, &r);
@@ -1868,7 +1868,7 @@ mod tests {
             impulses: Default::default(),
             presence: 0.5,
             focus: 0.,
-            drift: 0.,
+            sweep: 0.,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Sweep as u8,

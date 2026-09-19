@@ -90,7 +90,7 @@ material "gns-probe" {
     response "default" {
         focus "none"
         accent "none"
-        ring-drift-hz 0
+        ring-sweep-ms 0
     }
 }
 window-rule {

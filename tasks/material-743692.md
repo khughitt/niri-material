@@ -7,8 +7,8 @@ size: s
 complexity: mid
 process: planned
 created: 2026-09-02T12:09:35Z
-updated: 2026-09-19T00:50:09Z
-depends: [material-82323e]
+updated: 2026-09-19T02:49:37Z
+depends: [material-82323e, prism-eff23a]
 parent: material-a76720
 tags: [signals, prism]
 ---
@@ -20,3 +20,4 @@ Scope refinement (2026-09-18): this original source mixes already-shipped contro
 ## Notes
 
 - 2026-09-19T00:26:26Z (materials-26.04): scope: briefed; separated visual placement, native motion design and existing/new Prism wiring; brief: docs/notes/2026-09-18-ring-next-steps-brief.md
+- 2026-09-19T02:49:26Z (material-82323e): Finding from material-82323e: Prism's contract is spec §5 — glass.ring.driftHz becomes glass.ring.sweepMs (0-10000, default 1500) via a 'replaces:' declaration; 'prism migrate' rewrites base and every profile/wallpaper context (0->0, positive->1500, an existing sweepMs kept) with a backup and report; doctor names the command; rollout is install build, migrate+apply, restart, with rollback restoring the backup first. idle-after-ms stays native. Oscillator/impulse constants remain unexposed.

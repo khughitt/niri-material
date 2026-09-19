@@ -7,8 +7,8 @@ size: m
 complexity: high
 process: planned
 created: 2026-09-19T00:25:37Z
-updated: 2026-09-19T00:56:02Z
-depends: [prism-d8ee06, prism-0ea68f, prism-71b7d1, material-0e130e, material-9306b5]
+updated: 2026-09-19T02:49:37Z
+depends: [prism-d8ee06, prism-0ea68f, prism-71b7d1, material-0e130e, material-9306b5, prism-eff23a]
 tags: [ring, prism]
 source: docs/notes/2026-09-18-ring-next-steps-brief.md
 agent: codex

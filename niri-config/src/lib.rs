@@ -219,7 +219,13 @@ where
                 "config-notification" => m_merge!(config_notification),
                 "animations" => m_merge!(animations),
                 "blur" => m_merge!(blur),
-                "signal" => m_merge!(signal),
+                "signal" => {
+                    let part = SignalPart::decode_node(node, ctx)?;
+                    if let Err(message) = part.validate() {
+                        ctx.emit_error(DecodeError::unexpected(node, "signal", message));
+                    }
+                    config.borrow_mut().signal.merge_with(&part);
+                }
                 "gestures" => m_merge!(gestures),
                 "overview" => m_merge!(overview),
                 "xwayland-satellite" => m_merge!(xwayland_satellite),
@@ -714,6 +720,8 @@ impl ConfigPath {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use insta::{assert_debug_snapshot, assert_snapshot};
     use pretty_assertions::assert_eq;
 
@@ -921,9 +929,9 @@ mod tests {
                 response "default" {
                     focus "none"
                     ring-color "#ff8800"
-                    ring-drift-hz 20
+                    ring-sweep-ms 2000
                 }
-                response "still" { ring-drift-hz 0; }
+                response "still" { ring-sweep-ms 0; }
             }
             "##,
         )])
@@ -936,14 +944,14 @@ mod tests {
             d.ring_color,
             Color::from_rgba8_unpremul(0xff, 0x88, 0x00, 0xff)
         );
-        assert_eq!(d.ring_drift_hz, 20.);
+        assert_eq!(d.ring_sweep, Duration::from_millis(2000));
         let still = m.response(Some("still"));
         assert_eq!(
             still.focus,
             crate::FocusResponse::None,
             "inherited from default"
         );
-        assert_eq!(still.ring_drift_hz, 0.);
+        assert_eq!(still.ring_sweep, Duration::ZERO);
 
         let builtin = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)])
             .unwrap()
@@ -955,7 +963,7 @@ mod tests {
             b.ring_color,
             Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff)
         );
-        assert_eq!(b.ring_drift_hz, 15.);
+        assert_eq!(b.ring_sweep, Duration::from_millis(1500));
         assert_eq!((b.ring_inset, b.ring_width), (5., 2.6));
         assert_eq!(builtin.glass.light_ior, 6.);
     }
@@ -976,32 +984,68 @@ mod tests {
     }
 
     #[test]
-    fn ring_drift_hz_is_zero_or_at_least_one() {
+    fn ring_drift_hz_is_rejected_with_its_replacement() {
         let err = parse_files_err(&[(
             "config.kdl",
-            r#"material "tg" { glass {}; response "default" { ring-drift-hz 0.5; }; }"#,
+            r#"material "tg" { glass {}; response "default" { ring-drift-hz 15; }; }"#,
         )]);
         assert!(
-            err.contains("ring-drift-hz must be 0 or at least 1"),
+            err.contains("ring-drift-hz was replaced by ring-sweep-ms; see material-config.md"),
             "{err}"
         );
-        for ok in ["0", "1", "7.5", "30"] {
-            let parsed = parse_files(&[(
-                "config.kdl",
-                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ ring-drift-hz {ok}; }}; }}"#),
-            )])
-            .unwrap();
-            assert_eq!(
-                parsed.materials[0].resolve().response(None).ring_drift_hz,
-                ok.parse::<f64>().unwrap()
-            );
-        }
+    }
+
+    #[test]
+    fn ring_sweep_ms_defaults_bounds_and_inherits() {
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" {}; }"#,
+        )])
+        .unwrap();
+        assert_eq!(
+            parsed.materials[0].resolve().response(None).ring_sweep,
+            Duration::from_millis(1500)
+        );
+
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-sweep-ms 0; }; response "still" {}; }"#,
+        )])
+        .unwrap();
+        let m = parsed.materials[0].resolve();
+        assert_eq!(m.response(None).ring_sweep, Duration::ZERO);
+        assert_eq!(
+            m.response(Some("still")).ring_sweep,
+            Duration::ZERO,
+            "inherits"
+        );
+
+        let err = parse_files_err(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-sweep-ms 10001; }; }"#,
+        )]);
+        assert!(err.contains("ring-sweep-ms must be at most 10000"), "{err}");
+    }
+
+    #[test]
+    fn signal_idle_after_ms_defaults_and_bounds() {
+        let parsed = parse_files(&[("config.kdl", "")]).unwrap();
+        assert_eq!(parsed.signal.idle_after, Duration::from_millis(30_000));
+
+        let parsed = parse_files(&[("config.kdl", "signal { idle-after-ms 0\n}")]).unwrap();
+        assert_eq!(parsed.signal.idle_after, Duration::ZERO);
+
+        let err = parse_files_err(&[("config.kdl", "signal { idle-after-ms 3600001\n}")]);
+        assert!(
+            err.contains("idle-after-ms must be at most 3600000"),
+            "{err}"
+        );
     }
 
     #[test]
     fn focus_response_rejects_out_of_range() {
         for body in [
-            r#"material "tg" { glass {}; response "default" { ring-drift-hz 31; }; }"#,
+            r#"material "tg" { glass {}; response "default" { ring-sweep-ms 10001; }; }"#,
             r#"material "tg" { glass { light-ior 13; }; }"#,
             r#"material "tg" { glass { light-ior 0.5; }; }"#,
             r#"material "tg" { glass {}; response "default" { focus "glow"; }; }"#,
@@ -2855,6 +2899,7 @@ mod tests {
             },
             signal: Signal {
                 motion: Full,
+                idle_after: 30s,
             },
             gestures: Gestures {
                 dnd_edge_view_scroll: DndEdgeViewScroll {

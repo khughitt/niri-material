@@ -6,6 +6,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use knuffel::errors::DecodeError;
 
@@ -284,8 +285,11 @@ pub struct Response {
     pub focus: Option<FocusResponse>,
     #[knuffel(child)]
     pub ring_color: Option<Color>,
+    /// Retired: decoded only so the error can name its replacement.
     #[knuffel(child, unwrap(argument))]
-    pub ring_drift_hz: Option<FloatOrInt<0, 30>>,
+    pub ring_drift_hz: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_sweep_ms: Option<u32>,
 }
 
 /// A fully resolved response block.
@@ -301,8 +305,8 @@ pub struct ResolvedResponse {
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
     pub ring_color: Color,
-    /// Drift bucket rate in Hz; 0 pins the drift, otherwise at least 1.
-    pub ring_drift_hz: f64,
+    /// Duration of the focus-gain lap; zero disables the sweep.
+    pub ring_sweep: Duration,
 }
 
 impl Default for ResolvedResponse {
@@ -317,7 +321,7 @@ impl Default for ResolvedResponse {
             ring_width: 2.6,
             focus: FocusResponse::RingLight,
             ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
-            ring_drift_hz: 15.,
+            ring_sweep: Duration::from_millis(1500),
         }
     }
 }
@@ -334,7 +338,9 @@ impl ResolvedResponse {
             ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
             focus: response.focus.unwrap_or(base.focus),
             ring_color: response.ring_color.unwrap_or(base.ring_color),
-            ring_drift_hz: response.ring_drift_hz.map_or(base.ring_drift_hz, |x| x.0),
+            ring_sweep: response
+                .ring_sweep_ms
+                .map_or(base.ring_sweep, |ms| Duration::from_millis(u64::from(ms))),
         }
     }
 
@@ -742,15 +748,21 @@ impl Material {
         {
             return Err(String::from("ring-width must be positive"));
         }
-        // The solver divides the 10 s period into `hz * 10` buckets; a rate
-        // below 1 Hz (before the reduced-motion halving) has no sensible
-        // bucket and is refused rather than clamped.
-        if resolved
+        if self
             .responses
             .iter()
-            .any(|(_, response)| response.ring_drift_hz > 0. && response.ring_drift_hz < 1.)
+            .any(|response| response.ring_drift_hz.is_some())
         {
-            return Err(String::from("ring-drift-hz must be 0 or at least 1"));
+            return Err(String::from(
+                "ring-drift-hz was replaced by ring-sweep-ms; see material-config.md",
+            ));
+        }
+        if self
+            .responses
+            .iter()
+            .any(|response| response.ring_sweep_ms.is_some_and(|ms| ms > 10_000))
+        {
+            return Err(String::from("ring-sweep-ms must be at most 10000"));
         }
 
         if offset_x.abs().max(offset_y.abs()) > bevel {
