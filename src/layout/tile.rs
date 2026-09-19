@@ -139,6 +139,8 @@ pub struct Tile<W: LayoutElement> {
     signal_render_visible: bool,
     /// Whether this tile was active at the last `update_render_elements`.
     active: bool,
+    /// The input-activity gate at the last `update_render_elements` (design 2026-09-18 §3).
+    input_active: bool,
     focus_crossfade: Option<FocusCrossfade>,
     focus_sweep: Option<FocusSweep>,
 
@@ -446,6 +448,7 @@ impl<W: LayoutElement> Tile<W> {
             signal_frame_cache: RefCell::new(None),
             signal_render_visible: false,
             active: false,
+            input_active: true,
             focus_crossfade: None,
             focus_sweep: None,
             options,
@@ -557,7 +560,14 @@ impl<W: LayoutElement> Tile<W> {
         let folded = self.window.signal(self.clock.now_unadjusted());
         let eff = folded
             .as_ref()
-            .map(|folded| effective(folded, self.options.signal.motion, response))
+            .map(|folded| {
+                effective(
+                    folded,
+                    self.options.signal.motion,
+                    response,
+                    self.input_active,
+                )
+            })
             .unwrap_or(EffectiveSignal {
                 accent: None,
                 level: niri_ipc::SignalLevel::Quiet,
@@ -932,9 +942,11 @@ impl<W: LayoutElement> Tile<W> {
     pub fn update_render_elements(
         &mut self,
         is_active: bool,
+        input_active: bool,
         visible: bool,
         view_rect: Rectangle<f64, Logical>,
     ) {
+        self.input_active = input_active;
         let response = self
             .material
             .as_ref()
@@ -2749,7 +2761,7 @@ mod tests {
         let view = Rectangle::from_size(Size::from((1280., 720.)));
 
         for is_active in [true, false, true] {
-            tile.update_render_elements(is_active, true, view);
+            tile.update_render_elements(is_active, true, true, view);
             assert!(tile.focus_crossfade.is_none(), "active {is_active}");
             assert!(!tile.are_transitions_ongoing(), "active {is_active}");
         }
@@ -2764,7 +2776,7 @@ mod tests {
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::None, clock);
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert!(tile.signal_frame_cache.borrow().is_none());
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
@@ -2788,7 +2800,7 @@ mod tests {
         };
         let mut tile = material_tile(lit, niri_config::FocusResponse::None, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert!(!tile.active);
         assert!(tile.signal_frame_cache.borrow().is_none());
         assert_eq!(
@@ -2807,7 +2819,7 @@ mod tests {
             ..Default::default()
         };
         let mut tile = material_tile(pinned, niri_config::FocusResponse::None, clock);
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
             None
@@ -2824,11 +2836,11 @@ mod tests {
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
 
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert_eq!(sweep_of(&tile), None);
 
         clock.set_unadjusted(Duration::from_millis(100));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         assert_eq!(
             sweep_of(&tile),
             Some((Duration::from_millis(100), Duration::from_millis(1500)))
@@ -2837,7 +2849,7 @@ mod tests {
 
         // Loss mid-lap: the lap keeps its start; nothing new starts.
         clock.set_unadjusted(Duration::from_millis(600));
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert_eq!(
             sweep_of(&tile).map(|s| s.0),
             Some(Duration::from_millis(100))
@@ -2845,7 +2857,7 @@ mod tests {
 
         // Regain mid-lap: still the same lap.
         clock.set_unadjusted(Duration::from_millis(900));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         assert_eq!(
             sweep_of(&tile).map(|s| s.0),
             Some(Duration::from_millis(100))
@@ -2853,11 +2865,11 @@ mod tests {
 
         // Finished laps are cleared, and the next gain starts a fresh one.
         clock.set_unadjusted(Duration::from_millis(2000));
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         tile.advance_animations();
         assert_eq!(sweep_of(&tile), None);
         clock.set_unadjusted(Duration::from_millis(2100));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         assert_eq!(
             sweep_of(&tile).map(|s| s.0),
             Some(Duration::from_millis(2100))
@@ -2869,13 +2881,13 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         clock.set_unadjusted(Duration::from_millis(750));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         let (_, inputs) = tile.signal_frame_cache.borrow().clone().unwrap();
         assert!(inputs.sweep > 0., "{}", inputs.sweep);
         clock.set_unadjusted(Duration::from_millis(5000));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         tile.advance_animations();
         let (_, inputs) = tile.signal_frame_cache.borrow().clone().unwrap();
         assert_eq!(inputs.sweep, 0.);
@@ -2889,7 +2901,7 @@ mod tests {
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
         tile.active = true;
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         assert!(tile.focus_crossfade.is_none());
         assert_eq!(sweep_of(&tile), None, "no change of focus, no lap");
         assert!(tile.signal_frame_cache.borrow().is_some());
@@ -2915,13 +2927,67 @@ mod tests {
             options.signal.motion = policy;
             options.animations.off = animations_off;
             tile.options = Rc::new(options);
-            tile.update_render_elements(true, true, view);
+            tile.update_render_elements(true, true, true, view);
             assert_eq!(
                 sweep_of(&tile),
                 None,
                 "{policy:?} animations_off={animations_off}"
             );
         }
+    }
+
+    #[test]
+    fn idle_input_freezes_attention_but_not_the_sweep() {
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        tile.window()
+            .set_signal(Some(crate::window::signal::Folded {
+                level: niri_ipc::SignalLevel::Demand,
+                motion: niri_ipc::SignalMotion::Pulse,
+                accent: None,
+                tag: None,
+                sources: vec![String::from("demo")],
+                impulses: vec![],
+            }));
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+
+        tile.update_render_elements(true, true, true, view);
+        let (eff, _) = tile.signal_frame_cache.borrow().clone().unwrap();
+        assert_eq!(eff.motion, niri_ipc::SignalMotion::Pulse);
+        assert!(tile
+            .tick_deadline(Point::default(), view, Duration::ZERO)
+            .is_some());
+
+        let mut tile = focus_tile(
+            niri_config::FocusResponse::RingLight,
+            Clock::with_time(Duration::ZERO),
+        );
+        tile.window()
+            .set_signal(Some(crate::window::signal::Folded {
+                level: niri_ipc::SignalLevel::Demand,
+                motion: niri_ipc::SignalMotion::Pulse,
+                accent: None,
+                tag: None,
+                sources: vec![String::from("demo")],
+                impulses: vec![],
+            }));
+        tile.update_render_elements(true, false, true, view);
+        assert!(
+            sweep_of(&tile).is_some(),
+            "the lap is finite and not gated on idle"
+        );
+        let (eff, _) = tile.signal_frame_cache.borrow().clone().unwrap();
+        assert_eq!(eff.motion, niri_ipc::SignalMotion::Static);
+        assert_eq!(
+            eff.level,
+            niri_ipc::SignalLevel::Demand,
+            "level is untouched"
+        );
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::ZERO),
+            None,
+            "frozen attention reports no bucket deadline"
+        );
     }
 
     /// `frost` with the given response, everything else stock.
@@ -2943,7 +3009,7 @@ mod tests {
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         let size = Size::from((1280., 720.));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         assert_eq!(
             sweep_of(&tile).map(|s| s.1),
             Some(Duration::from_millis(1500))
@@ -2974,9 +3040,9 @@ mod tests {
 
         // ...and with zero configured, the next gain starts nothing.
         clock.set_unadjusted(Duration::from_millis(2000));
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         tile.advance_animations();
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         assert_eq!(sweep_of(&tile), None);
 
         // A policy change to reduced cuts a running lap at once.
@@ -2984,7 +3050,7 @@ mod tests {
             niri_config::FocusResponse::RingLight,
             Clock::with_time(Duration::ZERO),
         );
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
         assert!(sweep_of(&tile).is_some());
         let mut options = (*tile.options).clone();
         options.signal.motion = niri_config::SignalMotionPolicy::Reduced;

@@ -396,7 +396,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool) {
+    pub fn update_render_elements(&mut self, is_active: bool, input_active: bool) {
         let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size;
         let active_idx = self.active_column_idx;
@@ -405,7 +405,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::new(col_pos, view_size);
-            col.update_render_elements(is_active, view_rect);
+            col.update_render_elements(is_active, input_active, view_rect);
         }
     }
 
@@ -4126,7 +4126,12 @@ impl<W: LayoutElement> Column<W> {
             || self.tiles.iter().any(Tile::are_transitions_ongoing)
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, view_rect: Rectangle<f64, Logical>) {
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        input_active: bool,
+        view_rect: Rectangle<f64, Logical>,
+    ) {
         let active_idx = self.active_tile_idx;
         let display_mode = self.display_mode;
         for (tile_idx, (tile, tile_off)) in self.tiles_mut().enumerate() {
@@ -4137,7 +4142,7 @@ impl<W: LayoutElement> Column<W> {
 
             let mut tile_view_rect = view_rect;
             tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update_render_elements(is_active, visible, tile_view_rect);
+            tile.update_render_elements(is_active, input_active, visible, tile_view_rect);
         }
 
         let config = self.tab_indicator.config();

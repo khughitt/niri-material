@@ -370,6 +370,14 @@ pub struct Niri {
     /// Used for limiting the notify to once per iteration, so that it's not spammed with high
     /// resolution mice.
     pub notified_activity_this_iteration: bool,
+    /// Compositor-wide input activity for the attention gate (design 2026-09-18 §3).
+    pub input_activity: crate::activity::InputActivity,
+    /// The timer that checks `input_activity` for idleness; `Some` exactly while a source is
+    /// registered (see `arm_input_idle_timer`).
+    pub input_idle_timer: Option<RegistrationToken>,
+    /// Every idle-timer callback, including early firings; the fixture's leak check.
+    #[cfg(test)]
+    pub input_idle_timer_fires: usize,
     pub pointer_inside_hot_corner: bool,
     pub tablet_cursor_location: Option<Point<f64, Logical>>,
     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
@@ -1481,6 +1489,7 @@ impl State {
         let mut layer_rules_changed = false;
         let mut shaders_changed = false;
         let mut cursor_inactivity_timeout_changed = false;
+        let mut idle_threshold_changed = false;
         let mut recent_windows_changed = false;
         let mut xwls_changed = false;
         let mut old_config = self.niri.config.borrow_mut();
@@ -1587,6 +1596,10 @@ impl State {
             cursor_inactivity_timeout_changed = true;
         }
 
+        if config.signal.idle_after != old_config.signal.idle_after {
+            idle_threshold_changed = true;
+        }
+
         if config.debug.keep_laptop_panel_on_when_lid_is_closed
             != old_config.debug.keep_laptop_panel_on_when_lid_is_closed
         {
@@ -1681,6 +1694,11 @@ impl State {
             // Force reset due to timeout change.
             self.niri.pointer_inactivity_timer_got_reset = false;
             self.niri.reset_pointer_inactivity_timer();
+        }
+
+        if idle_threshold_changed {
+            let idle_after = self.niri.config.borrow().signal.idle_after;
+            self.niri.set_input_idle_threshold(idle_after);
         }
 
         if binds_changed {
@@ -2661,6 +2679,7 @@ impl Niri {
             )
             .unwrap();
 
+        let signal_idle_after = config_.signal.idle_after;
         drop(config_);
         let mut niri = Self {
             config,
@@ -2759,6 +2778,13 @@ impl Niri {
             pointer_inactivity_timer: None,
             pointer_inactivity_timer_got_reset: false,
             notified_activity_this_iteration: false,
+            input_activity: crate::activity::InputActivity::new(
+                get_monotonic_time(),
+                signal_idle_after,
+            ),
+            input_idle_timer: None,
+            #[cfg(test)]
+            input_idle_timer_fires: 0,
             pointer_inside_hot_corner: false,
             tablet_cursor_location: None,
             gesture_swipe_3f_cumulative: None,
@@ -2809,6 +2835,7 @@ impl Niri {
         };
 
         niri.reset_pointer_inactivity_timer();
+        niri.arm_input_idle_timer();
 
         niri
     }
@@ -6621,6 +6648,61 @@ impl Niri {
         self.idle_notifier_state.notify_activity(&self.seat);
 
         self.notified_activity_this_iteration = true;
+
+        // The attention gate (design 2026-09-18 §3). The timer is armed only
+        // on the idle→active edge; while active, an early fire re-arms
+        // itself, so per-input work is one `observe`.
+        if self.input_activity.observe(get_monotonic_time()) {
+            self.layout.set_input_active(true);
+            self.queue_redraw_all();
+            self.arm_input_idle_timer();
+        }
+    }
+
+    /// (Re)arms the attention idle timer from `input_activity.next_check()`.
+    pub fn arm_input_idle_timer(&mut self) {
+        if let Some(token) = self.input_idle_timer.take() {
+            self.event_loop.remove(token);
+        }
+        let Some(at) = self.input_activity.next_check() else {
+            return;
+        };
+        let delay = at.saturating_sub(get_monotonic_time());
+        let token = self
+            .event_loop
+            .insert_source(Timer::from_duration(delay), move |_, _, state| {
+                #[cfg(test)]
+                {
+                    state.niri.input_idle_timer_fires += 1;
+                }
+                // The source is always dropped here, so clearing the token
+                // is correct in both arms; a re-arm inserts a fresh source
+                // and stores its token. Never `TimeoutAction::ToDuration`:
+                // it would keep this source alive with no token to cancel it.
+                state.niri.input_idle_timer = None;
+                match state.niri.input_activity.poll(get_monotonic_time()) {
+                    crate::activity::Poll::Idle => {
+                        state.niri.layout.set_input_active(false);
+                        state.niri.queue_redraw_all();
+                    }
+                    crate::activity::Poll::Rearm(_) => state.niri.arm_input_idle_timer(),
+                }
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.input_idle_timer = Some(token);
+    }
+
+    /// Config reload changed `signal { idle-after-ms }`.
+    pub fn set_input_idle_threshold(&mut self, threshold: Duration) {
+        let changed = self
+            .input_activity
+            .set_threshold(threshold, get_monotonic_time());
+        if changed {
+            self.layout.set_input_active(!self.input_activity.is_idle());
+            self.queue_redraw_all();
+        }
+        self.arm_input_idle_timer();
     }
 
     pub fn close_mru(&mut self, close_request: MruCloseRequest) -> Option<Window> {
