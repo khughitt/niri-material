@@ -414,6 +414,12 @@ the reason the reduced-motion switch exists. The smoke test in section 9
 measures wakeups per second, not just damage, so the timer path is verified
 rather than assumed.
 
+Sustained motion is additionally gated on input activity: after
+`signal { idle-after-ms }` of no input the effective motion is `Static` and
+no bucket deadline is reported; the next input redraws every output and
+motion resumes from the absolute clock. Design:
+`docs/specs/2026-09-18-ring-focus-motion-design.md` §3.
+
 ## 5. Configuration contract
 
 Response policy lives in two places that already exist. The material
@@ -442,7 +448,7 @@ window-rule {
     material "terminal-glass" response="loud"
 }
 
-signal { motion "full" }
+signal { motion "full"; idle-after-ms 30000; }
 
 animations {
     material-signal { duration-ms 400; curve "ease-out-cubic" }
@@ -494,6 +500,10 @@ Rules:
   level is deferred; `is-urgent` covers the native case.
 - Reload semantics match materials: editing a response in place updates the
   retained `MaterialState`; changing the resolved material name swaps it.
+- `idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
+  `flash`) settles to the static indication (level and accent lit, no pulse)
+  once no input has arrived for this long and resumes in step on the next
+  input. Default 30000; `0` disables the gate; at most 3600000.
 
 ## 6. Glass responses
 

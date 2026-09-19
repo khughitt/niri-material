@@ -22,6 +22,8 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     self, ZwlrLayerSurfaceV1,
 };
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_manager_v1::ZwlrVirtualPointerManagerV1;
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
 use wayland_backend::client::Backend;
 use wayland_client::globals::Global;
 use wayland_client::protocol::wl_buffer::{self, WlBuffer};
@@ -55,6 +57,7 @@ pub struct State {
     pub layer_shell: Option<ZwlrLayerShellV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub viewporter: Option<WpViewporter>,
+    pub virtual_pointer_manager: Option<ZwlrVirtualPointerManagerV1>,
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
@@ -181,6 +184,7 @@ impl Client {
             layer_shell: None,
             spbm: None,
             viewporter: None,
+            virtual_pointer_manager: None,
             windows: Vec::new(),
             layers: Vec::new(),
         };
@@ -203,6 +207,21 @@ impl Client {
         if let Some(error) = self.connection.protocol_error() {
             panic!("{error}");
         }
+    }
+
+    /// One relative motion through a fresh virtual pointer: real input as
+    /// far as the compositor is concerned.
+    pub fn nudge_pointer(&mut self) {
+        let manager = self
+            .state
+            .virtual_pointer_manager
+            .as_ref()
+            .expect("virtual pointer manager");
+        let pointer: ZwlrVirtualPointerV1 = manager.create_virtual_pointer(None, &self.qh, ());
+        pointer.motion(0, 1., 0.);
+        pointer.frame();
+        pointer.destroy();
+        self.connection.flush().unwrap();
     }
 
     pub fn send_sync(&self) -> Arc<SyncData> {
@@ -518,6 +537,9 @@ impl Dispatch<WlRegistry, ()> for State {
                 } else if interface == WpViewporter::interface().name {
                     let version = min(version, WpViewporter::interface().version);
                     state.viewporter = Some(registry.bind(name, version, qh, ()));
+                } else if interface == ZwlrVirtualPointerManagerV1::interface().name {
+                    let version = min(version, ZwlrVirtualPointerManagerV1::interface().version);
+                    state.virtual_pointer_manager = Some(registry.bind(name, version, qh, ()));
                 } else if interface == WlOutput::interface().name {
                     let version = min(version, WlOutput::interface().version);
                     let output = registry.bind(name, version, qh, ());
@@ -755,6 +777,32 @@ impl Dispatch<WpViewporter, ()> for State {
         _state: &mut Self,
         _proxy: &WpViewporter,
         _event: <WpViewporter as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<ZwlrVirtualPointerManagerV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrVirtualPointerManagerV1,
+        _event: <ZwlrVirtualPointerManagerV1 as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<ZwlrVirtualPointerV1, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &ZwlrVirtualPointerV1,
+        _event: <ZwlrVirtualPointerV1 as wayland_client::Proxy>::Event,
         _data: &(),
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,

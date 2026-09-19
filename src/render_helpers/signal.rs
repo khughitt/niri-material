@@ -43,11 +43,14 @@ impl EffectiveSignal {
     }
 }
 
-/// Stage 1: apply the global policy and the response block (design §3).
+/// Stage 1: apply the global policy, the response block, and the
+/// input-activity gate (design 2026-09-18 §3): idle input makes sustained
+/// motion static and touches nothing else.
 pub fn effective(
     folded: &Folded,
     policy: SignalMotionPolicy,
     response: &ResolvedResponse,
+    input_active: bool,
 ) -> EffectiveSignal {
     let motion = match (policy, folded.motion) {
         (SignalMotionPolicy::Off, _) => SignalMotion::Static,
@@ -59,6 +62,11 @@ pub fn effective(
         SignalMotion::Static
     } else {
         motion
+    };
+    let motion = if input_active {
+        motion
+    } else {
+        SignalMotion::Static
     };
     let impulses = folded
         .impulses
@@ -450,6 +458,7 @@ mod tests {
             &folded(M::Pulse, vec![impulse(ImpulseKind::Done, ms(0))]),
             P::Off,
             &r,
+            true,
         );
         assert_eq!(e.motion, M::Static);
         assert!(e.impulses.is_empty());
@@ -459,11 +468,11 @@ mod tests {
     fn reduced_maps_flash_to_pulse_and_pulse_to_breathe() {
         let r = ResolvedResponse::default();
         assert_eq!(
-            effective(&folded(M::Flash, vec![]), P::Reduced, &r).motion,
+            effective(&folded(M::Flash, vec![]), P::Reduced, &r, true).motion,
             M::Pulse
         );
         assert_eq!(
-            effective(&folded(M::Pulse, vec![]), P::Reduced, &r).motion,
+            effective(&folded(M::Pulse, vec![]), P::Reduced, &r, true).motion,
             M::Breathe
         );
     }
@@ -473,7 +482,7 @@ mod tests {
         let mut r = ResolvedResponse::default();
         r.attention = niri_config::AttentionResponse::None;
         assert_eq!(
-            effective(&folded(M::Pulse, vec![]), P::Full, &r).motion,
+            effective(&folded(M::Pulse, vec![]), P::Full, &r, true).motion,
             M::Static
         );
     }
@@ -492,6 +501,7 @@ mod tests {
             ),
             P::Full,
             &r,
+            true,
         );
         assert_eq!(e.impulses.len(), 1);
         assert_eq!(
@@ -939,5 +949,25 @@ mod tests {
         };
         let c = SignalFingerprint::quantize(&solve(&quiet, ms(1000), 0.3, mid));
         assert_ne!(a, c, "a moving phase changes the fingerprint");
+    }
+
+    #[test]
+    fn idle_input_makes_sustained_motion_static_and_nothing_else() {
+        let folded = Folded {
+            level: L::Demand,
+            motion: M::Pulse,
+            accent: Some(Color::from_rgba8_unpremul(0xe5, 0xa3, 0x3c, 0xff)),
+            tag: None,
+            sources: vec![String::from("demo")],
+            impulses: vec![impulse(ImpulseKind::Ping, ms(100))],
+        };
+        let response = ResolvedResponse::default();
+        let active = effective(&folded, P::Full, &response, true);
+        assert_eq!(active.motion, M::Pulse);
+        let idle = effective(&folded, P::Full, &response, false);
+        assert_eq!(idle.motion, M::Static);
+        assert_eq!(idle.level, active.level);
+        assert_eq!(idle.accent, active.accent);
+        assert_eq!(idle.impulses, active.impulses);
     }
 }
