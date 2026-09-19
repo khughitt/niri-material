@@ -50,7 +50,9 @@ Settled with the owner during design:
   second eased quantity and a new shader uniform.
 - **A lap always completes; a gain only starts one from rest.** Focus loss
   never sweeps; the crossfade out is the loss cue. Losing and regaining focus
-  mid-lap restarts nothing. No phase jump is possible.
+  mid-lap restarts nothing. The one exception is a policy change that
+  forbids the sweep (§1, cut rule), which cuts the lap to rest at once. No
+  other phase jump is possible.
 - **Visible means rendered with the slab band in view on any lit output.**
   The existing gate. A second monitor keeps animating attention; that is where
   an attention cue is useful. Focus-output-only and occlusion tests were
@@ -164,8 +166,14 @@ gate is evidence rather than assumption.
   re-arm for `last_activity + threshold`. Input during the wait therefore
   costs no timer churn; `notify_activity` is already deduplicated per loop
   iteration.
-- A config reload that changes the threshold re-arms (or, at `0`, cancels the
-  timer and clears `input_idle`, redrawing once if it was set).
+- A config reload that changes the threshold recomputes the state, not just
+  the timer: `input_idle = threshold > 0 && now − last_activity ≥ threshold`.
+  If that differs from the stored flag, store it and `queue_redraw_all`.
+  Then cancel any timer and arm one at `last_activity + threshold` when the
+  new threshold is nonzero and the compositor is not idle. Raising the
+  threshold past the elapsed quiet time therefore wakes attention on the
+  spot; lowering it under the elapsed time freezes on the spot; `0` clears
+  and cancels.
 
 **Effect.** `Layout` gains `set_input_active(bool)`; the value follows
 `is_active` through the `update_render_elements` chain (monitor, workspace,
@@ -222,11 +230,23 @@ Under this design:
 - `glass.ring.driftHz` is replaced by `glass.ring.sweepMs` (integer, `0` to
   `10000`, default `1500`), in the same profile and reset slots; the sink
   emits `ring-sweep-ms` in every response block it writes.
-- Stored profiles carrying `driftHz` are migrated once on load: any value
-  maps to the default `sweepMs`, and the migration is reported, not silent.
-  The old key never reaches generated config, so `niri validate` accepts the
-  output of the new Prism against the new native build and rejects the old
-  Prism's output with the parse error above.
+- Persisted settings live in three stores that Prism validates in full on
+  every resolve (`resolveLayered` rejects an unknown key in base, in every
+  profile, and in every wallpaper context, active or not), so a stored
+  `driftHz` blocks every `apply` under the new definitions and a stored
+  `sweepMs` blocks every `apply` under the old ones. The migration is an
+  explicit command, `prism migrate`, driven by the definition: the
+  `glass.ring.sweepMs` entry declares `replaces: glass.ring.driftHz`. The
+  command walks base and every context file, and for each occurrence of a
+  replaced key removes it and writes the replacing key at its default (the
+  old value is a bucket rate and carries no meaning for a duration). Before
+  rewriting anything it copies every file it will touch into a timestamped
+  directory under Prism's state dir, then reports each file and key changed
+  and the backup location. `doctor` reports a pending migration (an orphan
+  key that a definition replaces) and names the command. The old key never
+  reaches generated config, so `niri validate` accepts the new Prism's output
+  against the new build and rejects the old Prism's output with the parse
+  error above.
 - `idle-after-ms` is not a Prism control: Prism does not own the `signal`
   block. Placement (`ring-inset`, `ring-width`) stays in `prism-d8ee06`;
   `light-ior` stays in `prism-0ea68f`.
@@ -241,8 +261,8 @@ sequence, in this order:
 
 1. Install the new niri build. The running compositor is untouched;
    `niri validate` now speaks the new contract.
-2. Update Prism and apply. Validation passes against the installed binary and
-   the file is written. The reload request succeeds as a request, but the
+2. Update Prism, run `prism migrate`, and apply. Validation passes against
+   the installed binary and the file is written. The reload request succeeds as a request, but the
    running (old) compositor rejects the file, keeps its in-memory config, and
    shows its reload-error notification. From here until step 3 the file on
    disk is ahead of the running compositor and every further apply reports
@@ -255,10 +275,13 @@ runs on the default config with the error notification (`main.rs`
 step 2 then recovers the running compositor through its reload, with no
 second restart.
 
-Rollback: reinstall the previous build and the previous Prism, apply (the
-old sink emits `ring-drift-hz`; the running new compositor rejects it and
-holds its config, as in step 2), and restart. The pair must move together
-in both directions; there is no version that accepts both keys, by decision.
+Rollback: restore the migration backup over base and the contexts first
+(the previous Prism rejects `sweepMs` in every layer, so without this step
+its `apply` fails before reaching niri), then reinstall the previous build
+and the previous Prism, apply (the old sink emits `ring-drift-hz`; the
+running new compositor rejects it and holds its config, as in step 2), and
+restart. The pair must move together in both directions; there is no
+version that accepts both keys, by decision.
 
 ## 6. Ownership and data flow
 
@@ -295,13 +318,19 @@ Deterministic, in `just test`:
 - Idle timer: activity inside the threshold re-arms without flipping; past
   the threshold flips and queues one redraw; activity clears and queues one
   redraw; threshold `0` never flips; a fresh `Niri` with no input flips at
-  the threshold. The timer logic is a pure function of
+  the threshold. A reload that raises the threshold past the elapsed quiet
+  time clears idle and redraws; one that lowers it under the elapsed time
+  sets idle and redraws; one that keeps the state on the same side changes
+  nothing. The idle logic is a pure function of
   `(last_activity, now, threshold)` so it is testable without an event loop.
 - Config: both new fields parse, default, bound, and inherit; `ring-drift-hz`
   errors with the replacement message.
 - Prism `test/niri-render.test.js`: `ring-sweep-ms` in both materials,
-  default and override, profile migration, and no `ring-drift-hz` anywhere in
-  generated output.
+  default and override, and no `ring-drift-hz` anywhere in generated output.
+  A migration test: base, a profile, and a wallpaper context each holding
+  `driftHz` come out holding `sweepMs` at its default, the backup holds the
+  originals byte for byte, the report names all three, and a second run
+  changes nothing. `doctor` names the command while a replaced key remains.
 
 Headless (`docs/materials/scripts/material-signals-smoke.sh cases`, on the
 headless verification host, never the desktop session), Tracy redraw counts
