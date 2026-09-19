@@ -15,6 +15,8 @@ its current acceptance record is the
 [render-order evidence](../materials/2026-09-12-material-render-order-evidence.md).
 The historical captures below retain measurements of the pre-within
 implementation and are not current placement or validation evidence.
+Its continuous drift (`ring-drift-hz`) is superseded by the finite sweep of
+[2026-09-18-ring-focus-motion-design.md](2026-09-18-ring-focus-motion-design.md).
 
 **Task:** `material-26dd8a`, piece of `material-d1f471`.
 
