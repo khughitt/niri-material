@@ -305,8 +305,6 @@ pub struct ResolvedResponse {
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
     pub ring_color: Color,
-    /// Retired with the drift clock (Task 2); never set by config.
-    pub ring_drift_hz: f64,
     /// Duration of the focus-gain lap; zero disables the sweep.
     pub ring_sweep: Duration,
 }
@@ -323,7 +321,6 @@ impl Default for ResolvedResponse {
             ring_width: 2.6,
             focus: FocusResponse::RingLight,
             ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
-            ring_drift_hz: 15.,
             ring_sweep: Duration::from_millis(1500),
         }
     }
@@ -341,7 +338,6 @@ impl ResolvedResponse {
             ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
             focus: response.focus.unwrap_or(base.focus),
             ring_color: response.ring_color.unwrap_or(base.ring_color),
-            ring_drift_hz: base.ring_drift_hz,
             ring_sweep: response
                 .ring_sweep_ms
                 .map_or(base.ring_sweep, |ms| Duration::from_millis(u64::from(ms))),

@@ -126,7 +126,7 @@ write_config() {   # $1 = path, remaining args = extra KDL lines
     local f=$1; shift
     {
         cat <<EOF
-material "tg" { glass {}; response "default" { ring-drift-hz 0; }; }
+material "tg" { glass {}; response "default" { ring-sweep-ms 0; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
 spawn-at-startup "kitty" $KITTY_OPTS "--hold" "true"
@@ -152,7 +152,7 @@ EOF
 write_gpu_config() {   # $1 = path
     {
         cat <<EOF
-material "tg" { glass {}; response "default" { ring-drift-hz 0; }; }
+material "tg" { glass {}; response "default" { ring-sweep-ms 0; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
 spawn-at-startup "kitty" $KITTY_OPTS "sh" "-c" "while :; do date +%s%N; sleep 0.1; done"
@@ -165,23 +165,24 @@ write_config "$WORK/motion-off.kdl"     'signal { motion "off"; }'
 write_config "$WORK/reduced.kdl"        'signal { motion "reduced"; }'
 write_config "$WORK/slowdown.kdl"       'animations { slowdown 3; }'
 write_config "$WORK/narrow.kdl"         'layout { gaps 0; default-column-width { proportion 0.1; }; }'
-write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none"; ring-drift-hz 0; }; }' \
+write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none"; ring-sweep-ms 0; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
-write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; ring-drift-hz 0; }; }' \
+write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; ring-sweep-ms 0; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
-# Focused-window fixtures: the filament drifts at ring-drift-hz on the focused
-# window only, so these keep the default 15 Hz while everything else is pinned.
-write_config "$WORK/drift.kdl"          'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+# Focused-window fixtures: on focus gain the filament runs one lap over
+# ring-sweep-ms on the animation loop and then rests. The steady window
+# starts long after the lap, so a focused window costs nothing there.
+write_config "$WORK/sweep.kdl"          'material "tg2" { glass {}; response "default" { ring-sweep-ms 1500; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
-write_config "$WORK/drift-anim-off.kdl" 'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+write_config "$WORK/sweep-anim-off.kdl" 'material "tg2" { glass {}; response "default" { ring-sweep-ms 1500; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }' \
                                          'animations { off; }'
-write_config "$WORK/drift-reduced.kdl"  'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+write_config "$WORK/sweep-reduced.kdl"  'material "tg2" { glass {}; response "default" { ring-sweep-ms 1500; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }' \
                                          'signal { motion "reduced"; }'
 # focus "none" turns the filament off and the gradient focus ring is off too,
 # so whatever a focus change still costs here is not the material.
-write_config "$WORK/focus-none.kdl"     'material "tg2" { glass {}; response "default" { focus "none"; ring-drift-hz 15; }; }' \
+write_config "$WORK/focus-none.kdl"     'material "tg2" { glass {}; response "default" { focus "none"; ring-sweep-ms 1500; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }' \
                                          'layout { focus-ring { off; }; }'
 write_no_material_config "$WORK/no-material.kdl"
@@ -543,15 +544,15 @@ focus_toggle_case() {   # $1 name, $2 cfg, $3 control total
 mode_cases() {
     tools_ready
     steady_zero  quiet-ring           "$WORK/base.kdl" setup_quiet_ring
-    local pulse_n breathe_n flash_n drift_n toggle_n n
-    # The focus filament: it wakes the focused window at ring-drift-hz and
-    # nothing else, and `other-focused` shows only the focused window drifts.
+    local pulse_n breathe_n flash_n toggle_n n
+    # The focus sweep: one lap on focus gain, finished long before the steady
+    # window, so a focused window at rest costs nothing under every policy.
     steady_zero  focused-static    "$WORK/base.kdl"           setup_focused_quiet
-    steady_about focused-drift     "$WORK/drift.kdl"          setup_focused_quiet 300; drift_n=$STEADY_N
-    steady_about focused-reduced   "$WORK/drift-reduced.kdl"  setup_focused_quiet 150
-    steady_zero  focused-anim-off  "$WORK/drift-anim-off.kdl" setup_focused_quiet
-    steady_zero  focus-none-drift  "$WORK/focus-none.kdl"     setup_focused_quiet
-    steady_about other-focused     "$WORK/drift.kdl"          setup_other_focused "$drift_n"
+    steady_zero  focused-settled   "$WORK/sweep.kdl"          setup_focused_quiet
+    steady_zero  focused-reduced   "$WORK/sweep-reduced.kdl"  setup_focused_quiet
+    steady_zero  focused-anim-off  "$WORK/sweep-anim-off.kdl" setup_focused_quiet
+    steady_zero  focus-none-sweep  "$WORK/focus-none.kdl"     setup_focused_quiet
+    steady_zero  other-focused     "$WORK/sweep.kdl"          setup_other_focused
     toggle_control_case toggle-control "$WORK/no-material.kdl"; toggle_n=$STEADY_N
     focus_toggle_case   focus-none-toggle "$WORK/focus-none.kdl" "$toggle_n"
     steady_about demand-pulse "$WORK/base.kdl" "setup_demand pulse" 540; pulse_n=$STEADY_N

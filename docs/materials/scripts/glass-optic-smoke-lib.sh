@@ -179,7 +179,7 @@ $glass
     response "default" {
         focus "$FOCUS_RESPONSE"
         accent "none"
-        ring-drift-hz 0
+        ring-sweep-ms 0
         $RESPONSE_EXTRA
     }
 }

@@ -37,7 +37,9 @@ use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::resize::ResizeRenderElement;
 use crate::render_helpers::shadow::ShadowRenderElement;
-use crate::render_helpers::signal::{solve, EffectiveSignal, FrameInputs, SignalFingerprint};
+use crate::render_helpers::signal::{
+    solve, sweep_phase, EffectiveSignal, FrameInputs, SignalFingerprint,
+};
 use crate::render_helpers::snapshot::RenderSnapshot;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use crate::render_helpers::xray::{Xray, XrayPos};
@@ -138,6 +140,7 @@ pub struct Tile<W: LayoutElement> {
     /// Whether this tile was active at the last `update_render_elements`.
     active: bool,
     focus_crossfade: Option<FocusCrossfade>,
+    focus_sweep: Option<FocusSweep>,
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
@@ -372,6 +375,32 @@ impl FocusCrossfade {
     }
 }
 
+/// One focus-gain lap of the ring's travelling light (design 2026-09-18 §1).
+#[derive(Debug)]
+struct FocusSweep {
+    /// Start instant on the unadjusted clock.
+    started: Duration,
+    /// Snapshotted at start so a reload mid-lap does not move the phase.
+    duration: Duration,
+}
+
+impl FocusSweep {
+    /// Like `Animation::is_done`, a clock set to complete instantly (the
+    /// fixtures' fast-forward; in production it mirrors `animations { off }`,
+    /// which already cuts the lap) finishes the lap at once.
+    fn is_done(&self, clock: &Clock) -> bool {
+        clock.should_complete_instantly() || clock.now_unadjusted() >= self.started + self.duration
+    }
+
+    /// The sweep phase for this frame; 0 once the lap is done.
+    fn phase(&self, clock: &Clock) -> f32 {
+        if self.is_done(clock) {
+            return 0.;
+        }
+        sweep_phase(self.started, clock.now_unadjusted(), self.duration)
+    }
+}
+
 impl<W: LayoutElement> Tile<W> {
     pub fn new(
         window: W,
@@ -418,6 +447,7 @@ impl<W: LayoutElement> Tile<W> {
             signal_render_visible: false,
             active: false,
             focus_crossfade: None,
+            focus_sweep: None,
             options,
         }
     }
@@ -439,6 +469,7 @@ impl<W: LayoutElement> Tile<W> {
         self.view_size = view_size;
         self.scale = scale;
         self.options = options;
+        self.cut_sweep_if_forbidden();
 
         let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
 
@@ -474,6 +505,7 @@ impl<W: LayoutElement> Tile<W> {
     fn refresh_material(&mut self) {
         let resolved = resolve_material(self.window.rules().material.as_ref(), &self.options);
         apply_resolved(&mut self.material, resolved.as_ref());
+        self.cut_sweep_if_forbidden();
     }
 
     /// Crossfaded focus, 0 to 1.
@@ -484,18 +516,33 @@ impl<W: LayoutElement> Tile<W> {
             .unwrap_or(if self.active { 1. } else { 0. })
     }
 
-    /// Effective drift rate for this frame: only a focused (or fading)
-    /// tile with a ring-light response drifts.
-    fn focus_drift_hz(&self, response: &ResolvedResponse) -> f64 {
-        use crate::render_helpers::signal::drift_rate;
-        if response.focus != niri_config::FocusResponse::RingLight || self.focus_value() <= 0. {
-            return 0.;
+    /// Whether the policy and response allow the ring's travelling light to
+    /// move at all: `focus ring-light`, `motion full`, animations on. This is
+    /// the cut rule's test (design §1); it says nothing about the duration,
+    /// which is snapshotted per lap.
+    fn sweep_allowed(&self, response: &ResolvedResponse) -> bool {
+        response.focus == niri_config::FocusResponse::RingLight
+            && self.options.signal.motion == niri_config::SignalMotionPolicy::Full
+            && !self.options.animations.off
+    }
+
+    /// Start eligibility: allowed, and the response asks for a lap.
+    fn sweep_permitted(&self, response: &ResolvedResponse) -> bool {
+        self.sweep_allowed(response) && !response.ring_sweep.is_zero()
+    }
+
+    /// Cut rule: a lap in progress ends at rest the moment motion is no
+    /// longer allowed (policy, animations, or the response's focus changed).
+    /// A reload that only changes `ring-sweep-ms`, to zero included, leaves
+    /// the running lap on its snapshotted duration.
+    fn cut_sweep_if_forbidden(&mut self) {
+        let allowed = self
+            .material
+            .as_ref()
+            .is_some_and(|material| self.sweep_allowed(&material.material().response(None)));
+        if !allowed {
+            self.focus_sweep = None;
         }
-        drift_rate(
-            response.ring_drift_hz,
-            self.options.signal.motion,
-            self.options.animations.off,
-        )
     }
 
     /// Stage 1 plus crossfade bookkeeping. Returns the effective signal and
@@ -558,7 +605,10 @@ impl<W: LayoutElement> Tile<W> {
             .as_ref()
             .map(SignalCrossfade::current)
             .unwrap_or((target.0, target.1, if target.1.is_some() { 1. } else { 0. }));
-        let drift_hz = self.focus_drift_hz(response);
+        let sweep = self
+            .focus_sweep
+            .as_ref()
+            .map_or(0., |sweep| sweep.phase(&self.clock));
         Some((
             eff,
             FrameInputs {
@@ -566,7 +616,7 @@ impl<W: LayoutElement> Tile<W> {
                 accent,
                 presence,
                 focus,
-                drift_hz,
+                sweep,
             },
         ))
     }
@@ -832,6 +882,14 @@ impl<W: LayoutElement> Tile<W> {
         {
             self.focus_crossfade = None;
         }
+
+        if self
+            .focus_sweep
+            .as_ref()
+            .is_some_and(|sweep| sweep.is_done(&self.clock))
+        {
+            self.focus_sweep = None;
+        }
     }
 
     pub fn are_animations_ongoing(&self) -> bool {
@@ -860,7 +918,11 @@ impl<W: LayoutElement> Tile<W> {
                     || self
                         .focus_crossfade
                         .as_ref()
-                        .is_some_and(|crossfade| !crossfade.anim.is_done()))
+                        .is_some_and(|crossfade| !crossfade.anim.is_done())
+                    || self
+                        .focus_sweep
+                        .as_ref()
+                        .is_some_and(|sweep| !sweep.is_done(&self.clock)))
     }
 
     pub fn clear_signal_render_visibility(&mut self) {
@@ -894,6 +956,20 @@ impl<W: LayoutElement> Tile<W> {
                 from,
                 to: if is_active { 1. } else { 0. },
             });
+            // Start rule (design §1): a gain starts one lap, from rest only.
+            if is_active {
+                let at_rest = self
+                    .focus_sweep
+                    .as_ref()
+                    .is_none_or(|sweep| sweep.is_done(&self.clock));
+                let permitted = response.as_ref().is_some_and(|r| self.sweep_permitted(r));
+                if at_rest && permitted {
+                    self.focus_sweep = Some(FocusSweep {
+                        started: self.clock.now_unadjusted(),
+                        duration: response.as_ref().unwrap().ring_sweep,
+                    });
+                }
+            }
         }
         let signal = response
             .as_ref()
@@ -2108,8 +2184,9 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// Next instant this tile needs a redraw for its material: the earliest
-    /// of any optic's own change and the sustained-signal or focus-drift
-    /// bucket boundary, while the slab band is in view.
+    /// of any optic's own change and the sustained-signal bucket boundary,
+    /// while the slab band is in view. The focus sweep runs on the animation
+    /// loop and has no arm here (design 2026-09-18 §2).
     ///
     /// The optic deadline does not sit behind the signal frame cache: an
     /// unfocused, signal-free window has no cache, and an animated optic
@@ -2132,7 +2209,7 @@ impl<W: LayoutElement> Tile<W> {
             .signal_frame_cache
             .borrow()
             .as_ref()
-            .and_then(|(eff, inputs)| tick_deadline(eff, true, now, inputs.drift_hz));
+            .and_then(|(eff, _)| tick_deadline(eff, true, now));
         match (optic, signal) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
@@ -2679,24 +2756,6 @@ mod tests {
     }
 
     #[test]
-    fn only_a_focused_tile_drifts() {
-        let clock = Clock::with_time(Duration::ZERO);
-        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
-        let response = tile.material.as_ref().unwrap().material().response(None);
-        assert_eq!(response.focus, niri_config::FocusResponse::RingLight);
-        assert!(response.ring_drift_hz > 0.);
-
-        // Unfocused and not fading: no drift, so nothing wakes.
-        assert!(!tile.active);
-        assert!(tile.focus_crossfade.is_none());
-        assert_eq!(tile.focus_drift_hz(&response), 0.);
-
-        // Focused, `motion "full"`, animations on: the configured rate.
-        tile.active = true;
-        assert_eq!(tile.focus_drift_hz(&response), response.ring_drift_hz);
-    }
-
-    #[test]
     fn static_optics_report_no_deadline_without_a_signal_cache() {
         // An unfocused tile whose response lights nothing and that carries no
         // signal has no signal frame cache. Optic deadlines are still
@@ -2755,34 +2814,181 @@ mod tests {
         );
     }
 
+    fn sweep_of(tile: &Tile<TestWindow>) -> Option<(Duration, Duration)> {
+        tile.focus_sweep.as_ref().map(|s| (s.started, s.duration))
+    }
+
     #[test]
-    fn a_focused_drifting_tile_keeps_its_signal_deadline() {
-        // Start the fixture already focused: a focus *change* would begin a
-        // crossfade from 0, and `focus_drift_hz` is 0 until that crossfade
-        // has advanced, so a tile focused at the same instant reports no
-        // drift yet. An already-focused tile has focus value 1.
+    fn focus_gain_from_rest_starts_one_lap_and_loss_does_not() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+
+        tile.update_render_elements(false, true, view);
+        assert_eq!(sweep_of(&tile), None);
+
+        clock.set_unadjusted(Duration::from_millis(100));
+        tile.update_render_elements(true, true, view);
+        assert_eq!(
+            sweep_of(&tile),
+            Some((Duration::from_millis(100), Duration::from_millis(1500)))
+        );
+        assert!(tile.are_transitions_ongoing());
+
+        // Loss mid-lap: the lap keeps its start; nothing new starts.
+        clock.set_unadjusted(Duration::from_millis(600));
+        tile.update_render_elements(false, true, view);
+        assert_eq!(
+            sweep_of(&tile).map(|s| s.0),
+            Some(Duration::from_millis(100))
+        );
+
+        // Regain mid-lap: still the same lap.
+        clock.set_unadjusted(Duration::from_millis(900));
+        tile.update_render_elements(true, true, view);
+        assert_eq!(
+            sweep_of(&tile).map(|s| s.0),
+            Some(Duration::from_millis(100))
+        );
+
+        // Finished laps are cleared, and the next gain starts a fresh one.
+        clock.set_unadjusted(Duration::from_millis(2000));
+        tile.update_render_elements(false, true, view);
+        tile.advance_animations();
+        assert_eq!(sweep_of(&tile), None);
+        clock.set_unadjusted(Duration::from_millis(2100));
+        tile.update_render_elements(true, true, view);
+        assert_eq!(
+            sweep_of(&tile).map(|s| s.0),
+            Some(Duration::from_millis(2100))
+        );
+    }
+
+    #[test]
+    fn the_sweep_phase_reaches_the_frame_and_rests_at_zero() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, view);
+        clock.set_unadjusted(Duration::from_millis(750));
+        tile.update_render_elements(true, true, view);
+        let (_, inputs) = tile.signal_frame_cache.borrow().clone().unwrap();
+        assert!(inputs.sweep > 0., "{}", inputs.sweep);
+        clock.set_unadjusted(Duration::from_millis(5000));
+        tile.update_render_elements(true, true, view);
+        tile.advance_animations();
+        let (_, inputs) = tile.signal_frame_cache.borrow().clone().unwrap();
+        assert_eq!(inputs.sweep, 0.);
+    }
+
+    #[test]
+    fn settled_focus_reports_no_deadline_and_no_transition() {
+        // Already focused, crossfade done, lap done: the three settled
+        // gates of the design (§2).
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
         tile.active = true;
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         tile.update_render_elements(true, true, view);
         assert!(tile.focus_crossfade.is_none());
+        assert_eq!(sweep_of(&tile), None, "no change of focus, no lap");
         assert!(tile.signal_frame_cache.borrow().is_some());
-        let deadline = tile.tick_deadline(Point::default(), view, Duration::ZERO);
-        assert!(deadline.is_some_and(|d| d > Duration::ZERO), "{deadline:?}");
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::ZERO),
+            None
+        );
+        assert!(!tile.are_transitions_ongoing());
     }
 
     #[test]
-    fn an_out_of_view_slab_reports_no_deadline() {
-        let clock = Clock::with_time(Duration::ZERO);
-        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
-        tile.active = true;
+    fn sweep_is_skipped_under_reduced_off_and_animations_off() {
         let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let cases: [(niri_config::SignalMotionPolicy, bool); 3] = [
+            (niri_config::SignalMotionPolicy::Reduced, false),
+            (niri_config::SignalMotionPolicy::Off, false),
+            (niri_config::SignalMotionPolicy::Full, true),
+        ];
+        for (policy, animations_off) in cases {
+            let clock = Clock::with_time(Duration::ZERO);
+            let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+            let mut options = (*tile.options).clone();
+            options.signal.motion = policy;
+            options.animations.off = animations_off;
+            tile.options = Rc::new(options);
+            tile.update_render_elements(true, true, view);
+            assert_eq!(
+                sweep_of(&tile),
+                None,
+                "{policy:?} animations_off={animations_off}"
+            );
+        }
+    }
+
+    /// `frost` with the given response, everything else stock.
+    fn frost_options(response: niri_config::ResolvedResponse) -> Options {
+        let material = niri_config::ResolvedMaterial {
+            name: String::from("frost"),
+            glass: niri_config::ResolvedGlass::default(),
+            responses: vec![(String::from("default"), response)],
+        };
+        Options {
+            materials: Rc::new(HashMap::from([(String::from("frost"), material)])),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sweep_duration_is_snapshotted_and_only_a_policy_change_cuts_the_lap() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let size = Size::from((1280., 720.));
         tile.update_render_elements(true, true, view);
-        assert!(tile
-            .tick_deadline(Point::default(), view, Duration::ZERO)
-            .is_some());
-        let far = Point::from((10_000., 10_000.));
-        assert_eq!(tile.tick_deadline(far, view, Duration::ZERO), None);
+        assert_eq!(
+            sweep_of(&tile).map(|s| s.1),
+            Some(Duration::from_millis(1500))
+        );
+
+        // A reload that changes `ring-sweep-ms` leaves the running lap on
+        // its snapshotted duration; the new value applies to the next lap.
+        let longer = niri_config::ResolvedResponse {
+            ring_sweep: Duration::from_millis(3000),
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(longer)));
+        assert_eq!(
+            sweep_of(&tile).map(|s| s.1),
+            Some(Duration::from_millis(1500))
+        );
+
+        // Even a reload to zero is not a cut: the lap finishes.
+        let none = niri_config::ResolvedResponse {
+            ring_sweep: Duration::ZERO,
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(none)));
+        assert_eq!(
+            sweep_of(&tile).map(|s| s.1),
+            Some(Duration::from_millis(1500))
+        );
+
+        // ...and with zero configured, the next gain starts nothing.
+        clock.set_unadjusted(Duration::from_millis(2000));
+        tile.update_render_elements(false, true, view);
+        tile.advance_animations();
+        tile.update_render_elements(true, true, view);
+        assert_eq!(sweep_of(&tile), None);
+
+        // A policy change to reduced cuts a running lap at once.
+        let mut tile = focus_tile(
+            niri_config::FocusResponse::RingLight,
+            Clock::with_time(Duration::ZERO),
+        );
+        tile.update_render_elements(true, true, view);
+        assert!(sweep_of(&tile).is_some());
+        let mut options = (*tile.options).clone();
+        options.signal.motion = niri_config::SignalMotionPolicy::Reduced;
+        tile.update_config(size, 1., Rc::new(options));
+        assert_eq!(sweep_of(&tile), None);
     }
 }

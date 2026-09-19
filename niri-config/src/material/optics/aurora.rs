@@ -21,14 +21,14 @@ pub struct Aurora {
 
 impl Aurora {
     /// The two rules the scalar bounds cannot express: the colour count,
-    /// and the `ring-drift-hz` rule for the field's clock.
+    /// and the lower bound of the field's clock rate.
     pub fn validate(&self) -> Result<(), String> {
         if !(self.colors.is_empty() || self.colors.len() == 2) {
             return Err(String::from("aurora: expected two color nodes"));
         }
         // The clock divides a 600 s period into `hz * 600` buckets; a rate
-        // below 1 Hz (before the reduced-motion halving) is refused rather
-        // than clamped, as `ring-drift-hz` is.
+        // below 1 Hz (before the reduced-motion halving) has no sensible
+        // bucket and is refused rather than clamped.
         if self.drift_hz.is_some_and(|hz| hz.0 > 0. && hz.0 < 1.) {
             return Err(String::from("aurora drift-hz must be 0 or at least 1"));
         }
