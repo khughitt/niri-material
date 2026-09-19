@@ -40,6 +40,7 @@
 | `src/layout/{mod,monitor,workspace,scrolling,floating}.rs` | thread `input_active` beside `is_active`; `Layout::set_input_active` |
 | `src/activity.rs` (new) | `InputActivity`: pure idle state machine |
 | `src/niri.rs` | owns `InputActivity` and its timer; `notify_activity` feeds it; reload recomputes |
+| `src/tests/client.rs`, `src/tests/attention_idle.rs` (new) | virtual-pointer client; fixture tests for the timer token and the input path |
 | `docs/materials/material-config.md`, `render-pipeline.md`, `2026-09-02-material-signals-design.md`, `docs/specs/2026-09-05-ring-light-focus-response-design.md` | documentation per spec §8 |
 | `docs/materials/scripts/material-signals-smoke.sh`, `glass-optic-smoke-lib.sh` | fixtures on `ring-sweep-ms`; new steady cases |
 
@@ -252,7 +253,7 @@ Expected: everything passes; the three new tests are listed as `ok`.
 - Line 261 example: `ring-sweep-ms 1500`.
 - Lines 282–300: replace the drift prose with: "lights it on the focused window, in `ring-color`. On focus gain the light runs one lap of its travelling brightness over `ring-sweep-ms` milliseconds, easing out onto a fixed pattern, and then the ring costs no redraws until the next focus gain; `0` skips the lap. `signal { motion reduced }`, `motion off`, and `animations { off }` also skip it. A `ring-drift-hz` line is rejected with the replacement named."
 - Lines 185–189 (aurora): replace "on the same rule as `ring-drift-hz`" with a self-contained sentence: "`drift-hz` is the field's clock: `0` pins the field, otherwise at least 1, and the error is `aurora drift-hz must be 0 or at least 1`."
-- Add to the `signal` section (or create one near the `motion` policy description): "`idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`, `flash`) freezes on its current frame once no input has arrived for this long and resumes in step on the next input. Default 30000; `0` disables the gate; at most 3600000."
+- Add to the `signal` section (or create one near the `motion` policy description): "`idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`, `flash`) settles to the static indication (level and accent lit, no pulse) once no input has arrived for this long and resumes in step on the next input. Default 30000; `0` disables the gate; at most 3600000."
 
 - [ ] **Step 7: Commit**
 
@@ -300,11 +301,20 @@ Append to `mod tests` in `src/render_helpers/signal.rs`:
         // Saturating: sampled before its own start (predicted presentation
         // time, then the clock re-fetched real time) is rest.
         assert_eq!(sweep_phase(s, ms(9_990), d), 0.);
+        // Nondecreasing at every millisecond: near the ease-out end the
+        // slope (~2.7e-7 rad/ms at 1493 ms) drops below the f32 ulp at 2π,
+        // so consecutive samples may round to the same value.
         let mut last = 0.;
         for k in 1..1500 {
             let p = sweep_phase(s, s + Duration::from_millis(k), d);
-            assert!(p > last, "monotonic at {k} ms: {p} <= {last}");
+            assert!(p >= last, "nondecreasing at {k} ms: {p} < {last}");
             last = p;
+        }
+        // Strictly increasing at coarse steps, where the slope is well above ulp.
+        for k in (100..=1400).step_by(100) {
+            let a = sweep_phase(s, s + Duration::from_millis(k - 100), d);
+            let b = sweep_phase(s, s + Duration::from_millis(k), d);
+            assert!(b > a, "progress {k} ms: {b} <= {a}");
         }
         let before_end = sweep_phase(s, s + d - Duration::from_nanos(1), d);
         assert!((before_end - TAU).abs() < 1e-3, "{before_end}");
@@ -516,29 +526,64 @@ Replace `only_a_focused_tile_drifts` and `a_focused_drifting_tile_keeps_its_sign
         }
     }
 
+    /// `frost` with the given response, everything else stock.
+    fn frost_options(response: niri_config::ResolvedResponse) -> Options {
+        let material = niri_config::ResolvedMaterial {
+            name: String::from("frost"),
+            glass: niri_config::ResolvedGlass::default(),
+            responses: vec![(String::from("default"), response)],
+        };
+        Options {
+            materials: Rc::new(HashMap::from([(String::from("frost"), material)])),
+            ..Default::default()
+        }
+    }
+
     #[test]
-    fn sweep_duration_is_snapshotted_and_a_policy_change_cuts_the_lap() {
+    fn sweep_duration_is_snapshotted_and_only_a_policy_change_cuts_the_lap() {
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let size = Size::from((1280., 720.));
         tile.update_render_elements(true, true, view);
         assert_eq!(sweep_of(&tile).map(|s| s.1), Some(Duration::from_millis(1500)));
 
-        // A reload that only changes the duration leaves the running lap alone.
-        let mut options = (*tile.options).clone();
-        options.signal.motion = niri_config::SignalMotionPolicy::Full;
-        tile.update_config(Size::from((1280., 720.)), 1., Rc::new(options));
+        // A reload that changes `ring-sweep-ms` leaves the running lap on
+        // its snapshotted duration; the new value applies to the next lap.
+        let longer = niri_config::ResolvedResponse {
+            ring_sweep: Duration::from_millis(3000),
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(longer)));
         assert_eq!(sweep_of(&tile).map(|s| s.1), Some(Duration::from_millis(1500)));
 
-        // A reload to reduced cuts it.
+        // Even a reload to zero is not a cut: the lap finishes.
+        let none = niri_config::ResolvedResponse {
+            ring_sweep: Duration::ZERO,
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(none)));
+        assert_eq!(sweep_of(&tile).map(|s| s.1), Some(Duration::from_millis(1500)));
+
+        // ...and with zero configured, the next gain starts nothing.
+        clock.set_unadjusted(Duration::from_millis(2000));
+        tile.update_render_elements(false, true, view);
+        tile.advance_animations();
+        tile.update_render_elements(true, true, view);
+        assert_eq!(sweep_of(&tile), None);
+
+        // A policy change to reduced cuts a running lap at once.
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, Clock::with_time(Duration::ZERO));
+        tile.update_render_elements(true, true, view);
+        assert!(sweep_of(&tile).is_some());
         let mut options = (*tile.options).clone();
         options.signal.motion = niri_config::SignalMotionPolicy::Reduced;
-        tile.update_config(Size::from((1280., 720.)), 1., Rc::new(options));
+        tile.update_config(size, 1., Rc::new(options));
         assert_eq!(sweep_of(&tile), None);
     }
 ```
 
-Also fix the three existing tests that build `FrameInputs { drift_hz: .. }` (lines 2725, 2745): use `sweep: 0.`. `an_out_of_view_slab_reports_no_deadline` asserted a focused tile has a deadline; change its fixture to a breathing signal or delete it — the settled test above covers the in-view/out-of-view gate through `tick_deadline_has_no_focus_arm` in Task 2 and `an_unfocused_signal_free_aurora_tile_reports_its_next_bucket` here. Delete it.
+`update_config` calls `refresh_material` (line 463), which is where the cut check runs, so `frost_options` reaches it. Also fix the three existing tests that build `FrameInputs { drift_hz: .. }` (lines 2725, 2745): use `sweep: 0.`. `an_out_of_view_slab_reports_no_deadline` asserted a focused tile has a deadline; change its fixture to a breathing signal or delete it — the settled test above covers the in-view/out-of-view gate through `tick_deadline_has_no_focus_arm` in Task 2 and `an_unfocused_signal_free_aurora_tile_reports_its_next_bucket` here. Delete it.
 
 - [ ] **Step B2: Run to verify they fail**
 
@@ -572,22 +617,31 @@ impl FocusSweep {
 3. Delete `focus_drift_hz` (lines 487–498). Add:
 
 ```rust
-    /// Whether a focus-gain lap may run under the current response and policy.
-    fn sweep_permitted(&self, response: &ResolvedResponse) -> bool {
+    /// Whether the policy and response allow the ring's travelling light to
+    /// move at all: `focus ring-light`, `motion full`, animations on. This is
+    /// the cut rule's test (design §1); it says nothing about the duration,
+    /// which is snapshotted per lap.
+    fn sweep_allowed(&self, response: &ResolvedResponse) -> bool {
         response.focus == niri_config::FocusResponse::RingLight
-            && !response.ring_sweep.is_zero()
             && self.options.signal.motion == niri_config::SignalMotionPolicy::Full
             && !self.options.animations.off
     }
 
-    /// Cut rule: a lap in progress ends at rest the moment it is no longer
-    /// permitted (policy, animations, or the response changed).
+    /// Start eligibility: allowed, and the response asks for a lap.
+    fn sweep_permitted(&self, response: &ResolvedResponse) -> bool {
+        self.sweep_allowed(response) && !response.ring_sweep.is_zero()
+    }
+
+    /// Cut rule: a lap in progress ends at rest the moment motion is no
+    /// longer allowed (policy, animations, or the response's focus changed).
+    /// A reload that only changes `ring-sweep-ms`, to zero included, leaves
+    /// the running lap on its snapshotted duration.
     fn cut_sweep_if_forbidden(&mut self) {
-        let permitted = self
+        let allowed = self
             .material
             .as_ref()
-            .is_some_and(|material| self.sweep_permitted(&material.material().response(None)));
-        if !permitted {
+            .is_some_and(|material| self.sweep_allowed(&material.material().response(None)));
+        if !allowed {
             self.focus_sweep = None;
         }
     }
@@ -690,7 +744,8 @@ git commit -m "feat(material): run one eased lap on focus gain, then rest"
 ### Task 3: The input-activity gate
 
 **Files:**
-- Create: `src/activity.rs`
+- Create: `src/activity.rs`, `src/tests/attention_idle.rs`
+- Modify: `src/tests/client.rs` (virtual pointer), `src/tests/mod.rs` (module list)
 - Modify: `src/lib.rs:5` (add `pub mod activity;`)
 - Modify: `src/niri.rs:362-370` (fields), `:2740-2765` (`Niri::new` init), `:1586-1590` and `:1680-1684` (reload), `:4256-4260` (`update_render_elements`), `:6614-6625` (`notify_activity`)
 - Modify: `src/render_helpers/signal.rs:49-83` (`effective`)
@@ -948,17 +1003,19 @@ Fix every other call site the compiler reports (tests in `src/layout/tests.rs` a
         let token = self
             .event_loop
             .insert_source(Timer::from_duration(delay), move |_, _, state| {
+                // The source is always dropped here, so clearing the token
+                // is correct in both arms; a re-arm inserts a fresh source
+                // and stores its token. Never `TimeoutAction::ToDuration`:
+                // it would keep this source alive with no token to cancel it.
                 state.niri.input_idle_timer = None;
                 match state.niri.input_activity.poll(get_monotonic_time()) {
                     crate::activity::Poll::Idle => {
                         state.niri.layout.set_input_active(false);
                         state.niri.queue_redraw_all();
-                        TimeoutAction::Drop
                     }
-                    crate::activity::Poll::Rearm(at) => {
-                        TimeoutAction::ToDuration(at.saturating_sub(get_monotonic_time()))
-                    }
+                    crate::activity::Poll::Rearm(_) => state.niri.arm_input_idle_timer(),
                 }
+                TimeoutAction::Drop
             })
             .unwrap();
         self.input_idle_timer = Some(token);
@@ -977,8 +1034,6 @@ Fix every other call site the compiler reports (tests in `src/layout/tests.rs` a
     }
 ```
 
-  Note `TimeoutAction::ToDuration` keeps the same source registered; when it returns `Drop`, the token was already cleared on entry. If the calloop version in `Cargo.lock` lacks `ToDuration`, return `Drop` and call `state.niri.arm_input_idle_timer()` inside the `Rearm` arm instead.
-
 - `notify_activity` (line 6614): after the early return, add:
 
 ```rust
@@ -991,22 +1046,150 @@ Fix every other call site the compiler reports (tests in `src/layout/tests.rs` a
 
   The timer is armed only on the idle→active edge; while active, an early fire re-arms itself (`Rearm`), so per-input work is one `observe`.
 
+- `Layout`: add `pub fn input_active(&self) -> bool { self.input_active }` beside `set_input_active`, for the integration tests below.
+
 - Reload (`reload_config`, near line 1586): `if config.signal.idle_after != old_config.signal.idle_after { idle_threshold_changed = true; }` and near line 1680: `if idle_threshold_changed { self.niri.set_input_idle_threshold(config.signal.idle_after); }` — declare the flag with the other `*_changed` booleans at the top of that function.
 
-- [ ] **Step 5: Run the whole suite**
+- [ ] **Step 5: Integration tests through the fixture: timer token, reload, and real input**
+
+The pure `InputActivity` tests cannot see the event loop. Two fixture tests
+in a new `src/tests/attention_idle.rs` (add `mod attention_idle;` to
+`src/tests/mod.rs`) cover the token invariant across an early fire and a
+reload, and the input→`notify_activity`→layout→timer wiring through a
+virtual pointer. They sleep real time in tens of milliseconds, like the
+thresholds they set.
+
+First, give the test client a virtual pointer. In `src/tests/client.rs`:
+
+```rust
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_manager_v1::ZwlrVirtualPointerManagerV1;
+use smithay::reexports::wayland_protocols_wlr::virtual_pointer::v1::client::zwlr_virtual_pointer_v1::ZwlrVirtualPointerV1;
+
+// State: a new field beside `spbm`
+    pub virtual_pointer_manager: Option<ZwlrVirtualPointerManagerV1>,
+
+// registry handler, beside the other binds:
+                "zwlr_virtual_pointer_manager_v1" => {
+                    state.virtual_pointer_manager = Some(registry.bind(name, version, qh, ()));
+                }
+
+// two event-less Dispatch impls, copied from the `WpViewporter` one at line 753,
+// for ZwlrVirtualPointerManagerV1 and ZwlrVirtualPointerV1 (both `unreachable!()`).
+
+// Client helper:
+    /// One relative motion through a fresh virtual pointer: real input as
+    /// far as the compositor is concerned.
+    pub fn nudge_pointer(&mut self) {
+        let manager = self.state.virtual_pointer_manager.as_ref().expect("virtual pointer manager");
+        let pointer: ZwlrVirtualPointerV1 = manager.create_virtual_pointer(None, &self.qh, ());
+        pointer.motion(0, 1., 0.);
+        pointer.frame();
+        pointer.destroy();
+    }
+```
+
+(Match the field names `state` and `qh` to what `Client` actually calls them; `create_window` shows the pattern. Initialize the new field to `None` where `State` is built.)
+
+Then `src/tests/attention_idle.rs`:
+
+```rust
+use std::thread::sleep;
+use std::time::Duration;
+
+use niri_config::Config;
+
+use super::fixture::Fixture;
+
+fn fixture(idle_after: Duration) -> Fixture {
+    let mut config = Config::default();
+    config.signal.idle_after = idle_after;
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1280, 720));
+    f
+}
+
+#[test]
+fn idle_timer_keeps_one_live_token_across_an_early_fire_and_reloads() {
+    let mut f = fixture(Duration::from_millis(150));
+    assert!(f.niri().input_idle_timer.is_some(), "armed at construction");
+
+    // Input at 80 ms, then the original 150 ms deadline fires early:
+    // poll says Rearm, and the token must point at the live source.
+    sleep(Duration::from_millis(80));
+    f.niri().notified_activity_this_iteration = false;
+    f.niri().notify_activity();
+    sleep(Duration::from_millis(90));
+    f.dispatch();
+    assert!(!f.niri().input_activity.is_idle());
+    assert!(f.niri().input_idle_timer.is_some(), "re-armed after the early fire");
+
+    // A reload that raises the threshold must be able to cancel that timer
+    // and arm one; the invariant is token.is_some() == next_check().is_some().
+    f.niri().set_input_idle_threshold(Duration::from_secs(10));
+    assert!(f.niri().input_idle_timer.is_some());
+    f.niri().set_input_idle_threshold(Duration::ZERO);
+    assert!(f.niri().input_idle_timer.is_none(), "gate off, no timer");
+
+    // Lowering under the elapsed quiet time flips on the spot and leaves no timer.
+    f.niri().set_input_idle_threshold(Duration::from_millis(50));
+    assert!(f.niri().input_activity.is_idle());
+    assert!(f.niri().input_idle_timer.is_none());
+    assert!(!f.niri().layout.input_active());
+
+    // Nothing leaked: a long wait produces no further state change.
+    sleep(Duration::from_millis(200));
+    f.dispatch();
+    assert!(f.niri().input_activity.is_idle());
+    assert!(f.niri().input_idle_timer.is_none());
+}
+
+#[test]
+fn virtual_pointer_input_resumes_attention_and_the_gate_re_engages() {
+    let mut f = fixture(Duration::from_millis(60));
+    let id = f.add_client();
+    f.roundtrip(id);
+
+    sleep(Duration::from_millis(80));
+    f.dispatch();
+    assert!(f.niri().input_activity.is_idle());
+    assert!(!f.niri().layout.input_active());
+    assert!(f.niri().input_idle_timer.is_none());
+
+    // Real input: the virtual pointer's motion enters process_input_event,
+    // which calls notify_activity before any per-event handling.
+    f.niri().notified_activity_this_iteration = false;
+    f.client(id).nudge_pointer();
+    f.roundtrip(id);
+    assert!(!f.niri().input_activity.is_idle());
+    assert!(f.niri().layout.input_active(), "the layout saw the resume");
+    assert!(f.niri().input_idle_timer.is_some(), "the gate is armed again");
+
+    sleep(Duration::from_millis(80));
+    f.dispatch();
+    assert!(f.niri().input_activity.is_idle(), "idle again after the threshold");
+    assert!(!f.niri().layout.input_active());
+}
+```
+
+`notified_activity_this_iteration` is reset by the event loop's per-iteration hook (`src/niri.rs:785`); the fixture's `dispatch` may or may not run it, so the tests reset it explicitly before driving activity. If `Fixture::roundtrip` does not process the server side, follow it with `f.dispatch()`.
+
+Run: `just test 2>&1 | grep -E "attention_idle|test result" | head`
+Expected: both PASS. If the virtual-pointer test fails at `is_idle()` after the nudge, check that `process_input_event` is reached (`should_notify_activity` accepts `PointerMotion`) and that the fixture's seat has a pointer capability.
+
+- [ ] **Step 6: Run the whole suite**
 
 Run: `just test 2>&1 | tail -30`
-Expected: all pass, including the five `activity` tests and the tile/solver tests from Task 2 with the new signature.
+Expected: all pass, including the five `activity` tests, the two fixture tests, and the tile/solver tests from Task 2 with the new signature.
 
-- [ ] **Step 6: Document the gate in the signals design**
+- [ ] **Step 7: Document the gate in the signals design**
 
 `docs/materials/2026-09-02-material-signals-design.md`: in §4 (Redraw and damage contract) add one paragraph: "Sustained motion is additionally gated on input activity: after `signal { idle-after-ms }` of no input the effective motion is `Static` and no bucket deadline is reported; the next input redraws every output and motion resumes from the absolute clock. Design: `docs/specs/2026-09-18-ring-focus-motion-design.md` §3." In §5 (Configuration contract) add the `idle-after-ms` line from `material-config.md`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 tasks check
-git add src/activity.rs src/lib.rs src/niri.rs src/render_helpers/signal.rs src/layout docs/materials/2026-09-02-material-signals-design.md
+git add src/activity.rs src/lib.rs src/niri.rs src/render_helpers/signal.rs src/layout src/tests docs/materials/2026-09-02-material-signals-design.md
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "feat(material): freeze sustained attention motion while input is idle"
 ```
@@ -1027,15 +1210,16 @@ git commit -m "feat(material): freeze sustained attention motion while input is 
 
 **Host:** the headless verification host (a headless weston unit), never the desktop session. The smoke script refuses on host load; if it refuses, `tasks park <child> "<rerun command>" --reason quiet --waiting-on user --minutes 25` and stop.
 
+**New requirement:** `wlrctl` on the host (AUR `wlrctl`), spawned *inside* the nested compositor so its virtual-pointer request reaches the instance under test. If it is missing, the script fails before any case with `requires wlrctl`; park with `--reason environment` and name the package.
+
 - [ ] **Step 1: Keep the existing cases honest under the default gate**
 
 The nested compositor receives no input, so with the default `idle-after-ms 30000` every fixture would freeze about when the capture starts. In `write_config` (line 125), add `signal { idle-after-ms 0; }` to the base lines so every existing case measures what it measured before. Add a second helper for the idle cases:
 
 ```bash
 # Idle-gate fixtures: the nested compositor sees no input, so a short
-# threshold makes it idle a few seconds after start. Freeze and resume are
-# driven through config reloads (spec §3: a reload recomputes the state),
-# since the headless host cannot inject input.
+# threshold makes it idle a few seconds after start. Resume is real input:
+# wlrctl, spawned inside the nested instance, moves a virtual pointer.
 write_idle_config() {   # $1 = path, $2 = idle-after-ms, remaining = extra KDL lines
     local f=$1 ms=$2; shift 2
     write_config "$f" "$@"
@@ -1080,34 +1264,34 @@ sweep_toggle_case() {   # $1 name, $2 cfg
 
 and call it: `sweep_toggle_case sweep-toggle "$WORK/sweep.kdl"`. The `- 1.5` leaves the last lap out of the tail.
 
-Add the idle cases after `demand-flash`:
+Add `command -v wlrctl >/dev/null || { echo "FAIL: requires wlrctl (AUR) for the idle-resume case" >&2; exit 1; }` at the top of `mode_cases`, and `wlrctl` to the `Requires:` line in the header. Then add the idle cases after `demand-flash`:
 
 ```bash
-# Idle gate: 5 s threshold, no input, so the compositor is idle before the
-# steady window and a pulsing window draws nothing. Resume is a reload to
-# idle-after-ms 0, freeze again a reload back to 5000 (spec §3 reload rule).
+# Idle gate: 5 s threshold and no input, so the compositor is idle before
+# the steady window and a pulsing window draws nothing. Resume is one
+# virtual-pointer motion from wlrctl spawned inside the nested instance,
+# which enters process_input_event like any device; the threshold then
+# re-engages 5 s later with no further input.
 during_idle_resume() {
-    sed -i 's/idle-after-ms 5000/idle-after-ms 0/' "$IDLE_CFG"; msg action load-config-file
-    sleep 6
-    sed -i 's/idle-after-ms 0/idle-after-ms 5000/' "$IDLE_CFG"; msg action load-config-file
+    msg action spawn -- wlrctl pointer move 1 0
 }
-idle_case() {   # $1 name, $2 cfg, $3 setup, $4 pulse rate for a resumed window
-    IDLE_CFG=$2
+idle_case() {   # $1 name, $2 cfg, $3 setup, $4 pulse rate for a resumed window (per 20 s)
     run_case "$1" "$2" "$3" during_idle_resume
-    local total resumed frozen
-    total=$(count_steady "$1")
-    # The resume window is [end-18 s, end-12 s): about 6 s of bucket-rate redraws.
-    resumed=$(count_window "$1" 18 12)
+    local resumed frozen
+    # `during` fires 12 s into the 30 s capture: resumed motion runs in
+    # [end-18 s, end-13 s), then the gate re-engages; [end-11 s, end) is quiet.
+    resumed=$(count_window "$1" 18 13)
     frozen=$(count_window "$1" 11 0)
-    expect_about "$1 resumed" "$resumed" "$(( $4 * 6 / 20 ))" 0.25
+    expect_about "$1 resumed" "$resumed" "$(( $4 * 5 / 20 ))" 0.25
     expect_zero "$1 frozen again" "$frozen"
+    printf '%s: %d redraws in the 5 s after input, %d after the gate re-engaged\n' "$1" "$resumed" "$frozen" | tee -a "$WORK/rates.txt" >&2
 }
     steady_zero  idle-pulse "$WORK/idle-5s.kdl" "setup_demand pulse"
     idle_case    idle-resume "$WORK/idle-5s.kdl" "setup_demand pulse" "$pulse_n"
     steady_zero  dpms-off-pulse "$WORK/base.kdl" setup_dpms_off_pulse
 ```
 
-with `setup_dpms_off_pulse() { setup_demand pulse; msg action power-off-monitors; }`. Check `count_window`'s argument order (start offset from end, end offset from end) against its definition near line 291 before relying on `18 12`.
+with `setup_dpms_off_pulse() { setup_demand pulse; msg action power-off-monitors; }`. `count_window` takes seconds-before-end start and stop (line 285), so `18 13` is the five seconds after the input.
 
 `inactive-workspace`, `hidden-tab`, and `offscreen-column` already cover the hidden cases; leave them.
 
@@ -1127,7 +1311,7 @@ Under the capture protocol (`tools/capture-meta`, strict cost timing; the GPU wa
 1. `gain-from-rest`: focus the other window, wait 3 s, focus back; 2.5 s of frames from the focus command.
 2. `alt-tab-three`: three windows; `focus-window` across all three at 0.4 s spacing; 4 s of frames.
 3. `loss-mid-lap`: focus back, then away at 0.5 s; 2.5 s of frames.
-4. `idle-freeze-resume`: `idle-5s.kdl`, a breathing window; frames from 4 s to 7 s (freeze), reload to `0`, 3 s more (resume).
+4. `idle-freeze-resume`: `idle-5s.kdl`, a breathing window; frames from 4 s to 7 s (freeze), one `wlrctl pointer move 1 0` spawned inside the instance, 3 s more (resume).
 
 Write each burst's directory and its `capture.json` path into the evidence record. These are for the owner's judgment of the 1500 ms starting value and the ease; the plan records them, it does not grade them.
 
@@ -1162,5 +1346,6 @@ Prism: one task under `material-743692`'s coordination, filed at plan approval, 
 
 - Spec §1 (phase, state, start, cut, redraw, removed): Task 2. §2 (three settled gates): Task 2 `tick_deadline_has_no_focus_arm`, `settled_focus_fingerprints_to_a_constant`, `settled_focus_reports_no_deadline_and_no_transition`. §3 (activity, init, reload, resume, matrix): Task 3; the smoke's hidden/DPMS/idle rows: Task 4. §4: Task 1. §5: cross-project follow-up (Prism repo). §6: file map. §7 headless and clips: Task 4. §8 docs: Task 1 (`material-config.md`), Task 2 (`render-pipeline.md`, smoke fixtures), Task 3 (signals design), Task 4 (status headers).
 - Every task leaves the workspace compiling and `just test` green: Task 1 keeps `ResolvedResponse.ring_drift_hz` inert; Task 2 removes it together with its only readers.
-- Deviation from §7 recorded: resume in the smoke is driven by a threshold reload, not synthetic input, because the headless host cannot inject input; the input path is covered by `InputActivity::observe` unit tests and `notify_activity` is a one-line call into it.
+- Resume is exercised by real input at both levels: a virtual pointer through the test client in `src/tests/attention_idle.rs` (Task 3), and `wlrctl` inside the nested instance in the smoke (Task 4). The reload path is covered by `InputActivity::set_threshold` unit tests and the fixture test's reload sequence.
+- The idle timer never uses `TimeoutAction::ToDuration`; every fire drops its source and a re-arm inserts a new one, so `input_idle_timer.is_some()` is equivalent to a registered source. The fixture test checks this across an early fire and three reloads.
 - Names used consistently: `sweep_phase`, `FocusSweep { started, duration }`, `FrameInputs.sweep`, `SignalFrame.sweep`, `sweep_q`, `InputActivity`, `Poll::{Idle, Rearm}`, `set_input_active`, `effective(.., input_active)`, `ring_sweep`, `idle_after`.

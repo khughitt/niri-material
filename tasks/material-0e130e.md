@@ -7,7 +7,7 @@ size: m
 complexity: high
 process: planned
 created: 2026-09-16T12:00:25Z
-updated: 2026-09-19T02:49:26Z
+updated: 2026-09-19T03:00:21Z
 depends: [material-92edaf, material-82323e]
 parent: material-5d6b2c
 tags: [performance, dynamics, signals]
@@ -26,3 +26,4 @@ Scope refinement (2026-09-18): material-82323e owns the next design pass; this i
 - 2026-09-18T23:57:25Z (materials-26.04): Within implementation is now committed as e79b226b on material-5b3107; its pixel, attenuation, selector, cadence and strict-cost acceptance passed. Final whole-branch review found no Critical/Important issue; documentation-only parent closeout follows. Scope motion against this new ring and retained FH88OR/C2DA1f frames, with unavailable animated geometry explicitly preserved. No motion judgment or behavior change was made by material-92edaf.
 - 2026-09-19T00:26:26Z (materials-26.04): scope: briefed; separated visual placement, native motion design and existing/new Prism wiring; brief: docs/notes/2026-09-18-ring-next-steps-brief.md
 - 2026-09-19T02:49:26Z (material-82323e): Design reviewed (docs/specs/2026-09-18-ring-focus-motion-design.md) and plan attached (docs/plans/2026-09-18-ring-focus-motion.md): one eased lap on focus gain over ring-sweep-ms on the animation loop, ending on the pinned pattern; ring-drift-hz retired with a parse error; sustained attention frozen after signal idle-after-ms (default 30 s) and resumed from the absolute clock. Four step children, ordered by deps; Task 4 runs on the headless host. Deviation to know: the smoke drives resume via a threshold reload, not injected input.
+- 2026-09-19T03:00:21Z (material-82323e): Plan review applied: idle timer always drops and re-arms (no ToDuration) with a fixture test across an early fire and reloads; start eligibility (nonzero ring-sweep-ms) separated from the cut rule so a reload to 0 finishes the lap; phase test nondecreasing per ms with coarse strict checks; resume exercised by real input at both levels (virtual pointer in src/tests, wlrctl inside the nested smoke instance - wlrctl is now a host requirement).
