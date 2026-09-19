@@ -14,11 +14,13 @@ hashed baseline binaries at `522a09fe`. GPU quietness was relaxed with user
 authorization for baseline and candidate pixel scopes only; timing remained
 strict and used no waiver. No performance pass threshold is claimed.
 Task 2 implementation, linked within pixel matrix, and strict within-cost
-matrix passed in the working tree. Its 2026-09-17 amendment (ring scatter,
+matrix passed and are committed at `e79b226b`. Its 2026-09-17 amendment (ring scatter,
 face placement, motion deferral to `material-0e130e`) is approved. Older ring
 pixel evidence passed with its explicit outer-settle limitation; older aurora
 visual/cadence/strict-cost evidence passed. The user selected SDD execution;
-Task 2 remains open until review and commit complete. See the
+the final whole-branch review found only the scoped documentation reconciliation
+recorded in the parent closeout. Neither child commit is merged or deployed.
+See the
 [execution evidence](../materials/2026-09-12-material-render-order-evidence.md).
 
 **Goal:** Move backdrop colour operations behind attenuation and interior
@@ -657,7 +659,8 @@ The user approved this file for inline, sequential execution with
 `superpowers:executing-plans`. Task 1 completed at `e33aa968` after its
 measured additive failure, pixel/signal acceptance and strict cost evidence.
 Task 2's implementation, runtime acceptance, and final software gates are
-complete; review and commit remain.
+complete and committed at `e79b226b`; the parent closeout verifies the final
+review's scoped documentation reconciliation. Neither child is merged.
 
 Self-review covers every spec section: colour-space preservation and
 transmitted grain (Task 1), depth/attenuation and motion (Task 2), neutral

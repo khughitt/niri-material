@@ -8,10 +8,12 @@ at `e33aa968`; candidate pixel and signal checks have passed. Strict
 GPU cost passed on 2026-09-18 in a retained TTY matrix: nine P8-only settled
 sub-runs, with all three case medians at 0.020 ms and +0.0% candidate
 differences. The within implementation, its linked GLES pixel matrix, and its
-strict within-cost matrix have passed in the working tree. The older ring pixel
+strict within-cost matrix have passed and Task 2 is committed at `e79b226b`. The older ring pixel
 matrix also passed under its documented outer-settle, pixel-only limitation.
 The older aurora visual, cadence, and strict cost-only evidence passed, as did
-the final software gates; review and commit remain. The old-build baseline records the required additive-light failure,
+the final software gates. The final whole-branch review found only the scoped
+documentation reconciliation recorded in the parent closeout; neither child
+commit is merged or deployed. The old-build baseline records the required additive-light failure,
 with a user-authorized GPU quietness waiver for baseline and candidate pixels
 only; timing remained strict. Source baseline: `8e3d890d`; reviewed spec
 revision: `522a09fe`. **Amended and approved 2026-09-17:** the within section

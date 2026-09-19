@@ -7,11 +7,14 @@ acceptance passed on 2026-09-18. The old-build baseline records the required
 measured additive failure and identical repeat images. Task 2 implementation,
 its linked within pixel matrix and strict within cost passed; older ring pixel
 acceptance passed with an outer-settle-only limitation. Older aurora visual,
-cadence, and strict cost-only evidence passed. Final software gates and review
-passed; review and commit remain.
+cadence, and strict cost-only evidence passed. Task 2 is committed at
+`e79b226b`; the final whole-branch review found only the scoped documentation
+reconciliation recorded in the parent closeout, not an outstanding rendering
+or acceptance change.
 
 **Tasks:** `material-5b3107`; Task 1 (`material-f8b6e9`) completed at
-`e33aa968`. Task 2 (`material-92edaf`) awaits review and commit.
+`e33aa968`. Task 2 (`material-92edaf`) completed at `e79b226b`. Neither
+commit is merged or deployed by this record.
 
 ## Capture readiness, 2026-09-12
 
@@ -242,12 +245,12 @@ reach, motion or cost acceptance result is claimed here.
 
 ## Behind implementation and requested capture pause, 2026-09-17
 
-Implemented saturation/noise at `behind`, once after averaged taps and
+At this Task 1 checkpoint, saturation/noise were implemented at `behind`, once after averaged taps and
 before attenuation. Both hooks return linear light and preserve their
 neutral early returns. White/fine retain signed grain; lightness retains
 its existing gamut clamp. The transfer helpers clamp only power bases,
 preserving signed linear branches. Both registries and parameter aggregation
-now order saturation, noise, iridescence, aurora. Ring, aurora, sweeps,
+then ordered saturation, noise, iridescence, aurora. Ring, aurora, sweeps,
 opaque bypass, KDL and the independent postprocess shader are unchanged.
 
 The source-assembly regression now also places the behind calls after the

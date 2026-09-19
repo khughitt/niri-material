@@ -89,7 +89,10 @@ their older names. Define one function for each hook the optic uses:
 `behind` transforms the averaged linear backdrop once, outside the tap loop,
 before attenuation. Saturation and noise encode internally to preserve their
 sRGB formulas and return linear light; neutral returns before conversion.
-`within` adds attenuated interior light at its refracted landing point.
+`within` adds attenuated interior light at its refracted landing point and
+therefore owns remaining-path attenuation. `emissive` is surface-only light:
+it must return an unattenuated contribution even though its signature carries
+`att`.
 `post` is the empty site after final encoding, reserved for screen-space film.
 
 The file is concatenated after `prelude.frag`, which provides `snoise`,
