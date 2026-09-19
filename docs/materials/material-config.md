@@ -182,10 +182,10 @@ first `color` node is the field's start (noise 0), the second its end
 `aurora: expected two color nodes`. Its explicit neutral is amount 0;
 nothing inherits.
 
-`drift-hz` is the field's clock, on the same rule as `ring-drift-hz`: `0`
-pins the field, otherwise at least 1, and the error is `aurora drift-hz
-must be 0 or at least 1`. The field's lookup point traces a small circle
-in noise space once per 600 s, so the loop closes seamlessly; the clock
+`drift-hz` is the field's clock: `0` pins the field, otherwise at least 1,
+and the error is `aurora drift-hz must be 0 or at least 1`. The field's
+lookup point traces a small circle in noise space once per 600 s, so the
+loop closes seamlessly; the clock
 steps the phase `drift-hz` times per second in buckets anchored to the
 absolute clock, and a lit, visible aurora window redraws at that rate
 whether or not it is focused or carries a signal. `signal { motion
@@ -236,7 +236,7 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ring-inset` | 0–128 logical px | 5 logical px |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
 | `ring-color` | `"#rrggbb"` | `#ccccff` |
-| `ring-drift-hz` | 0, or 1–30 (quantized to tenths of a hertz) | 15 |
+| `ring-sweep-ms` | 0–10000 (integer) | 1500 |
 
 When any `response` block is present, one must be named `default`. Named
 responses inherit omitted fields from that block; the `default` block itself
@@ -258,7 +258,7 @@ material "terminal-glass" {
         ring-inset 5
         ring-width 2.6
         ring-color "#ccccff"
-        ring-drift-hz 15
+        ring-sweep-ms 1500
     }
 
     response "loud" {
@@ -279,12 +279,14 @@ slot), while `signal-tag` matches the window's folded signal tag. A window
 with no signal matches neither.
 
 The filament is one band shared by focus and signals. `focus "ring-light"`
-lights it on the focused window, in `ring-color`, drifting at
-`ring-drift-hz` steps per second (0 pins it; otherwise at least 1, and the
-rate is quantized to tenths of a hertz so the steps divide the 10 s drift
-period evenly). `accent "ring"` lets a
-window signal light and tint the same band on any window. Both together show
-the drifting filament in the accent color. The band sits `ring-inset` px
+lights it on the focused window, in `ring-color`. On focus gain the light
+runs one lap of its travelling brightness over `ring-sweep-ms` milliseconds,
+easing out onto a fixed pattern, and then the ring costs no redraws until the
+next focus gain; `0` skips the lap. `signal { motion "reduced" }`, `motion
+"off"`, and `animations { off }` also skip it. A `ring-drift-hz` line is
+rejected with the replacement named. `accent "ring"` lets a window signal
+light and tint the same band on any window. Both together show the filament
+in the accent color. The band sits `ring-inset` px
 inward from the slab's outer edge, is refracted through the glass at its
 remaining interior depth, and may show through a translucent window face.
 `ring-width` must be positive.
@@ -297,7 +299,8 @@ windows keep whatever ring the layout configures.
 
 **What changes on upgrade.** The focus filament is on by default, so a
 material window that never configured a `response` block now shows a
-drifting ring of light in its bevel whenever it is focused. The signal
+ring of light in its bevel whenever it is focused, sweeping once on focus
+gain. The signal
 accent ring changed shape at the same time: it was a box band with +/-0.5 px
 soft edges and is now a Gaussian core with a halo, at new defaults of
 `ring-inset 5` and `ring-width 2.6` (previously 6 and 2). To go back to an
@@ -315,6 +318,7 @@ The top-level signal policy defaults to `full`:
 ```kdl
 signal {
     motion "reduced" // full | reduced | off
+    idle-after-ms 30000
 }
 
 animations {
@@ -331,8 +335,14 @@ drops impulse effects, while retaining the static accent and level
 crossfade. `material-signal` is the baseline signal crossfade; it defaults to
 400 ms with `ease-out-cubic` and follows the normal animation configuration,
 including `animations { off }`. The focus filament fades in and out with
-`material-signal` too, and `reduced` halves `ring-drift-hz` while `off` and
-`animations { off }` pin the drift.
+`material-signal` too; `reduced`, `off`, and `animations { off }` skip its
+focus-gain sweep.
+
+`idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
+`flash`) settles to the static indication (level and accent lit, no pulse)
+once no input has arrived for this long and resumes in step on the next
+input. Default 30000; `0` disables the gate; at most 3600000, and the error
+is `idle-after-ms must be at most 3600000`.
 
 ## Window rules and validation
 
@@ -352,8 +362,9 @@ The whole configuration is rejected with these validation errors:
   "default"`;
 - duplicate response names: `duplicate response: <name>`;
 - a zero or negative ring width: `ring-width must be positive`;
-- a drift rate strictly between 0 and 1: `ring-drift-hz must be 0 or at
-  least 1`;
+- a sweep longer than ten seconds: `ring-sweep-ms must be at most 10000`;
+- the retired drift rate: `ring-drift-hz was replaced by ring-sweep-ms; see
+  material-config.md`;
 - an unknown window-rule reference: `unknown material: <name>`.
 - an unknown response reference: `material <name>: unknown response:
   <response>`.
