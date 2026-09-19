@@ -6,6 +6,8 @@
 # Every recipe runs through the vendored timing wrapper tools/tt (ops bin/tt).
 # Design: ops docs/specs/2026-09-04-test-ci-audit-design.md.
 
+set quiet
+
 tt := "python3 tools/tt"
 
 # The three commands, each written once. Avoid single quotes inside them.
