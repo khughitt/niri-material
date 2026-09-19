@@ -1,15 +1,16 @@
 ---
 id: material-5b3107
 title: "Render pass order: what the glass slab refracts"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: high
 process: planned
 owner: material-5b3107
 created: 2026-09-06T00:38:34Z
-updated: 2026-09-18T22:16:29Z
+updated: 2026-09-19T00:00:53Z
 started: 2026-09-12T19:55:05Z
+completed: 2026-09-19T00:00:53Z
 depends: []
 tags: [rendering, design]
 spec: docs/specs/2026-09-12-material-render-order-design.md
@@ -58,3 +59,5 @@ Several open questions are one architectural question: in what order the passes 
 - 2026-09-18T22:16:29Z (material-5b3107): resumed
   provenance: {"harness_session":"codex:01a0b1cd-b9d7-71f1-85bb-a5aa09a40df4","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-18T22:16:29Z (material-5b3107): Task 1 is committed e33aa968. Task 2 source/offline review complete; current runtime acceptance passed ring bounds and found an under-resolved aurora fixture. Controlled thickness200 candidate/old-baseline comparison passes; fixture correction and remaining acceptance in progress.
+- 2026-09-19T00:00:53Z (material-5b3107): done
+- 2026-09-19T00:00:53Z (material-5b3107): Depth-ordered behind and within delivery committed at e33aa968 and e79b226b; runtime acceptance recorded and final-review documentation reconciliation completed; not merged

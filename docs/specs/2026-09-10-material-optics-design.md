@@ -18,9 +18,10 @@ records costs and their limits. The original implementation evidence used llvmpi
 and moves saturation/noise there; it is committed at `e33aa968` with its
 pixel, signal, and strict-cost acceptance recorded in the linked design.
 Task 2 adds `within`; its implementation and linked within pixel and cost
-matrices passed, as did the older aurora strict cost-only rotation. Final
-software gates passed; review and commit remain. The original implementation
-evidence above predates this ordering.
+matrices passed, as did the older aurora strict cost-only rotation, and it is
+committed at `e79b226b`. Final software gates passed; the whole-branch review
+found only the scoped documentation reconciliation recorded in the parent
+closeout. The original implementation evidence above predates this ordering.
 
 **Task:** `material-397fcb` (the API), with first users `material-bb3fe5`
 (ice) and `material-f0fc7b` (aurora and rainbow). Prism pieces are filed in
@@ -262,7 +263,9 @@ original migration put both optics at `post`, saturation first, moving the
 then-existing stage 9 and 10 code verbatim. The depth-order update now puts
 them at `behind`, with linear input/output and internal encoding to preserve
 their sRGB formulas. Neutral returns precede conversion. Registry and
-parameter order are `saturation, noise, iridescence, aurora` until Task 2.
+parameter order were `saturation, noise, iridescence, aurora` at the Task 1
+checkpoint. Task 2, committed at `e79b226b`, changes the current order to
+`saturation, noise, aurora, iridescence`.
 
 `material-3fcba2` (stacked noise layers) is unaffected in scope: it widens
 the noise node and becomes a change inside the noise optic's two Rust files
@@ -525,13 +528,15 @@ Aurora and Rainbow YAML profile snapshots (`prism-08c1de`). Both focus states
 have independent amounts, drift rate, and colors; bypasses are shared. Amounts
 default to zero. Aurora rate uses whole Hz from 0 to 30, with 0 pinning the field.
 
-The rack follows shader order: `iridescence` (optic, after Tint; mix
-`glass.iridescence`), then `aurora` (optic; mix `glass.aurora`, details
-`glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB`). The sink emits
-the nodes and the manifest binds all focused/unfocused keys and bypasses. The
-existing capability probe renders the actual fragment, so it tests both new
-nodes without a separate probe grammar. Installed niri `7526af1d` accepts the
-probe and both profile fragments.
+The previously landed Prism rack follows its historical external UI order:
+`iridescence` (optic, after Tint; mix `glass.iridescence`), then `aurora`
+(optic; mix `glass.aurora`, details `glass.auroraDriftHz`,
+`glass.auroraColorA`, `glass.auroraColorB`). Task 2's renderer-registry order
+does not change that out-of-scope Prism UI. The sink emits the nodes and the
+manifest binds all focused/unfocused keys and bypasses. The existing capability
+probe renders the actual fragment, so it tests both new nodes without a
+separate probe grammar. Installed niri `7526af1d` accepts the probe and both
+profile fragments.
 
 The starter profiles use section 8's optics in both focus states and explicitly
 set noise to 0 and saturation to 1 to avoid host blur inheritance. They are full
