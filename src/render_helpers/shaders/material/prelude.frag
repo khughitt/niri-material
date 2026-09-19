@@ -33,6 +33,7 @@ uniform vec4 mat_backdrop_color;
 uniform float mat_bg_prefilter_mix;
 uniform float mat_backdrop_prefilter_mix;
 uniform float mat_ior;
+uniform float mat_scatter;
 uniform float mat_thickness;
 uniform vec4 mat_attenuation_color;
 uniform float mat_attenuation_distance;
@@ -119,13 +120,14 @@ vec3 sampleBackground(vec2 v) {
 // deferred).
 vec3 srgbToLinear(vec3 c) {
     vec3 low = c / 12.92;
-    vec3 high = pow((c + 0.055) / 1.055, vec3(2.4));
+    // mix evaluates both branches; keep the power defined for signed grain.
+    vec3 high = pow(max((c + 0.055) / 1.055, vec3(0.0)), vec3(2.4));
     return mix(high, low, vec3(lessThanEqual(c, vec3(0.04045))));
 }
 
 vec3 linearToSrgb(vec3 c) {
     vec3 low = c * 12.92;
-    vec3 high = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+    vec3 high = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
     return mix(high, low, vec3(lessThanEqual(c, vec3(0.0031308))));
 }
 
@@ -378,9 +380,8 @@ vec3 tap(vec2 v, vec3 n, float ior, float thickness) {
     return srgbToLinear(sampleBackground(vv));
 }
 
-// Focus filament (design: Rendering). The ray through the fragment refracts
-// at the perturbed normal through the light-path index and lands `depth` px
-// into the slab; this is that in-plane displacement.
+// Interior light follows the perturbed normal through the light-path index
+// and lands `depth` px into the slab; this is that in-plane displacement.
 vec2 lightShift(vec3 n, float ior, float depth) {
     return refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior).xy * depth;
 }
@@ -388,13 +389,16 @@ vec2 lightShift(vec3 n, float ior, float depth) {
 // The band at a landing point `q`: a Gaussian of its distance from the outer
 // edge around `inset`, plus a soft halo bleeding into the glass. The caller
 // caps the shared part of the shift at half the inset before landing here —
-// dense glass bends the light path further than the inset (default glass,
-// light-ior 6: about 6.9 px against a 5 px inset), which would carry the
-// core out past the silhouette and leave nothing drawn. The per-channel aberration offsets
+// dense glass can bend the light path further than the inset, which would
+// carry the core out past the silhouette and leave nothing drawn. The
+// per-channel aberration offsets
 // ride on top of the capped shift, so the chromatic split survives the cap.
-float filamentBand(vec2 q, float inset, float width) {
+float filamentBand(vec2 q, float inset, float width, float scatter) {
     float d = -sdRoundedBox(q - g_center, g_half, g_outer_r);
-    float core = (d - inset) / width;
-    float halo = (d - inset - 2.0) / 9.0;
-    return exp(-2.0 * core * core) + 0.3 * exp(-2.0 * halo * halo);
+    float coreWidth = width + 6.0 * scatter;
+    float haloWidth = 9.0 + 18.0 * scatter;
+    float core = (d - inset) / coreWidth;
+    float halo = (d - inset - 2.0) / haloWidth;
+    return (width / coreWidth) * exp(-2.0 * core * core)
+         + 0.3 * (9.0 / haloWidth) * exp(-2.0 * halo * halo);
 }

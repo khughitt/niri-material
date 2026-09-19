@@ -76,6 +76,10 @@ void main() {
             sampled = acc / count;
         }
 
+        // Behind hooks act once on the averaged linear backdrop.
+        sampled = saturation_behind(sampled, gl_FragCoord.xy);
+        sampled = noise_behind(sampled, gl_FragCoord.xy);
+
         // Beer-Lambert over the view-lengthened slab path: the
         // orthographic incident ray is (0, 0, -1); the structural normal's
         // z is its cosine, so the chamfer tints more strongly than the
@@ -86,6 +90,51 @@ void main() {
         vec3 att = pow(clamp(mat_attenuation_color.rgb, vec3(0.001), vec3(1.0)),
                        vec3(opticalDistance / mat_attenuation_distance));
         vec3 transmitted = sampled * att;
+
+        vec3 within = vec3(0.0);
+        bool showAccent = mat_sig_response.x == 1 && mat_sig_accent.w > 0.0;
+        bool showFocus = mat_sig_response.z == 1 && mat_sig_focus.x > 0.0;
+        if ((showAccent || showFocus) && slabChamfer > 0.0) {
+            float inset = mat_sig_ring.x;
+            float width = mat_sig_ring.y;
+            float depth = mat_thickness * 0.2;
+            float ior = 1.0 + (mat_ior - 1.0) * mat_light_ior;
+            float ca = mat_chromatic_aberration * 0.1;
+            vec2 shift0 = lightShift(n, ior, depth);
+            float len0 = length(shift0);
+            float cap = 0.5 * inset;
+            vec2 base = len0 > cap ? shift0 * (cap / len0) : shift0;
+            vec2 q0 = p + base;
+            vec3 band = vec3(
+                filamentBand(q0, inset, width, mat_scatter),
+                filamentBand(q0 + lightShift(n, ior * (1.0 + ca), depth) - shift0,
+                             inset, width, mat_scatter),
+                filamentBand(q0 + lightShift(n, ior * (1.0 + 2.0 * ca), depth) - shift0,
+                             inset, width, mat_scatter));
+            float presence = mat_sig_accent.w;
+            float pulse = mat_sig_response.y == 2 ? mat_sig_breath : 0.0;
+            float accentGlow = showAccent
+                ? (0.15 + 0.35 * mat_sig_level) * (1.0 + pulse * mat_sig_level)
+                : 0.0;
+            float focusGlow = 0.0;
+            if (showFocus) {
+                vec2 q = q0 - g_center;
+                float ang = atan(q.y, q.x);
+                float drift = mat_sig_focus.y;
+                // Mirrors signal.rs `travel`: integer multiples of the
+                // drift keep the 2π wrap continuous.
+                float travel = sin(ang * 2.0 + drift) * sin(ang * 3.0 - 2.0 * drift);
+                focusGlow = mat_sig_focus.x * 0.7 * (0.55 + 0.45 * travel);
+            }
+            float glow = (accentGlow * presence + focusGlow) * (1.0 + 2.0 * mat_jelly_activity);
+            vec3 color = showAccent
+                ? mix(mat_sig_ring_color, mat_sig_accent.rgb, presence)
+                : mat_sig_ring_color;
+            within += color * glow * band * pow(att, vec3(0.2));
+        }
+
+        // Within hooks, in OPTICS order (render-pipeline.md within stage).
+        within += aurora_within(p, n, att, innerDist);
 
         // Fresnel edge glint: Schlick from the configured IOR on the
         // structural normal. Replaces the legacy
@@ -100,62 +149,13 @@ void main() {
             facing = max(dot(normalize(surfaceNormal.xy),
                              normalize(mat_sig_light.xy)), 0.0);
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
-        // Specular hooks, in OPTICS order (render-pipeline.md stage 5).
+        // Specular hooks, in OPTICS order (render-pipeline.md stage 6).
         specular = iridescence_specular(specular, surfaceNormal, surfaceCosine);
         if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0)
             specular = mix(specular, specular * mat_sig_accent.rgb * 2.0,
                            mat_sig_light.z * mat_sig_accent.w);
 
         vec3 emissive = vec3(0.0);
-        bool showAccent = mat_sig_response.x == 1 && mat_sig_accent.w > 0.0;
-        bool showFocus = mat_sig_response.z == 1 && mat_sig_focus.x > 0.0;
-        if ((showAccent || showFocus) && slabChamfer > 0.0) {
-            // Mask at the displayed fragment, never at the refracted point:
-            // exactly 0 on the face and everywhere di <= 0, 1 one px into
-            // the bevel, 0 everywhere when the rendered chamfer is 0.
-            float mask = smoothstep(0.0, 1.0, innerDist);
-            if (mask > 0.0) {
-                float inset = mat_sig_ring.x;
-                float width = mat_sig_ring.y;
-                float depth = mat_thickness * 0.6;
-                float ior = 1.0 + (mat_ior - 1.0) * mat_light_ior;
-                float ca = mat_chromatic_aberration * 0.1;
-                vec2 shift0 = lightShift(n, ior, depth);
-                float len0 = length(shift0);
-                float cap = 0.5 * inset;
-                vec2 base = len0 > cap ? shift0 * (cap / len0) : shift0;
-                vec2 q0 = p + base;
-                vec3 band = vec3(
-                    filamentBand(q0, inset, width),
-                    filamentBand(q0 + lightShift(n, ior * (1.0 + ca), depth) - shift0,
-                                 inset, width),
-                    filamentBand(q0 + lightShift(n, ior * (1.0 + 2.0 * ca), depth) - shift0,
-                                 inset, width));
-                float presence = mat_sig_accent.w;
-                float pulse = mat_sig_response.y == 2 ? mat_sig_breath : 0.0;
-                float accentGlow = showAccent
-                    ? (0.15 + 0.35 * mat_sig_level) * (1.0 + pulse * mat_sig_level)
-                    : 0.0;
-                float focusGlow = 0.0;
-                if (showFocus) {
-                    vec2 q = q0 - g_center;
-                    float ang = atan(q.y, q.x);
-                    float drift = mat_sig_focus.y;
-                    // Mirrors signal.rs `travel`: integer multiples of the
-                    // drift keep the 2π wrap continuous.
-                    float travel = sin(ang * 2.0 + drift) * sin(ang * 3.0 - 2.0 * drift);
-                    focusGlow = mat_sig_focus.x * 0.7 * (0.55 + 0.45 * travel);
-                }
-                float glow = (accentGlow * presence + focusGlow) * (1.0 + 2.0 * mat_jelly_activity);
-                vec3 color = showAccent
-                    ? mix(mat_sig_ring_color, mat_sig_accent.rgb, presence)
-                    : mat_sig_ring_color;
-                emissive += color * glow * band * mask * pow(att, vec3(0.2));
-            }
-        }
-
-        // Emissive hooks, in OPTICS order (render-pipeline.md stage 6).
-        emissive += aurora_emissive(p, n, att, innerDist);
 
         float diag = (p.x + p.y) / (mat_area_size.x + mat_area_size.y);
         for (int k = 0; k < 4; ++k) {
@@ -173,10 +173,8 @@ void main() {
             emissive += rgb * env * 0.5 * exp(-d * d);
         }
 
-        vec3 glassColor = linearToSrgb(transmitted + specular + emissive);
-        // Post hooks, in OPTICS order (render-pipeline.md stages 9 and 10).
-        glassColor = saturation_post(glassColor, gl_FragCoord.xy);
-        glassColor = noise_post(glassColor, gl_FragCoord.xy);
+        vec3 glassColor = linearToSrgb(transmitted + within + specular + emissive);
+        // Post hooks are reserved here for future screen-space film effects.
         glassed = vec4(glassColor, 1.0) * coverage;
     }
 

@@ -19,12 +19,9 @@
 # docs/materials/2026-09-05-material-glass-noise-saturation-params-evidence.md
 # stands as that guard's evidence.
 #
-# The ring itself is stable here. `animations { off; }` below pins its drift
-# phase (`drift_rate` returns 0 when animations are off,
-# src/render_helpers/signal.rs), and two runs of this script produce metrics
-# identical to the last digit. That dependency is load-bearing: dropping the
-# animations line would make every full-frame assertion below flaky, and
-# omitted_determinism_ae is the assertion that would say so first.
+# Formula checks use white attenuation, IOR 1 and no response lights:
+# saturation 0 grays the backdrop before tint or additive light can colour it.
+# Animations remain pinned for deterministic captures.
 #
 # Env: IMPL (niri binary under test), OUT (artifact dir).
 # Requires: weston, kitty, swaybg, jq, rg, ImageMagick.
@@ -74,9 +71,9 @@ blur {
 }
 material "gns-probe" {
     glass {
-        ior 1.5
+        ior 1
         thickness 20
-        attenuation-color "#dfe8ff"
+        attenuation-color "#ffffff"
         attenuation-distance 60
         chromatic-aberration 0
         distortion 0 scale=0.5
@@ -89,6 +86,11 @@ material "gns-probe" {
         offset-x 6
         offset-y 6
         $2
+    }
+    response "default" {
+        focus "none"
+        accent "none"
+        ring-drift-hz 0
     }
 }
 window-rule {

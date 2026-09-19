@@ -9,6 +9,11 @@ This run covers the unit and fixture suites, nested IPC behavior, redraw
 cadence and suppression, GPU cost, package contents, and a ten-minute physical
 DRM check.
 
+**Historical rendering note:** the signal, IPC, and cadence measurements below
+remain evidence for the signal system. Visual or cost conclusions that include
+the original ring placement are superseded by the depth-ordered
+[render-order evidence](2026-09-12-material-render-order-evidence.md).
+
 ## Unit and fixture suites
 
 | Command | Result |
