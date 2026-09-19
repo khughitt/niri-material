@@ -4,8 +4,9 @@ title: Tune stock ring inset against the refracted within ring
 status: idea
 priority: 2
 created: 2026-09-18T23:33:13Z
-updated: 2026-09-18T23:33:13Z
+updated: 2026-09-19T00:56:02Z
 depends: [material-92edaf]
+parent: material-a76720
 tags: [rendering]
 source: "2026-09-12-material-render-order:stock-inset-captures"
 agent: codex
