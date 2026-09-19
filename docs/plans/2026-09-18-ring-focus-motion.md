@@ -988,6 +988,7 @@ Fix every other call site the compiler reports (tests in `src/layout/tests.rs` a
 `src/niri.rs`:
 - Fields (near `pointer_inactivity_timer`): `pub input_activity: crate::activity::InputActivity,` and `pub input_idle_timer: Option<RegistrationToken>,`.
 - `Niri::new`: `input_activity: crate::activity::InputActivity::new(get_monotonic_time(), config.signal.idle_after)` — `config` is the borrowed `Config` in that constructor; `input_idle_timer: None`. Immediately after the struct is built (where other timers are armed, or at the end of `new` before return), call `niri.arm_input_idle_timer();`.
+- For the fixture's leak assertion, add `#[cfg(test)] pub input_idle_timer_fires: usize,` to `Niri`, initialized with `#[cfg(test)] input_idle_timer_fires: 0,`. Count every idle-timer callback, including early firings, before changing state; this field does not exist in production builds.
 - Methods, next to `reset_pointer_inactivity_timer`:
 
 ```rust
@@ -1003,6 +1004,10 @@ Fix every other call site the compiler reports (tests in `src/layout/tests.rs` a
         let token = self
             .event_loop
             .insert_source(Timer::from_duration(delay), move |_, _, state| {
+                #[cfg(test)]
+                {
+                    state.niri.input_idle_timer_fires += 1;
+                }
                 // The source is always dropped here, so clearing the token
                 // is correct in both arms; a re-arm inserts a fresh source
                 // and stores its token. Never `TimeoutAction::ToDuration`:
@@ -1057,7 +1062,12 @@ in a new `src/tests/attention_idle.rs` (add `mod attention_idle;` to
 `src/tests/mod.rs`) cover the token invariant across an early fire and a
 reload, and the input→`notify_activity`→layout→timer wiring through a
 virtual pointer. They sleep real time in tens of milliseconds, like the
-thresholds they set.
+thresholds they set. Timer-only checkpoints call `f.state.server.dispatch()`
+directly: `Fixture::dispatch()` polls the outer loop and dispatches the server
+only when its file descriptor is readable. Calloop discovers expired timers
+inside the server loop's own poll; timer expiration alone does not make that
+descriptor readable. The callback counter also catches a leaked source that
+fires while already idle, when the idle flag and token would remain unchanged.
 
 First, give the test client a virtual pointer. In `src/tests/client.rs`:
 
@@ -1099,6 +1109,7 @@ use std::time::Duration;
 use niri_config::Config;
 
 use super::fixture::Fixture;
+use crate::utils::get_monotonic_time;
 
 fn fixture(idle_after: Duration) -> Fixture {
     let mut config = Config::default();
@@ -1112,6 +1123,7 @@ fn fixture(idle_after: Duration) -> Fixture {
 fn idle_timer_keeps_one_live_token_across_an_early_fire_and_reloads() {
     let mut f = fixture(Duration::from_millis(150));
     assert!(f.niri().input_idle_timer.is_some(), "armed at construction");
+    let fires = f.niri().input_idle_timer_fires;
 
     // Input at 80 ms, then the original 150 ms deadline fires early:
     // poll says Rearm, and the token must point at the live source.
@@ -1119,14 +1131,18 @@ fn idle_timer_keeps_one_live_token_across_an_early_fire_and_reloads() {
     f.niri().notified_activity_this_iteration = false;
     f.niri().notify_activity();
     sleep(Duration::from_millis(90));
-    f.dispatch();
+    f.state.server.dispatch();
+    assert_eq!(f.niri().input_idle_timer_fires, fires + 1, "the early timer actually fired");
     assert!(!f.niri().input_activity.is_idle());
     assert!(f.niri().input_idle_timer.is_some(), "re-armed after the early fire");
 
     // A reload that raises the threshold must be able to cancel that timer
     // and arm one; the invariant is token.is_some() == next_check().is_some().
-    f.niri().set_input_idle_threshold(Duration::from_secs(10));
+    f.niri().set_input_idle_threshold(Duration::from_millis(250));
     assert!(f.niri().input_idle_timer.is_some());
+    // This is later than the cancelled 150 ms timer's deadline. Wait past
+    // both below, so either source leaking is observable.
+    let cancelled_deadline = f.niri().input_activity.next_check().unwrap();
     f.niri().set_input_idle_threshold(Duration::ZERO);
     assert!(f.niri().input_idle_timer.is_none(), "gate off, no timer");
 
@@ -1136,9 +1152,12 @@ fn idle_timer_keeps_one_live_token_across_an_early_fire_and_reloads() {
     assert!(f.niri().input_idle_timer.is_none());
     assert!(!f.niri().layout.input_active());
 
-    // Nothing leaked: a long wait produces no further state change.
-    sleep(Duration::from_millis(200));
-    f.dispatch();
+    // Neither cancelled source may fire, even if a callback would leave
+    // the already-idle state unchanged.
+    let fires = f.niri().input_idle_timer_fires;
+    sleep(cancelled_deadline.saturating_sub(get_monotonic_time()) + Duration::from_millis(20));
+    f.state.server.dispatch();
+    assert_eq!(f.niri().input_idle_timer_fires, fires, "a cancelled source fired");
     assert!(f.niri().input_activity.is_idle());
     assert!(f.niri().input_idle_timer.is_none());
 }
@@ -1150,7 +1169,7 @@ fn virtual_pointer_input_resumes_attention_and_the_gate_re_engages() {
     f.roundtrip(id);
 
     sleep(Duration::from_millis(80));
-    f.dispatch();
+    f.state.server.dispatch();
     assert!(f.niri().input_activity.is_idle());
     assert!(!f.niri().layout.input_active());
     assert!(f.niri().input_idle_timer.is_none());
@@ -1165,13 +1184,13 @@ fn virtual_pointer_input_resumes_attention_and_the_gate_re_engages() {
     assert!(f.niri().input_idle_timer.is_some(), "the gate is armed again");
 
     sleep(Duration::from_millis(80));
-    f.dispatch();
+    f.state.server.dispatch();
     assert!(f.niri().input_activity.is_idle(), "idle again after the threshold");
     assert!(!f.niri().layout.input_active());
 }
 ```
 
-`notified_activity_this_iteration` is reset by the event loop's per-iteration hook (`src/niri.rs:785`); the fixture's `dispatch` may or may not run it, so the tests reset it explicitly before driving activity. If `Fixture::roundtrip` does not process the server side, follow it with `f.dispatch()`.
+`Server::dispatch()` runs `refresh_and_flush_clients()` after polling, which resets `notified_activity_this_iteration`; the explicit resets before direct activity keep that setup local to each assertion. `Fixture::roundtrip()` drives both the server and client until the sync reply arrives, so keep it for virtual-pointer delivery. It is not a substitute for explicitly dispatching the server at timer-only checkpoints.
 
 Run: `just test 2>&1 | grep -E "attention_idle|test result" | head`
 Expected: both PASS. If the virtual-pointer test fails at `is_idle()` after the nudge, check that `process_input_event` is reached (`should_notify_activity` accepts `PointerMotion`) and that the fixture's seat has a pointer capability.
@@ -1347,5 +1366,5 @@ Prism: one task under `material-743692`'s coordination, filed at plan approval, 
 - Spec §1 (phase, state, start, cut, redraw, removed): Task 2. §2 (three settled gates): Task 2 `tick_deadline_has_no_focus_arm`, `settled_focus_fingerprints_to_a_constant`, `settled_focus_reports_no_deadline_and_no_transition`. §3 (activity, init, reload, resume, matrix): Task 3; the smoke's hidden/DPMS/idle rows: Task 4. §4: Task 1. §5: cross-project follow-up (Prism repo). §6: file map. §7 headless and clips: Task 4. §8 docs: Task 1 (`material-config.md`), Task 2 (`render-pipeline.md`, smoke fixtures), Task 3 (signals design), Task 4 (status headers).
 - Every task leaves the workspace compiling and `just test` green: Task 1 keeps `ResolvedResponse.ring_drift_hz` inert; Task 2 removes it together with its only readers.
 - Resume is exercised by real input at both levels: a virtual pointer through the test client in `src/tests/attention_idle.rs` (Task 3), and `wlrctl` inside the nested instance in the smoke (Task 4). The reload path is covered by `InputActivity::set_threshold` unit tests and the fixture test's reload sequence.
-- The idle timer never uses `TimeoutAction::ToDuration`; every fire drops its source and a re-arm inserts a new one, so `input_idle_timer.is_some()` is equivalent to a registered source. The fixture test checks this across an early fire and three reloads.
+- The idle timer never uses `TimeoutAction::ToDuration`; every fire drops its source and a re-arm inserts a new one, so `input_idle_timer.is_some()` is equivalent to a registered source. The fixture test dispatches the server loop directly across an early fire and three reloads, then verifies the test-only callback count stays unchanged after both cancelled deadlines.
 - Names used consistently: `sweep_phase`, `FocusSweep { started, duration }`, `FrameInputs.sweep`, `SignalFrame.sweep`, `sweep_q`, `InputActivity`, `Poll::{Idle, Rearm}`, `set_input_active`, `effective(.., input_active)`, `ring_sweep`, `idle_after`.
