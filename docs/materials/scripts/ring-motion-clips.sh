@@ -57,6 +57,10 @@ stop_nested() {
         timeout 10 systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
         for _ in $(seq 50); do [ -e "$HOST_SOCKET" ] || break; sleep 0.1; done
         UNIT=; HOST_SOCKET=
+        # Weston's GL renderer holds the GPU at P0; after the unit stops it
+        # steps down through P5 to P8 over about two seconds. The next
+        # sequence's settle samples at once and must not see our own tail.
+        sleep 4
     fi
     rm -f "$RT"/*
 }
@@ -87,13 +91,15 @@ CHECKER=$OUT/checker.png
 magick -size 160x90 pattern:checkerboard -scale 800% "$CHECKER"
 KITTY_OPTS='"-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "-o" "background_opacity=0.6"'
 # The gradient focus ring is off so the filament is the only focus cue in
-# frame. `ring-sweep-ms 1500` is the default under review; the idle fixture
+# frame, and the startup hotkey overlay is skipped so nothing sits over the
+# scene. `ring-sweep-ms 1500` is the default under review; the idle fixture
 # turns the gate to 5 s so the freeze lands inside a short capture.
 write_config() {   # $1 = path, $2 = idle-after-ms
     cat > "$1" <<EOF
 material "tg" { glass {}; response "default" { ring-sweep-ms 1500; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 layout { focus-ring { off; }; gaps 24; }
+hotkey-overlay { skip-at-startup; }
 signal { idle-after-ms $2; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
 spawn-at-startup "kitty" $KITTY_OPTS "--hold" "true"

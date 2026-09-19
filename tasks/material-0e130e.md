@@ -1,13 +1,14 @@
 ---
 id: material-0e130e
 title: Use one-shot focus ring effects; gate sustained attention motion on visibility and activity
-status: todo
+status: done
 priority: 1
 size: m
 complexity: high
 process: planned
 created: 2026-09-16T12:00:25Z
-updated: 2026-09-19T03:00:21Z
+updated: 2026-09-19T22:33:56Z
+completed: 2026-09-19T22:33:56Z
 depends: [material-92edaf, material-82323e]
 parent: material-5d6b2c
 tags: [performance, dynamics, signals]
@@ -27,3 +28,7 @@ Scope refinement (2026-09-18): material-82323e owns the next design pass; this i
 - 2026-09-19T00:26:26Z (materials-26.04): scope: briefed; separated visual placement, native motion design and existing/new Prism wiring; brief: docs/notes/2026-09-18-ring-next-steps-brief.md
 - 2026-09-19T02:49:26Z (material-82323e): Design reviewed (docs/specs/2026-09-18-ring-focus-motion-design.md) and plan attached (docs/plans/2026-09-18-ring-focus-motion.md): one eased lap on focus gain over ring-sweep-ms on the animation loop, ending on the pinned pattern; ring-drift-hz retired with a parse error; sustained attention frozen after signal idle-after-ms (default 30 s) and resumed from the absolute clock. Four step children, ordered by deps; Task 4 runs on the headless host. Deviation to know: the smoke drives resume via a threshold reload, not injected input.
 - 2026-09-19T03:00:21Z (material-82323e): Plan review applied: idle timer always drops and re-arms (no ToDuration) with a fixture test across an early fire and reloads; start eligibility (nonzero ring-sweep-ms) separated from the cut rule so a reload to 0 finishes the lap; phase test nondecreasing per ms with coarse strict checks; resume exercised by real input at both levels (virtual pointer in src/tests, wlrctl inside the nested smoke instance - wlrctl is now a host requirement).
+- 2026-09-19T22:33:56Z (material-82323e): done
+  provenance: {"harness_session":"claude-code:49261570-0755-4b4b-ac00-f6343337242c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-19T22:33:56Z (material-82323e): one eased lap on focus gain, settled focus costs nothing, attention frozen while idle; evidence 2026-09-18-ring-focus-motion-evidence.md
+  provenance: {"harness_session":"claude-code:49261570-0755-4b4b-ac00-f6343337242c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
