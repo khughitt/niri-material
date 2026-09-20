@@ -279,9 +279,9 @@ gpu_case() { # baseline|neutral|active, round
     local binary glass cooldown_name FOCUS_RESPONSE=none RESPONSE_EXTRA=
     if [ "${PHASE:-behind}" = within ]; then
         case $1 in
-            baseline) binary=$BASE_NIRI_TRACY; FOCUS_RESPONSE=ring-light; RESPONSE_EXTRA=$'ring-inset 5\nring-width 2.6'; glass=$'noise 0\nsaturation 1\naurora 0.5 { drift-hz 0; }' ;;
+            baseline) binary=$BASE_NIRI_TRACY; FOCUS_RESPONSE=ring-light; RESPONSE_EXTRA=$'ring-gap 5\nring-width 2.6'; glass=$'noise 0\nsaturation 1\naurora 0.5 { drift-hz 0; }' ;;
             neutral) binary=$NIRI_TRACY; glass=$'noise 0\nsaturation 1\naurora 0 { drift-hz 0; }' ;;
-            active) binary=$NIRI_TRACY; FOCUS_RESPONSE=ring-light; RESPONSE_EXTRA=$'ring-inset 5\nring-width 2.6'; glass=$'noise 0\nsaturation 1\naurora 0.5 { drift-hz 0; }' ;;
+            active) binary=$NIRI_TRACY; FOCUS_RESPONSE=ring-light; RESPONSE_EXTRA=$'ring-gap 5\nring-width 2.6'; glass=$'noise 0\nsaturation 1\naurora 0.5 { drift-hz 0; }' ;;
             *) fail "unknown GPU case $1" ;;
         esac
     else case $1 in
@@ -377,9 +377,14 @@ assert_changed() { # name, on, off, crop; requires at least one delta > 1 code
     printf '%s_changed_pixels=%s\n' "$1" "$changed" >> "$OUT/metrics.txt"
 }
 
-within_ring() { # name, glass, inset, width, thickness, bevel, scatter
+# `ring-gap` is measured from the face edge (the slab minus its chamfer), where
+# the retired inset key it replaced was measured from the slab's outer edge; the reach
+# model in glass-render-order-metrics.py still takes the slab-edge figure as
+# `--inset`, so its bound predates the beam and needs re-deriving before the
+# within cases are next graded.
+within_ring() { # name, glass, gap, width, thickness, bevel, scatter
     RESPONSE_EXTRA="ring-color \"#ffffff\"
-ring-inset $3
+ring-gap $3
 ring-width $4"
     capture "$1-off" "$2" "$NIRI" none
     capture "$1-on" "$2" "$NIRI" ring-light
@@ -485,7 +490,7 @@ within_opaque() {
     local neutral active
     neutral=$'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }'
     active=$'noise 0.5 type="fine"\nsaturation 0\niridescence 0.8\naurora 0.5 { drift-hz 0; }'
-    RESPONSE_EXTRA=$'ring-inset 20\nring-width 2.6'
+    RESPONSE_EXTRA=$'ring-gap 20\nring-width 2.6'
     capture within-opaque-off "$neutral" "$NIRI" none opaque 1.0
     capture within-opaque-on "$active" "$NIRI" ring-light opaque 1.0
     RESPONSE_EXTRA=
@@ -501,7 +506,7 @@ within_opaque() {
 
 within_additive() {
     additive_case aurora 'aurora 0 { drift-hz 0; }' 'aurora 0.5 { drift-hz 0; }' none
-    RESPONSE_EXTRA=$'ring-inset 5\nring-width 2.6'
+    RESPONSE_EXTRA=$'ring-gap 5\nring-width 2.6'
     additive_case ring '' '' ring-light
     RESPONSE_EXTRA=
     additive_case iridescence 'iridescence 0' 'iridescence 0.8' none
