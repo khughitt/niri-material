@@ -79,8 +79,10 @@ deadline.
 
 The focus beam is one run on the animation loop — the head's lap plus its
 tail, `(perimeter + tail) / ring-beam-speed` long, ended by the frame whose
-geometry sees the tail clear — reported through `are_transitions_ongoing`
-while the band is in view; it has no bucket clock and no deadline. Settled
+geometry sees the tail clear — reported through `are_animations_ongoing`
+while the band is in view; it has no bucket clock and no deadline. It is not
+a layout transition: `are_transitions_ongoing`, which also gates the
+pointer-focus refresh in `Niri::refresh_pointer_contents`, does not report it. Settled
 focus reports no deadline and a constant fingerprint. Sustained attention motion keeps its bucket deadline
 (`Tile::tick_deadline`) while the band is in view.
 
