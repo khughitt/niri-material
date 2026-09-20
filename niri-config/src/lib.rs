@@ -881,7 +881,7 @@ mod tests {
                     ping "ripple"
                     done "sweep"
                     error "flash"
-                    ring-inset 6
+                    ring-gap 6
                     ring-width 2
                 }
                 response "loud" {
@@ -901,7 +901,7 @@ mod tests {
         assert_eq!(loud.attention, crate::AttentionResponse::RingPulse);
         assert_eq!(loud.accent, crate::AccentResponse::Ring);
         assert_eq!(loud.done, crate::ImpulseResponse::Sweep);
-        assert_eq!(loud.ring_inset, 6.);
+        assert_eq!(loud.ring_gap, 6.);
         let r = parsed.window_rules[0].material.as_ref().unwrap();
         assert_eq!(r.name, "tg");
         assert_eq!(r.response.as_deref(), Some("loud"));
@@ -916,7 +916,7 @@ mod tests {
         assert_eq!(d.ping, crate::ImpulseResponse::Ripple);
         assert_eq!(d.done, crate::ImpulseResponse::Sweep);
         assert_eq!(d.error, crate::ImpulseResponse::Flash);
-        assert_eq!((d.ring_inset, d.ring_width), (5., 2.6));
+        assert_eq!((d.ring_gap, d.ring_width), (8., 2.6));
     }
 
     #[test]
@@ -929,9 +929,9 @@ mod tests {
                 response "default" {
                     focus "none"
                     ring-color "#ff8800"
-                    ring-sweep-ms 2000
+                    ring-beam-speed 600
                 }
-                response "still" { ring-sweep-ms 0; }
+                response "still" { ring-beam-speed 0; }
             }
             "##,
         )])
@@ -944,14 +944,14 @@ mod tests {
             d.ring_color,
             Color::from_rgba8_unpremul(0xff, 0x88, 0x00, 0xff)
         );
-        assert_eq!(d.ring_sweep, Duration::from_millis(2000));
+        assert_eq!(d.ring_beam_speed, 600.);
         let still = m.response(Some("still"));
         assert_eq!(
             still.focus,
             crate::FocusResponse::None,
             "inherited from default"
         );
-        assert_eq!(still.ring_sweep, Duration::ZERO);
+        assert_eq!(still.ring_beam_speed, 0.);
 
         let builtin = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)])
             .unwrap()
@@ -963,8 +963,8 @@ mod tests {
             b.ring_color,
             Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff)
         );
-        assert_eq!(b.ring_sweep, Duration::from_millis(1500));
-        assert_eq!((b.ring_inset, b.ring_width), (5., 2.6));
+        assert_eq!(b.ring_beam_speed, 300.);
+        assert_eq!((b.ring_gap, b.ring_width), (8., 2.6));
         assert_eq!(builtin.glass.light_ior, 6.);
     }
 
@@ -984,47 +984,61 @@ mod tests {
     }
 
     #[test]
-    fn ring_drift_hz_is_rejected_with_its_replacement() {
-        let err = parse_files_err(&[(
-            "config.kdl",
-            r#"material "tg" { glass {}; response "default" { ring-drift-hz 15; }; }"#,
-        )]);
-        assert!(
-            err.contains("ring-drift-hz was replaced by ring-sweep-ms; see material-config.md"),
-            "{err}"
-        );
+    fn retired_ring_keys_are_rejected_with_their_replacements() {
+        for (line, message) in [
+            (
+                "ring-drift-hz 15;",
+                "ring-drift-hz was replaced by ring-beam-speed; see material-config.md",
+            ),
+            (
+                "ring-sweep-ms 1500;",
+                "ring-sweep-ms was replaced by ring-beam-speed; see material-config.md",
+            ),
+            (
+                "ring-inset 5;",
+                "ring-inset was replaced by ring-gap; see material-config.md",
+            ),
+        ] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ {line} }}; }}"#),
+            )]);
+            assert!(err.contains(message), "{line}: {err}");
+        }
     }
 
     #[test]
-    fn ring_sweep_ms_defaults_bounds_and_inherits() {
-        let parsed = parse_files(&[(
-            "config.kdl",
-            r#"material "tg" { glass {}; response "default" {}; }"#,
-        )])
-        .unwrap();
-        assert_eq!(
-            parsed.materials[0].resolve().response(None).ring_sweep,
-            Duration::from_millis(1500)
-        );
+    fn ring_beam_keys_default_bound_and_inherit() {
+        let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
+        let d = parsed.materials[0].resolve().response(None);
+        assert_eq!((d.ring_beam_speed, d.ring_gap, d.ring_glow), (300., 8., 1.));
 
         let parsed = parse_files(&[(
             "config.kdl",
-            r#"material "tg" { glass {}; response "default" { ring-sweep-ms 0; }; response "still" {}; }"#,
+            r#"material "tg" { glass {}; response "default" { ring-beam-speed 0; ring-gap 12; ring-glow 1.5; }; response "still" {}; }"#,
         )])
         .unwrap();
         let m = parsed.materials[0].resolve();
-        assert_eq!(m.response(None).ring_sweep, Duration::ZERO);
+        let d = m.response(None);
+        assert_eq!((d.ring_beam_speed, d.ring_gap, d.ring_glow), (0., 12., 1.5));
+        let still = m.response(Some("still"));
         assert_eq!(
-            m.response(Some("still")).ring_sweep,
-            Duration::ZERO,
-            "inherits"
+            (still.ring_beam_speed, still.ring_gap, still.ring_glow),
+            (0., 12., 1.5),
+            "inherits from default"
         );
 
-        let err = parse_files_err(&[(
-            "config.kdl",
-            r#"material "tg" { glass {}; response "default" { ring-sweep-ms 10001; }; }"#,
-        )]);
-        assert!(err.contains("ring-sweep-ms must be at most 10000"), "{err}");
+        for (line, message) in [
+            ("ring-beam-speed 5001;", "value must be between 0 and 5000"),
+            ("ring-gap 129;", "value must be between 0 and 128"),
+            ("ring-glow 3.5;", "value must be between 0 and 3"),
+        ] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ {line} }}; }}"#),
+            )]);
+            assert!(err.contains(message), "{line}: {err}");
+        }
     }
 
     #[test]
@@ -1045,7 +1059,7 @@ mod tests {
     #[test]
     fn focus_response_rejects_out_of_range() {
         for body in [
-            r#"material "tg" { glass {}; response "default" { ring-sweep-ms 10001; }; }"#,
+            r#"material "tg" { glass {}; response "default" { ring-beam-speed 5001; }; }"#,
             r#"material "tg" { glass { light-ior 13; }; }"#,
             r#"material "tg" { glass { light-ior 0.5; }; }"#,
             r#"material "tg" { glass {}; response "default" { focus "glow"; }; }"#,
@@ -1076,7 +1090,7 @@ mod tests {
     fn ring_may_extend_past_the_bevel() {
         parse_files(&[(
             "config.kdl",
-            r#"material "tg" { glass { bevel 4; offset-x 0; offset-y 0; }; response "default" { ring-inset 3; ring-width 2; }; }"#,
+            r#"material "tg" { glass { bevel 4; offset-x 0; offset-y 0; }; response "default" { ring-gap 3; ring-width 2; }; }"#,
         )])
         .unwrap();
     }

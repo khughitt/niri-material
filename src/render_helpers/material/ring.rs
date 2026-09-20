@@ -503,6 +503,23 @@ mod tests {
     }
 
     #[test]
+    fn the_shader_names_the_same_constants() {
+        let frag = include_str!("../shaders/material/main.frag");
+        for (name, value) in [
+            ("BEAM_HEAD_SIGMA", format!("{:.1}", BEAM_HEAD_SIGMA)),
+            ("BEAM_TAIL_START", format!("{:.1}", BEAM_TAIL_START)),
+            ("BEAM_TAIL_FRACTION", format!("{:.2}", BEAM_TAIL_FRACTION)),
+            ("BEAM_TAIL_MAX", format!("{:.1}", BEAM_TAIL_MAX)),
+            ("BEAM_REST", format!("{:.1}", BEAM_REST)),
+            ("BEAM_SPILL", format!("{:.2}", BEAM_SPILL)),
+            ("BEAM_BASE", format!("{:.1}", BEAM_BASE)),
+        ] {
+            let line = format!("const float {name} = {value};");
+            assert!(frag.contains(&line), "main.frag lacks `{line}`");
+        }
+    }
+
+    #[test]
     fn glow_scales_the_whole_focus_light() {
         let f = BeamFrame {
             head: 100.,
