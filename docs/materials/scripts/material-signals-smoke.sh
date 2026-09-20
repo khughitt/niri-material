@@ -199,10 +199,10 @@ write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "de
 write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; ring-beam-speed 0; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
 # Focused-window fixtures: on focus gain the beam runs once around the face,
-# (P + L) / speed on the animation loop, and then rests. On this 1280x720
-# pane the face is about 1250x690 (P ~ 3800, L = 950), so at 1200 px/s the
-# run is about 4 s: long enough to count, and over long before the steady
-# window, so a focused window costs nothing there.
+# (P + L) / speed on the animation loop, and then rests. At 1200 px/s a
+# single 1280x720 pane (face ~1250x690, P ~ 3800, L = 950) runs about 4 s
+# and the two-column `beam-run` scene about 2.7 s: long enough to count, and
+# over long before the steady window, so a focused window costs nothing there.
 write_config "$WORK/beam.kdl"           'material "tg2" { glass {}; response "default" { ring-beam-speed 1200; ring-gap 8; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
 write_config "$WORK/beam-anim-off.kdl"  'material "tg2" { glass {}; response "default" { ring-beam-speed 1200; ring-gap 8; }; }' \
@@ -589,8 +589,12 @@ focus_toggle_case() {   # $1 name, $2 cfg, $3 control total
     expect_zero "$1 after" "$after"
 }
 # One focus gain with the beam on: the run is (P + L) / speed on the pane's
-# face (~4 s here), redraws during it approximate the animation-loop rate,
-# and the tail after it must be zero. `during` fires 12 s into the capture.
+# face. `setup_other_focused` is a two-column scene, so the focused face is
+# about 616x688 (P ~ 2600, L ~ 650): about 2.7 s at 1200 px/s, passed as 3.
+# Redraws during the run approximate the animation-loop rate and the tail
+# after it must be zero. `during` fires 12 s into the 30 s capture, so the
+# run window is [12, 12 + $3 + 0.5) s and the after window [18, 30) s, which
+# no run at this speed can reach.
 beam_run_case() {   # $1 name, $2 cfg, $3 expected run seconds
     run_case "$1" "$2" setup_other_focused during_focus_once
     local during after
@@ -633,7 +637,7 @@ mode_cases() {
     steady_zero  other-focused     "$WORK/beam.kdl"          setup_other_focused
     toggle_control_case toggle-control "$WORK/no-material.kdl"; toggle_n=$STEADY_N
     focus_toggle_case   focus-none-toggle "$WORK/focus-none.kdl" "$toggle_n"
-    beam_run_case       beam-run "$WORK/beam.kdl" 4
+    beam_run_case       beam-run "$WORK/beam.kdl" 3
     steady_about demand-pulse "$WORK/base.kdl" "setup_demand pulse" 540; pulse_n=$STEADY_N
     steady_zero  demand-pulse-focused "$WORK/base.kdl" setup_demand_focused
     steady_about demand-breathe "$WORK/base.kdl" "setup_demand breathe" 160; breathe_n=$STEADY_N
