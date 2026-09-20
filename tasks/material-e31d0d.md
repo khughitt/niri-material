@@ -7,8 +7,8 @@ size: m
 complexity: mid
 process: direct
 created: 2026-09-20T01:53:29Z
-updated: 2026-09-20T01:53:29Z
-depends: [material-f2579f]
+updated: 2026-09-20T09:24:44Z
+depends: [material-be2e27]
 parent: material-2c3984
 tags: [rendering, signals]
 agent: claude-code
