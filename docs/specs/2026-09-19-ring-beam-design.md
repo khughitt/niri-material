@@ -1,6 +1,6 @@
 # The ring beam: a light inside the glass, tracing the face
 
-**Status:** design, 2026-09-19, revised the same day after review (geometry-change policy, tail taper, circular head distance, rest uniforms); awaiting the owner's review before planning.
+**Status:** design, 2026-09-19, revised the same day after two reviews (geometry-change policy, tail taper, circular head distance, rest uniforms; then float32-safe tail, jelly-consistent perimeter, split head-cutoff/decay envelope); awaiting the owner's review before planning.
 Supersedes §1 (the pattern and the ease) of
 [2026-09-18-ring-focus-motion-design.md](2026-09-18-ring-focus-motion-design.md)
 and the `ring-inset` placement question of `material-9306b5`; keeps that
@@ -92,19 +92,26 @@ times the radius. The function is a projection, so it is valid for any `q`,
 including chamfer points (used by the spill in §1.4).
 
 Its Rust twin, `render_helpers::material::ring::beam_perimeter(face_half,
-face_radii, gap) -> f64`, uses the same formula on the un-jellied face and
-decides, every frame, whether the run has ended (§2). The two agree exactly
-at rest; under jelly motion the shader's `P` differs by the resize for the
-spring's duration, which moves the seam by that fraction and nothing else —
-the head is never repositioned.
+face_radii, gap) -> f64`, uses the same formula and decides, every frame,
+whether the run has ended (§2). It is given the **same effective face** the
+shader draws: the tile already computes the jelly resize it sends as
+`mat_jelly_resize`, and the face half-extents handed to `beam_perimeter`
+are scaled by it exactly as `slabSurface` scales `inner_half`
+(`half · (1 + resize / max(2 · half_ext, 1))`), with the radii refit the
+same way. Timing and rendering therefore see one perimeter at every frame,
+jelly included; there is no approximation to bound. A unit test feeds the
+Rust twin a jelly-scaled face and checks it against the closed form on the
+scaled extents.
 
 ### 1.3 The comet
 
-Uniforms: `mat_sig_focus = vec3(focus, head, env)` — `focus` as today,
-`head` the head's arc position in px (unbounded during a run, see §2),
-`env` the head envelope 0–1. `mat_sig_ring = vec3(gap, width, glow)`. Both
-are registered as `_2f` in `src/render_helpers/shaders/mod.rs` today and
-become `_3f`.
+Uniforms: `mat_sig_focus = vec4(focus, head, env, decay)` — `focus` as
+today, `head` the head's arc position in px (unbounded during a run, see
+§2), `env` the head cutoff 0–1 (exactly `0` once the head has completed its
+lap), `decay` the shared brightness of head and tail 0–1 (`1` throughout a
+plateau run). `mat_sig_ring = vec3(gap, width, glow)`. Both are registered
+as `_2f` in `src/render_helpers/shaders/mod.rs` today and become `_4f` and
+`_3f`.
 
 Constants, named at the top of the ring block so the sheets can move them
 in one line:
@@ -124,14 +131,21 @@ For a landing point with arc position `s`:
 dHead = |mod(head − s + P/2, P) − P/2|            // circular distance: s = 0 and s = P coincide
 headTerm = env · exp(−dHead² / (2 σ²))
 behind = head − s                                 // no wrap: the beam enters at s = 0
-taper = behind > 0 && behind < L ? (1 − behind / L)² : 0
-tailTerm = BEAM_TAIL_START · exp(−behind / L) · (1 − exp(−behind / σ)) · taper
-beam = BEAM_BASE · glow · (headTerm + tailTerm + BEAM_REST)
+tailTerm = (behind > 0 && behind < L)
+    ? BEAM_TAIL_START · exp(−behind / L) · (1 − exp(−behind / σ)) · (1 − behind / L)²
+    : 0
+beam = BEAM_BASE · glow · (decay · (headTerm + tailTerm) + BEAM_REST)
 ```
+
+The whole tail expression lives inside the conditional. Evaluated outside
+it, `exp(−behind/σ)` at rest (`head = 0`, `s = 2000`, `σ = 20`) is
+`exp(100)`, which overflows float32 to infinity, and infinity times a zero
+taper is NaN, not zero. Inside the branch `behind > 0`, so every factor is
+finite and at most `1`.
 
 The circular distance is symmetric across the seam: at `head = 20`, `σ = 20`
 the head lights `s = 0` and `s = P − 20` alike (`0.607` and `0.135`), and on
-its return at `head = P − 20` it lights `s = 20` the same way. `taper` takes
+its return at `head = P − 20` it lights `s = 20` the same way. The `(1 − behind/L)²` taper takes
 the tail to exactly `0` at `behind = L` with zero slope, so the tail
 diffuses into the resting glow instead of ending in a moving step (without
 it the cut would sit at `0.6/e ≈ 0.22`, brighter than the rest). The
@@ -139,12 +153,14 @@ it the cut would sit at `0.6/e ≈ 0.22`, brighter than the rest). The
 stepping on. `head` runs from `0` to `P + L` over a run (§2); while `head >
 P` the tail is what remains, leaving at the start point.
 
-**Rest is `head = 0, env = 0`.** Those are the uniform values the tile
-sends whenever no beam is running, and they define the resting state
-exactly: `env = 0` removes the head, and `head = 0` makes `behind = −s ≤ 0`
-for every fragment (`taper = 0`), so `beam = BEAM_BASE · glow · BEAM_REST`.
-The tail-drain phase (`head ∈ (P, P + L]`, `env = 0`) is *not* rest: `head`
-still moves and the fingerprint tracks it (§2).
+**Rest is `head = 0, env = 0, decay = 0`.** Those are the uniform values
+the tile sends whenever no beam is running, and they define the resting
+state exactly: `env = 0` removes the head, `head = 0` makes `behind = −s ≤
+0` for every fragment so the tail branch is not taken, and `decay = 0`
+would remove both anyway; `beam = BEAM_BASE · glow · BEAM_REST`, finite in
+float32 at every `s`. The tail-drain phase (`head ∈ (P, P + L]`, `env = 0`,
+`decay > 0`) is *not* rest: `head` still moves and the fingerprint tracks
+it (§2).
 
 `focusGlow` becomes `beam`; `travel`, `drift` and the `sin·sin` pattern go.
 The accent glow (`accentGlow`, familiar signals, `mat_sig_level`,
@@ -185,12 +201,17 @@ current geometry.
 - **Start.** On every focus gain with `focus "ring-light"`, `motion "full"`,
   animations on, and `ring-beam-speed > 0`. A running beam is replaced. A
   beam starts nowhere else.
-- **Frame.** With `P = beam_perimeter(...)` from the tile's face *as it is
-  this frame* and `L = min(P · BEAM_TAIL_FRACTION, BEAM_TAIL_MAX)`:
-  `head = speed · elapsed` px, and `env = smoothstep(0, FADE, t) ·
-  (1 − smoothstep(P/speed − FADE, P/speed, t))` with `FADE = 300 ms` — the
-  head fades in as it sets off and fades out as it returns to the start
-  point; the tail follows by construction.
+- **Frame.** With `P = beam_perimeter(...)` from the tile's effective face
+  *as it is this frame* (jelly included, §1.2) and `L = min(P ·
+  BEAM_TAIL_FRACTION, BEAM_TAIL_MAX)`: `head = speed · elapsed` px. Two
+  envelope factors, both from the clock:
+  - `env`, the **head cutoff**: `smoothstep(0, FADE, t) · (1 −
+    smoothstep(P/speed − FADE, P/speed, t))`, with `FADE = 300 ms`, and
+    exactly `0` for `t ≥ P/speed`. The head fades in as it sets off and out
+    as it returns to the start point, and can never begin a second lap
+    during the drain, whatever the other factor does.
+  - `decay`, the **shared brightness** of head and tail: `1` throughout a
+    plateau run (the default). The tail follows the head by construction.
 - **Geometry changes.** Because `P` and `L` are read every frame, a window
   that grows mid-run keeps the beam going until the head has covered the
   *new* perimeter and the tail has cleared it; one that shrinks ends the run
@@ -198,20 +219,24 @@ current geometry.
   spent on a lap that no longer exists. A `ring-gap` reload changes `P` the
   same way. The head is never repositioned: it stays at `speed · elapsed`,
   so the seam moves under it by the size change and the beam keeps its pace.
-  Jelly motion is the same case seen from the shader (§1.2) and is not
-  applied to the Rust `P`.
+  Jelly motion is the same case: both sides read the jelly-scaled face
+  (§1.2), so the spring never fades the head early or ends the run before
+  the shader's tail has cleared.
 - **End.** `head ≥ P + L` (evaluated against this frame's geometry) drops the
-  beam and sends the rest uniforms `head = 0, env = 0` (§1.3); the ring
-  holds the resting glow. The three settled gates of the motion design hold
+  beam and sends the rest uniforms `head = 0, env = 0, decay = 0` (§1.3);
+  the ring holds the resting glow. The three settled gates of the motion design hold
   unchanged: no `tick_deadline` arm, a constant fingerprint,
   `are_transitions_ongoing` false. Focus loss drops the beam at once (the
   ring is dark without focus, as today).
 - **Envelope shape under review.** The plateau above is the default. A
   second shape, *splash*, is carried as a named alternative for the sheets:
   head and tail start at full brightness and decay together over the run,
-  `env = (1 − t / run)²` after a 100 ms ramp, like a ripple leaving the
-  centre of a splash. One constant selects it; the sheets decide which
-  ships. Both end at rest the same way.
+  like a ripple leaving the centre of a splash. It changes only the shared
+  factor: `decay = (1 − t / run)²` with `run = (P + L) / speed`, and the
+  head's fade-in shortens to `100 ms` so the launch is at its brightest;
+  the head cutoff `env` is unchanged, so the head still ends its lap at the
+  seam and the tail still drains behind it. One constant selects the shape;
+  the sheets decide which ships. Both end at rest the same way.
 - **Skips.** `motion "reduced"`, `motion "off"`, `animations { off }`,
   `ring-beam-speed 0`, and the fixtures' `should_complete_instantly` skip
   the beam: focus gain shows the resting glow immediately.
@@ -232,10 +257,10 @@ motion, which this design does not add. The speed is the time knob:
 default is chosen by eye, not by argument — a faster, subtler pass may
 suit the circuit better than the slow breathing the old pattern wanted.
 
-Fingerprint: `head` quantized to 0.5 px, `env` to 1/256. During the tail
-drain `env = 0` and `head` still advances, so the fingerprint keeps changing
-and the tile keeps redrawing until the run ends; at rest `head = 0` and the
-fingerprint is constant.
+Fingerprint: `head` quantized to 0.5 px, `env` and `decay` to 1/256.
+During the tail drain `env = 0` and `head` still advances, so the
+fingerprint keeps changing and the tile keeps redrawing until the run ends;
+at rest `head = 0, env = 0, decay = 0` and the fingerprint is constant.
 
 ## 3. Native configuration contract
 
@@ -297,15 +322,15 @@ package, the previous Prism, apply, restart.
 | Face globals, `arcPosition`, `filamentBand` from the face edge | `src/render_helpers/shaders/material/prelude.frag` | §1.1, §1.2, §1.4 |
 | Comet, spill, `focusGlow` | `src/render_helpers/shaders/material/main.frag` ring block | §1.3, §1.4 |
 | `beam_perimeter`, comet constants shared with the shader | `src/render_helpers/material/ring.rs` (new) | §1.2 |
-| `mat_sig_focus` vec3, `mat_sig_ring` vec3 | `src/render_helpers/material/mod.rs` (values), `src/render_helpers/shaders/mod.rs:72-73` (registration, `_2f` → `_3f`) | §1.3 |
-| `FrameInputs { beam_head, beam_env }`, fingerprint | `src/render_helpers/signal.rs` | §2 |
+| `mat_sig_focus` vec4, `mat_sig_ring` vec3 | `src/render_helpers/material/mod.rs` (values), `src/render_helpers/shaders/mod.rs:72-73` (registration, `_2f` → `_4f` / `_3f`) | §1.3 |
+| `FrameInputs { beam_head, beam_env, beam_decay }`, fingerprint | `src/render_helpers/signal.rs` | §2 |
 | `FocusBeam`, start/end/skip/cut, uniforms | `src/layout/tile.rs` | §2 |
 | Prism defs, sink, migration | prism `defs/glass.yaml`, `integrations/niri/render.js`, `manifest.yaml`, `resources/profiles/*` | §4 |
 
-Data flow per frame: tile computes `head`, `env` from `FocusBeam` and the
-clock → `FrameInputs` → `SignalFrame` → uniforms `mat_sig_focus`,
-`mat_sig_ring` → shader evaluates `arcPosition`, comet, spill at each
-landing point.
+Data flow per frame: tile computes `P` (effective face, jelly included),
+`head`, `env`, `decay` from `FocusBeam` and the clock → `FrameInputs` →
+`SignalFrame` → uniforms `mat_sig_focus`, `mat_sig_ring` → shader evaluates
+`arcPosition`, comet, spill at each landing point.
 
 ## 6. Verification
 
@@ -314,14 +339,19 @@ Compositor unit tests:
 - `ring.rs`: `beam_perimeter` of a box with four equal radii equals
   `4(hx+hy) − (2 − π/2)·4r`; with zero radii `4(hx+hy)`; with a gap larger
   than a radius the radius floors at 0; a face narrower than `2·gap` yields
-  `0`.
+  `0`; a jelly-scaled face (resize `+8` on a `200 × 100` face) equals the
+  closed form on the scaled extents, i.e. what the shader's `slabSurface`
+  produces for the same `mat_jelly_resize`.
 - Config: defaults and bounds of the three keys; `ring-sweep-ms` and
   `ring-inset` rejected with their replacement messages; inheritance through
   `with_overrides`.
 - Tile: focus gain starts a beam; a gain during a run restarts it; loss
-  drops it and sends `head = 0, env = 0`; `head` and `env` follow the clock
-  (`env` 0 at `t = 0`, 1 mid-run, 0 at `P/speed`); the run ends at `head ≥
-  P + L` and the three settled gates then hold; the skip set shows the
+  drops it and sends `head = 0, env = 0, decay = 0`; `head`, `env` and
+  `decay` follow the clock (`env` 0 at `t = 0`, 1 mid-run, exactly 0 for
+  every `t ≥ P/speed` including the whole drain; `decay` 1 throughout a
+  plateau run and `(1 − t/run)²` under splash, both still `> 0` during the
+  drain); the run ends at `head ≥ P + L` and the three settled gates then
+  hold; the skip set shows the
   resting glow with no beam; a speed reload mid-run keeps the old speed; a
   `focus "none"` reload cuts.
 - Tile, geometry changes: a resize from `P = 4000` to `6000` during the
@@ -335,14 +365,18 @@ Compositor unit tests:
   `head = 20`, `σ = 20`, `P = 4000` gives `0.607` at `s = 0` and `0.135` at
   `s = P − 20` (launch) and, at `head = P − 20`, `0.135` at `s = 20`
   (return); the tail is `0` at `behind = L` and its slope there is `0`; the
-  tail is `0` at `behind = 0`; rest (`head = 0, env = 0`) yields exactly
-  `BEAM_BASE · glow · BEAM_REST` at every `s`.
+  tail is `0` at `behind = 0`; rest (`head = 0, env = 0, decay = 0`) yields
+  exactly `BEAM_BASE · glow · BEAM_REST` at every `s`, **evaluated in
+  `f32`** at `s = 2000, σ = 20` and at `s = P − 1` — finite, never NaN; under
+  splash, a head `> P` with `decay > 0` contributes no head term anywhere
+  (`env = 0` gates it), only its tail.
 - Signal: fingerprint changes with `head` by 0.5 px and not below, and keeps
   changing through the tail drain (`env = 0`, `head` advancing);
   `settled_focus_fingerprints_to_a_constant` holds at rest (`head = 0,
-  env = 0`) — the settled tests and the drain tests are distinct cases.
-- Uniforms: `mat_sig_focus` carries `(focus, head, env)`, `mat_sig_ring`
-  carries `(gap, width, glow)`.
+  env = 0, decay = 0`) — the settled tests and the drain tests are distinct
+  cases.
+- Uniforms: `mat_sig_focus` carries `(focus, head, env, decay)`,
+  `mat_sig_ring` carries `(gap, width, glow)`.
 
 Signals smoke (`material-signals-smoke.sh cases`): `focused-settled` stays
 `0`; the sweep cases become `beam-run` — on a known 1280×720 pane at
