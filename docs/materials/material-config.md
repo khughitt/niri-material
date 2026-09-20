@@ -77,8 +77,8 @@ interactive-drag behavior or a new perceptual range.
 paths only; the background taps are unaffected. The light-path index is
 `1 + (ior - 1) * light-ior`.
 
-Only the ring's shared refracted shift is capped at half `ring-inset` — 2.5 px
-at the default inset of 5. Aurora uses the same index without that ring cap.
+Only the ring's shared refracted shift is capped at half `ring-gap` — 4 px
+at the default gap of 8. Aurora uses the same index without that ring cap.
 The ring shift grows roughly as
 `sin(45deg - asin(sin 45deg / n)) * 0.2 * thickness`. At
 `light-ior 1`, the minimum, it is about 1.16 px on the stock default glass
@@ -233,10 +233,11 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ping` | `ripple`, `flash`, `sweep`, `none` | `ripple` |
 | `done` | `ripple`, `flash`, `sweep`, `none` | `sweep` |
 | `error` | `ripple`, `flash`, `sweep`, `none` | `flash` |
-| `ring-inset` | 0–128 logical px | 5 logical px |
+| `ring-beam-speed` | 0–5000 logical px/s | 300 |
+| `ring-gap` | 0–128 logical px | 8 logical px |
+| `ring-glow` | 0–3 | 1.0 |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
 | `ring-color` | `"#rrggbb"` | `#ccccff` |
-| `ring-sweep-ms` | 0–10000 (integer) | 1500 |
 
 When any `response` block is present, one must be named `default`. Named
 responses inherit omitted fields from that block; the `default` block itself
@@ -255,10 +256,11 @@ material "terminal-glass" {
         ping "ripple"
         done "sweep"
         error "flash"
-        ring-inset 5
+        ring-beam-speed 300
+        ring-gap 8
+        ring-glow 1.0
         ring-width 2.6
         ring-color "#ccccff"
-        ring-sweep-ms 1500
     }
 
     response "loud" {
@@ -279,37 +281,58 @@ slot), while `signal-tag` matches the window's folded signal tag. A window
 with no signal matches neither.
 
 The filament is one band shared by focus and signals. `focus "ring-light"`
-lights it on the focused window, in `ring-color`. On focus gain the light
-runs one lap of its travelling brightness over `ring-sweep-ms` milliseconds,
-easing out onto a fixed pattern, and then the ring costs no redraws until the
-next focus gain; `0` skips the lap. `signal { motion "reduced" }`, `motion
-"off"`, and `animations { off }` also skip it. A `ring-drift-hz` line is
-rejected with the replacement named. `accent "ring"` lets a window signal
-light and tint the same band on any window. Both together show the filament
-in the accent color. The band sits `ring-inset` px
-inward from the slab's outer edge, is refracted through the glass at its
-remaining interior depth, and may show through a translucent window face.
-`ring-width` must be positive.
-The filament shows through the slab's exterior band and through translucent
-window pixels; an opaque window shows a full ring only when
-`bevel >= 2 * max(|offset-x|, |offset-y|) + ring-inset + ring-width`.
-Set `focus-ring { off }` (globally or in a window rule) for material
-windows so the gradient ring does not draw a second ring; non-material
-windows keep whatever ring the layout configures.
+lights it on the focused window, in `ring-color`. On every focus gain one
+beam of that light runs the perimeter of the band once, clockwise from the
+top-left corner, at `ring-beam-speed` logical px/s: a bright head a few tens
+of pixels wide with a tail diffusing over a quarter of the perimeter (at most
+1200 px), fading in as it sets off and out as it returns to its start, the
+tail draining behind it. A lap takes `perimeter / ring-beam-speed`; at the
+default 300 px/s a full 1280×720 pane (perimeter about 3800 px) runs about
+16 s, tail included, and `ring-beam-speed 900` runs it three times as fast. The ring then settles to a
+dim, even resting glow and costs no redraws until the next focus gain (no
+deadline, a constant fingerprint). `ring-beam-speed 0` shows the resting glow
+without a beam; `signal { motion "reduced" }`, `motion "off"`, and
+`animations { off }` skip the beam the same way. A focus change mid-run
+restarts the beam on the newly focused window; focus loss ends it at once.
+`ring-glow` scales the whole focus light — head, tail, resting glow and
+spill together — so their ratios hold while the total is tuned.
+
+`accent "ring"` lets a window signal light and tint the same band on any
+window. Both together show the filament in the accent color. The band sits
+`ring-gap` px inward from the edge of the flat face (where the chamfer ends),
+so it is always under the face and the bevel may shrink to make room; the
+light is refracted through the glass at its remaining interior depth and
+shows through translucent window pixels. On the chamfer the beam spills a
+little light outward from the face edge, fading to the outer edge, so the
+frame reads as lit by the beam. `ring-width` must be positive.
+
+Two limits follow from the placement. An opaque window shows no ring: the
+band lies wholly under the face and there is no fallback band on the
+chamfer. A face narrower than `2 * ring-gap` on either axis has no beam
+line and shows no beam and no resting glow. A `ring-sweep-ms`, `ring-inset`
+or `ring-drift-hz` line is rejected with the replacement named. Set
+`focus-ring { off }` (globally or in a window rule) for material windows so
+the gradient ring does not draw a second ring; non-material windows keep
+whatever ring the layout configures.
 
 **What changes on upgrade.** The focus filament is on by default, so a
-material window that never configured a `response` block now shows a
-ring of light in its bevel whenever it is focused, sweeping once on focus
-gain. The signal
-accent ring changed shape at the same time: it was a box band with +/-0.5 px
-soft edges and is now a Gaussian core with a halo, at new defaults of
-`ring-inset 5` and `ring-width 2.6` (previously 6 and 2). To go back to an
-unlit focused window, set `focus "none"` in the material's `default`
-response; the
-filament and the accent ring are otherwise the same band, so `accent "none"`
-turns off the signal tint alone. If the upgrade leaves two rings on screen,
-that is the layout's gradient ring underneath — turn it off with
-`focus-ring { off; }`.
+material window that never configured a `response` block shows a ring of
+light under its face whenever it is focused, with one beam running the
+ring on every focus gain. `ring-sweep-ms` and `ring-inset` are rejected by
+name (`ring-sweep-ms was replaced by ring-beam-speed`, `ring-inset was
+replaced by ring-gap`; neither is reinterpreted); Prism users run `prism
+migrate`, which maps `glass.ring.sweepMs` to `glass.ring.beamSpeed` (`0`
+stays `0`, any positive value becomes the default 300). The band moved from
+`ring-inset` px inside the slab's outer edge to `ring-gap` px inside the
+face edge, so it sits under the face instead of on the chamfer: opaque
+windows show no ring, and a face narrower than `2·ring-gap` shows no beam.
+The signal accent ring is a Gaussian core with a halo, `ring-width 2.6`
+(the box band with +/-0.5 px soft edges was retired earlier). To go back to
+an unlit focused window, set `focus "none"` in the material's `default`
+response; the filament and the accent ring are otherwise the same band, so
+`accent "none"` turns off the signal tint alone. If the upgrade leaves two
+rings on screen, that is the layout's gradient ring underneath — turn it off
+with `focus-ring { off; }`.
 
 ## Signal motion and animation
 
@@ -362,8 +385,11 @@ The whole configuration is rejected with these validation errors:
   "default"`;
 - duplicate response names: `duplicate response: <name>`;
 - a zero or negative ring width: `ring-width must be positive`;
-- a sweep longer than ten seconds: `ring-sweep-ms must be at most 10000`;
-- the retired drift rate: `ring-drift-hz was replaced by ring-sweep-ms; see
+- the retired lap time: `ring-sweep-ms was replaced by ring-beam-speed; see
+  material-config.md`;
+- the retired outer-edge inset: `ring-inset was replaced by ring-gap; see
+  material-config.md`;
+- the retired drift rate: `ring-drift-hz was replaced by ring-beam-speed; see
   material-config.md`;
 - an unknown window-rule reference: `unknown material: <name>`.
 - an unknown response reference: `material <name>: unknown response:

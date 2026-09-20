@@ -127,7 +127,8 @@ GLASS='bevel 0; offset-x 0; offset-y 0;' write_config "$OUT/beam-bevel0.kdl"
 # its own under $OUT (shared by both scratch builds, so the dependencies
 # compile once). Prints the binary's path. The worktree is never edited.
 scratch_build() {   # $1 = name, $2... = "file|sed expression|expected line" edits
-    local name=$1 src=$OUT/src-$name edit file expr want; shift
+    local name=$1 edit file expr want; shift
+    local src=$OUT/src-$name
     mkdir -p "$src"
     git archive HEAD | tar -x -C "$src"
     for edit in "$@"; do
