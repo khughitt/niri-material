@@ -309,7 +309,8 @@ frame reads as lit by the beam. `ring-width` must be positive.
 Two limits follow from the placement. An opaque window shows no ring: the
 band lies wholly under the face and there is no fallback band on the
 chamfer. A face narrower than `2 * ring-gap` on either axis has no beam
-line and shows no beam and no resting glow. A `ring-sweep-ms`, `ring-inset`
+line, and the ring — accent band, beam and resting glow — is not drawn
+on it. A `ring-sweep-ms`, `ring-inset`
 or `ring-drift-hz` line is rejected with the replacement named. Set
 `focus-ring { off }` (globally or in a window rule) for material windows so
 the gradient ring does not draw a second ring; non-material windows keep

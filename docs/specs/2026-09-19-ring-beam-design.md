@@ -223,6 +223,9 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   spent on a lap that no longer exists. A `ring-gap` reload changes `P` the
   same way. The head is never repositioned: it stays at `speed · elapsed`,
   so the seam moves under it by the size change and the beam keeps its pace.
+  One consequence: on a grow during the drain the head, still counting, is
+  back inside the longer lap, so `env` returns to 1 and the head visibly
+  reappears until it completes the new perimeter.
   Jelly motion is the same case: both sides read the jelly-scaled face
   (§1.2), so the spring never fades the head early or ends the run before
   the shader's tail has cleared.
@@ -231,7 +234,7 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   `advance_animations` then removes it without consulting an old perimeter.
   The ring holds the resting glow. The three settled gates of the motion design hold
   unchanged: no `tick_deadline` arm, a constant fingerprint,
-  `are_transitions_ongoing` false. Focus loss drops the beam at once (the
+  `are_animations_ongoing` false. Focus loss drops the beam at once (the
   ring is dark without focus, as today).
 - **Never-rendered timeout.** `BEAM_MAX_RUN = 120 s` expires a beam only
   while `rendered` is false. Its first geometry evaluation permanently
@@ -257,7 +260,9 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   `ring-beam-speed`, `ring-gap` or `ring-glow` does not cut it; the speed is
   snapshotted, gap (through `P`) and glow apply on the next frame.
 - **Scheduling.** The beam runs on the animation loop through
-  `are_transitions_ongoing`, as the sweep did. No bucket deadline.
+  `are_animations_ongoing`; it is not a layout transition, so
+  `are_transitions_ongoing` — which also gates pointer-focus refresh in
+  `Niri::refresh_pointer_contents` — does not report it. No bucket deadline.
 - **Idle gate.** Untouched. The beam is focus, not attention.
 
 Cost, stated: one focus gain on a 6000 px terminal at 300 px/s is

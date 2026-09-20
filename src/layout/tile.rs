@@ -952,8 +952,19 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// Everything that needs another frame. The beam lives here and not in
+    /// `are_transitions_ongoing`: it schedules frames on the animation loop
+    /// but is not a layout transition, and `are_transitions_ongoing` also
+    /// gates the pointer-focus refresh in `Niri::refresh_pointer_contents`,
+    /// which a 16–24 s run must not hold up (design 2026-09-19 §2).
     pub fn are_animations_ongoing(&self) -> bool {
-        self.are_transitions_ongoing() || self.window.rules().baba_is_float == Some(true)
+        self.are_transitions_ongoing()
+            || self.window.rules().baba_is_float == Some(true)
+            || self.signal_render_visible
+                && self
+                    .focus_beam
+                    .as_ref()
+                    .is_some_and(|beam| !beam.is_done(&self.clock))
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
@@ -978,11 +989,7 @@ impl<W: LayoutElement> Tile<W> {
                     || self
                         .focus_crossfade
                         .as_ref()
-                        .is_some_and(|crossfade| !crossfade.anim.is_done())
-                    || self
-                        .focus_beam
-                        .as_ref()
-                        .is_some_and(|beam| !beam.is_done(&self.clock)))
+                        .is_some_and(|crossfade| !crossfade.anim.is_done()))
     }
 
     pub fn clear_signal_render_visibility(&mut self) {
@@ -2993,7 +3000,7 @@ mod tests {
             beam_of(&tile),
             Some((Duration::from_millis(100), 300., false))
         );
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
 
         // A second gain a second later (another tile took focus, then this
         // one got it back) starts a fresh beam at the new instant.
@@ -3030,7 +3037,7 @@ mod tests {
         tile.update_render_elements(true, true, true, view);
         let near_end = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
         assert!((beam_uniforms(&near_end)[0] - 300. * (run - 0.1) as f32).abs() < 1e-2);
 
         // Past the run, `advance_animations` alone changes nothing: no
@@ -3042,7 +3049,7 @@ mod tests {
         let ended = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.], "rest uniforms");
-        assert!(!tile.are_transitions_ongoing());
+        assert!(!tile.are_animations_ongoing());
         tile.advance_animations();
         assert_eq!(beam_of(&tile), None);
 
@@ -3080,7 +3087,7 @@ mod tests {
         let grown = render_dynamics(&tile, 800., 600.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!((beam_uniforms(&grown)[0] - (300. * t) as f32).abs() < 1e-2);
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
 
         // The shrink: past the old limit, under the new one, back to the
         // small geometry — the fresh evaluation ends the run.
@@ -3123,6 +3130,9 @@ mod tests {
 
         // The window grows: the beam persists, the head keeps counting
         // from the same start, and the run now ends on the new geometry.
+        // The head is never repositioned (design 2026-09-19 §2), so on the
+        // longer line `elapsed < P₂ / speed` again: the head re-enters the
+        // new lap, `env` returns to 1 and the head visibly reappears.
         let t = (p1 + l1 + 1.) / 300.;
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
@@ -3132,7 +3142,7 @@ mod tests {
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!((beam_uniforms(&grown)[0] - (300. * t) as f32).abs() < 1e-2);
         assert_eq!(beam_uniforms(&grown)[2], 1., "plateau decay");
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
 
         let t = (p2 + l2) / 300. + 0.1;
         clock.set_unadjusted(secs(t));
@@ -3158,10 +3168,10 @@ mod tests {
         tile.update_render_elements(true, true, true, view);
         assert!(beam_of(&tile).is_some());
         assert!(!tile.focus_beam.as_ref().unwrap().rendered.get());
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
 
         clock.set_unadjusted(ring::BEAM_MAX_RUN + Duration::from_secs(1));
-        assert!(!tile.are_transitions_ongoing());
+        assert!(!tile.are_animations_ongoing());
         tile.advance_animations();
         assert_eq!(beam_of(&tile), None);
     }
@@ -3214,7 +3224,7 @@ mod tests {
         let draining = render_dynamics(&tile, 1800., 1200.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert_eq!(beam_uniforms(&draining), [6050., 0., 1.]);
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
 
         clock.set_unadjusted(secs(122.));
         tile.advance_animations();
@@ -3257,12 +3267,12 @@ mod tests {
             tile.update_render_elements(true, true, false, view);
             assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
             assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
-            assert!(!tile.are_transitions_ongoing(), "hidden at {t} s");
+            assert!(!tile.are_animations_ongoing(), "hidden at {t} s");
         }
 
         // Revealed at 121 s: the tail is draining.
         tile.update_render_elements(true, true, true, view);
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
         let revealed = render_dynamics(&tile, 1800., 1200.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert_eq!(beam_uniforms(&revealed), [6050., 0., 1.]);
@@ -3462,7 +3472,7 @@ mod tests {
         assert!((head - (p + 150.) as f32).abs() < 1e-2, "{head}");
         assert_eq!(decay, 1.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
-        assert!(tile.are_transitions_ongoing());
+        assert!(tile.are_animations_ongoing());
 
         clock.set_unadjusted(secs(t + 0.1));
         tile.advance_animations();
@@ -3497,5 +3507,87 @@ mod tests {
         let dynamics = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "a live beam");
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+    }
+
+    #[test]
+    fn the_beam_schedules_frames_without_holding_layout_transitions() {
+        // `are_transitions_ongoing` also gates the pointer-focus refresh in
+        // `Niri::refresh_pointer_contents`; a beam run must not hold it.
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p, l) = geometry_of(&tile, 400., 300.);
+        render_dynamics(&tile, 400., 300.);
+
+        // Mid-run, the focus crossfade long settled.
+        clock.set_unadjusted(secs(2.));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        assert!(tile.focus_crossfade.is_none());
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!(tile.are_animations_ongoing(), "the beam wants frames");
+        assert!(
+            !tile.are_transitions_ongoing(),
+            "but is not a layout transition"
+        );
+
+        // At rest, neither.
+        clock.set_unadjusted(secs((p + l) / 300. + 0.1));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert!(!tile.are_animations_ongoing());
+        assert!(!tile.are_transitions_ongoing());
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+        assert!(!tile.are_animations_ongoing());
+    }
+
+    #[test]
+    fn a_gap_reload_mid_run_changes_the_perimeter_but_not_the_head() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let size = Size::from((1280., 720.));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p1, l1) = geometry_of(&tile, 400., 300.);
+        render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile), Some((Duration::ZERO, 300., false)));
+
+        // Reload to a wider gap: the beam is the same one, on a shorter line.
+        let wider = niri_config::ResolvedResponse {
+            ring_gap: 16.,
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(wider)));
+        assert_eq!(beam_of(&tile), Some((Duration::ZERO, 300., false)));
+        let (_, p2, l2) = geometry_of(&tile, 400., 300.);
+        assert!(p2 < p1, "a wider gap shortens the line: {p2} vs {p1}");
+        assert!(p2 + l2 + 50. < p1 + l1);
+
+        // Under both limits: running, the head at `speed · elapsed`.
+        let t = (p2 + l2 - 50.) / 300.;
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let running = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!((beam_uniforms(&running)[0] - (300. * t) as f32).abs() < 1e-2);
+
+        // Past the new limit, still under the old one: the fresh geometry
+        // ends the run where the old perimeter would have kept it going.
+        let t = (p2 + l2 + 50.) / 300.;
+        assert!(300. * t < p1 + l1);
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        tile.update_render_elements(true, true, true, view);
+        let ended = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
     }
 }
