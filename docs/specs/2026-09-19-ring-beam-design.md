@@ -1,6 +1,6 @@
 # The ring beam: a light inside the glass, tracing the face
 
-**Status:** design, 2026-09-19, revised the same day after two reviews (geometry-change policy, tail taper, circular head distance, rest uniforms; then float32-safe tail, jelly-consistent perimeter, split head-cutoff/decay envelope); awaiting the owner's review before planning.
+**Status:** design, 2026-09-19, revised after two design reviews and the 2026-09-20 plan review (rendered-face geometry, timeout only before the first rendered frame, tests on returned dynamics). Implementation has not started; the implementation plan remains under review.
 Supersedes §1 (the pattern and the ease) of
 [2026-09-18-ring-focus-motion-design.md](2026-09-18-ring-focus-motion-design.md)
 and the `ring-inset` placement question of `material-9306b5`; keeps that
@@ -98,7 +98,10 @@ shader draws: the tile already computes the jelly resize it sends as
 `mat_jelly_resize`, and the face half-extents handed to `beam_perimeter`
 are scaled by it exactly as `slabSurface` scales `inner_half`
 (`half · (1 + resize / max(2 · half_ext, 1))`), with the radii refit the
-same way. Timing and rendering therefore see one perimeter at every frame,
+same way. The slab size and chamfer come from the rendered `MaterialFrame`,
+and the corner radii are the fitted values passed to the element; neither
+is reconstructed from the target window size. Timing and rendering therefore
+see one perimeter at every frame,
 jelly included; there is no approximation to bound. A unit test feeds the
 Rust twin a jelly-scaled face and checks it against the closed form on the
 scaled extents.
@@ -193,10 +196,11 @@ early return on opaque window pixels.
 
 ## 2. Motion policy
 
-`FocusSweep` becomes `FocusBeam { started: Duration, speed: f64 }` on the
+`FocusSweep` becomes `FocusBeam { started, speed, rendered, done }` on the
 tile, on the unadjusted clock as today. Only the start instant and the
-speed are snapshotted; everything else is derived per frame from the
-current geometry.
+speed are snapshotted. The two flags start false: the first geometry
+evaluation sets `rendered`, and the frame that sees the tail clear sets
+`done`. Geometry and envelope values are derived per frame.
 
 - **Start.** On every focus gain with `focus "ring-light"`, `motion "full"`,
   animations on, and `ring-beam-speed > 0`. A running beam is replaced. A
@@ -222,12 +226,20 @@ current geometry.
   Jelly motion is the same case: both sides read the jelly-scaled face
   (§1.2), so the spring never fades the head early or ends the run before
   the shader's tail has cleared.
-- **End.** `head ≥ P + L` (evaluated against this frame's geometry) drops the
-  beam and sends the rest uniforms `head = 0, env = 0, decay = 0` (§1.3);
-  the ring holds the resting glow. The three settled gates of the motion design hold
+- **End.** `head ≥ P + L` (evaluated against this frame's geometry) marks the
+  beam done and sends the rest uniforms `head = 0, env = 0, decay = 0` (§1.3);
+  `advance_animations` then removes it without consulting an old perimeter.
+  The ring holds the resting glow. The three settled gates of the motion design hold
   unchanged: no `tick_deadline` arm, a constant fingerprint,
   `are_transitions_ongoing` false. Focus loss drops the beam at once (the
   ring is dark without focus, as today).
+- **Never-rendered timeout.** `BEAM_MAX_RUN = 120 s` expires a beam only
+  while `rendered` is false. Its first geometry evaluation permanently
+  disables this backstop for that run. A rendered beam at `P = 6000` and
+  `speed = 50` lasts 144 s, including the entire 24 s tail after 120 s.
+  Hiding a previously rendered tile does not reset the flag or arm a new
+  timeout: visibility suppresses redraws, and its next rendered frame
+  decides completion from elapsed time and current geometry.
 - **Envelope shape under review.** The plateau above is the default. A
   second shape, *splash*, is carried as a named alternative for the sheets:
   head and tail start at full brightness and decay together over the run,
@@ -354,6 +366,13 @@ Compositor unit tests:
   hold; the skip set shows the
   resting glow with no beam; a speed reload mid-run keeps the old speed; a
   `focus "none"` reload cuts.
+- Tile, timeout: a never-rendered beam expires at 120 s; a rendered
+  `P = 6000`, `speed = 50` plateau beam remains active at 121 s and ends
+  on the geometry evaluation at 144 s. Hiding it after its first frame
+  does not re-arm the timeout. Observe the returned `material_dynamics`
+  uniforms and fingerprint: the tail advances after 120 s, then rest is
+  constant. Cached `FrameInputs.beam` stays `REST` and is not the output
+  under test.
 - Tile, geometry changes: a resize from `P = 4000` to `6000` during the
   head phase keeps the beam running until `head ≥ 6000 + L₆₀₀₀`; the same
   resize during the tail phase likewise; a shrink from `6000` to `4000`
