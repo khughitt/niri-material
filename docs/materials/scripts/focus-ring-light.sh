@@ -59,8 +59,9 @@ PIN_IOR=1.02; PIN_THICKNESS=41.7; PIN_BEVEL=11
 PIN_OFFSET=1                              # the prism block's offset-x/offset-y
 # `ring-gap` is measured from the face edge (the slab minus its chamfer); the
 # retired inset key this replaced was measured from the slab's outer edge.
-# The sampling row and the reach bound below still carry the slab-edge
-# derivation and need re-deriving before the measured cases are next graded.
+# The sampling row (FIL_Y) and the reach bound (`reach`) below still carry the
+# slab-edge derivation, PIN_BEVEL px short of the band: material-3db428
+# re-derives them before the measured cases are next graded.
 RING_GAP=5
 RING_WIDTH=2.6
 # The layout below (1280x720 host, gaps 54, two columns at proportion 0.5)

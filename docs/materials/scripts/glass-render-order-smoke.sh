@@ -378,10 +378,11 @@ assert_changed() { # name, on, off, crop; requires at least one delta > 1 code
 }
 
 # `ring-gap` is measured from the face edge (the slab minus its chamfer), where
-# the retired inset key it replaced was measured from the slab's outer edge; the reach
-# model in glass-render-order-metrics.py still takes the slab-edge figure as
-# `--inset`, so its bound predates the beam and needs re-deriving before the
-# within cases are next graded.
+# the retired inset key it replaced was measured from the slab's outer edge; the
+# reach model in glass-render-order-metrics.py still takes the slab-edge figure
+# as `--inset`, so the bounds here (and `profile_reach`'s row) are the bevel px
+# short of the band: material-3db428 re-derives them before the within cases
+# are next graded.
 within_ring() { # name, glass, gap, width, thickness, bevel, scatter
     RESPONSE_EXTRA="ring-color \"#ffffff\"
 ring-gap $3
