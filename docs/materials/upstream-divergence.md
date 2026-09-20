@@ -64,7 +64,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `justfile` | C | A | +59/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1266/-0 |
+| `niri-config/src/lib.rs` | B | M | +1280/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -87,7 +87,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
 | `src/layout/tests.rs` | B | M | +116/-4 |
-| `src/layout/tile.rs` | B | M | +1579/-77 |
+| `src/layout/tile.rs` | B | M | +2020/-77 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
 | `src/niri.rs` | B | M | +287/-0 |
@@ -96,7 +96,7 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
 | `src/render_helpers/mod.rs` | B | M | +27/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +173/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +175/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
 | `src/tests/client.rs` | B | M | +48/-0 |
 | `src/tests/mod.rs` | B | M | +3/-0 |

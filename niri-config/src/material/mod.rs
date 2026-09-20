@@ -6,7 +6,6 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::time::Duration;
 
 use knuffel::errors::DecodeError;
 
@@ -277,8 +276,15 @@ pub struct Response {
     pub done: Option<ImpulseResponse>,
     #[knuffel(child, unwrap(argument, str))]
     pub error: Option<ImpulseResponse>,
+    /// Retired: decoded only so the error can name its replacement.
     #[knuffel(child, unwrap(argument))]
-    pub ring_inset: Option<FloatOrInt<0, 128>>,
+    pub ring_inset: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_gap: Option<FloatOrInt<0, 128>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_glow: Option<FloatOrInt<0, 3>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_beam_speed: Option<FloatOrInt<0, 5000>>,
     #[knuffel(child, unwrap(argument))]
     pub ring_width: Option<FloatOrInt<0, 128>>,
     #[knuffel(child, unwrap(argument, str))]
@@ -288,6 +294,7 @@ pub struct Response {
     /// Retired: decoded only so the error can name its replacement.
     #[knuffel(child, unwrap(argument))]
     pub ring_drift_hz: Option<f64>,
+    /// Retired: decoded only so the error can name its replacement.
     #[knuffel(child, unwrap(argument))]
     pub ring_sweep_ms: Option<u32>,
 }
@@ -300,13 +307,16 @@ pub struct ResolvedResponse {
     pub ping: ImpulseResponse,
     pub done: ImpulseResponse,
     pub error: ImpulseResponse,
-    pub ring_inset: f64,
+    /// Gap from the face edge to the beam's centre, px.
+    pub ring_gap: f64,
     pub ring_width: f64,
+    /// Focus light scale; multiplies head, tail, rest and spill.
+    pub ring_glow: f64,
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
     pub ring_color: Color,
-    /// Duration of the focus-gain lap; zero disables the sweep.
-    pub ring_sweep: Duration,
+    /// Beam pace along the perimeter, px/s; zero skips the beam.
+    pub ring_beam_speed: f64,
 }
 
 impl Default for ResolvedResponse {
@@ -317,11 +327,12 @@ impl Default for ResolvedResponse {
             ping: ImpulseResponse::Ripple,
             done: ImpulseResponse::Sweep,
             error: ImpulseResponse::Flash,
-            ring_inset: 5.,
+            ring_gap: 8.,
             ring_width: 2.6,
+            ring_glow: 1.,
             focus: FocusResponse::RingLight,
             ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
-            ring_sweep: Duration::from_millis(1500),
+            ring_beam_speed: 300.,
         }
     }
 }
@@ -334,13 +345,14 @@ impl ResolvedResponse {
             ping: response.ping.unwrap_or(base.ping),
             done: response.done.unwrap_or(base.done),
             error: response.error.unwrap_or(base.error),
-            ring_inset: response.ring_inset.map_or(base.ring_inset, |x| x.0),
+            ring_gap: response.ring_gap.map_or(base.ring_gap, |x| x.0),
             ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
+            ring_glow: response.ring_glow.map_or(base.ring_glow, |x| x.0),
             focus: response.focus.unwrap_or(base.focus),
             ring_color: response.ring_color.unwrap_or(base.ring_color),
-            ring_sweep: response
-                .ring_sweep_ms
-                .map_or(base.ring_sweep, |ms| Duration::from_millis(u64::from(ms))),
+            ring_beam_speed: response
+                .ring_beam_speed
+                .map_or(base.ring_beam_speed, |x| x.0),
         }
     }
 
@@ -754,15 +766,26 @@ impl Material {
             .any(|response| response.ring_drift_hz.is_some())
         {
             return Err(String::from(
-                "ring-drift-hz was replaced by ring-sweep-ms; see material-config.md",
+                "ring-drift-hz was replaced by ring-beam-speed; see material-config.md",
             ));
         }
         if self
             .responses
             .iter()
-            .any(|response| response.ring_sweep_ms.is_some_and(|ms| ms > 10_000))
+            .any(|response| response.ring_sweep_ms.is_some())
         {
-            return Err(String::from("ring-sweep-ms must be at most 10000"));
+            return Err(String::from(
+                "ring-sweep-ms was replaced by ring-beam-speed; see material-config.md",
+            ));
+        }
+        if self
+            .responses
+            .iter()
+            .any(|response| response.ring_inset.is_some())
+        {
+            return Err(String::from(
+                "ring-inset was replaced by ring-gap; see material-config.md",
+            ));
         }
 
         if offset_x.abs().max(offset_y.abs()) > bevel {
