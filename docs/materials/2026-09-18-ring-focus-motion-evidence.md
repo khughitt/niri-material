@@ -5,8 +5,10 @@
 of the signals smoke passed on 2026-09-19 under the binary built from
 `4aad1587`, and the four review clips were recorded the same day under the
 release binary built from `079ed613` (below). The sweep duration
-(`ring-sweep-ms 1500`) awaits the owner's reading of those clips; this
-record does not grade it.
+(`ring-sweep-ms 1500`) was read by the owner live (`57cd81e5`); the sweep
+itself was replaced by the ring beam on 2026-09-21
+([2026-09-19-ring-beam-evidence.md](2026-09-19-ring-beam-evidence.md)), so
+this record is historical.
 
 **Design:** [2026-09-18-ring-focus-motion-design.md](../specs/2026-09-18-ring-focus-motion-design.md).
 **Plan:** `docs/plans/2026-09-18-ring-focus-motion.md`. **Task:**
