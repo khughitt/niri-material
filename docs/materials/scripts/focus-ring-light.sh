@@ -10,7 +10,7 @@
 # "none"; }`), so refraction, attenuation, Fresnel, and jelly are identical in
 # both and only the filament differs. Rest scenes are deterministic, so the
 # disabled render is taken at rest in its own nested instance, and every case
-# pins `ring-sweep-ms 0` so the clock never enters a comparison.
+# pins `ring-beam-speed 0` so the beam never enters a comparison.
 #
 # Cases:
 #   baseline          the spike's stills and bursts (static gradient ring)
@@ -57,7 +57,12 @@ if [ -z "$WALL" ]; then WALL=$WORK/checker.png; magick -size 160x90 pattern:chec
 # pinned here and the written config is checked for them.
 PIN_IOR=1.02; PIN_THICKNESS=41.7; PIN_BEVEL=11
 PIN_OFFSET=1                              # the prism block's offset-x/offset-y
-RING_INSET=5
+# `ring-gap` is measured from the face edge (the slab minus its chamfer); the
+# retired inset key this replaced was measured from the slab's outer edge.
+# The sampling row (FIL_Y) and the reach bound (`reach`) below still carry the
+# slab-edge derivation, PIN_BEVEL px short of the band: material-3db428
+# re-derives them before the measured cases are next graded.
+RING_GAP=5
 RING_WIDTH=2.6
 # The layout below (1280x720 host, gaps 54, two columns at proportion 0.5)
 # puts the focused right window at this rect; `wait_geometry` refuses to
@@ -69,7 +74,7 @@ FACE_CROP=$((WIN_W - 2 * FACE_INSET))x$((WIN_H - 2 * FACE_INSET))+$((WIN_X + FAC
 # and slid by the offset, so its top edge sits this far above the window.
 SLAB_TOP=$((WIN_Y - (PIN_BEVEL - PIN_OFFSET) + PIN_OFFSET))
 FIL_X=$((WIN_X + WIN_W / 2))              # top edge of the right window, mid-span
-FIL_Y=$((SLAB_TOP + RING_INSET))          # the band's Gaussian core
+FIL_Y=$((SLAB_TOP + RING_GAP))            # the band's Gaussian core
 # The strip spanning the left column's right edge and the gap to the right
 # column: where a difference in layout position between two hosts shows up.
 GAP_CROP=(440 300 200 120)                # x y w h
@@ -123,8 +128,8 @@ MEAS_INACTIVE=$(measurable "$DARK_INACTIVE")
 # Replace Prism's inherited default response, then append the pinned one.
 with_response() {   # $1 = material block, $2 = response body
     printf '%s\n' "$1" | sed '/^    response "default" {$/,/^    }$/d' | sed '$d'
-    printf '    response "default" {\n        ring-color "#ccccff"\n        ring-inset %s\n        ring-width %s\n        %s\n    }\n}\n' \
-        "$RING_INSET" "$RING_WIDTH" "$2"
+    printf '    response "default" {\n        ring-color "#ccccff"\n        ring-gap %s\n        ring-width %s\n        %s\n    }\n}\n' \
+        "$RING_GAP" "$RING_WIDTH" "$2"
 }
 assert_pinned_geometry() {   # $1 = written config; both materials carry the calibrated slab
     local k n
@@ -140,9 +145,9 @@ assert_rest_glass() { # $1 = written config; measurement scenes are unscattered
     n=$(sed 's/^ *//' "$1" | grep -cxF 'roughness 0' || true)
     [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 lines of 'roughness 0', found $n" >&2; exit 1; }
 }
-assert_pinned_response() { # $1 = written config, $2 = expected sweep ms
+assert_pinned_response() { # $1 = written config, $2 = expected beam speed
     local k n
-    for k in 'ring-color "#ccccff"' "ring-inset $RING_INSET" "ring-width $RING_WIDTH" "ring-sweep-ms $2;"; do
+    for k in 'ring-color "#ccccff"' "ring-gap $RING_GAP" "ring-width $RING_WIDTH" "ring-beam-speed $2;"; do
         n=$(grep -cF "$k" "$1" || true)
         [ "$n" -eq 2 ] || { echo "FAIL: $1: expected 2 response bodies containing '$k', found $n" >&2; exit 1; }
     done
@@ -177,11 +182,11 @@ write_baseline_config() {   # $1 = path
 # The measurement config: no gradient ring, the measurable glass, and the
 # case's response on both materials.
 write_capture_config() {   # $1 = path, $2 = response body, $3 = animations body
-    local sweep=0
+    local speed=0
     case $2 in
-        *'ring-sweep-ms 0;'*) ;;
-        *'ring-sweep-ms 10000;'*) sweep=10000 ;;
-        *) echo "FAIL: response must set ring-sweep-ms to 0 or 10000" >&2; exit 1 ;;
+        *'ring-beam-speed 0;'*) ;;
+        *'ring-beam-speed 3000;'*) speed=3000 ;;
+        *) echo "FAIL: response must set ring-beam-speed to 0 or 3000" >&2; exit 1 ;;
     esac
     {
         layout_block 'focus-ring { off; }'
@@ -189,10 +194,10 @@ write_capture_config() {   # $1 = path, $2 = response body, $3 = animations body
         with_response "$MEAS_ACTIVE" "$2"
         with_response "$MEAS_INACTIVE" "$2"
     } > "$1"
-    assert_rest_glass "$1"; assert_pinned_response "$1" "$sweep"; validate "$1"
+    assert_rest_glass "$1"; assert_pinned_response "$1" "$speed"; validate "$1"
 }
-RESP_ON='ring-sweep-ms 0;'
-RESP_OFF='focus "none"; accent "none"; ring-sweep-ms 0;'
+RESP_ON='ring-beam-speed 0;'
+RESP_OFF='focus "none"; accent "none"; ring-beam-speed 0;'
 
 start_nested() {   # $1 = slot, $2 = config
     local slot=$1 cfg=$2 host unit
@@ -252,7 +257,7 @@ wait_geometry() {   # $1 = window id: the layout is final within ten seconds or 
 }
 # Two windows over the split glass with the right one focused: the scene every
 # measured case renders. Prints the focused window's id. Rest is a separate
-# step: the baseline case runs the default focus sweep before coming to rest.
+# step: the baseline case runs the default focus beam before coming to rest.
 open_scene() {
     spawn_kitty left;  wait_kitty 1
     spawn_kitty right; wait_kitty 2
@@ -297,7 +302,7 @@ reach() { # $1 label, $2 on, $3 off
     local rc=0
     python3 "$HERE/glass-render-order-metrics.py" reach "$2" "$3" \
         --window "$WIN_X" "$WIN_Y" "$WIN_W" "$WIN_H" --bevel "$PIN_BEVEL" \
-        --thickness "$PIN_THICKNESS" --inset "$RING_INSET" --width "$RING_WIDTH" \
+        --thickness "$PIN_THICKNESS" --inset "$RING_GAP" --width "$RING_WIDTH" \
         --scatter 0 --offset-x "$PIN_OFFSET" --offset-y "$PIN_OFFSET" --corner-radius 12 \
         > "$WORK/$1-reach.json" || rc=$?
     cat "$WORK/$1-reach.json" >> "$WORK/checks.txt"
@@ -469,6 +474,34 @@ case_resize_flex() {
     info "resize-flex face max channel delta"    "$(face_max "$(px flex-on)" "$(px flex-off)")" "not gated: same cause"
     info "resize-flex emissive luminance vs rest ($lum_rest)" "${ratio}x" "not gated: sampled across the skew"
 }
+# Focus toggles for the moving bursts: the beam runs (P + L) / speed, about a
+# second on this pane at 3000 px/s, so motion throughout a burst comes from
+# re-gaining focus every half second on both hosts (the off host toggles too,
+# so the paired scenes' active materials stay in step). Runs in the
+# background for the burst; the caller stops it before the next layout
+# command, which acts on the focused column.
+TOGGLES_PID=
+toggles_start() {   # $1 on slot, $2 on right id, $3 off slot, $4 off right id
+    (
+        local on_left off_left
+        use_slot "$1"; on_left=$(kitty_ids | grep -vx "$2" | head -1)
+        use_slot "$3"; off_left=$(kitty_ids | grep -vx "$4" | head -1)
+        while :; do
+            use_slot "$1"; msg action focus-window --id "$on_left"
+            use_slot "$3"; msg action focus-window --id "$off_left"
+            sleep 0.25
+            use_slot "$1"; msg action focus-window --id "$2"
+            use_slot "$3"; msg action focus-window --id "$4"
+            sleep 0.5
+        done
+    ) &
+    TOGGLES_PID=$!
+}
+toggles_stop() {   # $1 on slot, $2 on right id, $3 off slot, $4 off right id
+    kill "$TOGGLES_PID" 2>/dev/null || true; wait "$TOGGLES_PID" 2>/dev/null || true; TOGGLES_PID=
+    use_slot "$1"; msg action focus-window --id "$2"
+    use_slot "$3"; msg action focus-window --id "$4"
+}
 case_ring_motion() {
     require_off
     local right_on right_off label on off
@@ -476,10 +509,10 @@ case_ring_motion() {
         if [ "$label" = pinned ]; then
             on=$RESP_ON; off=$RESP_OFF
         else
-            # The longest lap, so the bursts a few seconds after focus land
-            # inside it: the sweep runs on the unadjusted clock, so
-            # `slowdown` does not stretch it.
-            on='ring-sweep-ms 10000;'; off='focus "none"; accent "none"; ring-sweep-ms 10000;'
+            # The fastest beam the config allows short of its cap, re-triggered
+            # by focus gains through each burst (`toggles_start`): the beam
+            # runs on the unadjusted clock, so `slowdown` does not stretch it.
+            on='ring-beam-speed 3000;'; off='focus "none"; accent "none"; ring-beam-speed 3000;'
         fi
         write_capture_config "$WORK/ring-motion-$label-on.kdl" "$on" 'slowdown 6.0;'
         write_capture_config "$WORK/ring-motion-$label-off.kdl" "$off" 'slowdown 6.0;'
@@ -487,10 +520,14 @@ case_ring_motion() {
         start_nested 2 "$WORK/ring-motion-$label-off.kdl"; right_off=$(open_scene); sleep 1
         use_slot 1; msg action move-column-left
         use_slot 2; msg action move-column-left
+        [ "$label" = moving ] && toggles_start 1 "$right_on" 2 "$right_off"
         motion_pair_burst "ring-motion-$label-move" 1 "$right_on" 2 "$right_off"
+        [ "$label" = moving ] && toggles_stop 1 "$right_on" 2 "$right_off"
         use_slot 1; msg action set-column-width +200
         use_slot 2; msg action set-column-width +200
+        [ "$label" = moving ] && toggles_start 1 "$right_on" 2 "$right_off"
         motion_pair_burst "ring-motion-$label-resize" 1 "$right_on" 2 "$right_off"
+        [ "$label" = moving ] && toggles_stop 1 "$right_on" 2 "$right_off"
         stop_nested 1; stop_nested 2
     done
 }
@@ -500,7 +537,7 @@ case_selectors() {
     require_off
     local name resp right e
     while read -r name resp; do
-        write_capture_config "$WORK/sel-$name.kdl" "$resp ring-sweep-ms 0;" 'slowdown 6.0;'
+        write_capture_config "$WORK/sel-$name.kdl" "$resp ring-beam-speed 0;" 'slowdown 6.0;'
         start_nested 1 "$WORK/sel-$name.kdl"
         right=$(open_scene); settle
         msg set-window-signal --id "$right" --source demo --accent '#ff0000'

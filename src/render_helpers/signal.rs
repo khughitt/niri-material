@@ -7,6 +7,7 @@ use niri_config::{Color, ResolvedResponse, SignalMotionPolicy};
 use niri_ipc::{SignalLevel, SignalMotion};
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
+use crate::render_helpers::material::ring::BeamFrame;
 use crate::window::signal::{Folded, IMPULSE_LIFETIME};
 
 pub const BREATHE_PERIOD: Duration = Duration::from_millis(4000);
@@ -107,19 +108,19 @@ pub struct SignalFrame {
     pub presence: f32,
     /// Crossfaded focus, 0 to 1.
     pub focus: f32,
-    /// Sweep phase in radians; 0 at rest.
-    pub sweep: f32,
+    /// Beam head, cutoff and decay for this frame; `BeamFrame::REST` at rest.
+    pub beam: BeamFrame,
 }
 
-/// The tile's crossfaded values and sweep phase for one frame.
+/// The tile's crossfaded values and beam frame for one frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FrameInputs {
     pub level: f32,
     pub accent: Option<[f32; 3]>,
     pub presence: f32,
     pub focus: f32,
-    /// Sweep phase for this frame, from the tile's sweep state; 0 at rest.
-    pub sweep: f32,
+    /// Beam head, cutoff and decay for this frame; `BeamFrame::REST` at rest.
+    pub beam: BeamFrame,
 }
 
 impl FrameInputs {
@@ -129,7 +130,7 @@ impl FrameInputs {
             accent: None,
             presence: 0.,
             focus: 0.,
-            sweep: 0.,
+            beam: BeamFrame::REST,
         }
     }
 }
@@ -289,29 +290,6 @@ pub fn next_boundary_on(period: Duration, hz: f64, now: Duration) -> Option<Dura
     ))
 }
 
-/// The filament's travelling brightness in `[-1, 1]`, mirrored exactly by
-/// the shader: two sines of the perimeter angle whose phases are integer
-/// multiples of the drift, so the `2π` wrap is continuous.
-pub fn travel(angle: f32, drift: f32) -> f32 {
-    (2. * angle + drift).sin() * (3. * angle - 2. * drift).sin()
-}
-
-/// Phase of the focus-gain sweep: one lap of `travel`'s phase from 0 to
-/// `2π` over `duration`, easing out (`1 − (1 − x)³`), then exactly 0.
-/// `travel` is 2π-periodic, so the lap ends on the rest pattern. The
-/// subtraction saturates: `Niri::redraw` samples at the predicted
-/// presentation time and the next iteration re-fetches real time, so a
-/// sweep can be sampled before its own start; that sample is rest.
-pub fn sweep_phase(started: Duration, now: Duration, duration: Duration) -> f32 {
-    let t = now.saturating_sub(started);
-    if duration.is_zero() || t >= duration {
-        return 0.;
-    }
-    let x = t.as_secs_f32() / duration.as_secs_f32();
-    let eased = 1. - (1. - x).powi(3);
-    eased * TAU
-}
-
 /// Whether a tile's slab band is in view. The band is the tile rect inflated
 /// by `bevel` on every side: a superset of the exact slab, so a visible
 /// band never freezes when the tile rect alone leaves view.
@@ -329,7 +307,7 @@ pub fn slab_in_view(
 }
 
 /// Next redraw deadline for a tile: sustained signal motion, only while the
-/// slab band is in view. The focus sweep runs on the animation loop and has
+/// slab band is in view. The focus beam runs on the animation loop and has
 /// no arm here (design 2026-09-18 §2).
 pub fn tick_deadline(eff: &EffectiveSignal, in_view: bool, now: Duration) -> Option<Duration> {
     if !in_view || !eff.is_sustained() {
@@ -339,7 +317,7 @@ pub fn tick_deadline(eff: &EffectiveSignal, in_view: bool, now: Duration) -> Opt
 }
 
 /// Stage 2: pure solve (design §3). `inputs` are the crossfaded values the
-/// tile already computed plus the sweep phase.
+/// tile already computed plus the beam frame.
 pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs) -> SignalFrame {
     let mut impulses = [ImpulseFrame::default(); 4];
     let live = e.impulses.iter().filter(|i| now < i.at + IMPULSE_LIFETIME);
@@ -359,7 +337,7 @@ pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs)
         impulses,
         presence: inputs.presence,
         focus: inputs.focus,
-        sweep: inputs.sweep,
+        beam: inputs.beam,
     }
 }
 
@@ -372,7 +350,9 @@ pub struct SignalFingerprint {
     impulses_q: [(u8, i32, i32, [i32; 3]); 4],
     presence_q: i32,
     focus_q: i32,
-    sweep_q: i32,
+    head_q: i32,
+    env_q: i32,
+    decay_q: i32,
 }
 
 impl Default for SignalFingerprint {
@@ -385,7 +365,9 @@ impl Default for SignalFingerprint {
             impulses_q: [(0, 0, 0, [-1; 3]); 4],
             presence_q: 0,
             focus_q: 0,
-            sweep_q: 0,
+            head_q: 0,
+            env_q: 0,
+            decay_q: 0,
         }
     }
 }
@@ -415,7 +397,9 @@ impl SignalFingerprint {
             impulses_q,
             presence_q: q256(f.presence),
             focus_q: q256(f.focus),
-            sweep_q: (f.sweep * 1024.).round() as i32,
+            head_q: (f.beam.head * 2.).round() as i32,
+            env_q: q256(f.beam.env),
+            decay_q: q256(f.beam.decay),
         }
     }
 }
@@ -746,7 +730,11 @@ mod tests {
             ],
             presence: 1. / 512.,
             focus: 1. / 256.,
-            sweep: 1. / 2048.,
+            beam: BeamFrame {
+                head: 0.25,
+                env: 1. / 256.,
+                decay: 1. / 256.,
+            },
         };
         assert_eq!(
             SignalFingerprint::quantize(&frame),
@@ -762,7 +750,9 @@ mod tests {
                 ],
                 presence_q: 1,
                 focus_q: 1,
-                sweep_q: 1,
+                head_q: 1,
+                env_q: 1,
+                decay_q: 1,
             }
         );
     }
@@ -809,21 +799,7 @@ mod tests {
     }
 
     #[test]
-    fn travel_is_continuous_across_the_phase_wrap() {
-        for k in 0..16 {
-            let a = k as f32 / 16. * TAU;
-            let before = travel(a, TAU - 1e-4);
-            let after = travel(a, 0.);
-            assert!(
-                (before - after).abs() < 2e-3,
-                "angle {a}: {before} vs {after}"
-            );
-            assert!((travel(a, 1.) - travel(a, 1. + TAU)).abs() < 1e-3);
-        }
-    }
-
-    #[test]
-    fn solve_carries_focus_presence_and_sweep() {
+    fn solve_carries_focus_presence_and_the_beam() {
         let e = EffectiveSignal {
             accent: None,
             level: L::Quiet,
@@ -831,7 +807,8 @@ mod tests {
             impulses: vec![],
         };
         let quiet = solve(&e, ms(5000), 0.1, FrameInputs::quiet());
-        assert_eq!((quiet.presence, quiet.focus, quiet.sweep), (0., 0., 0.));
+        assert_eq!((quiet.presence, quiet.focus), (0., 0.));
+        assert_eq!(quiet.beam, BeamFrame::REST);
         assert_eq!(
             SignalFingerprint::quantize(&quiet),
             SignalFingerprint::default()
@@ -843,12 +820,24 @@ mod tests {
             0.1,
             FrameInputs {
                 focus: 1.,
-                sweep: 1.25,
+                beam: BeamFrame {
+                    head: 1234.5,
+                    env: 0.5,
+                    decay: 0.75,
+                },
                 ..FrameInputs::quiet()
             },
         );
         assert_eq!(focused.focus, 1.);
-        assert_eq!(focused.sweep, 1.25, "the phase is carried straight");
+        assert_eq!(
+            focused.beam,
+            BeamFrame {
+                head: 1234.5,
+                env: 0.5,
+                decay: 0.75,
+            },
+            "the beam frame is carried straight"
+        );
 
         let half = solve(
             &e,
@@ -866,48 +855,6 @@ mod tests {
             "accent is carried straight"
         );
         assert_eq!(half.presence, 0.5);
-    }
-
-    #[test]
-    fn sweep_phase_runs_one_eased_lap_then_rests() {
-        let d = Duration::from_millis(1500);
-        let s = ms(10_000);
-        assert_eq!(sweep_phase(s, s, d), 0.);
-        // Saturating: sampled before its own start (predicted presentation
-        // time, then the clock re-fetched real time) is rest.
-        assert_eq!(sweep_phase(s, ms(9_990), d), 0.);
-        // Nondecreasing at every millisecond: near the ease-out end the
-        // slope (~2.7e-7 rad/ms at 1493 ms) drops below the f32 ulp at 2π,
-        // so consecutive samples may round to the same value.
-        let mut last = 0.;
-        for k in 1..1500 {
-            let p = sweep_phase(s, s + Duration::from_millis(k), d);
-            assert!(p >= last, "nondecreasing at {k} ms: {p} < {last}");
-            last = p;
-        }
-        // Strictly increasing at coarse steps, where the slope is well above ulp.
-        for k in (100..=1400).step_by(100) {
-            let a = sweep_phase(s, s + Duration::from_millis(k - 100), d);
-            let b = sweep_phase(s, s + Duration::from_millis(k), d);
-            assert!(b > a, "progress {k} ms: {b} <= {a}");
-        }
-        let before_end = sweep_phase(s, s + d - Duration::from_nanos(1), d);
-        assert!((before_end - TAU).abs() < 1e-3, "{before_end}");
-        assert_eq!(sweep_phase(s, s + d, d), 0.);
-        assert_eq!(sweep_phase(s, s + d + Duration::from_secs(60), d), 0.);
-        // Ease-out: the first half of the time covers more than half the lap.
-        assert!(sweep_phase(s, s + d / 2, d) > TAU / 2.);
-    }
-
-    #[test]
-    fn travel_is_periodic_in_the_sweep_phase() {
-        for i in 0..16 {
-            let a = i as f32 * TAU / 16.;
-            for j in 0..8 {
-                let phi = j as f32 * TAU / 8.;
-                assert!((travel(a, phi) - travel(a, phi + TAU)).abs() < 1e-5);
-            }
-        }
     }
 
     #[test]
@@ -937,18 +884,55 @@ mod tests {
         };
         let inputs = FrameInputs {
             focus: 1.,
-            sweep: 0.,
+            beam: BeamFrame::REST,
             ..FrameInputs::quiet()
         };
         let a = SignalFingerprint::quantize(&solve(&quiet, ms(1000), 0.3, inputs));
         let b = SignalFingerprint::quantize(&solve(&quiet, ms(2000), 0.3, inputs));
         assert_eq!(a, b);
         let mid = FrameInputs {
-            sweep: 1.0,
+            beam: BeamFrame {
+                head: 100.,
+                env: 1.,
+                decay: 1.,
+            },
             ..inputs
         };
         let c = SignalFingerprint::quantize(&solve(&quiet, ms(1000), 0.3, mid));
-        assert_ne!(a, c, "a moving phase changes the fingerprint");
+        assert_ne!(a, c, "a running beam changes the fingerprint");
+    }
+
+    #[test]
+    fn the_fingerprint_tracks_the_head_by_half_pixels_through_the_drain() {
+        let quiet = EffectiveSignal {
+            accent: None,
+            level: L::Quiet,
+            motion: M::Static,
+            impulses: vec![],
+        };
+        let mut f = solve(&quiet, ms(1000), 0.3, FrameInputs::quiet());
+        f.focus = 1.;
+        f.beam = BeamFrame {
+            head: 3000.,
+            env: 0.,
+            decay: 1.,
+        };
+        let a = SignalFingerprint::quantize(&f);
+        f.beam.head = 3000.2;
+        assert_eq!(
+            SignalFingerprint::quantize(&f),
+            a,
+            "under half a pixel is the same frame"
+        );
+        f.beam.head = 3000.6;
+        assert_ne!(
+            SignalFingerprint::quantize(&f),
+            a,
+            "the drain keeps redrawing"
+        );
+        f.beam = BeamFrame::REST;
+        let rest = SignalFingerprint::quantize(&f);
+        assert_eq!(SignalFingerprint::quantize(&f), rest, "rest is constant");
     }
 
     #[test]
