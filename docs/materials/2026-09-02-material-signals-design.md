@@ -13,7 +13,11 @@ contract fixed here. Tracked by `material-a54d89`; follow-ups are the
 remain current. This document's original ring-placement statements are
 superseded by the depth-ordered
 [render-order design](../specs/2026-09-12-material-render-order-design.md)
-and its [acceptance evidence](2026-09-12-material-render-order-evidence.md).
+and its [acceptance evidence](2026-09-12-material-render-order-evidence.md),
+and the band's place and keys (`ring-gap` from the face edge, `ring-width`,
+`ring-color`, `ring-beam-speed`, `ring-glow`) by the
+[ring beam design](../specs/2026-09-19-ring-beam-design.md); `ring-inset` is
+rejected.
 
 ## Context
 
@@ -419,6 +423,16 @@ Sustained motion is additionally gated on input activity: after
 no bucket deadline is reported; the next input redraws every output and
 motion resumes from the absolute clock. Design:
 `docs/specs/2026-09-18-ring-focus-motion-design.md` §3.
+
+The focus response (`focus "ring-light"`, added after this design) lights
+the same band on the focused window and is the one bounded motion the ring
+carries: on every focus gain the ring beam — one comet of light running the
+band's perimeter once at `ring-beam-speed` px/s, its tail draining behind
+it — runs on the animation loop through `are_transitions_ongoing`, then the
+ring settles to a resting glow with no deadline and a constant fingerprint,
+so a focused window at rest costs nothing. It is not an attention motion:
+the idle gate does not touch it, and the `reduced`/`off` policies skip it.
+Design: `docs/specs/2026-09-19-ring-beam-design.md`.
 
 ## 5. Configuration contract
 

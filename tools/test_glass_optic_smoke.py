@@ -171,9 +171,9 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), cases)
 
-    def test_within_ring_reuses_the_default_pinned_sweep(self):
+    def test_within_ring_reuses_the_default_pinned_beam(self):
         ring = self.function('within_ring')
-        self.assertNotIn('ring-sweep-ms', ring)
+        self.assertNotIn('ring-beam-speed', ring)
         self.assertIn('ring-color \\"#ffffff\\"', ring)
         for value in ('within-dense', 'thickness 80', 'within-wide', ' 5 20 20 32 0',
                       'within-rough', 'roughness 0.5', 'within-face', ' 20 2.6 20 12 0',
@@ -216,14 +216,14 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
     def test_capture_validates_the_generated_single_response_config_before_launch(self):
         with tempfile.TemporaryDirectory() as out:
             script = (
-                'write_config() { printf "focus \\\"none\\\"\\nring-sweep-ms 0\\n" > "$1"; }\n'
+                'write_config() { printf "focus \\\"none\\\"\\nring-beam-speed 0\\n" > "$1"; }\n'
                 'validate_config() { grep -c "^focus " "$2" >> "$OUT/order"; echo validate >> "$OUT/order"; }\n'
                 'start_nested() { echo start >> "$OUT/order"; }\n'
                 'spawn_client() { :; }\nsleep() { :; }\nprobe_rect() { :; }\nshot() { :; }\n'
                 'ae() { METRIC=0; }\nassert_zero() { :; }\nstop_nested() { :; }\nassert_clean_log() { :; }\n' +
                 self.function('capture') +
                 '\nOUT=$1; NIRI=/niri; capture ring "noise 0" /niri ring-light; cat "$OUT/order"; '
-                'grep -Fx "focus \\\"ring-light\\\"" "$OUT/ring.kdl"; grep -cx "ring-sweep-ms 0" "$OUT/ring.kdl"')
+                'grep -Fx "focus \\\"ring-light\\\"" "$OUT/ring.kdl"; grep -cx "ring-beam-speed 0" "$OUT/ring.kdl"')
             result = subprocess.run(['bash', '-eu', '-c', script, 'test', out],
                                     text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -315,7 +315,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
         ring = (Path(__file__).resolve().parents[1] /
                 'docs/materials/scripts/focus-ring-light.sh').read_text()
         for value in ('roughness 0', 'ring-color "#ccccff"',
-                      'RING_INSET=5', 'RING_WIDTH=2.6', '--scatter 0'):
+                      'RING_GAP=5', 'RING_WIDTH=2.6', '--scatter 0'):
             self.assertIn(value, ring)
 
     def test_old_ring_writes_all_baseline_rest_selector_and_motion_configs(self):
@@ -324,25 +324,25 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                          'assert_pinned_response write_baseline_config write_capture_config').split()
             script = (
                 'PIN_IOR=1.02; PIN_THICKNESS=41.7; PIN_BEVEL=11; PIN_OFFSET=1; '\
-                'RING_INSET=5; RING_WIDTH=2.6; WORK=$1\n'
+                'RING_GAP=5; RING_WIDTH=2.6; WORK=$1\n'
                 'DARK_ACTIVE=$\'material "dark" {\\n    ior 1.02\\n    thickness 41.7\\n    bevel 11\\n    offset-x 1\\n    offset-y 1\\n    roughness 0\\n}\'\n'
                 'DARK_INACTIVE=$\'material "dark-inactive" {\\n    ior 1.02\\n    thickness 41.7\\n    bevel 11\\n    offset-x 1\\n    offset-y 1\\n    roughness 0.5\\n}\'\n'
                 'MEAS_ACTIVE=$DARK_ACTIVE; MEAS_INACTIVE=${DARK_INACTIVE/roughness 0.5/roughness 0}\n'
                 'layout_block() { :; }; validate() { :; }\n' +
                 '\n'.join(self.focus_function(name) for name in functions) +
-                '\nRESP_ON=\'ring-sweep-ms 0;\'; RESP_OFF=\'focus "none"; accent "none"; ring-sweep-ms 0;\'\n'
+                '\nRESP_ON=\'ring-beam-speed 0;\'; RESP_OFF=\'focus "none"; accent "none"; ring-beam-speed 0;\'\n'
                 'write_baseline_config "$WORK/baseline.kdl"\n'
                 'grep -Fqx "    roughness 0.5" "$WORK/baseline.kdl"\n'
                 'for response in "$RESP_ON" "$RESP_OFF" '
-                '\'accent "ring"; focus "ring-light"; ring-sweep-ms 0;\' '
-                '\'accent "ring"; focus "none"; ring-sweep-ms 0;\' '
-                '\'accent "none"; focus "ring-light"; ring-sweep-ms 0;\' '
-                '\'accent "none"; focus "none"; ring-sweep-ms 0;\' '
-                '\'ring-sweep-ms 10000;\' '\
+                '\'accent "ring"; focus "ring-light"; ring-beam-speed 0;\' '
+                '\'accent "ring"; focus "none"; ring-beam-speed 0;\' '
+                '\'accent "none"; focus "ring-light"; ring-beam-speed 0;\' '
+                '\'accent "none"; focus "none"; ring-beam-speed 0;\' '
+                '\'ring-beam-speed 3000;\' '\
                 '; do write_capture_config "$WORK/cfg-$RANDOM.kdl" "$response" "slowdown 6;"; done\n'
                 'for config in "$WORK"/cfg-*.kdl; do '
                 '[ "$(grep -cF \"ring-color \\\"#ccccff\\\"\" "$config")" -eq 2 ]; '
-                '[ "$(grep -cF "ring-inset 5" "$config")" -eq 2 ]; '
+                '[ "$(grep -cF "ring-gap 5" "$config")" -eq 2 ]; '
                 '[ "$(grep -cF "ring-width 2.6" "$config")" -eq 2 ]; done')
             result = subprocess.run(['bash', '-eu', '-c', script, 'test', out],
                                     text=True, capture_output=True)
@@ -366,7 +366,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
             inherited = (material +
                          '    response "default" {\n'
                          '        accent "ring"\n        focus "ring-light"\n'
-                         '        ring-color "#ccccff"\n        ring-sweep-ms 2500\n'
+                         '        ring-color "#ccccff"\n        ring-beam-speed 600\n'
                          '    }\n}').rstrip()
             inactive = inherited.replace('"dark"', '"dark-inactive"')
             no_response = (material + '}').rstrip()
@@ -374,7 +374,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                 return "$'" + value.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '\\n') + "'"
             script = (
                 'PIN_IOR=1.02; PIN_THICKNESS=41.7; PIN_BEVEL=11; PIN_OFFSET=1; '
-                'RING_INSET=5; RING_WIDTH=2.6; WORK=$1; NIRI=$2\n'
+                'RING_GAP=5; RING_WIDTH=2.6; WORK=$1; NIRI=$2\n'
                 f'DARK_ACTIVE={ansi(inherited)}\n'
                 f'DARK_INACTIVE={ansi(inactive)}\n'
                 'MEAS_ACTIVE=$DARK_ACTIVE; MEAS_INACTIVE=$DARK_INACTIVE\n'
@@ -382,14 +382,14 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                 'layout_block() { printf "layout {\\n    focus-ring { off; }\\n}\\n"; }; '
                 'validate() { "$NIRI" validate -c "$1"; }\n' +
                 '\n'.join(self.focus_function(name) for name in functions) +
-                '\nRESP_ON=\'ring-sweep-ms 0;\'; RESP_OFF=\'focus "none"; accent "none"; ring-sweep-ms 0;\'\n'
+                '\nRESP_ON=\'ring-beam-speed 0;\'; RESP_OFF=\'focus "none"; accent "none"; ring-beam-speed 0;\'\n'
                 'write_baseline_config "$WORK/baseline.kdl"\n'
                 'for response in "$RESP_ON" "$RESP_OFF" '
-                '\'accent "ring"; focus "ring-light"; ring-sweep-ms 0;\' '
-                '\'accent "ring"; focus "none"; ring-sweep-ms 0;\' '
-                '\'accent "none"; focus "ring-light"; ring-sweep-ms 0;\' '
-                '\'accent "none"; focus "none"; ring-sweep-ms 0;\' '
-                '\'ring-sweep-ms 10000;\'; do write_capture_config "$WORK/cfg-$RANDOM.kdl" "$response" "slowdown 6;"; done\n'
+                '\'accent "ring"; focus "ring-light"; ring-beam-speed 0;\' '
+                '\'accent "ring"; focus "none"; ring-beam-speed 0;\' '
+                '\'accent "none"; focus "ring-light"; ring-beam-speed 0;\' '
+                '\'accent "none"; focus "none"; ring-beam-speed 0;\' '
+                '\'ring-beam-speed 3000;\'; do write_capture_config "$WORK/cfg-$RANDOM.kdl" "$response" "slowdown 6;"; done\n'
                 '{ layout_block; with_response "$NO_RESPONSE" "$RESP_ON"; } > "$WORK/no-response.kdl"\n'
                 'validate "$WORK/no-response.kdl"\n'
                 'for config in "$WORK"/*.kdl; do '
@@ -427,7 +427,8 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
         ring = (Path(__file__).resolve().parents[1] /
                 'docs/materials/scripts/focus-ring-light.sh').read_text()
         for value in ('motion_pair_burst()', 'motion_record()', 'ring-motion-$label-move',
-                      'ring-motion-$label-resize', 'ring-sweep-ms 10000', 'resize-flex-motion',
+                      'ring-motion-$label-resize', 'ring-beam-speed 3000', 'toggles_start',
+                      'resize-flex-motion',
                       'window_layout_json', 'animated slab geometry',
                       'set-column-width +200', 'move-column-right'):
             self.assertIn(value, ring)
