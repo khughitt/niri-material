@@ -201,7 +201,7 @@ $ systemctl --user list-units 'gns.*'
 0 loaded units listed.
 $ ls -d "$XDG_RUNTIME_DIR"/gns.*
 ls: cannot access '/run/user/1000/gns.*': No such file or directory
-$ git -C /mnt/ssd/Dropbox/niri-material worktree remove /mnt/ssd3/tmp/material-1293e8-base
+$ git -C "$MAIN" worktree remove /mnt/ssd3/tmp/material-1293e8-base
 ```
 
 All three checks confirmed clean after the run and after removing the

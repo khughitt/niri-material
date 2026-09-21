@@ -1690,9 +1690,9 @@ git commit -m "feat(material): optic smokes record captures through capture-meta
 Work in a new worktree:
 
 ```bash
-cd /mnt/ssd/Dropbox/niri-experiments
+cd "$NIRI_EXPERIMENTS"  # the niri-experiments checkout
 git worktree add .worktrees/material-bae9c9 -b results/capture-protocol results/idle-budget
-export MATERIAL_ROOT=/mnt/ssd/Dropbox/niri-material/.worktrees/material-bae9c9
+export MATERIAL_ROOT="$NIRI_MATERIAL/.worktrees/material-bae9c9"  # under the main niri-material checkout
 cd .worktrees/material-bae9c9
 ```
 

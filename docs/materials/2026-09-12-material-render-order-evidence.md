@@ -20,7 +20,7 @@ commit is merged or deployed by this record.
 
 Retained artifact: `$NIRI_MATERIAL_WORK_ROOT/render-order-readiness.pCbsOC/capture.json`.
 SHA-256: `e56e846026688734b097b2a4e9113e6fe375610e2b220a5a95f0c0a7341c59bb`.
-The record identifies host `titan`, run start `2026-09-12T16:32:19-04:00`,
+The record identifies the verification host, run start `2026-09-12T16:32:19-04:00`,
 the headless lane and Task 1. The separate readiness probe names the planned
 smoke as its fixture; at that time the smoke had not been created or launched.
 
@@ -316,7 +316,7 @@ SHA-256: `7b4b602ece3bf072e3c9945e95ebda47493a172950e04149e499d880f8b44353`.
 | Compute clients | BitwigStudio | None |
 
 Available memory was 69.1%, above its 20% minimum. The run began at
-`2026-09-17T20:05:04-04:00` on `titan`. No second preflight, threshold waiver,
+`2026-09-17T20:05:04-04:00` on the verification host. No second preflight, threshold waiver,
 capture, build, desktop change or process termination followed.
 
 Offline work extended `glass-render-order-smoke.sh` with focused candidate
