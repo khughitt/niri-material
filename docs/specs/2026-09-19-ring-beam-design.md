@@ -1,6 +1,6 @@
 # The ring beam: a light inside the glass, tracing the face
 
-**Status:** implemented on `material-2c3984` (`5610d666`, `98013739`, `0a12a7bd`, `0219599f`); evidence in [2026-09-19-ring-beam-evidence.md](../materials/2026-09-19-ring-beam-evidence.md); constants pending the owner's acceptance. Design of 2026-09-19, revised after two design reviews and the 2026-09-20 plan review (rendered-face geometry, timeout only before the first rendered frame, tests on returned dynamics).
+**Status:** implemented on `material-2c3984` (`5610d666`, `98013739`, `0a12a7bd`, `0219599f`, `06b71bb1`); evidence in [2026-09-19-ring-beam-evidence.md](../materials/2026-09-19-ring-beam-evidence.md); constants accepted by the owner on the review sheets, 2026-09-21, defaults unchanged. Design of 2026-09-19, revised after two design reviews and the 2026-09-20 plan review (rendered-face geometry, timeout only before the first rendered frame, tests on returned dynamics).
 Supersedes §1 (the pattern and the ease) of
 [2026-09-18-ring-focus-motion-design.md](2026-09-18-ring-focus-motion-design.md)
 and the `ring-inset` placement question of `material-9306b5`; keeps that

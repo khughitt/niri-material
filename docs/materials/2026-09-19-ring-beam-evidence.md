@@ -8,8 +8,8 @@ sheets of the design's §6 are recorded from the same tree (the preflight
 had refused every attempt of 2026-09-20 on desktop activity; the sheets
 landed once the desktop was logged out). The constants judged on the
 sheets (`ring-gap`, spill, envelope, pace, bevel 0) await the owner's
-acceptance; this record does not grade them. **Owner acceptance: pending**
-(last section).
+acceptance; this record does not grade them. **Owner acceptance: given
+2026-09-21, defaults unchanged** (last section).
 
 **Design:** [2026-09-19-ring-beam-design.md](../specs/2026-09-19-ring-beam-design.md).
 **Plan:** `docs/plans/2026-09-19-ring-beam.md`. **Task:** `material-912dab`,
@@ -328,8 +328,6 @@ otherwise as recorded by `0219599f`.
 
 ## Deviations from the spec
 
-- **Owner gate open.** The design's §6 sheets are recorded; the owner's
-  judgment of them (last section) is not yet given.
 - **`beam-run` bound.** The plan's Task 6 named "≥ 80 redraws during the
   run" for a single 1280×720 pane at 1200 px/s (run ≈ 4 s); the fixture
   commit `0219599f` moved the case to the two-column scene (run ≈ 2.7 s,
@@ -343,20 +341,22 @@ otherwise as recorded by `0219599f`.
   gap)`; the arithmetic is the spec's.
 - No constant, key, default or shader line differs from the design.
 
-## Owner acceptance: pending
+## Owner acceptance: 2026-09-21
 
-The sheets above are for the owner's judgment; nothing here is graded. The
-decisions, each with the value the branch ships today:
+The owner read the `beam-run` gif and the four composites on 2026-09-21
+and accepted every shipped default ("Looks good"). No constant moved, so
+no sheet was re-recorded. The decisions, each with the value the branch
+ships:
 
 | Decision | Sheets to compare | Shipped default | Accepted |
 | --- | --- | --- | --- |
-| Gap from the face edge | `beam-run` (8) vs `beam-gap16` (16) | `ring-gap 8` | pending |
-| Edge spill onto the chamfer | `beam-run` (spill) vs `beam-nospill` (none) | `BEAM_SPILL 0.25` | pending |
-| Envelope shape | `beam-run` (plateau) vs `beam-splash` (splash) | `BEAM_ENVELOPE Plateau` | pending |
-| Pace | `beam-run` (300 px/s) vs `beam-fast` (900 px/s) | `ring-beam-speed 300` | pending |
-| Flat slab | `beam-bevel0`: the ring carries with no chamfer and no spill | (no constant; a fixture check) | pending |
-| Head, tail, glow | the corner crops of every sheet | `BEAM_HEAD_SIGMA 20`, `BEAM_TAIL_START 0.6`, `BEAM_TAIL_FRACTION 0.25` / `BEAM_TAIL_MAX 1200`, `BEAM_REST 0.2`, `BEAM_BASE 0.7`, `ring-glow 1` | pending |
+| Gap from the face edge | `beam-run` (8) vs `beam-gap16` (16) | `ring-gap 8` | accepted |
+| Edge spill onto the chamfer | `beam-run` (spill) vs `beam-nospill` (none) | `BEAM_SPILL 0.25` | accepted |
+| Envelope shape | `beam-run` (plateau) vs `beam-splash` (splash) | `BEAM_ENVELOPE Plateau` | accepted |
+| Pace | `beam-run` (300 px/s) vs `beam-fast` (900 px/s) | `ring-beam-speed 300` | accepted |
+| Flat slab | `beam-bevel0`: the ring carries with no chamfer and no spill | (no constant; a fixture check) | accepted |
+| Head, tail, glow | the corner crops of every sheet | `BEAM_HEAD_SIGMA 20`, `BEAM_TAIL_START 0.6`, `BEAM_TAIL_FRACTION 0.25` / `BEAM_TAIL_MAX 1200`, `BEAM_REST 0.2`, `BEAM_BASE 0.7`, `ring-glow 1` | accepted |
 
-Any constant the owner moves is changed in `ring.rs`, the shader,
-`niri-config` defaults and Prism's defaults together, `just test` re-run, and
-the affected sheet re-recorded before this section is filled in.
+A constant moved later is changed in `ring.rs`, the shader, `niri-config`
+defaults and Prism's defaults together, `just test` re-run, and the
+affected sheet re-recorded.
