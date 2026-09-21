@@ -18,7 +18,7 @@ subsumed when the sheets are accepted.
 
 ## Host and binary
 
-Host `titan`, the headless lane: every nested instance runs under its own
+The verification host, headless lane: every nested instance runs under its own
 `weston --backend=headless --renderer=gl` unit, never the desktop session.
 Worktree HEAD `35e736b6c5fb3fd57d2b2b6d89a6c6ef04adef3f` for the sheets
 and the smoke of 2026-09-21 (the tree differed from it only by the task

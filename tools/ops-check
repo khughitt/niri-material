@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 4
+# ops-check version 5
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -17,10 +17,20 @@ exits 2 when it cannot run at all.
 - Conflicted copies: no tracked path may be a Dropbox conflicted copy.
 - Agent scratch: no tracked path may lie under a `.agents/` directory. The global ignore
   keeps one out of `git add`; only `git add -f` gets past it, and only the index shows that.
+- Machine layout: no tracked file may carry this machine's layout — the home directory,
+  the hostname, `WORK_ROOT`, a registered checkout or its parent directory (the sync root),
+  or a value listed under `banned` in `$XDG_CONFIG_HOME/ops/ops-check.toml` (a tracker
+  host, say). The values are read from the machine the check runs on, never written here:
+  this file is public in every project that vendors it. Matches are whole words, one
+  finding per value per line, at most LAYOUT_LINES lines per file and then a count.
+  `tasks/*.md` is exempt (records are written only by tasks). A repository whose content is
+  host configuration by design lists the path prefixes that may carry the layout under
+  `layout_allowed` in a root `.ops-check.toml`; a malformed file exits 2.
 """
 import os
 import pathlib
 import re
+import socket
 import subprocess
 import sys
 import tomllib
@@ -42,6 +52,11 @@ JUSTFILE_RECIPE = re.compile(r"^([a-z][\w-]*)\s*(?:\+?\*?[\w ]*)?:(?!=)", re.MUL
 FENCE = re.compile(r"^\s*(```|~~~)")
 # The last word of a candidate prefix, without the punctuation that can precede it.
 WORD = re.compile(r"\w[\w-]*$")
+TASK_RECORD = re.compile(r"^tasks/[^/]+\.md$")
+PROJECT_CONFIG = ".ops-check.toml"
+LAYOUT_LINES = 10
+# A hostname that names no machine in particular is not layout.
+GENERIC_HOSTNAMES = ("localhost",)
 
 
 def fail(message):
@@ -68,6 +83,74 @@ def registry(env):
     if not path.is_file():
         return {}
     return {prefix: pathlib.Path(root) for prefix, root in tomllib.loads(path.read_text())["projects"].items()}
+
+
+def banned(env):
+    """Values the machine's `$XDG_CONFIG_HOME/ops/ops-check.toml` bans; empty when absent."""
+    config = pathlib.Path(env.get("XDG_CONFIG_HOME") or pathlib.Path.home() / ".config")
+    path = config / "ops" / "ops-check.toml"
+    if not path.is_file():
+        return []
+    return string_list(path, "banned")
+
+
+def string_list(path, key):
+    """The list of non-empty strings under `key` in a TOML file that holds nothing else."""
+    try:
+        data = tomllib.loads(path.read_text())
+    except tomllib.TOMLDecodeError as error:
+        fail(f"{path}: {error}")
+    values = data.get(key)
+    if set(data) != {key} or not isinstance(values, list) or not all(isinstance(v, str) and v for v in values):
+        fail(f"{path}: expected exactly `{key} = [...]`, a list of non-empty strings")
+    return values
+
+
+def layout(env, projects, hostname, extra):
+    """This machine's layout as {value: what it is}: the strings no tracked file may carry.
+    A value's first description wins, so a home that is also a checkout's parent is the home."""
+    values = {}
+    values.setdefault(env.get("HOME") or str(pathlib.Path.home()), "the home directory")
+    if hostname not in GENERIC_HOSTNAMES:
+        values.setdefault(hostname, "the hostname")
+    if env.get("WORK_ROOT"):
+        values.setdefault(env["WORK_ROOT"].rstrip("/"), "WORK_ROOT")
+    for root in projects.values():
+        values.setdefault(str(root), "a registered checkout")
+    for root in projects.values():
+        values.setdefault(str(root.parent), "the parent of a registered checkout")
+    for value in extra:
+        values.setdefault(value, "banned by ops-check.toml")
+    return {value: what for value, what in values.items() if value not in ("", "/")}
+
+
+def layout_allowed(root):
+    """Path prefixes the repository's `.ops-check.toml` allows to carry the layout."""
+    path = root / PROJECT_CONFIG
+    return tuple(string_list(path, "layout_allowed")) if path.is_file() else ()
+
+
+def layout_findings(root, files, values):
+    """(path, line, message) for every layout value in a tracked file, capped per file."""
+    allowed = layout_allowed(root)
+    alternation = "|".join(re.escape(v) for v in sorted(values, key=len, reverse=True))
+    pattern = re.compile(rf"(?<!\w)(?:{alternation})(?!\w)")
+    for path in files:
+        if TASK_RECORD.match(path) or path.startswith(allowed) or not (root / path).is_file():
+            continue
+        text = (root / path).read_bytes().decode("utf-8", errors="replace")
+        reported = 0
+        for number, line in enumerate(text.splitlines(), 1):
+            found = dict.fromkeys(m.group(0) for m in pattern.finditer(line))
+            if not found:
+                continue
+            reported += 1
+            if reported > LAYOUT_LINES:
+                continue
+            for value in found:
+                yield path, number, f"machine layout: {value} ({values[value]})"
+        if reported > LAYOUT_LINES:
+            yield path, 0, f"{reported - LAYOUT_LINES} more lines carry machine layout"
 
 
 def tracked(root):
@@ -145,7 +228,7 @@ def references(root, projects, basenames, doc):
         previous = line
 
 
-def findings(root, projects):
+def findings(root, projects, values):
     """Every finding in the repository at root, as (path, line, message); line 0 when
     the finding is about a path rather than a place in a document."""
     files = tracked(root)
@@ -158,12 +241,15 @@ def findings(root, projects):
             yield path, 0, "Dropbox conflicted copy is tracked"
         if path.startswith(".agents/") or "/.agents/" in path:
             yield path, 0, "agent scratch under .agents/ is tracked"
+    yield from layout_findings(root, files, values)
 
 
 def main():
     root = repository_root(pathlib.Path(os.getcwd()))
+    projects = registry(os.environ)
+    values = layout(os.environ, projects, socket.gethostname(), banned(os.environ))
     count = 0
-    for path, line, message in findings(root, registry(os.environ)):
+    for path, line, message in findings(root, projects, values):
         where = f"{path}:{line}" if line else path
         sys.stderr.write(f"{where}: {message}\n")
         count += 1

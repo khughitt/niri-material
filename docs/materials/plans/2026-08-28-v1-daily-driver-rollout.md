@@ -62,7 +62,7 @@ KDL, zsh, systemd user services, niri IPC, and Git worktrees.
 | `packaging/arch/PKGBUILD` | Reproducible Arch package for the accepted source commit | 1 |
 | dotfiles `niri/materials.kdl` | Native daily terminal material and exact app-ID rule | 2 |
 | dotfiles `niri/config.kdl` | Include native materials after Prism and stop legacy autostart | 2 |
-| host-local `$HOME/d/dotfiles/shell/local/titan.env.zsh` (ignored) | Required external build root; intentionally outside the dotfiles commit | 2 |
+| host-local `$HOME/d/dotfiles/shell/local/$(hostname).env.zsh` (ignored) | Required external build root; intentionally outside the dotfiles commit | 2 |
 | dotfiles `tests/setup_and_health.zsh` | Static rollout/config contract and retained evidence links | 2 |
 | `docs/materials/README.md` | Current accepted/package entry point and complete index | 3, 7 |
 | `docs/materials/2026-08-22-v1-design.md` | Concise accepted v1 status | 3 |
@@ -237,7 +237,7 @@ git commit -m "build(arch): package accepted material compositor"
 - Create: dotfiles `niri/materials.kdl`
 - Modify: dotfiles `niri/config.kdl`
 - Modify: dotfiles `tests/setup_and_health.zsh`
-- Modify outside Git: host-local `$HOME/d/dotfiles/shell/local/titan.env.zsh`
+- Modify outside Git: host-local `$HOME/d/dotfiles/shell/local/$(hostname).env.zsh`
 
 **Interfaces:**
 - Consumes: Prism-generated terminal opacity/background-effect rules and the
@@ -277,7 +277,7 @@ test_setup_graphical_config_retains_glass_evidence_without_autostart() {
   register_tmp_cleanup "$tmp"
   mkdir -p "${tmp}/home" "${tmp}/config" "${tmp}/data"
 
-  output=$(PRISM_TEST_HOSTNAME=titan \
+  output=$(PRISM_TEST_HOSTNAME=$(hostname) \
     run_setup "$tmp" --dry-run --link-only --only graphical-config)
 
   [[ "$output" == *"${tmp}/home/d/niri-glass"* ]] || \
@@ -372,7 +372,7 @@ for those retained evidence inputs.
 
 - [ ] **Step 5: Add the external work root to the ignored host-local file**
 
-Verify that `$HOME/d/dotfiles/shell/local/titan.env.zsh` is ignored, then
+Verify that `$HOME/d/dotfiles/shell/local/$(hostname).env.zsh` is ignored, then
 append after its `TMPDIR` block:
 
 ```zsh
@@ -387,7 +387,7 @@ export NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material
 zsh tests/setup_and_health.zsh
 test "$(grep -c -F 'include "./materials.kdl"' niri/config.kdl)" = 1
 ! rg -n -F 'spawn-at-startup "qs" "-c" "niri-glass"' niri/config.kdl
-zsh -c 'source "$HOME/d/dotfiles/shell/local/titan.env.zsh"; test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material'
+zsh -c 'source "$HOME/d/dotfiles/shell/local/$(hostname).env.zsh"; test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material'
 git diff --check
 ```
 
@@ -568,7 +568,7 @@ git commit -m "docs(materials): curate accepted v1 status"
 
 ```bash
 dotfiles_wt="$HOME/d/dotfiles/.worktrees/niri-material-daily-driver"
-source "$HOME/d/dotfiles/shell/local/titan.env.zsh"
+source "$HOME/d/dotfiles/shell/local/$(hostname).env.zsh"
 : "${NIRI_MATERIAL_WORK_ROOT:?NIRI_MATERIAL_WORK_ROOT must be set}"
 test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material
 
@@ -670,10 +670,10 @@ test "$($stagedir/usr/bin/niri --version)" = 'niri 26.04 (138697be)'
 config_stage="$rollout_root/config"
 install -d "$config_stage"
 cp "$dotfiles_wt/niri/config.kdl" "$dotfiles_wt/niri/materials.kdl" \
-  "$dotfiles_wt/niri/host-titan.kdl" "$config_stage/"
+  "$dotfiles_wt/niri/host-$(hostname).kdl" "$config_stage/"
 cp "$HOME/.local/state/prism/generated/prism.kdl" "$config_stage/prism.kdl"
 cp "$HOME/.config/niri/noctalia.kdl" "$config_stage/noctalia.kdl"
-ln -s host-titan.kdl "$config_stage/host.kdl"
+ln -s host-$(hostname).kdl "$config_stage/host.kdl"
 "$stagedir/usr/bin/niri" validate -c "$config_stage/config.kdl"
 sha256sum "$archive" "$logdest"/* | tee "$rollout_root/artifacts.sha256"
 ```
@@ -699,7 +699,7 @@ plus log hashes. No host package or running process has changed yet.
 - [ ] **Step 1: Record rollback identities before any host mutation**
 
 ```bash
-source "$HOME/d/dotfiles/shell/local/titan.env.zsh"
+source "$HOME/d/dotfiles/shell/local/$(hostname).env.zsh"
 : "${NIRI_MATERIAL_WORK_ROOT:?NIRI_MATERIAL_WORK_ROOT must be set}"
 test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material
 rollout_root="$NIRI_MATERIAL_WORK_ROOT/v1-daily-driver-138697be"
@@ -841,7 +841,7 @@ login, continue with Task 6.
 - [ ] **Step 1: Verify the new live process and absence of legacy rendering**
 
 ```bash
-source "$HOME/d/dotfiles/shell/local/titan.env.zsh"
+source "$HOME/d/dotfiles/shell/local/$(hostname).env.zsh"
 : "${NIRI_MATERIAL_WORK_ROOT:?NIRI_MATERIAL_WORK_ROOT must be set}"
 test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material
 rollout_root="$NIRI_MATERIAL_WORK_ROOT/v1-daily-driver-138697be"
@@ -994,7 +994,7 @@ the dotfiles commit from `rollback.txt`, and the two PASS lines from
 `burn-in.txt`:
 
 ```bash
-source "$HOME/d/dotfiles/shell/local/titan.env.zsh"
+source "$HOME/d/dotfiles/shell/local/$(hostname).env.zsh"
 : "${NIRI_MATERIAL_WORK_ROOT:?NIRI_MATERIAL_WORK_ROOT must be set}"
 test "$NIRI_MATERIAL_WORK_ROOT" = /mnt/ssd3/niri-material
 rollout_root="$NIRI_MATERIAL_WORK_ROOT/v1-daily-driver-138697be"

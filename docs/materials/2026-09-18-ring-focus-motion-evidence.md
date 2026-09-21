@@ -16,7 +16,7 @@ this record is historical.
 
 ## Host and binary
 
-Host `titan`, the headless lane: every nested instance runs under its own
+The verification host, headless lane: every nested instance runs under its own
 `weston --backend=headless --renderer=gl` unit, never the desktop session.
 Load average at launch 1.31. `wlrctl` (AUR) was installed for the
 idle-resume input and is now a `cases` requirement of the smoke.
@@ -102,7 +102,7 @@ CAPTURE_TASK=material-ee451d NIRI_MATERIAL_WORK_ROOT=$NIRI_MATERIAL_WORK_ROOT \
 ```
 
 The recorded run is `$NIRI_MATERIAL_WORK_ROOT/ring-motion-clips-079ed613/ring-clips-3278563-1789856906`
-(host `titan`, headless lane, started 2026-09-19 18:28:26 local; exit 0).
+(the verification host, headless lane, started 2026-09-19 18:28:26 local; exit 0).
 Release binary SHA-256
 `0ef259b34eac9eecc7a08013429d95a36718c26d38b835838caeeacd19e34c02`.
 Preflight `quiet`: load1 0.64, CPU 1.1 %, GPU P8 throughout, power IQR
