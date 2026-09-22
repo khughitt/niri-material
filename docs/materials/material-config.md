@@ -234,6 +234,8 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `done` | `ripple`, `flash`, `sweep`, `none` | `sweep` |
 | `error` | `ripple`, `flash`, `sweep`, `none` | `flash` |
 | `ring-beam-speed` | 0–5000 logical px/s | 300 |
+| `ring-beam-noise` | 0–1 | 0 |
+| `ring-beam-noise-hz` | 0–30 wanders per second | 3 |
 | `ring-gap` | 0–128 logical px | 8 logical px |
 | `ring-glow` | 0–3 | 1.0 |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
@@ -257,6 +259,8 @@ material "terminal-glass" {
         done "sweep"
         error "flash"
         ring-beam-speed 300
+        ring-beam-noise 0
+        ring-beam-noise-hz 3
         ring-gap 8
         ring-glow 1.0
         ring-width 2.6
@@ -296,6 +300,22 @@ without a beam; `signal { motion "reduced" }`, `motion "off"`, and
 restarts the beam on the newly focused window; focus loss ends it at once.
 `ring-glow` scales the whole focus light — head, tail, resting glow and
 spill together — so their ratios hold while the total is tuned.
+
+`ring-beam-noise` makes the head's brightness wander as it travels, so the
+comet reads as a living light rather than a lamp on a track. It is the
+fraction either side of the head's own brightness that the wander reaches:
+`0` is a steady head (the default, and the appearance every earlier release
+shipped), `0.3` a gentle breathing, `1.0` a head that flares and nearly dies.
+`ring-beam-noise-hz` is how fast it wanders, in wanders per second; either
+value at `0` leaves the head steady.
+
+The wander rides the head alone. The tail is a trail the head has already
+left and stays smooth, and the resting glow is untouched — the quiet ring
+still costs no redraws and keeps its constant fingerprint, so a wandering
+head never puts a settled window back on a clock. It is seeded per window
+and per run, so two panes that gain focus together do not flicker in step
+and one pane's successive runs do not replay. The motion policies that skip
+the beam skip the wander with it.
 
 `accent "ring"` lets a window signal light and tint the same band on any
 window. Both together show the filament in the accent color. The band sits

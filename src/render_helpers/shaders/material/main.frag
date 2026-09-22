@@ -136,6 +136,9 @@ void main() {
                 float P;
                 float s = arcPosition(q0, gap, P);
                 float head = mat_sig_focus.y;
+                // Head amplitude: the fade envelope times the brightness
+                // wander ring.rs folded into it. Exactly 0 once the head
+                // has finished its lap, so the drain is tail-only.
                 float env = mat_sig_focus.z;
                 float decay = mat_sig_focus.w;
                 float L = min(P * BEAM_TAIL_FRACTION, BEAM_TAIL_MAX);

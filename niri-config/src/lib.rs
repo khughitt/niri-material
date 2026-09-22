@@ -1042,6 +1042,46 @@ mod tests {
     }
 
     #[test]
+    fn ring_beam_noise_defaults_off_bounds_and_inherits() {
+        let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
+        let d = parsed.materials[0].resolve().response(None);
+        assert_eq!(
+            (d.ring_beam_noise, d.ring_beam_noise_hz),
+            (0., 3.),
+            "a steady head unless asked: the shipped look is unchanged"
+        );
+
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-beam-noise 0.35; ring-beam-noise-hz 4.5; }; response "still" {}; }"#,
+        )])
+        .unwrap();
+        let m = parsed.materials[0].resolve();
+        let d = m.response(None);
+        assert_eq!((d.ring_beam_noise, d.ring_beam_noise_hz), (0.35, 4.5));
+        assert_eq!(
+            {
+                let still = m.response(Some("still"));
+                (still.ring_beam_noise, still.ring_beam_noise_hz)
+            },
+            (0.35, 4.5),
+            "inherits from default"
+        );
+
+        for (line, message) in [
+            ("ring-beam-noise 1.5;", "value must be between 0 and 1"),
+            ("ring-beam-noise -0.1;", "value must be between 0 and 1"),
+            ("ring-beam-noise-hz 31;", "value must be between 0 and 30"),
+        ] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ {line} }}; }}"#),
+            )]);
+            assert!(err.contains(message), "{line}: {err}");
+        }
+    }
+
+    #[test]
     fn signal_idle_after_ms_defaults_and_bounds() {
         let parsed = parse_files(&[("config.kdl", "")]).unwrap();
         assert_eq!(parsed.signal.idle_after, Duration::from_millis(30_000));
