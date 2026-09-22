@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-9704b0
 created: 2026-09-22T13:52:16Z
-updated: 2026-09-22T15:43:36Z
+updated: 2026-09-22T16:05:13Z
 started: 2026-09-22T15:43:35Z
 depends: []
 tags: [rendering, noise]
@@ -25,4 +25,7 @@ Open: whether the noise rides the head alone or the tail and resting glow too; w
 
 - 2026-09-22T15:35:37Z (materials-26.04): Scoped 2026-09-22. process=direct: the three open questions are bounded and the code answers them. (a) env already multiplies the head term alone in both ring.rs comet() and main.frag (decay multiplies head+tail together), so a head-brightness gain rides env — no new uniform, no shader formula change, and BeamFrame::REST stays exactly zero. (b) rate in Hz, evaluated CPU-side per frame in beam_frame as smooth value noise over elapsed time: the head is one point, so its brightness needs no per-fragment noise, and a free-running temporal wobble is what 'living light' asks for (a spatial-along-arc term would repeat identically every lap and across windows). (c) its own knob, not shared with material-3fcba2: those are per-fragment spatial grain on the sampled backdrop, this is a per-frame scalar. Seeded per window from jelly_seed so two focused panes do not flicker in lockstep. Quiescence holds by construction: env is 0 at rest and after the lap, so the noise term vanishes with the run and the resting glow keeps its constant fingerprint.
 - 2026-09-22T15:43:36Z (material-9704b0): started
+  provenance: {"harness_session":"claude-code:365f5b3e-15f6-430e-aa21-082d2a27e409","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-22T16:05:13Z (materials-26.04): Both halves land and are green. niri: ring-beam-noise / ring-beam-noise-hz on the response block, the wander folded into the head amplitude beam_frame already sends as mat_sig_focus.z (no new uniform, shader formula unchanged); merged to materials-26.04 at 0213ea0f; just gate clean. Prism: glass.ring.beamNoise / beamNoiseHz in the Ring group, emitted, bound for reload, in both starter profiles; committed on prism's branch prism-de6e54 (e190270), deliberately NOT merged to prism main. Prism's suite is 479/479 with the new niri first on PATH and fails only its two installed-niri probe tests against the installed 26.04 (649c731b), so merging prism before the install would make the next prism apply emit keys this niri rejects. Remaining: install, merge prism, apply, and judge the look.
+- 2026-09-22T16:05:13Z (materials-26.04): parked (waiting on user, review): Roll out and accept: (1) install the niri carrying 0213ea0f (just package-pin, push before makepkg; check where ~/bin/prism points first; do not restart between the niri install and the prism apply); (2) merge prism's prism-de6e54 branch into prism main - until then prism main does not emit the new keys, which is deliberate; (3) prism apply, then set glass.ring.beamNoise to about 0.4 and beamNoiseHz to about 3 and judge the head's wander on a focus gain. Both default to 0, so nothing changes until that slider moves. For a headless sheet instead of the live desktop: SEQUENCES=beam-wander docs/materials/scripts/ring-motion-clips.sh, which is a quiet-host job.
   provenance: {"harness_session":"claude-code:365f5b3e-15f6-430e-aa21-082d2a27e409","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
