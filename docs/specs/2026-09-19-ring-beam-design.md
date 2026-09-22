@@ -209,11 +209,12 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   *as it is this frame* (jelly included, §1.2) and `L = min(P ·
   BEAM_TAIL_FRACTION, BEAM_TAIL_MAX)`: `head = speed · elapsed` px. Two
   envelope factors, both from the clock:
-  - `env`, the **head cutoff**: `smoothstep(0, FADE, t) · (1 −
-    smoothstep(P/speed − FADE, P/speed, t))`, with `FADE = 300 ms`, and
-    exactly `0` for `t ≥ P/speed`. The head fades in as it sets off and out
-    as it returns to the start point, and can never begin a second lap
-    during the drain, whatever the other factor does.
+  - `env`, the **head amplitude**: `smoothstep(0, FADE, t) · (1 −
+    smoothstep(P/speed − FADE, P/speed, t)) · gain(t)`, with `FADE = 300 ms`,
+    and exactly `0` for `t ≥ P/speed`. The head fades in as it sets off and
+    out as it returns to the start point, and can never begin a second lap
+    during the drain, whatever the other factor does. `gain` is the head's
+    brightness wander, `1` unless asked for (addendum below).
   - `decay`, the **shared brightness** of head and tail: `1` throughout a
     plateau run (the default). The tail follows the head by construction.
 - **Geometry changes.** Because `P` and `L` are read every frame, a window
@@ -252,6 +253,28 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   the head cutoff `env` is unchanged, so the head still ends its lap at the
   seam and the tail still drains behind it. One constant selects the shape;
   the sheets decide which ships. Both end at rest the same way.
+- **Head wander (addendum, 2026-09-22, material-9704b0).** `gain(t)` gives
+  the head's brightness a life of its own, so the comet reads as a living
+  light rather than a lamp on a track. Two response keys drive it:
+  `ring-beam-noise`, the fraction either side of 1 the gain reaches, and
+  `ring-beam-noise-hz`, its rate. `gain = 1 + intensity · (2 · w − 1)`,
+  floored at 0, where `w ∈ [0, 1]` is one octave of value noise — hashed
+  lattice points one unit apart on `t · hz`, smoothstep between them — so
+  the head wanders rather than flickers. Either key at `0` gives `gain = 1`
+  and a bit-identical beam. The seed mixes the pane's jelly seed with the
+  run's start instant, so two panes focused together do not flicker in step
+  and one pane's successive runs do not replay.
+
+  It rides the **head alone**, by multiplying `env`: the tail is a trail the
+  head has already left, and re-wandering it would make the whole comet
+  breathe rather than its light flicker. Because it multiplies `env` it is
+  carried by the existing `mat_sig_focus.z` — no new uniform, and the
+  shader formula is unchanged. Two properties are preserved by
+  construction: `env` is still exactly `0` from the lap's end on, so the
+  drain and the rest uniforms are untouched; and the wander exists only
+  while a beam runs, so the settled ring keeps its constant fingerprint and
+  its zero redraws. The skips below skip it with the beam.
+
 - **Skips.** `motion "reduced"`, `motion "off"`, `animations { off }`,
   `ring-beam-speed 0`, and the fixtures' `should_complete_instantly` skip
   the beam: focus gain shows the resting glow immediately.

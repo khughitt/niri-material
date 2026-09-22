@@ -156,7 +156,9 @@ pub fn arc_position(face: &Face, gap: f64, q: [f64; 2]) -> f64 {
 pub struct BeamFrame {
     /// Head arc position, px; unbounded during a run.
     pub head: f32,
-    /// Head cutoff, 0–1; exactly 0 once the head has completed its lap.
+    /// Head amplitude: the fade envelope times the brightness wander.
+    /// Exactly 0 once the head has completed its lap, whatever the
+    /// wander does; above 1 while the wander is up.
     pub env: f32,
     /// Shared brightness of head and tail, 0–1.
     pub decay: f32,
@@ -171,6 +173,68 @@ impl BeamFrame {
     };
 }
 
+/// The head's brightness wander: how far the head strays from its envelope
+/// amplitude (`intensity`, a fraction either side of 1) and how fast
+/// (`hz`, wanders per second). `seed` separates two panes that gain focus
+/// together, and separates one pane's successive runs.
+///
+/// This rides the head alone. The tail is a trail the head already left,
+/// so re-wandering it would make the whole comet breathe rather than its
+/// light flicker, and the resting glow must stay a constant fingerprint
+/// (spec 1.3) or the quiet ring would be back on a clock.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HeadNoise {
+    pub intensity: f64,
+    pub hz: f64,
+    pub seed: u32,
+}
+
+impl HeadNoise {
+    /// A steady head, bit-identical to the beam before this knob existed.
+    pub const NONE: Self = Self {
+        intensity: 0.,
+        hz: 0.,
+        seed: 0,
+    };
+
+    fn is_off(&self) -> bool {
+        self.intensity <= 0. || self.hz <= 0.
+    }
+}
+
+/// splitmix64's finalizer, to 53 bits in [0, 1).
+fn hash01(mut x: u64) -> f64 {
+    x = x.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x ^= x >> 27;
+    x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 31;
+    (x >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// Value noise in [0, 1]: hashed lattice points one unit apart, smoothstep
+/// between them. One octave, so the head wanders rather than flickers.
+fn wander(x: f64, seed: u32) -> f64 {
+    let x = x.max(0.);
+    let i = x.floor();
+    let lattice = |n: f64| hash01((n as i64 as u64).wrapping_mul(0x1_0000_0001) ^ u64::from(seed));
+    let a = lattice(i);
+    let b = lattice(i + 1.);
+    a + (b - a) * smoothstep(0., 1., x - i)
+}
+
+/// The head's amplitude multiplier at `elapsed`: 1 when the wander is off,
+/// otherwise within `1 +/- intensity`, floored at 0 so a full-intensity
+/// trough darkens the head without inverting it.
+pub fn head_gain(noise: HeadNoise, elapsed: Duration) -> f64 {
+    if noise.is_off() {
+        return 1.;
+    }
+    let w = wander(elapsed.as_secs_f64() * noise.hz, noise.seed);
+    (1. + noise.intensity * (2. * w - 1.)).max(0.)
+}
+
 fn smoothstep(e0: f64, e1: f64, x: f64) -> f64 {
     if e1 <= e0 {
         return if x >= e1 { 1. } else { 0. };
@@ -180,8 +244,15 @@ fn smoothstep(e0: f64, e1: f64, x: f64) -> f64 {
 }
 
 /// The frame values at `elapsed` for a beam of `speed` on a `perimeter`.
-/// `env` is exactly zero from the lap's end on, whatever the envelope does.
-pub fn beam_frame(elapsed: Duration, speed: f64, perimeter: f64, envelope: Envelope) -> BeamFrame {
+/// `env` is exactly zero from the lap's end on, whatever the envelope or
+/// the wander does.
+pub fn beam_frame(
+    elapsed: Duration,
+    speed: f64,
+    perimeter: f64,
+    envelope: Envelope,
+    noise: HeadNoise,
+) -> BeamFrame {
     let t = elapsed.as_secs_f64();
     let lap = perimeter / speed;
     let run = (perimeter + tail_length(perimeter)) / speed;
@@ -194,7 +265,9 @@ pub fn beam_frame(elapsed: Duration, speed: f64, perimeter: f64, envelope: Envel
     let env = if t >= lap {
         0.
     } else {
-        smoothstep(0., fade_in, t) * (1. - smoothstep(lap - fade, lap, t))
+        smoothstep(0., fade_in, t)
+            * (1. - smoothstep(lap - fade, lap, t))
+            * head_gain(noise, elapsed)
     };
     let decay = match envelope {
         Envelope::Plateau => 1.,
@@ -398,7 +471,15 @@ mod tests {
     fn plateau_frame_fades_the_head_in_and_out_and_runs_until_the_tail_clears() {
         let p = 3000.;
         let v = 300.; // lap 10 s, tail 750 px → 2.5 s
-        let at = |ms: u64| beam_frame(Duration::from_millis(ms), v, p, Envelope::Plateau);
+        let at = |ms: u64| {
+            beam_frame(
+                Duration::from_millis(ms),
+                v,
+                p,
+                Envelope::Plateau,
+                HeadNoise::NONE,
+            )
+        };
         assert_eq!(at(0).head, 0.);
         assert_eq!(at(0).env, 0.);
         assert_eq!(at(0).decay, 1.);
@@ -420,7 +501,15 @@ mod tests {
         let p = 3000.;
         let v = 300.;
         let run = (p + tail_length(p)) / v; // 12.5 s
-        let at = |ms: u64| beam_frame(Duration::from_millis(ms), v, p, Envelope::Splash);
+        let at = |ms: u64| {
+            beam_frame(
+                Duration::from_millis(ms),
+                v,
+                p,
+                Envelope::Splash,
+                HeadNoise::NONE,
+            )
+        };
         assert!((at(50).env - 0.5).abs() < 1e-6, "100 ms fade-in");
         assert!(
             (at(6250).decay - 0.25).abs() < 1e-6,
@@ -433,7 +522,102 @@ mod tests {
         );
         assert!(at(10_000).decay > 0., "while the tail is still draining");
         let end = Duration::from_secs_f64(run);
-        assert!(beam_frame(end, v, p, Envelope::Splash).decay.abs() < 1e-6);
+        assert!(
+            beam_frame(end, v, p, Envelope::Splash, HeadNoise::NONE)
+                .decay
+                .abs()
+                < 1e-6
+        );
+    }
+
+    #[test]
+    fn the_wander_is_off_by_default_and_bounded_by_its_intensity_when_on() {
+        let at = |n, ms| head_gain(n, Duration::from_millis(ms));
+        // either knob at zero is a steady head, exactly 1 at every instant
+        for ms in [0, 17, 250, 4000] {
+            assert_eq!(at(HeadNoise::NONE, ms), 1.);
+            let no_rate = HeadNoise {
+                intensity: 0.5,
+                hz: 0.,
+                seed: 7,
+            };
+            assert_eq!(at(no_rate, ms), 1.);
+            let no_depth = HeadNoise {
+                intensity: 0.,
+                hz: 4.,
+                seed: 7,
+            };
+            assert_eq!(at(no_depth, ms), 1.);
+        }
+        let n = HeadNoise {
+            intensity: 0.4,
+            hz: 3.,
+            seed: 12345,
+        };
+        // every sample over a long run stays inside 1 +/- intensity, and the
+        // band is actually used: the extremes are approached, not hugged at 1
+        let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+        for ms in 0..8000 {
+            let g = at(n, ms);
+            assert!((0.6..=1.4).contains(&g), "{ms} ms: {g}");
+            lo = lo.min(g);
+            hi = hi.max(g);
+        }
+        assert!(lo < 0.7 && hi > 1.3, "band barely used: {lo}..{hi}");
+    }
+
+    #[test]
+    fn the_wander_is_continuous_and_differs_per_seed() {
+        let n = |seed| HeadNoise {
+            intensity: 1.,
+            hz: 4.,
+            seed,
+        };
+        // no step between adjacent frames: at 4 Hz a 60 Hz frame is 1/15 of a
+        // lattice unit, and smoothstep's slope peaks at 1.5, so 0.2 is slack
+        let step = Duration::from_micros(16_667);
+        let mut t = Duration::ZERO;
+        let mut prev = head_gain(n(1), t);
+        while t < Duration::from_secs(5) {
+            t += step;
+            let g = head_gain(n(1), t);
+            assert!((g - prev).abs() < 0.2, "jump at {t:?}: {prev} -> {g}");
+            prev = g;
+        }
+        // two panes focused at the same instant do not flicker together
+        let differs = (0..2000).any(|ms| {
+            let d = Duration::from_millis(ms);
+            (head_gain(n(1), d) - head_gain(n(2), d)).abs() > 0.05
+        });
+        assert!(differs, "seeds 1 and 2 wander identically");
+    }
+
+    #[test]
+    fn the_wander_rides_the_head_without_disturbing_the_seam_or_the_rest() {
+        let p = 3000.;
+        let v = 300.; // lap 10 s
+        let n = HeadNoise {
+            intensity: 0.8,
+            hz: 5.,
+            seed: 99,
+        };
+        let at = |ms: u64| beam_frame(Duration::from_millis(ms), v, p, Envelope::Plateau, n);
+        // the lap's end is still exactly zero, and stays zero through the drain
+        assert_eq!(at(10_000).env, 0., "exactly zero at the seam");
+        assert_eq!(at(11_000).env, 0., "and for the whole drain");
+        // the head still counts, and the shared decay is untouched
+        assert!((at(11_000).head - 3300.).abs() < 1e-3);
+        assert_eq!(at(5000).decay, 1.);
+        // mid-plateau the amplitude has left 1 at least once
+        let wandered = (1000..9000)
+            .step_by(13)
+            .any(|ms| (at(ms).env - 1.).abs() > 0.05);
+        assert!(wandered, "env never left 1 under an 0.8 wander");
+        // and the resting frame is untouched: the quiet ring keeps one value
+        for s in [0., 1500., p - 1.] {
+            let v = comet(s as f32, BeamFrame::REST, p as f32, 1.);
+            assert!((v - BEAM_BASE * BEAM_REST).abs() < 1e-6, "s = {s}: {v}");
+        }
     }
 
     #[test]

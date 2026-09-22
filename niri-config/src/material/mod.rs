@@ -286,6 +286,10 @@ pub struct Response {
     #[knuffel(child, unwrap(argument))]
     pub ring_beam_speed: Option<FloatOrInt<0, 5000>>,
     #[knuffel(child, unwrap(argument))]
+    pub ring_beam_noise: Option<FloatOrInt<0, 1>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_beam_noise_hz: Option<FloatOrInt<0, 30>>,
+    #[knuffel(child, unwrap(argument))]
     pub ring_width: Option<FloatOrInt<0, 128>>,
     #[knuffel(child, unwrap(argument, str))]
     pub focus: Option<FocusResponse>,
@@ -317,6 +321,11 @@ pub struct ResolvedResponse {
     pub ring_color: Color,
     /// Beam pace along the perimeter, px/s; zero skips the beam.
     pub ring_beam_speed: f64,
+    /// How far the beam head's brightness wanders either side of its
+    /// envelope, 0–1; zero is a steady head.
+    pub ring_beam_noise: f64,
+    /// How fast it wanders, in wanders per second.
+    pub ring_beam_noise_hz: f64,
 }
 
 impl Default for ResolvedResponse {
@@ -333,6 +342,8 @@ impl Default for ResolvedResponse {
             focus: FocusResponse::RingLight,
             ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
             ring_beam_speed: 300.,
+            ring_beam_noise: 0.,
+            ring_beam_noise_hz: 3.,
         }
     }
 }
@@ -353,6 +364,12 @@ impl ResolvedResponse {
             ring_beam_speed: response
                 .ring_beam_speed
                 .map_or(base.ring_beam_speed, |x| x.0),
+            ring_beam_noise: response
+                .ring_beam_noise
+                .map_or(base.ring_beam_noise, |x| x.0),
+            ring_beam_noise_hz: response
+                .ring_beam_noise_hz
+                .map_or(base.ring_beam_noise_hz, |x| x.0),
         }
     }
 

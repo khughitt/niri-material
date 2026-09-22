@@ -713,6 +713,16 @@ impl<W: LayoutElement> Tile<W> {
                             beam.speed,
                             perimeter,
                             ring::BEAM_ENVELOPE,
+                            ring::HeadNoise {
+                                intensity: response.ring_beam_noise,
+                                hz: response.ring_beam_noise_hz,
+                                // The pane's own seed keeps two windows
+                                // focused together out of step; the run's
+                                // start keeps one window's successive runs
+                                // from replaying the same wander.
+                                seed: material.jelly_seed()[0].to_bits()
+                                    ^ beam.started.as_millis() as u32,
+                            },
                         );
                     }
                 }
@@ -3507,6 +3517,83 @@ mod tests {
         let dynamics = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "a live beam");
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+    }
+
+    #[test]
+    fn the_head_wander_reaches_the_uniform_and_stops_with_the_beam() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let response = niri_config::ResolvedResponse {
+            ring_beam_noise: 0.6,
+            ring_beam_noise_hz: 5.,
+            ..Default::default()
+        };
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = beam_tile(flat_glass(), response, clock.clone());
+        let (_, p, l) = geometry_of(&tile, 400., 300.);
+        tile.update_render_elements(true, true, true, view);
+
+        // Through the plateau the head amplitude leaves 1, while the head
+        // position and the shared decay stay exactly where they were.
+        let mut wandered = false;
+        let mut t = 0.4;
+        while t < (p / 300.) - 0.4 {
+            clock.set_unadjusted(secs(t));
+            tile.update_render_elements(true, true, true, view);
+            let [head, env, decay] = beam_uniforms(&render_dynamics(&tile, 400., 300.));
+            assert!((head - (300. * t) as f32).abs() < 1e-2, "head at {t}");
+            assert_eq!(decay, 1., "plateau decay at {t}");
+            assert!((0.4..=1.6).contains(&env), "env {env} out of band at {t}");
+            wandered |= (env - 1.).abs() > 0.05;
+            t += 0.05;
+        }
+        assert!(wandered, "the head never left its envelope amplitude");
+
+        // Past the lap the head amplitude is exactly zero while the tail
+        // drains, and the settled frame is the rest uniform: the wander
+        // never puts the quiet ring back on a clock.
+        clock.set_unadjusted(secs((p / 300.) + 0.5));
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(beam_uniforms(&render_dynamics(&tile, 400., 300.))[1], 0.);
+        clock.set_unadjusted(secs(((p + l) / 300.) + 0.5));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(
+            beam_uniforms(&render_dynamics(&tile, 400., 300.)),
+            [0., 0., 0.]
+        );
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn the_wander_is_skipped_with_the_beam_under_reduced_and_off() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        for (policy, animations_off) in [
+            (niri_config::SignalMotionPolicy::Reduced, false),
+            (niri_config::SignalMotionPolicy::Off, false),
+            (niri_config::SignalMotionPolicy::Full, true),
+        ] {
+            let mut clock = Clock::with_time(Duration::ZERO);
+            let response = niri_config::ResolvedResponse {
+                ring_beam_noise: 1.,
+                ring_beam_noise_hz: 20.,
+                ..Default::default()
+            };
+            let mut tile = beam_tile(flat_glass(), response, clock.clone());
+            let mut options = (*tile.options).clone();
+            options.signal.motion = policy;
+            options.animations.off = animations_off;
+            tile.options = Rc::new(options);
+            tile.update_render_elements(true, true, true, view);
+            let label = format!("{policy:?} animations_off={animations_off}");
+            assert_eq!(beam_of(&tile), None, "{label}");
+            for t in [0.1, 0.5, 1., 2.] {
+                clock.set_unadjusted(secs(t));
+                tile.update_render_elements(true, true, true, view);
+                let dynamics = render_dynamics(&tile, 400., 300.);
+                assert_eq!(beam_uniforms(&dynamics), [0., 0., 0.], "{label} at {t}");
+            }
+        }
     }
 
     #[test]

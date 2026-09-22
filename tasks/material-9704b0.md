@@ -1,13 +1,15 @@
 ---
 id: material-9704b0
 title: "Ring beam: tunable noise on the comet head's brightness"
-status: todo
+status: doing
 priority: 2
 size: m
 complexity: mid
 process: direct
+owner: material-9704b0
 created: 2026-09-22T13:52:16Z
-updated: 2026-09-22T15:35:37Z
+updated: 2026-09-22T15:43:36Z
+started: 2026-09-22T15:43:35Z
 depends: []
 tags: [rendering, noise]
 agent: claude-code/claude-opus-5
@@ -22,3 +24,5 @@ Open: whether the noise rides the head alone or the tail and resting glow too; w
 ## Notes
 
 - 2026-09-22T15:35:37Z (materials-26.04): Scoped 2026-09-22. process=direct: the three open questions are bounded and the code answers them. (a) env already multiplies the head term alone in both ring.rs comet() and main.frag (decay multiplies head+tail together), so a head-brightness gain rides env — no new uniform, no shader formula change, and BeamFrame::REST stays exactly zero. (b) rate in Hz, evaluated CPU-side per frame in beam_frame as smooth value noise over elapsed time: the head is one point, so its brightness needs no per-fragment noise, and a free-running temporal wobble is what 'living light' asks for (a spatial-along-arc term would repeat identically every lap and across windows). (c) its own knob, not shared with material-3fcba2: those are per-fragment spatial grain on the sampled backdrop, this is a per-frame scalar. Seeded per window from jelly_seed so two focused panes do not flicker in lockstep. Quiescence holds by construction: env is 0 at rest and after the lap, so the noise term vanishes with the run and the resting glow keeps its constant fingerprint.
+- 2026-09-22T15:43:36Z (material-9704b0): started
+  provenance: {"harness_session":"claude-code:365f5b3e-15f6-430e-aa21-082d2a27e409","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
