@@ -6,7 +6,7 @@ priority: 2
 size: m
 owner: material-265eb0
 created: 2026-09-11T10:27:54Z
-updated: 2026-09-12T10:01:44Z
+updated: 2026-09-23T19:40:37Z
 started: 2026-09-12T09:57:45Z
 depends: [material-ec6229]
 parent: material-265eb0
@@ -25,3 +25,7 @@ After execution resumes and the fixture is validated, collect 24 short trace obs
 - 2026-09-12T10:01:44Z (material-265eb0): Readiness on 2026-09-12T06:00:38-04:00 sampled 20 seconds after integration tests finished: exit 1; CPU 25.5% > 10%, load1 12.89 > 2.0, GPU 34.5% > 5%, mixed P5/P8, power IQR 5.64 W > 1.0 W. Graphics clients: Xwayland, firefox, kitty, niri, noctalia, qs; no compute clients. Release exited 0. Retained capture.json and logs under NIRI_MATERIAL_WORK_ROOT/material-265eb0/readiness-20260912-15msz4ks. No release build or compositor capture started.
 - 2026-09-12T10:01:44Z (material-265eb0): Merged verification passed: 434 Rust/unit/doc tests, 126 tooling tests, 22 idle-budget fixture tests.
 - 2026-09-12T10:01:44Z (material-265eb0): parked (waiting on user, environment): Resume the authorized trace build and approximately 50-minute capture after a real headless readiness preflight passes on a quiet desktop. Keep default thresholds; retained refusal record readiness-20260912-15msz4ks explains current load. Power still requires the operator-arranged dedicated session.
+- 2026-09-23T19:40:37Z (material-265eb0): resumed
+  provenance: {"harness_session":"claude-code:66e9c2d5-22bf-40bc-bb0a-ea5774109c31","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-23T19:40:37Z (material-265eb0): parked (waiting on user, quiet; idle, 50 min): Resume the authorized trace build and approximately 50-minute capture after a real headless readiness preflight passes on a quiet desktop. Keep default thresholds; retained refusal record readiness-20260912-15msz4ks explains current load. Power still requires the operator-arranged dedicated session.
+  provenance: {"harness_session":"claude-code:66e9c2d5-22bf-40bc-bb0a-ea5774109c31","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
