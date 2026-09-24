@@ -1,15 +1,16 @@
 ---
 id: material-068639
 title: colorSource familiar leaves every terminal on the same resting ring color
-status: doing
+status: done
 priority: 2
 size: s
 complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-22T15:37:43Z
-updated: 2026-09-24T18:08:53Z
+updated: 2026-09-24T18:11:44Z
 started: 2026-09-24T18:08:53Z
+completed: 2026-09-24T18:11:44Z
 depends: []
 tags: [signals, bug, prism]
 agent: claude-code/claude-opus-5
@@ -31,3 +32,6 @@ Close this when a user selecting `familiar` either sees per-window hues or is to
 
 - 2026-09-22T15:37:52Z (materials-26.04): Deliberately not depending on material-930c55: the bridge is one of the two acceptable outcomes, but marking the option unavailable closes this without it.
 - 2026-09-24T18:08:53Z (materials-26.04): started
+- 2026-09-24T18:11:44Z (materials-26.04): Landed on prism main fff28a6: the colorSource def description now discloses that familiar is not wired yet, and the panel shows it as the row tooltip. Kept the option selectable because the Aurora and Rainbow profiles ship it; removing the value would fail their validation. Per-window hues stay with material-930c55; the Color-control gating and the glass.ring.color description stay with prism-b4d118.
+- 2026-09-24T18:11:44Z (materials-26.04): done
+- 2026-09-24T18:11:44Z (materials-26.04): colorSource familiar now tells the user it rests every window on the manual Color until the familiar bridge lands
