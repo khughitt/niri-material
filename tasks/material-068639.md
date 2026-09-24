@@ -1,13 +1,15 @@
 ---
 id: material-068639
 title: colorSource familiar leaves every terminal on the same resting ring color
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-09-22T15:37:43Z
-updated: 2026-09-22T15:37:52Z
+updated: 2026-09-24T18:08:53Z
+started: 2026-09-24T18:08:53Z
 depends: []
 tags: [signals, bug, prism]
 agent: claude-code/claude-opus-5
@@ -28,3 +30,4 @@ Close this when a user selecting `familiar` either sees per-window hues or is to
 ## Notes
 
 - 2026-09-22T15:37:52Z (materials-26.04): Deliberately not depending on material-930c55: the bridge is one of the two acceptable outcomes, but marking the option unavailable closes this without it.
+- 2026-09-24T18:08:53Z (materials-26.04): started
