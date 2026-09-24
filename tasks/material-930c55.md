@@ -7,7 +7,7 @@ size: xs
 complexity: low
 process: direct
 created: 2026-09-02T12:09:35Z
-updated: 2026-09-24T18:15:39Z
+updated: 2026-09-24T18:21:57Z
 depends: [material-a54d89, fam-e7fa72]
 tags: [signals, sources]
 ---
@@ -24,3 +24,6 @@ Where to look: fam-e7fa72; niri-ipc signal requests; Prism integrations/niri/ren
 
 - 2026-09-22T15:37:52Z (materials-26.04): User-visible as of 2026-09-22: with Prism's ring colorSource set to familiar, every terminal shows the same resting ring color because nothing pushes set-window-signal. Filed as material-068639. This bridge is the fix for per-window hue; 068639 covers the interim honesty of the Prism option.
 - 2026-09-24T18:15:39Z (materials-26.04): scope: scoped; implementation filed in familiar as fam-e7fa72 (direct, mid, m), this record now a pointer that closes on a live per-window hue check
+- 2026-09-24T18:21:57Z (materials-26.04): fam-e7fa72 landed on familiar main 188c602 (not pushed). One-shot live sync from its worktree lit windows 65/66/67 as #c464bc tuxedo active/pulse, #d2a956 maine-coon quiet/breathe, #5990cf seal-point active/pulse; pulse and ttl commands accepted by niri; slots cleared afterwards. The running familiar-niri watch (started by niri at login) still runs the old code until restarted.
+- 2026-09-24T18:21:57Z (materials-26.04): parked (waiting on user, review): Restart familiar-niri watch so it runs familiar 188c602, then confirm each terminal ring takes its familiar hue with Prism's colorSource=familiar; close this and revisit the 068639 disclosure in Prism
+  provenance: {"harness_session":"claude-code:043fdd81-3649-4354-a9c1-0d8726289ef8","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
