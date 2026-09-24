@@ -414,7 +414,14 @@ col() {
     [ -n "$idx" ] || fail "column '$2' not in $(head -1 "$1")"
     echo "$idx"
 }
-export_cpu() { "$TOOLS/tracy-csvexport" --unwrap "$OUT/$1.tracy" > "$OUT/$1.csv"; }
+# Some traces send tracy-csvexport into an endless loop (view-tilt-smoke
+# gpu-deep-3, 2026-09-24: reproducible; siblings export in under a second),
+# so every export is bounded and a hang fails the run instead of stalling it.
+csvexport() {   # flag, tracy file, csv out
+    timeout 120 "$TOOLS/tracy-csvexport" "$1" "$2" > "$3" \
+        || fail "tracy-csvexport $1 ${2##*/} failed or ran past 120 s"
+}
+export_cpu() { csvexport --unwrap "$OUT/$1.tracy" "$OUT/$1.csv"; }
 trace_end() {
     local c; c=$(col "$OUT/$1.csv" ns_since_start)
     awk -F, -v c="$c" 'NR>1 { t=$c+0; if (t>end) end=t } END { printf "%d", end }' "$OUT/$1.csv"
@@ -440,7 +447,7 @@ count_last20() {
 }
 gpu_median_ns() {
     local csv=${1%.tracy}.gpu.csv
-    "$TOOLS/tracy-csvexport" --gpu "$1" > "$csv"
+    csvexport --gpu "$1" "$csv"
     local ct ce; ct=$(col "$csv" "Time from start of program"); ce=$(col "$csv" "GPU execution time")
     awk -F, -v ct="$ct" -v ce="$ce" 'NR>1 && $1=="MaterialRenderElement::draw" && $ct+0>=20e9 && $ct+0<28e9 { print $ce+0 }' "$csv" \
         | head -14 | sort -n | awk '{ a[NR]=$1 } END { if (NR!=14) { print "FAIL: " NR " MaterialRenderElement::draw samples in 20-28 s, need 14" > "/dev/stderr"; exit 1 }

@@ -6,7 +6,7 @@ priority: 2
 size: m
 owner: material-265eb0
 created: 2026-09-11T10:27:54Z
-updated: 2026-09-23T19:40:37Z
+updated: 2026-09-24T20:25:57Z
 started: 2026-09-12T09:57:45Z
 depends: [material-ec6229]
 parent: material-265eb0
@@ -29,3 +29,5 @@ After execution resumes and the fixture is validated, collect 24 short trace obs
   provenance: {"harness_session":"claude-code:66e9c2d5-22bf-40bc-bb0a-ea5774109c31","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-23T19:40:37Z (material-265eb0): parked (waiting on user, quiet; idle, 50 min): Resume the authorized trace build and approximately 50-minute capture after a real headless readiness preflight passes on a quiet desktop. Keep default thresholds; retained refusal record readiness-20260912-15msz4ks explains current load. Power still requires the operator-arranged dedicated session.
   provenance: {"harness_session":"claude-code:66e9c2d5-22bf-40bc-bb0a-ea5774109c31","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-24T20:25:57Z (material-265eb0): resumed
+  provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
