@@ -7,7 +7,7 @@ size: xs
 complexity: low
 process: direct
 created: 2026-09-22T15:42:03Z
-updated: 2026-09-22T15:42:03Z
+updated: 2026-09-25T15:31:28Z
 depends: []
 tags: [testing, bug, capture]
 agent: claude-code/claude-opus-5
@@ -20,3 +20,7 @@ Cause is in the fixture, not in capture-meta: `cm_run(sampling=True)` arms a `th
 Fix: make the sample deterministic — write the post-sample `/proc/stat` before the preflight starts rather than on a timer, or have capture-meta take the sample window from an env var the test pins, so the fixture no longer races wall-clock. Do not widen the refusal threshold to hide it.
 
 Related: material-e2759c makes the refusal name the load it refused on, which would have turned this `2 != 0` into a readable message.
+
+## Notes
+
+- 2026-09-25T15:31:28Z (materials-26.04): Recurred 2026-09-25 at the settle step (2 != 0) in hook-pre-commit, which now runs under host-budget run (background.slice, CPUWeight 30) while other budgeted jobs loaded the host; passed 6/6 alone, wrapped and unwrapped. The lower weight under contention may make the 0.2 s fake-stat timer race more frequent.
