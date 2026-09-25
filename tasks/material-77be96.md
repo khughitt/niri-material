@@ -4,7 +4,7 @@ title: Shared cargo target dir serves stale niri-config artifacts across worktre
 status: idea
 priority: 2
 created: 2026-09-23T19:47:41Z
-updated: 2026-09-23T19:50:04Z
+updated: 2026-09-25T15:28:37Z
 depends: []
 tags: [tooling]
 agent: claude-code/claude-opus-5-5
@@ -15,3 +15,4 @@ Worktrees share one build.target-dir. After a build of another branch or commit 
 ## Notes
 
 - 2026-09-23T19:50:04Z (materials-26.04): Fourth hit 2026-09-23: the main checkout's pre-commit (materials-26.04) failed with no field ring_beam_speed/idle_after right after a material-265eb0 build; cargo clean -p niri-config -p niri fixed it. So a rebuild of any tree can break the others.
+- 2026-09-25T15:28:37Z (materials-26.04): Recurred 2026-09-25 (material-43f88c): a main-checkout commit failed clippy with no field ring_beam_speed / idle_after because another worktree's niri-config build in the shared target dir looked fresh; touching niri-config/src and niri-ipc/src cleared it.
