@@ -4,7 +4,11 @@
 # The git hooks call `hook-pre-commit` and `hook-pre-push`, which run the very same
 # commands under their own target names so the report can price the hooks.
 # Every recipe runs through the vendored timing wrapper tools/tt (ops bin/tt).
-# Design: ops docs/specs/2026-09-04-test-ci-audit-design.md.
+# The host recipes run their command under `host-budget run`, which sets
+# CARGO_BUILD_JOBS and NEXTEST_TEST_THREADS from the host's CPU budget; the ci-
+# recipes do not, since CI has no ops tooling.
+# Design: ops docs/specs/2026-09-04-test-ci-audit-design.md and
+# docs/specs/2026-09-24-host-budget-design.md.
 
 set quiet
 
@@ -20,25 +24,25 @@ check_cmd := "python3 tools/ops-check && cargo fmt --all -- --check && cargo cli
 
 # Affected-only: the inner loop.
 test-fast:
-    {{tt}} test-fast -- sh -c '{{fast_cmd}}'
+    {{tt}} test-fast -- host-budget run -- sh -c '{{fast_cmd}}'
 
 # The full suite.
 test:
-    {{tt}} test -- sh -c '{{test_cmd}}'
+    {{tt}} test -- host-budget run -- sh -c '{{test_cmd}}'
 
 # Format, clippy, tooling tests, tasks check.
 check:
-    {{tt}} check -- sh -c '{{check_cmd}}'
+    {{tt}} check -- host-budget run -- sh -c '{{check_cmd}}'
 
 gate: check test
 
 # What the pre-commit hook runs: `check`'s command under its own hook target.
 hook-pre-commit:
-    {{tt}} hook-pre-commit -- sh -c '{{check_cmd}}'
+    {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{check_cmd}}'
 
 # What the pre-push hook runs: the same commands as `gate`, under one hook target.
 hook-pre-push:
-    {{tt}} hook-pre-push -- sh -c '{{check_cmd}} && {{test_cmd}}'
+    {{tt}} hook-pre-push -- host-budget run -- sh -c '{{check_cmd}} && {{test_cmd}}'
 
 # CI's test job, exactly as before it went through the front door.
 ci-test:

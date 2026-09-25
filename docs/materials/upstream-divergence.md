@@ -59,10 +59,10 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.githooks/pre-push` | C | A | +36/-0 |
 | `.github/workflows/ci.yml` | B | M | +6/-2 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +33/-0 |
+| `AGENTS.md` | C | A | +35/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
-| `justfile` | C | A | +59/-0 |
+| `justfile` | C | A | +63/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1320/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
