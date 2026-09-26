@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-265eb0
 created: 2026-09-11T10:27:54Z
-updated: 2026-09-25T09:32:34Z
+updated: 2026-09-26T02:06:00Z
 started: 2026-09-12T09:57:45Z
 depends: [material-ec6229]
 parent: material-265eb0
@@ -48,3 +48,4 @@ After execution resumes and the fixture is validated, collect 24 short trace obs
 - 2026-09-25T09:31:22Z (material-265eb0): TTY trace 2026-09-25 04:31:29-05:29:49 (58 min 20 s against the 60 min estimate): capture valid, all 25 settle gates passed, analysis ran. Behavioral gates: C and D cadence pass (81 and 41 redraws with draws); every quiet observation (A, B, P, O, 600 s hold) fails on one redraw 3.00 s after the last stimulus redraw, zero material draws, pixels equal. Filed material-4be9c3 per the plan's rule; evidence kept at NIRI_MATERIAL_WORK_ROOT/material-265eb0/trace-20260925T043128. wali-rotate.timer restored at 05:3x.
 - 2026-09-25T09:31:22Z (material-265eb0): parked (waiting on agent, dependency): After material-4be9c3 lands (the trailing 3.0 s redraw fixed or accounted for), rerun the trace from a TTY with the desktop stopped (runner as in the 2026-09-25 note; rebuild the trace binary first if the fix is in niri), then the plan's Task 2 review and commit.
   provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-26T02:06:00Z (material-265eb0): material-4be9c3 done (fixture fix niri-experiments 0f7d00f, pilots pass one case of every kind). Full TTY trace rerun started 2026-09-25 evening on the same trace binary; wali-rotate.timer stopped (restore: systemctl --user start wali-rotate.timer).
