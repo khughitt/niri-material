@@ -2,10 +2,9 @@
 
 **Status:** Task 1 fixture implemented, offline validated and reviewed on
 experiment `results/idle-budget` at `8db5dc8`, with capture-protocol adoption
-integrated at `9d7d43f`. Task 2 resumed on 2026-09-12; its real headless readiness
-preflight refused the busy host, so it is parked for a quiet window. Release
-builds and trace/power collection remain pending. This
-document proposes rules, not measured results.
+integrated at `9d7d43f`. Task 2 traces passed on 2026-09-25 (25 of 25; see the
+[evidence](../materials/2026-09-11-idle-budget-evidence.md)). Power collection
+(Task 3) remains pending, so the budget sections below are still proposed rules.
 
 **Task:** `material-265eb0`, within `material-53f873`.
 **Plan:** [execution plan](../plans/2026-09-11-material-idle-budget.md).

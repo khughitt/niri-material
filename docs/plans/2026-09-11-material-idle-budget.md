@@ -4,9 +4,11 @@
 
 **Status:** Task 1 complete: fixture implemented, offline validated and reviewed
 on experiment `results/idle-budget` at `8db5dc8`, with capture-protocol adoption
-integrated at `9d7d43f`. Task 2 resumed on 2026-09-12; its 20-second readiness
-preflight refused the busy host and it is parked for a quiet window. Task 3 still requires the operator's
-dedicated-session checkpoint. No release binaries or measurements have been produced.
+integrated at `9d7d43f`. Task 2 complete on 2026-09-25: 25 of 25 trace
+observations passed from a TTY (experiment `f0c13ac`, fixture `0f7d00f`;
+[evidence](../materials/2026-09-11-idle-budget-evidence.md)). Board-power
+acceptance is pending Task 3, which still requires the operator's
+dedicated-session checkpoint.
 
 **Goal:** verify quiescence after finite material motion and establish a
 repeatability-bounded idle board-power comparison in an isolated session.
@@ -217,17 +219,17 @@ trace-only marker patch, pinned tools.
 **Produces:** validated CPU/GPU traces, pixel-return evidence, and explicit
 per-case verdicts; this task may finish even if isolated power is unavailable.
 
-- [ ] Build the trace binary with Task 1's `build-tracy` recipe. Verify
+- [x] Build the trace binary with Task 1's `build-tracy` recipe. Verify
   binary/source/GPU identity and record the inherited fingerprint,
   unchanged-commit, transition, and Aurora deadline tests. Use native Just tests;
   add a focused regression only if a behavior is missing or fails.
-- [ ] Execute A/B after both move and resize, P/O after move, and C/D after
+- [x] Execute A/B after both move and resize, P/O after move, and C/D after
   settling: eight scenarios × three repetitions = 24 short observations. The
   owning compositor must receive no screenshot/config/input traffic inside
   observation windows. Observe `[stimulus_end + 3 s, stimulus_end + 23 s)`.
   Budget roughly 50 minutes for this lane: captures reserve 86 s each for the
   short observations and 666 s for the long hold, plus setup and exports.
-- [ ] Start the fresh compositor's first capture after mapping clients; issue
+- [x] Start the fresh compositor's first capture after mapping clients; issue
   the outward/return stimulus actions with the pinned 3 s wait, then no further
   IPC action until capture finishes. Retain the complete serial controller
   journal, including pre-connect setup actions. Require one `IdleBudget::action`
@@ -237,22 +239,22 @@ per-case verdicts; this task may finish even if isolated power is unavailable.
   `ns_since_start + exec_time_ns`. Connection time does not exclude buffered
   setup markers. Do not treat controller IPC return time as a Tracy timestamp.
   The trace-only marker does not schedule another frame.
-- [ ] Require at least one material GPU draw during the preceding stimulus
+- [x] Require at least one material GPU draw during the preceding stimulus
   in every trace, between the outward marker's start and observation start.
   GPU work need not overlap the short CPU action span. This positive control
   proves GPU recording is live before a zero-draw conclusion. Case A may contribute just one draw from its immediate
   animations-off jump; do not add animation to strengthen that control. Reject
   an entirely empty GPU channel.
-- [ ] Run one 600-second quiet B hold after movement, starting at
+- [x] Run one 600-second quiet B hold after movement, starting at
   `stimulus_end + 3 s`, with full heartbeat coverage and zero redraw/material-draw zones. Capture clean settled images
   before/after the interval and compare decoded pixels at AE 0. The before image
   is the pre-stimulus settled capture; the after image and any post-observation
   geometry restore/verify actions run only after the capture process has exited.
-- [ ] Analyze all intervals and expected case inventory. Report active GPU-zone
+- [x] Analyze all intervals and expected case inventory. Report active GPU-zone
   sums/durations alongside cadence, with DVFS limits. If any behavioral gate
   fails, retain evidence and file a concrete regression under this task; do not
   automatically widen the settle delay or rewrite the renderer.
-- [ ] Independently review raw intervals, absence-of-work coverage, and source
+- [x] Independently review raw intervals, absence-of-work coverage, and source
   attribution. Archive valid traces/results and mark Task 2 done in that commit.
   Record that board-power acceptance is still pending Task 3.
 

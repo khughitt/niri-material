@@ -1,18 +1,20 @@
 ---
 id: material-4241c3
 title: Verify material quiescence and bounded animation cadence
-status: doing
+status: done
 priority: 2
 size: m
 complexity: mid
 process: direct
 owner: material-265eb0
 created: 2026-09-11T10:27:54Z
-updated: 2026-09-26T02:06:00Z
+updated: 2026-09-26T03:14:16Z
 started: 2026-09-12T09:57:45Z
+completed: 2026-09-26T03:14:16Z
 depends: [material-ec6229]
 parent: material-265eb0
 tags: [performance]
+model: "claude-opus-5-5[1m]"
 spec: docs/specs/2026-09-11-material-idle-budget-design.md
 plan: docs/plans/2026-09-11-material-idle-budget.md
 step: "Task 2: Verify quiescence and bounded active cadence"
@@ -49,3 +51,7 @@ After execution resumes and the fixture is validated, collect 24 short trace obs
 - 2026-09-25T09:31:22Z (material-265eb0): parked (waiting on agent, dependency): After material-4be9c3 lands (the trailing 3.0 s redraw fixed or accounted for), rerun the trace from a TTY with the desktop stopped (runner as in the 2026-09-25 note; rebuild the trace binary first if the fix is in niri), then the plan's Task 2 review and commit.
   provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-26T02:06:00Z (material-265eb0): material-4be9c3 done (fixture fix niri-experiments 0f7d00f, pilots pass one case of every kind). Full TTY trace rerun started 2026-09-25 evening on the same trace binary; wali-rotate.timer stopped (restore: systemctl --user start wali-rotate.timer).
+- 2026-09-26T03:14:16Z (material-265eb0): done
+  provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-26T03:14:16Z (material-265eb0): Task 2 complete: TTY trace 2026-09-25 22:07-23:05 (58 min 23 s), 25/25 observations pass (A/B/P/O and the 600 s hold 0 redraws / 0 material draws / pixels equal; C 80/80, D 40/40), preflight quiet, 25/25 settled; independent raw recomputation matches analysis.json exactly. Evidence: docs/materials/2026-09-11-idle-budget-evidence.md; experiments results/idle-budget f0c13ac (pushed), fixture fix 0f7d00f. Board-power acceptance still pending Task 3 (material-5f9dee).
+  provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
