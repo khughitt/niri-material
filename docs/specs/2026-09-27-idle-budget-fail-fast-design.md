@@ -1,6 +1,6 @@
 # Idle-budget fixture: judge each case as it lands
 
-**Status:** reviewed (two rounds, 2026-09-27); approved for planning.
+**Status:** reviewed (two rounds, 2026-09-27); approved for planning. Cleanup order revised from the plan review (2026-09-27).
 
 **Task:** `material-b15ad7`, within `material-53f873`.
 **Changes:** the fixture from [the idle-budget design](2026-09-11-material-idle-budget-design.md),
@@ -116,51 +116,50 @@ so a specific message is never overwritten by a generic one:
 On a non-zero exit with no `stop.json` yet, `cleanup` writes one from the signal
 or `ERR` record. If neither exists it writes `kind: "exit"` with the status alone.
 
-**Cleanup order.** The lib's `cleanup` (renamed `native_cleanup`) ends in
-`exit`, and its `stop_weston` can call `fail`. So nothing can run after it, and
-it cannot move into a subshell either: niri, the capture and weston are the
-parent shell's children, and a subshell cannot `wait` on them. The fixture's
-`cleanup` therefore does its own work first and calls `native_cleanup` last:
+**Cleanup order.** The fixture's `cleanup` no longer calls the lib's `cleanup`.
+That function ends in `exit`, and its `stop_weston` repeats a fatal socket check
+through `fail`, which would exit before the runtime directory is removed and the
+capture lock released. The teardown cannot move into a subshell either: niri, the
+capture and weston are the parent shell's children, and a subshell cannot `wait`
+on them. The fixture's `cleanup` does the whole teardown itself, from the lib's
+building blocks (`remove_runtime_dir`, `capture_meta release`), in this order:
 1. Record `rc=$?` and the pending signal or `ERR` record, then `set +e` and
    `trap - ERR`. `ERR` fires even under `set +e`, and without this a failing
    teardown command would be taken as the run's stop reason. Replace the INT and
    TERM traps with one that only notes a second signal. A trap with a handler,
    unlike an ignored signal, resets to the default in children, so Ctrl-C still
    reaches a running analysis.
-2. Stop every process that writes into `OUT`, and `wait` on each: the power
-   sampler, the clients, the capture, niri, and then weston. Weston logs its
-   shutdown (`caught signal 15`) to `$OUT/weston.log`, so it must be reaped
-   before the checksum. `reap_weston` does this without going through the lib's
-   `stop_weston`, which calls `fail` and so exits. It kills and waits on
-   `WESTON_PID`, clears it, and waits up to 5 s for the host socket to go. A
-   socket that lingers is recorded as a teardown error rather than exiting. Each
-   teardown error goes to `$OUT/teardown.json`, which `analyze` reports under
-   `teardown`. None of these steps calls `fail`.
-3. Write the fallback `stop.json` (above).
-4. In trace and power mode, once `manifest.json` exists, run `timeout 300
+2. Stop every process that writes into `OUT`, and reap each: the clients, the
+   power sampler, the capture, niri, and then weston. A signal caught by a trap
+   interrupts `wait` (status > 128) while the child still runs, so `reap` waits
+   again until the process is gone; a zombie still answers `kill -0` until it is
+   reaped. The clients and the sampler run in their own `setsid` groups, whose
+   other members are not our children, so `reap_group` also polls, for up to 5 s,
+   until the group is empty. Weston logs its shutdown (`caught signal 15`) to
+   `$OUT/weston.log`, so it must be gone before the checksum. `reap_weston` kills
+   and reaps `WESTON_PID`, clears it, and waits up to 5 s for the host socket to
+   go. None of these steps calls `fail`: a group or socket that outlives its
+   bound is recorded as a teardown error.
+3. Remove the runtime directory (`remove_runtime_dir`); a failure is a teardown
+   error. Each teardown error goes to `$OUT/teardown.json`, which `analyze`
+   reports under `teardown`, and marks the run's teardown failed.
+4. Write the fallback `stop.json` (above).
+5. In trace and power mode, once `manifest.json` exists, run `timeout 300
    idle-budget.py analyze "$OUT" > analysis.json`, then write `SHA256SUMS`.
-5. Seal the directory: set `SEALED=1`. From then on, the `fail` redefinition
-   and the stop recorders write nothing into `OUT`, so a late `fail` in the
-   lib's teardown cannot change a checksummed file.
-6. Choose the status and hand it to the lib: `(exit "$status"); native_cleanup`.
-   This is the existing idiom. With niri and weston already reaped, `native_cleanup`
-   only rechecks the weston socket, removes the runtime directory, releases the
-   capture lock, and exits. None of these writes into `OUT`: `capture_meta
-   release` reads `capture.json` and unlinks the global lock, which lives
-   outside `OUT`.
+6. Seal the directory: set `SEALED=1`. From then on, the `fail` redefinition,
+   the stop recorders and the teardown recorder write nothing into `OUT`.
+7. `capture_meta release`, which reads `capture.json` and unlinks the global
+   lock outside `OUT`. It stays last so that no other capture starts while this
+   one is still analyzing. Then `exit` with the status below.
 
 **Exit status.**
 - A non-zero run status (`fail` 1, 130, 143, or a failed command's status) is
   kept.
 - On a zero run status, a non-zero or timed-out analysis makes it 1, and so do
-  a teardown error from step 2 and a `SHA256SUMS` failure.
-- The lib's teardown can still replace any status with 1 when it fails itself
-  (`remove_runtime_dir`, or `stop_weston` through `fail`), as today. This
-  design does not change the lib.
+  a teardown error from steps 2–3 and a `SHA256SUMS` failure.
 
 The success path is the same one: `runtime` no longer runs the analysis or
-writes `SHA256SUMS` itself. `capture_meta release` still runs after
-`SHA256SUMS`, as today.
+writes `SHA256SUMS` itself.
 
 `analyze` recomputes every completed case from raw, as now. The verdict files
 decide only which cases are complete. It adds these fields:
@@ -251,7 +250,7 @@ that is missing or zero refuses the inventory.
 
 | Where | Change |
 | --- | --- |
-| `idle-budget.sh` | `trace` and `power` accept `--pilot` and `--inventory`; one loop over `plan` replaces `trace_all`/`power_all`'s nested loops (`trace_one`, a new `power_one`); `fail` redefinition, signal and `ERR` records, `stop.json`; `observe` after each case; reordered `cleanup` that analyzes, checksums, then calls `native_cleanup` |
+| `idle-budget.sh` | `trace` and `power` accept `--pilot` and `--inventory`; one loop over `plan` replaces `trace_all`/`power_all`'s nested loops (`trace_one`, a new `power_one`); `fail` redefinition, signal and `ERR` records, `stop.json`; `observe` after each case; `cleanup` that reaps with retried waits, removes the runtime directory, analyzes, checksums, seals, and releases, without the lib's `cleanup`; `idle-budget-supervise.sh` for live runs |
 | `idle-budget.py` | `check_run`; `check-run`, `observe` and `plan` subcommands; `manifest` takes `--pilot` / `--inventory`; `pilot_matrix`; repetition-major `trace_matrix`; partial `analyze`; trace-end gate; seat exemption pinned by pid with an explicit `compositor` through `inventory`, `check_inventory`, `collect` and `interval.json` |
 | `idle-budget.just` | `trace *flags`, `power *flags` pass the flags through |
 | `test_idle_budget.py` | cases below |
@@ -287,8 +286,8 @@ Offline, in `test_idle_budget.py`:
   not, so a client cannot stand in for the compositor. `power_observation`
   refuses an `interval.json` whose `compositor` differs from `pids[0]`.
 - Shell: `idle-budget.sh` sourced, with the case functions (`trace_one`,
-  `power_one`), the lib's process helpers and `native_cleanup` stubbed, and the
-  stubs logging their calls:
+  `power_one`), the analysis and `capture-meta` stubbed, and the stubs logging
+  their calls:
   - The case functions are called in manifest order for each of the four plans.
   - A failing `observe` stops the loop after that case, and `--inventory`
     continues past it.
@@ -296,26 +295,39 @@ Offline, in `test_idle_budget.py`:
     (`false` under `set -e`) each leave a `stop.json` of the matching `kind`
     naming the case in progress. `fail`'s message survives the fallback. Each
     leaves an `analysis.json` covering exactly the completed cases, the exit
-    statuses 1, 143, 130 and the command's own, and `native_cleanup` called
-    last, once.
+    statuses 1, 143, 130 and the command's own, and `capture_meta release`
+    called last, after the seal.
   - A clean run whose analysis fails exits 1, and so does a run whose analysis
     times out.
   - The weston stub appends a shutdown line (`caught signal 15`) to
     `$OUT/weston.log` when it is killed. After the fixture has exited, `sha256sum
     -c SHA256SUMS` in `OUT` passes for a clean run and for a TERM mid-case. The
     stub's shutdown line is present and covered by the sums.
+  - A second signal while cleanup reaps (a weston stub, and separately a client
+    stub, that on TERM signals the fixture and then writes its shutdown line
+    0.3 s later): the interrupted `wait` is retried, the line lands before the
+    checksum, and `sha256sum -c` passes after exit.
   - A weston stub whose socket lingers: the run exits 1, `analysis.json` lists
-    the teardown error, and no file in `OUT` changes after `SHA256SUMS`
-    (`sha256sum -c` still passes after exit, and `stop.json` is not written by
-    the lib's late `fail`).
+    the teardown error, the runtime directory is removed and `capture_meta
+    release` runs, and no file in `OUT` changes after `SHA256SUMS`
+    (`sha256sum -c` still passes after exit, and there is no `stop.json`).
   - A teardown command failing inside `cleanup` does not replace the stop reason
     recorded from the run.
 
 Live: a trace pilot and a power pilot on a TTY with the desktop stopped (see the
 settle-gated capture practice). Each must pass, leave per-case verdicts, and
 produce an `analysis.json` with `pilot: true`. One deliberately interrupted
-trace pilot (TERM after case 2) must leave an analysis of cases 1–2 with
-`stopped` set. These need the machine and are parked `quiet` for the person.
+trace pilot (Ctrl-C after the second verdict) must leave an analysis of the
+completed cases with `stopped` set. Each run goes through
+`idle-budget-supervise.sh`: it runs the command in its own process group,
+with INT at its default, and returns only when every process in the group has
+exited. It delivers INT and TERM to the fixture's shell alone: `tt` runs its
+command with `subprocess.run`, which SIGKILLs the child when `tt` itself is
+interrupted (ops-8fe6c9), so a Ctrl-C reaching `tt` would cut the fixture's
+cleanup short. The wrappers (`just`, `tt`) can return before the fixture's
+cleanup has finished, and `analysis.json` exists from the moment its redirection
+opens, so neither the prompt nor the file says the run is done. These need the
+machine and are parked `quiet` for the person.
 
 ## Rejected alternatives
 
