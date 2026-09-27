@@ -1,6 +1,6 @@
 # Idle-budget fixture: judge each case as it lands
 
-**Status:** draft for review.
+**Status:** reviewed (two rounds, 2026-09-27); approved for planning.
 
 **Task:** `material-b15ad7`, within `material-53f873`.
 **Changes:** the fixture from [the idle-budget design](2026-09-11-material-idle-budget-design.md),
@@ -121,24 +121,39 @@ or `ERR` record. If neither exists it writes `kind: "exit"` with the status alon
 it cannot move into a subshell either: niri, the capture and weston are the
 parent shell's children, and a subshell cannot `wait` on them. The fixture's
 `cleanup` therefore does its own work first and calls `native_cleanup` last:
-1. Record `rc=$?`. Replace the INT and TERM traps with one that only notes a
-   second signal. A trap with a handler, unlike an ignored signal, resets to the
-   default in children, so Ctrl-C still reaches a running analysis.
-2. Stop the power sampler and the clients, then kill and `wait` on the capture
-   and niri, and clear their pids. None of these steps calls `fail`. Weston, the
-   idle nested host in the trace lane, is left to `native_cleanup`.
+1. Record `rc=$?` and the pending signal or `ERR` record, then `set +e` and
+   `trap - ERR`. `ERR` fires even under `set +e`, and without this a failing
+   teardown command would be taken as the run's stop reason. Replace the INT and
+   TERM traps with one that only notes a second signal. A trap with a handler,
+   unlike an ignored signal, resets to the default in children, so Ctrl-C still
+   reaches a running analysis.
+2. Stop every process that writes into `OUT`, and `wait` on each: the power
+   sampler, the clients, the capture, niri, and then weston. Weston logs its
+   shutdown (`caught signal 15`) to `$OUT/weston.log`, so it must be reaped
+   before the checksum. `reap_weston` does this without going through the lib's
+   `stop_weston`, which calls `fail` and so exits. It kills and waits on
+   `WESTON_PID`, clears it, and waits up to 5 s for the host socket to go. A
+   socket that lingers is recorded as a teardown error rather than exiting. Each
+   teardown error goes to `$OUT/teardown.json`, which `analyze` reports under
+   `teardown`. None of these steps calls `fail`.
 3. Write the fallback `stop.json` (above).
 4. In trace and power mode, once `manifest.json` exists, run `timeout 300
    idle-budget.py analyze "$OUT" > analysis.json`, then write `SHA256SUMS`.
-5. Choose the status and hand it to the lib: `(exit "$status"); native_cleanup`.
-   This is the existing idiom. `native_cleanup` stops weston, removes the
-   runtime directory, releases the capture lock, and exits.
+5. Seal the directory: set `SEALED=1`. From then on, the `fail` redefinition
+   and the stop recorders write nothing into `OUT`, so a late `fail` in the
+   lib's teardown cannot change a checksummed file.
+6. Choose the status and hand it to the lib: `(exit "$status"); native_cleanup`.
+   This is the existing idiom. With niri and weston already reaped, `native_cleanup`
+   only rechecks the weston socket, removes the runtime directory, releases the
+   capture lock, and exits. None of these writes into `OUT`: `capture_meta
+   release` reads `capture.json` and unlinks the global lock, which lives
+   outside `OUT`.
 
 **Exit status.**
 - A non-zero run status (`fail` 1, 130, 143, or a failed command's status) is
   kept.
-- On a zero run status, a non-zero or timed-out analysis makes it 1, and so does
-  a `SHA256SUMS` failure.
+- On a zero run status, a non-zero or timed-out analysis makes it 1, and so do
+  a teardown error from step 2 and a `SHA256SUMS` failure.
 - The lib's teardown can still replace any status with 1 when it fails itself
   (`remove_runtime_dir`, or `stop_weston` through `fail`), as today. This
   design does not change the lib.
@@ -285,6 +300,16 @@ Offline, in `test_idle_budget.py`:
     last, once.
   - A clean run whose analysis fails exits 1, and so does a run whose analysis
     times out.
+  - The weston stub appends a shutdown line (`caught signal 15`) to
+    `$OUT/weston.log` when it is killed. After the fixture has exited, `sha256sum
+    -c SHA256SUMS` in `OUT` passes for a clean run and for a TERM mid-case. The
+    stub's shutdown line is present and covered by the sums.
+  - A weston stub whose socket lingers: the run exits 1, `analysis.json` lists
+    the teardown error, and no file in `OUT` changes after `SHA256SUMS`
+    (`sha256sum -c` still passes after exit, and `stop.json` is not written by
+    the lib's late `fail`).
+  - A teardown command failing inside `cleanup` does not replace the stop reason
+    recorded from the run.
 
 Live: a trace pilot and a power pilot on a TTY with the desktop stopped (see the
 settle-gated capture practice). Each must pass, leave per-case verdicts, and
