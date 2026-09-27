@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-b15ad7
 created: 2026-09-27T13:19:02Z
-updated: 2026-09-27T14:22:40Z
+updated: 2026-09-27T14:29:13Z
 started: 2026-09-27T14:18:14Z
 completed: 2026-09-27T14:22:40Z
 depends: []
@@ -27,3 +27,4 @@ step: "Task 3: A verdict per case: `check_run`, `observe`, and the trace-end gat
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-27T14:22:40Z (material-b15ad7): niri-experiments 76b48af: stop records, bounded writer teardown, sealed partial analysis; 61 fixture tests pass
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-27T14:29:13Z (material-b15ad7): Correction: this is Task 3; niri-experiments f0f6cf7 implements case verdicts and trace-end gate (40 fixture tests pass). The prior completion note named a later step.
