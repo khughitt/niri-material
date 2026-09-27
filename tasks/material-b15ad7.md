@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: materials-26.04
 created: 2026-09-25T09:50:48Z
-updated: 2026-09-27T14:36:43Z
+updated: 2026-09-27T14:49:57Z
 started: 2026-09-27T12:25:25Z
 depends: []
 parent: material-53f873
@@ -42,3 +42,4 @@ The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case 
 - 2026-09-27T14:36:13Z (material-b15ad7): Implementation complete at niri-experiments c82cfd8. Offline fixture suite 66/66; live pilots remain parked in material-204be4.
 - 2026-09-27T14:36:43Z (material-b15ad7): parked (waiting on user, quiet; headless, 35 min): User runs the three supervised pilots from Task 8 of docs/plans/2026-09-27-idle-budget-fail-fast.md on a headless TTY; agent then validates OUT verdicts and checksums, records each run, and closes material-204be4 and this parent
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-27T14:49:57Z (material-b15ad7): Fresh branch review found one Important teardown gap: trace cleanup stopped only timeout, leaving its TERM-ignoring capture child alive. Fixed in niri-experiments d7593b7 with a dedicated capture group and group teardown; focused regression RED to GREEN, full fixture suite 67/67. No Critical or Minor findings. Task 8 live pilots still require the quiet headless and desktop-stopped TTY runs.
