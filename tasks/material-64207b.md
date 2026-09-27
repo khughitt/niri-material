@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-b15ad7
 created: 2026-09-27T13:19:02Z
-updated: 2026-09-27T14:11:17Z
+updated: 2026-09-27T14:29:13Z
 started: 2026-09-27T14:08:37Z
 completed: 2026-09-27T14:11:17Z
 depends: []
@@ -27,3 +27,4 @@ step: "Task 7: Live-run supervisor, documentation, and full gate"
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-27T14:11:17Z (material-b15ad7): niri-experiments e820552: seat-manager PIDs and explicit compositor; 31 fixture tests pass
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-27T14:29:13Z (material-b15ad7): Correction: this is Task 7; niri-experiments 06822f0 implements the supervisor and docs (65 fixture tests pass). The prior completion note named Task 2.

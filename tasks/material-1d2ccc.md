@@ -8,7 +8,7 @@ complexity: high
 process: direct
 owner: material-b15ad7
 created: 2026-09-27T13:19:02Z
-updated: 2026-09-27T14:17:40Z
+updated: 2026-09-27T14:29:13Z
 started: 2026-09-27T14:15:27Z
 completed: 2026-09-27T14:17:40Z
 depends: []
@@ -27,3 +27,4 @@ step: "Task 6: Every exit records why, reaps OUT's writers, analyzes, and seals"
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-27T14:17:40Z (material-b15ad7): niri-experiments 58e1726: manifest loop, pilot and inventory flags; 48 fixture tests pass
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-27T14:29:13Z (material-b15ad7): Correction: this is Task 6; niri-experiments 76b48af implements stop records and bounded teardown (61 fixture tests pass). The prior completion note named Task 5.
