@@ -36,6 +36,7 @@ the whole tree and is never scoped by class.
 | Material pass ordering hook | `src/render_helpers/blur.rs`, `effect_buffer.rs` | B | seam | unfiled |
 | Tile material state | `src/layout/tile.rs` | B | fork-only | — |
 | Test front door and timing | `justfile`, `tools/` | C | fork-only | — |
+| Fork front page and GitHub metadata | `.github/README.md`; issue templates edited, `FUNDING.yml`, `dependabot.yml`, `workflows/release.yml` removed | A, B | fork-only | — |
 
 Posture is `seam`, `fork-only`, or `carried`. Status tracks seam candidates through
 `unfiled` → `submitted #NNNN` → `merged <tag>` / `declined: <reason>`.
@@ -48,7 +49,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-384 paths differ: 41 class B (seam), 322 class A (fork-only), 21 class C (scaffolding).
+390 paths differ: 46 class B (seam), 323 class A (fork-only), 21 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -57,7 +58,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.githooks/post-merge` | C | A | +3/-0 |
 | `.githooks/pre-commit` | C | A | +4/-0 |
 | `.githooks/pre-push` | C | A | +36/-0 |
+| `.github/FUNDING.yml` | B | D | +0/-1 |
+| `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
+| `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
+| `.github/dependabot.yml` | B | D | +0/-24 |
 | `.github/workflows/ci.yml` | B | M | +6/-2 |
+| `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
 | `AGENTS.md` | C | A | +35/-0 |
 | `Cargo.toml` | B | M | +4/-0 |

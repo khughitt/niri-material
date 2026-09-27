@@ -28,7 +28,7 @@ PKGBUILD = textwrap.dedent("""\
     pkgname=niri-material
     pkgver=26.04.r7.gdeadbeef
     pkgrel=1
-    source=("niri::git+ssh://git@github.com/khughitt/niri-material.git#commit=%s")
+    source=("niri::git+https://github.com/khughitt/niri-material.git#commit=%s")
 
     build() {
       cd "$srcdir/niri"

@@ -44,7 +44,7 @@ optdepends=(
 provides=("niri=$pkgver" wayland-compositor)
 conflicts=(niri niri-git niri-bin)
 options=(!debug)
-source=("niri::git+ssh://git@github.com/khughitt/niri-material.git#commit=19bec72e21c489a49d58b498cfe2bc53857124b1")
+source=("niri::git+https://github.com/khughitt/niri-material.git#commit=19bec72e21c489a49d58b498cfe2bc53857124b1")
 sha256sums=('SKIP')
 export CARGO_TARGET_DIR=target
 

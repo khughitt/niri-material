@@ -1,10 +1,7 @@
 contact_links:
-  - name: Feature request
-    url: https://github.com/niri-wm/niri/discussions/new?category=ideas
-    about: Ideas for new features and functionality (start a Discussion)
-  - name: Ask a question
-    url: https://github.com/niri-wm/niri/discussions/new?category=q-a
-    about: Question about niri (start a Discussion)
-  - name: Matrix room
-    url: https://matrix.to/#/#niri:matrix.org
-    about: Chat about niri with other users
+  - name: Bug in stock niri
+    url: https://github.com/niri-wm/niri/issues
+    about: If the bug also happens on stock niri, report it upstream instead
+  - name: niri documentation
+    url: https://niri-wm.github.io/niri/
+    about: Everything outside materials behaves as in stock niri
