@@ -1,10 +1,10 @@
 # Idle-budget fixture: judge each case as it lands
 
-**Status:** implemented (niri-experiments `06822f0`); live pilots pending.
+**Status:** implemented (niri-experiments `c82cfd8`); live pilots pending.
 
 **Task:** `material-b15ad7`, within `material-53f873`.
 **Changes:** the fixture from [the idle-budget design](2026-09-11-material-idle-budget-design.md),
-on niri-experiments `results/idle-budget` (head `647f3c8`).
+on niri-experiments `results/idle-budget` (starting head `647f3c8`).
 
 ## Intent
 
