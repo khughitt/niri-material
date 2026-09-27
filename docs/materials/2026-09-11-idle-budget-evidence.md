@@ -150,8 +150,8 @@ files were task notes. The binary was built from `191ad747` (`identity.json`,
 - Captures that re-check host quiet before every case run from a TTY with the
   desktop stopped; three desktop attempts each lost a settle check to a
   different transient (idle lock, a desktop GPU blip, build load).
-- The fixture judges only at the end of a run; per-case analysis and a pilot
-  mode are `material-b15ad7`.
+- `material-b15ad7` now judges each case as it lands and offers a pilot for
+  each lane; the live trace, interrupted trace, and power pilots remain to run.
 - The power lane's first DRM pilots found three fixture defects that synthetic
   validation could not show. Seat managers holding the KMS node were counted
   as GPU clients, `fuser`'s split output was misparsed, and a settle could
