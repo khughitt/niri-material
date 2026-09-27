@@ -7,6 +7,8 @@ assignees: ''
 
 ---
 
+<!-- This tracker is for niri-material. If the bug also happens on stock niri, report it at https://github.com/niri-wm/niri/issues instead. -->
+
 <!-- Please describe the issue here at the top, then fill in the system information below. -->
 
 <!-- Attaching your full niri config can help diagnose the problem. -->
