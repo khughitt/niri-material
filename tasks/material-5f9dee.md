@@ -1,13 +1,14 @@
 ---
 id: material-5f9dee
 title: Measure isolated idle power and publish the material budget
-status: doing
+status: done
 priority: 2
 size: m
 owner: material-265eb0
 created: 2026-09-11T10:28:52Z
-updated: 2026-09-27T06:30:48Z
+updated: 2026-09-27T08:53:57Z
 started: 2026-09-26T03:15:03Z
+completed: 2026-09-27T08:53:57Z
 depends: [material-4241c3]
 parent: material-265eb0
 tags: [performance]
@@ -29,4 +30,10 @@ After user resume and trace validation, use an operator-provided dedicated DRM s
   provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-27T06:30:24Z (material-265eb0): 2026-09-27: user added the sudoers rule; verified 'sudo -n /usr/bin/fuser -v <the 7 devices>' runs without a password (rc 0, full device-user listing; same device list). Remaining gate: a TTY session with the desktop stopped (this check ran from the Wayland desktop: niri, noctalia, firefox, kitty on the GPU, P3 33 W).
 - 2026-09-27T06:30:48Z (material-265eb0): parked (waiting on user, quiet; headless, 90 min): User: start a TTY session with the desktop stopped and resume this session there. Then agent: run the sham-block power pilot (scratch power-pilot.sh, ~7 min, DRM takeover of DP-1 3440x1440@59.999), read its 4 windows, and only if all pass run the full power lane (~80 min) and analyze.
+  provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T06:46:33Z (material-265eb0): 2026-09-27 TTY window (VT3, desktop stopped, P8 10.2 W, no GPU users): wali-rotate.timer stopped for the runs (restore: systemctl --user start wali-rotate.timer). Starting the sham-block pilot.
+- 2026-09-27T07:14:05Z (material-265eb0): 2026-09-27 pilots on DRM (TTY VT3). Pilot 1 (02:46) failed window 1 in 46 s: 'GPU client contamination' - with a DRM session, root systemd (pid 1) and systemd-logind hold /dev/dri/card1 (logind opens the KMS node for the compositor), which the inventory counted as clients; fix experiments 73fbbe0 exempts only root systemd/systemd-logind rows on a card node that nvidia-smi does not list. Pilot 2 (02:50) failed at once: captured fuser -v puts pids on stdout and the rest of each row on stderr; fix 7953684 pairs them in order. Pilot 3 (02:52-03:00): sham-1-1..4 PASS, medians 11.17/11.06/11.035/11.08 W, P8 210 MHz throughout, 27-28 C. Full run 1 (03:00) passed sham-1-1/1-2 (11.14/11.15 W), then the settle before sham-1-3 refused on P5/P8: a DRM niri's exit can hold the GPU in P5 ~2 s (probe: 1 of 3 exits), and the settle started 1.6 s after exit; fix 127cf6b waits for 3 s of consecutive P8 (bounded 30 s) before each power settle, gate unchanged. Full run 2 started 03:13 (power-full-20260927T031335).
+- 2026-09-27T08:53:57Z (material-265eb0): done
+  provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T08:53:57Z (material-265eb0): Task 3 complete: isolated DRM power run 2026-09-27 03:13-04:47 (93 min; power-full-20260927T031335), 48/48 windows valid (settle 48/48, full GPU-client inventory every sample, P8 210 MHz throughout). Sham floor 0.105 W; A->B +0.015 W, floor 0.1175 W, upper 0.13 W, not resolved (budget_passed); B->C +0.845 W (upper 1.11), B->D +0.68 W (upper 0.98). Independent raw recomputation matches analysis.json to 1e-9. Pilots found and fixed three power-lane fixture defects (experiments 73fbbe0, 7953684, 127cf6b). Evidence: docs/materials/2026-09-11-idle-budget-evidence.md; experiments results/idle-budget 647f3c8 (pushed); wali-rotate.timer restored.
   provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

@@ -1,14 +1,16 @@
 # Material idle budget: evidence
 
-**Status:** quiescence and cadence verified (Task 2, `material-4241c3`,
-2026-09-25). Board-power acceptance is still pending Task 3, which needs the
-operator-arranged dedicated DRM session. This page makes no power claim and
-proposes no watt limit yet.
+**Status:** complete. Quiescence and cadence were verified by traces (Task 2,
+`material-4241c3`, 2026-09-25). Isolated board power was measured on DRM
+(Task 3, `material-5f9dee`, 2026-09-27). Material at rest passes the idle
+budget: jelly shows no resolvable board-power increase over plain glass at
+the 1.0 W resolution target. A drifting aurora's cost is measured below. A
+product watt allowance for it is a separate decision.
 
 Design: [idle budget](../specs/2026-09-11-material-idle-budget-design.md).
 Plan: [execution plan](../plans/2026-09-11-material-idle-budget.md).
-Full method, per-draw numbers and the artifact manifest are in niri-experiments
-`results/idle-budget`, `docs/results/2026-09-11-idle-budget.md` (`f0c13ac`).
+Full method, per-window numbers and the artifact manifests are in
+niri-experiments `results/idle-budget`, `docs/results/2026-09-11-idle-budget.md`.
 
 ## What is established
 
@@ -80,6 +82,62 @@ to its `git archive`), with `profile-with-tracy` and the experiment's
 `IdleBudget::action` marker patch. The two commits differ only in docs and
 task files, and `just test` passed 434 tests at `fb8e9a95`.
 
+## Isolated board power
+
+An uninstrumented niri (`191ad747`, binary SHA-256 `282fdb10…`) ran directly on
+DRM from a TTY with the desktop stopped. It drove DP-1 at 3440×1440@59.999,
+scale 1, VRR off. The scene was a diagnostic backdrop and two transparent
+kitty windows, and the only GPU clients present were niri and kitty. There
+were 48 windows of 60 s warmup and 30 s observation at 1 Hz, run as a sham
+A/A comparison and then A/B, B/C and B/D, each three ABBA/BAAB blocks. Every
+window passed its settle check and the full GPU-client inventory.
+
+| Comparison | Delta | Conservative floor | Upper estimate | Resolved increase |
+| --- | ---: | ---: | ---: | --- |
+| sham A/A | −0.025 W | 0.105 W | 0.08 W | no |
+| plain → jelly at rest (A→B) | +0.015 W | 0.118 W | 0.13 W | **no** |
+| jelly → aurora 4 Hz (B→C) | +0.845 W | 0.265 W | 1.11 W | yes |
+| jelly → aurora 2 Hz (B→D) | +0.68 W | 0.30 W | 0.98 W | yes |
+
+- **Precision.** The sham floor is 0.105 W and every combined floor is at most
+  0.30 W, far inside the 1.0 W target.
+- **Idle budget.** Resting jelly costs nothing resolvable. A is plain glass with
+  animations off and B is jelly with the spring animations on, so this bounds
+  the material and its animation machinery together, at rest.
+- **Aurora.** A drifting aurora costs most of a watt, and halving its rate
+  saves only about 20 %. Every sample stayed in P8 at 210 MHz with 0–4 % GPU
+  utilization, so the cost is not clock ramping. It is consistent with each
+  redraw holding the board out of deeper idle, which this run does not
+  establish. Board power excludes CPU, monitor and total-system energy.
+
+`tools/capture-meta show` for the power run (header):
+
+```
+run power-full-20260927T031335  task material-265eb0  fixture idle-budget.sh  lane dedicated
+started 2026-09-27T03:13:46-04:00
+
+environment
+  kernel 7.2.2-arch1-1
+  gpu NVIDIA GeForce RTX 3070 615.71.09 /dev/dri/renderD128
+  session tty
+  kitty kitty 0.49.1 created by Kovid Goyal
+
+baseline
+  cpu_busy_pct 3.6  load1 1.02  gpu_util_pct 0.0  gpu_power_w 10.61
+  gpu_power_iqr_w 0.537  gpu_clock_mhz 210  gpu_pstates ['P8']
+
+preflight quiet
+sub-runs: 48 of 48 settled
+
+provenance
+  source b6bf6014f3fb974c0aae796e4e3f9b9fdfd4a543 material-265eb0 dirty
+  binary niri 282fdb108d63c23e7c863f82d1c684fd965c8761f9e600bfd6a0bb817016b9aa
+```
+
+The recorded source is the worktree head at capture time. Its uncommitted
+files were task notes. The binary was built from `191ad747` (`identity.json`,
+`source.tar`).
+
 ## Findings along the way
 
 - The first complete trace failed every quiet case on one redraw exactly 3.0 s
@@ -94,3 +152,9 @@ task files, and `just test` passed 434 tests at `fb8e9a95`.
   different transient (idle lock, a desktop GPU blip, build load).
 - The fixture judges only at the end of a run; per-case analysis and a pilot
   mode are `material-b15ad7`.
+- The power lane's first DRM pilots found three fixture defects that synthetic
+  validation could not show. Seat managers holding the KMS node were counted
+  as GPU clients, `fuser`'s split output was misparsed, and a settle could
+  start inside our own compositor's teardown P-state transient. Each was fixed
+  with a test before the full run (experiments `73fbbe0`, `7953684`,
+  `127cf6b`).

@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task.
 
-**Status:** Task 1 complete: fixture implemented, offline validated and reviewed
-on experiment `results/idle-budget` at `8db5dc8`, with capture-protocol adoption
-integrated at `9d7d43f`. Task 2 complete on 2026-09-25: 25 of 25 trace
-observations passed from a TTY (experiment `f0c13ac`, fixture `0f7d00f`;
-[evidence](../materials/2026-09-11-idle-budget-evidence.md)). Board-power
-acceptance is pending Task 3, which still requires the operator's
-dedicated-session checkpoint.
+**Status:** complete. Task 1: fixture implemented, offline validated and
+reviewed on experiment `results/idle-budget` at `8db5dc8`, with capture-protocol
+adoption integrated at `9d7d43f`. Task 2 on 2026-09-25: 25 of 25 trace
+observations passed from a TTY. Task 3 on 2026-09-27: 48 of 48 isolated DRM
+power windows were valid. B shows no resolved idle increase over A (+0.015 W,
+upper 0.13 W), and aurora costs +0.85 W at 4 Hz and +0.68 W at 2 Hz. See the
+[evidence](../materials/2026-09-11-idle-budget-evidence.md).
 
 **Goal:** verify quiescence after finite material motion and establish a
 repeatability-bounded idle board-power comparison in an isolated session.
@@ -264,13 +264,13 @@ per-case verdicts; this task may finish even if isolated power is unavailable.
 session. **Produces:** isolated repeated comparisons, precision/idle verdict,
 raw archive, and stable native documentation.
 
-- [ ] Build the uninstrumented binary with Task 1's `build-power` recipe.
+- [x] Build the uninstrumented binary with Task 1's `build-power` recipe.
   Present the concrete fixture, runtime estimate (about 72 minutes plus
   setup), output mode, client inventory, and restoration/exit behavior. Let the
   operator arrange a session with the desktop and other GPU clients closed.
   Do not issue logout, display-manager-stop, or VT-switch commands for them.
   If the session is not available, park this child waiting on the user.
-- [ ] From that session, run `just --justfile fixtures/idle-budget.just power`
+- [x] From that session, run `just --justfile fixtures/idle-budget.just power`
   with `MATERIAL_ROOT`, `NIRI_MATERIAL_WORK_ROOT`, an identified uninstrumented
   binary, and a fresh OUT. Use a private config and launch directly on DRM:
 
@@ -284,25 +284,25 @@ env -u DISPLAY -u WAYLAND_DISPLAY -u NIRI_SOCKET \
   Require positive compositor/kitty PID visibility after mapping and throughout
   collection. Reject incomplete enumeration or any GPU client outside the
   recorded compositor/kitty/wallpaper allowlist.
-- [ ] Collect sham A/A, then A/B, B/C, B/D. For each, execute three blocks in
+- [x] Collect sham A/A, then A/B, B/C, B/D. For each, execute three blocks in
   ABBA, BAAB, ABBA order. Each window is 60 s warmup + 30 s observation at 1 Hz.
   Save all 48 windows, output/process inventory, clocks/P-state/temperature,
   raw power samples, and config-load completion events outside observation.
-- [ ] Analyze `sham_floor_w` and require `sham_precision_ok` before interpreting
+- [x] Analyze `sham_floor_w` and require `sham_precision_ok` before interpreting
   feature comparisons; also require each combined `precision_ok`. Either floor
   over 1.0 W, missing coverage, or external GPU work means insufficient precision
   or invalid evidence. Preserve the run and leave this child open; no repeated
   shared-desktop substitution and no selecting only favorable windows.
-- [ ] Report all window medians, block deltas, `sham_floor_w`, `abba_floor_w`,
+- [x] Report all window medians, block deltas, `sham_floor_w`, `abba_floor_w`,
   `raw_repeat_floor_w`, combined `floor_w`, both precision verdicts, and upper
   estimate. Explain that raw repeat drift can veto an ABBA-cancelled comparison.
   B must have no resolved positive idle increment over A at ≤1.0 W resolution.
   Report C/D costs descriptively; a product watt allowance remains a separate
   decision. Link any proven regression to the responsible task.
-- [ ] Write experiment and native evidence, SHA-256 manifests, exact commands,
+- [x] Write experiment and native evidence, SHA-256 manifests, exact commands,
   source/binary identity, machine/display metadata, and all exclusions. Verify
   hashes and compare report values independently with raw samples.
-- [ ] Update this design/plan status and native material-config link only when
+- [x] Update this design/plan status and native material-config link only when
   results exist. Close Task 3 and then `material-265eb0` only if required evidence
   and verdicts are complete. `tasks check`, native `just check`/push gate,
   conventional commits, archive push, native merge, and owned-worktree cleanup
