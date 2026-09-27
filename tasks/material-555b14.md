@@ -1,17 +1,19 @@
 ---
 id: material-555b14
 title: Triage the five unacknowledged upstream drift conflicts
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-27T10:26:42Z
-updated: 2026-09-27T11:14:49Z
+updated: 2026-09-27T11:30:06Z
 started: 2026-09-27T11:11:28Z
+completed: 2026-09-27T11:30:06Z
 depends: []
 tags: [upstream]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 ---
 
@@ -24,4 +26,10 @@ First end-to-end drift run (2026-09-27, local simulation of the CI checkout afte
   provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-27T11:14:09Z (materials-26.04): All five acknowledged with per-path reasons (merged 67a4f053); none is a behavioural disagreement: each is both sides editing the same lines. Local --drift against upstream/main 1f03391e exits 0. Remaining: push, rerun the canary, close issue #1.
 - 2026-09-27T11:14:49Z (materials-26.04): parked (waiting on user, approval): User approves pushing materials-26.04 (2 commits ahead); then gh workflow run upstream-drift.yml -R khughitt/niri-material --ref materials-26.04, confirm Report drift is skipped (drift exit 0), close issue #1 with a comment naming 67a4f053, tasks done, and remove .worktrees/material-555b14.
+  provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T11:27:18Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T11:30:06Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T11:30:06Z (materials-26.04): All five conflicts acknowledged with per-path reasons (67a4f053); each is both sides editing the same lines, none a behavioural disagreement. Canary run 36315887493 passes against upstream/main 1f03391e; issue #1 closed.
   provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
