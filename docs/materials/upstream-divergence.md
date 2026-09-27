@@ -125,61 +125,69 @@ Generated against a fetched upstream. Refreshed weekly by
 it is. Do not edit by hand; run `just upstream-report --drift`.
 
 <!-- BEGIN GENERATED: drift -->
-As of **2026-09-06**: baseline tree `7b010d1b3ab2`, fork `e82e419e52c8`, upstream `upstream/main` at `dd75865f547f`.
+As of **2026-09-27**: baseline tree `7b010d1b3ab2`, fork `390dfc3e5fd1`, upstream `upstream/main` at `1f03391ea644`.
 
 This is a three-way merge of final trees. It does not predict a rebase, which replays commits individually, and it says nothing about whether the result compiles or behaves correctly.
 
-**6 conflicting path(s).**
+**11 conflicting path(s).**
 
 | Seam path | Upstream name | Upstream commits since baseline | Upstream status | Conflict | Acknowledged |
 | --- | --- | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | same | 3 | - | - | - |
+| `.github/workflows/ci.yml` | same | 5 | - | - | - |
 | `.gitignore` | same | 0 | - | - | - |
-| `docs/wiki/IPC.md` | same | 0 | - | - | - |
-| `niri-config/src/animations.rs` | same | 0 | - | - | - |
-| `niri-config/src/lib.rs` | same | 6 | - | - | - |
-| `niri-config/src/window_rule.rs` | same | 2 | - | - | - |
-| `niri-ipc/src/lib.rs` | same | 1 | - | - | - |
+| `Cargo.toml` | same | 13 | - | - | - |
+| `docs/wiki/IPC.md` | same | 1 | - | - | - |
+| `niri-config/src/animations.rs` | same | 1 | - | - | - |
+| `niri-config/src/lib.rs` | same | 11 | - | yes | yes |
+| `niri-config/src/window_rule.rs` | same | 3 | - | - | - |
+| `niri-ipc/src/lib.rs` | same | 2 | - | - | - |
 | `niri-ipc/src/state.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/layout.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/tile.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/window.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/test_window.rs` | same | 0 | - | - | - |
-| `src/backend/tty.rs` | same | 6 | - | - | - |
-| `src/backend/winit.rs` | same | 2 | - | - | - |
-| `src/cli.rs` | same | 0 | - | - | - |
+| `src/backend/tty.rs` | same | 9 | - | - | - |
+| `src/backend/winit.rs` | same | 7 | - | - | - |
+| `src/cli.rs` | same | 1 | - | - | - |
 | `src/handlers/compositor.rs` | same | 2 | - | - | - |
-| `src/handlers/xdg_shell.rs` | same | 3 | - | - | - |
+| `src/handlers/xdg_shell.rs` | same | 4 | - | - | - |
 | `src/input/pick_color_grab.rs` | same | 0 | - | - | - |
-| `src/ipc/client.rs` | same | 2 | - | - | - |
-| `src/ipc/server.rs` | same | 0 | - | - | - |
+| `src/ipc/client.rs` | same | 6 | - | - | - |
+| `src/ipc/server.rs` | same | 2 | - | - | - |
 | `src/layout/floating.rs` | same | 4 | - | yes | yes |
-| `src/layout/mod.rs` | same | 8 | - | - | - |
-| `src/layout/monitor.rs` | same | 7 | - | yes | yes |
-| `src/layout/scrolling.rs` | same | 12 | - | - | - |
-| `src/layout/tests.rs` | same | 1 | - | - | - |
+| `src/layout/mod.rs` | same | 9 | - | - | - |
+| `src/layout/monitor.rs` | same | 8 | - | yes | yes |
+| `src/layout/scrolling.rs` | same | 12 | - | yes | yes |
+| `src/layout/tests.rs` | same | 2 | - | - | - |
 | `src/layout/tile.rs` | same | 2 | - | yes | yes |
-| `src/layout/workspace.rs` | same | 5 | - | yes | yes |
-| `src/niri.rs` | same | 11 | - | - | - |
+| `src/layout/workspace.rs` | same | 6 | - | yes | yes |
+| `src/lib.rs` | same | 0 | - | - | - |
+| `src/niri.rs` | same | 18 | - | yes | yes |
 | `src/protocols/foreign_toplevel.rs` | same | 1 | - | yes | yes |
 | `src/render_helpers/blur.rs` | same | 1 | - | yes | yes |
 | `src/render_helpers/effect_buffer.rs` | same | 0 | - | - | - |
-| `src/render_helpers/mod.rs` | same | 0 | - | - | - |
+| `src/render_helpers/mod.rs` | same | 3 | - | - | - |
 | `src/render_helpers/resize.rs` | same | 0 | - | - | - |
 | `src/render_helpers/shaders/mod.rs` | same | 0 | - | - | - |
-| `src/screencasting/mod.rs` | same | 0 | - | - | - |
-| `src/tests/mod.rs` | same | 0 | - | - | - |
+| `src/screencasting/mod.rs` | same | 4 | - | - | - |
+| `src/tests/client.rs` | same | 3 | - | yes | yes |
+| `src/tests/mod.rs` | same | 2 | - | yes | yes |
 | `src/window/mapped.rs` | same | 0 | - | - | - |
-| `src/window/mod.rs` | same | 2 | - | - | - |
+| `src/window/mod.rs` | same | 3 | - | - | - |
 
 Conflict notices, verbatim and unparsed:
 
+    CONFLICT (content): Merge conflict in niri-config/src/lib.rs
     CONFLICT (content): Merge conflict in src/layout/floating.rs
     CONFLICT (content): Merge conflict in src/layout/monitor.rs
+    CONFLICT (content): Merge conflict in src/layout/scrolling.rs
     CONFLICT (content): Merge conflict in src/layout/tile.rs
     CONFLICT (content): Merge conflict in src/layout/workspace.rs
+    CONFLICT (content): Merge conflict in src/niri.rs
     CONFLICT (content): Merge conflict in src/protocols/foreign_toplevel.rs
     CONFLICT (content): Merge conflict in src/render_helpers/blur.rs
+    CONFLICT (content): Merge conflict in src/tests/client.rs
+    CONFLICT (content): Merge conflict in src/tests/mod.rs
 <!-- END GENERATED: drift -->
 
 ## Rebase procedure
