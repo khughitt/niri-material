@@ -54,14 +54,14 @@ lengths are logical pixels.
 | `light-ior` | float | 6 | 1–12 | — |
 | `offset-x` | float | 6 | −64–64 | logical px |
 | `offset-y` | float | 6 | −64–64 | logical px |
-| `iridescence` | float | 0 | 0–1 | — |
+| `saturation` | float | inherit | 0–3 | — |
+| `noise` | float | inherit | 0–1 | — |
+| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
 | `aurora` | float | 0 | 0–1 | — |
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
 | `aurora` `color` | color | `#7a5cff` | any color | — |
-| `saturation` | float | inherit | 0–3 | — |
-| `noise` | float | inherit | 0–1 | — |
-| `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
+| `iridescence` | float | 0 | 0–1 | — |
 
 <!-- params:end -->
 
@@ -73,24 +73,20 @@ parameters during scripted column moves and verifies exact return to settled
 pixels. Its sample points cover the current ranges; it does not establish
 interactive-drag behavior or a new perceptual range.
 
-`light-ior` multiplies the bend applied to the focus filament's light path
-only; the background taps are unaffected. The light-path index is
+`light-ior` multiplies the bend applied to ring and aurora interior-light
+paths only; the background taps are unaffected. The light-path index is
 `1 + (ior - 1) * light-ior`.
 
-The knob is much narrower than its range suggests. The filament's shared
-refracted shift is capped at half `ring-inset` — 2.5 px at the default
-inset of 5 — so the core always stays inside the bevel, and the shift grows
-roughly as `sin(45deg - asin(sin 45deg / n)) * 0.6 * thickness`. At
-`light-ior 1`, the minimum, that is already about 3.5 px on the stock
-default glass (`ior 1.5`, `thickness 20`) and about 4.6 px on thick glass
-near `ior 1.24` with `thickness 43.3`. Both are past the cap, so on such
-glass *every* `light-ior` value saturates it: the knob no longer positions
-the filament's core, and only widens the chromatic split — which does
-nothing at all when `chromatic-aberration` is 0.
-
-`light-ior` only positions the core on very low-index glass near `ior 1.02`
-(the calibration the spike used), where the light-path product lands near
-0.12 at the default 6.
+Only the ring's shared refracted shift is capped at half `ring-gap` — 4 px
+at the default gap of 8. Aurora uses the same index without that ring cap.
+The ring shift grows roughly as
+`sin(45deg - asin(sin 45deg / n)) * 0.2 * thickness`. At
+`light-ior 1`, the minimum, it is about 1.16 px on the stock default glass
+(`ior 1.5`, `thickness 20`) and about 1.54 px on thick glass near `ior 1.24`
+with `thickness 43.3`, both below the cap. At the default `light-ior 6`, the
+stock glass is about 2.3 px, still just below it. The cap remains a safety
+limit for sufficiently dense or high-`light-ior` settings; it does not make
+every value saturate or reduce the knob to chromatic split alone.
 
 `backdrop-blur` makes the glass refract the blurred backdrop rather than the
 sharp one, which is what produces a frosted appearance: blur and refraction
@@ -99,9 +95,12 @@ strength — the amount of blur comes from the global `blur` block's `passes` an
 `offset`, shared with every other blur consumer. Setting `blur { off }`
 disables it along with all other blur, regardless of this parameter.
 
-`noise` and `saturation` are applied after the glass optics: saturation
-first, then screen-space noise. A written value is a material optic and
-applies regardless of `backdrop-blur` and of `blur { off }`. An omitted
+`saturation` then `noise` transform the averaged backdrop before attenuation,
+through the `behind` hook. Their formulas run in sRGB (Oklab for lightness
+grain) and return linear light. Additive glint, ring, aurora and sweeps are
+not postprocessed; the chamfer still transmits attenuated grain. A written
+value is a material optic and applies regardless of `backdrop-blur` and of
+`blur { off }`. An omitted
 value inherits the global `blur` block's `noise` or `saturation` while
 `backdrop-blur` is effective and is neutral otherwise (`noise 0`,
 `saturation 1`); each parameter decides on its own, so `blur { off }` and
@@ -140,12 +139,29 @@ the offsets. Its inner corners follow the window's effective
 The glass pipeline is a slab plus an ordered list of optics. Each optic owns
 its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
 changes nothing; omission can instead inherit where stated below.
-Optics are listed in render order: `iridescence`, `aurora`, `saturation`, `noise`.
+Optics are listed in render order: `saturation`, `noise`, `aurora`, `iridescence`.
 Contributors: see `adding-an-optic.md`.
+
+### saturation
+
+Stage 3a (`behind`). `saturation <amount>` mixes the encoded averaged backdrop
+toward its luma, then returns linear light before attenuation. Its explicit
+neutral is 1; 0 makes the backdrop grayscale, but tint and additive light can
+still colour the result. An omitted amount inherits
+the global `blur` block's `saturation` while backdrop blur is effective and
+resolves to 1 otherwise.
+
+### noise
+
+Stage 3b (`behind`). `noise <amount> type=<type>` grains the averaged backdrop
+per screen pixel before attenuation; `white`, `fine`, and `lightness` are
+described above. Its explicit neutral is amount 0. An omitted amount inherits the global `blur`
+block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
+the type never inherits.
 
 ### iridescence
 
-Stage 5. `iridescence <amount>` gives the Fresnel glint a thin-film hue
+Stage 6. `iridescence <amount>` gives the Fresnel glint a thin-film hue
 from the view angle: `hue = fract(2.5 * (1 - cos))` through the cosine
 palette `0.5 + 0.5 * cos(2π (hue + (0, ⅓, ⅔)))`, and the glint becomes
 `mix(glint, glint * palette * 2, amount)`. It runs before the signal accent
@@ -156,7 +172,7 @@ iridescence colours the edge light.
 
 ### aurora
 
-Stage 6. `aurora <amount> { drift-hz <hz>; color <a>; color <b>; }` adds a
+Within stage. `aurora <amount> { drift-hz <hz>; color <a>; color <b>; }` adds a
 slow colour field inside the glass: two octaves of simplex noise on the
 element position (one noise unit is 250 px), offset by the window seed,
 mix the two colours, and a coarser octave sets the brightness; the light
@@ -166,10 +182,10 @@ first `color` node is the field's start (noise 0), the second its end
 `aurora: expected two color nodes`. Its explicit neutral is amount 0;
 nothing inherits.
 
-`drift-hz` is the field's clock, on the same rule as `ring-drift-hz`: `0`
-pins the field, otherwise at least 1, and the error is `aurora drift-hz
-must be 0 or at least 1`. The field's lookup point traces a small circle
-in noise space once per 600 s, so the loop closes seamlessly; the clock
+`drift-hz` is the field's clock: `0` pins the field, otherwise at least 1,
+and the error is `aurora drift-hz must be 0 or at least 1`. The field's
+lookup point traces a small circle in noise space once per 600 s, so the
+loop closes seamlessly; the clock
 steps the phase `drift-hz` times per second in buckets anchored to the
 absolute clock, and a lit, visible aurora window redraws at that rate
 whether or not it is focused or carries a signal. `signal { motion
@@ -187,21 +203,6 @@ on DRM at 3440×1440: a lit drifting aurora window costs +0.85 W of board power
 at 4 Hz and +0.68 W at 2 Hz over resting jelly (upper bounds 1.11 W and
 0.98 W), with the GPU in P8 at 210 MHz throughout. Resting jelly costs nothing
 resolvable over plain glass: +0.015 W, upper bound 0.13 W.
-
-### saturation
-
-Stage 9. `saturation <amount>` mixes the encoded glass colour toward its
-luma. Its explicit neutral is 1; 0 is grayscale. An omitted amount inherits
-the global `blur` block's `saturation` while backdrop blur is effective and
-resolves to 1 otherwise.
-
-### noise
-
-Stage 10. `noise <amount> type=<type>` grains the encoded glass colour per
-screen pixel; `white`, `fine`, and `lightness` are described above. Its
-explicit neutral is amount 0. An omitted amount inherits the global `blur`
-block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
-the type never inherits.
 
 ## Presets
 
@@ -237,10 +238,13 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ping` | `ripple`, `flash`, `sweep`, `none` | `ripple` |
 | `done` | `ripple`, `flash`, `sweep`, `none` | `sweep` |
 | `error` | `ripple`, `flash`, `sweep`, `none` | `flash` |
-| `ring-inset` | 0–128 logical px | 5 logical px |
+| `ring-beam-speed` | 0–5000 logical px/s | 300 |
+| `ring-beam-noise` | 0–1 | 0 |
+| `ring-beam-noise-hz` | 0–30 wanders per second | 3 |
+| `ring-gap` | 0–128 logical px | 8 logical px |
+| `ring-glow` | 0–3 | 1.0 |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
 | `ring-color` | `"#rrggbb"` | `#ccccff` |
-| `ring-drift-hz` | 0, or 1–30 (quantized to tenths of a hertz) | 15 |
 
 When any `response` block is present, one must be named `default`. Named
 responses inherit omitted fields from that block; the `default` block itself
@@ -259,10 +263,13 @@ material "terminal-glass" {
         ping "ripple"
         done "sweep"
         error "flash"
-        ring-inset 5
+        ring-beam-speed 300
+        ring-beam-noise 0
+        ring-beam-noise-hz 3
+        ring-gap 8
+        ring-glow 1.0
         ring-width 2.6
         ring-color "#ccccff"
-        ring-drift-hz 15
     }
 
     response "loud" {
@@ -283,34 +290,75 @@ slot), while `signal-tag` matches the window's folded signal tag. A window
 with no signal matches neither.
 
 The filament is one band shared by focus and signals. `focus "ring-light"`
-lights it on the focused window, in `ring-color`, drifting at
-`ring-drift-hz` steps per second (0 pins it; otherwise at least 1, and the
-rate is quantized to tenths of a hertz so the steps divide the 10 s drift
-period evenly). `accent "ring"` lets a
-window signal light and tint the same band on any window. Both together show
-the drifting filament in the accent color. The band sits `ring-inset` px
-inward from the slab's outer edge, is refracted through the glass, and is
-masked to the bevel, so it never lights the window face. Every resolved
-response must satisfy `ring-inset + ring-width <= bevel` and `ring-width > 0`.
-The filament shows through the slab's exterior band and through translucent
-window pixels; an opaque window shows a full ring only when
-`bevel >= 2 * max(|offset-x|, |offset-y|) + ring-inset + ring-width`.
-Set `focus-ring { off }` (globally or in a window rule) for material
-windows so the gradient ring does not draw a second ring; non-material
-windows keep whatever ring the layout configures.
+lights it on the focused window, in `ring-color`. On every focus gain one
+beam of that light runs the perimeter of the band once, clockwise from the
+top-left corner, at `ring-beam-speed` logical px/s: a bright head a few tens
+of pixels wide with a tail diffusing over a quarter of the perimeter (at most
+1200 px), fading in as it sets off and out as it returns to its start, the
+tail draining behind it. A lap takes `perimeter / ring-beam-speed`; at the
+default 300 px/s a full 1280×720 pane (perimeter about 3800 px) runs about
+16 s, tail included, and `ring-beam-speed 900` runs it three times as fast. The ring then settles to a
+dim, even resting glow and costs no redraws until the next focus gain (no
+deadline, a constant fingerprint). `ring-beam-speed 0` shows the resting glow
+without a beam; `signal { motion "reduced" }`, `motion "off"`, and
+`animations { off }` skip the beam the same way. A focus change mid-run
+restarts the beam on the newly focused window; focus loss ends it at once.
+`ring-glow` scales the whole focus light — head, tail, resting glow and
+spill together — so their ratios hold while the total is tuned.
+
+`ring-beam-noise` makes the head's brightness wander as it travels, so the
+comet reads as a living light rather than a lamp on a track. It is the
+fraction either side of the head's own brightness that the wander reaches:
+`0` is a steady head (the default, and the appearance every earlier release
+shipped), `0.3` a gentle breathing, `1.0` a head that flares and nearly dies.
+`ring-beam-noise-hz` is how fast it wanders, in wanders per second; either
+value at `0` leaves the head steady.
+
+The wander rides the head alone. The tail is a trail the head has already
+left and stays smooth, and the resting glow is untouched — the quiet ring
+still costs no redraws and keeps its constant fingerprint, so a wandering
+head never puts a settled window back on a clock. It is seeded per window
+and per run, so two panes that gain focus together do not flicker in step
+and one pane's successive runs do not replay. The motion policies that skip
+the beam skip the wander with it.
+
+`accent "ring"` lets a window signal light and tint the same band on any
+window. Both together show the filament in the accent color. The band sits
+`ring-gap` px inward from the edge of the flat face (where the chamfer ends),
+so it is always under the face and the bevel may shrink to make room; the
+light is refracted through the glass at its remaining interior depth and
+shows through translucent window pixels. On the chamfer the beam spills a
+little light outward from the face edge, fading to the outer edge, so the
+frame reads as lit by the beam. `ring-width` must be positive.
+
+Two limits follow from the placement. An opaque window shows no ring: the
+band lies wholly under the face and there is no fallback band on the
+chamfer. A face narrower than `2 * ring-gap` on either axis has no beam
+line, and the ring — accent band, beam and resting glow — is not drawn
+on it. A `ring-sweep-ms`, `ring-inset`
+or `ring-drift-hz` line is rejected with the replacement named. Set
+`focus-ring { off }` (globally or in a window rule) for material windows so
+the gradient ring does not draw a second ring; non-material windows keep
+whatever ring the layout configures.
 
 **What changes on upgrade.** The focus filament is on by default, so a
-material window that never configured a `response` block now shows a
-drifting ring of light in its bevel whenever it is focused. The signal
-accent ring changed shape at the same time: it was a box band with +/-0.5 px
-soft edges and is now a Gaussian core with a halo, at new defaults of
-`ring-inset 5` and `ring-width 2.6` (previously 6 and 2). To go back to an
-unlit focused window, set `focus "none"` in the material's `default`
-response; the
-filament and the accent ring are otherwise the same band, so `accent "none"`
-turns off the signal tint alone. If the upgrade leaves two rings on screen,
-that is the layout's gradient ring underneath — turn it off with
-`focus-ring { off; }`.
+material window that never configured a `response` block shows a ring of
+light under its face whenever it is focused, with one beam running the
+ring on every focus gain. `ring-sweep-ms` and `ring-inset` are rejected by
+name (`ring-sweep-ms was replaced by ring-beam-speed`, `ring-inset was
+replaced by ring-gap`; neither is reinterpreted); Prism users run `prism
+migrate`, which maps `glass.ring.sweepMs` to `glass.ring.beamSpeed` (`0`
+stays `0`, any positive value becomes the default 300). The band moved from
+`ring-inset` px inside the slab's outer edge to `ring-gap` px inside the
+face edge, so it sits under the face instead of on the chamfer: opaque
+windows show no ring, and a face narrower than `2·ring-gap` shows no beam.
+The signal accent ring is a Gaussian core with a halo, `ring-width 2.6`
+(the box band with +/-0.5 px soft edges was retired earlier). To go back to
+an unlit focused window, set `focus "none"` in the material's `default`
+response; the filament and the accent ring are otherwise the same band, so
+`accent "none"` turns off the signal tint alone. If the upgrade leaves two
+rings on screen, that is the layout's gradient ring underneath — turn it off
+with `focus-ring { off; }`.
 
 ## Signal motion and animation
 
@@ -319,6 +367,7 @@ The top-level signal policy defaults to `full`:
 ```kdl
 signal {
     motion "reduced" // full | reduced | off
+    idle-after-ms 30000
 }
 
 animations {
@@ -335,8 +384,14 @@ drops impulse effects, while retaining the static accent and level
 crossfade. `material-signal` is the baseline signal crossfade; it defaults to
 400 ms with `ease-out-cubic` and follows the normal animation configuration,
 including `animations { off }`. The focus filament fades in and out with
-`material-signal` too, and `reduced` halves `ring-drift-hz` while `off` and
-`animations { off }` pin the drift.
+`material-signal` too; `reduced`, `off`, and `animations { off }` skip its
+focus-gain sweep.
+
+`idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
+`flash`) settles to the static indication (level and accent lit, no pulse)
+once no input has arrived for this long and resumes in step on the next
+input. Default 30000; `0` disables the gate; at most 3600000, and the error
+is `idle-after-ms must be at most 3600000`.
 
 ## Window rules and validation
 
@@ -355,10 +410,13 @@ The whole configuration is rejected with these validation errors:
 - response blocks without `default`: `material <name>: missing response
   "default"`;
 - duplicate response names: `duplicate response: <name>`;
-- a ring outside the bevel: `ring-inset + ring-width must not exceed bevel`;
 - a zero or negative ring width: `ring-width must be positive`;
-- a drift rate strictly between 0 and 1: `ring-drift-hz must be 0 or at
-  least 1`;
+- the retired lap time: `ring-sweep-ms was replaced by ring-beam-speed; see
+  material-config.md`;
+- the retired outer-edge inset: `ring-inset was replaced by ring-gap; see
+  material-config.md`;
+- the retired drift rate: `ring-drift-hz was replaced by ring-beam-speed; see
+  material-config.md`;
 - an unknown window-rule reference: `unknown material: <name>`.
 - an unknown response reference: `material <name>: unknown response:
   <response>`.

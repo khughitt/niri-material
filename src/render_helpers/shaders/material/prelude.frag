@@ -4,6 +4,9 @@
 // the compile path prepends it.
 precision highp float;
 
+const float PI = 3.14159265358979;
+const float HALF_PI = 1.57079632679490;
+
 varying vec2 niri_v_coords;
 uniform vec2 niri_size;
 uniform float niri_scale;
@@ -33,6 +36,7 @@ uniform vec4 mat_backdrop_color;
 uniform float mat_bg_prefilter_mix;
 uniform float mat_backdrop_prefilter_mix;
 uniform float mat_ior;
+uniform float mat_scatter;
 uniform float mat_thickness;
 uniform vec4 mat_attenuation_color;
 uniform float mat_attenuation_distance;
@@ -54,15 +58,20 @@ uniform vec3 mat_sig_impulse_rgb2;
 uniform vec3 mat_sig_impulse_rgb3;
 uniform ivec4 mat_sig_impulse_resp;
 uniform ivec3 mat_sig_response;
-uniform vec2 mat_sig_ring;
-uniform vec2 mat_sig_focus;
+uniform vec3 mat_sig_ring;
+uniform vec4 mat_sig_focus;
 uniform vec3 mat_sig_ring_color;
 uniform float mat_light_ior;
 
-// Slab geometry published by slabSurface for the focus filament.
+// Slab geometry published by slabSurface for the focus filament: the outer
+// silhouette and the face (the chamfer's inner edge, jelly included), which
+// the ring beam runs inside.
 vec2 g_center;
 vec2 g_half;
 vec4 g_outer_r;
+vec2 g_face_center;
+vec2 g_face_half;
+vec4 g_face_r;
 
 bool inRect(vec2 v, vec4 rect) {
     return all(greaterThanEqual(v, rect.xy))
@@ -119,13 +128,14 @@ vec3 sampleBackground(vec2 v) {
 // deferred).
 vec3 srgbToLinear(vec3 c) {
     vec3 low = c / 12.92;
-    vec3 high = pow((c + 0.055) / 1.055, vec3(2.4));
+    // mix evaluates both branches; keep the power defined for signed grain.
+    vec3 high = pow(max((c + 0.055) / 1.055, vec3(0.0)), vec3(2.4));
     return mix(high, low, vec3(lessThanEqual(c, vec3(0.04045))));
 }
 
 vec3 linearToSrgb(vec3 c) {
     vec3 low = c * 12.92;
-    vec3 high = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+    vec3 high = 1.055 * pow(max(c, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
     return mix(high, low, vec3(lessThanEqual(c, vec3(0.0031308))));
 }
 
@@ -348,6 +358,9 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     g_center = center;
     g_half = half_ext;
     g_outer_r = outer_r;
+    g_face_center = inner_center;
+    g_face_half = inner_half;
+    g_face_r = inner_r;
     chamferOut = chamfer;
 
     float d = sdRoundedBox(p - center, half_ext, outer_r);
@@ -378,23 +391,67 @@ vec3 tap(vec2 v, vec3 n, float ior, float thickness) {
     return srgbToLinear(sampleBackground(vv));
 }
 
-// Focus filament (design: Rendering). The ray through the fragment refracts
-// at the perturbed normal through the light-path index and lands `depth` px
-// into the slab; this is that in-plane displacement.
+// Interior light follows the perturbed normal through the light-path index
+// and lands `depth` px into the slab; this is that in-plane displacement.
 vec2 lightShift(vec3 n, float ior, float depth) {
     return refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior).xy * depth;
 }
 
-// The band at a landing point `q`: a Gaussian of its distance from the outer
-// edge around `inset`, plus a soft halo bleeding into the glass. The caller
-// caps the shared part of the shift at half the inset before landing here —
-// dense glass bends the light path further than the inset (default glass,
-// light-ior 6: about 6.9 px against a 5 px inset), which would carry the
-// core out past the silhouette and leave nothing drawn. The per-channel aberration offsets
-// ride on top of the capped shift, so the chromatic split survives the cap.
-float filamentBand(vec2 q, float inset, float width) {
-    float d = -sdRoundedBox(q - g_center, g_half, g_outer_r);
-    float core = (d - inset) / width;
-    float halo = (d - inset - 2.0) / 9.0;
-    return exp(-2.0 * core * core) + 0.3 * exp(-2.0 * halo * halo);
+// The band at a landing point `q`: a Gaussian of its distance inward from
+// the face edge around `gap`, plus a soft halo bleeding into the glass. The
+// caller caps the shared part of the light shift at half the gap before
+// landing here, so dense glass cannot carry the core out past the face.
+// The per-channel aberration offsets ride on top of the capped shift, so
+// the chromatic split survives the cap.
+float filamentBand(vec2 q, float gap, float width, float scatter) {
+    float d = -sdRoundedBox(q - g_face_center, g_face_half, g_face_r);
+    float coreWidth = width + 6.0 * scatter;
+    float haloWidth = 9.0 + 18.0 * scatter;
+    float core = (d - gap) / coreWidth;
+    float halo = (d - gap - 2.0) / haloWidth;
+    return (width / coreWidth) * exp(-2.0 * core * core)
+         + 0.3 * (9.0 / haloWidth) * exp(-2.0 * halo * halo);
+}
+
+// Arc position along the beam line (the face box shrunk by `gap`), clockwise
+// from the end of the top-left arc, and the line's perimeter. A projection:
+// valid for any q, chamfer points included. Mirrors ring.rs `arc_position`.
+float arcPosition(vec2 q, float gap, out float perimeter) {
+    vec2 h = g_face_half - vec2(gap);
+    vec4 r = max(g_face_r - vec4(gap), vec4(0.0));     // TL, TR, BR, BL
+    perimeter = 4.0 * (h.x + h.y) - (2.0 - HALF_PI) * (r.x + r.y + r.z + r.w);
+    vec2 d = q - g_face_center;
+    float top = 2.0 * h.x - r.x - r.y;
+    float right = 2.0 * h.y - r.y - r.z;
+    float bottom = 2.0 * h.x - r.z - r.w;
+    float left = 2.0 * h.y - r.w - r.x;
+    float afterTop = top + r.y * HALF_PI;
+    float afterRight = afterTop + right + r.z * HALF_PI;
+    float afterBottom = afterRight + bottom + r.w * HALF_PI;
+    if (d.x > h.x - r.y && d.y < -h.y + r.y) {
+        float a = clamp(atan(d.y + h.y - r.y, d.x - h.x + r.y), -HALF_PI, 0.0);
+        return top + r.y * (a + HALF_PI);
+    }
+    if (d.x > h.x - r.z && d.y > h.y - r.z) {
+        float a = clamp(atan(d.y - h.y + r.z, d.x - h.x + r.z), 0.0, HALF_PI);
+        return afterTop + right + r.z * a;
+    }
+    if (d.x < -h.x + r.w && d.y > h.y - r.w) {
+        float a = clamp(atan(d.y - h.y + r.w, d.x + h.x - r.w), HALF_PI, PI);
+        return afterRight + bottom + r.w * (a - HALF_PI);
+    }
+    if (d.x < -h.x + r.x && d.y < -h.y + r.x) {
+        float a = atan(d.y + h.y - r.x, d.x + h.x - r.x);
+        if (a > 0.0) a -= 2.0 * PI;
+        a = clamp(a, -PI, -HALF_PI);
+        return afterBottom + left + r.x * (a + PI);
+    }
+    vec2 toEdge = h - abs(d);
+    if (toEdge.y <= toEdge.x) {
+        if (d.y < 0.0) return clamp(d.x + h.x - r.x, 0.0, top);
+        return afterRight + clamp(h.x - r.z - d.x, 0.0, bottom);
+    }
+    if (d.x > 0.0) return afterTop + clamp(d.y + h.y - r.y, 0.0, right);
+    // the left edge starts where the bottom-left arc ends, at y = h − r.w
+    return afterBottom + clamp(h.y - r.w - d.y, 0.0, left);
 }

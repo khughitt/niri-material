@@ -24,6 +24,7 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::RenderTarget;
 
 pub mod optics;
+pub mod ring;
 
 /// Per-fragment background composition inputs, mirroring `XrayElement`'s
 /// two-layer stack for the one workspace the element belongs to.
@@ -115,6 +116,10 @@ fn tap_count(anisotropic_blur: f64, chromatic_aberration: f64) -> u8 {
         return 1;
     }
     (8. * strength).ceil().clamp(2., 8.) as u8
+}
+
+fn scatter(roughness: f64, ior: f64) -> f32 {
+    (roughness * (ior * 2. - 2.).clamp(0., 1.)) as f32
 }
 
 /// Glass-specific interpretation of a `SignalFrame` (design §6). The one
@@ -267,9 +272,10 @@ pub struct SignalUniforms {
     pub impulse_rgb: [[f32; 3]; 4],
     pub impulse_resp: [i32; 4],
     pub response: [i32; 3],
-    pub ring: [f32; 2],
-    /// Crossfaded focus and bucketed drift phase.
-    pub focus: [f32; 2],
+    /// Gap from the face edge, band width, glow.
+    pub ring: [f32; 3],
+    /// Focus, beam head px, head cutoff, decay.
+    pub focus: [f32; 4],
     /// Filament base color, linear RGB.
     pub ring_color: [f32; 3],
 }
@@ -291,8 +297,12 @@ impl SignalUniforms {
                 response.attention as i32,
                 response.focus as i32,
             ],
-            ring: [response.ring_inset as f32, response.ring_width as f32],
-            focus: [0., 0.],
+            ring: [
+                response.ring_gap as f32,
+                response.ring_width as f32,
+                response.ring_glow as f32,
+            ],
+            focus: [0., 0., 0., 0.],
             ring_color: color_linear(response.ring_color),
         }
     }
@@ -341,8 +351,17 @@ impl SignalUniforms {
                 response.attention as i32,
                 response.focus as i32,
             ],
-            ring: [response.ring_inset as f32, response.ring_width as f32],
-            focus: [frame.focus, frame.drift],
+            ring: [
+                response.ring_gap as f32,
+                response.ring_width as f32,
+                response.ring_glow as f32,
+            ],
+            focus: [
+                frame.focus,
+                frame.beam.head,
+                frame.beam.env,
+                frame.beam.decay,
+            ],
             ring_color: color_linear(response.ring_color),
         }
     }
@@ -842,6 +861,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_bg_prefilter_mix", bg_texture.mix),
             Uniform::new("mat_backdrop_prefilter_mix", backdrop_texture.mix),
             Uniform::new("mat_ior", g.ior as f32),
+            Uniform::new("mat_scatter", scatter(g.roughness, g.ior)),
             Uniform::new("mat_thickness", g.thickness as f32),
             Uniform::new(
                 "mat_attenuation_color",
@@ -953,8 +973,15 @@ mod tests {
     use smithay::backend::renderer::Color32F;
     use smithay::utils::Point;
 
+    use super::ring::BeamFrame;
     use super::*;
     use crate::render_helpers::RenderTarget;
+
+    #[test]
+    fn scatter_matches_prefilter_selection() {
+        assert_eq!(scatter(0.5, 1.5), 0.5);
+        assert_eq!(scatter(0.5, 1.0), 0.0);
+    }
 
     fn render_config(name: &str) -> MaterialRenderConfig {
         MaterialRenderConfig {
@@ -1592,7 +1619,7 @@ mod tests {
             impulses: Default::default(),
             presence: 0.,
             focus: 0.,
-            drift: 0.,
+            beam: BeamFrame::REST,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Ripple as u8,
@@ -1649,7 +1676,7 @@ mod tests {
             impulses: Default::default(),
             presence: 1.,
             focus: 0.,
-            drift: 0.,
+            beam: BeamFrame::REST,
         };
         let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
         let mut r = ResolvedResponse::default();
@@ -1677,7 +1704,7 @@ mod tests {
             impulses: Default::default(),
             presence: 0.,
             focus: 0.,
-            drift: 0.,
+            beam: BeamFrame::REST,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Sweep as u8,
@@ -1797,13 +1824,14 @@ mod tests {
     }
 
     #[test]
-    fn signal_uniforms_carry_presence_focus_drift_and_selectors() {
+    fn signal_uniforms_carry_presence_focus_beam_and_selectors() {
         use crate::render_helpers::signal::{color_linear, SignalFrame};
         use niri_config::{FocusResponse, ResolvedResponse};
 
         let mut r = ResolvedResponse::default();
         let quiet = SignalUniforms::quiet(&r);
-        assert_eq!(quiet.focus, [0., 0.]);
+        assert_eq!(quiet.focus, [0., 0., 0., 0.]);
+        assert_eq!(quiet.ring, [8., 2.6, 1.], "gap, width, glow");
         assert_eq!(quiet.ring_color, color_linear(r.ring_color));
         assert_eq!(quiet.response, [1, 1, 1], "ring, rim-orbit, ring-light");
         assert_eq!(quiet.accent[3], 0.);
@@ -1814,8 +1842,12 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.25,
-            focus: 0.75,
-            drift: 1.5,
+            focus: 1.,
+            beam: BeamFrame {
+                head: 1234.5,
+                env: 0.5,
+                decay: 1.,
+            },
         };
         let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
         let u = SignalUniforms::from_frame(&frame, &g, &r);
@@ -1824,7 +1856,8 @@ mod tests {
             [1., 0.5, 0., 0.25],
             "straight rgb, presence in alpha"
         );
-        assert_eq!(u.focus, [0.75, 1.5]);
+        assert_eq!(u.focus, [1., 1234.5, 0.5, 1.], "focus, head, env, decay");
+        assert_eq!(u.ring, [8., 2.6, 1.]);
 
         r.focus = FocusResponse::None;
         assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).response[2], 0);
@@ -1857,7 +1890,7 @@ mod tests {
             impulses: Default::default(),
             presence: 0.5,
             focus: 0.,
-            drift: 0.,
+            beam: BeamFrame::REST,
         };
         frame.impulses[0] = ImpulseFrame {
             selector: R::Sweep as u8,

@@ -1,4 +1,4 @@
-// Optic: aurora (render-pipeline.md stage 6). Neutral at amount 0.
+// Optic: aurora (render-pipeline.md within stage). Neutral at amount 0.
 // Uses snoise, snoiseJelly, and mat_jelly_seed from the prelude.
 uniform float mat_aurora;
 uniform float mat_aurora_phase;
@@ -13,10 +13,12 @@ const float AURORA_SCALE = 0.004;
 // about 5 px per second.
 const float AURORA_LOOP_RADIUS = 2.0;
 
-vec3 aurora_emissive(vec2 p, vec3 n, vec3 att, float innerDist) {
+vec3 aurora_within(vec2 p, vec3 n, vec3 att, float innerDist) {
     if (mat_aurora <= 0.0)
         return vec3(0.0);
-    vec3 q = vec3(p * AURORA_SCALE, 0.0) + mat_jelly_seed
+    float ior = 1.0 + (mat_ior - 1.0) * mat_light_ior;
+    vec2 landing = p + lightShift(n, ior, mat_thickness * 0.2);
+    vec3 q = vec3(landing * AURORA_SCALE, 0.0) + mat_jelly_seed
            + vec3(cos(mat_aurora_phase), 0.0, sin(mat_aurora_phase)) * AURORA_LOOP_RADIUS;
     // Two octaves for the field, one coarser octave for its brightness.
     float field = 0.5 + 0.5 * snoiseJelly(q);

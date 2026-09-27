@@ -65,7 +65,7 @@
 - [x] **Step 1: Move the module into a directory**
 
 ```bash
-cd /mnt/ssd/Dropbox/niri-material/.worktrees/material-api
+cd .worktrees/material-api  # from the main checkout
 mkdir -p niri-config/src/material
 git mv niri-config/src/material.rs niri-config/src/material/mod.rs
 cargo build -p niri-config

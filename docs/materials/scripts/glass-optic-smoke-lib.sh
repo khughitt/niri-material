@@ -109,7 +109,7 @@ build_binaries() {
 WALL=$OUT/warm-mid.png
 magick -size 1280x720 xc:'rgb(140,115,90)' "$WALL"
 GEOM_COLOR='#ff00ff'
-GLASS_EXTRA=; RESPONSE_EXTRA=; TOP_EXTRA=
+GLASS_EXTRA=; RESPONSE_EXTRA=; FOCUS_RESPONSE=none; TOP_EXTRA=
 IDLE='printf "\033[?25l"; exec sleep 600'
 TICK='printf "\033[?25l"; while :; do date +%s%N; sleep 0.1; done'
 # The material is pinned rather than taken from a generated prism.kdl, which
@@ -177,9 +177,9 @@ material "gos-probe" {
 $glass
     }
     response "default" {
-        focus "none"
+        focus "$FOCUS_RESPONSE"
         accent "none"
-        ring-drift-hz 0
+        ring-beam-speed 0
         $RESPONSE_EXTRA
     }
 }

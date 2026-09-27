@@ -454,9 +454,10 @@ Run: `tasks start material-4af245`
 - [ ] **Step 1: Build both binaries**
 
 ```bash
-W=/mnt/ssd/Dropbox/niri-material/.worktrees/glass-noise-saturation
+MAIN=<the main niri-material checkout>
+W=$MAIN/.worktrees/glass-noise-saturation
 cargo build --manifest-path "$W/Cargo.toml" --target-dir /mnt/ssd3/tmp/material-1293e8-impl-target
-git -C /mnt/ssd/Dropbox/niri-material worktree add /mnt/ssd3/tmp/material-1293e8-base 56aed303
+git -C "$MAIN" worktree add /mnt/ssd3/tmp/material-1293e8-base 56aed303
 cargo build --manifest-path /mnt/ssd3/tmp/material-1293e8-base/Cargo.toml --target-dir /mnt/ssd3/tmp/material-1293e8-base-target
 ```
 
@@ -758,7 +759,7 @@ Add to `docs/materials/README.md` after the spec entry from Task 3:
 - `scripts/glass-noise-saturation-smoke.sh`: headless harness for those captures.
 ```
 
-Then: `git -C /mnt/ssd/Dropbox/niri-material worktree remove /mnt/ssd3/tmp/material-1293e8-base`, and confirm `systemctl --user list-units 'gns.*'` and `ls -d "$XDG_RUNTIME_DIR"/gns.*` show nothing.
+Then: `git -C "$MAIN" worktree remove /mnt/ssd3/tmp/material-1293e8-base`, and confirm `systemctl --user list-units 'gns.*'` and `ls -d "$XDG_RUNTIME_DIR"/gns.*` show nothing.
 
 - [ ] **Step 6: Check, close the child, commit**
 

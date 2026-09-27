@@ -4,9 +4,10 @@ title: Test + CI iteration cost audit
 status: doing
 priority: 2
 size: m
+complexity: mid
 owner: materials-26.04
 created: 2026-09-04T21:44:54Z
-updated: 2026-09-07T00:03:24Z
+updated: 2026-09-12T19:24:32Z
 depends: [ops-31f038]
 tags: [testing]
 ---
@@ -19,3 +20,4 @@ Piece of ops-65837b (the cross-project audit in the ops hub). 1. Measure: full-s
 - 2026-09-05T08:25:01Z (audit/front-door): step 1 in worktree .worktrees/audit-front-door (branch audit/front-door). Findings: the design's 'material checked-in hook scripts' do not exist; only git-lfs hooks in .git/hooks, so .githooks/ carries the template hooks plus the LFS hooks that core.hooksPath would bypass. No AGENTS.md existed; one is added with the just recipes. Stable rustfmt passes --check here (the unstable options only warn), so check_cmd uses stable fmt. cargo-nextest installed user-locally via cargo install for the fast target; tools/test-affected selects packages changed against HEAD plus dependents from cargo metadata, excludes niri-visual-tests as CI does, and on an empty selection prints a nextest-shaped Summary line so tt records tests: 0. CI test jobs route through just ci-test / ci-test-release via extractions/setup-just@v4.
 - 2026-09-05T08:30:49Z (audit/front-door): step 1 verified: just test-fast recorded once under claude (shared log), once under codex (codex workspace-write sandbox cannot write the shared log or the main checkout, so the line landed in the worktree .tt/runs.jsonl and tt-report harvested it), once by hand with the agent vars unset; agent and session fields correct in all three. Numbers on this host: full suite cold in a fresh worktree 461s / 371 tests; warm 16.7s; test-fast after a niri-config edit 15.7s / 366 tests (niri + niri-config via nextest); test-fast on a tooling-only change 1.6s / tests 0; just check cold 71s (clippy dominates; stable rustfmt prints 32 unstable-option warnings per run; hygiene for step 3). One warm-suite line 'error in client communication' printed by a passing test. Affected set is nearly always niri + niri-config because niri is the root and depends on both libs; the empty case (docs, tasks, tooling) is where the fast target saves time.
 - 2026-09-07T00:03:24Z (materials-26.04): Hygiene observed 2026-09-06 while committing through the hook: cargo clippy --all --all-targets prints 13 warnings for the niri lib test target (unused import MergeWith at src/layout/tests.rs:3, needless_late_init in src/layout/mod.rs, field_reassign_with_default in render_helpers/material.rs and signal.rs, for_kv_map in two protocols, an unused gtk prelude in niri-visual-tests). They are pre-existing and do not fail check, but they add about 150 lines of noise to every hook run; candidates for step 3.
+- 2026-09-12T19:24:32Z (materials-26.04): Complexity mid: The linked ops audit design fixes the workflow and measurement contract; justfile, timing wrapper, hooks, and affected selector already exist. Remaining baseline interpretation, evidence-led hygiene, guidance, and before/after reporting are bounded investigation.

@@ -6,9 +6,16 @@
 Superseded in part on 2026-09-05: the "no glass-specific parameters" decision
 gave way to optional `glass { noise; saturation }` in
 [`2026-09-05-material-glass-noise-saturation-params-design.md`](2026-09-05-material-glass-noise-saturation-params-design.md).
-The composition order and inheritance for omitted values are unchanged.
+That parameter change preserved composition order and inheritance for omitted values.
 
 **Task:** `material-cad932`
+
+**Render-order update:** [Task 1](2026-09-12-material-render-order-design.md)
+committed the superseding placement at `e33aa968`: saturation/noise now
+transform the averaged backdrop before attenuation. Its pixel, signal, and
+strict-cost acceptance passed. Parameters, inheritance and grain formulas are
+preserved; historical evidence here was collected with the old order. Task 2
+then committed the completed `within` placement at `e79b226b`.
 
 ## Context
 

@@ -16,6 +16,9 @@
 # grain remains; that relies on the same determinism the omitted check
 # asserts first.
 #
+# White attenuation, IOR 1 and disabled response lights isolate the grain
+# formula from the light added after the behind hook.
+#
 # Env: IMPL (niri binary under test), OUT (artifact dir).
 # Requires: weston, kitty, swaybg, jq, rg, ImageMagick 7 with Oklab.
 set -eu
@@ -64,9 +67,9 @@ blur {
 }
 material "gnt-probe" {
     glass {
-        ior 1.5
+        ior 1
         thickness 20
-        attenuation-color "#dfe8ff"
+        attenuation-color "#ffffff"
         attenuation-distance 60
         chromatic-aberration 0
         distortion 0 scale=0.5
@@ -79,6 +82,11 @@ material "gnt-probe" {
         offset-x 6
         offset-y 6
         $2
+    }
+    response "default" {
+        focus "none"
+        accent "none"
+        ring-beam-speed 0
     }
 }
 window-rule {

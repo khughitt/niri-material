@@ -361,6 +361,9 @@ pub struct Layout<W: LayoutElement> {
     clock: Clock,
     /// Time that we last updated render elements for.
     update_render_elements_time: Duration,
+    /// Input-activity gate for sustained attention motion (design 2026-09-18 §3): false while
+    /// the user has been idle for `signal { idle-after-ms }`.
+    input_active: bool,
     /// Whether the overview is open.
     ///
     /// This is a boolean flag that controls things like where input goes to. The actual animation
@@ -719,6 +722,7 @@ impl<W: LayoutElement> Layout<W> {
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
+            input_active: true,
             overview_open: false,
             overview_progress: None,
             options: Rc::new(options),
@@ -744,6 +748,7 @@ impl<W: LayoutElement> Layout<W> {
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
+            input_active: true,
             overview_open: false,
             overview_progress: None,
             options: opts,
@@ -2802,6 +2807,17 @@ impl<W: LayoutElement> Layout<W> {
         false
     }
 
+    /// Input-activity gate for sustained attention motion (design
+    /// 2026-09-18 §3). Set by `Niri` when its idle state changes; read on
+    /// the next `update_render_elements`.
+    pub fn set_input_active(&mut self, active: bool) {
+        self.input_active = active;
+    }
+
+    pub fn input_active(&self) -> bool {
+        self.input_active
+    }
+
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
         let _span = tracy_client::span!("Layout::update_render_elements");
 
@@ -2823,7 +2839,9 @@ impl<W: LayoutElement> Layout<W> {
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
                         .downscale(zoom);
 
-                move_.tile.update_render_elements(true, true, view_rect);
+                move_
+                    .tile
+                    .update_render_elements(true, self.input_active, true, view_rect);
             }
         }
 
@@ -2847,7 +2865,7 @@ impl<W: LayoutElement> Layout<W> {
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
                 mon.set_overview_progress(self.overview_progress.as_ref());
-                mon.update_render_elements(is_active);
+                mon.update_render_elements(is_active, self.input_active);
             }
         }
     }
@@ -4701,11 +4719,14 @@ impl<W: LayoutElement> Layout<W> {
             if move_.tile.window().id() == window {
                 let pos_within_output = move_.tile_render_location(zoom);
 
-                // Computation matches update_render_elements().
+                // Computation matches update_render_elements(). An unmapping tile computes no
+                // attention motion, so the input-activity value is inert here.
                 let view_rect =
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
                         .downscale(zoom);
-                move_.tile.update_render_elements(false, false, view_rect);
+                move_
+                    .tile
+                    .update_render_elements(false, true, false, view_rect);
 
                 move_.tile.store_unmap_snapshot_if_empty(
                     renderer,
