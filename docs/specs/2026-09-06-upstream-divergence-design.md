@@ -156,22 +156,23 @@ anything else:
 1. Read the baseline record from `docs/materials/upstream-baseline.toml`:
 
        tag            = "v26.04"
-       tag_commit     = "aece2b0c..."   # upstream release commit
        tree           = "7b010d1b..."   # tree OF THE RELEASE, not of patched-*
        patched_commit = "..."           # pinned SHA of the patched branch tip
        [[carried]]
        subject  = "..."
        patch_id = "..."
 
-2. Assert `git rev-parse <tag_commit>^{tree}` equals the recorded `tree`, and
-   that `<tag>` resolves to `tag_commit`.
+2. Assert `git rev-parse <tag>^{tree}` equals the recorded `tree`. The tag's
+   commit is never compared: locally `v26.04` is the rewritten copy `aece2b0c`,
+   while a GitHub checkout gets upstream's own tag object, which names
+   `8ed0da44`. Both carry the release tree, and only the tree is portable.
 3. Assert `<patched_commit>~<n>^{tree}` equals the recorded `tree`, where `n`
    is the length of `carried`. This compares **trees, not commit identities**,
    and it must: in this repository
-   `patched-26.04~2` is `8ed0da44` while `v26.04` is `aece2b0c` — different
-   commits carrying the identical tree `7b010d1b`. Requiring
-   `<patched_commit>~<n> == tag_commit` fails against the very fork this
-   design describes.
+   `patched-26.04~2` is `8ed0da44` while the local `v26.04` is `aece2b0c` —
+   different commits carrying the identical tree `7b010d1b`. Requiring
+   `<patched_commit>~<n>` to equal the tag's commit fails against the very fork
+   this design describes.
 4. Assert each carried commit's `git patch-id --stable` matches the recorded
    one, in order, at depths `n-1 .. 0` below `patched_commit`.
 
@@ -182,10 +183,15 @@ was wrong:
   Those differ whenever any patch is carried, and the validation compares
   against the release. Recording the patched tree would make step 2 fail on
   every cycle where `carried` is non-empty.
-- **`tag_commit` is recorded and validated independently**, by asserting
-  `tag_commit^{tree} == tree`, because a tree cannot identify history. All
-  history counting — upstream commits since the baseline, per-file churn —
-  walks from `tag_commit`. A tree hash alone supports no `git log`.
+- **History is walked from `patched_commit~<n>`, never from the tag.** A tree
+  cannot identify history, so history counting — upstream commits since the
+  baseline, per-file churn, and the merge base of the drift check — needs a
+  commit. `patched_commit~<n>` is upstream's real release commit, reachable from
+  the fork's branch in every clone; the local tag's rewritten copy is on no
+  pushed branch and not on upstream's line, so `git log` cannot walk from it.
+  No commit hash for the tag is recorded: an earlier `tag_commit` key named the
+  local copy, which a CI clone never has, and its identity check failed every
+  CI run.
 - **The fork side is anchored only by tree.** The rewritten history means the
   fork's copy of the release commit is a different object with the same
   content. Content is what the baseline actually asserts; commit identity is
@@ -418,7 +424,7 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
    `main` and still be absent from the tag we are moving to, and dropping it
    then would silently remove the IPC surface.
 
-   `git patch-id --stable` against `git log <new tag_commit>` is **evidence,
+   `git patch-id --stable` against `git log <newtag>` is **evidence,
    not the decision**. Upstream routinely squashes or revises a patch during
    review, which changes its id while keeping its behaviour, so a miss does not
    prove absence; and a patch that did land can later be reverted, so a hit
@@ -431,7 +437,7 @@ Triggered by a new upstream release tag, or quarterly, whichever comes first.
 3. Create `patched-<newtag>` from the new tag plus whatever step 2 decided, and
    branch `materials-<newtag>` from it — step 4's rebase target, which no
    earlier step otherwise creates. Record in the baseline file: the new `tag`,
-   its `tag_commit`, **the tree of the release commit** (not of
+   **the tree of the release commit** (not of
    `patched-<newtag>`, which differs whenever anything is still carried), the
    new `patched_commit`, and the patch-ids of whatever `carried` now holds.
 4. In a fresh `.worktrees/` worktree, rebase the material work with an
@@ -545,14 +551,15 @@ Unit tests, on fixture repositories built in `tmp` by the test itself:
   that a tampered baseline tree hash produces a hard error naming both hashes
   rather than any fallback.
 - **Baseline record.** The central fixture reproduces this fork's shape: the
-  commit at `<patched_commit>~<n>` is a **different object from `tag_commit`
-  with an identical tree**. Assert validation *passes*. Then assert it fails
+  commit at `<patched_commit>~<n>` is a **different object from the tag's
+  commit with an identical tree**. Assert validation *passes*. Then assert it fails
   when that commit's tree differs, proving the check tests content and not
   identity.
 
   Assert each other validation fails independently: a `tree` that is the
-  patched tree rather than the release tree; a `tag` that no longer resolves to
-  `tag_commit`; a `tag_commit` whose tree is not `tree`; a `carried` list of
+  patched tree rather than the release tree; a `tag` whose tree is not `tree`;
+  a `tag` moved to another commit with the same tree still validates (the CI
+  clone's case); a `carried` list of
   the right length but wrong patch-ids. Assert resolution succeeds in a clone
   with **no local branches at all**, proving nothing depends on a branch name.
 - **Index freshness.** Stage a source change without regenerating; assert

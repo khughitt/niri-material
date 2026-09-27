@@ -8,7 +8,6 @@
 # appear below patched_commit.
 
 tag = "v26.04"
-tag_commit = "aece2b0c4e1fed364f80b8d0083374d921fe710f"
 tree = "7b010d1b3ab29a1bee76b1554c6bc8eb09300ec6"
 patched_commit = "5e53b949810ac6576d9b801a55146163c8b19984"
 
