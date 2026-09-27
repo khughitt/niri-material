@@ -32,3 +32,23 @@ note = "signal sources hook the toplevel protocol"
 [[acknowledged]]
 path = "src/render_helpers/blur.rs"
 note = "we insert the material pass before blur; expected to conflict every cycle"
+
+[[acknowledged]]
+path = "niri-config/src/lib.rs"
+note = "material and signal config live here (+1300 lines); upstream edits beside our additions"
+
+[[acknowledged]]
+path = "src/layout/scrolling.rs"
+note = "input_active threaded through update_render_elements, as in monitor and workspace"
+
+[[acknowledged]]
+path = "src/niri.rs"
+note = "signal_ticks on every RenderCtx literal, so any upstream edit to one collides"
+
+[[acknowledged]]
+path = "src/tests/client.rs"
+note = "test client gains the virtual pointer manager; collides when upstream appends a global"
+
+[[acknowledged]]
+path = "src/tests/mod.rs"
+note = "attention_idle test module declared beside upstream's; keep both"
