@@ -129,23 +129,25 @@ building blocks (`remove_runtime_dir`, `capture_meta release`), in this order:
    TERM traps with one that only notes a second signal. A trap with a handler,
    unlike an ignored signal, resets to the default in children, so Ctrl-C still
    reaches a running analysis.
-2. Stop every process that writes into `OUT`, and reap each: the clients, the
-   power sampler, the capture, niri, and then weston. A signal caught by a trap
-   interrupts `wait` (status > 128) while the child still runs, so `reap` waits
-   again until the process is gone; a zombie still answers `kill -0` until it is
-   reaped. The clients and the sampler run in their own `setsid` groups, whose
-   other members are not our children, so `reap_group` polls until the group is
-   empty. Nothing we own may outlive the seal: after 5 s the group is KILLed and
-   polled for up to 5 s more. A group gone only after KILL is a teardown error. A
-   group that survives KILL (uninterruptible sleep) sets `UNSEALABLE`: the fixture
-   then writes no analysis and no checksum, keeps the capture lock so no other
-   capture starts beside a live writer, names the survivors on stderr and in
-   `teardown.json`, and exits non-zero. Mid-run, `stop_scene` fails the run on
-   the same condition. Weston logs its shutdown (`caught signal 15`) to
-   `$OUT/weston.log`, so it must be gone before the checksum. `reap_weston` kills
-   and reaps `WESTON_PID`, clears it, and waits up to 5 s for the host socket to
-   go. None of these steps calls `fail`: a group or socket that outlives its
-   bound is recorded as a teardown error.
+2. Stop every process that writes into `OUT`: the clients, the power sampler,
+   the capture, niri, and then weston. Each gets TERM, up to 5 s, KILL, and up to
+   5 s more. The clients and the sampler are whole `setsid` groups, leader
+   included. The teardown never blocks in `wait`. It polls process state, and
+   reaps each of its own zombies as it sees one, where a `wait` returns at once.
+   So neither a signal caught by a trap nor a process that ignores TERM (a group
+   leader, weston) can stall it or leave a writer behind. A process gone only
+   after KILL is a teardown error. Weston logs its shutdown (`caught signal 15`)
+   to `$OUT/weston.log`, so it must be gone before the checksum; after it,
+   `reap_weston` waits up to 5 s for the host socket to go. None of these steps
+   calls `fail`.
+
+   A process that survives KILL (uninterruptible sleep) may still write into
+   `OUT`, so nothing is analyzed, summed or released while it runs. Leaving the
+   lock file behind would not protect it: `capture-meta` reclaims a lock whose
+   owner pid has exited. So the fixture stays alive, holding the lock, polling
+   once a second until every survivor is gone. It names them on stderr and in
+   `teardown.json`, and says that KILLing the fixture gives up. Then it continues
+   with step 3. Mid-run, `stop_scene` fails the run on the same condition.
 3. Remove the runtime directory (`remove_runtime_dir`); a failure is a teardown
    error. Each teardown error goes to `$OUT/teardown.json`, which `analyze`
    reports under `teardown`, and marks the run's teardown failed.
@@ -256,7 +258,7 @@ that is missing or zero refuses the inventory.
 
 | Where | Change |
 | --- | --- |
-| `idle-budget.sh` | `trace` and `power` accept `--pilot` and `--inventory`; one loop over `plan` replaces `trace_all`/`power_all`'s nested loops (`trace_one`, a new `power_one`); `fail` redefinition, signal and `ERR` records, `stop.json`; `observe` after each case; `cleanup` that reaps with retried waits, removes the runtime directory, analyzes, checksums, seals, and releases, without the lib's `cleanup`; `idle-budget-supervise.sh` for live runs |
+| `idle-budget.sh` | `trace` and `power` accept `--pilot` and `--inventory`; one loop over `plan` replaces `trace_all`/`power_all`'s nested loops (`trace_one`, a new `power_one`); `fail` redefinition, signal and `ERR` records, `stop.json`; `observe` after each case; `cleanup` that stops owned processes by polling (TERM, then KILL), holds the lock while any survives, removes the runtime directory, analyzes, checksums, seals, and releases, without the lib's `cleanup`; `idle-budget-supervise.sh` for live runs |
 | `idle-budget.py` | `check_run`; `check-run`, `observe` and `plan` subcommands; `manifest` takes `--pilot` / `--inventory`; `pilot_matrix`; repetition-major `trace_matrix`; partial `analyze`; trace-end gate; seat exemption pinned by pid with an explicit `compositor` through `inventory`, `check_inventory`, `collect` and `interval.json` |
 | `idle-budget.just` | `trace *flags`, `power *flags` pass the flags through |
 | `test_idle_budget.py` | cases below |
@@ -314,13 +316,18 @@ Offline, in `test_idle_budget.py`:
     for it, so no stub is stopped before it can log its shutdown.
   - A second signal while cleanup reaps (a weston stub, and separately a client
     stub, that on TERM signals the fixture and then writes its shutdown line
-    0.3 s later): the interrupted `wait` is retried, the line lands before the
+    0.3 s later): the teardown keeps polling, the line lands before the
     checksum, and `sha256sum -c` passes after exit.
+  - A process that itself ignores TERM (a client group's leader, and weston) is
+    KILLed after 5 s; it is gone, the run exits 1 with a teardown error, and the
+    sums hold after its next tick.
   - A client whose descendant ignores TERM and keeps writing after its leader
     exits: the group is KILLed after 5 s, no member remains, the run exits 1
     with a teardown error, and the sums still hold after the writer's next tick.
-  - A group that survives KILL (simulated): no `analysis.json`, no `SHA256SUMS`,
-    no `capture_meta release`, and the run's own status.
+  - A process that survives KILL (simulated): the fixture stays alive, a second
+    `acquire_lock` on the real lock is refused, and nothing is summed. Once the
+    survivor is gone, the fixture analyzes, seals and releases, exits 1, and the
+    lock is then acquired fresh, not reclaimed.
   - A weston stub whose socket lingers: the run exits 1, `analysis.json` lists
     the teardown error, the runtime directory is removed and `capture_meta
     release` runs, and no file in `OUT` changes after `SHA256SUMS`
