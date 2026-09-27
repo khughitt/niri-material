@@ -1,13 +1,15 @@
 ---
 id: material-555b14
 title: Triage the five unacknowledged upstream drift conflicts
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-09-27T10:26:42Z
-updated: 2026-09-27T11:04:53Z
+updated: 2026-09-27T11:11:28Z
+started: 2026-09-27T11:11:28Z
 depends: []
 tags: [upstream]
 agent: claude-code/claude-opus-5-5
@@ -18,3 +20,5 @@ First end-to-end drift run (2026-09-27, local simulation of the CI checkout afte
 ## Notes
 
 - 2026-09-27T11:04:53Z (materials-26.04): CI canary now files these as khughitt/niri-material#1 (run 36314529632); close that issue once all five are acknowledged or resolved.
+- 2026-09-27T11:11:28Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
