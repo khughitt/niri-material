@@ -30,7 +30,7 @@ CONFLICTS_PATH = "docs/materials/upstream-conflicts.toml"
 REPORT_PATH = "docs/materials/upstream-divergence.md"
 SELF_PATHS = (BASELINE_PATH, CONFLICTS_PATH, REPORT_PATH)
 
-REQUIRED_KEYS = ("tag", "tag_commit", "tree", "patched_commit")
+REQUIRED_KEYS = ("tag", "tree", "patched_commit")
 
 
 class ReportError(Exception):
@@ -171,7 +171,7 @@ def render_local(record, rows):
         counts[classify(row.status, row.path)] += 1
 
     lines = [
-        f"Baseline `{record['tag']}` (`{record['tag_commit'][:12]}`), "
+        f"Baseline `{record['tag']}` (`{record['baseline_commit'][:12]}`), "
         f"tree `{record['tree'][:12]}`, carrying {len(record['carried'])} patch(es).",
         "",
         f"{len(rows)} paths differ: {counts['B']} class B (seam), "
@@ -236,7 +236,7 @@ def load_baseline(root):
                 f"{BASELINE_PATH}: {key} must be a non-empty string, "
                 f"got {record[key]!r}"
             )
-    for key in ("tag_commit", "tree", "patched_commit"):
+    for key in ("tree", "patched_commit"):
         if not _hash(record[key]):
             raise ReportError(
                 f"{BASELINE_PATH}: {key} must be a full 40-character hex hash, "
@@ -266,30 +266,23 @@ def load_baseline(root):
 
 def resolve_baseline(root, record):
     """Validate the record against the object store. Trees on both sides; never
-    commit identity, because the fork's copy of the release commit is a different
-    object with the same content.
+    commit identity, because the tag names a different commit object in different
+    clones: locally it is a rewritten copy of the release commit, while a GitHub
+    checkout gets upstream's own tag object. Both carry the release tree.
 
-    `tag_commit` proves the local tag still names the release TREE, and that is all
-    a tree can prove. History counting (`churn`, `_upstream_status`) needs a commit
+    The tag check proves the tag still names the release TREE, and that is all a
+    tree can prove. History counting (`churn`, `_upstream_status`) needs a commit
     that is actually on upstream's line of history, not merely a tree match: the
     fork's baseline commit — `patched_commit~depth` — is upstream's real release
-    commit, while this fork's local tag is a rewritten copy of it with a different
-    SHA that `git log A..B` cannot walk across. `baseline_commit` is exposed on the
-    record for exactly that use."""
+    commit, reachable from the fork's branch in every clone, while the local tag's
+    rewritten copy has a different SHA that `git log A..B` cannot walk across.
+    `baseline_commit` is exposed on the record for exactly that use."""
     tree = record["tree"]
-    tag_commit = record["tag_commit"]
 
-    resolved = rev(root, f"{record['tag']}^{{commit}}")
-    if resolved != tag_commit:
-        raise ReportError(
-            f"tag {record['tag']} resolves to {resolved}, "
-            f"recorded tag_commit is {tag_commit}"
-        )
-
-    tag_tree = rev(root, f"{tag_commit}^{{tree}}")
+    tag_tree = rev(root, f"{record['tag']}^{{tree}}")
     if tag_tree != tree:
         raise ReportError(
-            f"tree of tag_commit {tag_commit} is {tag_tree}, recorded tree is {tree}"
+            f"tree of tag {record['tag']} is {tag_tree}, recorded tree is {tree}"
         )
 
     carried = record["carried"]
@@ -473,11 +466,11 @@ def _upstream_status(root, baseline_commit, upstream):
     Renames are keyed by the OLD path, because that is the name the baseline — and
     therefore our inventory — knows the file by.
 
-    `baseline_commit` must be `record["baseline_commit"]`, never
-    `record["tag_commit"]`, for consistency with `churn`, which calls this: the
-    recorded tag_commit is a rewritten copy of the release commit and is NOT on
-    upstream's history line, so it must not be used here even though a tree diff,
-    unlike `git log`, does not itself require ancestry to run."""
+    `baseline_commit` must be `record["baseline_commit"]`, never the local tag,
+    for consistency with `churn`, which calls this: the local tag names a rewritten
+    copy of the release commit that is NOT on upstream's history line, so it must
+    not be used here even though a tree diff, unlike `git log`, does not itself
+    require ancestry to run."""
     fields = _split_z(
         git(root, "diff", "--name-status", "-M", "-z",
             f"{baseline_commit}..{upstream}")
@@ -503,9 +496,9 @@ def churn(root, baseline_commit, upstream, watched):
     one: upstream never saw our rename, so asking it about `src/new.rs` returns zero
     commits while it is busily editing `src/old.rs`.
 
-    `baseline_commit` must be `record["baseline_commit"]`, never
-    `record["tag_commit"]`: the recorded tag_commit is a rewritten copy of the
-    release commit and is NOT on upstream's history line, so `git log A..B`
+    `baseline_commit` must be `record["baseline_commit"]`, never the local tag:
+    it names a rewritten copy of the release commit that is NOT on upstream's
+    history line, so `git log A..B`
     cannot walk from it to upstream — it instead counts every commit reachable
     from upstream that isn't reachable from that unrelated commit, which is
     almost all of them (a 66x inflation was observed for src/layout/tile.rs:
@@ -604,7 +597,7 @@ def run(root, args):
     failure raises and is caught by the boundary in main()."""
     record = resolve_baseline(root, load_baseline(root))
     if args.show_baseline:
-        print(f"{record['tag']} {record['tag_commit']} tree {record['tree']}")
+        print(f"{record['tag']} {record['baseline_commit']} tree {record['tree']}")
         print(f"patched {record['patched_commit']} carried {len(record['carried'])}")
 
     if args.check:
@@ -620,11 +613,11 @@ def run(root, args):
     if args.drift:
         upstream_sha = rev(root, args.against)
         fork_sha = rev(root, "HEAD")
-        # merge-tree needs only a TREE for --merge-base=, and tag_commit and
-        # baseline_commit carry the same one; churn below needs a commit that is
-        # actually an ancestor of upstream, which only baseline_commit is.
+        # merge-tree needs only the baseline TREE for --merge-base=; churn below
+        # also needs a commit that is an ancestor of upstream. baseline_commit is
+        # both, and unlike the tag it resolves to the same object in every clone.
         status, paths, messages = merge_tree(
-            root, record["tag_commit"], args.against, "HEAD"
+            root, record["baseline_commit"], args.against, "HEAD"
         )
         acknowledged = load_acknowledged(root)
         # Churn over every seam path plus anything that conflicted, so a cleanly

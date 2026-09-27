@@ -68,10 +68,10 @@ class Fixture(unittest.TestCase):
         """Build the fork's shape: a release commit, a rewritten copy of it with a
         different SHA and an identical tree, and two carried patches on the copy.
 
-        Returns (tag_commit, tree, patched_commit).
+        Returns (release, tree, patched_commit).
         """
         self.write("src/lib.rs", "fn upstream() {}\n")
-        tag_commit = self.commit("release")
+        release = self.commit("release")
         self.git("tag", "v1.0")
         tree = self.git("rev-parse", "v1.0^{tree}").strip()
 
@@ -84,10 +84,10 @@ class Fixture(unittest.TestCase):
         self.commit("carry a")
         self.write("carried_b.rs", "fn b() {}\n")
         patched_commit = self.commit("carry b")
-        self.assertNotEqual(copy, tag_commit)
-        return tag_commit, tree, patched_commit
+        self.assertNotEqual(copy, release)
+        return release, tree, patched_commit
 
-    def write_baseline(self, tag_commit, tree, patched_commit, carried):
+    def write_baseline(self, tree, patched_commit, carried):
         """Flush-left TOML, built line by line.
 
         Do NOT use an indented triple-quoted string here. `write` runs
@@ -98,7 +98,6 @@ class Fixture(unittest.TestCase):
         match on `line.startswith("tree = ")` and quietly match nothing."""
         lines = [
             'tag = "v1.0"',
-            f'tag_commit = "{tag_commit}"',
             f'tree = "{tree}"',
             f'patched_commit = "{patched_commit}"',
         ]
@@ -125,30 +124,30 @@ class Fixture(unittest.TestCase):
 
 class Baseline(Fixture):
     def test_rewritten_ancestry_with_identical_tree_validates(self):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
         self.assertEqual(record["tree"], tree)
 
     def test_merge_base_is_never_consulted(self):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         merge_base = subprocess.run(
-            ["git", "-C", str(self.root), "merge-base", patched, tag_commit],
+            ["git", "-C", str(self.root), "merge-base", patched, release],
             capture_output=True, text=True,
         )
         self.assertNotEqual(merge_base.returncode, 0)  # unrelated histories
         report.resolve_baseline(self.root, report.load_baseline(self.root))
 
     def test_fork_tree_mismatch_fails(self):
-        tag_commit, tree, patched = self.baseline_repo()
+        release, tree, patched = self.baseline_repo()
         self.git("checkout", "-q", patched)
         self.write("src/lib.rs", "fn drifted() {}\n")
         drifted = self.commit("drift the baseline tree")
         # resolve_baseline checks the tree at patched_commit~depth, i.e. drifted~2
         # here (depth == len(carried) == 2), not drifted itself.
         found_tree = self.git("rev-parse", f"{drifted}~2^{{tree}}").strip()
-        self.write_baseline(tag_commit, tree, drifted, self.carried_ids(patched, 2))
+        self.write_baseline(tree, drifted, self.carried_ids(patched, 2))
         with self.assertRaises(report.ReportError) as caught:
             report.resolve_baseline(self.root, report.load_baseline(self.root))
         # Both hashes: the tree actually found AND the recorded tree it was
@@ -156,23 +155,39 @@ class Baseline(Fixture):
         self.assertIn(found_tree[:8], str(caught.exception))
         self.assertIn(tree[:8], str(caught.exception))
 
-    def test_tag_commit_tree_mismatch_fails(self):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, "0" * 40, patched, self.carried_ids(patched, 2))
+    def test_recorded_tree_mismatch_fails(self):
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline("0" * 40, patched, self.carried_ids(patched, 2))
         with self.assertRaises(report.ReportError):
             report.resolve_baseline(self.root, report.load_baseline(self.root))
 
-    def test_tag_moved_off_tag_commit_fails(self):
-        tag_commit, tree, patched = self.baseline_repo()
+    def test_tag_naming_another_tree_fails(self):
+        release, tree, patched = self.baseline_repo()
         self.git("tag", "-f", "v1.0", patched)
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
-        with self.assertRaises(report.ReportError):
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
+        with self.assertRaises(report.ReportError) as caught:
             report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.assertIn("v1.0", str(caught.exception))
+        self.assertIn(tree[:8], str(caught.exception))
+
+    def test_tag_resolving_to_another_commit_with_the_same_tree_validates(self):
+        """The CI case: a GitHub checkout's tag names upstream's release commit,
+        while the local tag names the rewritten copy. Both carry the release tree,
+        so both clones must validate the same record."""
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
+        local = report.resolve_baseline(self.root, report.load_baseline(self.root))
+
+        copy = self.git("rev-parse", f"{patched}~2").strip()
+        self.assertNotEqual(copy, release)
+        self.git("tag", "-f", "v1.0", copy)
+        moved = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.assertEqual(moved["baseline_commit"], local["baseline_commit"])
 
     def test_wrong_carried_patch_ids_fail(self):
-        tag_commit, tree, patched = self.baseline_repo()
+        release, tree, patched = self.baseline_repo()
         carried = [(s, "0" * 40) for s, _ in self.carried_ids(patched, 2)]
-        self.write_baseline(tag_commit, tree, patched, carried)
+        self.write_baseline(tree, patched, carried)
         with self.assertRaises(report.ReportError):
             report.resolve_baseline(self.root, report.load_baseline(self.root))
 
@@ -182,10 +197,9 @@ class Baseline(Fixture):
         legitimately empty a misspelled `[[carrried]]` header would then validate
         clean, since depth 0 is correct and the misspelled entries are never
         checked."""
-        tag_commit, tree, patched = self.baseline_repo()
+        release, tree, patched = self.baseline_repo()
         lines = [
             'tag = "v1.0"',
-            f'tag_commit = "{tag_commit}"',
             f'tree = "{tree}"',
             f'patched_commit = "{patched}"',
         ]
@@ -203,8 +217,8 @@ class Baseline(Fixture):
         `git branch --format` is NOT usable here: baseline_repo leaves HEAD detached,
         and it then prints `(HEAD detached at abc1234)`, which splits into the tokens
         `(HEAD`, `detached`, `at`, `abc1234)`. for-each-ref lists refs only."""
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         branches = self.git(
             "for-each-ref", "--format=%(refname:short)", "refs/heads/"
         ).split()
@@ -240,8 +254,8 @@ class Inventory(Fixture):
     def stage_divergence(self):
         """A baseline plus one modified upstream file, one added source file, one
         added scaffold file, and the tool's own files."""
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         self.write("src/lib.rs", "fn upstream() { changed(); }\n")
         self.write("src/material.rs", "fn material() {}\n")
         self.write("tools/tt", "#!/bin/sh\n")
@@ -276,8 +290,8 @@ class Inventory(Fixture):
     def test_rename_joins_both_diff_formats_on_the_new_path(self):
         """--name-status gives `R100\0old\0new`; --numstat gives `0\t0\t\0old\0new`.
         Joining them naively yields the nonexistent path `src/{old.rs => new.rs}`."""
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         self.git("mv", "src/lib.rs", "src/renamed.rs")
         self.git("add", "-A")
         rows = report.inventory(self.root, tree)
@@ -293,8 +307,8 @@ class Inventory(Fixture):
         self.assertEqual(row.previous, "src/lib.rs")
 
     def test_disagreeing_diff_formats_are_an_error(self):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         self.git("add", "-A")
         original = report._numstat
         try:
@@ -347,8 +361,8 @@ class Splice(unittest.TestCase):
 
 class Freshness(Fixture):
     def stage_document(self, body="stale"):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         self.write("src/lib.rs", "fn upstream() { changed(); }\n")
         self.write(report.CONFLICTS_PATH, "acknowledged = []\n")
         self.write(
@@ -609,8 +623,8 @@ class Conflicts(Fixture):
 
 class Drift(Fixture):
     def test_seam_paths_map_to_the_baseline_name(self):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         self.git("mv", "src/lib.rs", "src/renamed.rs")
         self.git("add", "-A")
         watched = report.seam_paths(report.inventory(self.root, tree))
@@ -619,11 +633,11 @@ class Drift(Fixture):
     def test_churn_follows_the_baseline_path_across_a_fork_rename(self):
         """The fork renamed src/lib.rs; upstream kept editing it under the old name.
         Asking upstream about the fork's new name returns zero and hides the churn."""
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
 
         # Upstream continues from the release, editing the file under its old name.
-        self.git("checkout", "-q", "-b", "upstream-main", tag_commit)
+        self.git("checkout", "-q", "-b", "upstream-main", release)
         self.write("src/lib.rs", "fn upstream() { moved_on(); }\n")
         self.commit("upstream edits src/lib.rs")
 
@@ -632,14 +646,14 @@ class Drift(Fixture):
         self.git("add", "-A")
 
         watched = report.seam_paths(report.inventory(self.root, tree))
-        churns = report.churn(self.root, tag_commit, "upstream-main", watched)
+        churns = report.churn(self.root, release, "upstream-main", watched)
         count, letter, baseline, upstream_path = churns["src/renamed.rs"]
         self.assertEqual(baseline, "src/lib.rs")
         self.assertEqual(count, 1, "upstream churn must follow the baseline path")
 
     def test_resolve_baseline_exposes_the_fork_baseline_commit(self):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
         expected = self.git("rev-parse", f"{patched}~2").strip()
         self.assertEqual(record["baseline_commit"], expected)
@@ -654,8 +668,8 @@ class Drift(Fixture):
         cannot walk from it. Anchoring churn at the tag produces a different
         (inflated) count than anchoring it at the fork's baseline commit, which
         upstream's real history line passes through."""
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         record = report.resolve_baseline(self.root, report.load_baseline(self.root))
         baseline_commit = record["baseline_commit"]
 
@@ -668,7 +682,7 @@ class Drift(Fixture):
 
         watched = {"src/lib.rs": "src/lib.rs"}
         from_baseline = report.churn(self.root, baseline_commit, "upstream-main", watched)
-        from_tag = report.churn(self.root, tag_commit, "upstream-main", watched)
+        from_tag = report.churn(self.root, release, "upstream-main", watched)
 
         self.assertEqual(from_baseline["src/lib.rs"][0], 1)
         self.assertEqual(from_tag["src/lib.rs"][0], 2)
@@ -682,8 +696,8 @@ class Cli(Fixture):
     contract, and CI branches on it: 0 success, 1 finding, 2 error."""
 
     def stage_working_document(self):
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
         self.write("src/lib.rs", "fn upstream() { changed(); }\n")
         self.write(report.CONFLICTS_PATH, "acknowledged = []\n")
         self.write(
@@ -772,8 +786,8 @@ class Cli(Fixture):
 
         Returns the name of the conflicting branch.
         """
-        tag_commit, tree, patched = self.baseline_repo()
-        self.write_baseline(tag_commit, tree, patched, self.carried_ids(patched, 2))
+        release, tree, patched = self.baseline_repo()
+        self.write_baseline(tree, patched, self.carried_ids(patched, 2))
 
         # Real fork work beyond the carried patches: HEAD, not patched_commit
         # itself, is the "fork" side merge-tree compares.
@@ -781,7 +795,7 @@ class Cli(Fixture):
         self.write("src/lib.rs", "fn upstream() { fork_change(); }\n")
         head_commit = self.commit("fork edits lib.rs")
 
-        self.git("checkout", "-q", "-b", "conflicting", tag_commit)
+        self.git("checkout", "-q", "-b", "conflicting", release)
         self.write("src/lib.rs", "fn upstream() { upstream_change(); }\n")
         self.commit("upstream edits lib.rs")
 
