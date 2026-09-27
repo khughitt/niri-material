@@ -8,12 +8,13 @@ complexity: mid
 process: planned
 owner: materials-26.04
 created: 2026-09-25T09:50:48Z
-updated: 2026-09-27T12:25:25Z
+updated: 2026-09-27T12:29:41Z
 started: 2026-09-27T12:25:25Z
 depends: []
 parent: material-53f873
 tags: [performance]
 agent: claude-code/claude-opus-5-5
+spec: docs/specs/2026-09-27-idle-budget-fail-fast-design.md
 ---
 
 The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case showed, starting with the first (~2 min in). The same trailing 3 s redraw (material-4be9c3) was already in the retained traces of the two refused desktop attempts on 2026-09-24 (A-move-1 and B-move-1 in trace-20260924T163317 and trace-20260924T165644), but the fixture analyzes only after all 24 cases, so a refused or aborted run never judges the cases it completed. Scope: (1) run the per-observation behavioral gate right after each case's export and stop at the first failure (keeping evidence), unless a full-inventory flag asks for the complete matrix; (2) on a settle refusal or abort, analyze the completed cases before exiting; (3) a pilot mode that runs one quiet case (A-move-1) and one cadence case (C-move-1), about 5 min, to run before committing an hour. Changes the reviewed Task 1 fixture, so planned.
