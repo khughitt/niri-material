@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-19T13:07:35Z
-updated: 2026-09-27T10:21:19Z
+updated: 2026-09-27T10:26:49Z
 started: 2026-09-27T10:21:19Z
 depends: []
 tags: [upstream, tooling, bug]
@@ -24,4 +24,7 @@ Fix: validate `<tag>^{tree}` against `tree` instead of comparing commits (keep `
 ## Notes
 
 - 2026-09-27T10:21:19Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T10:26:49Z (materials-26.04): Fixed in a81806be (merged 7bddb325): tag validated by tree; tag_commit dropped (it named aece2b0c, which a CI clone never has, so --drift's merge-tree base would have failed next); merge base and report hash use baseline_commit. Verified in a file:// clone with upstream tags fetched from GitHub and aece2b0c absent: --check exits 0, --drift reaches its verdict and exits 1 on 5 unacknowledged conflicts (filed material-555b14). Remaining: push materials-26.04 (35 commits ahead of origin) and gh workflow run; that run will open the drift issue.
+- 2026-09-27T10:26:49Z (materials-26.04): parked (waiting on user, approval): User approves pushing materials-26.04 (35 commits ahead of origin); then gh workflow run upstream-drift.yml -R khughitt/niri-material --ref materials-26.04, confirm it reaches the Drift step (expect exit 1 and a 'Upstream drift' issue for material-555b14's five paths), then tasks done.
   provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
