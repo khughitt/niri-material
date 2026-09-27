@@ -332,6 +332,19 @@ count_window() {   # $1 = case, $2 = seconds-before-end start, $3 = seconds-befo
     awk -F, -v c="$c" -v end="$end" -v a="$2" -v b="$3" \
         'NR>1 && $1=="Niri::redraw" { t=$c+0; if (t>=end-a*1e9 && t<end-b*1e9) n++ } END { printf "%d", n+0 }' "$WORK/$1.csv"
 }
+# The redraws of the final 20 s taken as one burst, measured from its own
+# first and last zone rather than from the trace end: the trace runs on past
+# the capture's 30 s by a varying second, so a fixed-from-end window slides
+# over a burst that starts at the input. Prints "lead span n": seconds from
+# the window's start to the first redraw, first to last, and the count.
+burst_in_steady() {   # $1 = case
+    export_cpu "$1"
+    local end c; end=$(trace_end "$1"); c=$(col "$WORK/$1.csv" ns_since_start)
+    awk -F, -v c="$c" -v end="$end" \
+        'NR>1 && $1=="Niri::redraw" { t=$c+0; if (t>=end-20e9) { if (!n || t<first) first=t; if (t>last) last=t; n++ } }
+         END { if (!n) { print "FAIL: no redraw in the final 20 s" > "/dev/stderr"; exit 1 }
+               printf "%.2f %.2f %d", (first-(end-20e9))/1e9, (last-first)/1e9, n }' "$WORK/$1.csv"
+}
 count_steady() {   # $1 = case; the final 20 s; appends to rates.txt and prints the count
     local n; n=$(count_window "$1" 20 0)
     printf '%s: %d zones in 20 s = %.1f/s\n' "$1" "$n" "$(awk -v n="$n" 'BEGIN { printf "%.1f", n/20 }')" | tee -a "$WORK/rates.txt" >&2
@@ -611,12 +624,19 @@ during_focus_once() { msg action focus-window --id "$WID"; }
 # re-engages 5 s later with no further input.
 idle_case() {   # $1 name, $2 cfg, $3 setup, $4 pulse rate for a resumed window (per 20 s)
     run_case "$1" "$2" "$3" during_idle_resume
-    local resumed frozen
-    # `during` fires 12 s into the 30 s capture: resumed motion runs in
-    # [end-18 s, end-13 s), then the gate re-engages; [end-11 s, end) is quiet.
-    resumed=$(count_window "$1" 18 13)
+    local burst lead span resumed frozen
+    # `during` fires 12 s into the 30 s capture, about 2 s into the final
+    # 20 s, where the idle gate has held the compositor still. Every redraw
+    # of the final 20 s is then the resumed burst: it must start after a
+    # quiet lead, last the 5 s threshold, and [end-11 s, end) is quiet.
+    burst=$(burst_in_steady "$1"); read -r lead span resumed <<< "$burst"
     frozen=$(count_window "$1" 11 0)
-    printf '%s: %d redraws in the 5 s after input, %d after the gate re-engaged\n' "$1" "$resumed" "$frozen" | tee -a "$WORK/rates.txt" >&2
+    printf '%s: %d redraws over %s s after input (%s s quiet before it), %d after the gate re-engaged\n' \
+        "$1" "$resumed" "$span" "$lead" "$frozen" | tee -a "$WORK/rates.txt" >&2
+    awk -v l="$lead" 'BEGIN { exit !(l >= 1) }' \
+        || { echo "FAIL: $1: first redraw $lead s into the final 20 s; the gate was not holding before the input" >&2; exit 1; }
+    awk -v s="$span" 'BEGIN { exit !(s >= 4.5 && s <= 5.5) }' \
+        || { echo "FAIL: $1: resumed burst lasted $span s, want the 5 s threshold within 0.5 s" >&2; exit 1; }
     expect_about "$1 resumed" "$resumed" "$(( $4 * 5 / 20 ))" 0.25
     expect_zero "$1 frozen again" "$frozen"
 }
