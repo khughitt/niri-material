@@ -134,8 +134,14 @@ building blocks (`remove_runtime_dir`, `capture_meta release`), in this order:
    interrupts `wait` (status > 128) while the child still runs, so `reap` waits
    again until the process is gone; a zombie still answers `kill -0` until it is
    reaped. The clients and the sampler run in their own `setsid` groups, whose
-   other members are not our children, so `reap_group` also polls, for up to 5 s,
-   until the group is empty. Weston logs its shutdown (`caught signal 15`) to
+   other members are not our children, so `reap_group` polls until the group is
+   empty. Nothing we own may outlive the seal: after 5 s the group is KILLed and
+   polled for up to 5 s more. A group gone only after KILL is a teardown error. A
+   group that survives KILL (uninterruptible sleep) sets `UNSEALABLE`: the fixture
+   then writes no analysis and no checksum, keeps the capture lock so no other
+   capture starts beside a live writer, names the survivors on stderr and in
+   `teardown.json`, and exits non-zero. Mid-run, `stop_scene` fails the run on
+   the same condition. Weston logs its shutdown (`caught signal 15`) to
    `$OUT/weston.log`, so it must be gone before the checksum. `reap_weston` kills
    and reaps `WESTON_PID`, clears it, and waits up to 5 s for the host socket to
    go. None of these steps calls `fail`: a group or socket that outlives its
@@ -303,10 +309,18 @@ Offline, in `test_idle_budget.py`:
     `$OUT/weston.log` when it is killed. After the fixture has exited, `sha256sum
     -c SHA256SUMS` in `OUT` passes for a clean run and for a TERM mid-case. The
     stub's shutdown line is present and covered by the sums.
+  - Every writer stub publishes readiness only after installing its TERM
+    handler (a client, from inside its new group), and the stub's starter waits
+    for it, so no stub is stopped before it can log its shutdown.
   - A second signal while cleanup reaps (a weston stub, and separately a client
     stub, that on TERM signals the fixture and then writes its shutdown line
     0.3 s later): the interrupted `wait` is retried, the line lands before the
     checksum, and `sha256sum -c` passes after exit.
+  - A client whose descendant ignores TERM and keeps writing after its leader
+    exits: the group is KILLed after 5 s, no member remains, the run exits 1
+    with a teardown error, and the sums still hold after the writer's next tick.
+  - A group that survives KILL (simulated): no `analysis.json`, no `SHA256SUMS`,
+    no `capture_meta release`, and the run's own status.
   - A weston stub whose socket lingers: the run exits 1, `analysis.json` lists
     the teardown error, the runtime directory is removed and `capture_meta
     release` runs, and no file in `OUT` changes after `SHA256SUMS`
