@@ -181,7 +181,12 @@ measurement does not establish physical-GPU cost. The subsequent
 9.728 µs for both plain and aurora median material draws in a small scene,
 but clock variation prevented resolving relative overhead. Idle redraws were
 exactly 4 Hz, 2 Hz with reduced motion, and zero when pinned or off; whole-board
-power variation prevented attributing a watt cost.
+power variation prevented attributing a watt cost. The isolated
+[idle-budget measurement](2026-09-11-idle-budget-evidence.md) later resolved it
+on DRM at 3440×1440: a lit drifting aurora window costs +0.85 W of board power
+at 4 Hz and +0.68 W at 2 Hz over resting jelly (upper bounds 1.11 W and
+0.98 W), with the GPU in P8 at 210 MHz throughout. Resting jelly costs nothing
+resolvable over plain glass: +0.015 W, upper bound 0.13 W.
 
 ### saturation
 

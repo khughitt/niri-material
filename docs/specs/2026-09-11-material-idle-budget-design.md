@@ -1,10 +1,10 @@
 # Material idle GPU and power budget
 
-**Status:** Task 1 fixture implemented, offline validated and reviewed on
-experiment `results/idle-budget` at `8db5dc8`, with capture-protocol adoption
-integrated at `9d7d43f`. Task 2 traces passed on 2026-09-25 (25 of 25; see the
-[evidence](../materials/2026-09-11-idle-budget-evidence.md)). Power collection
-(Task 3) remains pending, so the budget sections below are still proposed rules.
+**Status:** implemented and measured. Task 2 traces passed on 2026-09-25
+(25 of 25). Task 3 isolated power on 2026-09-27 met the precision gates (sham
+floor 0.105 W). Resting material has no resolved idle cost: B minus A is
++0.015 W, upper 0.13 W. See the
+[evidence](../materials/2026-09-11-idle-budget-evidence.md).
 
 **Task:** `material-265eb0`, within `material-53f873`.
 **Plan:** [execution plan](../plans/2026-09-11-material-idle-budget.md).

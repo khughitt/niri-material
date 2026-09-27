@@ -7,9 +7,9 @@ size: s
 complexity: mid
 process: planned
 created: 2026-09-25T09:50:48Z
-updated: 2026-09-26T03:14:16Z
+updated: 2026-09-27T08:53:57Z
 depends: []
-parent: material-265eb0
+parent: material-53f873
 tags: [performance]
 agent: claude-code/claude-opus-5-5
 ---
@@ -19,3 +19,4 @@ The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case 
 ## Notes
 
 - 2026-09-26T03:14:16Z (material-265eb0): From the 2026-09-25 Task 2 review: the analyzer never requires the trace to reach the window end (the heartbeat check tolerates a trace ending up to 1.5 s early); add an explicit trace-end >= window-end gate with the per-case analysis. The watcher that judged cases as they landed during the passing run is a working model: judge each case with trace_observation right after its GPU export.
+- 2026-09-27T08:53:57Z (material-265eb0): From the 2026-09-27 Task 3 review (power run valid): the seat-manager exemption (experiments 73fbbe0) keys on the command name, so a root 'systemd --user' or a root process that renamed itself would also be exempt, and it does not require our niri to be running. Pin it to pid 1 and systemd-logind's MainPID (systemctl show -p MainPID systemd-logind), recorded in the inventory. Also: the power pilot runner used this evening (sham block 1 only, per-window power_observation) is the model for the power lane's pilot mode.
