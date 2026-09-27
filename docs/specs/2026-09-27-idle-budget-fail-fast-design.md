@@ -60,10 +60,13 @@ cannot pass as a full run.
 The run-level half of `analyze` becomes `check_run(run)`: identity, capture lane,
 quiet preflight, hardware identity, and the capture-time binary hash, plus the
 power lane's tty-session and preflight-inventory checks. It needs only artifacts
-that exist after `capture_meta identity` (and after `preflight` for power). The
-fixture calls `idle-budget.py check-run "$OUT"` once before case 1, and `analyze`
-calls the same function. A run whose identity or preflight evidence is bad stops
-before its first capture, not 58 min later.
+that exist after `capture_meta identity` (and after `preflight` for power).
+The order is: `manifest`, then power's `preflight`, then `idle-budget.py
+check-run "$OUT"`, then case 1. A run whose identity or preflight evidence is
+bad stops before its first capture, not 58 min later. The manifest already
+exists at that point, so the stop still gets an analysis (§4). `analyze` calls
+the same `check_run` and reports a failure there as a run-level integrity
+failure, with every case under `not_run`, rather than raising.
 
 ### 3. A verdict per case, and stopping on the first failure
 
@@ -73,10 +76,17 @@ After each case's last artifact is written, the fixture runs
 - power: after `stop_scene`, which follows the after-snapshots.
 
 `observe` runs the existing `trace_observation` or `power_observation` for that
-one item. It checks the output mode against the first case's `<name>.verdict.json`,
-writes `<name>.verdict.json` (`{"observation", "passed", "summary" | "error"}`),
-prints one line to stderr (`A-move-1 pass: 0 redraws, 0 material draws, pixels
-equal`), and exits 1 on an integrity error or a failed behavioural gate.
+one item. It writes `<name>.verdict.json` (`{"observation", "passed", "summary" |
+"error"}`), prints one line to stderr (`A-move-1 pass: 0 redraws, 0 material
+draws, pixels equal`), and exits 1 on an integrity error or a failed behavioural
+gate.
+
+It also checks the output mode against a baseline. The baseline is the output of
+the first case, in manifest order, whose verdict carries a `summary`: its
+observation was reconstructed, whether or not its gate passed. A verdict holding
+only an `error` has no output and is skipped. Until a case yields a summary there
+is no baseline, and the first one to yield a summary becomes it. `analyze`'s
+cross-run check already compares against the first summary, so the two agree.
 
 With `fail_fast` (the default), a failing `observe` stops the run: the fixture
 calls `fail "first failure: <name>"` and the stop path (§4) takes over. With
@@ -88,12 +98,54 @@ not run: its raw files stay in `OUT` and no analysis claims them.
 
 ### 4. Every exit analyzes what completed
 
-The fixture wraps the lib's `fail` so the message is also written to
-`$OUT/stop.json` with the case in progress (`{"exit", "during", "message"}`).
-The fixture's `cleanup` first tears down (native cleanup, as now) and then, in
-trace and power mode, once `manifest.json` exists, runs `idle-budget.py analyze
-"$OUT" > analysis.json` and writes `SHA256SUMS`, whatever the exit status. A
-successful run follows the same path, so there is only one.
+**Stop reason.** The fixture keeps `CURRENT_CASE`, set when a case starts and
+cleared once its verdict is written. It writes `$OUT/stop.json` (`{"exit",
+"during", "kind", "message"}`) from three sources. Whichever writes first wins,
+so a specific message is never overwritten by a generic one:
+- `fail`: the fixture redefines the lib's `fail` after sourcing it. Lib functions
+  call `fail` by name, so they get the new one too. It writes `kind: "fail"`
+  with the message, or `kind: "first-failure"` when a failing `observe` stopped
+  the run.
+- Signals: the INT and TERM traps record `kind: "signal"` and the signal's name
+  in a variable before exiting with 130 or 143, as now.
+- Command failures: the fixture sets `set -E` and an `ERR` trap that records the
+  failing command, its line and its status. A `set -e` exit then has a reason.
+  Commands in conditional contexts (`||`, `if`) do not fire `ERR`, which matches
+  `set -e`.
+
+On a non-zero exit with no `stop.json` yet, `cleanup` writes one from the signal
+or `ERR` record. If neither exists it writes `kind: "exit"` with the status alone.
+
+**Cleanup order.** The lib's `cleanup` (renamed `native_cleanup`) ends in
+`exit`, and its `stop_weston` can call `fail`. So nothing can run after it, and
+it cannot move into a subshell either: niri, the capture and weston are the
+parent shell's children, and a subshell cannot `wait` on them. The fixture's
+`cleanup` therefore does its own work first and calls `native_cleanup` last:
+1. Record `rc=$?`. Replace the INT and TERM traps with one that only notes a
+   second signal. A trap with a handler, unlike an ignored signal, resets to the
+   default in children, so Ctrl-C still reaches a running analysis.
+2. Stop the power sampler and the clients, then kill and `wait` on the capture
+   and niri, and clear their pids. None of these steps calls `fail`. Weston, the
+   idle nested host in the trace lane, is left to `native_cleanup`.
+3. Write the fallback `stop.json` (above).
+4. In trace and power mode, once `manifest.json` exists, run `timeout 300
+   idle-budget.py analyze "$OUT" > analysis.json`, then write `SHA256SUMS`.
+5. Choose the status and hand it to the lib: `(exit "$status"); native_cleanup`.
+   This is the existing idiom. `native_cleanup` stops weston, removes the
+   runtime directory, releases the capture lock, and exits.
+
+**Exit status.**
+- A non-zero run status (`fail` 1, 130, 143, or a failed command's status) is
+  kept.
+- On a zero run status, a non-zero or timed-out analysis makes it 1, and so does
+  a `SHA256SUMS` failure.
+- The lib's teardown can still replace any status with 1 when it fails itself
+  (`remove_runtime_dir`, or `stop_weston` through `fail`), as today. This
+  design does not change the lib.
+
+The success path is the same one: `runtime` no longer runs the analysis or
+writes `SHA256SUMS` itself. `capture_meta release` still runs after
+`SHA256SUMS`, as today.
 
 `analyze` recomputes every completed case from raw, as now. The verdict files
 decide only which cases are complete. It adds these fields:
@@ -128,10 +180,23 @@ operator's choice, as today.
 The full trace runs repetition-major: repetition 1 of every kind (`A-move`,
 `A-resize`, `B-move`, `B-resize`, `P`, `C`, `D`, `O`), then repetition 2, then
 3, then the 600 s hold last. A failure specific to one kind then shows within
-the first 8 cases (about 17 min) instead of as late as case 22 (`O-move-1`). `analyze`
-compares matrices as sets, so only `trace_matrix`'s order changes. The power
-lane's ABBA order within blocks is part of its measurement design and does not
-change.
+the first 8 cases (about 17 min) instead of as late as case 22 (`O-move-1`). The
+power lane's ABBA order within blocks is part of its measurement design and does
+not change.
+
+Execution follows the manifest, not loops of its own. Today `trace_all` and
+`power_all` nest shell loops that repeat the matrix, and `power_all` calls
+`power_case` through inline Python. Both are replaced by one loop over
+`idle-budget.py plan "$OUT"`, which reads `manifest.json` and prints one TSV row
+per declared observation in order:
+- trace: `name case stimulus repetition`;
+- power: `name case`, with the case resolved by `power_case`.
+
+The shell captures the rows with a command substitution, `plan=$(…)`, so a failure
+stops the run under `set -e`. It reads them into an array with `mapfile`,
+because the case functions must not read from the loop's stdin. The manifest is
+then the only statement of both the set and the order, and a pilot needs no
+separate loop.
 
 ### 7. The trace must reach its window's end
 
@@ -143,26 +208,36 @@ alone would accept a trace that ended up to 1.5 s early.
 
 `inventory` records the seat managers by pid: `{"systemd": 1, "systemd-logind":
 <MainPID>}`, read once per inventory with `systemctl show -p MainPID --value
-systemd-logind`. `check_inventory` exempts a device holder only if all of these
-hold:
-- its pid is one of those two;
+systemd-logind`.
+
+The compositor is passed explicitly, never inferred from `required`: both
+`collect` and `power_observation` turn `required` into a set, so it has no
+first element. `inventory` and `check_inventory` take a `compositor` argument
+(a pid, or `None`). `collect` takes it as its own argument, which `power_one`
+passes as `$NIRI_PID`, and writes it to `<name>.interval.json`. `power_observation`
+refuses the window unless the recorded `compositor` equals the scene's recorded
+niri pid (`pids[0]` from `<name>.pids`), and rechecks each stored inventory with
+it.
+
+`check_inventory` exempts a device holder only if all of these hold:
+- its pid is one of the two recorded seat-manager pids;
 - its user is root;
 - it holds only `/dev/dri/card*` nodes;
 - nvidia-smi does not list it;
-- our compositor (the first pid in `required`) also holds a card node.
+- `compositor` is not `None`, is in `required`, and itself holds a
+  `/dev/dri/card*` node in the same report.
 
-With `required` empty, as in the preflight inventory, nothing is exempt. That
+With `compositor=None`, as in the preflight inventory, nothing is exempt. That
 matches the 2026-09-27 evidence: the preflight inventory had no holders at all,
-and pid 1 and logind appear only beside our niri on `/dev/dri/card1`.
-`power_observation` rechecks each stored inventory with the pids it recorded. A
-MainPID that is missing or zero refuses the inventory.
+and pid 1 and logind appear only beside our niri on `/dev/dri/card1`. A MainPID
+that is missing or zero refuses the inventory.
 
 ## Interfaces
 
 | Where | Change |
 | --- | --- |
-| `idle-budget.sh` | `trace` and `power` accept `--pilot` and `--inventory`; `fail` wrapper, `stop.json`, `observe` after each case, analysis in `cleanup` |
-| `idle-budget.py` | `check_run`, `observe` and `check-run` subcommands; `manifest` takes `--pilot` / `--inventory`; `pilot_matrix`; repetition-major `trace_matrix`; partial `analyze`; trace-end gate; pinned seat exemption |
+| `idle-budget.sh` | `trace` and `power` accept `--pilot` and `--inventory`; one loop over `plan` replaces `trace_all`/`power_all`'s nested loops (`trace_one`, a new `power_one`); `fail` redefinition, signal and `ERR` records, `stop.json`; `observe` after each case; reordered `cleanup` that analyzes, checksums, then calls `native_cleanup` |
+| `idle-budget.py` | `check_run`; `check-run`, `observe` and `plan` subcommands; `manifest` takes `--pilot` / `--inventory`; `pilot_matrix`; repetition-major `trace_matrix`; partial `analyze`; trace-end gate; seat exemption pinned by pid with an explicit `compositor` through `inventory`, `check_inventory`, `collect` and `interval.json` |
 | `idle-budget.just` | `trace *flags`, `power *flags` pass the flags through |
 | `test_idle_budget.py` | cases below |
 | `docs/results/2026-09-11-idle-budget.md` | reproduction section names the pilot and `--inventory` |
@@ -174,6 +249,13 @@ No change to `glass-optic-smoke-lib.sh`, `capture-meta`, or niri.
 Offline, in `test_idle_budget.py`:
 - `observe` on synthetic trace and power items writes a verdict and exits 1 on a
   failed gate, an integrity error, and an output-mode change.
+- The output baseline: case 1 fails integrity (an `error`-only verdict), case 2
+  is reconstructed and becomes the baseline, and case 3 passes with case 2's
+  output but fails with a different one. A failed-gate verdict that carries a
+  `summary` also serves as the baseline.
+- `plan` prints the manifest's rows in manifest order for the full trace, the
+  trace pilot, the full power run and the power pilot, with power cases resolved
+  by `power_case`.
 - `analyze` on a run with verdicts for some declared cases reports those cases,
   `complete: false`, `not_run`, and `stopped` from `stop.json` and from a refused
   sub-run in `capture.json`. It computes no power comparison for an incomplete or
@@ -183,13 +265,26 @@ Offline, in `test_idle_budget.py`:
 - `trace_matrix` is repetition-major and still equals the old matrix as a set.
 - The trace-end gate refuses a trace ending 1 s before the window end whose
   heartbeat coverage passes.
-- The seat exemption: pinned pids with our niri present pass. They are refused
-  with `required` empty, with a non-pinned root `systemd`, with a holder on a
-  render node, and with a missing MainPID.
-- Shell: source `idle-budget.sh` with the per-case function and the helpers
-  stubbed. Check that a failing `observe` stops the loop after that case, that
-  `--inventory` continues, and that a `fail` mid-run leaves `stop.json` and an
-  `analysis.json` covering the completed cases.
+- The seat exemption: pinned pids beside our compositor on a card node pass.
+  They are refused with `compositor=None`, with a non-pinned root `systemd`,
+  with a holder on a render node, and with a missing MainPID. They are also
+  refused when a kitty in `required` holds a card node but the compositor does
+  not, so a client cannot stand in for the compositor. `power_observation`
+  refuses an `interval.json` whose `compositor` differs from `pids[0]`.
+- Shell: `idle-budget.sh` sourced, with the case functions (`trace_one`,
+  `power_one`), the lib's process helpers and `native_cleanup` stubbed, and the
+  stubs logging their calls:
+  - The case functions are called in manifest order for each of the four plans.
+  - A failing `observe` stops the loop after that case, and `--inventory`
+    continues past it.
+  - `fail` mid-run, TERM mid-case, INT mid-case, and a failing plain command
+    (`false` under `set -e`) each leave a `stop.json` of the matching `kind`
+    naming the case in progress. `fail`'s message survives the fallback. Each
+    leaves an `analysis.json` covering exactly the completed cases, the exit
+    statuses 1, 143, 130 and the command's own, and `native_cleanup` called
+    last, once.
+  - A clean run whose analysis fails exits 1, and so does a run whose analysis
+    times out.
 
 Live: a trace pilot and a power pilot on a TTY with the desktop stopped (see the
 settle-gated capture practice). Each must pass, leave per-case verdicts, and
