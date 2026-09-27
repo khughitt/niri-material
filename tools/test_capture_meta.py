@@ -702,24 +702,40 @@ class EndToEndTest(unittest.TestCase):
             env = {**os.environ, "PATH": f"{bins}:{os.environ['PATH']}", "XDG_RUNTIME_DIR": str(runtime),
                    "CAPTURE_META_PROC": str(proc), "XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-1"}
             tool = str(pathlib.Path(__file__).with_name("capture-meta"))
-            ticks = 0
+            stat = proc / "stat"
+            def serve_idle_ticks():
+                # A one-second sample reads stat twice. The first read blocks on a FIFO; the advanced
+                # counters replace it before that read is released, so the second read sees them
+                # however late the tool starts. No wall-clock timing is involved.
+                stat.unlink(); os.mkfifo(stat)
+                def serve():
+                    with open(stat, "w") as first:
+                        staged = proc / "stat.next"
+                        staged.write_text("cpu  100 0 50 9100 10 0 0 0 0 0\n"); staged.replace(stat)
+                        first.write("cpu  100 0 50 9000 10 0 0 0 0 0\n")
+                server = threading.Thread(target=serve); server.start()
+                return server
             def cm_run(*args, sampling=False):
-                nonlocal ticks
+                server = serve_idle_ticks() if sampling else None
                 process = subprocess.Popen([sys.executable, tool, *args], env=env,
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                if sampling:
-                    ticks += 100
-                    threading.Timer(.2, lambda: (proc / "stat").write_text(
-                        f"cpu  100 0 50 {9010 + ticks} 0 0 0 0 0 0\n")).start()
                 stdout, stderr = process.communicate()
+                if server is not None and server.is_alive():
+                    # The tool exited without reading stat: open the reading end so the server finishes.
+                    reader = os.open(stat, os.O_RDONLY | os.O_NONBLOCK)
+                    server.join(); os.close(reader)
                 return process.returncode, stdout, stderr
-            self.assertEqual(cm_run("preflight", str(run), "--lane", "headless", "--task", "material-x",
-                                    "--fixture", "t.sh", "--seconds", "1", "--tool", "tracy=0.13.1",
-                                    sampling=True)[0], 0)
-            self.assertEqual(cm_run("identity", str(run), "--source", str(src), "--input", str(root / "A.kdl"))[0], 0)
-            self.assertEqual(cm_run("settle", str(run), "--sub-run", "A-1", "--input", str(root / "A.kdl"),
-                                    "--seconds", "1", sampling=True)[0], 0)
-            self.assertEqual(cm_run("release", str(run))[0], 0)
+            code, _, stderr = cm_run("preflight", str(run), "--lane", "headless", "--task", "material-x",
+                                     "--fixture", "t.sh", "--seconds", "1", "--tool", "tracy=0.13.1",
+                                     sampling=True)
+            self.assertEqual(code, 0, stderr)
+            code, _, stderr = cm_run("identity", str(run), "--source", str(src), "--input", str(root / "A.kdl"))
+            self.assertEqual(code, 0, stderr)
+            code, _, stderr = cm_run("settle", str(run), "--sub-run", "A-1", "--input", str(root / "A.kdl"),
+                                     "--seconds", "1", sampling=True)
+            self.assertEqual(code, 0, stderr)
+            code, _, stderr = cm_run("release", str(run))
+            self.assertEqual(code, 0, stderr)
             code, stdout, stderr = cm_run("show", str(run))
             self.assertEqual(code, 0, stderr)
             self.assertIn("A-1: settled", stdout)

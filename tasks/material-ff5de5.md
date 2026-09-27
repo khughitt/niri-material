@@ -1,15 +1,16 @@
 ---
 id: material-ff5de5
 title: test_real_binary_against_fake_nvidia_smi flakes under full-suite load
-status: doing
+status: done
 priority: 2
 size: xs
 complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-22T15:42:03Z
-updated: 2026-09-27T11:58:10Z
+updated: 2026-09-27T12:01:32Z
 started: 2026-09-27T11:58:10Z
+completed: 2026-09-27T12:01:32Z
 depends: []
 tags: [testing, bug, capture]
 agent: claude-code/claude-opus-5
@@ -27,4 +28,8 @@ Related: material-e2759c makes the refusal name the load it refused on, which wo
 
 - 2026-09-25T15:31:28Z (materials-26.04): Recurred 2026-09-25 at the settle step (2 != 0) in hook-pre-commit, which now runs under host-budget run (background.slice, CPUWeight 30) while other budgeted jobs loaded the host; passed 6/6 alone, wrapped and unwrapped. The lower weight under contention may make the 0.2 s fake-stat timer race more frequent.
 - 2026-09-27T11:58:10Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:2b4916ff-4c11-43fa-b146-a7c0e4cc51d8","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T12:01:32Z (material-ff5de5): done
+  provenance: {"harness_session":"claude-code:2b4916ff-4c11-43fa-b146-a7c0e4cc51d8","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T12:01:32Z (material-ff5de5): The end-to-end fixture serves /proc/stat through a FIFO: the advanced counters replace it before capture-meta's first read is released, so the one-second sample no longer races a 0.2 s timer. A 0.5 s delayed tool start fails the old fixture (2 != 0) and passes the new one; each exit-code assertion now carries the tool's stderr.
   provenance: {"harness_session":"claude-code:2b4916ff-4c11-43fa-b146-a7c0e4cc51d8","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
