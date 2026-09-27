@@ -111,12 +111,15 @@ jobs:
           Run \`just upstream-report --drift\` locally, then either resolve the seam
           or acknowledge the path with a note explaining why it conflicts.
           BODY
+          # Every gh call names the repository: without --repo, gh resolves it from
+          # the git remotes and prefers one named `upstream`, which the fetch step
+          # just pointed at niri-wm/niri.
           existing=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
             --search "$marker in:body" --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
-            gh issue edit "$existing" --body-file issue-body.md
+            gh issue edit "$existing" --repo "$GITHUB_REPOSITORY" --body-file issue-body.md
           else
-            gh issue create --title "Upstream drift: unacknowledged conflicts" \
-              --body-file issue-body.md
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Upstream drift: unacknowledged conflicts" --body-file issue-body.md
           fi
           exit 1
