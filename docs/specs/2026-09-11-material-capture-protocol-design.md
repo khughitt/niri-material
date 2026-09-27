@@ -61,7 +61,7 @@ tools/capture-meta show      <run-dir>
 ```
 
 Exit codes follow `package-pin`: 0 passed, 1 refused (the machine is not quiet, a
-named `--binary` or `--input` path does not exist, or the lock is held), 2 cannot run (no `nvidia-smi`, unwritable
+named `--binary` or `--input` path does not exist, or the lock is held), 2 cannot run (no `nvidia-smi` or `host-load`, unwritable
 directory, malformed existing `capture.json`). A fixture treats 1 and 2 alike:
 stop before the sub-run.
 
@@ -172,6 +172,16 @@ design doc records the revision.
 Non-NVIDIA hosts: preflight exits 2 with a message naming the missing sampler.
 Supporting another vendor means adding a sampler, not weakening the rule.
 
+A refusal on CPU busy or load average names the load. Preflight then runs ops's
+`host-load --json --section load -n 5`, stores its report as `preflight.host_load`,
+and appends each process it lists to the refusal message, with its CPU share, age,
+whether it holds a terminal, and whether its scope is dead. The report omits
+`host-load` itself. Preflight requires `host-load` on `PATH` before it samples,
+quiet host or not, and exits 2 with the install hint when it is absent. If the
+tool fails after a refusal, preflight exits 2 with the refusal reasons in the
+message. A refusal on GPU or memory alone runs no `host-load`: it names only
+CPU consumers.
+
 ### 2.5 `show`
 
 Prints the record in a fixed human-readable layout for evidence documents: the
@@ -223,6 +233,11 @@ that exists (exit 2), so a fixture cannot half-rerun into a directory.
   ]
 }
 ```
+
+A preflight refused on `cpu_busy_pct` or `load1` also carries `host_load`, the
+`host-load` report verbatim (`{"host", "at", "load": {"load1", …, "top": [{"pid",
+"comm", "cmd", "cpu_pct", "age_s", "tty", "unit", "scope_dead", …}]}}`). The field is
+optional and additive, so schema 1 records without it stay valid.
 
 Field rules: every measured value carries its unit in the key; hashes are full
 SHA-256 hex; timestamps are RFC 3339 with offset; `host` is the hostname, never
@@ -373,6 +388,10 @@ tolerance appends a `settled` entry with its inputs' hashes, outside tolerance
 (including a memory drop past 5 % of `MemTotal`) appends `refused` with the
 reason and exits 1; rewriting an existing section exits 2 and leaves the file
 unchanged; `show` renders a schema-1 record and refuses an unknown schema.
+A CPU or load refusal records the `host-load` report and names its processes;
+a GPU-only refusal and a quiet preflight never run it; a failing `host-load`
+exits 2, names the refusal, and releases the lock; an absent `host-load` exits
+2 before writing anything; and `HostLoadReader` drops its own process from the list.
 
 One integration test runs the real binary against a fake `nvidia-smi` on `PATH`
 and asserts the exit code and `capture.json` end to end.

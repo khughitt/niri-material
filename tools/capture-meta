@@ -241,6 +241,41 @@ class GpuReader:
         return {"name": name, "uuid": uuid, "driver": driver}
 
 
+def has_load_top(report):
+    load = report.get("load") if isinstance(report, dict) else None
+    top = load.get("top") if isinstance(load, dict) else None
+    return isinstance(top, list) and all(isinstance(p, dict) for p in top)
+
+
+class HostLoadReader:
+    """Names the processes carrying CPU load, through ops's `host-load`."""
+
+    TOP = 5
+
+    def __init__(self):
+        if shutil.which("host-load") is None:
+            raise CannotRun("host-load not found on PATH; run `just install` in the ops checkout to put it on ~/.local/bin")
+
+    def report(self):
+        command = ["host-load", "--json", "--section", "load", "-n", str(self.TOP)]
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except OSError as error:
+            raise CannotRun(f"{' '.join(command)}: {error}") from error
+        if process.returncode != 0:
+            raise CannotRun(f"{' '.join(command)}: exit {process.returncode}: {(stderr or stdout).strip()}")
+        try:
+            report = json.loads(stdout)
+        except json.JSONDecodeError as error:
+            raise CannotRun(f"{' '.join(command)}: output is not JSON: {error}") from error
+        if not has_load_top(report):
+            raise CannotRun(f"{' '.join(command)}: report has no load.top list")
+        # host-load samples itself while it samples the host; it is never the load being named.
+        report["load"]["top"] = [p for p in report["load"]["top"] if p.get("pid") != process.pid]
+        return report
+
+
 def parse_number(text, field):
     try: value = float(text)
     except (TypeError, ValueError) as error:
@@ -382,6 +417,19 @@ def judge_quiet(summary, samples, thresholds, lane):
     return reasons + client_reasons(samples, lane)
 
 
+HOST_LOAD_KEYS = ("cpu_busy_pct", "load1")
+
+
+def describe_process(p):
+    facts = [f"{p.get('cpu_pct')}% cpu", f"{p.get('age_s')} s old", "tty" if p.get("tty") else "no tty"]
+    if p.get("scope_dead"): facts.append("scope dead")
+    return f"{p.get('comm')} pid {p.get('pid')} {', '.join(facts)}"
+
+
+def describe_load(top):
+    return "; ".join(describe_process(p) for p in top) or "no process named"
+
+
 def judge_settled(summary, samples, baseline, thresholds, lane):
     reasons = []
     for key, limit in (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", "settle_mem_pct"), ("gpu_util_pct", "settle_gpu_util_pct"), ("gpu_power_w", "settle_gpu_power_w")):
@@ -437,6 +485,8 @@ def validate_record(record, path=RECORD):
         for name, kind in (("reasons", list), ("thresholds", dict), ("lock", dict)):
             if name in preflight and not isinstance(preflight[name], kind):
                 raise CannotRun(f"{path}: preflight.{name} must be a {kind.__name__}")
+        if "host_load" in preflight and not has_load_top(preflight["host_load"]):
+            raise CannotRun(f"{path}: preflight.host_load must carry a load.top list")
     provenance = section("provenance")
     if provenance is not None:
         for name in ("source", "config"):
@@ -621,7 +671,7 @@ def session_reasons(lane):
     return reasons
 
 
-def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tools, proc, gpu,
+def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tools, proc, gpu, host_load,
               sleep=time.sleep, lock=lock_path):
     if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
         raise CannotRun("seconds must be a positive integer")
@@ -642,10 +692,18 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         summary = summarize(samples)
         write_section(run_dir, "baseline", {"seconds": seconds, **summary})
         reasons += judge_quiet(summary, samples, thresholds, lane)
-        write_section(run_dir, "preflight", {"verdict": "quiet" if not reasons else "refused",
-                                              "reasons": reasons, "thresholds": thresholds, "lock": lock_info})
+        section = {"verdict": "quiet" if not reasons else "refused",
+                   "reasons": reasons, "thresholds": thresholds, "lock": lock_info}
+        message = "; ".join(reasons)
+        if any(summary[key] > thresholds[key] for key in HOST_LOAD_KEYS):
+            try:
+                section["host_load"] = host_load.report()
+            except CannotRun as error:
+                raise CannotRun(f"preflight refused ({message}) and could not name the load: {error}") from error
+            message += f"; load carried by: {describe_load(section['host_load']['load']['top'])}"
+        write_section(run_dir, "preflight", section)
         if reasons:
-            raise Refused("; ".join(reasons))
+            raise Refused(message)
     except BaseException:
         release_lock(lock_file, owner_pid, run["id"])
         raise
@@ -654,7 +712,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
 def cmd_preflight(args):
     preflight(args.run_dir, args.lane, args.task, args.fixture, args.seconds,
               args.owner_pid if args.owner_pid is not None else os.getppid(),
-              parse_thresholds(args.threshold), args.tool, ProcReader(), GpuReader())
+              parse_thresholds(args.threshold), args.tool, ProcReader(), GpuReader(), HostLoadReader())
 
 
 def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=lock_path):
@@ -750,6 +808,10 @@ def render(record):
         lines += ["", f"preflight {preflight.get('verdict')}"]
         for reason in preflight.get("reasons", []):
             lines.append(f"  {reason}")
+        host_load = preflight.get("host_load")
+        if host_load:
+            lines.append(f"  load carried by (host-load at {host_load.get('at')})")
+            lines += [f"    {describe_process(p)}" for p in host_load["load"]["top"]]
     provenance = record.get("provenance")
     if provenance:
         source = provenance.get("source", {})
