@@ -188,6 +188,7 @@ class RecordTests(unittest.TestCase):
                                                        "lock": {"owner_pid": 1}}},
                        ["settle", "--sub-run", "A", "--seconds", "1"]),
             "release": ({"schema": 1, "run": {"task": "t"}}, ["release"]),
+            "show host_load": ({"schema": 1, "preflight": {"verdict": "refused", "host_load": {"load": {}}}}, ["show"]),
         }
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
@@ -359,6 +360,20 @@ class FakeGpu:
     def static(self): return dict(self._static)
 
 
+class FakeHostLoad:
+    def __init__(self, top=None):
+        self.calls = 0
+        self._top = top if top is not None else [
+            {"pid": 4242, "comm": "bun", "cmd": "bun test", "cpu_pct": 97.0, "age_s": 3600,
+             "tty": False, "unit": "kitty-1-0.scope", "scope_dead": True},
+            {"pid": 1700, "comm": "niri", "cmd": "niri --session", "cpu_pct": 4.0, "age_s": 7200,
+             "tty": False, "unit": "niri.service", "scope_dead": False}]
+    def report(self):
+        self.calls += 1
+        return {"host": "h", "at": "2026-09-27T12:00:00+00:00",
+                "load": {"load1": 6.65, "cpus": 32, "interval_s": 1.0, "top": [dict(p) for p in self._top]}}
+
+
 QUIET = {"util_pct": 0.0, "power_w": 18.4, "clock_mhz": 360, "pstate": "P8"}
 
 
@@ -444,6 +459,41 @@ class GpuEvidenceTests(unittest.TestCase):
             cm.sample_stream(FakeProc([(0, 0), (1, 100)], total_kib=-1), FakeGpu([QUIET]), 1, sleep=lambda s: None)
 
 
+class HostLoadReaderTests(unittest.TestCase):
+    def reader(self, script):
+        directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
+        fake = pathlib.Path(directory.name) / "host-load"
+        fake.write_text("#!/bin/sh\n" + script); fake.chmod(0o755)
+        with mock.patch.dict(os.environ, {"PATH": directory.name}):
+            reader = cm.HostLoadReader()
+        return reader, directory.name
+
+    def test_absent_tool_cannot_run_with_install_hint(self):
+        with tempfile.TemporaryDirectory() as empty, mock.patch.dict(os.environ, {"PATH": empty}):
+            with self.assertRaises(cm.CannotRun) as failed:
+                cm.HostLoadReader()
+        self.assertIn("host-load not found on PATH", str(failed.exception))
+        self.assertIn("just install", str(failed.exception))
+
+    def test_report_runs_the_load_section_and_drops_its_own_process(self):
+        reader, bindir = self.reader(textwrap.dedent("""\
+            [ "$*" = "--json --section load -n 5" ] || exit 7
+            printf '{"host":"h","at":"t","load":{"load1":6.6,"top":[{"pid":%s,"comm":"python3"},{"pid":1,"comm":"bun"}]}}' $$
+            """))
+        with mock.patch.dict(os.environ, {"PATH": bindir}):
+            report = reader.report()
+        self.assertEqual([p["comm"] for p in report["load"]["top"]], ["bun"])
+
+    def test_failed_or_malformed_report_cannot_run(self):
+        for script, expected in (("echo boom >&2; exit 3\n", "boom"), ("echo not json\n", "not JSON"),
+                                 ("echo '{\"load\": {}}'\n", "no load.top list")):
+            reader, bindir = self.reader(script)
+            with self.subTest(expected=expected), mock.patch.dict(os.environ, {"PATH": bindir}):
+                with self.assertRaises(cm.CannotRun) as failed:
+                    reader.report()
+                self.assertIn(expected, str(failed.exception))
+
+
 class JudgementTests(unittest.TestCase):
     def test_quiet_and_settle(self):
         samples = quiet_samples()
@@ -479,15 +529,17 @@ class JudgementTests(unittest.TestCase):
 
 
 class PreflightTests(unittest.TestCase):
-    def run_preflight(self, run, lane="headless", gpu=None, proc=None, env=None, lock=None, **kw):
+    def run_preflight(self, run, lane="headless", gpu=None, proc=None, env=None, lock=None, host_load=None, **kw):
         proc = proc or FakeProc([(i * 2, i * 100) for i in range(30)])
         gpu = gpu or FakeGpu([QUIET] * 30)
+        host_load = host_load or FakeHostLoad()
         saved = dict(os.environ)
         os.environ.update(env or {})
         try:
             return cm.preflight(run, lane=lane, task="material-x", fixture="f.sh", seconds=3, owner_pid=os.getpid(),
                                 thresholds=cm.DEFAULT_THRESHOLDS, tools=kw.get("tools", ["tracy=0.13.1"]),
-                                proc=proc, gpu=gpu, sleep=lambda s: None, lock=lock or (lambda: run / "lock"))
+                                proc=proc, gpu=gpu, host_load=host_load, sleep=lambda s: None,
+                                lock=lock or (lambda: run / "lock"))
         finally:
             os.environ.clear(); os.environ.update(saved)
 
@@ -520,6 +572,55 @@ class PreflightTests(unittest.TestCase):
             self.assertEqual(record["preflight"]["verdict"], "refused")
             self.assertIn("gpu_util_pct 35.0 exceeds 5.0", record["preflight"]["reasons"])
             self.assertIn("BitwigStudio", record["baseline"]["gpu_clients"]["graphics"])
+            self.assertFalse((run / "lock").exists())
+
+    def test_gpu_only_refusal_does_not_ask_who_loads_the_cpu(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "r"; run.mkdir()
+            host_load = FakeHostLoad()
+            with self.assertRaises(cm.Refused):
+                self.run_preflight(run, gpu=FakeGpu([dict(QUIET, util_pct=35.0)] * 5), host_load=host_load)
+            self.assertEqual(host_load.calls, 0)
+            self.assertNotIn("host_load", cm.load_record(run)["preflight"])
+
+    def test_cpu_or_load_refusal_records_and_names_the_load(self):
+        cases = {"load1": {"proc": FakeProc([(i * 2, i * 100) for i in range(30)], load1=6.65)},
+                 "cpu_busy_pct": {"proc": FakeProc([(i * 50, i * 100) for i in range(30)])}}
+        for key, kw in cases.items():
+            with tempfile.TemporaryDirectory() as directory, self.subTest(refused_on=key):
+                run = pathlib.Path(directory) / "r"; run.mkdir()
+                host_load = FakeHostLoad()
+                with self.assertRaises(cm.Refused) as refused:
+                    self.run_preflight(run, host_load=host_load, **kw)
+                self.assertEqual(host_load.calls, 1)
+                message = str(refused.exception)
+                self.assertIn(f"{key} ", message)
+                self.assertIn("bun pid 4242 97.0% cpu, 3600 s old, no tty, scope dead", message)
+                self.assertIn("niri pid 1700", message)
+                preflight = cm.load_record(run)["preflight"]
+                self.assertEqual(preflight["verdict"], "refused")
+                self.assertEqual(preflight["host_load"]["load"]["top"][0]["comm"], "bun")
+                self.assertIn("bun pid 4242", cm.render(cm.load_record(run)))
+                self.assertFalse((run / "lock").exists())
+
+    def test_quiet_preflight_does_not_run_host_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "r"; run.mkdir()
+            host_load = FakeHostLoad()
+            self.run_preflight(run, host_load=host_load)
+            self.assertEqual(host_load.calls, 0)
+            self.assertNotIn("host_load", cm.load_record(run)["preflight"])
+
+    def test_host_load_failure_cannot_run_names_the_refusal_and_releases_lock(self):
+        class Broken:
+            def report(self): raise cm.CannotRun("host-load --json: exit 3")
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory) / "r"; run.mkdir()
+            with self.assertRaises(cm.CannotRun) as failed:
+                self.run_preflight(run, proc=FakeProc([(i * 2, i * 100) for i in range(30)], load1=6.65),
+                                   host_load=Broken())
+            self.assertIn("load1 6.65 exceeds 2.0", str(failed.exception))
+            self.assertIn("exit 3", str(failed.exception))
             self.assertFalse((run / "lock").exists())
 
     def test_dedicated_requires_tty_and_no_clients(self):
@@ -560,7 +661,7 @@ class PreflightTests(unittest.TestCase):
                 run = pathlib.Path(directory) / f"r-{seconds}-{owner_pid}"; run.mkdir()
                 with self.subTest(seconds=seconds, owner_pid=owner_pid), self.assertRaises(cm.CannotRun):
                     cm.preflight(run, "headless", "t", "f", seconds, owner_pid, cm.DEFAULT_THRESHOLDS,
-                                 [], FakeProc([(0, 0), (1, 100)]), FakeGpu([QUIET]), sleep=lambda _: None,
+                                 [], FakeProc([(0, 0), (1, 100)]), FakeGpu([QUIET]), FakeHostLoad(), sleep=lambda _: None,
                                  lock=lambda: run / "lock")
                 self.assertEqual(cm.load_record(run), {})
 
@@ -688,6 +789,9 @@ class EndToEndTest(unittest.TestCase):
                   *) exit 9 ;;
                 esac
                 """)); fake.chmod(0o755)
+            host_load = bins / "host-load"
+            host_load.write_text('#!/bin/sh\necho \'{"host":"h","at":"t","load":{"load1":0.4,"top":[]}}\'\n')
+            host_load.chmod(0o755)
             run = root / "material-x" / "headless-20260911T000000"; run.mkdir(parents=True)
             runtime = root / "rt"; runtime.mkdir()
             proc = root / "proc"; proc.mkdir()
@@ -747,6 +851,14 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual(record["baseline"]["mem_available_pct"], 80.0)
             self.assertEqual(record["baseline"]["cpu_busy_pct"], 0.0)
             self.assertFalse((runtime / cm.LOCK_NAME).exists())
+            host_load.unlink()
+            bare = root / "material-x" / "no-host-load"
+            result = subprocess.run([sys.executable, tool, "preflight", str(bare), "--lane", "headless",
+                                     "--task", "material-x", "--fixture", "t.sh", "--seconds", "1"],
+                                    env={**env, "PATH": str(bins)}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertIn("host-load not found on PATH", result.stderr)
+            self.assertFalse(bare.exists())
 
 
 if __name__ == "__main__":
