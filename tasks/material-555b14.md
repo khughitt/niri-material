@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-27T10:26:42Z
-updated: 2026-09-27T11:11:28Z
+updated: 2026-09-27T11:14:09Z
 started: 2026-09-27T11:11:28Z
 depends: []
 tags: [upstream]
@@ -22,3 +22,4 @@ First end-to-end drift run (2026-09-27, local simulation of the CI checkout afte
 - 2026-09-27T11:04:53Z (materials-26.04): CI canary now files these as khughitt/niri-material#1 (run 36314529632); close that issue once all five are acknowledged or resolved.
 - 2026-09-27T11:11:28Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T11:14:09Z (materials-26.04): All five acknowledged with per-path reasons (merged 67a4f053); none is a behavioural disagreement: each is both sides editing the same lines. Local --drift against upstream/main 1f03391e exits 0. Remaining: push, rerun the canary, close issue #1.
