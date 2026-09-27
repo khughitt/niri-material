@@ -8,13 +8,14 @@ complexity: mid
 process: planned
 owner: materials-26.04
 created: 2026-09-25T09:50:48Z
-updated: 2026-09-27T12:29:41Z
+updated: 2026-09-27T13:19:24Z
 started: 2026-09-27T12:25:25Z
 depends: []
 parent: material-53f873
 tags: [performance]
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-09-27-idle-budget-fail-fast-design.md
+plan: docs/plans/2026-09-27-idle-budget-fail-fast.md
 ---
 
 The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case showed, starting with the first (~2 min in). The same trailing 3 s redraw (material-4be9c3) was already in the retained traces of the two refused desktop attempts on 2026-09-24 (A-move-1 and B-move-1 in trace-20260924T163317 and trace-20260924T165644), but the fixture analyzes only after all 24 cases, so a refused or aborted run never judges the cases it completed. Scope: (1) run the per-observation behavioral gate right after each case's export and stop at the first failure (keeping evidence), unless a full-inventory flag asks for the complete matrix; (2) on a settle refusal or abort, analyze the completed cases before exiting; (3) a pilot mode that runs one quiet case (A-move-1) and one cadence case (C-move-1), about 5 min, to run before committing an hour. Changes the reviewed Task 1 fixture, so planned.
@@ -25,3 +26,5 @@ The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case 
 - 2026-09-27T08:53:57Z (material-265eb0): From the 2026-09-27 Task 3 review (power run valid): the seat-manager exemption (experiments 73fbbe0) keys on the command name, so a root 'systemd --user' or a root process that renamed itself would also be exempt, and it does not require our niri to be running. Pin it to pid 1 and systemd-logind's MainPID (systemctl show -p MainPID systemd-logind), recorded in the inventory. Also: the power pilot runner used this evening (sham block 1 only, per-window power_observation) is the model for the power lane's pilot mode.
 - 2026-09-27T12:25:25Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:5fc9e346-b9ce-4a5a-be56-3ea1c4973d50","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T13:19:24Z (material-b15ad7): Spec review 1 (5 findings) addressed in 65075362: cleanup reordered (analysis before native_cleanup, which exits; subshell rejected since it cannot wait on the parent's children), stop.json from fail/signal/ERR with first-writer-wins, explicit compositor pid through inventory/interval.json, execution driven by manifest plan rows, output baseline = first verdict with a summary
+- 2026-09-27T13:19:24Z (material-b15ad7): Spec review 2 (1 finding) addressed in 2e82d7e0: weston reaped before the checksum, OUT sealed before native_cleanup, ERR trap removed in cleanup; spec approved for planning. Plan docs/plans/2026-09-27-idle-budget-fail-fast.md with 8 step children
