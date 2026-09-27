@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: materials-26.04
 created: 2026-09-25T09:50:48Z
-updated: 2026-09-27T13:46:07Z
+updated: 2026-09-27T13:54:21Z
 started: 2026-09-27T12:25:25Z
 depends: []
 parent: material-53f873
@@ -30,3 +30,4 @@ The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case 
 - 2026-09-27T13:19:24Z (material-b15ad7): Spec review 2 (1 finding) addressed in 2e82d7e0: weston reaped before the checksum, OUT sealed before native_cleanup, ERR trap removed in cleanup; spec approved for planning. Plan docs/plans/2026-09-27-idle-budget-fail-fast.md with 8 step children
 - 2026-09-27T13:36:38Z (material-b15ad7): Plan review 1 (4 findings): retried waits via reap/reap_group with a second-signal-during-reap test; fixture cleanup no longer calls the lib's cleanup (lingering socket skipped runtime-dir removal and lock release); verdict marking opt-in in synthetic runs; live runs through fixtures/idle-budget-supervise.sh. Found while prototyping it: tt SIGKILLs its child on Ctrl-C (ops-8fe6c9), so the supervisor signals only the fixture shell; spec cleanup order and live section amended to match
 - 2026-09-27T13:46:07Z (material-b15ad7): Plan review 2 (2 findings): reap_group KILLs a group still alive 5 s after TERM and waits again; a group surviving KILL sets UNSEALABLE (no analysis, no sums, lock kept, non-zero exit); writer stubs publish readiness after installing their TERM handler and starters wait for it. Both prototyped in scratch: TERM-ignoring descendant killed and sums held; 12/12 immediate stops logged shutdown
+- 2026-09-27T13:54:21Z (material-b15ad7): Plan review 3 (2 findings): teardown no longer blocks in wait; running/members_running poll /proc state and reap our zombies, terminate applies TERM-5s-KILL-5s to single processes and whole groups, leader included (prototyped: deaf leader and deaf single both KILLed, zombies reaped). A survivor of KILL now keeps the fixture alive holding the capture lock until it is gone, since capture-meta reclaims a dead owner's lock; the test attempts a real second acquire_lock

@@ -9,8 +9,9 @@ any exit, and offers a pilot per lane.
 **Architecture:** the manifest, written before case 1, becomes the only statement of
 which cases run and in what order. One shell loop runs the declared cases and calls
 `idle-budget.py observe` after each. The fixture's `cleanup` reaps every writer into
-`OUT` (retrying waits a signal interrupts), removes the runtime directory, analyzes,
-checksums, seals `OUT`, and releases the capture lock. It does not call the lib's
+`OUT` (polling, never blocking in `wait`; TERM, then KILL after 5 s), holds the
+capture lock while any owned process survives KILL, removes the runtime directory,
+analyzes, checksums, seals `OUT`, and releases the lock. It does not call the lib's
 `cleanup`.
 
 **Tech Stack:** Bash (`set -euo pipefail`, `set -E`), Python 3 stdlib, `unittest`,
@@ -46,8 +47,10 @@ Just, and the vendored `tools/tt` of niri-material.
   written into `OUT` once `SEALED=1`.
 - Exit status: a non-zero run status is kept. On zero, a failed or timed-out analysis,
   a teardown error, or a failed checksum makes it 1.
-- Cleanup never calls the lib's `cleanup`. It reaps with retried waits, removes the
-  runtime directory, analyzes, checksums, seals, and runs `capture_meta release` last.
+- Cleanup never calls the lib's `cleanup`. It stops every owned process by polling
+  (TERM, 5 s, KILL, 5 s), stays alive holding the lock while any survives KILL,
+  removes the runtime directory, analyzes, checksums, seals, and runs
+  `capture_meta release` last.
 - Live runs go through `fixtures/idle-budget-supervise.sh`; `OUT` is read only after it
   returns.
 - Seat managers are pinned by pid: `{"systemd": 1, "systemd-logind": <MainPID>}`. They
@@ -1224,10 +1227,11 @@ Then close the Task 5 child in niri-material.
 
 **Files:**
 - Modify: `fixtures/idle-budget.sh`:
-  - new top-level `reap`, `reap_group`, `stop_group`, `record_stop`, `teardown_error`,
+  - a top-level `SURVIVORS=()`, and new top-level `running`, `members_running`,
+    `terminate`, `stop_owned`, `survivors_running`, `record_stop`, `teardown_error`,
     `reap_weston`;
-  - `stop_clients` stops each group with `stop_group`; `stop_scene` fails the run
-    when a group survived KILL;
+  - `stop_clients` stops each group with `stop_owned`; `stop_scene` fails the run
+    when an owned process survived KILL;
   - inside `runtime`: the `eval … native_cleanup` line is deleted, and it gains the
     `fail` redefinition, stop variables, signal and `ERR` traps, and the new `cleanup`;
   - the tail loses its analysis and checksum.
@@ -1238,20 +1242,32 @@ Then close the Task 5 child in niri-material.
   `STOP_KIND` (Task 5); `analyze`'s `teardown` (Task 4); the lib's `remove_runtime_dir`,
   `capture_meta`, `RT`, `HOST`, `WESTON_PID`, `NIRI_PID`, `CAP_PID`.
 - Produces:
-  - `reap PID`: returns once PID is gone, retrying a `wait` that a trap interrupted.
-  - `reap_group LEADER`: `reap`, then polls up to 5 s for the whole group. After that
-    it KILLs the group and polls up to 5 s more. It returns 0 when the group is gone,
-    1 when it went only after KILL, and 2 when it survived KILL.
-  - `stop_group LEADER LABEL`: TERM, `reap_group`, a teardown error for 1, and for 2 a
-    teardown error naming the survivors plus `UNSEALABLE=1`. It always returns 0.
-  - `UNSEALABLE=1`: a process we own may still write into `OUT`. Cleanup then writes
-    no analysis and no checksum, keeps the capture lock, and exits 1.
+  - `running PID`: true while PID runs. A zombie does not run, and one of ours is
+    reaped on sight. It never blocks.
+  - `members_running PID single|group`: the process, or any member of its group
+    (leader included).
+  - `terminate PID single|group`: TERM, polls up to 5 s, KILL, polls up to 5 s more.
+    It returns 0 when gone, 1 when gone only after KILL, and 2 when it survived KILL.
+    It never blocks in `wait`, so neither a trapped signal nor a TERM-ignoring leader
+    stalls it.
+  - `stop_owned LABEL PID single|group`: `terminate`, then a teardown error for 1, and
+    for 2 a teardown error plus an entry `PID:scope` in `SURVIVORS`. It always
+    returns 0.
+  - `SURVIVORS` non-empty: an owned process may still write into `OUT`. Cleanup waits
+    until every survivor is gone before it analyzes, checksums or releases, because
+    `capture-meta` reclaims a lock whose owner pid has exited. Mid-run, `stop_scene`
+    fails the run.
   - `$OUT/stop.json`; `$OUT/teardown.json`, a JSON list of strings, with
     `TEARDOWN_FAILED=1`.
   - `analysis.json` and `SHA256SUMS`, written on every exit once the manifest exists.
   - `ShellTests.capture_stub(root) -> str`: a `capture-meta` stub that appends each
     subcommand to `$CAPTURE_LOG`, outside `OUT`. It appends `sealed` after `release`
     when `SHA256SUMS` exists.
+  - `ShellTests.lock_stub(root) -> str`: a `capture-meta` stub whose `preflight` and
+    `release` take and give back the real lock, through the real module's
+    `acquire_lock`/`release_lock` at `$XDG_RUNTIME_DIR/capture-meta.lock`.
+  - `ShellTests.capture_meta_module()`: the real `tools/capture-meta`, loaded from
+    `$MATERIAL_ROOT`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1287,7 +1303,23 @@ start_fake_client() {
     setsid sh -c 'trap "[ -z \"\$SECOND\" ] || kill -INT \$1; sleep 0.3; echo client shutdown >> \"\$0\"; exit 0" TERM
            : > "$2"; while :; do sleep 0.05; done' "$OUT/client.log" "$$" "$XDG_RUNTIME_DIR/client.ready" &
     CLIENT_PIDS+=("$!")
+    echo "$!" > "$XDG_RUNTIME_DIR/client.pgid"
     await_ready "$XDG_RUNTIME_DIR/client.ready"
+}
+# Deaf writers: the process we signal (a group's leader, or Weston) itself ignores TERM.
+start_deaf_client() {
+    setsid sh -c 'trap "" TERM; : > "$1"; while :; do echo tick >> "$0"; sleep 0.2; done' \
+        "$OUT/deaf-client.log" "$XDG_RUNTIME_DIR/deaf-client.ready" &
+    CLIENT_PIDS+=("$!")
+    echo "$!" > "$XDG_RUNTIME_DIR/deaf-client.pid"
+    await_ready "$XDG_RUNTIME_DIR/deaf-client.ready"
+}
+start_deaf_weston() {
+    sh -c 'trap "" TERM; : > "$1"; while :; do echo tick >> "$0"; sleep 0.2; done' \
+        "$OUT/weston.log" "$XDG_RUNTIME_DIR/deaf-weston.ready" &
+    WESTON_PID=$!
+    echo "$!" > "$XDG_RUNTIME_DIR/deaf-weston.pid"
+    await_ready "$XDG_RUNTIME_DIR/deaf-weston.ready"
 }
 start_stubborn_client() {
     setsid sh -c 'trap "exit 0" TERM
@@ -1302,6 +1334,8 @@ fake_one() {
     [ "$1" != "${WESTON_AT:-}" ] || start_fake_weston
     [ "$1" != "${CLIENT_AT:-}" ] || start_fake_client
     [ "$1" != "${STUBBORN_AT:-}" ] || start_stubborn_client
+    [ "$1" != "${DEAF_CLIENT_AT:-}" ] || start_deaf_client
+    [ "$1" != "${DEAF_WESTON_AT:-}" ] || start_deaf_weston
     if [ "$1" = "${STOP_AT:-}" ]; then
         case $STOP_KIND_TEST in
             fail) fail boom ;;
@@ -1368,21 +1402,83 @@ analyze_run() { (cd "$OUT" && ls *.verdict.json 2>/dev/null) | python3 -c 'impor
         time.sleep(0.6)   # three of the writer's ticks, had it survived
         self.sums_hold(out)
 
-    def test_a_group_surviving_kill_leaves_out_unsealed_and_the_lock_held(self):
-        import subprocess
+    def test_a_process_ignoring_term_itself_is_killed_before_the_seal(self):
+        import os, time
+        for label, env, pid_file, log in (("group leader", {"DEAF_CLIENT_AT": "A-move-1"}, "deaf-client.pid", "deaf-client.log"),
+                                          ("weston", {"DEAF_WESTON_AT": "A-move-1"}, "deaf-weston.pid", "weston.log")):
+            with self.subTest(label):
+                result, out = self.run_loop("trace", extra=self.WRITER_STUBS, env_extra=env, timeout=40)
+                self.assertEqual(result.returncode, 1, result.stderr)   # a clean run with a teardown error
+                errors = json.loads((out / "teardown.json").read_text())
+                self.assertEqual(len(errors), 1); self.assertIn("was killed", errors[0])
+                pid = int((out.parent.parent / "runtime" / pid_file).read_text())
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(pid, 0)
+                self.assertIn(f"./{log}", (out / "SHA256SUMS").read_text())
+                time.sleep(0.6)   # three of the writer's ticks, had it survived
+                self.sums_hold(out)
+
+    @staticmethod
+    def capture_meta_module():
+        import importlib.util, os
+        from importlib.machinery import SourceFileLoader
+        path = os.path.join(os.environ["MATERIAL_ROOT"], "tools", "capture-meta")
+        spec = importlib.util.spec_from_loader("capture_meta", SourceFileLoader("capture_meta", path))
+        module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def lock_stub(root):
+        stub = root / "capture-meta-lock-stub"
+        stub.write_text("""#!/usr/bin/env python3
+# preflight and release take and give back the real lock; every other call is a no-op.
+import importlib.util, os, sys
+from importlib.machinery import SourceFileLoader
+path = os.path.join(os.environ["MATERIAL_ROOT"], "tools", "capture-meta")
+spec = importlib.util.spec_from_loader("capture_meta", SourceFileLoader("capture_meta", path))
+cm = importlib.util.module_from_spec(spec); spec.loader.exec_module(cm)
+owner_file = os.path.join(os.environ["XDG_RUNTIME_DIR"], "lock-owner")
+if sys.argv[1] == "preflight":
+    owner = int(sys.argv[sys.argv.index("--owner-pid") + 1])
+    cm.acquire_lock(cm.lock_path(), owner, "fixture-run")
+    open(owner_file, "w").write(str(owner))
+elif sys.argv[1] == "release":
+    cm.release_lock(cm.lock_path(), int(open(owner_file).read()), "fixture-run")
+""")
+        stub.chmod(0o755)
+        return str(stub)
+
+    def test_a_survivor_keeps_the_fixture_alive_and_the_lock_held(self):
+        import os, signal, subprocess, time
+        cm = self.capture_meta_module()
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        env = {**self.fixture_env(root, "trace", capture_meta=self.capture_stub(root)),
-               "CAPTURE_LOG": str(root / "capture-calls"), "CLIENT_AT": "A-move-1", "STOP_AT": "A-move-1", "STOP_KIND_TEST": "TERM"}
-        # A process in uninterruptible sleep cannot be made on demand: stand in for one.
-        extra = self.WRITER_STUBS + 'reap_group() { kill -KILL -- "-$1" 2>/dev/null; return 2; }\n'
-        result = subprocess.run(["bash", "-c", self.LOOP_STUBS + extra + "runtime trace\n"], env=env, capture_output=True, text=True, timeout=20)
-        out = Path(env["OUT"])
-        self.assertEqual(result.returncode, 143, result.stderr)
-        self.assertIn("survived KILL", json.loads((out / "teardown.json").read_text())[0])
-        self.assertFalse((out / "analysis.json").exists()); self.assertFalse((out / "SHA256SUMS").exists())
-        self.assertNotIn("release", (root / "capture-calls").read_text())
-        self.assertEqual(json.loads((out / "stop.json").read_text())["kind"], "signal")
+        env = {**self.fixture_env(root, "trace", capture_meta=self.lock_stub(root)), "DEAF_CLIENT_AT": "A-move-1"}
+        # A process in uninterruptible sleep cannot be made on demand: terminate reports
+        # every process as having survived KILL and sends nothing. The client ignores the
+        # TERM that stop_clients sends first, so it really does keep running.
+        extra = self.WRITER_STUBS + "terminate() { return 2; }\n"
+        process = subprocess.Popen(["bash", "-c", self.LOOP_STUBS + extra + "runtime trace\n"], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: process.poll() is not None or process.kill())
+        out, lock = Path(env["OUT"]), root / "runtime" / "capture-meta.lock"
+        teardown = out / "teardown.json"
+        for _ in range(150):
+            if teardown.exists() and "survived KILL" in teardown.read_text(): break
+            time.sleep(0.1)
+        else:
+            self.fail("no survivor recorded")
+        time.sleep(0.5)
+        self.assertIsNone(process.poll())   # still alive, so its lock is not reclaimable
+        with self.assertRaises(cm.Refused):
+            cm.acquire_lock(lock, os.getpid(), "second-capture")
+        self.assertFalse((out / "SHA256SUMS").exists())
+        os.killpg(int((root / "runtime" / "deaf-client.pid").read_text()), signal.SIGKILL)   # the survivor goes
+        self.assertEqual(process.wait(timeout=20), 1)
+        self.assertIn("waiting for owned processes that survived KILL", process.stderr.read())
+        self.sums_hold(out)
+        # Released by the fixture, not reclaimed from a dead owner.
+        self.assertFalse(cm.acquire_lock(lock, os.getpid(), "second-capture")["reclaimed"])
 
     def test_a_lingering_weston_socket_is_a_teardown_error_and_cleanup_still_completes(self):
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
@@ -1450,45 +1546,62 @@ The lingering stub leaves that file behind, which is how `host_of` finds the nam
 - [ ] **Step 2: Run to see them fail**
 
 Run: `python3 -m unittest -v fixtures/test_idle_budget.py -k ShellTests`
-Expected: FAIL. A TERM-ignoring descendant outlives the seal, there is no `stop.json`, a TERM leaves no `analysis.json`,
+Expected: FAIL. A TERM-ignoring leader blocks the teardown, a TERM-ignoring descendant
+outlives the seal, a survivor's lock is left to be reclaimed, there is no `stop.json`, a TERM leaves no `analysis.json`,
 `weston.log` changes after `SHA256SUMS`, and a lingering socket exits before
 `release`.
 
 - [ ] **Step 3: Implement**
 
-Top level, replacing `stop_clients` and `stop_scene`, and following `seal_checksums`:
+Top level: `SURVIVORS=()` beside the fixture's other globals, right after `root=…`, so
+the helpers work in a sourced fixture too. Then, replacing `stop_clients` and
+`stop_scene`, and following `seal_checksums`:
 
 ```bash
-# A signal caught by a trap interrupts `wait` (status > 128) while the child still
-# runs, so wait again until it is gone; a zombie answers kill -0 until it is reaped.
-reap() {   # pid
-    local rc
-    while kill -0 "$1" 2>/dev/null; do
-        rc=0; wait "$1" 2>/dev/null || rc=$?
-        [ "$rc" != 127 ] || sleep 0.05   # not our child: poll instead
-    done
+# True while pid runs. A zombie does not run; one of our own is reaped here, where a
+# wait on a zombie returns at once. Nothing in the teardown blocks in `wait`, so
+# neither a trapped signal nor a process that ignores TERM can stall it.
+running() {   # pid
+    local state
+    state=$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f1) || true
+    [ -n "$state" ] || return 1
+    [ "$state" = Z ] || return 0
+    wait "$1" 2>/dev/null || true
+    return 1
 }
 
-# A setsid group's other members are not our children, so they are polled. Nothing we
-# own may outlive the seal: after 5 s the group is KILLed and awaited again.
+members_running() {   # pid, scope: single | group (a setsid group, leader included)
+    local pid
+    [ "$2" = group ] || { running "$1"; return; }
+    for pid in $(pgrep -g "$1") "$1"; do running "$pid" && return 0; done
+    return 1
+}
+
+# TERM, up to 5 s, KILL, up to 5 s more: nothing we own may outlive the seal.
 # 0: gone; 1: gone only after KILL; 2: survived KILL (uninterruptible sleep).
-reap_group() {   # leader pid
-    local _
-    reap "$1"
-    for _ in $(seq 50); do kill -0 -- "-$1" 2>/dev/null || return 0; sleep 0.1; done
-    kill -KILL -- "-$1" 2>/dev/null
-    for _ in $(seq 50); do kill -0 -- "-$1" 2>/dev/null || return 1; sleep 0.1; done
+terminate() {   # pid, scope
+    local target=$1 _
+    [ "$2" = single ] || target=-$1
+    kill -TERM -- "$target" 2>/dev/null || true
+    for _ in $(seq 50); do members_running "$1" "$2" || return 0; sleep 0.1; done
+    kill -KILL -- "$target" 2>/dev/null || true
+    for _ in $(seq 50); do members_running "$1" "$2" || return 1; sleep 0.1; done
     return 2
 }
 
-stop_group() {   # leader pid, label
+stop_owned() {   # label, pid, scope
     local rc=0
-    kill -- "-$1" 2>/dev/null || true
-    reap_group "$1" || rc=$?
+    terminate "$2" "$3" || rc=$?
     case $rc in
-        1) teardown_error "$2 (group $1) outlived TERM for 5 s and was killed" ;;
-        2) teardown_error "$2 (group $1) survived KILL: pids $(pgrep -g "$1" | tr '\n' ' ')"; UNSEALABLE=1 ;;
+        1) teardown_error "$1 ($3 $2) outlived TERM for 5 s and was killed" ;;
+        2) teardown_error "$1 ($3 $2) survived KILL"; SURVIVORS+=("$2:$3") ;;
     esac
+}
+
+survivors_running() {
+    local entry
+    for entry in "${SURVIVORS[@]}"; do members_running "${entry%:*}" "${entry#*:}" && return 0; done
+    return 1
 }
 
 # Kitty runs its shell in a session of its own, which dies with kitty's pty and
@@ -1496,13 +1609,13 @@ stop_group() {   # leader pid, label
 stop_clients() {
     local pid
     for pid in "${CLIENT_PIDS[@]}"; do kill -- "-$pid" 2>/dev/null || true; done
-    for pid in "${CLIENT_PIDS[@]}"; do stop_group "$pid" client; done
+    for pid in "${CLIENT_PIDS[@]}"; do stop_owned client "$pid" group; done
     CLIENT_PIDS=()
 }
 
 stop_scene() {
     stop_clients
-    [ "${UNSEALABLE:-0}" = 0 ] || fail 'an owned process survived KILL; see teardown.json'
+    [ "${#SURVIVORS[@]}" = 0 ] || fail 'an owned process survived KILL; see teardown.json'
     stop_nested
 }
 
@@ -1535,7 +1648,7 @@ TEARDOWN
 # stop_weston calls fail, which exits; a lingering socket is recorded instead.
 reap_weston() {
     local _
-    if [ -n "$WESTON_PID" ]; then kill "$WESTON_PID" 2>/dev/null || true; reap "$WESTON_PID"; WESTON_PID=; fi
+    if [ -n "$WESTON_PID" ]; then stop_owned weston "$WESTON_PID" single; WESTON_PID=; fi
     for _ in $(seq 50); do [ -e "$XDG_RUNTIME_DIR/$HOST" ] || return 0; sleep 0.1; done
     teardown_error "Weston socket $HOST still present"
 }
@@ -1546,7 +1659,7 @@ Inside `runtime`, delete the line
 from `CLIENT_PIDS=(); SAMPLE_PID=` through `trap 'exit 143' TERM`:
 
 ```bash
-    CLIENT_PIDS=(); SAMPLE_PID=; STOP_SIGNAL=; ERR_RECORD=; SEALED=0; TEARDOWN_FAILED=0; UNSEALABLE=0
+    CLIENT_PIDS=(); SAMPLE_PID=; STOP_SIGNAL=; ERR_RECORD=; SEALED=0; TEARDOWN_FAILED=0; SURVIVORS=()
     # Lib functions call fail by name, so they record through this one too.
     fail() {
         record_stop "${STOP_KIND:-fail}" 1 "$*"
@@ -1564,22 +1677,23 @@ from `CLIENT_PIDS=(); SAMPLE_PID=` through `trap 'exit 143' TERM`:
         trap 'SECOND_SIGNAL=1' INT TERM
         # 1. Every process that writes into OUT is gone before anything is judged or summed.
         stop_clients || teardown_error "stopping the clients failed"
-        if [ -n "$SAMPLE_PID" ]; then stop_group "$SAMPLE_PID" "the power sampler"; SAMPLE_PID=; fi
-        if [ -n "$CAP_PID" ]; then kill "$CAP_PID" 2>/dev/null; reap "$CAP_PID"; CAP_PID=; fi
-        if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null; reap "$NIRI_PID"; NIRI_PID=; fi
+        if [ -n "$SAMPLE_PID" ]; then stop_owned "the power sampler" "$SAMPLE_PID" group; SAMPLE_PID=; fi
+        if [ -n "$CAP_PID" ]; then stop_owned "the trace capture" "$CAP_PID" single; CAP_PID=; fi
+        if [ -n "$NIRI_PID" ]; then stop_owned niri "$NIRI_PID" single; NIRI_PID=; fi
         reap_weston
+        # An owned process survived KILL and may still write into OUT. capture-meta
+        # reclaims a lock whose owner has exited, so only a live fixture keeps another
+        # capture from starting beside it: wait here, holding the lock.
+        if [ "${#SURVIVORS[@]}" != 0 ]; then
+            echo "idle-budget: waiting for owned processes that survived KILL (${SURVIVORS[*]}); the capture lock stays held. KILL this fixture (pid $$) to give up." >&2
+            while survivors_running; do sleep 1; done
+        fi
         remove_runtime_dir || teardown_error "runtime directory $RT not removed"
         # 2. Why the run stopped, when nothing more specific was recorded.
         if [ "$rc" != 0 ]; then
             if [ -n "$signal" ]; then record_stop signal "$rc" "$signal"
             elif [ -n "$error" ]; then record_stop command "$rc" "$error"
             else record_stop exit "$rc" "exit $rc"; fi
-        fi
-        # A process we own may still write into OUT: no analysis, no sums, and the lock
-        # stays held so no other capture starts beside it.
-        if [ "$UNSEALABLE" != 0 ]; then
-            SEALED=1
-            if [ "$rc" = 0 ]; then exit 1; else exit "$rc"; fi
         fi
         # 3. Judge and sum, then write nothing more into OUT.
         if [ -e "$OUT/manifest.json" ]; then
