@@ -275,6 +275,8 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as out:
             script = (
                 'OUT=$1/run; NIRI_MATERIAL_WORK_ROOT=/tmp; XDG_RUNTIME_DIR=$1/runtime; CAPTURE_META=:; mkdir -p "$XDG_RUNTIME_DIR"\n'
+                # Sourcing the lib paints the wallpaper; this test reads only configs.
+                'magick() { :; }\n'
                 '. "$2"\n'
                 'GLASS_BASELINE=("distortion 0 scale=0.5")\n'
                 'FOCUS_RESPONSE=none; RESPONSE_EXTRA=; WALL=wall; TOP_EXTRA=\n'
