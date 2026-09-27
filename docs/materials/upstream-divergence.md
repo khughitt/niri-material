@@ -46,7 +46,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 `just upstream-report`.
 
 <!-- BEGIN GENERATED: local -->
-Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
+Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
 382 paths differ: 41 class B (seam), 320 class A (fork-only), 21 class C (scaffolding).
 
@@ -111,9 +111,9 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_glass_optic_smoke.py` | C | A | +633/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
-| `tools/test_upstream_report.py` | C | A | +840/-0 |
+| `tools/test_upstream_report.py` | C | A | +854/-0 |
 | `tools/tt` | C | A | +276/-0 |
-| `tools/upstream-report` | C | A | +693/-0 |
+| `tools/upstream-report` | C | A | +686/-0 |
 
 Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can.
 <!-- END GENERATED: local -->
