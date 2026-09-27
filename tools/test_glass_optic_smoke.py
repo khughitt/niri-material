@@ -274,7 +274,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
     def test_within_aurora_generates_one_distortion_node_and_attenuation_skips_reach_bound(self):
         with tempfile.TemporaryDirectory() as out:
             script = (
-                'OUT=$1/run; EVIDENCE=/tmp; XDG_RUNTIME_DIR=$1/runtime; CAPTURE_META=:; mkdir -p "$XDG_RUNTIME_DIR"\n'
+                'OUT=$1/run; NIRI_MATERIAL_WORK_ROOT=/tmp; XDG_RUNTIME_DIR=$1/runtime; CAPTURE_META=:; mkdir -p "$XDG_RUNTIME_DIR"\n'
                 '. "$2"\n'
                 'GLASS_BASELINE=("distortion 0 scale=0.5")\n'
                 'FOCUS_RESPONSE=none; RESPONSE_EXTRA=; WALL=wall; TOP_EXTRA=\n'
@@ -464,7 +464,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
         self.assertTrue(niri.is_file(), niri)
         with tempfile.TemporaryDirectory() as out:
             script = (
-                'OUT=$1/run; EVIDENCE=/tmp; XDG_RUNTIME_DIR=$1/runtime; CAPTURE_META=:; mkdir -p "$OUT" "$XDG_RUNTIME_DIR"\n'
+                'OUT=$1/run; NIRI_MATERIAL_WORK_ROOT=/tmp; XDG_RUNTIME_DIR=$1/runtime; CAPTURE_META=:; mkdir -p "$OUT" "$XDG_RUNTIME_DIR"\n'
                 '. "$2"\n'
                 'GLASS_BASELINE=("distortion 0 scale=0.5")\n'
                 'FOCUS_RESPONSE=none; RESPONSE_EXTRA=; WALL=wall; TOP_EXTRA=\n'
