@@ -4,8 +4,9 @@ title: "Material: ice"
 status: todo
 priority: 2
 size: m
+complexity: mid
 created: 2026-09-06T22:27:52Z
-updated: 2026-09-11T00:22:25Z
+updated: 2026-09-12T19:24:31Z
 depends: [material-397fcb]
 tags: [material, rendering]
 source: "mindful:thought:5778c060e57d47dd808e20347223cfd5"
@@ -17,3 +18,4 @@ Spec section 7.1 and 8: the cracks optic (normal + specular hooks, cellular edge
 ## Notes
 
 - 2026-09-11T00:22:25Z (material-f0fc7b): resources/materials/ and its install plumbing landed with material-f0fc7b; ice adds ice.kdl to PKGBUILD package() and both Cargo.toml asset lists
+- 2026-09-12T19:24:31Z (materials-26.04): Complexity mid: Optics design sections 7.1 and 8 define the cracks algorithm, hooks, bounds, preset, and smoke criteria; the optic registry and preset installation pattern exist. Gradient implementation and visual tuning remain bounded choices.

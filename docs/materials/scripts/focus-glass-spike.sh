@@ -10,8 +10,8 @@
 # glass), zero-dark-split (dark glass active / lighter frosted dark inactive).
 #
 # `animations { off; }` pins the ring of light. The focus response defaults to
-# RingLight, whose drift phase advances with the clock unless the rate is zero
-# (`drift_rate` returns 0 when animations are off, src/render_helpers/signal.rs).
+# RingLight, which runs one beam of its travelling light on focus gain unless
+# animations are off (`Tile::beam_allowed`, src/layout/tile.rs).
 # The ring is drawn at the window edge, which is where this spike's corner crops
 # are, so without it two runs of the same case differed by ~1000 px per frame -
 # measured at AE 994 full frame and Lab RMSE 0.015 on the bottom crop. With it

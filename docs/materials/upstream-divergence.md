@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-324 paths differ: 39 class B (seam), 265 class A (fork-only), 20 class C (scaffolding).
+382 paths differ: 41 class B (seam), 320 class A (fork-only), 21 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -59,17 +59,17 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.githooks/pre-push` | C | A | +36/-0 |
 | `.github/workflows/ci.yml` | B | M | +6/-2 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +33/-0 |
+| `AGENTS.md` | C | A | +35/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
-| `justfile` | C | A | +57/-0 |
+| `justfile` | C | A | +63/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1224/-0 |
+| `niri-config/src/lib.rs` | B | M | +1320/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
 | `niri-visual-tests/src/cases/layout.rs` | B | M | +1/-0 |
-| `niri-visual-tests/src/cases/tile.rs` | B | M | +10/-4 |
+| `niri-visual-tests/src/cases/tile.rs` | B | M | +11/-4 |
 | `niri-visual-tests/src/cases/window.rs` | B | M | +1/-0 |
 | `niri-visual-tests/src/test_window.rs` | B | M | +5/-0 |
 | `packaging/arch/.gitignore` | C | A | +6/-0 |
@@ -82,31 +82,34 @@ Baseline `v26.04` (`aece2b0c4e1f`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/input/pick_color_grab.rs` | B | M | +1/-0 |
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
-| `src/layout/floating.rs` | B | M | +15/-5 |
-| `src/layout/mod.rs` | B | M | +49/-7 |
-| `src/layout/monitor.rs` | B | M | +134/-23 |
-| `src/layout/scrolling.rs` | B | M | +45/-4 |
-| `src/layout/tests.rs` | B | M | +109/-4 |
-| `src/layout/tile.rs` | B | M | +1307/-77 |
-| `src/layout/workspace.rs` | B | M | +29/-3 |
-| `src/niri.rs` | B | M | +205/-0 |
+| `src/layout/floating.rs` | B | M | +16/-5 |
+| `src/layout/mod.rs` | B | M | +72/-9 |
+| `src/layout/monitor.rs` | B | M | +136/-25 |
+| `src/layout/scrolling.rs` | B | M | +53/-7 |
+| `src/layout/tests.rs` | B | M | +116/-4 |
+| `src/layout/tile.rs` | B | M | +2200/-78 |
+| `src/layout/workspace.rs` | B | M | +34/-5 |
+| `src/lib.rs` | B | M | +1/-0 |
+| `src/niri.rs` | B | M | +287/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
 | `src/render_helpers/mod.rs` | B | M | +27/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +154/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +175/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/mod.rs` | B | M | +2/-0 |
+| `src/tests/client.rs` | B | M | +48/-0 |
+| `src/tests/mod.rs` | B | M | +3/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +830/-0 |
-| `tools/ops-check` | C | A | +170/-0 |
+| `tools/ops-check` | C | A | +260/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_meta.py` | C | A | +737/-0 |
-| `tools/test_glass_optic_smoke.py` | C | A | +121/-0 |
+| `tools/test_glass_optic_smoke.py` | C | A | +633/-0 |
+| `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_upstream_report.py` | C | A | +840/-0 |
 | `tools/tt` | C | A | +276/-0 |

@@ -9,6 +9,16 @@ slice: signal model, IPC, envelope solver, configuration, and the first glass re
 contract fixed here. Tracked by `material-a54d89`; follow-ups are the
 `signals` tagged idea tasks that depend on it.
 
+**Historical rendering note:** the signal model, IPC, and motion contract
+remain current. This document's original ring-placement statements are
+superseded by the depth-ordered
+[render-order design](../specs/2026-09-12-material-render-order-design.md)
+and its [acceptance evidence](2026-09-12-material-render-order-evidence.md),
+and the band's place and keys (`ring-gap` from the face edge, `ring-width`,
+`ring-color`, `ring-beam-speed`, `ring-glow`) by the
+[ring beam design](../specs/2026-09-19-ring-beam-design.md); `ring-inset` is
+rejected.
+
 ## Context
 
 Before this slice, native glass rendered a window's material from static
@@ -408,6 +418,22 @@ the reason the reduced-motion switch exists. The smoke test in section 9
 measures wakeups per second, not just damage, so the timer path is verified
 rather than assumed.
 
+Sustained motion is additionally gated on input activity: after
+`signal { idle-after-ms }` of no input the effective motion is `Static` and
+no bucket deadline is reported; the next input redraws every output and
+motion resumes from the absolute clock. Design:
+`docs/specs/2026-09-18-ring-focus-motion-design.md` §3.
+
+The focus response (`focus "ring-light"`, added after this design) lights
+the same band on the focused window and is the one bounded motion the ring
+carries: on every focus gain the ring beam — one comet of light running the
+band's perimeter once at `ring-beam-speed` px/s, its tail draining behind
+it — runs on the animation loop through `are_transitions_ongoing`, then the
+ring settles to a resting glow with no deadline and a constant fingerprint,
+so a focused window at rest costs nothing. It is not an attention motion:
+the idle gate does not touch it, and the `reduced`/`off` policies skip it.
+Design: `docs/specs/2026-09-19-ring-beam-design.md`.
+
 ## 5. Configuration contract
 
 Response policy lives in two places that already exist. The material
@@ -436,7 +462,7 @@ window-rule {
     material "terminal-glass" response="loud"
 }
 
-signal { motion "full" }
+signal { motion "full"; idle-after-ms 30000; }
 
 animations {
     material-signal { duration-ms 400; curve "ease-out-cubic" }
@@ -488,6 +514,10 @@ Rules:
   level is deferred; `is-urgent` covers the native case.
 - Reload semantics match materials: editing a response in place updates the
   retained `MaterialState`; changing the resolved material name swaps it.
+- `idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
+  `flash`) settles to the static indication (level and accent lit, no pulse)
+  once no input has arrived for this long and resumes in step on the next
+  input. Default 30000; `0` disables the gate; at most 3600000.
 
 ## 6. Glass responses
 

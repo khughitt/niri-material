@@ -5,6 +5,7 @@ status: done
 priority: 2
 size: m
 owner: material-265eb0
+complexity: mid
 created: 2026-09-11T00:52:15Z
 updated: 2026-09-27T08:53:57Z
 completed: 2026-09-27T08:53:57Z
@@ -28,6 +29,7 @@ Verify existing material dynamics become quiescent after finite move/resize stim
 - 2026-09-11T11:02:29Z (material-265eb0): Second preparation review: pixel-return uses the pre-stimulus settled image and takes the after image and post-observation geometry actions only after Tracy capture exits. Marker matching counts successful IPC calls only; validation rejections are retained separately, and unknown outcomes abort. Execution remains paused.
 - 2026-09-11T11:02:29Z (material-265eb0): parked (waiting on user): Both marker-journal clarifications are documented; await explicit user resume before starting execution children.
 - 2026-09-11T11:47:34Z (material-265eb0): parked (waiting on user): Fixture material-ec6229 complete at experiment 8db5dc8. Await user resume of material-4241c3 to build Tracy binary and collect traces; material-5f9dee still requires a later isolated-session checkpoint.
+- 2026-09-12T19:24:30Z (materials-26.04): Complexity mid: Reviewed the newer spec and plan in .worktrees/material-265eb0/docs/ and verified the fixture files at experiment commit 9d7d43f. Remaining trace/power execution has explicit matrices, coverage checks, and precision rules; hardware isolation blocks readiness rather than increasing complexity. Reproduced renderer defects are separately scoped.
 - 2026-09-27T08:53:57Z (material-265eb0): done
   provenance: {"harness_session":"claude-code:29e26027-f18b-4d4f-9742-5dc4a9c688ec","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-27T08:53:57Z (material-265eb0): Idle budget answered: settled material does no rendering work (traces 25/25, material-4241c3) and costs no resolvable idle board power (B-A +0.015 W, upper 0.13 W at 1.0 W resolution, material-5f9dee); a drifting aurora costs +0.85 W at 4 Hz and +0.68 W at 2 Hz. Fixture follow-ups moved to material-b15ad7 under material-53f873. Evidence: docs/materials/2026-09-11-idle-budget-evidence.md.

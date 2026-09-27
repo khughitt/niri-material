@@ -12,7 +12,9 @@ rendering design assumes.
   the same commit; `tasks check` before every commit.
 - Tests: `just test` runs the suite CI runs. `just check` runs format, clippy, the
   tooling tests, and `tasks check`; `just gate` is both. Every recipe records its run
-  through `tools/tt`, so run tests through `just`, not `cargo` directly.
+  through `tools/tt`, so run tests through `just`, not `cargo` directly. The host recipes
+  run under ops `host-budget run`, which sets `CARGO_BUILD_JOBS` and
+  `NEXTEST_TEST_THREADS` from the host's CPU budget; the `ci-` recipes do not.
 - Fresh clone: `git config core.hooksPath .githooks` installs the hooks. Pre-commit runs
   `just check`; pre-push runs `just gate`. They also run the Git LFS hooks, which
   `core.hooksPath` would otherwise bypass.

@@ -1,5 +1,5 @@
 use core::f64;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
@@ -28,10 +28,12 @@ use crate::render_helpers::border::BorderRenderElement;
 use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, RoundedCornerDamage};
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::optics::{self, OpticFrame};
+use crate::render_helpers::material::ring::{self, BeamFrame};
 use crate::render_helpers::material::{
     apply_resolved, background_mapping, bevel_depth, glass_signal_inputs, jelly_state,
     material_frame, GlassSignalFingerprint, GlassSignalInputs, InputFingerprint, JellyFingerprint,
-    JellyUniforms, MaterialRenderConfig, MaterialRenderElement, MaterialState, SignalUniforms,
+    JellyUniforms, MaterialFrame, MaterialRenderConfig, MaterialRenderElement, MaterialState,
+    SignalUniforms,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -137,7 +139,10 @@ pub struct Tile<W: LayoutElement> {
     signal_render_visible: bool,
     /// Whether this tile was active at the last `update_render_elements`.
     active: bool,
+    /// The input-activity gate at the last `update_render_elements` (design 2026-09-18 §3).
+    input_active: bool,
     focus_crossfade: Option<FocusCrossfade>,
+    focus_beam: Option<FocusBeam>,
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
@@ -372,6 +377,46 @@ impl FocusCrossfade {
     }
 }
 
+/// One beam of the ring's light around the face on focus gain
+/// (design 2026-09-19 §2). Only the start and the speed are snapshotted.
+/// The run's end is decided in `material_dynamics`, on the perimeter of the
+/// face it has just computed for this frame — never on a cached limit, so a
+/// window that grows past an old limit keeps its beam.
+#[derive(Debug)]
+struct FocusBeam {
+    /// Start instant on the unadjusted clock.
+    started: Duration,
+    /// px/s, snapshotted so a reload mid-run does not jump the head.
+    speed: f64,
+    /// Set on the first geometry evaluation; disables the unrendered timeout.
+    rendered: Cell<bool>,
+    /// Set by the frame that saw the head past `perimeter + tail`; the next
+    /// `advance_animations` drops the beam.
+    done: Cell<bool>,
+}
+
+impl FocusBeam {
+    fn elapsed(&self, clock: &Clock) -> Duration {
+        clock.now_unadjusted().saturating_sub(self.started)
+    }
+
+    fn head_px(&self, clock: &Clock) -> f64 {
+        self.speed * self.elapsed(clock).as_secs_f64()
+    }
+
+    /// A clock set to complete instantly (the fixtures' fast-forward; in
+    /// production it mirrors `animations { off }`, which already cuts the
+    /// beam) finishes at once; a rendered frame that saw the run complete
+    /// finishes it; and a beam that has never rendered expires at
+    /// `BEAM_MAX_RUN`. A rendered beam has no wall-clock cap: even a slow
+    /// run must finish its lap and tail on the current geometry.
+    fn is_done(&self, clock: &Clock) -> bool {
+        clock.should_complete_instantly()
+            || self.done.get()
+            || (!self.rendered.get() && self.elapsed(clock) >= ring::BEAM_MAX_RUN)
+    }
+}
+
 impl<W: LayoutElement> Tile<W> {
     pub fn new(
         window: W,
@@ -417,7 +462,9 @@ impl<W: LayoutElement> Tile<W> {
             signal_frame_cache: RefCell::new(None),
             signal_render_visible: false,
             active: false,
+            input_active: true,
             focus_crossfade: None,
+            focus_beam: None,
             options,
         }
     }
@@ -439,6 +486,7 @@ impl<W: LayoutElement> Tile<W> {
         self.view_size = view_size;
         self.scale = scale;
         self.options = options;
+        self.cut_beam_if_forbidden();
 
         let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
 
@@ -474,6 +522,7 @@ impl<W: LayoutElement> Tile<W> {
     fn refresh_material(&mut self) {
         let resolved = resolve_material(self.window.rules().material.as_ref(), &self.options);
         apply_resolved(&mut self.material, resolved.as_ref());
+        self.cut_beam_if_forbidden();
     }
 
     /// Crossfaded focus, 0 to 1.
@@ -484,18 +533,33 @@ impl<W: LayoutElement> Tile<W> {
             .unwrap_or(if self.active { 1. } else { 0. })
     }
 
-    /// Effective drift rate for this frame: only a focused (or fading)
-    /// tile with a ring-light response drifts.
-    fn focus_drift_hz(&self, response: &ResolvedResponse) -> f64 {
-        use crate::render_helpers::signal::drift_rate;
-        if response.focus != niri_config::FocusResponse::RingLight || self.focus_value() <= 0. {
-            return 0.;
+    /// Whether the policy and response allow the ring's beam to move at
+    /// all: `focus ring-light`, `motion full`, animations on. This is the
+    /// cut rule's test (design §1); it says nothing about the speed, which
+    /// is snapshotted per beam.
+    fn beam_allowed(&self, response: &ResolvedResponse) -> bool {
+        response.focus == niri_config::FocusResponse::RingLight
+            && self.options.signal.motion == niri_config::SignalMotionPolicy::Full
+            && !self.options.animations.off
+    }
+
+    /// Start eligibility: allowed, and the response asks for a beam.
+    fn beam_permitted(&self, response: &ResolvedResponse) -> bool {
+        self.beam_allowed(response) && response.ring_beam_speed > 0.
+    }
+
+    /// Cut rule: a beam in progress ends at rest the moment motion is no
+    /// longer allowed (policy, animations, or the response's focus changed).
+    /// A reload that only changes `ring-beam-speed`, to zero included,
+    /// leaves the running beam on its snapshotted speed.
+    fn cut_beam_if_forbidden(&mut self) {
+        let allowed = self
+            .material
+            .as_ref()
+            .is_some_and(|material| self.beam_allowed(&material.material().response(None)));
+        if !allowed {
+            self.focus_beam = None;
         }
-        drift_rate(
-            response.ring_drift_hz,
-            self.options.signal.motion,
-            self.options.animations.off,
-        )
     }
 
     /// Stage 1 plus crossfade bookkeeping. Returns the effective signal and
@@ -510,7 +574,14 @@ impl<W: LayoutElement> Tile<W> {
         let folded = self.window.signal(self.clock.now_unadjusted());
         let eff = folded
             .as_ref()
-            .map(|folded| effective(folded, self.options.signal.motion, response))
+            .map(|folded| {
+                effective(
+                    folded,
+                    self.options.signal.motion,
+                    response,
+                    self.input_active,
+                )
+            })
             .unwrap_or(EffectiveSignal {
                 accent: None,
                 level: niri_ipc::SignalLevel::Quiet,
@@ -558,7 +629,8 @@ impl<W: LayoutElement> Tile<W> {
             .as_ref()
             .map(SignalCrossfade::current)
             .unwrap_or((target.0, target.1, if target.1.is_some() { 1. } else { 0. }));
-        let drift_hz = self.focus_drift_hz(response);
+        // The beam's frame values need the geometry; `material_dynamics`
+        // fills them on its local copy of these inputs.
         Some((
             eff,
             FrameInputs {
@@ -566,7 +638,7 @@ impl<W: LayoutElement> Tile<W> {
                 accent,
                 presence,
                 focus,
-                drift_hz,
+                beam: BeamFrame::REST,
             },
         ))
     }
@@ -583,10 +655,15 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// The per-frame material state for the rendered `frame` and the
+    /// `corner_radius` the element gets: jelly, signal, optics. The one place
+    /// the beam's frame values are computed and its run is ended, on the
+    /// face this frame draws.
     fn material_dynamics(
         &self,
         material: &MaterialState,
-        chamfer: f32,
+        frame: &MaterialFrame,
+        corner_radius: CornerRadius,
         motion_residual: Point<f64, Logical>,
         size_residual: (f64, f64),
         window_size: Size<f64, Logical>,
@@ -595,10 +672,61 @@ impl<W: LayoutElement> Tile<W> {
         let response = material.material().response(None);
         let now = self.clock.now_unadjusted();
         let optics = optics::values(glass, &self.optic_frame(material, now));
+        let max_flex = 0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
+        let mut jelly = jelly_state(
+            motion_residual,
+            size_residual,
+            window_size,
+            glass.jelly_flex,
+            max_flex,
+        );
         let signal = self.signal_frame_cache.borrow().clone();
         let (signal_fingerprint, glass_signal, signal_uniforms) = match &signal {
             Some((effective, inputs)) => {
-                let frame = solve(effective, now, material.jelly_seed()[0], *inputs);
+                let mut inputs = *inputs;
+                if let Some(beam) = self
+                    .focus_beam
+                    .as_ref()
+                    .filter(|beam| !beam.is_done(&self.clock))
+                {
+                    beam.rendered.set(true);
+                    // The face the shader draws this frame: the rendered slab,
+                    // its chamfer, the element's fitted radius, the jelly resize.
+                    let slab = [
+                        f64::from(frame.slab_rect[2] * frame.area_size[0]),
+                        f64::from(frame.slab_rect[3] * frame.area_size[1]),
+                    ];
+                    let face = ring::face(
+                        slab,
+                        f64::from(frame.chamfer),
+                        <[f32; 4]>::from(corner_radius).map(f64::from),
+                        [f64::from(jelly.resize[0]), f64::from(jelly.resize[1])],
+                    );
+                    let perimeter = ring::beam_perimeter(&face, response.ring_gap);
+                    let run_px = perimeter + ring::tail_length(perimeter);
+                    // The one place the run ends: on the geometry just computed.
+                    if beam.head_px(&self.clock) >= run_px {
+                        beam.done.set(true);
+                    } else {
+                        inputs.beam = ring::beam_frame(
+                            beam.elapsed(&self.clock),
+                            beam.speed,
+                            perimeter,
+                            ring::BEAM_ENVELOPE,
+                            ring::HeadNoise {
+                                intensity: response.ring_beam_noise,
+                                hz: response.ring_beam_noise_hz,
+                                // The pane's own seed keeps two windows
+                                // focused together out of step; the run's
+                                // start keeps one window's successive runs
+                                // from replaying the same wander.
+                                seed: material.jelly_seed()[0].to_bits()
+                                    ^ beam.started.as_millis() as u32,
+                            },
+                        );
+                    }
+                }
+                let frame = solve(effective, now, material.jelly_seed()[0], inputs);
                 let glass_signal = glass_signal_inputs(&frame, glass);
                 let uniforms = SignalUniforms::from_frame(&frame, &glass_signal, &response);
                 (SignalFingerprint::quantize(&frame), glass_signal, uniforms)
@@ -609,14 +737,6 @@ impl<W: LayoutElement> Tile<W> {
                 SignalUniforms::quiet(&response),
             ),
         };
-        let max_flex = 0.25 * bevel_depth(f64::from(chamfer), glass.thickness);
-        let mut jelly = jelly_state(
-            motion_residual,
-            size_residual,
-            window_size,
-            glass.jelly_flex,
-            max_flex,
-        );
         jelly.activity = (jelly.activity + glass_signal.activity_add).min(0.999);
         let time = self.clock.now().as_secs_f64();
 
@@ -832,10 +952,29 @@ impl<W: LayoutElement> Tile<W> {
         {
             self.focus_crossfade = None;
         }
+
+        if self
+            .focus_beam
+            .as_ref()
+            .is_some_and(|beam| beam.is_done(&self.clock))
+        {
+            self.focus_beam = None;
+        }
     }
 
+    /// Everything that needs another frame. The beam lives here and not in
+    /// `are_transitions_ongoing`: it schedules frames on the animation loop
+    /// but is not a layout transition, and `are_transitions_ongoing` also
+    /// gates the pointer-focus refresh in `Niri::refresh_pointer_contents`,
+    /// which a 16–24 s run must not hold up (design 2026-09-19 §2).
     pub fn are_animations_ongoing(&self) -> bool {
-        self.are_transitions_ongoing() || self.window.rules().baba_is_float == Some(true)
+        self.are_transitions_ongoing()
+            || self.window.rules().baba_is_float == Some(true)
+            || self.signal_render_visible
+                && self
+                    .focus_beam
+                    .as_ref()
+                    .is_some_and(|beam| !beam.is_done(&self.clock))
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
@@ -870,9 +1009,11 @@ impl<W: LayoutElement> Tile<W> {
     pub fn update_render_elements(
         &mut self,
         is_active: bool,
+        input_active: bool,
         visible: bool,
         view_rect: Rectangle<f64, Logical>,
     ) {
+        self.input_active = input_active;
         let response = self
             .material
             .as_ref()
@@ -894,6 +1035,20 @@ impl<W: LayoutElement> Tile<W> {
                 from,
                 to: if is_active { 1. } else { 0. },
             });
+            // Start rule (design 2026-09-19 §2): every gain starts a beam,
+            // replacing a running one; loss ends it.
+            if is_active {
+                if response.as_ref().is_some_and(|r| self.beam_permitted(r)) {
+                    self.focus_beam = Some(FocusBeam {
+                        started: self.clock.now_unadjusted(),
+                        speed: response.as_ref().unwrap().ring_beam_speed,
+                        rendered: Cell::new(false),
+                        done: Cell::new(false),
+                    });
+                }
+            } else {
+                self.focus_beam = None;
+            }
         }
         let signal = response
             .as_ref()
@@ -1643,9 +1798,12 @@ impl<W: LayoutElement> Tile<W> {
                                             &material.material().glass,
                                             self.scale,
                                         );
+                                        let corner_radius =
+                                            radius.fit_to(area.size.w as f32, area.size.h as f32);
                                         let dynamics = self.material_dynamics(
                                             material,
-                                            frame.chamfer,
+                                            &frame,
+                                            corner_radius,
                                             motion_residual,
                                             size_residual,
                                             window_size,
@@ -1689,8 +1847,7 @@ impl<W: LayoutElement> Tile<W> {
                                             backdrop: backdrop_commit,
                                             mapping: mapping.clone(),
                                             backdrop_color,
-                                            corner_radius: radius
-                                                .fit_to(area.size.w as f32, area.size.h as f32),
+                                            corner_radius,
                                             jelly: dynamics.jelly_fingerprint,
                                             signal: dynamics.signal_fingerprint,
                                             glass_signal: dynamics.glass_signal_fingerprint,
@@ -1822,7 +1979,8 @@ impl<W: LayoutElement> Tile<W> {
                                 );
                                 let dynamics = self.material_dynamics(
                                     material,
-                                    frame.chamfer,
+                                    &frame,
+                                    clip_radius,
                                     motion_residual,
                                     size_residual,
                                     window_size,
@@ -2108,8 +2266,9 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// Next instant this tile needs a redraw for its material: the earliest
-    /// of any optic's own change and the sustained-signal or focus-drift
-    /// bucket boundary, while the slab band is in view.
+    /// of any optic's own change and the sustained-signal bucket boundary,
+    /// while the slab band is in view. The focus beam runs on the animation
+    /// loop and has no arm here (design 2026-09-18 §2).
     ///
     /// The optic deadline does not sit behind the signal frame cache: an
     /// unfocused, signal-free window has no cache, and an animated optic
@@ -2132,7 +2291,7 @@ impl<W: LayoutElement> Tile<W> {
             .signal_frame_cache
             .borrow()
             .as_ref()
-            .and_then(|(eff, inputs)| tick_deadline(eff, true, now, inputs.drift_hz));
+            .and_then(|(eff, _)| tick_deadline(eff, true, now));
         match (optic, signal) {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
@@ -2626,35 +2785,13 @@ mod tests {
         focus: niri_config::FocusResponse,
         clock: Clock,
     ) -> Tile<TestWindow> {
-        let material = niri_config::ResolvedMaterial {
-            name: String::from("frost"),
+        beam_tile(
             glass,
-            responses: vec![(
-                String::from("default"),
-                niri_config::ResolvedResponse {
-                    focus,
-                    ..Default::default()
-                },
-            )],
-        };
-        let options = Options {
-            materials: Rc::new(HashMap::from([(String::from("frost"), material)])),
-            ..Default::default()
-        };
-        let mut params = TestWindowParams::new(1);
-        params.rules = Some(ResolvedWindowRules {
-            material: Some(MaterialRef {
-                name: String::from("frost"),
-                response: None,
-            }),
-            ..Default::default()
-        });
-        Tile::new(
-            TestWindow::new(params),
-            Size::from((1280., 720.)),
-            1.,
+            niri_config::ResolvedResponse {
+                focus,
+                ..Default::default()
+            },
             clock,
-            Rc::new(options),
         )
     }
 
@@ -2672,28 +2809,10 @@ mod tests {
         let view = Rectangle::from_size(Size::from((1280., 720.)));
 
         for is_active in [true, false, true] {
-            tile.update_render_elements(is_active, true, view);
+            tile.update_render_elements(is_active, true, true, view);
             assert!(tile.focus_crossfade.is_none(), "active {is_active}");
             assert!(!tile.are_transitions_ongoing(), "active {is_active}");
         }
-    }
-
-    #[test]
-    fn only_a_focused_tile_drifts() {
-        let clock = Clock::with_time(Duration::ZERO);
-        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
-        let response = tile.material.as_ref().unwrap().material().response(None);
-        assert_eq!(response.focus, niri_config::FocusResponse::RingLight);
-        assert!(response.ring_drift_hz > 0.);
-
-        // Unfocused and not fading: no drift, so nothing wakes.
-        assert!(!tile.active);
-        assert!(tile.focus_crossfade.is_none());
-        assert_eq!(tile.focus_drift_hz(&response), 0.);
-
-        // Focused, `motion "full"`, animations on: the configured rate.
-        tile.active = true;
-        assert_eq!(tile.focus_drift_hz(&response), response.ring_drift_hz);
     }
 
     #[test]
@@ -2705,7 +2824,7 @@ mod tests {
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::None, clock);
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert!(tile.signal_frame_cache.borrow().is_none());
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
@@ -2729,7 +2848,7 @@ mod tests {
         };
         let mut tile = material_tile(lit, niri_config::FocusResponse::None, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert!(!tile.active);
         assert!(tile.signal_frame_cache.borrow().is_none());
         assert_eq!(
@@ -2748,41 +2867,814 @@ mod tests {
             ..Default::default()
         };
         let mut tile = material_tile(pinned, niri_config::FocusResponse::None, clock);
-        tile.update_render_elements(false, true, view);
+        tile.update_render_elements(false, true, true, view);
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
             None
         );
     }
 
-    #[test]
-    fn a_focused_drifting_tile_keeps_its_signal_deadline() {
-        // Start the fixture already focused: a focus *change* would begin a
-        // crossfade from 0, and `focus_drift_hz` is 0 until that crossfade
-        // has advanced, so a tile focused at the same instant reports no
-        // drift yet. An already-focused tile has focus value 1.
-        let clock = Clock::with_time(Duration::ZERO);
-        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
-        tile.active = true;
-        let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, view);
-        assert!(tile.focus_crossfade.is_none());
-        assert!(tile.signal_frame_cache.borrow().is_some());
-        let deadline = tile.tick_deadline(Point::default(), view, Duration::ZERO);
-        assert!(deadline.is_some_and(|d| d > Duration::ZERO), "{deadline:?}");
+    /// A tile carrying the material "frost" with the given glass and
+    /// response. Everything else is stock: `motion "full"`, animations on.
+    fn beam_tile(
+        glass: niri_config::ResolvedGlass,
+        response: niri_config::ResolvedResponse,
+        clock: Clock,
+    ) -> Tile<TestWindow> {
+        let material = niri_config::ResolvedMaterial {
+            name: String::from("frost"),
+            glass,
+            responses: vec![(String::from("default"), response)],
+        };
+        let options = Options {
+            materials: Rc::new(HashMap::from([(String::from("frost"), material)])),
+            ..Default::default()
+        };
+        let mut params = TestWindowParams::new(1);
+        params.rules = Some(ResolvedWindowRules {
+            material: Some(MaterialRef {
+                name: String::from("frost"),
+                response: None,
+            }),
+            ..Default::default()
+        });
+        Tile::new(
+            TestWindow::new(params),
+            Size::from((1280., 720.)),
+            1.,
+            clock,
+            Rc::new(options),
+        )
+    }
+
+    /// A flat slab: no bevel, no offset, so the face is the window itself.
+    fn flat_glass() -> niri_config::ResolvedGlass {
+        niri_config::ResolvedGlass {
+            bevel: 0.,
+            offset_x: 0.,
+            offset_y: 0.,
+            ..Default::default()
+        }
+    }
+
+    fn beam_of(tile: &Tile<TestWindow>) -> Option<(Duration, f64, bool)> {
+        tile.focus_beam
+            .as_ref()
+            .map(|b| (b.started, b.speed, b.done.get()))
+    }
+
+    /// The frame a render of a `w × h` window at (0, 0) builds, exactly as
+    /// `render_inner` does with the window texture covering the window.
+    fn frame_for(tile: &Tile<TestWindow>, w: f64, h: f64) -> MaterialFrame {
+        let geo = Rectangle::from_size(Size::from((w, h)));
+        let glass = &tile.material.as_ref().unwrap().material().glass;
+        material_frame(geo, geo, glass, 1.)
+    }
+
+    /// What a render of a `w × h` window computes this frame: the dynamics
+    /// `render_inner` hands the element, with zero radii and zero residuals.
+    fn render_dynamics(tile: &Tile<TestWindow>, w: f64, h: f64) -> MaterialDynamics {
+        let material = tile.material.as_ref().unwrap();
+        let frame = frame_for(tile, w, h);
+        tile.material_dynamics(
+            material,
+            &frame,
+            CornerRadius::default(),
+            Point::default(),
+            (0., 0.),
+            Size::from((w, h)),
+        )
+    }
+
+    /// The face of that render and its beam perimeter and tail, from the same
+    /// frame values `material_dynamics` reads.
+    fn geometry_of(tile: &Tile<TestWindow>, w: f64, h: f64) -> (ring::Face, f64, f64) {
+        let frame = frame_for(tile, w, h);
+        let slab = [
+            f64::from(frame.slab_rect[2] * frame.area_size[0]),
+            f64::from(frame.slab_rect[3] * frame.area_size[1]),
+        ];
+        let face = ring::face(slab, f64::from(frame.chamfer), [0.; 4], [0., 0.]);
+        let gap = tile
+            .material
+            .as_ref()
+            .unwrap()
+            .material()
+            .response(None)
+            .ring_gap;
+        let p = ring::beam_perimeter(&face, gap);
+        (face, p, ring::tail_length(p))
+    }
+
+    /// The beam part of the focus uniform: head, env, decay.
+    fn beam_uniforms(dynamics: &MaterialDynamics) -> [f32; 3] {
+        let f = dynamics.signal_uniforms.focus;
+        [f[1], f[2], f[3]]
+    }
+
+    fn secs(t: f64) -> Duration {
+        Duration::from_secs_f64(t)
     }
 
     #[test]
-    fn an_out_of_view_slab_reports_no_deadline() {
+    fn settled_focus_reports_no_deadline_and_no_transition() {
+        // Already focused, crossfade done, beam done: the three settled
+        // gates of the design (§2).
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
         tile.active = true;
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, view);
+        tile.update_render_elements(true, true, true, view);
+        assert!(tile.focus_crossfade.is_none());
+        assert_eq!(beam_of(&tile), None, "no change of focus, no beam");
+        assert!(tile.signal_frame_cache.borrow().is_some());
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::ZERO),
+            None
+        );
+        assert!(!tile.are_transitions_ongoing());
+    }
+
+    #[test]
+    fn every_focus_gain_starts_a_beam_and_loss_ends_it() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+
+        tile.update_render_elements(false, true, true, view);
+        assert_eq!(beam_of(&tile), None);
+
+        clock.set_unadjusted(Duration::from_millis(100));
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(
+            beam_of(&tile),
+            Some((Duration::from_millis(100), 300., false))
+        );
+        assert!(tile.are_animations_ongoing());
+
+        // A second gain a second later (another tile took focus, then this
+        // one got it back) starts a fresh beam at the new instant.
+        clock.set_unadjusted(Duration::from_millis(1100));
+        tile.update_render_elements(false, true, true, view);
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(
+            beam_of(&tile),
+            Some((Duration::from_millis(1100), 300., false))
+        );
+
+        // Loss ends it.
+        clock.set_unadjusted(Duration::from_millis(1500));
+        tile.update_render_elements(false, true, true, view);
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn the_beam_ends_only_when_a_rendered_frame_sees_the_tail_clear() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p, l) = geometry_of(&tile, 400., 300.);
+        // slab 412 × 312, chamfer 12, gap 8: a 372 × 272 line
+        assert_eq!((p, l), (1288., 322.));
+        let run = (p + l) / 300.;
+
+        let first = render_dynamics(&tile, 400., 300.);
+        assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
+        assert_eq!(beam_uniforms(&first), [0., 0., 1.], "launch: head at 0");
+
+        clock.set_unadjusted(secs(run - 0.1));
+        tile.update_render_elements(true, true, true, view);
+        let near_end = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!(tile.are_animations_ongoing());
+        assert!((beam_uniforms(&near_end)[0] - 300. * (run - 0.1) as f32).abs() < 1e-2);
+
+        // Past the run, `advance_animations` alone changes nothing: no
+        // frame has seen the new time against the geometry.
+        clock.set_unadjusted(secs(run + 0.1));
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        tile.update_render_elements(true, true, true, view);
+        let ended = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&ended), [0., 0., 0.], "rest uniforms");
+        assert!(!tile.are_animations_ongoing());
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+
+        // Settled: the same fingerprint later, and no deadline.
+        clock.set_unadjusted(secs(run + 5.));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let later = render_dynamics(&tile, 400., 300.);
+        assert_eq!(later.signal_fingerprint, ended.signal_fingerprint);
+        assert_eq!(beam_uniforms(&later), [0., 0., 0.]);
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, secs(run + 5.)),
+            None
+        );
+    }
+
+    #[test]
+    fn growth_past_an_old_limit_keeps_the_beam() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p1, l1) = geometry_of(&tile, 400., 300.);
+        let (_, p2, l2) = geometry_of(&tile, 800., 600.);
+        assert!(p2 + l2 > p1 + l1 + 200.);
+        render_dynamics(&tile, 400., 300.);
+
+        // One px past the old limit, the window has grown before any frame
+        // evaluates: the beam stays, its head where elapsed time puts it.
+        let t = (p1 + l1 + 1.) / 300.;
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        assert!(beam_of(&tile).is_some());
+        tile.update_render_elements(true, true, true, view);
+        let grown = render_dynamics(&tile, 800., 600.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!((beam_uniforms(&grown)[0] - (300. * t) as f32).abs() < 1e-2);
+        assert!(tile.are_animations_ongoing());
+
+        // The shrink: past the old limit, under the new one, back to the
+        // small geometry — the fresh evaluation ends the run.
+        let t = (p1 + l1 + 100.) / 300.;
+        assert!(300. * t < p2 + l2);
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let still = render_dynamics(&tile, 800., 600.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!((beam_uniforms(&still)[0] - (300. * t) as f32).abs() < 1e-2);
+        let shrunk = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&shrunk), [0., 0., 0.]);
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn a_resize_during_the_tail_phase_behaves_the_same() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p1, l1) = geometry_of(&tile, 400., 300.);
+        let (_, p2, l2) = geometry_of(&tile, 800., 600.);
+        render_dynamics(&tile, 400., 300.);
+
+        // Mid-drain on the small face: the head is past P₁, env is 0.
+        let t = (p1 + 50.) / 300.;
+        clock.set_unadjusted(secs(t));
+        tile.update_render_elements(true, true, true, view);
+        let draining = render_dynamics(&tile, 400., 300.);
+        assert_eq!(
+            beam_uniforms(&draining)[1],
+            0.,
+            "env is 0 through the drain"
+        );
+        assert!((beam_uniforms(&draining)[0] - (300. * t) as f32).abs() < 1e-2);
+
+        // The window grows: the beam persists, the head keeps counting
+        // from the same start, and the run now ends on the new geometry.
+        // The head is never repositioned (design 2026-09-19 §2), so on the
+        // longer line `elapsed < P₂ / speed` again: the head re-enters the
+        // new lap, `env` returns to 1 and the head visibly reappears.
+        let t = (p1 + l1 + 1.) / 300.;
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        assert!(beam_of(&tile).is_some());
+        tile.update_render_elements(true, true, true, view);
+        let grown = render_dynamics(&tile, 800., 600.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!((beam_uniforms(&grown)[0] - (300. * t) as f32).abs() < 1e-2);
+        assert_eq!(beam_uniforms(&grown)[2], 1., "plateau decay");
+        assert!(tile.are_animations_ongoing());
+
+        let t = (p2 + l2) / 300. + 0.1;
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let ended = render_dynamics(&tile, 800., 600.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn a_beam_nobody_renders_ends_at_the_backstop() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        assert!(beam_of(&tile).is_some());
+
+        clock.set_unadjusted(ring::BEAM_MAX_RUN - Duration::from_secs(1));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        assert!(beam_of(&tile).is_some());
+        assert!(!tile.focus_beam.as_ref().unwrap().rendered.get());
+        assert!(tile.are_animations_ongoing());
+
+        clock.set_unadjusted(ring::BEAM_MAX_RUN + Duration::from_secs(1));
+        assert!(!tile.are_animations_ongoing());
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    /// The slow fixture of the design's timeout cases: a flat 1800 × 1200
+    /// slab, gap 0, zero radii and zero jelly (`P = 6000`, `L = 1200`) at
+    /// 50 px/s: a 120 s lap and a 144 s run.
+    fn slow_tile(clock: Clock) -> Tile<TestWindow> {
+        let response = niri_config::ResolvedResponse {
+            ring_gap: 0.,
+            ring_beam_speed: 50.,
+            ..Default::default()
+        };
+        let tile = beam_tile(flat_glass(), response, clock);
+        let (face, p, l) = geometry_of(&tile, 1800., 1200.);
+        assert_eq!(face.half, [900., 600.]);
+        assert_eq!((p, l), (6000., 1200.));
+        tile
+    }
+
+    #[test]
+    fn a_rendered_slow_beam_outlives_the_unrendered_backstop() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = slow_tile(clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(beam_of(&tile), Some((Duration::ZERO, 50., false)));
+
+        clock.set_unadjusted(secs(10.));
+        tile.update_render_elements(true, true, true, view);
+        let early = render_dynamics(&tile, 1800., 1200.);
+        assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
+        assert_eq!(beam_uniforms(&early), [500., 1., 1.]);
+
+        for t in [60., 119.] {
+            clock.set_unadjusted(secs(t));
+            tile.advance_animations();
+            tile.update_render_elements(true, true, true, view);
+            let mid = render_dynamics(&tile, 1800., 1200.);
+            assert_eq!(beam_uniforms(&mid)[0], (50. * t) as f32);
+            assert!(beam_of(&tile).is_some());
+        }
+
+        // Past the unrendered backstop: a rendered beam has no wall-clock
+        // cap, and its tail is still draining.
+        clock.set_unadjusted(secs(121.));
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        tile.update_render_elements(true, true, true, view);
+        let draining = render_dynamics(&tile, 1800., 1200.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert_eq!(beam_uniforms(&draining), [6050., 0., 1.]);
+        assert!(tile.are_animations_ongoing());
+
+        clock.set_unadjusted(secs(122.));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let later = render_dynamics(&tile, 1800., 1200.);
+        assert_ne!(
+            later.signal_fingerprint, draining.signal_fingerprint,
+            "the tail still advances"
+        );
+        assert_eq!(beam_uniforms(&later), [6100., 0., 1.]);
+
+        clock.set_unadjusted(secs(144.));
+        tile.advance_animations();
+        assert!(beam_of(&tile).is_some());
+        tile.update_render_elements(true, true, true, view);
+        let ended = render_dynamics(&tile, 1800., 1200.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn hiding_a_rendered_beam_does_not_rearm_the_backstop() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = slow_tile(clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+
+        clock.set_unadjusted(secs(10.));
+        tile.update_render_elements(true, true, true, view);
+        render_dynamics(&tile, 1800., 1200.);
+        assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
+
+        // Hidden past 120 s without a render: the beam is retained, its
+        // redraws suppressed by visibility, the backstop not re-armed.
+        for t in [30., 121.] {
+            clock.set_unadjusted(secs(t));
+            tile.advance_animations();
+            tile.update_render_elements(true, true, false, view);
+            assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+            assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
+            assert!(!tile.are_animations_ongoing(), "hidden at {t} s");
+        }
+
+        // Revealed at 121 s: the tail is draining.
+        tile.update_render_elements(true, true, true, view);
+        assert!(tile.are_animations_ongoing());
+        let revealed = render_dynamics(&tile, 1800., 1200.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert_eq!(beam_uniforms(&revealed), [6050., 0., 1.]);
+
+        // Hidden again and revealed after 144 s instead: fresh geometry ends
+        // the beam and the frame returns rest.
+        clock.set_unadjusted(secs(130.));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, false, view);
+        clock.set_unadjusted(secs(150.));
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        tile.update_render_elements(true, true, true, view);
+        let ended = render_dynamics(&tile, 1800., 1200.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn the_beam_is_skipped_under_reduced_off_animations_off_and_zero_speed() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let cases: [(niri_config::SignalMotionPolicy, bool, f64); 4] = [
+            (niri_config::SignalMotionPolicy::Reduced, false, 300.),
+            (niri_config::SignalMotionPolicy::Off, false, 300.),
+            (niri_config::SignalMotionPolicy::Full, true, 300.),
+            (niri_config::SignalMotionPolicy::Full, false, 0.),
+        ];
+        for (policy, animations_off, speed) in cases {
+            let mut clock = Clock::with_time(Duration::ZERO);
+            let response = niri_config::ResolvedResponse {
+                ring_beam_speed: speed,
+                ..Default::default()
+            };
+            let mut tile = beam_tile(Default::default(), response, clock.clone());
+            let mut options = (*tile.options).clone();
+            options.signal.motion = policy;
+            options.animations.off = animations_off;
+            tile.options = Rc::new(options);
+            tile.update_render_elements(true, true, true, view);
+            let label = format!("{policy:?} animations_off={animations_off} speed={speed}");
+            assert_eq!(beam_of(&tile), None, "{label}");
+            clock.set_unadjusted(secs(1.));
+            tile.update_render_elements(true, true, true, view);
+            let dynamics = render_dynamics(&tile, 400., 300.);
+            assert_eq!(beam_uniforms(&dynamics), [0., 0., 0.], "{label}");
+        }
+    }
+
+    #[test]
+    fn idle_input_freezes_attention_but_not_the_beam() {
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        tile.window()
+            .set_signal(Some(crate::window::signal::Folded {
+                level: niri_ipc::SignalLevel::Demand,
+                motion: niri_ipc::SignalMotion::Pulse,
+                accent: None,
+                tag: None,
+                sources: vec![String::from("demo")],
+                impulses: vec![],
+            }));
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+
+        tile.update_render_elements(true, true, true, view);
+        let (eff, _) = tile.signal_frame_cache.borrow().clone().unwrap();
+        assert_eq!(eff.motion, niri_ipc::SignalMotion::Pulse);
         assert!(tile
             .tick_deadline(Point::default(), view, Duration::ZERO)
             .is_some());
-        let far = Point::from((10_000., 10_000.));
-        assert_eq!(tile.tick_deadline(far, view, Duration::ZERO), None);
+
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        tile.window()
+            .set_signal(Some(crate::window::signal::Folded {
+                level: niri_ipc::SignalLevel::Demand,
+                motion: niri_ipc::SignalMotion::Pulse,
+                accent: None,
+                tag: None,
+                sources: vec![String::from("demo")],
+                impulses: vec![],
+            }));
+        tile.update_render_elements(true, false, true, view);
+        assert!(
+            beam_of(&tile).is_some(),
+            "the beam is finite and not gated on idle"
+        );
+        let (eff, _) = tile.signal_frame_cache.borrow().clone().unwrap();
+        assert_eq!(eff.motion, niri_ipc::SignalMotion::Static);
+        assert_eq!(
+            eff.level,
+            niri_ipc::SignalLevel::Demand,
+            "level is untouched"
+        );
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::ZERO),
+            None,
+            "frozen attention reports no bucket deadline"
+        );
+        clock.set_unadjusted(secs(1.));
+        tile.update_render_elements(true, false, true, view);
+        let dynamics = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "the beam runs");
+    }
+
+    /// `frost` with the given response, everything else stock.
+    fn frost_options(response: niri_config::ResolvedResponse) -> Options {
+        let material = niri_config::ResolvedMaterial {
+            name: String::from("frost"),
+            glass: niri_config::ResolvedGlass::default(),
+            responses: vec![(String::from("default"), response)],
+        };
+        Options {
+            materials: Rc::new(HashMap::from([(String::from("frost"), material)])),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn a_speed_reload_keeps_the_running_beam_and_a_focus_none_reload_cuts_it() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let size = Size::from((1280., 720.));
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(beam_of(&tile).map(|b| b.1), Some(300.));
+
+        // A reload that changes `ring-beam-speed` leaves the running beam on
+        // its snapshotted speed; the new value applies to the next beam.
+        let faster = niri_config::ResolvedResponse {
+            ring_beam_speed: 900.,
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(faster)));
+        assert_eq!(beam_of(&tile).map(|b| b.1), Some(300.));
+
+        // Even a reload to zero is not a cut: the beam finishes.
+        let none = niri_config::ResolvedResponse {
+            ring_beam_speed: 0.,
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(none)));
+        assert_eq!(beam_of(&tile).map(|b| b.1), Some(300.));
+
+        // ...and with zero configured, the next gain starts nothing.
+        clock.set_unadjusted(Duration::from_millis(2000));
+        tile.update_render_elements(false, true, true, view);
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(beam_of(&tile), None);
+
+        // A reload to `focus "none"` cuts a running beam at once.
+        let mut tile = focus_tile(
+            niri_config::FocusResponse::RingLight,
+            Clock::with_time(Duration::ZERO),
+        );
+        tile.update_render_elements(true, true, true, view);
+        assert!(beam_of(&tile).is_some());
+        let lights_off = niri_config::ResolvedResponse {
+            focus: niri_config::FocusResponse::None,
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(lights_off)));
+        assert_eq!(beam_of(&tile), None);
+
+        // So does a policy change to reduced.
+        let mut tile = focus_tile(
+            niri_config::FocusResponse::RingLight,
+            Clock::with_time(Duration::ZERO),
+        );
+        tile.update_render_elements(true, true, true, view);
+        assert!(beam_of(&tile).is_some());
+        let mut options = (*tile.options).clone();
+        options.signal.motion = niri_config::SignalMotionPolicy::Reduced;
+        tile.update_config(size, 1., Rc::new(options));
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn env_is_zero_through_the_drain_and_the_head_keeps_moving() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p, l) = geometry_of(&tile, 400., 300.);
+        render_dynamics(&tile, 400., 300.);
+
+        let t = p / 300. + 0.5;
+        assert!(t + 0.1 < (p + l) / 300., "still within the drain");
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let drain = render_dynamics(&tile, 400., 300.);
+        let [head, env, decay] = beam_uniforms(&drain);
+        assert_eq!(env, 0.);
+        assert!((head - (p + 150.) as f32).abs() < 1e-2, "{head}");
+        assert_eq!(decay, 1.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!(tile.are_animations_ongoing());
+
+        clock.set_unadjusted(secs(t + 0.1));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let next = render_dynamics(&tile, 400., 300.);
+        let [head2, env2, _] = beam_uniforms(&next);
+        assert_eq!(env2, 0.);
+        assert!(head2 > head + 29., "{head2} vs {head}");
+        assert_ne!(next.signal_fingerprint, drain.signal_fingerprint);
+        // Only the head moved: the rest of the frame is settled.
+        assert_eq!(
+            next.signal_uniforms.focus[0],
+            drain.signal_uniforms.focus[0]
+        );
+        assert_eq!(next.signal_uniforms.accent, drain.signal_uniforms.accent);
+        assert_eq!(next.signal_uniforms.level, drain.signal_uniforms.level);
+    }
+
+    #[test]
+    fn a_flat_slab_carries_the_beam() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = beam_tile(flat_glass(), Default::default(), clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let (face, p, _) = geometry_of(&tile, 400., 300.);
+        assert_eq!(frame_for(&tile, 400., 300.).chamfer, 0.);
+        assert_eq!(face.half, [200., 150.], "the face is the slab");
+        assert_eq!(p, 4. * (192. + 142.));
+
+        tile.update_render_elements(true, true, true, view);
+        clock.set_unadjusted(secs(1.));
+        tile.update_render_elements(true, true, true, view);
+        let dynamics = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "a live beam");
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+    }
+
+    #[test]
+    fn the_head_wander_reaches_the_uniform_and_stops_with_the_beam() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let response = niri_config::ResolvedResponse {
+            ring_beam_noise: 0.6,
+            ring_beam_noise_hz: 5.,
+            ..Default::default()
+        };
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = beam_tile(flat_glass(), response, clock.clone());
+        let (_, p, l) = geometry_of(&tile, 400., 300.);
+        tile.update_render_elements(true, true, true, view);
+
+        // Through the plateau the head amplitude leaves 1, while the head
+        // position and the shared decay stay exactly where they were.
+        let mut wandered = false;
+        let mut t = 0.4;
+        while t < (p / 300.) - 0.4 {
+            clock.set_unadjusted(secs(t));
+            tile.update_render_elements(true, true, true, view);
+            let [head, env, decay] = beam_uniforms(&render_dynamics(&tile, 400., 300.));
+            assert!((head - (300. * t) as f32).abs() < 1e-2, "head at {t}");
+            assert_eq!(decay, 1., "plateau decay at {t}");
+            assert!((0.4..=1.6).contains(&env), "env {env} out of band at {t}");
+            wandered |= (env - 1.).abs() > 0.05;
+            t += 0.05;
+        }
+        assert!(wandered, "the head never left its envelope amplitude");
+
+        // Past the lap the head amplitude is exactly zero while the tail
+        // drains, and the settled frame is the rest uniform: the wander
+        // never puts the quiet ring back on a clock.
+        clock.set_unadjusted(secs((p / 300.) + 0.5));
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(beam_uniforms(&render_dynamics(&tile, 400., 300.))[1], 0.);
+        clock.set_unadjusted(secs(((p + l) / 300.) + 0.5));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        assert_eq!(
+            beam_uniforms(&render_dynamics(&tile, 400., 300.)),
+            [0., 0., 0.]
+        );
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+    }
+
+    #[test]
+    fn the_wander_is_skipped_with_the_beam_under_reduced_and_off() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        for (policy, animations_off) in [
+            (niri_config::SignalMotionPolicy::Reduced, false),
+            (niri_config::SignalMotionPolicy::Off, false),
+            (niri_config::SignalMotionPolicy::Full, true),
+        ] {
+            let mut clock = Clock::with_time(Duration::ZERO);
+            let response = niri_config::ResolvedResponse {
+                ring_beam_noise: 1.,
+                ring_beam_noise_hz: 20.,
+                ..Default::default()
+            };
+            let mut tile = beam_tile(flat_glass(), response, clock.clone());
+            let mut options = (*tile.options).clone();
+            options.signal.motion = policy;
+            options.animations.off = animations_off;
+            tile.options = Rc::new(options);
+            tile.update_render_elements(true, true, true, view);
+            let label = format!("{policy:?} animations_off={animations_off}");
+            assert_eq!(beam_of(&tile), None, "{label}");
+            for t in [0.1, 0.5, 1., 2.] {
+                clock.set_unadjusted(secs(t));
+                tile.update_render_elements(true, true, true, view);
+                let dynamics = render_dynamics(&tile, 400., 300.);
+                assert_eq!(beam_uniforms(&dynamics), [0., 0., 0.], "{label} at {t}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_beam_schedules_frames_without_holding_layout_transitions() {
+        // `are_transitions_ongoing` also gates the pointer-focus refresh in
+        // `Niri::refresh_pointer_contents`; a beam run must not hold it.
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p, l) = geometry_of(&tile, 400., 300.);
+        render_dynamics(&tile, 400., 300.);
+
+        // Mid-run, the focus crossfade long settled.
+        clock.set_unadjusted(secs(2.));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        assert!(tile.focus_crossfade.is_none());
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!(tile.are_animations_ongoing(), "the beam wants frames");
+        assert!(
+            !tile.are_transitions_ongoing(),
+            "but is not a layout transition"
+        );
+
+        // At rest, neither.
+        clock.set_unadjusted(secs((p + l) / 300. + 0.1));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert!(!tile.are_animations_ongoing());
+        assert!(!tile.are_transitions_ongoing());
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+        assert!(!tile.are_animations_ongoing());
+    }
+
+    #[test]
+    fn a_gap_reload_mid_run_changes_the_perimeter_but_not_the_head() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let size = Size::from((1280., 720.));
+        tile.update_render_elements(true, true, true, view);
+        let (_, p1, l1) = geometry_of(&tile, 400., 300.);
+        render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile), Some((Duration::ZERO, 300., false)));
+
+        // Reload to a wider gap: the beam is the same one, on a shorter line.
+        let wider = niri_config::ResolvedResponse {
+            ring_gap: 16.,
+            ..Default::default()
+        };
+        tile.update_config(size, 1., Rc::new(frost_options(wider)));
+        assert_eq!(beam_of(&tile), Some((Duration::ZERO, 300., false)));
+        let (_, p2, l2) = geometry_of(&tile, 400., 300.);
+        assert!(p2 < p1, "a wider gap shortens the line: {p2} vs {p1}");
+        assert!(p2 + l2 + 50. < p1 + l1);
+
+        // Under both limits: running, the head at `speed · elapsed`.
+        let t = (p2 + l2 - 50.) / 300.;
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let running = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        assert!((beam_uniforms(&running)[0] - (300. * t) as f32).abs() < 1e-2);
+
+        // Past the new limit, still under the old one: the fresh geometry
+        // ends the run where the old perimeter would have kept it going.
+        let t = (p2 + l2 + 50.) / 300.;
+        assert!(300. * t < p1 + l1);
+        clock.set_unadjusted(secs(t));
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
+        tile.update_render_elements(true, true, true, view);
+        let ended = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
     }
 }

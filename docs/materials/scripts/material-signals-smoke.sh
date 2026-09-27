@@ -8,14 +8,17 @@
 #   cases   Tracy redraw counts for every steady-state case
 #   gpu     Tracy GPU cost of the material draw: this build's default path against
 #           the branch base commit on the identical fixture, plus ring and rim orbit
+#   validate  write every fixture and validate it with the binary, then stop;
+#           NIRI names a built binary to use instead of building one
 #
 # Every resource name is unique per run, every wait is bounded, and a
 # leftover nested socket fails the run. Requires: jq, weston, kitty, swaybg, flock, ss,
-# ImageMagick (`magick` or `convert`) for the checkerboard backdrop, cmake
-# (only if the 0.13.1 Tracy tools must be rebuilt), NIRI_MATERIAL_WORK_ROOT.
+# ImageMagick (`magick` or `convert`) for the checkerboard backdrop, wlrctl (AUR;
+# `cases` only, for the idle-resume input), cmake (only if the 0.13.1 Tracy tools
+# must be rebuilt), NIRI_MATERIAL_WORK_ROOT.
 set -euo pipefail
 
-MODE=${1:?"usage: $0 visual|ipc|cases|gpu"}
+MODE=${1:?"usage: $0 visual|ipc|cases|gpu|validate"}
 ROOT=$(git rev-parse --show-toplevel)
 cd "$ROOT"
 RUN=signals-$$-$(date +%s)
@@ -103,12 +106,14 @@ trap cleanup EXIT
 # run a snapshot copied into $WORK so a concurrent build cannot replace the
 # executable mid-capture. The reference build gets its own target directory.
 TARGET=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
+BUILT=$TARGET/release/niri
 case $MODE in
     cases|gpu) cargo build --release --features profile-with-tracy ;;
+    validate)  [ -n "${NIRI:-}" ] && BUILT=$NIRI || cargo build --release ;;
     *)         cargo build --release ;;
 esac
-[ -x "$TARGET/release/niri" ] || { echo "FAIL: built binary not found at $TARGET/release/niri" >&2; exit 1; }
-cp "$TARGET/release/niri" "$WORK/niri"
+[ -x "$BUILT" ] || { echo "FAIL: built binary not found at $BUILT" >&2; exit 1; }
+cp "$BUILT" "$WORK/niri"
 NIRI=$WORK/niri
 sha256sum "$NIRI" | tee -a "$WORK/SHA256SUMS"
 
@@ -122,17 +127,41 @@ CHECKER=$WORK/checker.png
 if command -v magick >/dev/null; then magick -size 160x90 pattern:checkerboard -scale 800% "$CHECKER"
 else convert -size 160x90 pattern:checkerboard -scale 800% "$CHECKER"; fi
 KITTY_OPTS='"-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "-o" "background_opacity=0.6"'
+# The nested compositor receives no input, so under the default
+# `idle-after-ms 30000` every fixture would freeze about when the capture
+# starts; the base `signal` block turns the gate off so each case measures
+# what it measures. KDL allows one `signal` node, so an extra line of the
+# form `signal { ... }` is folded into that block rather than appended. The
+# idle cases turn the gate back on through `write_idle_config`. Every
+# written fixture is validated by the binary under test.
 write_config() {   # $1 = path, remaining args = extra KDL lines
-    local f=$1; shift
+    local f=$1 signal_body="idle-after-ms 0;" line; shift
     {
         cat <<EOF
-material "tg" { glass {}; response "default" { ring-drift-hz 0; }; }
+material "tg" { glass {}; response "default" { ring-beam-speed 0; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
 spawn-at-startup "kitty" $KITTY_OPTS "--hold" "true"
 EOF
-        printf '%s\n' "$@"
+        for line in "$@"; do
+            case $line in
+                signal*) signal_body="$signal_body $(printf '%s' "$line" | sed -e 's/^signal *{ *//' -e 's/ *} *$//')" ;;
+                *) printf '%s\n' "$line" ;;
+            esac
+        done
+        printf 'signal { %s }\n' "$signal_body"
     } > "$f"
+    "$NIRI" validate -c "$f" >/dev/null 2>&1 || { "$NIRI" validate -c "$f"; echo "FAIL: $f does not validate" >&2; exit 1; }
+}
+# Idle-gate fixtures: the nested compositor sees no input, so a short
+# threshold makes it idle a few seconds after start. Resume is real input:
+# wlrctl, spawned inside the nested instance, moves a virtual pointer.
+write_idle_config() {   # $1 = path, $2 = idle-after-ms, remaining = extra KDL lines
+    local f=$1 ms=$2; shift 2
+    write_config "$f" "$@"
+    sed -i "s/idle-after-ms 0;/idle-after-ms $ms;/" "$f"
+    grep -qF "idle-after-ms $ms;" "$f" || { echo "FAIL: $f: idle threshold not written" >&2; exit 1; }
+    "$NIRI" validate -c "$f" >/dev/null 2>&1 || { "$NIRI" validate -c "$f"; echo "FAIL: $f does not validate" >&2; exit 1; }
 }
 # The toggle control's fixture: the same windows and the same focus-ring-off
 # layout, with no material on them at all, so its redraw count is the fixture's
@@ -152,7 +181,7 @@ EOF
 write_gpu_config() {   # $1 = path
     {
         cat <<EOF
-material "tg" { glass {}; response "default" { ring-drift-hz 0; }; }
+material "tg" { glass {}; response "default" { ring-beam-speed 0; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
 spawn-at-startup "kitty" $KITTY_OPTS "sh" "-c" "while :; do date +%s%N; sleep 0.1; done"
@@ -165,26 +194,41 @@ write_config "$WORK/motion-off.kdl"     'signal { motion "off"; }'
 write_config "$WORK/reduced.kdl"        'signal { motion "reduced"; }'
 write_config "$WORK/slowdown.kdl"       'animations { slowdown 3; }'
 write_config "$WORK/narrow.kdl"         'layout { gaps 0; default-column-width { proportion 0.1; }; }'
-write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none"; ring-drift-hz 0; }; }' \
+write_config "$WORK/attention-none.kdl" 'material "tg2" { glass {}; response "default" { attention "none"; ring-beam-speed 0; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
-write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; ring-drift-hz 0; }; }' \
+write_config "$WORK/impulse-none.kdl"   'material "tg2" { glass {}; response "default" { ping "none"; done "none"; error "none"; ring-beam-speed 0; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
-# Focused-window fixtures: the filament drifts at ring-drift-hz on the focused
-# window only, so these keep the default 15 Hz while everything else is pinned.
-write_config "$WORK/drift.kdl"          'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+# Focused-window fixtures: on focus gain the beam runs once around the face,
+# (P + L) / speed on the animation loop, and then rests. At 1200 px/s a
+# single 1280x720 pane (face ~1250x690, P ~ 3800, L = 950) runs about 4 s
+# and the two-column `beam-run` scene about 2.7 s: long enough to count, and
+# over long before the steady window, so a focused window costs nothing there.
+write_config "$WORK/beam.kdl"           'material "tg2" { glass {}; response "default" { ring-beam-speed 1200; ring-gap 8; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }'
-write_config "$WORK/drift-anim-off.kdl" 'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+write_config "$WORK/beam-anim-off.kdl"  'material "tg2" { glass {}; response "default" { ring-beam-speed 1200; ring-gap 8; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }' \
                                          'animations { off; }'
-write_config "$WORK/drift-reduced.kdl"  'material "tg2" { glass {}; response "default" { ring-drift-hz 15; }; }' \
+write_config "$WORK/beam-reduced.kdl"   'material "tg2" { glass {}; response "default" { ring-beam-speed 1200; ring-gap 8; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }' \
                                          'signal { motion "reduced"; }'
-# focus "none" turns the filament off and the gradient focus ring is off too,
+# focus "none" turns the beam off and the gradient focus ring is off too,
 # so whatever a focus change still costs here is not the material.
-write_config "$WORK/focus-none.kdl"     'material "tg2" { glass {}; response "default" { focus "none"; ring-drift-hz 15; }; }' \
+write_config "$WORK/focus-none.kdl"     'material "tg2" { glass {}; response "default" { focus "none"; ring-beam-speed 1200; ring-gap 8; }; }' \
                                          'window-rule { match app-id="^kitty$"; material "tg2"; }' \
                                          'layout { focus-ring { off; }; }'
 write_no_material_config "$WORK/no-material.kdl"
+write_idle_config "$WORK/idle-5s.kdl" 5000
+# Every `write_config` fixture above validated as it was written (a failure
+# exits); this mode validates all of them again, the raw control and GPU
+# fixtures included, reports each, and stops before any host starts.
+mode_validate() {
+    local f
+    for f in "$WORK"/*.kdl; do
+        "$NIRI" validate -c "$f" >/dev/null 2>&1 || { "$NIRI" validate -c "$f"; echo "FAIL: $f does not validate" >&2; exit 1; }
+        echo "validate: OK $f"
+    done
+    echo "validate: OK, fixtures in $WORK"
+}
 
 # --- host and nested compositor -------------------------------------------
 msg() { "$NIRI" msg "$@"; }
@@ -480,9 +524,13 @@ setup_offscreen_column() {
 }
 setup_motion_off() { set_demand "$WID" pulse; assert_eq "$(win "$WID" .signal.motion)" Pulse "stored motion"; }
 setup_focused_quiet() { assert_eq "$(win "$WID" .is_focused)" true "focused"; }
+setup_dpms_off_pulse() { setup_demand pulse; msg action power-off-monitors; }
 setup_other_focused() { spawn_kitty_to 2; OTHER=$(other_kitty); msg action focus-window --id "$OTHER"; assert_eq "$(win "$WID" .is_focused)" false "WID unfocused"; }
 during_pulses() { local k; for k in 1 2 3; do msg pulse-window-signal --id "$WID" --source demo --kind done; done; }
 during_one_done() { msg pulse-window-signal --id "$WID" --source demo --kind done; }
+# One virtual-pointer motion from wlrctl spawned inside the nested instance:
+# it enters process_input_event like any device, so notify_activity sees it.
+during_idle_resume() { msg action spawn -- wlrctl pointer move 1 0; }
 # Six focus changes, then a wait for the client to stop repainting. Each `niri
 # msg action focus-window` spawns the niri binary, so the sequence takes about
 # 6 s rather than the 3 s of its sleeps, and its real duration varies with host
@@ -540,24 +588,63 @@ focus_toggle_case() {   # $1 name, $2 cfg, $3 control total
     printf '%s: %d redraws vs control %d, %d in the %s s after\n' "$1" "$total" "$3" "$after" "$quiet_tail" | tee -a "$WORK/rates.txt" >&2
     expect_zero "$1 after" "$after"
 }
+# One focus gain with the beam on: the run is (P + L) / speed on the pane's
+# face. `setup_other_focused` is a two-column scene, so the focused face is
+# about 616x688 (P ~ 2600, L ~ 650): about 2.7 s at 1200 px/s, passed as 3.
+# Redraws during the run approximate the animation-loop rate and the tail
+# after it must be zero. `during` fires 12 s into the 30 s capture, so the
+# run window is [12, 12 + $3 + 0.5) s and the after window [18, 30) s, which
+# no run at this speed can reach.
+beam_run_case() {   # $1 name, $2 cfg, $3 expected run seconds
+    run_case "$1" "$2" setup_other_focused during_focus_once
+    local during after
+    during=$(count_window "$1" 18 $(awk -v r="$3" 'BEGIN { printf "%.1f", 18 - r - 0.5 }'))
+    after=$(count_window "$1" 12 0)
+    printf '%s: %d redraws during the %s s run, %d in the 12 s after\n' "$1" "$during" "$3" "$after" | tee -a "$WORK/rates.txt" >&2
+    [ "$during" -ge $(( ${3%.*} * 20 )) ] || { echo "FAIL: $1: only $during redraws during a $3 s run" >&2; exit 1; }
+    expect_zero "$1 after" "$after"
+}
+during_focus_once() { msg action focus-window --id "$WID"; }
+# Idle gate: 5 s threshold and no input, so the compositor is idle before
+# the steady window and a pulsing window draws nothing. Resume is one
+# virtual-pointer motion (`during_idle_resume`); the threshold then
+# re-engages 5 s later with no further input.
+idle_case() {   # $1 name, $2 cfg, $3 setup, $4 pulse rate for a resumed window (per 20 s)
+    run_case "$1" "$2" "$3" during_idle_resume
+    local resumed frozen
+    # `during` fires 12 s into the 30 s capture: resumed motion runs in
+    # [end-18 s, end-13 s), then the gate re-engages; [end-11 s, end) is quiet.
+    resumed=$(count_window "$1" 18 13)
+    frozen=$(count_window "$1" 11 0)
+    printf '%s: %d redraws in the 5 s after input, %d after the gate re-engaged\n' "$1" "$resumed" "$frozen" | tee -a "$WORK/rates.txt" >&2
+    expect_about "$1 resumed" "$resumed" "$(( $4 * 5 / 20 ))" 0.25
+    expect_zero "$1 frozen again" "$frozen"
+}
 mode_cases() {
+    command -v wlrctl >/dev/null || { echo "FAIL: requires wlrctl (AUR) for the idle-resume case" >&2; exit 1; }
     tools_ready
     steady_zero  quiet-ring           "$WORK/base.kdl" setup_quiet_ring
-    local pulse_n breathe_n flash_n drift_n toggle_n n
-    # The focus filament: it wakes the focused window at ring-drift-hz and
-    # nothing else, and `other-focused` shows only the focused window drifts.
-    steady_zero  focused-static    "$WORK/base.kdl"           setup_focused_quiet
-    steady_about focused-drift     "$WORK/drift.kdl"          setup_focused_quiet 300; drift_n=$STEADY_N
-    steady_about focused-reduced   "$WORK/drift-reduced.kdl"  setup_focused_quiet 150
-    steady_zero  focused-anim-off  "$WORK/drift-anim-off.kdl" setup_focused_quiet
-    steady_zero  focus-none-drift  "$WORK/focus-none.kdl"     setup_focused_quiet
-    steady_about other-focused     "$WORK/drift.kdl"          setup_other_focused "$drift_n"
+    local pulse_n breathe_n flash_n toggle_n n
+    # The focus beam: one run on focus gain, finished long before the steady
+    # window, so a focused window at rest costs nothing under every policy.
+    # `beam-off` is the base fixture's `ring-beam-speed 0`, which never runs
+    # (it was `focused-static`: the same fixture, the same window at rest).
+    steady_zero  beam-off          "$WORK/base.kdl"          setup_focused_quiet
+    steady_zero  focused-settled   "$WORK/beam.kdl"          setup_focused_quiet
+    steady_zero  focused-reduced   "$WORK/beam-reduced.kdl"  setup_focused_quiet
+    steady_zero  focused-anim-off  "$WORK/beam-anim-off.kdl" setup_focused_quiet
+    steady_zero  focus-none-beam   "$WORK/focus-none.kdl"    setup_focused_quiet
+    steady_zero  other-focused     "$WORK/beam.kdl"          setup_other_focused
     toggle_control_case toggle-control "$WORK/no-material.kdl"; toggle_n=$STEADY_N
     focus_toggle_case   focus-none-toggle "$WORK/focus-none.kdl" "$toggle_n"
+    beam_run_case       beam-run "$WORK/beam.kdl" 3
     steady_about demand-pulse "$WORK/base.kdl" "setup_demand pulse" 540; pulse_n=$STEADY_N
     steady_zero  demand-pulse-focused "$WORK/base.kdl" setup_demand_focused
     steady_about demand-breathe "$WORK/base.kdl" "setup_demand breathe" 160; breathe_n=$STEADY_N
     steady_about demand-flash "$WORK/base.kdl" "setup_demand flash" 320; flash_n=$STEADY_N
+    steady_zero  idle-pulse     "$WORK/idle-5s.kdl" "setup_demand pulse"
+    idle_case    idle-resume    "$WORK/idle-5s.kdl" "setup_demand pulse" "$pulse_n"
+    steady_zero  dpms-off-pulse "$WORK/base.kdl"    setup_dpms_off_pulse
     steady_about ten-breathe "$WORK/narrow.kdl" "setup_ten breathe Breathe" "$breathe_n"; n=$STEADY_N; expect_about "ten-breathe vs one" "$n" "$breathe_n" 0.10
     steady_about ten-flash "$WORK/narrow.kdl" "setup_ten flash Flash" "$flash_n"; n=$STEADY_N; expect_about "ten-flash vs one" "$n" "$flash_n" 0.10
     steady_zero  inactive-workspace "$WORK/base.kdl" setup_inactive_workspace

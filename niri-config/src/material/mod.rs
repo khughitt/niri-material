@@ -276,16 +276,31 @@ pub struct Response {
     pub done: Option<ImpulseResponse>,
     #[knuffel(child, unwrap(argument, str))]
     pub error: Option<ImpulseResponse>,
+    /// Retired: decoded only so the error can name its replacement.
     #[knuffel(child, unwrap(argument))]
-    pub ring_inset: Option<FloatOrInt<0, 128>>,
+    pub ring_inset: Option<f64>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_gap: Option<FloatOrInt<0, 128>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_glow: Option<FloatOrInt<0, 3>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_beam_speed: Option<FloatOrInt<0, 5000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_beam_noise: Option<FloatOrInt<0, 1>>,
+    #[knuffel(child, unwrap(argument))]
+    pub ring_beam_noise_hz: Option<FloatOrInt<0, 30>>,
     #[knuffel(child, unwrap(argument))]
     pub ring_width: Option<FloatOrInt<0, 128>>,
     #[knuffel(child, unwrap(argument, str))]
     pub focus: Option<FocusResponse>,
     #[knuffel(child)]
     pub ring_color: Option<Color>,
+    /// Retired: decoded only so the error can name its replacement.
     #[knuffel(child, unwrap(argument))]
-    pub ring_drift_hz: Option<FloatOrInt<0, 30>>,
+    pub ring_drift_hz: Option<f64>,
+    /// Retired: decoded only so the error can name its replacement.
+    #[knuffel(child, unwrap(argument))]
+    pub ring_sweep_ms: Option<u32>,
 }
 
 /// A fully resolved response block.
@@ -296,13 +311,21 @@ pub struct ResolvedResponse {
     pub ping: ImpulseResponse,
     pub done: ImpulseResponse,
     pub error: ImpulseResponse,
-    pub ring_inset: f64,
+    /// Gap from the face edge to the beam's centre, px.
+    pub ring_gap: f64,
     pub ring_width: f64,
+    /// Focus light scale; multiplies head, tail, rest and spill.
+    pub ring_glow: f64,
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
     pub ring_color: Color,
-    /// Drift bucket rate in Hz; 0 pins the drift, otherwise at least 1.
-    pub ring_drift_hz: f64,
+    /// Beam pace along the perimeter, px/s; zero skips the beam.
+    pub ring_beam_speed: f64,
+    /// How far the beam head's brightness wanders either side of its
+    /// envelope, 0–1; zero is a steady head.
+    pub ring_beam_noise: f64,
+    /// How fast it wanders, in wanders per second.
+    pub ring_beam_noise_hz: f64,
 }
 
 impl Default for ResolvedResponse {
@@ -313,11 +336,14 @@ impl Default for ResolvedResponse {
             ping: ImpulseResponse::Ripple,
             done: ImpulseResponse::Sweep,
             error: ImpulseResponse::Flash,
-            ring_inset: 5.,
+            ring_gap: 8.,
             ring_width: 2.6,
+            ring_glow: 1.,
             focus: FocusResponse::RingLight,
             ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
-            ring_drift_hz: 15.,
+            ring_beam_speed: 300.,
+            ring_beam_noise: 0.,
+            ring_beam_noise_hz: 3.,
         }
     }
 }
@@ -330,11 +356,20 @@ impl ResolvedResponse {
             ping: response.ping.unwrap_or(base.ping),
             done: response.done.unwrap_or(base.done),
             error: response.error.unwrap_or(base.error),
-            ring_inset: response.ring_inset.map_or(base.ring_inset, |x| x.0),
+            ring_gap: response.ring_gap.map_or(base.ring_gap, |x| x.0),
             ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
+            ring_glow: response.ring_glow.map_or(base.ring_glow, |x| x.0),
             focus: response.focus.unwrap_or(base.focus),
             ring_color: response.ring_color.unwrap_or(base.ring_color),
-            ring_drift_hz: response.ring_drift_hz.map_or(base.ring_drift_hz, |x| x.0),
+            ring_beam_speed: response
+                .ring_beam_speed
+                .map_or(base.ring_beam_speed, |x| x.0),
+            ring_beam_noise: response
+                .ring_beam_noise
+                .map_or(base.ring_beam_noise, |x| x.0),
+            ring_beam_noise_hz: response
+                .ring_beam_noise_hz
+                .map_or(base.ring_beam_noise_hz, |x| x.0),
         }
     }
 
@@ -735,11 +770,6 @@ impl Material {
             }
         }
         let resolved = self.resolve();
-        let ring_fits = resolved
-            .responses
-            .iter()
-            .all(|(_, response)| response.ring_inset + response.ring_width <= bevel);
-
         if resolved
             .responses
             .iter()
@@ -747,33 +777,37 @@ impl Material {
         {
             return Err(String::from("ring-width must be positive"));
         }
-        // The solver divides the 10 s period into `hz * 10` buckets; a rate
-        // below 1 Hz (before the reduced-motion halving) has no sensible
-        // bucket and is refused rather than clamped.
-        if resolved
+        if self
             .responses
             .iter()
-            .any(|(_, response)| response.ring_drift_hz > 0. && response.ring_drift_hz < 1.)
+            .any(|response| response.ring_drift_hz.is_some())
         {
-            return Err(String::from("ring-drift-hz must be 0 or at least 1"));
-        }
-
-        // Prefer the explicitly configured response error when both it and
-        // the inherited glass offset exceed the bevel.
-        if !self.responses.is_empty() && !ring_fits {
             return Err(String::from(
-                "ring-inset + ring-width must not exceed bevel",
+                "ring-drift-hz was replaced by ring-beam-speed; see material-config.md",
             ));
         }
+        if self
+            .responses
+            .iter()
+            .any(|response| response.ring_sweep_ms.is_some())
+        {
+            return Err(String::from(
+                "ring-sweep-ms was replaced by ring-beam-speed; see material-config.md",
+            ));
+        }
+        if self
+            .responses
+            .iter()
+            .any(|response| response.ring_inset.is_some())
+        {
+            return Err(String::from(
+                "ring-inset was replaced by ring-gap; see material-config.md",
+            ));
+        }
+
         if offset_x.abs().max(offset_y.abs()) > bevel {
             return Err(String::from("offset must not exceed bevel"));
         }
-        if !ring_fits {
-            return Err(String::from(
-                "ring-inset + ring-width must not exceed bevel",
-            ));
-        }
-
         Ok(())
     }
 }

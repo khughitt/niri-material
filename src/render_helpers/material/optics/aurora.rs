@@ -1,4 +1,4 @@
-//! `aurora`: stage 6, neutral at amount 0. Animated: the field's phase
+//! `aurora`: within stage, neutral at amount 0. Animated: the field's phase
 //! steps at `drift-hz` buckets per second on the generalised drift clock
 //! over a 600 s period, so its `next_change` is the next bucket boundary.
 
