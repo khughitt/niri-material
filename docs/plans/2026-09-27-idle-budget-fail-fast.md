@@ -9,7 +9,9 @@ any exit, and offers a pilot per lane.
 **Architecture:** the manifest, written before case 1, becomes the only statement of
 which cases run and in what order. One shell loop runs the declared cases and calls
 `idle-budget.py observe` after each. The fixture's `cleanup` reaps every writer into
-`OUT`, then analyzes and checksums, and calls the lib's `native_cleanup` last.
+`OUT` (retrying waits a signal interrupts), removes the runtime directory, analyzes,
+checksums, seals `OUT`, and releases the capture lock. It does not call the lib's
+`cleanup`.
 
 **Tech Stack:** Bash (`set -euo pipefail`, `set -E`), Python 3 stdlib, `unittest`,
 Just, and the vendored `tools/tt` of niri-material.
@@ -25,7 +27,8 @@ Just, and the vendored `tools/tt` of niri-material.
   `material-b15ad7` (`.worktrees/material-b15ad7`).
 - Files touched in niri-experiments: `fixtures/idle-budget.sh`,
   `fixtures/idle-budget.py`, `fixtures/idle-budget.just`,
-  `fixtures/test_idle_budget.py`, `docs/results/2026-09-11-idle-budget.md`.
+  `fixtures/test_idle_budget.py`, `fixtures/idle-budget-supervise.sh` (new),
+  `docs/results/2026-09-11-idle-budget.md`.
 - No change to `docs/materials/scripts/glass-optic-smoke-lib.sh`,
   `tools/capture-meta`, or niri (spec, *Interfaces*).
 - Test command, from the experiments worktree:
@@ -43,6 +46,10 @@ Just, and the vendored `tools/tt` of niri-material.
   written into `OUT` once `SEALED=1`.
 - Exit status: a non-zero run status is kept. On zero, a failed or timed-out analysis,
   a teardown error, or a failed checksum makes it 1.
+- Cleanup never calls the lib's `cleanup`. It reaps with retried waits, removes the
+  runtime directory, analyzes, checksums, seals, and runs `capture_meta release` last.
+- Live runs go through `fixtures/idle-budget-supervise.sh`; `OUT` is read only after it
+  returns.
 - Seat managers are pinned by pid: `{"systemd": 1, "systemd-logind": <MainPID>}`. They
   are exempt only beside an explicit `compositor` that holds a `/dev/dri/card*` node.
 - Commits: conventional, with no AI attribution of any kind. Each code commit in
@@ -781,16 +788,36 @@ Then close the Task 3 child in niri-material.
   `analyze` exits 1 when `integrity_failures` is non-empty, when `complete` is false,
   or when `budget_passed` is false.
 
-- [ ] **Step 1: Mark synthetic cases complete and write the failing tests**
+- [ ] **Step 1: Make completion explicit in the synthetic runs, and write the failing tests**
 
-At the end of each case in `trace_run`, and of each window in `power_run`, write its
-verdict (only its presence matters to `analyze`):
+The synthetic runs stay raw by default: `ObserveTests` needs cases without verdicts,
+since `observe` refuses to overwrite one. Completion is opt-in. Add to
+`IntegrationTests`:
 
 ```python
-            (root / f"{name}.verdict.json").write_text(json.dumps({"observation": observations[-1], "passed": True}))
+    def mark_completed(self, root, names=None):
+        """Write a verdict for each declared case, or only for `names`: what the fixture's observe leaves."""
+        manifest = json.loads((root / "manifest.json").read_text())
+        for item in manifest["observations"]:
+            name = idle_budget.observation_name(manifest["mode"], item)
+            if names is None or name in names:
+                (root / f"{name}.verdict.json").write_text(json.dumps({"observation": item, "passed": True}))
 ```
 
-(in `power_run`, with `items[-1]`). Add:
+`trace_run(self, root, completed=False)` ends with
+`if completed: self.mark_completed(root)`, and so does
+`power_run(self, root, pilot=False, watts=None, completed=False)` (its inner
+`self.trace_run(root)` stays raw). The existing tests that expect `analyze` to judge
+every case pass `completed=True`, so that their corruptions still fail for their own
+reason and not merely because the run is incomplete:
+- `IntegrationTests.test_analyzer_rejects_invalid_capture_evidence`,
+  `test_synthetic_trace_cli_and_failures`, and
+  `test_matrix_identity_markers_geometry_and_long_coverage`:
+  `self.trace_run(root, completed=True)`;
+- `PowerIntegrityTests.test_power_cli_uses_raw_48_window_matrix`:
+  `IntegrationTests().power_run(root, completed=True)`.
+
+`ObserveTests.setUp` and `PlanTests` keep the raw default. Add:
 
 ```python
 class PartialAnalysisTests(unittest.TestCase):
@@ -800,7 +827,7 @@ class PartialAnalysisTests(unittest.TestCase):
 
     def test_complete_trace(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); IntegrationTests().trace_run(root)
+            root = Path(directory); IntegrationTests().trace_run(root, completed=True)
             code, result = self.analyze(root)
             self.assertEqual(code, 0, result["integrity_failures"])
             self.assertEqual((result["complete"], result["not_run"], result["stopped"], result["pilot"]), (True, [], None, False))
@@ -809,8 +836,7 @@ class PartialAnalysisTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); IntegrationTests().trace_run(root)
             names = [f"{c}-{s}-{r}" for c, s, r in idle_budget.trace_matrix()]
-            for name in names[3:]:
-                (root / f"{name}.verdict.json").unlink()
+            IntegrationTests().mark_completed(root, names[:3])
             (root / "stop.json").write_text(json.dumps({"exit": 1, "during": names[3], "kind": "fail", "message": f"settle refused before {names[3]}"}))
             record = json.loads((root / "capture.json").read_text())
             entry = next(e for e in record["sub_runs"] if e["name"] == names[3]); entry.update(verdict="refused", reason="gpu busy")
@@ -828,7 +854,7 @@ class PartialAnalysisTests(unittest.TestCase):
 
     def test_a_run_level_failure_is_reported_not_raised(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); IntegrationTests().trace_run(root)
+            root = Path(directory); IntegrationTests().trace_run(root, completed=True)
             (root / "source.tar").write_bytes(b"changed")
             code, result = self.analyze(root)
             self.assertEqual(code, 1)
@@ -839,7 +865,7 @@ class PartialAnalysisTests(unittest.TestCase):
     def test_power_pilot_reports_a_descriptive_block(self):
         medians = {"sham-1-1": 20.0, "sham-1-2": 20.4, "sham-1-3": 20.2, "sham-1-4": 20.1}
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); IntegrationTests().power_run(root, pilot=True, watts=lambda name, case: medians[name])
+            root = Path(directory); IntegrationTests().power_run(root, pilot=True, watts=lambda name, case: medians[name], completed=True)
             code, result = self.analyze(root)
             self.assertEqual(code, 0, result["integrity_failures"])
             self.assertNotIn("power", result); self.assertNotIn("budget_passed", result)
@@ -851,7 +877,7 @@ class PartialAnalysisTests(unittest.TestCase):
 
     def test_an_incomplete_power_run_computes_no_comparison(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory); IntegrationTests().power_run(root)
+            root = Path(directory); IntegrationTests().power_run(root, completed=True)
             (root / "B-D-3-4.verdict.json").unlink()
             code, result = self.analyze(root)
             self.assertEqual(code, 1)
@@ -927,8 +953,8 @@ def analyze(run):
         return bool(result["integrity_failures"]) or not result["complete"] or not result.get("budget_passed", True)
 ```
 
-- [ ] **Step 4: Run the suite** — Expected: all pass. The existing power CLI test
-now needs its windows' verdicts, which `power_run` writes.
+- [ ] **Step 4: Run the suite** — Expected: all pass, `ObserveTests` included (its
+runs carry no verdicts).
 
 - [ ] **Step 5: Commit**
 
@@ -1197,31 +1223,58 @@ Then close the Task 5 child in niri-material.
 ### Task 6: Every exit records why, reaps OUT's writers, analyzes, and seals
 
 **Files:**
-- Modify: `fixtures/idle-budget.sh` (top-level `record_stop`, `teardown_error`,
-  `reap_weston`; inside `runtime`: `fail` redefinition, stop variables, signal and
-  `ERR` traps, the new `cleanup`; the tail loses its analysis and checksum)
+- Modify: `fixtures/idle-budget.sh`:
+  - new top-level `reap`, `reap_group`, `record_stop`, `teardown_error`, `reap_weston`;
+  - `stop_clients` reaps with `reap_group`;
+  - inside `runtime`: the `eval … native_cleanup` line is deleted, and it gains the
+    `fail` redefinition, stop variables, signal and `ERR` traps, and the new `cleanup`;
+  - the tail loses its analysis and checksum.
 - Test: `fixtures/test_idle_budget.py`
 
 **Interfaces:**
 - Consumes: `analyze_run`, `seal_checksums`, `run_cases`' `CURRENT_CASE` and
-  `STOP_KIND` (Task 5); `analyze`'s `teardown` (Task 4).
-- Produces: `$OUT/stop.json`, `$OUT/teardown.json` (a JSON list of strings),
-  `analysis.json` and `SHA256SUMS` written on every exit once the manifest exists.
+  `STOP_KIND` (Task 5); `analyze`'s `teardown` (Task 4); the lib's `remove_runtime_dir`,
+  `capture_meta`, `RT`, `HOST`, `WESTON_PID`, `NIRI_PID`, `CAP_PID`.
+- Produces:
+  - `reap PID`: returns once PID is gone, retrying a `wait` that a trap interrupted.
+  - `reap_group LEADER`: `reap`, then polls up to 5 s for the whole group; returns 1 if
+    the group outlives that.
+  - `$OUT/stop.json`; `$OUT/teardown.json`, a JSON list of strings, with
+    `TEARDOWN_FAILED=1`.
+  - `analysis.json` and `SHA256SUMS`, written on every exit once the manifest exists.
+  - `ShellTests.capture_stub(root) -> str`: a `capture-meta` stub that appends each
+    subcommand to `$CAPTURE_LOG`, outside `OUT`. It appends `sealed` after `release`
+    when `SHA256SUMS` exists.
 
 - [ ] **Step 1: Write the failing tests**
 
 ```python
-    # A fake Weston: a host socket file, and a shutdown line in OUT's log when killed.
-    WESTON_STUB = r"""
+    @staticmethod
+    def capture_stub(root):
+        stub = root / "capture-meta-stub"
+        stub.write_text('#!/bin/sh\n{ printf "%s" "$1"; [ "$1" != release ] || { [ -e "$OUT/SHA256SUMS" ] && printf " sealed"; }; echo; } >> "$CAPTURE_LOG"\n')
+        stub.chmod(0o755)
+        return str(stub)
+
+    # Fakes for OUT's writers. On TERM, each optionally signals the fixture (SECOND=1),
+    # then writes its shutdown line 0.3 s later: a second signal lands while cleanup
+    # waits on it. With LINGER=1, the fake Weston leaves its host socket behind.
+    WRITER_STUBS = r"""
 start_fake_weston() {
     touch "$XDG_RUNTIME_DIR/$HOST"
-    sh -c 'trap "echo caught signal 15 >> \"\$0\"; [ -n \"\$LINGER\" ] || rm -f \"\$1\"; exit 0" TERM
-           while :; do sleep 0.05; done' "$OUT/weston.log" "$XDG_RUNTIME_DIR/$HOST" &
+    sh -c 'trap "[ -z \"\$SECOND\" ] || kill -INT \$2; sleep 0.3; echo caught signal 15 >> \"\$0\"; [ -n \"\$LINGER\" ] || rm -f \"\$1\"; exit 0" TERM
+           while :; do sleep 0.05; done' "$OUT/weston.log" "$XDG_RUNTIME_DIR/$HOST" "$$" &
     WESTON_PID=$!
+}
+start_fake_client() {
+    setsid sh -c 'trap "[ -z \"\$SECOND\" ] || kill -INT \$1; sleep 0.3; echo client shutdown >> \"\$0\"; exit 0" TERM
+           while :; do sleep 0.05; done' "$OUT/client.log" "$$" &
+    CLIENT_PIDS+=("$!")
 }
 fake_one() {
     echo "$*" >> "$OUT/calls"
     [ "$1" != "${WESTON_AT:-}" ] || start_fake_weston
+    [ "$1" != "${CLIENT_AT:-}" ] || start_fake_client
     if [ "$1" = "${STOP_AT:-}" ]; then
         case $STOP_KIND_TEST in
             fail) fail boom ;;
@@ -1233,10 +1286,15 @@ fake_one() {
 analyze_run() { (cd "$OUT" && ls *.verdict.json 2>/dev/null) | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))'; }
 """
 
+    def sums_hold(self, out):
+        import subprocess
+        check = subprocess.run(["sha256sum", "-c", "--quiet", "SHA256SUMS"], cwd=out, capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
     def test_every_stop_records_its_kind_and_analyzes_completed_cases(self):
         for kind, status, message in (("fail", 1, "boom"), ("TERM", 143, "TERM"), ("INT", 130, "INT"), ("command", 1, "false")):
             with self.subTest(kind=kind):
-                result, out = self.run_loop("trace", extra=self.WESTON_STUB,
+                result, out = self.run_loop("trace", extra=self.WRITER_STUBS,
                                             env_extra={"STOP_AT": "A-resize-1", "STOP_KIND_TEST": kind})
                 self.assertEqual(result.returncode, status, result.stderr)
                 stop = json.loads((out / "stop.json").read_text())
@@ -1251,26 +1309,46 @@ analyze_run() { (cd "$OUT" && ls *.verdict.json 2>/dev/null) | python3 -c 'impor
         self.assertEqual((stop["kind"], stop["during"], stop["message"]), ("first-failure", "A-resize-1", "first failure: A-resize-1"))
 
     def test_checksums_hold_after_exit_with_weston_shutdown_logged(self):
-        import subprocess
         for label, env in (("clean", {"WESTON_AT": "B-long-move-1"}),
                            ("term mid-case", {"WESTON_AT": "A-resize-1", "STOP_AT": "A-resize-1", "STOP_KIND_TEST": "TERM"})):
             with self.subTest(label):
-                result, out = self.run_loop("trace", extra=self.WESTON_STUB, env_extra=env)
+                result, out = self.run_loop("trace", extra=self.WRITER_STUBS, env_extra=env)
                 self.assertEqual(result.returncode, 0 if label == "clean" else 143, result.stderr)
                 self.assertIn("caught signal 15", (out / "weston.log").read_text())
-                check = subprocess.run(["sha256sum", "-c", "--quiet", "SHA256SUMS"], cwd=out, capture_output=True, text=True)
-                self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
                 self.assertIn("./weston.log", (out / "SHA256SUMS").read_text())
+                self.sums_hold(out)
 
-    def test_a_lingering_weston_socket_is_a_teardown_error_and_nothing_changes_after_the_seal(self):
+    def test_a_second_signal_while_reaping_still_waits_for_each_writer(self):
+        for writer, env, log, line in (("weston", {"WESTON_AT": "A-resize-1"}, "weston.log", "caught signal 15"),
+                                       ("client", {"CLIENT_AT": "A-resize-1"}, "client.log", "client shutdown")):
+            with self.subTest(writer):
+                result, out = self.run_loop("trace", extra=self.WRITER_STUBS, env_extra={
+                    **env, "STOP_AT": "A-resize-1", "STOP_KIND_TEST": "TERM", "SECOND": "1"})
+                self.assertEqual(result.returncode, 143, result.stderr)   # the first signal's status
+                self.assertIn(line, (out / log).read_text())
+                self.assertIn(f"./{log}", (out / "SHA256SUMS").read_text())
+                self.sums_hold(out)
+
+    def test_a_lingering_weston_socket_is_a_teardown_error_and_cleanup_still_completes(self):
+        directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        env = {**self.fixture_env(root, "trace", capture_meta=self.capture_stub(root)),
+               "CAPTURE_LOG": str(root / "capture-calls"), "WESTON_AT": "B-long-move-1", "LINGER": "1"}
         import subprocess
-        result, out = self.run_loop("trace", extra=self.WESTON_STUB,
-                                    env_extra={"WESTON_AT": "B-long-move-1", "LINGER": "1"}, timeout=40)
+        result = subprocess.run(["bash", "-c", self.LOOP_STUBS + self.WRITER_STUBS + "runtime trace\n"],
+                                env=env, capture_output=True, text=True, timeout=30)
+        out = Path(env["OUT"])
         self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(len(json.loads((out / "teardown.json").read_text())), 1)
-        self.assertFalse((out / "stop.json").exists())   # the lib's late fail is sealed out
-        check = subprocess.run(["sha256sum", "-c", "--quiet", "SHA256SUMS"], cwd=out, capture_output=True, text=True)
-        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertEqual(json.loads((out / "teardown.json").read_text()), [f"Weston socket {self.host_of(root)} still present"])
+        self.assertFalse((out / "stop.json").exists())
+        self.assertEqual([p.name for p in (root / "runtime").iterdir() if p.is_dir()], [])   # runtime dir removed; the socket file stays
+        self.assertEqual((root / "capture-calls").read_text().splitlines()[-1], "release sealed")
+        self.sums_hold(out)
+
+    @staticmethod
+    def host_of(root):
+        # The lib names Weston's socket after its runtime directory: <gos.XXXXXX>-host.
+        return next(p.name for p in (root / "runtime").iterdir() if p.name.endswith("-host"))
 
     def test_a_failed_or_timed_out_analysis_fails_a_clean_run(self):
         for code in (1, 124):
@@ -1278,21 +1356,22 @@ analyze_run() { (cd "$OUT" && ls *.verdict.json 2>/dev/null) | python3 -c 'impor
                 result, _ = self.run_loop("trace", extra=f"analyze_run() {{ return {code}; }}\n")
                 self.assertEqual(result.returncode, 1, result.stderr)
 
-    def test_a_failing_teardown_command_keeps_the_runs_stop_reason(self):
-        result, out = self.run_loop("trace", extra=self.WESTON_STUB + "stop_clients() { false; }\n",
+    def test_a_failing_teardown_step_keeps_the_runs_stop_reason(self):
+        result, out = self.run_loop("trace", extra=self.WRITER_STUBS + "stop_clients() { false; }\n",
                                     env_extra={"STOP_AT": "A-move-1", "STOP_KIND_TEST": "fail"})
         self.assertEqual(result.returncode, 1)
         stop = json.loads((out / "stop.json").read_text())
         self.assertEqual((stop["kind"], stop["message"]), ("fail", "boom"))
+        self.assertEqual(len(json.loads((out / "teardown.json").read_text())), 1)
 
     def test_second_interrupt_during_analysis_still_tears_down(self):
-        extra = self.WESTON_STUB + r"""
+        extra = self.WRITER_STUBS + r"""
 analyze_run() { kill -INT $$; sleep 0.3; echo '"analyzed"'; }
 """
         result, out = self.run_loop("trace", extra=extra, env_extra={"STOP_AT": "A-move-1", "STOP_KIND_TEST": "TERM"})
         self.assertEqual(result.returncode, 143, result.stderr)
         self.assertEqual(json.loads((out / "analysis.json").read_text()), "analyzed")
-        self.assertTrue((out / "SHA256SUMS").exists())
+        self.sums_hold(out)
 
     def test_stop_before_manifest_writes_no_analysis(self):
         result, out = self.run_loop("trace", extra='write_manifest() { fail "refused before the plan"; }\n')
@@ -1304,27 +1383,53 @@ analyze_run() { kill -INT $$; sleep 0.3; echo '"analyzed"'; }
         import subprocess
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
         root = Path(directory.name)
-        stub = root / "capture-meta-stub"
-        # The lib creates OUT before its first capture-meta call (the existing stub test relies on it).
-        stub.write_text('#!/bin/sh\n{ printf "%s" "$1"; [ "$1" != release ] || { [ -e "$OUT/SHA256SUMS" ] && printf " sealed"; }; echo; } >> "$OUT/capture-calls"\n')
-        stub.chmod(0o755)
-        env = self.fixture_env(root, "trace", capture_meta=str(stub))
+        env = {**self.fixture_env(root, "trace", capture_meta=self.capture_stub(root)), "CAPTURE_LOG": str(root / "capture-calls")}
         result = subprocess.run(["bash", "-c", self.LOOP_STUBS + "runtime trace --pilot\n"], env=env, capture_output=True, text=True, timeout=20)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((Path(env["OUT"]) / "capture-calls").read_text().splitlines()[-1], "release sealed")
+        self.assertEqual((root / "capture-calls").read_text().splitlines()[-1], "release sealed")
 ```
+
+The lib names Weston's socket `$XDG_RUNTIME_DIR/$HOST`, with `HOST=$(basename "$RT")-host`.
+The lingering stub leaves that file behind, which is how `host_of` finds the name.
 
 - [ ] **Step 2: Run to see them fail**
 
 Run: `python3 -m unittest -v fixtures/test_idle_budget.py -k ShellTests`
-Expected: FAIL (no `stop.json`; a TERM leaves no `analysis.json`; `weston.log`
-changes after `SHA256SUMS`).
+Expected: FAIL. There is no `stop.json`, a TERM leaves no `analysis.json`,
+`weston.log` changes after `SHA256SUMS`, and a lingering socket exits before
+`release`.
 
 - [ ] **Step 3: Implement**
 
-Top level, after `seal_checksums`:
+Top level, replacing `stop_clients` and following `seal_checksums`:
 
 ```bash
+# A signal caught by a trap interrupts `wait` (status > 128) while the child still
+# runs, so wait again until it is gone; a zombie answers kill -0 until it is reaped.
+reap() {   # pid
+    local rc
+    while kill -0 "$1" 2>/dev/null; do
+        rc=0; wait "$1" 2>/dev/null || rc=$?
+        [ "$rc" != 127 ] || sleep 0.05   # not our child: poll instead
+    done
+}
+
+# A setsid group's other members are not our children: poll until the group is empty.
+reap_group() {   # leader pid
+    local _
+    reap "$1"
+    for _ in $(seq 50); do kill -0 -- "-$1" 2>/dev/null || return 0; sleep 0.1; done
+    return 1
+}
+
+stop_clients() {
+    local pid failed=0
+    for pid in "${CLIENT_PIDS[@]}"; do kill -- "-$pid" 2>/dev/null || true; done
+    for pid in "${CLIENT_PIDS[@]}"; do reap_group "$pid" || failed=1; done
+    CLIENT_PIDS=()
+    return "$failed"
+}
+
 # Whichever records first wins, so a specific reason is never replaced by a generic one;
 # nothing is written into OUT once it is sealed.
 record_stop() {   # kind, exit status, message
@@ -1338,6 +1443,9 @@ STOP
 }
 
 teardown_error() {
+    TEARDOWN_FAILED=1
+    echo "teardown: $1" >&2
+    if [ "${SEALED:-0}" != 0 ] || [ ! -d "$OUT" ]; then return 0; fi
     python3 - "$OUT/teardown.json" "$1" <<'TEARDOWN'
 import json, sys
 from pathlib import Path
@@ -1347,52 +1455,65 @@ path.write_text(json.dumps(errors + [sys.argv[2]], indent=2) + "\n")
 TEARDOWN
 }
 
-# Weston logs its shutdown into OUT, so it is reaped before the checksum. The lib's
+# Weston logs its shutdown into OUT, so it is gone before the checksum. The lib's
 # stop_weston calls fail, which exits; a lingering socket is recorded instead.
 reap_weston() {
-    if [ -n "$WESTON_PID" ]; then kill "$WESTON_PID" 2>/dev/null; wait "$WESTON_PID" 2>/dev/null; WESTON_PID=; fi
-    for _ in $(seq 50); do [ ! -e "$XDG_RUNTIME_DIR/$HOST" ] && return 0; sleep 0.1; done
+    local _
+    if [ -n "$WESTON_PID" ]; then kill "$WESTON_PID" 2>/dev/null || true; reap "$WESTON_PID"; WESTON_PID=; fi
+    for _ in $(seq 50); do [ -e "$XDG_RUNTIME_DIR/$HOST" ] || return 0; sleep 0.1; done
     teardown_error "Weston socket $HOST still present"
 }
 ```
 
-Inside `runtime`, replace the block from `CLIENT_PIDS=(); SAMPLE_PID=` through
-`trap 'exit 143' TERM`:
+Inside `runtime`, delete the line
+`eval "$(declare -f cleanup | sed '1s/cleanup/native_cleanup/')"`, and replace the block
+from `CLIENT_PIDS=(); SAMPLE_PID=` through `trap 'exit 143' TERM`:
 
 ```bash
-    CLIENT_PIDS=(); SAMPLE_PID=; STOP_SIGNAL=; ERR_RECORD=; SEALED=0
+    CLIENT_PIDS=(); SAMPLE_PID=; STOP_SIGNAL=; ERR_RECORD=; SEALED=0; TEARDOWN_FAILED=0
     # Lib functions call fail by name, so they record through this one too.
     fail() {
         record_stop "${STOP_KIND:-fail}" 1 "$*"
         echo "FAIL: $*" >&2
         exit 1
     }
+    # Replaces the lib's cleanup rather than wrapping it: that one ends in exit and
+    # repeats Weston's socket check through fail, which would skip the runtime
+    # directory and the lock.
     cleanup() {
         local rc=$? signal=$STOP_SIGNAL error=$ERR_RECORD status analysis=0
         set +e
         trap - ERR
         # A handler, unlike an ignored signal, resets in children: Ctrl-C still reaches the analysis.
         trap 'SECOND_SIGNAL=1' INT TERM
-        stop_clients
-        if [ -n "$SAMPLE_PID" ]; then kill -- "-$SAMPLE_PID" 2>/dev/null; wait "$SAMPLE_PID" 2>/dev/null; SAMPLE_PID=; fi
-        if [ -n "$CAP_PID" ]; then kill "$CAP_PID" 2>/dev/null; wait "$CAP_PID" 2>/dev/null; CAP_PID=; fi
-        if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null; wait "$NIRI_PID" 2>/dev/null; NIRI_PID=; fi
+        # 1. Every process that writes into OUT is gone before anything is judged or summed.
+        stop_clients || teardown_error "a client process group outlived its kill"
+        if [ -n "$SAMPLE_PID" ]; then
+            kill -- "-$SAMPLE_PID" 2>/dev/null
+            reap_group "$SAMPLE_PID" || teardown_error "the power sampler's group outlived its kill"
+            SAMPLE_PID=
+        fi
+        if [ -n "$CAP_PID" ]; then kill "$CAP_PID" 2>/dev/null; reap "$CAP_PID"; CAP_PID=; fi
+        if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null; reap "$NIRI_PID"; NIRI_PID=; fi
         reap_weston
+        remove_runtime_dir || teardown_error "runtime directory $RT not removed"
+        # 2. Why the run stopped, when nothing more specific was recorded.
         if [ "$rc" != 0 ]; then
             if [ -n "$signal" ]; then record_stop signal "$rc" "$signal"
             elif [ -n "$error" ]; then record_stop command "$rc" "$error"
             else record_stop exit "$rc" "exit $rc"; fi
         fi
+        # 3. Judge and sum, then write nothing more into OUT.
         if [ -e "$OUT/manifest.json" ]; then
             analyze_run > "$OUT/analysis.json" || analysis=1
             seal_checksums || analysis=1
         fi
         SEALED=1
+        # Last, so no other capture starts while this one is still analyzing.
+        capture_meta release "$OUT" || true
         status=$rc
-        if [ "$status" = 0 ] && { [ "$analysis" != 0 ] || [ -e "$OUT/teardown.json" ]; }; then status=1; fi
-        # native_cleanup reads the status from $? and ends in exit.
-        (exit "$status")
-        native_cleanup
+        if [ "$status" = 0 ] && { [ "$analysis" != 0 ] || [ "$TEARDOWN_FAILED" != 0 ]; }; then status=1; fi
+        exit "$status"
     }
     trap cleanup EXIT
     trap 'STOP_SIGNAL=INT; exit 130' INT
@@ -1411,37 +1532,154 @@ The tail loses its analysis and checksum:
 ```
 
 - [ ] **Step 4: Run the suite** — Expected: all pass, including
-`test_runtime_signals_reap_capture_sampler_clients_and_compositor` (prepare mode:
-`stop.json` is written, with no analysis).
+  `test_stop_clients_reaps_owned_process_group` and
+  `test_runtime_signals_reap_capture_sampler_clients_and_compositor`. In prepare mode,
+  the latter now gets a `stop.json` and no analysis, and its runtime directory is
+  still removed.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add fixtures/idle-budget.sh fixtures/test_idle_budget.py
-git commit -m "feat(idle-budget): every exit records why, reaps OUT's writers, then analyzes and checksums"
+git commit -m "feat(idle-budget): every exit records why, reaps OUT's writers, then analyzes, seals and releases"
 ```
 
 Then close the Task 6 child in niri-material.
 
 ---
 
-### Task 7: Documentation, full gate, and the results branch
+### Task 7: Live-run supervisor, documentation, and full gate
 
 **Files:**
-- Modify (experiments): `docs/results/2026-09-11-idle-budget.md`
+- Create (experiments): `fixtures/idle-budget-supervise.sh`
+- Modify (experiments): `fixtures/test_idle_budget.py`, `fixtures/idle-budget.sh`
+  (the `cp` of fixture files into `OUT` also copies the supervisor, which joins
+  `identity_inputs`), `docs/results/2026-09-11-idle-budget.md`
 - Modify (niri-material): `docs/specs/2026-09-27-idle-budget-fail-fast-design.md`
   (status line), `docs/materials/2026-09-11-idle-budget-evidence.md` (one
   sentence naming the pilot)
 
-- [ ] **Step 1: Results doc.** In the reproduction section, after the trace and power
+**Interfaces:**
+- Produces: `idle-budget-supervise.sh COMMAND [ARGS...]`. It runs the command in its
+  own process group with INT at its default, and returns only when every process in
+  the group has exited. Its exit status is the command's. INT and TERM are delivered
+  to the fixture's shell (`bash …idle-budget.sh trace|power|prepare`) alone, or to the
+  whole group while no fixture shell is running.
+
+A wrapper (`just`, `tt`) can return before the fixture's cleanup has finished, and
+`analysis.json` exists as soon as its redirection opens. So neither a prompt nor a
+file says a live run is done. The group, which holds the fixture's shell, does.
+The signal must not reach `tt`: it runs its command with `subprocess.run`, which
+SIGKILLs the child about 0.25 s after tt's own KeyboardInterrupt (filed as
+ops-8fe6c9). Signalled alone, the fixture cleans up and exits, and `tt` and `just`
+then record and return its status normally.
+
+- [ ] **Step 1: Write the failing tests**
+
+```python
+class SuperviseTests(unittest.TestCase):
+    SUPERVISE = str(Path(__file__).with_name("idle-budget-supervise.sh"))
+
+    def interrupted_run(self, directory):
+        """A stand-in fixture behind a tt-like wrapper, interrupted once through the supervisor."""
+        import os, signal, subprocess, sys, time
+        root = Path(directory)
+        fixture = root / "idle-budget.sh"   # the name the supervisor looks for
+        # The fixture traps INT and cleans up for 0.5 s before writing `done`.
+        fixture.write_text('trap \'sleep 0.5; touch "$DONE"; exit 130\' INT\nwhile :; do sleep 0.05; done\n')
+        # Like tt: subprocess.run, which SIGKILLs its child if the wrapper itself is interrupted.
+        wrapper = [sys.executable, "-c", "import subprocess, sys; rc = subprocess.run(['bash', sys.argv[1], 'trace', '--pilot']).returncode; "
+                   "open(sys.argv[2], 'w').write(str(rc)); sys.exit(rc)", str(fixture), str(root / "wrapper-status")]
+        process = subprocess.Popen([self.SUPERVISE, *wrapper], env={**os.environ, "DONE": str(root / "done")})
+        time.sleep(0.5)
+        process.send_signal(signal.SIGINT)
+        return process.wait(timeout=10), root
+
+    def test_int_reaches_the_fixture_alone_and_the_supervisor_returns_after_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            status, root = self.interrupted_run(directory)
+            self.assertEqual(status, 130)
+            self.assertTrue((root / "done").exists())   # the fixture finished its cleanup, unkilled
+            self.assertEqual((root / "wrapper-status").read_text(), "130")   # the wrapper was never interrupted
+
+    def test_the_command_starts_with_int_at_its_default(self):
+        # A plain `cmd &` in a non-interactive shell starts cmd with INT ignored, and a
+        # bash started that way cannot trap it.
+        import subprocess, sys
+        probe = "import signal, sys; sys.exit(signal.getsignal(signal.SIGINT) is signal.SIG_IGN)"
+        self.assertEqual(subprocess.run([self.SUPERVISE, sys.executable, "-c", probe], timeout=10).returncode, 0)
+
+    def test_waits_for_a_member_that_outlives_its_leader(self):
+        import subprocess, time
+        with tempfile.TemporaryDirectory() as directory:
+            done = Path(directory) / "done"
+            start = time.monotonic()
+            result = subprocess.run([self.SUPERVISE, "bash", "-c", '(sleep 0.5; touch "$0") & exit 3', str(done)], timeout=10)
+            self.assertEqual(result.returncode, 3)
+            self.assertTrue(done.exists())
+            self.assertGreaterEqual(time.monotonic() - start, 0.5)
+
+    def test_usage(self):
+        import subprocess
+        self.assertEqual(subprocess.run([self.SUPERVISE], capture_output=True).returncode, 2)
+```
+
+Run: `python3 -m unittest -v fixtures/test_idle_budget.py -k SuperviseTests`
+Expected: ERROR (no such file).
+
+- [ ] **Step 2: Implement `fixtures/idle-budget-supervise.sh`** (mode 0755)
+
+```bash
+#!/usr/bin/env bash
+# Run a live capture in its own process group and return only when every process in
+# that group has exited. Wrappers such as just and tt can return before the fixture's
+# cleanup finishes, and analysis.json exists as soon as its redirection opens, so only
+# the group says a run is done. INT and TERM (Ctrl-C at the TTY) go to the whole group.
+set -uo pipefail
+[ $# -gt 0 ] || { echo "usage: $0 command [args...]" >&2; exit 2; }
+# In a non-interactive shell the background child is no group leader, so setsid does
+# not fork: $! is the command's pid, and the new group's id. Such a child also starts
+# with INT ignored, and a bash started that way cannot trap it: env resets it.
+setsid env --default-signal=INT "$@" & leader=$!
+# Only the fixture's shell is signalled: tt answers its own interrupt by SIGKILLing its
+# child, which would cut the fixture's cleanup short. The wrappers wait for it instead.
+forward() {   # signal
+    local targets
+    targets=$(pgrep -g "$leader" -f '^bash .*idle-budget\.sh (trace|power|prepare)( |$)') || targets=
+    if [ -n "$targets" ]; then kill -"$1" $targets 2>/dev/null
+    else kill -"$1" -- "-$leader" 2>/dev/null; fi
+}
+trap 'forward INT' INT
+trap 'forward TERM' TERM
+status=
+while [ -z "$status" ]; do
+    rc=0; wait "$leader" || rc=$?
+    # A trapped signal interrupts wait while the leader still runs.
+    kill -0 "$leader" 2>/dev/null || status=$rc
+done
+while kill -0 -- "-$leader" 2>/dev/null; do sleep 0.2; done
+exit "$status"
+```
+
+In `idle-budget.sh`'s `runtime`, the fixture copy becomes
+`cp "$fixture"/idle-budget.{py,sh,just} "$fixture/idle-budget-supervise.sh" "$fixture/idle-budget-trace-marker.patch" "$OUT/"`,
+and `identity_inputs` gains `--input "$OUT/idle-budget-supervise.sh"`. In
+`test_runtime_calls_capture_meta_in_order_per_mode`, add `"idle-budget-supervise.sh"`
+to the names asserted in the identity call.
+
+- [ ] **Step 3: Results doc.** In the reproduction section, after the trace and power
   commands, add:
 
 ```markdown
-Each lane runs a pilot first: `… idle-budget.just trace --pilot` (A-move-1,
-A-resize-1, C-move-1, D-move-1; about 9 min) or `… power --pilot` (sham block 1;
-about 10 min). A run stops at its first failing case and writes `analysis.json` for
-the cases it completed, with the reason in `stopped`; `--inventory` runs every case
-regardless. Each case's verdict is in `<case>.verdict.json` as it lands.
+Each lane runs a pilot first: `idle-budget-supervise.sh just … trace --pilot`
+(A-move-1, A-resize-1, C-move-1, D-move-1; about 9 min) or `… power --pilot` (sham
+block 1; about 10 min). Interrupt a supervised run with Ctrl-C at the supervisor: it
+signals the fixture alone, since `tt` would otherwise SIGKILL the fixture mid-cleanup. A run stops at its first failing case and writes
+`analysis.json` for the cases it completed, with the reason in `stopped`;
+`--inventory` runs every case regardless. Each case's verdict is in
+`<case>.verdict.json` as it lands. Run live captures under
+`fixtures/idle-budget-supervise.sh`: it returns only when the fixture has finished
+its cleanup and analysis, which is when `OUT` can be read.
 ```
 
 Replace the *Caveats* bullet "The analyzer does not require the trace to reach the
@@ -1449,20 +1687,20 @@ window end…" with: "Since `material-b15ad7` the analyzer requires each trace t
 its window end. This run predates that gate, and every trace here runs about 58 s past
 its window."
 
-- [ ] **Step 2: Full suite.** Run the test recipe. Expected: all pass. Then
-  `bash -n fixtures/idle-budget.sh`.
+- [ ] **Step 4: Full suite.** Run the test recipe. Expected: all pass. Then
+  `bash -n fixtures/idle-budget.sh fixtures/idle-budget-supervise.sh`.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add docs/results/2026-09-11-idle-budget.md
-git commit -m "docs(idle-budget): the pilot, fail-fast, and per-case verdicts"
+git add fixtures/idle-budget-supervise.sh fixtures/idle-budget.sh fixtures/test_idle_budget.py docs/results/2026-09-11-idle-budget.md
+git commit -m "feat(idle-budget): a supervisor that returns when the fixture has finished; document the pilot and fail-fast"
 ```
 
 Pushing `results/idle-budget` is an action outside the repository: ask the person
 first.
 
-- [ ] **Step 4: niri-material.** Set the spec status to "implemented (experiments
+- [ ] **Step 6: niri-material.** Set the spec status to "implemented (experiments
   `<sha>`); live pilots pending", add the sentence to the evidence doc, `tasks done`
   the Task 7 child, `tasks check`, commit `docs(specs): idle-budget fail-fast
   implemented`.
@@ -1473,26 +1711,27 @@ first.
 
 Not an agent step: `tasks park <Task 8 child> … --reason quiet --waiting-on user
 --needs headless --minutes 35`. From a TTY with the desktop session stopped (see the
-settle-gated capture practice), in the niri-material checkout:
+settle-gated capture practice), in the niri-material checkout. Each run is a separate
+command. The next one starts only after the previous supervisor has returned.
 
 ```bash
 X=~/d/niri-experiments/.worktrees/material-b15ad7/fixtures
+S=$X/idle-budget-supervise.sh
 W=$NIRI_MATERIAL_WORK_ROOT/material-265eb0; T=$(date +%Y%m%dT%H%M%S)
 # 1. trace pilot, ~12 min
-OUT=$W/pilot-trace-$T NIRI_BIN=$W/trace-target/release/niri MATERIAL_ROOT=$PWD just --justfile $X/idle-budget.just trace --pilot
-# 2. interrupted trace pilot, ~6 min: press Ctrl-C after the second verdict line
-OUT=$W/pilot-trace-int-$T NIRI_BIN=$W/trace-target/release/niri MATERIAL_ROOT=$PWD just --justfile $X/idle-budget.just trace --pilot
+OUT=$W/pilot-trace-$T NIRI_BIN=$W/trace-target/release/niri MATERIAL_ROOT=$PWD $S just --justfile $X/idle-budget.just trace --pilot
+# 2. interrupted trace pilot, ~6 min: press Ctrl-C once, after the second verdict line;
+#    the supervisor forwards it and returns when the fixture has finished its cleanup.
+OUT=$W/pilot-trace-int-$T NIRI_BIN=$W/trace-target/release/niri MATERIAL_ROOT=$PWD $S just --justfile $X/idle-budget.just trace --pilot
 # 3. power pilot, ~12 min, dedicated DRM session
 OUT=$W/pilot-power-$T NIRI_BIN=$W/power-target/release/niri POWER_OUTPUT=<output> POWER_MODE=<mode> POWER_SCALE=<scale> \
-  MATERIAL_ROOT=$PWD just --justfile $X/idle-budget.just power --pilot
+  MATERIAL_ROOT=$PWD $S just --justfile $X/idle-budget.just power --pilot
 ```
 
 Both binaries and their `niri.identity.json` were present on 2026-09-27. Recheck
 before parking; if either is gone, the next step for the person begins with
-`build-tracy` / `build-power`, plus about 10 min each. For run 2, wait until
-`analysis.json` exists before judging it: Ctrl-C also reaches `just` and `tt`, which
-may return to the prompt before the fixture finishes its cleanup. Pass criteria, which
-the agent reads afterwards from `OUT` (not from the wrapper's exit status):
+`build-tracy` / `build-power`, plus about 10 min each. The agent reads the pass criteria
+afterwards from `OUT`, after each supervisor has returned:
 1. Runs 1 and 3 hold four verdicts each, with `analysis.json` `pilot: true`,
    `complete: true`, and for power a `pilot_block`. Neither has a `stop.json`.
 2. Run 2's `stop.json` is `kind: "signal"`, message `INT`, `exit: 130`. Its

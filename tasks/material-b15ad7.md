@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: materials-26.04
 created: 2026-09-25T09:50:48Z
-updated: 2026-09-27T13:19:24Z
+updated: 2026-09-27T13:36:38Z
 started: 2026-09-27T12:25:25Z
 depends: []
 parent: material-53f873
@@ -28,3 +28,4 @@ The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case 
   provenance: {"harness_session":"claude-code:5fc9e346-b9ce-4a5a-be56-3ea1c4973d50","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-27T13:19:24Z (material-b15ad7): Spec review 1 (5 findings) addressed in 65075362: cleanup reordered (analysis before native_cleanup, which exits; subshell rejected since it cannot wait on the parent's children), stop.json from fail/signal/ERR with first-writer-wins, explicit compositor pid through inventory/interval.json, execution driven by manifest plan rows, output baseline = first verdict with a summary
 - 2026-09-27T13:19:24Z (material-b15ad7): Spec review 2 (1 finding) addressed in 2e82d7e0: weston reaped before the checksum, OUT sealed before native_cleanup, ERR trap removed in cleanup; spec approved for planning. Plan docs/plans/2026-09-27-idle-budget-fail-fast.md with 8 step children
+- 2026-09-27T13:36:38Z (material-b15ad7): Plan review 1 (4 findings): retried waits via reap/reap_group with a second-signal-during-reap test; fixture cleanup no longer calls the lib's cleanup (lingering socket skipped runtime-dir removal and lock release); verdict marking opt-in in synthetic runs; live runs through fixtures/idle-budget-supervise.sh. Found while prototyping it: tt SIGKILLs its child on Ctrl-C (ops-8fe6c9), so the supervisor signals only the fixture shell; spec cleanup order and live section amended to match
