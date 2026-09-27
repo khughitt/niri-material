@@ -1224,8 +1224,10 @@ Then close the Task 5 child in niri-material.
 
 **Files:**
 - Modify: `fixtures/idle-budget.sh`:
-  - new top-level `reap`, `reap_group`, `record_stop`, `teardown_error`, `reap_weston`;
-  - `stop_clients` reaps with `reap_group`;
+  - new top-level `reap`, `reap_group`, `stop_group`, `record_stop`, `teardown_error`,
+    `reap_weston`;
+  - `stop_clients` stops each group with `stop_group`; `stop_scene` fails the run
+    when a group survived KILL;
   - inside `runtime`: the `eval … native_cleanup` line is deleted, and it gains the
     `fail` redefinition, stop variables, signal and `ERR` traps, and the new `cleanup`;
   - the tail loses its analysis and checksum.
@@ -1237,8 +1239,13 @@ Then close the Task 5 child in niri-material.
   `capture_meta`, `RT`, `HOST`, `WESTON_PID`, `NIRI_PID`, `CAP_PID`.
 - Produces:
   - `reap PID`: returns once PID is gone, retrying a `wait` that a trap interrupted.
-  - `reap_group LEADER`: `reap`, then polls up to 5 s for the whole group; returns 1 if
-    the group outlives that.
+  - `reap_group LEADER`: `reap`, then polls up to 5 s for the whole group. After that
+    it KILLs the group and polls up to 5 s more. It returns 0 when the group is gone,
+    1 when it went only after KILL, and 2 when it survived KILL.
+  - `stop_group LEADER LABEL`: TERM, `reap_group`, a teardown error for 1, and for 2 a
+    teardown error naming the survivors plus `UNSEALABLE=1`. It always returns 0.
+  - `UNSEALABLE=1`: a process we own may still write into `OUT`. Cleanup then writes
+    no analysis and no checksum, keeps the capture lock, and exits 1.
   - `$OUT/stop.json`; `$OUT/teardown.json`, a JSON list of strings, with
     `TEARDOWN_FAILED=1`.
   - `analysis.json` and `SHA256SUMS`, written on every exit once the manifest exists.
@@ -1256,25 +1263,45 @@ Then close the Task 5 child in niri-material.
         stub.chmod(0o755)
         return str(stub)
 
-    # Fakes for OUT's writers. On TERM, each optionally signals the fixture (SECOND=1),
-    # then writes its shutdown line 0.3 s later: a second signal lands while cleanup
-    # waits on it. With LINGER=1, the fake Weston leaves its host socket behind.
+    # Fakes for OUT's writers. Each publishes a ready file only after installing its
+    # TERM handler (and, for a client, from inside its new group), and the starter
+    # waits for it: a writer stopped before then would die without its shutdown line.
+    # On TERM, each optionally signals the fixture (SECOND=1), then writes its shutdown
+    # line 0.3 s later, so a second signal lands while cleanup waits on it. With
+    # LINGER=1, the fake Weston leaves its host socket behind. The stubborn client's
+    # leader exits on TERM, but its child ignores TERM and keeps writing.
     WRITER_STUBS = r"""
+await_ready() {
+    local _
+    for _ in $(seq 100); do [ ! -e "$1" ] || return 0; sleep 0.05; done
+    echo "stub never ready: $1" >&2; exit 97
+}
 start_fake_weston() {
     touch "$XDG_RUNTIME_DIR/$HOST"
     sh -c 'trap "[ -z \"\$SECOND\" ] || kill -INT \$2; sleep 0.3; echo caught signal 15 >> \"\$0\"; [ -n \"\$LINGER\" ] || rm -f \"\$1\"; exit 0" TERM
-           while :; do sleep 0.05; done' "$OUT/weston.log" "$XDG_RUNTIME_DIR/$HOST" "$$" &
+           : > "$3"; while :; do sleep 0.05; done' "$OUT/weston.log" "$XDG_RUNTIME_DIR/$HOST" "$$" "$XDG_RUNTIME_DIR/weston.ready" &
     WESTON_PID=$!
+    await_ready "$XDG_RUNTIME_DIR/weston.ready"
 }
 start_fake_client() {
     setsid sh -c 'trap "[ -z \"\$SECOND\" ] || kill -INT \$1; sleep 0.3; echo client shutdown >> \"\$0\"; exit 0" TERM
-           while :; do sleep 0.05; done' "$OUT/client.log" "$$" &
+           : > "$2"; while :; do sleep 0.05; done' "$OUT/client.log" "$$" "$XDG_RUNTIME_DIR/client.ready" &
     CLIENT_PIDS+=("$!")
+    await_ready "$XDG_RUNTIME_DIR/client.ready"
+}
+start_stubborn_client() {
+    setsid sh -c 'trap "exit 0" TERM
+           ( trap "" TERM; : > "$1"; while :; do echo tick >> "$0"; sleep 0.2; done ) &
+           while :; do sleep 0.05; done' "$OUT/late.log" "$XDG_RUNTIME_DIR/stubborn.ready" &
+    CLIENT_PIDS+=("$!")
+    echo "$!" > "$XDG_RUNTIME_DIR/stubborn.pgid"
+    await_ready "$XDG_RUNTIME_DIR/stubborn.ready"
 }
 fake_one() {
     echo "$*" >> "$OUT/calls"
     [ "$1" != "${WESTON_AT:-}" ] || start_fake_weston
     [ "$1" != "${CLIENT_AT:-}" ] || start_fake_client
+    [ "$1" != "${STUBBORN_AT:-}" ] || start_stubborn_client
     if [ "$1" = "${STOP_AT:-}" ]; then
         case $STOP_KIND_TEST in
             fail) fail boom ;;
@@ -1328,6 +1355,34 @@ analyze_run() { (cd "$OUT" && ls *.verdict.json 2>/dev/null) | python3 -c 'impor
                 self.assertIn(line, (out / log).read_text())
                 self.assertIn(f"./{log}", (out / "SHA256SUMS").read_text())
                 self.sums_hold(out)
+
+    def test_a_descendant_ignoring_term_is_killed_before_the_seal(self):
+        import os, time
+        result, out = self.run_loop("trace", extra=self.WRITER_STUBS, env_extra={"STUBBORN_AT": "A-move-1"}, timeout=40)
+        self.assertEqual(result.returncode, 1, result.stderr)   # a clean run with a teardown error
+        errors = json.loads((out / "teardown.json").read_text())
+        self.assertEqual(len(errors), 1); self.assertIn("was killed", errors[0])
+        pgid = int((out.parent.parent / "runtime" / "stubborn.pgid").read_text())
+        with self.assertRaises(ProcessLookupError):
+            os.killpg(pgid, 0)
+        time.sleep(0.6)   # three of the writer's ticks, had it survived
+        self.sums_hold(out)
+
+    def test_a_group_surviving_kill_leaves_out_unsealed_and_the_lock_held(self):
+        import subprocess
+        directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        env = {**self.fixture_env(root, "trace", capture_meta=self.capture_stub(root)),
+               "CAPTURE_LOG": str(root / "capture-calls"), "CLIENT_AT": "A-move-1", "STOP_AT": "A-move-1", "STOP_KIND_TEST": "TERM"}
+        # A process in uninterruptible sleep cannot be made on demand: stand in for one.
+        extra = self.WRITER_STUBS + 'reap_group() { kill -KILL -- "-$1" 2>/dev/null; return 2; }\n'
+        result = subprocess.run(["bash", "-c", self.LOOP_STUBS + extra + "runtime trace\n"], env=env, capture_output=True, text=True, timeout=20)
+        out = Path(env["OUT"])
+        self.assertEqual(result.returncode, 143, result.stderr)
+        self.assertIn("survived KILL", json.loads((out / "teardown.json").read_text())[0])
+        self.assertFalse((out / "analysis.json").exists()); self.assertFalse((out / "SHA256SUMS").exists())
+        self.assertNotIn("release", (root / "capture-calls").read_text())
+        self.assertEqual(json.loads((out / "stop.json").read_text())["kind"], "signal")
 
     def test_a_lingering_weston_socket_is_a_teardown_error_and_cleanup_still_completes(self):
         directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
@@ -1395,13 +1450,13 @@ The lingering stub leaves that file behind, which is how `host_of` finds the nam
 - [ ] **Step 2: Run to see them fail**
 
 Run: `python3 -m unittest -v fixtures/test_idle_budget.py -k ShellTests`
-Expected: FAIL. There is no `stop.json`, a TERM leaves no `analysis.json`,
+Expected: FAIL. A TERM-ignoring descendant outlives the seal, there is no `stop.json`, a TERM leaves no `analysis.json`,
 `weston.log` changes after `SHA256SUMS`, and a lingering socket exits before
 `release`.
 
 - [ ] **Step 3: Implement**
 
-Top level, replacing `stop_clients` and following `seal_checksums`:
+Top level, replacing `stop_clients` and `stop_scene`, and following `seal_checksums`:
 
 ```bash
 # A signal caught by a trap interrupts `wait` (status > 128) while the child still
@@ -1414,20 +1469,41 @@ reap() {   # pid
     done
 }
 
-# A setsid group's other members are not our children: poll until the group is empty.
+# A setsid group's other members are not our children, so they are polled. Nothing we
+# own may outlive the seal: after 5 s the group is KILLed and awaited again.
+# 0: gone; 1: gone only after KILL; 2: survived KILL (uninterruptible sleep).
 reap_group() {   # leader pid
     local _
     reap "$1"
     for _ in $(seq 50); do kill -0 -- "-$1" 2>/dev/null || return 0; sleep 0.1; done
-    return 1
+    kill -KILL -- "-$1" 2>/dev/null
+    for _ in $(seq 50); do kill -0 -- "-$1" 2>/dev/null || return 1; sleep 0.1; done
+    return 2
 }
 
+stop_group() {   # leader pid, label
+    local rc=0
+    kill -- "-$1" 2>/dev/null || true
+    reap_group "$1" || rc=$?
+    case $rc in
+        1) teardown_error "$2 (group $1) outlived TERM for 5 s and was killed" ;;
+        2) teardown_error "$2 (group $1) survived KILL: pids $(pgrep -g "$1" | tr '\n' ' ')"; UNSEALABLE=1 ;;
+    esac
+}
+
+# Kitty runs its shell in a session of its own, which dies with kitty's pty and
+# writes nothing into OUT; the groups we created are what we own.
 stop_clients() {
-    local pid failed=0
+    local pid
     for pid in "${CLIENT_PIDS[@]}"; do kill -- "-$pid" 2>/dev/null || true; done
-    for pid in "${CLIENT_PIDS[@]}"; do reap_group "$pid" || failed=1; done
+    for pid in "${CLIENT_PIDS[@]}"; do stop_group "$pid" client; done
     CLIENT_PIDS=()
-    return "$failed"
+}
+
+stop_scene() {
+    stop_clients
+    [ "${UNSEALABLE:-0}" = 0 ] || fail 'an owned process survived KILL; see teardown.json'
+    stop_nested
 }
 
 # Whichever records first wins, so a specific reason is never replaced by a generic one;
@@ -1445,7 +1521,7 @@ STOP
 teardown_error() {
     TEARDOWN_FAILED=1
     echo "teardown: $1" >&2
-    if [ "${SEALED:-0}" != 0 ] || [ ! -d "$OUT" ]; then return 0; fi
+    if [ "${SEALED:-0}" != 0 ] || [ ! -d "${OUT:-}" ]; then return 0; fi
     python3 - "$OUT/teardown.json" "$1" <<'TEARDOWN'
 import json, sys
 from pathlib import Path
@@ -1470,7 +1546,7 @@ Inside `runtime`, delete the line
 from `CLIENT_PIDS=(); SAMPLE_PID=` through `trap 'exit 143' TERM`:
 
 ```bash
-    CLIENT_PIDS=(); SAMPLE_PID=; STOP_SIGNAL=; ERR_RECORD=; SEALED=0; TEARDOWN_FAILED=0
+    CLIENT_PIDS=(); SAMPLE_PID=; STOP_SIGNAL=; ERR_RECORD=; SEALED=0; TEARDOWN_FAILED=0; UNSEALABLE=0
     # Lib functions call fail by name, so they record through this one too.
     fail() {
         record_stop "${STOP_KIND:-fail}" 1 "$*"
@@ -1487,12 +1563,8 @@ from `CLIENT_PIDS=(); SAMPLE_PID=` through `trap 'exit 143' TERM`:
         # A handler, unlike an ignored signal, resets in children: Ctrl-C still reaches the analysis.
         trap 'SECOND_SIGNAL=1' INT TERM
         # 1. Every process that writes into OUT is gone before anything is judged or summed.
-        stop_clients || teardown_error "a client process group outlived its kill"
-        if [ -n "$SAMPLE_PID" ]; then
-            kill -- "-$SAMPLE_PID" 2>/dev/null
-            reap_group "$SAMPLE_PID" || teardown_error "the power sampler's group outlived its kill"
-            SAMPLE_PID=
-        fi
+        stop_clients || teardown_error "stopping the clients failed"
+        if [ -n "$SAMPLE_PID" ]; then stop_group "$SAMPLE_PID" "the power sampler"; SAMPLE_PID=; fi
         if [ -n "$CAP_PID" ]; then kill "$CAP_PID" 2>/dev/null; reap "$CAP_PID"; CAP_PID=; fi
         if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null; reap "$NIRI_PID"; NIRI_PID=; fi
         reap_weston
@@ -1502,6 +1574,12 @@ from `CLIENT_PIDS=(); SAMPLE_PID=` through `trap 'exit 143' TERM`:
             if [ -n "$signal" ]; then record_stop signal "$rc" "$signal"
             elif [ -n "$error" ]; then record_stop command "$rc" "$error"
             else record_stop exit "$rc" "exit $rc"; fi
+        fi
+        # A process we own may still write into OUT: no analysis, no sums, and the lock
+        # stays held so no other capture starts beside it.
+        if [ "$UNSEALABLE" != 0 ]; then
+            SEALED=1
+            if [ "$rc" = 0 ]; then exit 1; else exit "$rc"; fi
         fi
         # 3. Judge and sum, then write nothing more into OUT.
         if [ -e "$OUT/manifest.json" ]; then
