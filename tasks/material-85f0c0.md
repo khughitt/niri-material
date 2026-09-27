@@ -1,13 +1,15 @@
 ---
 id: material-85f0c0
 title: "signals smoke: anchor idle-resume's resumed window to the input, not the trace end"
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-09-21T09:01:15Z
-updated: 2026-09-21T09:01:22Z
+updated: 2026-09-27T12:15:19Z
+started: 2026-09-27T12:15:19Z
 depends: []
 tags: [tooling, signals]
 agent: claude-code/claude-opus-5
@@ -18,3 +20,5 @@ idle_case in docs/materials/scripts/material-signals-smoke.sh counts Niri::redra
 ## Notes
 
 - 2026-09-21T09:01:22Z (material-2c3984): filed from the ring-beam evidence run (material-912dab); not a beam regression, so it stays outside the material-2c3984 goal
+- 2026-09-27T12:15:19Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:5c58ac0f-7e10-4813-ae4c-48834db98357","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
