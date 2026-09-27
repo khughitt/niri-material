@@ -1,17 +1,19 @@
 ---
 id: material-7963b8
 title: "Drift canary --check compares tag commit identity, contradicting its tree contract"
-status: doing
+status: done
 priority: 1
 size: s
 complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-19T13:07:35Z
-updated: 2026-09-27T10:50:46Z
+updated: 2026-09-27T11:04:53Z
 started: 2026-09-27T10:21:19Z
+completed: 2026-09-27T11:04:53Z
 depends: []
 tags: [upstream, tooling, bug]
+model: claude-opus-5-5
 agent: "claude-code/claude-opus-5[1m]"
 ---
 
@@ -31,3 +33,7 @@ Fix: validate `<tag>^{tree}` against `tree` instead of comparing commits (keep `
 - 2026-09-27T10:45:01Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-27T10:50:46Z (materials-26.04): First dispatched run (36313708159) failed earlier, at Tooling tests: test_within_aurora_* set EVIDENCE=/tmp but the smoke lib reads NIRI_MATERIAL_WORK_ROOT, which only this host exports. Fixed in 18288a7b; suite passes with the variable unset.
+- 2026-09-27T11:04:53Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T11:04:53Z (materials-26.04): Baseline tag validated by tree; tag_commit dropped, drift merge base is baseline_commit (a81806be). Also fixed to reach the drift step in CI: the smoke-lib offline test needed NIRI_MATERIAL_WORK_ROOT and ImageMagick (18288a7b, a2a2c28a), and the issue step resolved gh's repository to the upstream remote, niri-wm/niri (d0106616). Dispatched run 36314529632 passes through Drift and opened issue #1 for material-555b14's five conflicts.
+  provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
