@@ -1,15 +1,16 @@
 ---
 id: material-b349a6
 title: Publish niri-material as a public repository with a fork-aware front page
-status: doing
+status: done
 priority: 2
 size: m
 complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-27T17:14:18Z
-updated: 2026-09-27T17:14:24Z
+updated: 2026-09-27T17:36:46Z
 started: 2026-09-27T17:14:24Z
+completed: 2026-09-27T17:36:46Z
 depends: []
 tags: [docs, release]
 agent: claude-code/claude-opus-5-5
@@ -30,4 +31,8 @@ Making the repo public is outward-facing: confirm with the user first.
 ## Notes
 
 - 2026-09-27T17:14:24Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:8c710f98-bc15-4d6b-b0cb-7b43df9f3a75","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T17:36:46Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:8c710f98-bc15-4d6b-b0cb-7b43df9f3a75","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-27T17:36:46Z (materials-26.04): public at github.com/khughitt/niri-material: fork front page in .github/README.md (upstream README untouched), fork issue routing, upstream FUNDING/dependabot/release workflow removed, https PKGBUILD source, history as-is after audit; screenshot filed separately
   provenance: {"harness_session":"claude-code:8c710f98-bc15-4d6b-b0cb-7b43df9f3a75","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
