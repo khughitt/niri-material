@@ -703,8 +703,9 @@ impl<W: LayoutElement> Tile<W> {
                         [f64::from(jelly.resize[0]), f64::from(jelly.resize[1])],
                     );
                     let perimeter = ring::beam_perimeter(&face, response.ring_gap);
-                    let run_px = perimeter + ring::tail_length(perimeter);
-                    // The one place the run ends: on the geometry just computed.
+                    let run_px = ring::run_length(perimeter, response.ring_beam_decay);
+                    // The one place the run ends: on the geometry just computed,
+                    // once the tail has cleared or the decay has gone dark.
                     if beam.head_px(&self.clock) >= run_px {
                         beam.done.set(true);
                     } else {
@@ -723,6 +724,7 @@ impl<W: LayoutElement> Tile<W> {
                                 seed: material.jelly_seed()[0].to_bits()
                                     ^ beam.started.as_millis() as u32,
                             },
+                            response.ring_beam_decay,
                         );
                     }
                 }
@@ -3615,7 +3617,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wander_is_skipped_with_the_beam_under_reduced_and_off() {
+    fn the_wander_and_decay_are_skipped_with_the_beam_under_reduced_and_off() {
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         for (policy, animations_off) in [
             (niri_config::SignalMotionPolicy::Reduced, false),
@@ -3626,6 +3628,7 @@ mod tests {
             let response = niri_config::ResolvedResponse {
                 ring_beam_noise: 1.,
                 ring_beam_noise_hz: 20.,
+                ring_beam_decay: 600.,
                 ..Default::default()
             };
             let mut tile = beam_tile(flat_glass(), response, clock.clone());
@@ -3643,6 +3646,48 @@ mod tests {
                 assert_eq!(beam_uniforms(&dynamics), [0., 0., 0.], "{label} at {t}");
             }
         }
+    }
+
+    #[test]
+    fn a_decay_shorter_than_the_lap_ends_the_run_where_the_comet_goes_dark() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let response = niri_config::ResolvedResponse {
+            ring_beam_decay: 600.,
+            ..Default::default()
+        };
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = beam_tile(flat_glass(), response, clock.clone());
+        let (_, p, _) = geometry_of(&tile, 400., 300.);
+        assert!(p > 600., "the decay must fall inside the lap: P = {p}");
+        tile.update_render_elements(true, true, true, view);
+        render_dynamics(&tile, 400., 300.);
+
+        // Halfway to dark: a quarter of the brightness, the head on its path.
+        clock.set_unadjusted(secs(1.));
+        tile.update_render_elements(true, true, true, view);
+        let [head, _, decay] = beam_uniforms(&render_dynamics(&tile, 400., 300.));
+        assert!((head - 300.).abs() < 1e-2);
+        assert!((decay - 0.25).abs() < 1e-6, "decay {decay}");
+        assert!(tile.are_animations_ongoing());
+
+        // 600 px at 300 px/s is dark at 2 s, long before the lap closes:
+        // the first frame past it ends the run, so the redraws stop there.
+        clock.set_unadjusted(secs(2.1));
+        tile.update_render_elements(true, true, true, view);
+        let ended = render_dynamics(&tile, 400., 300.);
+        assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
+        assert_eq!(beam_uniforms(&ended), [0., 0., 0.], "rest uniforms");
+        assert!(!tile.are_animations_ongoing());
+        tile.advance_animations();
+        assert_eq!(beam_of(&tile), None);
+
+        // The resting ring is the same constant it is without the knob.
+        clock.set_unadjusted(secs(10.));
+        tile.advance_animations();
+        tile.update_render_elements(true, true, true, view);
+        let later = render_dynamics(&tile, 400., 300.);
+        assert_eq!(later.signal_fingerprint, ended.signal_fingerprint);
+        assert_eq!(tile.tick_deadline(Point::default(), view, secs(10.)), None);
     }
 
     #[test]

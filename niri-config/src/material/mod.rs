@@ -290,6 +290,8 @@ pub struct Response {
     #[knuffel(child, unwrap(argument))]
     pub ring_beam_noise_hz: Option<FloatOrInt<0, 30>>,
     #[knuffel(child, unwrap(argument))]
+    pub ring_beam_decay: Option<FloatOrInt<0, 20000>>,
+    #[knuffel(child, unwrap(argument))]
     pub ring_width: Option<FloatOrInt<0, 128>>,
     #[knuffel(child, unwrap(argument, str))]
     pub focus: Option<FocusResponse>,
@@ -326,6 +328,9 @@ pub struct ResolvedResponse {
     pub ring_beam_noise: f64,
     /// How fast it wanders, in wanders per second.
     pub ring_beam_noise_hz: f64,
+    /// Distance along the beam line over which the comet darkens, px;
+    /// zero is no decay.
+    pub ring_beam_decay: f64,
 }
 
 impl Default for ResolvedResponse {
@@ -344,6 +349,7 @@ impl Default for ResolvedResponse {
             ring_beam_speed: 300.,
             ring_beam_noise: 0.,
             ring_beam_noise_hz: 3.,
+            ring_beam_decay: 0.,
         }
     }
 }
@@ -370,6 +376,9 @@ impl ResolvedResponse {
             ring_beam_noise_hz: response
                 .ring_beam_noise_hz
                 .map_or(base.ring_beam_noise_hz, |x| x.0),
+            ring_beam_decay: response
+                .ring_beam_decay
+                .map_or(base.ring_beam_decay, |x| x.0),
         }
     }
 

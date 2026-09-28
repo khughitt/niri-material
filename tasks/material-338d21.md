@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-22T15:33:56Z
-updated: 2026-09-28T11:05:34Z
+updated: 2026-09-28T11:11:42Z
 started: 2026-09-28T11:05:34Z
 depends: []
 tags: [rendering, prism]
@@ -37,3 +37,4 @@ Shares its plumbing with material-9704b0 (noise on the head's brightness): the s
 - 2026-09-28T11:05:34Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-28T11:05:34Z (materials-26.04): Decay knob chosen 2026-09-28 (owner approved the recommendation): ring-beam-decay as a distance in px the comet travels before it is dark, 0/unset = no decay (the plateau). Lands with material-19cca1 in one worktree, .worktrees/material-338d21.
+- 2026-09-28T11:11:42Z (material-338d21): niri half landed in .worktrees/material-338d21: ring-beam-decay (px, (1 - d/D)^2 on the shared decay, run ends at min(P + L, D)), config tests, tile test, spec addendum, docs, beam-decay clip sequence. Next: Prism glass.ring.decay on a prism branch, held off prism main until the niri carrying it is installed.

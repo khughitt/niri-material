@@ -1,17 +1,19 @@
 ---
 id: material-19cca1
 title: "Ring beam: fade overlap when a lap is shorter than BEAM_FADE"
-status: doing
+status: done
 priority: 3
 size: xs
 complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-21T09:39:49Z
-updated: 2026-09-28T11:05:34Z
+updated: 2026-09-28T11:11:25Z
 started: 2026-09-28T11:05:34Z
+completed: 2026-09-28T11:11:25Z
 depends: []
 tags: [rendering]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5
 ---
 
@@ -23,3 +25,7 @@ In src/render_helpers/material/ring.rs the envelope's fade (BEAM_FADE 300 ms) st
 - 2026-09-28T11:05:34Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-28T11:05:34Z (materials-26.04): Landing with material-338d21 in .worktrees/material-338d21.
+- 2026-09-28T11:11:25Z (material-338d21): done
+  provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T11:11:25Z (material-338d21): Both head fades are capped at half the lap, so a lap shorter than BEAM_FADE fades in then out without dimming mid-run; env is CPU-side, so main.frag needs no mirror. Landed with material-338d21.
+  provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
