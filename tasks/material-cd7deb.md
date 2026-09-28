@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-28T03:05:12Z
-updated: 2026-09-28T03:30:29Z
+updated: 2026-09-28T03:39:53Z
 started: 2026-09-28T03:30:29Z
 depends: []
 parent: material-53f873
@@ -22,3 +22,4 @@ Idle-budget trace pilots 2026-09-27 (TTY, desktop stopped; binary built from 460
 
 - 2026-09-28T03:30:29Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:1462ad85-ed02-4290-a860-8f7187b484a9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T03:39:53Z (material-cd7deb): Fix: Tile::attention_gated says whether a tile's signal has sustained motion while input is active; Layout::set_input_active returns whether any tile (workspaces plus an interactive move) is gated, and Niri queues a redraw on either edge or a threshold change only then. Tests: tile only_sustained_attention_is_gated_by_input; fixture an_idle_edge_that_changes_no_tile_queues_no_redraw, which fails on the old code (the idle edge rendered a frame) and passes now. just gate passes

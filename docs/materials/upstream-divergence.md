@@ -88,14 +88,14 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
 | `src/layout/floating.rs` | B | M | +16/-5 |
-| `src/layout/mod.rs` | B | M | +72/-9 |
+| `src/layout/mod.rs` | B | M | +85/-9 |
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
 | `src/layout/tests.rs` | B | M | +116/-4 |
-| `src/layout/tile.rs` | B | M | +2200/-78 |
+| `src/layout/tile.rs` | B | M | +2249/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
-| `src/niri.rs` | B | M | +287/-0 |
+| `src/niri.rs` | B | M | +288/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
