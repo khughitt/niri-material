@@ -6653,8 +6653,9 @@ impl Niri {
         // on the idle→active edge; while active, an early fire re-arms
         // itself, so per-input work is one `observe`.
         if self.input_activity.observe(get_monotonic_time()) {
-            self.layout.set_input_active(true);
-            self.queue_redraw_all();
+            if self.layout.set_input_active(true) {
+                self.queue_redraw_all();
+            }
             self.arm_input_idle_timer();
         }
     }
@@ -6682,8 +6683,9 @@ impl Niri {
                 state.niri.input_idle_timer = None;
                 match state.niri.input_activity.poll(get_monotonic_time()) {
                     crate::activity::Poll::Idle => {
-                        state.niri.layout.set_input_active(false);
-                        state.niri.queue_redraw_all();
+                        if state.niri.layout.set_input_active(false) {
+                            state.niri.queue_redraw_all();
+                        }
                     }
                     crate::activity::Poll::Rearm(_) => state.niri.arm_input_idle_timer(),
                 }
@@ -6698,8 +6700,7 @@ impl Niri {
         let changed = self
             .input_activity
             .set_threshold(threshold, get_monotonic_time());
-        if changed {
-            self.layout.set_input_active(!self.input_activity.is_idle());
+        if changed && self.layout.set_input_active(!self.input_activity.is_idle()) {
             self.queue_redraw_all();
         }
         self.arm_input_idle_timer();

@@ -2265,6 +2265,24 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// Whether the input-activity gate changes what this tile renders: its
+    /// window's signal has sustained motion while input is active. The gate
+    /// touches nothing else (design 2026-09-18 §3), so a tile without such a
+    /// signal needs no redraw when the gate flips.
+    pub fn attention_gated(&self) -> bool {
+        use crate::render_helpers::signal::effective;
+
+        let Some(material) = &self.material else {
+            return false;
+        };
+        let response = material.material().response(None);
+        self.window
+            .signal(self.clock.now_unadjusted())
+            .is_some_and(|folded| {
+                effective(&folded, self.options.signal.motion, &response, true).is_sustained()
+            })
+    }
+
     /// Next instant this tile needs a redraw for its material: the earliest
     /// of any optic's own change and the sustained-signal bucket boundary,
     /// while the slab band is in view. The focus beam runs on the animation
@@ -3331,6 +3349,37 @@ mod tests {
             let dynamics = render_dynamics(&tile, 400., 300.);
             assert_eq!(beam_uniforms(&dynamics), [0., 0., 0.], "{label}");
         }
+    }
+
+    #[test]
+    fn only_sustained_attention_is_gated_by_input() {
+        // The idle gate redraws only tiles it changes: a window whose signal
+        // moves while input is active. No signal, a static one, or motion
+        // "off" render the same either way.
+        let signal = |motion| crate::window::signal::Folded {
+            level: niri_ipc::SignalLevel::Demand,
+            motion,
+            accent: None,
+            tag: None,
+            sources: vec![String::from("demo")],
+            impulses: vec![],
+        };
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
+        assert!(!tile.attention_gated(), "no signal");
+
+        tile.window()
+            .set_signal(Some(signal(niri_ipc::SignalMotion::Static)));
+        assert!(!tile.attention_gated(), "static signal");
+
+        tile.window()
+            .set_signal(Some(signal(niri_ipc::SignalMotion::Pulse)));
+        assert!(tile.attention_gated(), "pulsing signal");
+
+        let mut options = (*tile.options).clone();
+        options.signal.motion = niri_config::SignalMotionPolicy::Off;
+        tile.options = Rc::new(options);
+        assert!(!tile.attention_gated(), "motion off");
     }
 
     #[test]
