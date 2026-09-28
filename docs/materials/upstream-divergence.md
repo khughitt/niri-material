@@ -36,7 +36,6 @@ the whole tree and is never scoped by class.
 | Material pass ordering hook | `src/render_helpers/blur.rs`, `effect_buffer.rs` | B | seam | unfiled |
 | Tile material state | `src/layout/tile.rs` | B | fork-only | — |
 | Test front door and timing | `justfile`, `tools/` | C | fork-only | — |
-| Fork front page and GitHub metadata | `.github/README.md`; issue templates edited, `FUNDING.yml`, `dependabot.yml`, `workflows/release.yml` removed | A, B | fork-only | — |
 
 Posture is `seam`, `fork-only`, or `carried`. Status tracks seam candidates through
 `unfiled` → `submitted #NNNN` → `merged <tag>` / `declined: <reason>`.
@@ -49,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-391 paths differ: 46 class B (seam), 324 class A (fork-only), 21 class C (scaffolding).
+402 paths differ: 46 class B (seam), 335 class A (fork-only), 21 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
