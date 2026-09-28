@@ -1,18 +1,20 @@
 ---
 id: material-b15ad7
 title: "Idle-budget fixture: analyze each case as it lands, fail fast, and offer a one-case pilot"
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
 process: planned
 owner: materials-26.04
 created: 2026-09-25T09:50:48Z
-updated: 2026-09-27T14:49:57Z
+updated: 2026-09-28T03:28:00Z
 started: 2026-09-27T12:25:25Z
+completed: 2026-09-28T03:28:00Z
 depends: []
 parent: material-53f873
 tags: [performance]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-09-27-idle-budget-fail-fast-design.md
 plan: docs/plans/2026-09-27-idle-budget-fail-fast.md
@@ -43,3 +45,7 @@ The 2026-09-25 TTY trace spent 58 min to report a failure that every quiet case 
 - 2026-09-27T14:36:43Z (material-b15ad7): parked (waiting on user, quiet; headless, 35 min): User runs the three supervised pilots from Task 8 of docs/plans/2026-09-27-idle-budget-fail-fast.md on a headless TTY; agent then validates OUT verdicts and checksums, records each run, and closes material-204be4 and this parent
   provenance: {"harness_session":"codex:01a0e32b-8d4c-7d40-9694-4c3b6a75bb15","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-27T14:49:57Z (material-b15ad7): Fresh branch review found one Important teardown gap: trace cleanup stopped only timeout, leaving its TERM-ignoring capture child alive. Fixed in niri-experiments d7593b7 with a dedicated capture group and group teardown; focused regression RED to GREEN, full fixture suite 67/67. No Critical or Minor findings. Task 8 live pilots still require the quiet headless and desktop-stopped TTY runs.
+- 2026-09-28T03:28:00Z (material-b15ad7): done
+  provenance: {"harness_session":"claude-code:1462ad85-ed02-4290-a860-8f7187b484a9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T03:28:00Z (material-b15ad7): Fixture fail-fast, per-case verdicts, partial analysis, supervisor, and pilots implemented (niri-experiments d7593b7) and validated by the 2026-09-27 live pilots (material-204be4). The full trace rerun waits on material-cd7deb, the niri idle-edge redraw the pilot found
+  provenance: {"harness_session":"claude-code:1462ad85-ed02-4290-a860-8f7187b484a9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
