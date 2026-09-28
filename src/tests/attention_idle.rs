@@ -14,6 +14,7 @@ use std::time::Duration;
 use niri_config::Config;
 
 use super::fixture::Fixture;
+use crate::niri::RedrawState;
 use crate::utils::get_monotonic_time;
 
 fn fixture(idle_after: Duration) -> Fixture {
@@ -110,4 +111,40 @@ fn virtual_pointer_input_resumes_attention_and_the_gate_re_engages() {
         "idle again after the threshold"
     );
     assert!(!f.niri().layout.input_active());
+}
+
+#[test]
+fn an_idle_edge_that_changes_no_tile_queues_no_redraw() {
+    // With no sustained signal on screen the gate changes nothing, so going
+    // idle must not wake any output (the idle-budget trace saw exactly one
+    // such redraw per quiet case before this).
+    // The headless backend bumps `frame_callback_sequence` on every render,
+    // so a redraw queued and drawn within one dispatch still shows.
+    let mut f = fixture(Duration::from_millis(60));
+    // Draw the frame the output was created with, well before the timer.
+    f.state.server.dispatch();
+    for state in f.niri().output_state.values_mut() {
+        state.redraw_state = RedrawState::Idle;
+    }
+    let sequences = |f: &mut Fixture| -> Vec<u32> {
+        f.niri()
+            .output_state
+            .values()
+            .map(|state| state.frame_callback_sequence)
+            .collect()
+    };
+    let before = sequences(&mut f);
+
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    assert!(f.niri().input_activity.is_idle());
+    assert!(!f.niri().layout.input_active());
+    assert_eq!(sequences(&mut f), before, "the idle edge rendered a frame");
+    assert!(
+        f.niri()
+            .output_state
+            .values()
+            .all(|state| matches!(state.redraw_state, RedrawState::Idle)),
+        "the idle edge queued a redraw"
+    );
 }
