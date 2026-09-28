@@ -160,7 +160,11 @@ files were task notes. The binary was built from `191ad747` (`identity.json`,
   gate's idle edge, which redraws every output unconditionally
   (`material-cd7deb`). With that fixed (`721b8df7`), the fail-fast trace
   pilot passes all four cases: A move and resize at 0 redraws, C at 80, and
-  D at 40 (`pilot-trace-20260927T234658`). The full trace can now be rerun.
+  D at 40 (`pilot-trace-20260927T234658`). The full fail-fast trace on the
+  same binary then passed all 25 cases in 58 min (`trace-20260927T235810`,
+  `material-d248a6`). Every quiet case, including the 600 s B hold, had 0
+  redraws and 0 material draws with equal pixels. C held 80 and D held 40
+  per case.
 - The power lane's first DRM pilots found three fixture defects that synthetic
   validation could not show. Seat managers holding the KMS node were counted
   as GPU clients, `fuser`'s split output was misparsed, and a settle could
