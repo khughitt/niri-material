@@ -1,18 +1,20 @@
 ---
 id: material-cd7deb
 title: Attention idle edge redraws every output even when no tile's signal changes
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-28T03:05:12Z
-updated: 2026-09-28T03:30:29Z
+updated: 2026-09-28T03:55:48Z
 started: 2026-09-28T03:30:29Z
+completed: 2026-09-28T03:55:48Z
 depends: []
 parent: material-53f873
 tags: [performance, signals, bug]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 ---
 
@@ -21,4 +23,11 @@ Idle-budget trace pilots 2026-09-27 (TTY, desktop stopped; binary built from 460
 ## Notes
 
 - 2026-09-28T03:30:29Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:1462ad85-ed02-4290-a860-8f7187b484a9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T03:39:53Z (material-cd7deb): Fix: Tile::attention_gated says whether a tile's signal has sustained motion while input is active; Layout::set_input_active returns whether any tile (workspaces plus an interactive move) is gated, and Niri queues a redraw on either edge or a threshold change only then. Tests: tile only_sustained_attention_is_gated_by_input; fixture an_idle_edge_that_changes_no_tile_queues_no_redraw, which fails on the old code (the idle edge rendered a frame) and passes now. just gate passes
+- 2026-09-28T03:55:41Z (material-cd7deb): run: 11 min (est 12, headless); build 3, trace 8; passed: fail-fast trace pilot on 721b8df7 (trace-target-20260927T234358 or the newest trace-target-*): A-move-1 and A-resize-1 0 redraws, C-move-1 80/80, D-move-1 40/40, complete, no stop.json, SHA256SUMS ok (pilot-trace-20260927T234658)
+- 2026-09-28T03:55:48Z (material-cd7deb): Correction to the run note above: the fixed binary is NIRI_MATERIAL_WORK_ROOT/material-265eb0/trace-target-20260927T234054 (source 721b8df7)
+- 2026-09-28T03:55:48Z (material-cd7deb): done
+  provenance: {"harness_session":"claude-code:1462ad85-ed02-4290-a860-8f7187b484a9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T03:55:48Z (material-cd7deb): Idle and active edges of the attention gate redraw only when a tile has sustained motion (721b8df7), with tile and fixture tests. Live trace pilot on the fixed binary passes all four cases with A at 0 redraws
   provenance: {"harness_session":"claude-code:1462ad85-ed02-4290-a860-8f7187b484a9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

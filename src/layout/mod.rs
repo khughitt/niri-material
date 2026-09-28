@@ -2809,9 +2809,22 @@ impl<W: LayoutElement> Layout<W> {
 
     /// Input-activity gate for sustained attention motion (design
     /// 2026-09-18 §3). Set by `Niri` when its idle state changes; read on
-    /// the next `update_render_elements`.
-    pub fn set_input_active(&mut self, active: bool) {
+    /// the next `update_render_elements`. Returns whether the change reaches
+    /// any tile, so the caller redraws only when something renders
+    /// differently.
+    pub fn set_input_active(&mut self, active: bool) -> bool {
+        if self.input_active == active {
+            return false;
+        }
         self.input_active = active;
+        let moving = match &self.interactive_move {
+            Some(InteractiveMoveState::Moving(move_)) => Some(&move_.tile),
+            _ => None,
+        };
+        self.workspaces()
+            .flat_map(|(_, _, ws)| ws.tiles())
+            .chain(moving)
+            .any(Tile::attention_gated)
     }
 
     pub fn input_active(&self) -> bool {
