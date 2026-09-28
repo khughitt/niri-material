@@ -334,8 +334,8 @@ at every `ring-beam-speed`. The run ends where the comet goes dark, so a
 short decay also stops the redraws sooner; the resting glow is unaffected.
 `0`, the default, is no decay: the comet keeps its brightness for the whole
 lap, as every earlier release did. A decay longer than the lap and its tail
-changes nothing. The motion policies that skip the beam skip the decay with
-it.
+still dims the comet along the way but never shortens the run. The motion
+policies that skip the beam skip the decay with it.
 
 `accent "ring"` lets a window signal light and tint the same band on any
 window. Both together show the filament in the accent color. The band sits

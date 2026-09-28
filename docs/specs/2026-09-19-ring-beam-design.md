@@ -300,8 +300,10 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   the beam: focus gain shows the resting glow immediately.
 - **Cut.** As today: `focus` ceasing to be `ring-light`, or the motion
   policy ceasing to allow it, drops a running beam. A reload of
-  `ring-beam-speed`, `ring-gap` or `ring-glow` does not cut it; the speed is
-  snapshotted, gap (through `P`) and glow apply on the next frame.
+  `ring-beam-speed`, `ring-gap`, `ring-glow` or `ring-beam-decay` does not
+  cut it; the speed is snapshotted, gap (through `P`), glow and decay apply
+  on the next frame (a decay reloaded shorter than the head's distance ends
+  the run on that frame).
 - **Scheduling.** The beam runs on the animation loop through
   `are_animations_ongoing`; it is not a layout transition, so
   `are_transitions_ongoing` — which also gates pointer-focus refresh in

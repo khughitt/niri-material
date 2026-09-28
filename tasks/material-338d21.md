@@ -8,9 +8,9 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-22T15:33:56Z
-updated: 2026-09-28T11:11:42Z
+updated: 2026-09-28T11:13:24Z
 started: 2026-09-28T11:05:34Z
-depends: []
+depends: [prism-cd219b]
 tags: [rendering, prism]
 agent: claude-code/claude-opus-5
 ---
