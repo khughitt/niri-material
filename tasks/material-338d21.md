@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-22T15:33:56Z
-updated: 2026-09-28T11:27:34Z
+updated: 2026-09-28T11:40:27Z
 started: 2026-09-28T11:05:34Z
 depends: [prism-cd219b]
 tags: [rendering, prism]
@@ -43,4 +43,7 @@ Shares its plumbing with material-9704b0 (noise on the head's brightness): the s
   provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-28T11:27:34Z (materials-26.04): Step 1 done 2026-09-28: pushed materials-26.04 (a18ca619) and the pin 50cddb5e; PKGBUILD pinned 26.04.r560.ga18ca619, package-pin --check agrees.
 - 2026-09-28T11:27:34Z (materials-26.04): parked (waiting on user, review): Install and judge. (2) Owner: cd packaging/arch && makepkg -sf, then sudo pacman -U niri-material-*.pkg.tar.zst; confirm with niri validate (niri msg version reports the running compositor). (3) Agent: merge prism branch prism-cd219b into prism main, remove its worktree, prism apply - apply refuses until (2) lands. (4) Owner: set glass.ring.decay to about 1500 and judge on a focus gain. Default 0 changes nothing; the old generated prism.kdl stays valid under the new niri. Headless alternative: SEQUENCES=beam-decay docs/materials/scripts/ring-motion-clips.sh, a quiet-host job.
+  provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T11:40:27Z (materials-26.04): Steps 2-3 done 2026-09-28: niri-material 26.04.r560.ga18ca619 installed (niri validate clean); prism main fast-forwarded to 3f29db5 (490/490 against the installed niri), prism-cd219b worktree and branch removed; prism migrate had nothing to do; prism apply emits ring-beam-decay 0 and niri validate passes. The running compositor (19bec72e) rejects the reload with 'unexpected node ring-beam-decay' and keeps its previous config until the session restarts.
+- 2026-09-28T11:40:27Z (materials-26.04): parked (waiting on user, review): Judge the look. Owner: restart the session so the running compositor is a18ca619 (until then it rejects the applied config and keeps the old one), then set glass.ring.decay to about 1500 in Prism and watch a focus gain. On acceptance, agent closes material-338d21 with the chosen value.
   provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
