@@ -1,17 +1,19 @@
 ---
 id: material-9704b0
 title: "Ring beam: tunable noise on the comet head's brightness"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: mid
 process: direct
 owner: material-9704b0
 created: 2026-09-22T13:52:16Z
-updated: 2026-09-22T16:32:20Z
+updated: 2026-09-28T11:05:34Z
 started: 2026-09-22T15:43:35Z
+completed: 2026-09-28T11:05:34Z
 depends: []
 tags: [rendering, noise]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5
 ---
 
@@ -32,3 +34,7 @@ Open: whether the noise rides the head alone or the tail and resting glow too; w
 - 2026-09-22T16:32:20Z (materials-26.04): 2026-09-22: push, pin and the Prism merge are done. origin/materials-26.04 = 2d91b798; PKGBUILD pinned 26.04.r464.g19bec72e on 19bec72e (package-pin --check agrees). Prism main = e190270 and now emits ring-beam-noise/-hz, its worktree and branch removed. So prism apply refuses until the new niri is installed (probe fails, apply rolls back) - that window is open now.
 - 2026-09-22T16:32:20Z (materials-26.04): parked (waiting on user, review): Install and judge. (1) cd packaging/arch && makepkg -sf, then sudo pacman -U niri-material-*.pkg.tar.zst; confirm with niri validate (niri msg version reports the RUNNING compositor, not the installed one). (2) Restart the session so the running compositor is the new build. (3) prism apply - it refuses until (1) lands, since prism main already emits the keys. (4) Set glass.ring.beamNoise to about 0.4 and beamNoiseHz to about 3 and judge the head's wander on a focus gain; both default to 0, so nothing changes until that slider moves. The change is additive, so the old generated prism.kdl stays valid under the new niri - verified - and no restart window is unsafe. Headless alternative to judging live: SEQUENCES=beam-wander docs/materials/scripts/ring-motion-clips.sh, a quiet-host job.
   provenance: {"harness_session":"claude-code:365f5b3e-15f6-430e-aa21-082d2a27e409","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T11:05:34Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T11:05:34Z (materials-26.04): Accepted in daily use: installed 19bec72e carries 0213ea0f, and the owner's glass5-7 profiles run beamNoise 0.45 at 12 Hz with per-material overrides (0.8/3.5, 0.9/23).
+  provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
