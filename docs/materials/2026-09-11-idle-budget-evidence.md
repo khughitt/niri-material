@@ -158,7 +158,9 @@ files were task notes. The binary was built from `191ad747` (`identity.json`,
   cadence cases pass (C 81/81, D 41/41), and both quiet A cases fail on one
   redraw about 30 s after startup. That redraw comes from the attention
   gate's idle edge, which redraws every output unconditionally
-  (`material-cd7deb`). The full trace waits on that fix.
+  (`material-cd7deb`). With that fixed (`721b8df7`), the fail-fast trace
+  pilot passes all four cases: A move and resize at 0 redraws, C at 80, and
+  D at 40 (`pilot-trace-20260927T234658`). The full trace can now be rerun.
 - The power lane's first DRM pilots found three fixture defects that synthetic
   validation could not show. Seat managers holding the KMS node were counted
   as GPU clients, `fuser`'s split output was misparsed, and a settle could
