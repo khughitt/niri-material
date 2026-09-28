@@ -390,8 +390,9 @@ struct FocusBeam {
     speed: f64,
     /// Set on the first geometry evaluation; disables the unrendered timeout.
     rendered: Cell<bool>,
-    /// Set by the frame that saw the head past `perimeter + tail`; the next
-    /// `advance_animations` drops the beam.
+    /// Set by the frame that saw the head past `ring::run_length` (the tail
+    /// cleared, or the decay gone dark); the next `advance_animations` drops
+    /// the beam.
     done: Cell<bool>,
 }
 
