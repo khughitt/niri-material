@@ -1,13 +1,15 @@
 ---
 id: material-338d21
 title: "Ring beam: tunable decay so the comet can die before the lap closes"
-status: todo
+status: doing
 priority: 2
 size: m
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-09-22T15:33:56Z
-updated: 2026-09-22T15:34:01Z
+updated: 2026-09-28T11:05:34Z
+started: 2026-09-28T11:05:34Z
 depends: []
 tags: [rendering, prism]
 agent: claude-code/claude-opus-5
@@ -32,3 +34,6 @@ Shares its plumbing with material-9704b0 (noise on the head's brightness): the s
 ## Notes
 
 - 2026-09-22T15:34:01Z (materials-26.04): Filed from owner request 2026-09-22 alongside material-9704b0; both add a per-response beam-envelope float and a Prism Ring knob.
+- 2026-09-28T11:05:34Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T11:05:34Z (materials-26.04): Decay knob chosen 2026-09-28 (owner approved the recommendation): ring-beam-decay as a distance in px the comet travels before it is dark, 0/unset = no decay (the plateau). Lands with material-19cca1 in one worktree, .worktrees/material-338d21.
