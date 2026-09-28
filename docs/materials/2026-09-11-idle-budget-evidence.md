@@ -151,7 +151,14 @@ files were task notes. The binary was built from `191ad747` (`identity.json`,
   desktop stopped; three desktop attempts each lost a settle check to a
   different transient (idle lock, a desktop GPU blip, build load).
 - `material-b15ad7` now judges each case as it lands and offers a pilot for
-  each lane; the live trace, interrupted trace, and power pilots remain to run.
+  each lane. The live pilots ran on 2026-09-27 from a TTY with the desktop
+  stopped, on binaries rebuilt from `4607d054`. Fail-fast, an interrupted
+  trace, and the power pilot each behaved as designed. The power pilot's
+  four sham windows had medians of 11.39 to 11.47 W. The trace pilot's
+  cadence cases pass (C 81/81, D 41/41), and both quiet A cases fail on one
+  redraw about 30 s after startup. That redraw comes from the attention
+  gate's idle edge, which redraws every output unconditionally
+  (`material-cd7deb`). The full trace waits on that fix.
 - The power lane's first DRM pilots found three fixture defects that synthetic
   validation could not show. Seat managers holding the KMS node were counted
   as GPU clients, `fuser`'s split output was misparsed, and a settle could
