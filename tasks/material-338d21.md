@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-22T15:33:56Z
-updated: 2026-09-28T11:19:42Z
+updated: 2026-09-28T11:27:34Z
 started: 2026-09-28T11:05:34Z
 depends: [prism-cd219b]
 tags: [rendering, prism]
@@ -40,4 +40,7 @@ Shares its plumbing with material-9704b0 (noise on the head's brightness): the s
 - 2026-09-28T11:11:42Z (material-338d21): niri half landed in .worktrees/material-338d21: ring-beam-decay (px, (1 - d/D)^2 on the shared decay, run ends at min(P + L, D)), config tests, tile test, spec addendum, docs, beam-decay clip sequence. Next: Prism glass.ring.decay on a prism branch, held off prism main until the niri carrying it is installed.
 - 2026-09-28T11:19:42Z (materials-26.04): Merged to materials-26.04 at 5ed1a44a (ff), just gate clean. Prism half is prism-cd219b on prism branch prism-cd219b (3f29db5), 490/490 against this build, deliberately not merged to prism main: the installed niri (19bec72e) rejects ring-beam-decay, verified with niri validate.
 - 2026-09-28T11:19:42Z (materials-26.04): parked (waiting on user, approval): Roll out and judge. (1) Agent, on the owner's go-ahead: push materials-26.04, then just package-pin HEAD and push the pin. (2) Owner: cd packaging/arch && makepkg -sf, sudo pacman -U the package, confirm with niri validate. (3) Agent: merge prism branch prism-cd219b into prism main and remove its worktree; prism apply. (4) Owner: set glass.ring.decay (about 1500 px dies before a full pane's lap) and judge on a focus gain. Default 0 changes nothing, so no restart window is unsafe once (2) lands before (3). Headless alternative: SEQUENCES=beam-decay docs/materials/scripts/ring-motion-clips.sh, a quiet-host job.
+  provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-28T11:27:34Z (materials-26.04): Step 1 done 2026-09-28: pushed materials-26.04 (a18ca619) and the pin 50cddb5e; PKGBUILD pinned 26.04.r560.ga18ca619, package-pin --check agrees.
+- 2026-09-28T11:27:34Z (materials-26.04): parked (waiting on user, review): Install and judge. (2) Owner: cd packaging/arch && makepkg -sf, then sudo pacman -U niri-material-*.pkg.tar.zst; confirm with niri validate (niri msg version reports the running compositor). (3) Agent: merge prism branch prism-cd219b into prism main, remove its worktree, prism apply - apply refuses until (2) lands. (4) Owner: set glass.ring.decay to about 1500 and judge on a focus gain. Default 0 changes nothing; the old generated prism.kdl stays valid under the new niri. Headless alternative: SEQUENCES=beam-decay docs/materials/scripts/ring-motion-clips.sh, a quiet-host job.
   provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
