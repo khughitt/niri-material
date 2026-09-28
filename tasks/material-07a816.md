@@ -5,9 +5,10 @@ status: doing
 priority: 2
 size: m
 complexity: mid
+process: direct
 owner: materials-26.04
 created: 2026-09-04T21:44:54Z
-updated: 2026-09-28T08:35:07Z
+updated: 2026-09-28T08:36:40Z
 depends: [ops-31f038]
 tags: [testing]
 ---
@@ -23,3 +24,4 @@ Piece of ops-65837b (the cross-project audit in the ops hub). 1. Measure: full-s
 - 2026-09-12T19:24:32Z (materials-26.04): Complexity mid: The linked ops audit design fixes the workflow and measurement contract; justfile, timing wrapper, hooks, and affected selector already exist. Remaining baseline interpretation, evidence-led hygiene, guidance, and before/after reporting are bounded investigation.
 - 2026-09-28T08:34:21Z (materials-26.04): baseline 2026-09-28 (tt-report --project material --since 2026-09-05 --until 2026-09-24; 19 active days, before step 3): test 97 runs median 19.5s p90 93.6s fail 0.05, 74 min total; test-fast 281 runs median 3.3s p90 62.4s fail 0.39 empty 14, 201 min total; check 131 runs median 15.8s p90 37.0s fail 0.24, 38 min total; hook-pre-commit 363 runs median 19.0s p90 33.2s fail 0.24, 125 min total; hook-pre-push 28 runs median 44.2s p90 93.0s fail 0.07, 27 min total; front-door total 7.72 h (24 min per active day), ad-hoc targets 19 min; fast/full by agents 2.90; bypasses 94
 - 2026-09-28T08:35:07Z (materials-26.04): Baseline window 2026-09-05..09-24 closes the day before ops host-budget worker sizing (09-25), the first timing change after step 1; no step-3 change had landed. Front-door total counts wrapper seconds of test, test-fast, check and both hooks. Next: step 3 (gates to ops design §4.6, the AGENTS.md inner-loop line, hygiene the numbers point at), then an after-window read with tt-report --since/--until.
+- 2026-09-28T08:36:40Z (materials-26.04): Process direct: ops design §4.6 and §5 steps 3-4 settle the remaining gate, guidance and after-window work; hygiene follows the recorded baseline.
