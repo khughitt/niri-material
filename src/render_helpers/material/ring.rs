@@ -243,25 +243,54 @@ fn smoothstep(e0: f64, e1: f64, x: f64) -> f64 {
     t * t * (3. - 2. * t)
 }
 
-/// The frame values at `elapsed` for a beam of `speed` on a `perimeter`.
-/// `env` is exactly zero from the lap's end on, whatever the envelope or
-/// the wander does.
+/// How far along the beam line the comet's own brightness reaches before it
+/// is dark, px: the shared `decay` falls from 1 at launch to exactly 0 at
+/// `length`, as `(1 − d/length)²`, whatever the perimeter. `length` 0 (the
+/// default) is no decay: the comet keeps its brightness for the whole run.
+pub fn distance_decay(head: f64, length: f64) -> f64 {
+    if length <= 0. {
+        return 1.;
+    }
+    let x = (1. - head / length).clamp(0., 1.);
+    x * x
+}
+
+/// Head distance, px, at which the run is over: the tail has cleared the
+/// lap, or the decay has darkened the comet, whichever comes first. After it
+/// only the resting glow remains, so this is where the redraws stop.
+pub fn run_length(perimeter: f64, decay_length: f64) -> f64 {
+    let full = perimeter + tail_length(perimeter);
+    if decay_length > 0. {
+        full.min(decay_length)
+    } else {
+        full
+    }
+}
+
+/// The frame values at `elapsed` for a beam of `speed` on a `perimeter`,
+/// darkening over `decay_length` px (0: no decay). `env` is exactly zero
+/// from the lap's end on, whatever the envelope or the wander does.
 pub fn beam_frame(
     elapsed: Duration,
     speed: f64,
     perimeter: f64,
     envelope: Envelope,
     noise: HeadNoise,
+    decay_length: f64,
 ) -> BeamFrame {
     let t = elapsed.as_secs_f64();
+    let head = speed * t;
     let lap = perimeter / speed;
     let run = (perimeter + tail_length(perimeter)) / speed;
+    // A lap shorter than both fades shares it between them, so the head
+    // fades out only after it has finished fading in.
     let fade_in = match envelope {
         Envelope::Plateau => BEAM_FADE,
         Envelope::Splash => BEAM_SPLASH_FADE,
     }
-    .as_secs_f64();
-    let fade = BEAM_FADE.as_secs_f64();
+    .as_secs_f64()
+    .min(lap / 2.);
+    let fade = BEAM_FADE.as_secs_f64().min(lap / 2.);
     let env = if t >= lap {
         0.
     } else {
@@ -269,7 +298,7 @@ pub fn beam_frame(
             * (1. - smoothstep(lap - fade, lap, t))
             * head_gain(noise, elapsed)
     };
-    let decay = match envelope {
+    let shape = match envelope {
         Envelope::Plateau => 1.,
         Envelope::Splash => {
             let x = (1. - t / run).clamp(0., 1.);
@@ -277,9 +306,9 @@ pub fn beam_frame(
         }
     };
     BeamFrame {
-        head: (speed * t) as f32,
+        head: head as f32,
         env: env as f32,
-        decay: decay as f32,
+        decay: (shape * distance_decay(head, decay_length)) as f32,
     }
 }
 
@@ -478,6 +507,7 @@ mod tests {
                 p,
                 Envelope::Plateau,
                 HeadNoise::NONE,
+                0.,
             )
         };
         assert_eq!(at(0).head, 0.);
@@ -508,6 +538,7 @@ mod tests {
                 p,
                 Envelope::Splash,
                 HeadNoise::NONE,
+                0.,
             )
         };
         assert!((at(50).env - 0.5).abs() < 1e-6, "100 ms fade-in");
@@ -523,7 +554,7 @@ mod tests {
         assert!(at(10_000).decay > 0., "while the tail is still draining");
         let end = Duration::from_secs_f64(run);
         assert!(
-            beam_frame(end, v, p, Envelope::Splash, HeadNoise::NONE)
+            beam_frame(end, v, p, Envelope::Splash, HeadNoise::NONE, 0.)
                 .decay
                 .abs()
                 < 1e-6
@@ -601,7 +632,7 @@ mod tests {
             hz: 5.,
             seed: 99,
         };
-        let at = |ms: u64| beam_frame(Duration::from_millis(ms), v, p, Envelope::Plateau, n);
+        let at = |ms: u64| beam_frame(Duration::from_millis(ms), v, p, Envelope::Plateau, n, 0.);
         // the lap's end is still exactly zero, and stays zero through the drain
         assert_eq!(at(10_000).env, 0., "exactly zero at the seam");
         assert_eq!(at(11_000).env, 0., "and for the whole drain");
@@ -618,6 +649,124 @@ mod tests {
             let v = comet(s as f32, BeamFrame::REST, p as f32, 1.);
             assert!((v - BEAM_BASE * BEAM_REST).abs() < 1e-6, "s = {s}: {v}");
         }
+    }
+
+    #[test]
+    fn a_decay_length_darkens_head_and_tail_by_distance_before_the_lap() {
+        let p = 3000.;
+        let v = 300.;
+        let at = |ms: u64, length: f64| {
+            beam_frame(
+                Duration::from_millis(ms),
+                v,
+                p,
+                Envelope::Plateau,
+                HeadNoise::NONE,
+                length,
+            )
+        };
+        // 0 is no decay: the plateau, bit-identical to the knob's absence
+        for ms in [0, 150, 5000, 9850, 11_000] {
+            let frame = at(ms, 0.);
+            assert_eq!(frame.decay, 1., "{ms} ms");
+        }
+        // 1500 px at 300 px/s: dark at 5 s, halfway through the lap
+        assert_eq!(at(0, 1500.).decay, 1.);
+        assert!(
+            (at(2500, 1500.).decay - 0.25).abs() < 1e-6,
+            "(1 − d/length)² halfway"
+        );
+        assert_eq!(at(5000, 1500.).decay, 0., "exactly dark at the length");
+        assert_eq!(at(7000, 1500.).decay, 0., "and stays dark");
+        // decay dims the brightness, not the head's path or its own envelope
+        assert_eq!(at(2500, 1500.).env, at(2500, 0.).env);
+        assert_eq!(at(2500, 1500.).head, at(2500, 0.).head);
+        // it is a distance, not a time: the same length darkens at the same
+        // place at any speed
+        let fast = beam_frame(
+            Duration::from_millis(1250),
+            1200.,
+            p,
+            Envelope::Plateau,
+            HeadNoise::NONE,
+            1500.,
+        );
+        assert_eq!(fast.decay, 0., "1500 px at 1200 px/s is 1.25 s");
+        // the splash shape and the distance decay compose
+        let splash = beam_frame(
+            Duration::from_millis(2500),
+            v,
+            p,
+            Envelope::Splash,
+            HeadNoise::NONE,
+            1500.,
+        );
+        let run = (p + tail_length(p)) / v;
+        let shape = (1. - 2.5 / run) * (1. - 2.5 / run);
+        assert!((f64::from(splash.decay) - shape * 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_run_ends_where_the_decay_goes_dark_if_that_comes_first() {
+        let p = 3000.;
+        let full = p + tail_length(p); // 3750
+        assert_eq!(run_length(p, 0.), full, "no decay: the tail clears the lap");
+        assert_eq!(run_length(p, 1500.), 1500., "dark before the lap");
+        assert_eq!(run_length(p, 3200.), 3200., "dark during the drain");
+        assert_eq!(
+            run_length(p, 9000.),
+            full,
+            "a length past the drain never shortens it"
+        );
+        // at the run's end the comet contributes nothing: only the rest is left
+        for length in [1500., 3200.] {
+            let end = Duration::from_secs_f64(run_length(p, length) / 300.);
+            let frame = beam_frame(end, 300., p, Envelope::Plateau, HeadNoise::NONE, length);
+            for s in [0., 1000., 1499., 2999.] {
+                let v = comet(s, frame, p as f32, 1.);
+                assert!(
+                    (v - BEAM_BASE * BEAM_REST).abs() < 1e-6,
+                    "length {length}, s {s}: {v}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_lap_shorter_than_the_fades_shares_it_between_them() {
+        // P 240 px at 1200 px/s: a 200 ms lap, under BEAM_FADE (300 ms)
+        let p = 240.;
+        let v = 1200.;
+        let at = |ms: u64| {
+            beam_frame(
+                Duration::from_millis(ms),
+                v,
+                p,
+                Envelope::Plateau,
+                HeadNoise::NONE,
+                0.,
+            )
+        };
+        // fade in over the first half, out over the second: full at the
+        // midpoint, never dimmed by the fade-out before it
+        assert_eq!(at(0).env, 0.);
+        assert!((at(50).env - 0.5).abs() < 1e-6, "fade-in midpoint");
+        assert_eq!(at(100).env, 1., "the head reaches full brightness");
+        assert!((at(150).env - 0.5).abs() < 1e-6, "fade-out midpoint");
+        assert_eq!(at(200).env, 0., "exactly zero at the seam");
+        // rising, then falling: no dip while fading in
+        let env: Vec<f32> = (0..=100).map(|ms| at(ms).env).collect();
+        assert!(env.windows(2).all(|w| w[1] >= w[0]), "{env:?}");
+        // an ordinary lap keeps the full 300 ms fades
+        let long = beam_frame(
+            Duration::from_millis(150),
+            300.,
+            3000.,
+            Envelope::Plateau,
+            HeadNoise::NONE,
+            0.,
+        );
+        assert!((long.env - 0.5).abs() < 1e-6);
     }
 
     #[test]

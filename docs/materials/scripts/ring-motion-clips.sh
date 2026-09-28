@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ring-motion-clips.sh: review clips for the ring beam
-# (docs/specs/2026-09-19-ring-beam-design.md §6, "Sheets"). Seven sequences
+# (docs/specs/2026-09-19-ring-beam-design.md §6, "Sheets"). Eight sequences
 # from a nested headless instance, each one focus gain recorded as a burst of
 # full-frame screenshots as fast as the async screenshot path allows, plus 4x
 # crops of the focused pane's top-left corner at rest, mid-pass, and as the
@@ -18,6 +18,8 @@
 #   beam-fast     the same at `ring-beam-speed 900`
 #   beam-wander   the same at `ring-beam-noise 0.5; ring-beam-noise-hz 4`:
 #                 the head's brightness wanders as it travels
+#   beam-decay    the same at `ring-beam-decay 1500`: the comet darkens and
+#                 is gone after 1500 px, before the lap closes
 #   beam-bevel0   the same on a flat slab: `bevel 0; offset-x 0; offset-y 0`
 #                 (no chamfer, so no spill)
 #
@@ -40,7 +42,7 @@ TASK=${CAPTURE_TASK:?task id authorizing this run}
 RUN=ring-clips-$$-$(date +%s)
 OUT=$EVIDENCE/ring-motion-clips-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # short: nested niri panics on long socket paths
-SEQUENCES=${SEQUENCES:-"beam-run beam-gap16 beam-nospill beam-splash beam-fast beam-wander beam-bevel0"}
+SEQUENCES=${SEQUENCES:-"beam-run beam-gap16 beam-nospill beam-splash beam-fast beam-wander beam-decay beam-bevel0"}
 BEAM_SCRATCH=${BEAM_SCRATCH:-1}
 RUN_S=15   # (P + L) / 300 on a two-column 1280x720 pane is under 12 s; 15 s keeps the tail clearing in frame
 UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; HOST_SEQ=0
@@ -105,9 +107,9 @@ KITTY_OPTS='"-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "
 # `bevel 10; ring-gap 8` is the spec's pairing under review, with the shipped
 # `ring-beam-speed 300` and `ring-glow 1`; SPEED, GAP and GLASS vary one of
 # them per fixture. The idle gate is off: the nested instance sees no input.
-write_config() {   # $1 = path; SPEED, GAP, GLASS, NOISE, NOISE_HZ override the fixture's defaults
+write_config() {   # $1 = path; SPEED, GAP, GLASS, NOISE, NOISE_HZ, DECAY override the fixture's defaults
     cat > "$1" <<EOF
-material "tg" { glass { ${GLASS:-bevel 10;} }; response "default" { ring-beam-speed ${SPEED:-300}; ring-gap ${GAP:-8}; ring-glow 1; ring-beam-noise ${NOISE:-0}; ring-beam-noise-hz ${NOISE_HZ:-3}; }; }
+material "tg" { glass { ${GLASS:-bevel 10;} }; response "default" { ring-beam-speed ${SPEED:-300}; ring-gap ${GAP:-8}; ring-glow 1; ring-beam-noise ${NOISE:-0}; ring-beam-noise-hz ${NOISE_HZ:-3}; ring-beam-decay ${DECAY:-0}; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 layout { focus-ring { off; }; gaps 24; }
 hotkey-overlay { skip-at-startup; }
@@ -121,6 +123,7 @@ write_config "$OUT/beam.kdl"
 GAP=16 write_config "$OUT/beam-gap16.kdl"
 SPEED=900 write_config "$OUT/beam-fast.kdl"
 NOISE=0.5 NOISE_HZ=4 write_config "$OUT/beam-wander.kdl"
+DECAY=1500 write_config "$OUT/beam-decay.kdl"
 GLASS='bevel 0; offset-x 0; offset-y 0;' write_config "$OUT/beam-bevel0.kdl"
 
 # --- scratch builds ----------------------------------------------------------
@@ -164,7 +167,7 @@ fi
 
 capture_meta identity "$OUT" --source "$ROOT" "${BINARIES[@]}" --input "$0" \
     --input "$OUT/beam.kdl" --input "$OUT/beam-gap16.kdl" --input "$OUT/beam-fast.kdl" \
-    --input "$OUT/beam-wander.kdl" --input "$OUT/beam-bevel0.kdl" || fail "identity refused"
+    --input "$OUT/beam-wander.kdl" --input "$OUT/beam-decay.kdl" --input "$OUT/beam-bevel0.kdl" || fail "identity refused"
 
 # --- nested instance ---------------------------------------------------------
 start_nested() {   # $1 = config, $2 = sub-run name; sets NIRI_SOCKET
@@ -275,6 +278,7 @@ seq_beam_nospill() { beam_sequence beam-nospill "$OUT/beam.kdl"        "$NIRI_NO
 seq_beam_splash()  { beam_sequence beam-splash  "$OUT/beam.kdl"        "$NIRI_SPLASH"; }
 seq_beam_fast()    { beam_sequence beam-fast    "$OUT/beam-fast.kdl"   "$NIRI"; }
 seq_beam_wander()  { beam_sequence beam-wander  "$OUT/beam-wander.kdl" "$NIRI"; }
+seq_beam_decay()   { beam_sequence beam-decay   "$OUT/beam-decay.kdl"  "$NIRI"; }
 seq_beam_bevel0()  { beam_sequence beam-bevel0  "$OUT/beam-bevel0.kdl" "$NIRI"; }
 
 for s in $SEQUENCES; do
@@ -285,6 +289,7 @@ for s in $SEQUENCES; do
         beam-splash)  if [ "$BEAM_SCRATCH" = 0 ]; then echo "$s: skipped (BEAM_SCRATCH=0)" | tee -a "$OUT/clips.txt"; else seq_beam_splash; fi ;;
         beam-fast)    seq_beam_fast ;;
         beam-wander)  seq_beam_wander ;;
+        beam-decay)   seq_beam_decay ;;
         beam-bevel0)  seq_beam_bevel0 ;;
         *) fail "unknown sequence $s" ;;
     esac

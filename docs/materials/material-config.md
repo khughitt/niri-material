@@ -241,6 +241,7 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ring-beam-speed` | 0–5000 logical px/s | 300 |
 | `ring-beam-noise` | 0–1 | 0 |
 | `ring-beam-noise-hz` | 0–30 wanders per second | 3 |
+| `ring-beam-decay` | 0–20000 logical px | 0 (no decay) |
 | `ring-gap` | 0–128 logical px | 8 logical px |
 | `ring-glow` | 0–3 | 1.0 |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
@@ -266,6 +267,7 @@ material "terminal-glass" {
         ring-beam-speed 300
         ring-beam-noise 0
         ring-beam-noise-hz 3
+        ring-beam-decay 0
         ring-gap 8
         ring-glow 1.0
         ring-width 2.6
@@ -321,6 +323,19 @@ head never puts a settled window back on a clock. It is seeded per window
 and per run, so two panes that gain focus together do not flicker in step
 and one pane's successive runs do not replay. The motion policies that skip
 the beam skip the wander with it.
+
+`ring-beam-decay` lets the comet die out on its way round: it is the
+distance, in logical px along the band, over which head and tail darken
+together until they are gone, falling as `(1 − distance / decay)²` so the
+light eases out rather than cutting off. `ring-beam-decay 1500` at the
+default speed is dark after 5 s, well before a full pane's lap closes. It is
+a distance, not a time, so the comet's reach is the same on every window and
+at every `ring-beam-speed`. The run ends where the comet goes dark, so a
+short decay also stops the redraws sooner; the resting glow is unaffected.
+`0`, the default, is no decay: the comet keeps its brightness for the whole
+lap, as every earlier release did. A decay longer than the lap and its tail
+changes nothing. The motion policies that skip the beam skip the decay with
+it.
 
 `accent "ring"` lets a window signal light and tint the same band on any
 window. Both together show the filament in the accent color. The band sits

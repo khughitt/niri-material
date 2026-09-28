@@ -210,13 +210,16 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   BEAM_TAIL_FRACTION, BEAM_TAIL_MAX)`: `head = speed · elapsed` px. Two
   envelope factors, both from the clock:
   - `env`, the **head amplitude**: `smoothstep(0, FADE, t) · (1 −
-    smoothstep(P/speed − FADE, P/speed, t)) · gain(t)`, with `FADE = 300 ms`,
-    and exactly `0` for `t ≥ P/speed`. The head fades in as it sets off and
+    smoothstep(P/speed − FADE, P/speed, t)) · gain(t)`, with `FADE = 300 ms`
+    capped at half the lap (so on a lap shorter than both fades the head
+    fades out only after it has faded in), and exactly `0` for
+    `t ≥ P/speed`. The head fades in as it sets off and
     out as it returns to the start point, and can never begin a second lap
     during the drain, whatever the other factor does. `gain` is the head's
     brightness wander, `1` unless asked for (addendum below).
   - `decay`, the **shared brightness** of head and tail: `1` throughout a
-    plateau run (the default). The tail follows the head by construction.
+    plateau run (the default), times the distance decay when one is asked
+    for (addendum below). The tail follows the head by construction.
 - **Geometry changes.** Because `P` and `L` are read every frame, a window
   that grows mid-run keeps the beam going until the head has covered the
   *new* perimeter and the tail has cleared it; one that shrinks ends the run
@@ -230,7 +233,8 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   Jelly motion is the same case: both sides read the jelly-scaled face
   (§1.2), so the spring never fades the head early or ends the run before
   the shader's tail has cleared.
-- **End.** `head ≥ P + L` (evaluated against this frame's geometry) marks the
+- **End.** `head ≥ P + L` — or `head ≥ D` under a distance decay `D`
+  (addendum below) — evaluated against this frame's geometry, marks the
   beam done and sends the rest uniforms `head = 0, env = 0, decay = 0` (§1.3);
   `advance_animations` then removes it without consulting an old perimeter.
   The ring holds the resting glow. The three settled gates of the motion design hold
@@ -274,6 +278,22 @@ evaluation sets `rendered`, and the frame that sees the tail clear sets
   drain and the rest uniforms are untouched; and the wander exists only
   while a beam runs, so the settled ring keeps its constant fingerprint and
   its zero redraws. The skips below skip it with the beam.
+
+- **Distance decay (addendum, 2026-09-28, material-338d21).** The response
+  key `ring-beam-decay` is a distance `D` in px along the beam line: the
+  shared `decay` falls as `(1 − head / D)²`, clamped at `0`, so head and
+  tail darken together and are exactly dark once the head has travelled
+  `D`. The slope is zero there, so the light eases out. A distance rather
+  than a half-life makes the comet's reach a property of the beam, the same
+  on every window and at every speed. `D = 0` (the default) is no decay and
+  a bit-identical beam; it composes with the splash shape by multiplication.
+  The run ends at `min(P + L, D)`: when the comet goes dark before the lap
+  and its tail are done, that frame ends the run and the redraws stop there
+  instead of drawing nothing until `P + L`. `decay` rides the existing
+  `mat_sig_focus.w`, so the shader is unchanged, and the resting glow sits
+  outside it, so the settled ring keeps its constant fingerprint. A decay
+  inside the lap also makes the seam fade moot: the comet is already dark
+  when the head reaches the seam.
 
 - **Skips.** `motion "reduced"`, `motion "off"`, `animations { off }`,
   `ring-beam-speed 0`, and the fixtures' `should_complete_instantly` skip

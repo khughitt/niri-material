@@ -1082,6 +1082,40 @@ mod tests {
     }
 
     #[test]
+    fn ring_beam_decay_defaults_off_bounds_and_inherits() {
+        let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
+        let d = parsed.materials[0].resolve().response(None);
+        assert_eq!(
+            d.ring_beam_decay, 0.,
+            "no decay unless asked: the shipped plateau is unchanged"
+        );
+
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-beam-decay 1800; }; response "still" {}; }"#,
+        )])
+        .unwrap();
+        let m = parsed.materials[0].resolve();
+        assert_eq!(m.response(None).ring_beam_decay, 1800.);
+        assert_eq!(
+            m.response(Some("still")).ring_beam_decay,
+            1800.,
+            "inherits from default"
+        );
+
+        for line in ["ring-beam-decay 20001;", "ring-beam-decay -1;"] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ {line} }}; }}"#),
+            )]);
+            assert!(
+                err.contains("value must be between 0 and 20000"),
+                "{line}: {err}"
+            );
+        }
+    }
+
+    #[test]
     fn signal_idle_after_ms_defaults_and_bounds() {
         let parsed = parse_files(&[("config.kdl", "")]).unwrap();
         assert_eq!(parsed.signal.idle_after, Duration::from_millis(30_000));
