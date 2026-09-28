@@ -26,6 +26,11 @@ rendering design assumes.
   (`setfattr -n user.com.dropbox.ignored -v 1 .cargo`). A `target-dir` naming a path
   that exists on one machine only fails `cargo fmt` before any gate can run, so no
   commit is possible there.
+- Live captures that need an idle host (settle-gated traces, DRM power runs) are parked
+  for `tasks quiet`. When the user starts a session from a TTY with the desktop stopped
+  and hands the host over, run that queue yourself: one run at a time, the lane's pilot
+  before any full run, and a `run:` note for every attempt. The fixture's reproduction
+  notes in the `niri-experiments` results doc give the commands and known pitfalls.
 - Before removing a worktree, run `tt-report` so its fallback test-timing log is
   harvested.
 - `tools/tt` is a vendored copy of ops `bin/tt`: change it there and re-copy.
