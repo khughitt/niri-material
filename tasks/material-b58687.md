@@ -7,7 +7,7 @@ size: xs
 complexity: low
 process: direct
 created: 2026-09-28T08:21:42Z
-updated: 2026-09-29T21:33:43Z
+updated: 2026-09-29T22:34:10Z
 depends: []
 tags: [tooling]
 agent: claude-code/claude-opus-5-5
@@ -18,3 +18,4 @@ tools/upstream-report classifies every added path as class A and prints the tota
 ## Notes
 
 - 2026-09-29T21:33:43Z (materials-26.04): Recurred during the 2026-09-29 scope pass: task records and a notes brief were the only staged changes; pre-commit passed format/clippy and 164 tooling tests, then upstream-report --check refused as stale. Regenerating the report is required to commit the pass.
+- 2026-09-29T22:34:10Z (materials-26.04): Recurred during the deferred signal-model scope pass: pre-commit passed clippy and 164 tooling tests (2 skipped), then upstream-report --check refused the task/brief-only staged changes. Refreshing the generated inventory remains necessary; gate feedback filed as ops-50c1ae.
