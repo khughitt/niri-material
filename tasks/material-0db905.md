@@ -8,13 +8,14 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-29T23:08:21Z
+updated: 2026-09-29T23:14:14Z
 started: 2026-09-29T23:08:21Z
 depends: []
 parent: material-5d6b2c
 tags: [performance]
 source: docs/notes/2026-09-29-resource-aware-rendering-brief.md
 agent: codex
+spec: docs/specs/2026-09-29-sustained-optic-settling-design.md
 ---
 
 Why: Attention motion already uses signal { idle-after-ms } (default 30000; 0 disables), but Tile::optic_frame and AuroraOptic::rate do not read input activity. Finite-motion quiescence has passed the idle-budget trace; the remaining outcome is stopping optional sustained optic motion during extended input inactivity.
@@ -27,3 +28,8 @@ Ideas it wakes: On completion, run tasks note on material-f86183 with the review
 
 - 2026-09-29T23:08:21Z (materials-26.04): started
   provenance: {"harness_session":"codex:01a0ef6c-81be-7053-b1db-8781e2ef7949","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-29T23:12:49Z (material-0db905): Design proposal: default Aurora settling on the existing idle threshold; shared paused optic timeline preserves phase across idle/resume and hidden-workspace cycles; broaden the attention-only activity redraw predicate. Draft is pending owner review; no implementation or captures.
+- 2026-09-29T23:13:26Z (material-0db905): Spec self-review: checked the scoped requirements against the draft and current source; explicit real/logical deadline conversion, predicted-time monotonicity, Aurora-only resume interest, preserved attention semantics, bounded edge wakes, and pilot positive controls are covered. Local links, placeholder scan, git diff --check, tasks check and docs-only just test-fast passed.
+- 2026-09-29T23:13:26Z (material-0db905): parked (waiting on user, review): User reviews .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md; agent records the review and revises as needed, then drafts the implementation plan for separate review. This task implements and captures nothing.
+  provenance: {"harness_session":"codex:01a0ef6c-81be-7053-b1db-8781e2ef7949","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-29T23:14:14Z (material-0db905): Commit hook initially refused missing optional machine-local Cargo paths in the fresh worktree (ops-3b4a6e filed). Hydrated ignored Cargo config and target link using the existing local build cache; no repository source or host launcher changed.
