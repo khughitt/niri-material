@@ -4,8 +4,9 @@ title: Revisit the filament shift cap versus light-ior for dense glass
 status: idea
 priority: 2
 created: 2026-09-05T17:14:14Z
-updated: 2026-09-05T17:48:20Z
+updated: 2026-09-29T22:38:51Z
 depends: []
+parent: material-49871a
 tags: []
 ---
 
@@ -19,3 +20,7 @@ the cap, a bevel-relative depth, or an auto light-ior is the intended model,
 with captures at ior 1.02, 1.24, and 1.5. Take one capture at ior 1.24 /
 bevel 9 once the deterministic flex probe (material-22d78f) exists so the
 owner's own glass has evidence.
+
+## Notes
+
+- 2026-09-29T22:38:51Z (materials-26.04): scope: briefed; current shader caps shared shift at half ring-gap with a 0.2-thickness path; old numeric examples need recomputation before any cap redesign; brief: docs/notes/2026-09-29-glass-measurement-brief.md

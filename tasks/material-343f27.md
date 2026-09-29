@@ -4,8 +4,9 @@ title: Validated measurement for glass ray bending
 status: idea
 priority: 2
 created: 2026-09-06T11:12:33Z
-updated: 2026-09-07T00:03:24Z
+updated: 2026-09-29T22:38:51Z
 depends: []
+parent: material-49871a
 tags: [rendering, harness]
 ---
 
@@ -14,3 +15,4 @@ material-37cec9 reports WHERE the rendered image changes; it deliberately does n
 ## Notes
 
 - 2026-09-07T00:03:24Z (materials-26.04): From material-48dc76's thickness sweep: the sweep backdrop is a 20px periodic grid, so cumulative Lab RMSE against the first capture oscillates for any parameter that translates the backdrop (thickness cumulative 0.055 at 10, 0.025 at 20, 0.057 at 80, 0.028 at 120). A displacement instrument needs an aperiodic backdrop, or it will alias the same way; see the Instrument caveat section of docs/materials/2026-09-06-glass-parameter-sweep-evidence.md.
+- 2026-09-29T22:38:51Z (materials-26.04): scope: briefed; regional Lab RMSE still cannot identify bending; bounded calibration research will test spatial warp against photometric-only controls; brief: docs/notes/2026-09-29-glass-measurement-brief.md
