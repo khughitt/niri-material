@@ -4,7 +4,7 @@ title: Skip material rendering for windows that are not visible
 status: idea
 priority: 1
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-16T12:00:25Z
+updated: 2026-09-29T21:43:50Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
@@ -20,3 +20,4 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 ## Notes
 
 - 2026-09-16T12:00:25Z (materials-26.04): Raised P2 to P1 at user request: prioritize avoiding invisible-window and idle resource waste; distinguish observed client GPU use from unproven compositor rendering.
+- 2026-09-29T21:43:50Z (materials-26.04): scope: briefed; hidden-workspace/tab/offscreen attention draws already gate to zero; broader material/prefilter and client attribution still need a bounded audit; brief: docs/notes/2026-09-29-resource-aware-rendering-brief.md
