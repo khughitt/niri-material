@@ -3,10 +3,11 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
 > to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Status:** draft for owner review. No implementation or capture is authorized
+**Status:** revised after plan review round 1; pending owner review.
+No implementation or capture is authorized
 by this document's creation. `material-0db905` delivers the reviewed spec and
 plan only; the execution records belong under `material-f86183` and depend on
-completion of that design task. Keep that idea's scoping decision for plan acceptance.
+completion of that design task.
 
 **Goal:** stop optional Aurora deadlines and uniform changes after input
 inactivity, while preserving real client damage and phase-continuous resume.
@@ -202,6 +203,10 @@ pub(crate) fn next_change(
     frame: &OpticFrame<'_>,
     time: &OpticTime,
 ) -> Option<Duration> {
+    debug_assert_eq!(
+        frame.logical_now, time.logical_now,
+        "optic frame and timeline samples must match",
+    );
     if !time.running {
         return None;
     }
@@ -210,9 +215,38 @@ pub(crate) fn next_change(
 }
 ```
 
-  Keep frame/snapshot construction together so their logical samples agree.
+  Keep frame/snapshot construction together; the debug assertion checks their
+  logical samples agree before either pause suppression or deadline arithmetic.
   Rename `ctx.now` in Aurora's two helper calls and every `OpticFrame` literal
-  in the other optics' tests. Do not expose anchors or running state to entries.
+  in the other optics' tests, including the test-only `post_uniforms` literal
+  in `src/layout/tile.rs`. Do not expose anchors or running state to entries.
+- [ ] Add this focused mismatch test to the registry tests and run it with
+  `just test-one -p niri optic_settling_rejects_mismatched_samples`. Gate it
+  on debug assertions because the invariant check is intentionally debug-only:
+
+```rust
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "optic frame and timeline samples must match")]
+fn optic_settling_rejects_mismatched_samples() {
+    let clock = crate::animation::Clock::with_time(Duration::ZERO);
+    let time = clock.optic_time(Duration::from_secs(1));
+    let blur = Blur::default();
+    let frame = OpticFrame {
+        logical_now: Duration::ZERO,
+        motion: SignalMotionPolicy::Full,
+        animations_off: false,
+        backdrop_blur: false,
+        blur: &blur,
+        seed: 0.,
+    };
+    next_change(&ResolvedGlass::default(), &frame, &time);
+}
+```
+
+  This must fail without the assertion even for static optics, where there is
+  no boundary arithmetic to panic accidentally. Keep the ordinary matched-sample
+  running/paused tests as release-build coverage.
 - [ ] In `Tile::optic_frame`, interpret the time argument as logical time and
   name it accordingly. In `material_dynamics`, sample once from the raw tile
   clock, record only this render sample, and pass its logical time to optics:
@@ -321,13 +355,72 @@ if let Some(client) = tracy_client::Client::running() {
   the gate re-engages. Keep `an_idle_edge_that_changes_no_tile_queues_no_redraw`
   unchanged and passing. Use output redraw states/counters already in that file.
   Do not freeze the fixture clock. Run `just test-one -p niri attention_idle`.
-- [ ] Use real-time Niri fixture checks for IPC power-on while idle versus
-  `notify_activity` on resume/unlock; use virtual layout tests to pin held versus
-  resumed deadlines. Actual backend activation/unlock delivery remains a Task 5
-  capture requirement. Exercise inhibitor/screencast state without an input
-  notification and require the timeline to remain paused. Run existing signal
-  tests for level/accent, attention and finite impulses; add idle cases for
-  finite beam/impulse completion, without virtual time spanning a Niri edge.
+- [ ] Add separate real-time Niri fixture tests for power-on action dispatch and
+  the actual unlock handler. Import `niri_config::Action` and
+  `smithay::wayland::session_lock::SessionLockHandler`. Use `f.niri_state()`
+  to reach the compositor `State`; `f.state` is the outer fixture state.
+  Exercise the real entry points, not a direct `notify_activity` substitute:
+
+```rust
+#[test]
+fn optic_settling_power_on_keeps_the_timeline_paused() {
+    let mut f = fixture(Duration::from_millis(60));
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    let held = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held.running);
+    f.niri_state().do_action(Action::PowerOffMonitors, false);
+    f.niri_state().do_action(Action::PowerOnMonitors, false);
+    let after = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!after.running);
+    assert_eq!(after.logical_now, held.logical_now);
+    assert!(f.niri().input_activity.is_idle());
+}
+
+#[test]
+fn optic_settling_unlock_handler_resumes_the_timeline() {
+    let mut f = fixture(Duration::from_millis(60));
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    let held = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held.running);
+    f.niri().notified_activity_this_iteration = false;
+    SessionLockHandler::unlock(f.niri_state());
+    let after = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(after.running);
+    assert_eq!(after.logical_anchor, held.logical_now);
+    assert!(!f.niri().input_activity.is_idle());
+    assert!(f.niri().input_idle_timer.is_some());
+}
+```
+
+  These tests do not require a session-lock client or a virtual clock. They
+  detect removal of the handler's notification and addition of one to the
+  power-on action. Use the virtual layout tests to pin the corresponding exact
+  deadlines. Only actual TTY backend activation remains operator-driven in Task 5.
+- [ ] Add a real-time inhibitor check using the same idle fixture setup. After
+  obtaining a paused snapshot `held`, exercise the path `refresh_idle_inhibit`
+  actually reads, with both inhibition states:
+
+```rust
+for inhibited in [true, false] {
+    f.niri().is_fdo_idle_inhibited.store(
+        inhibited, std::sync::atomic::Ordering::SeqCst,
+    );
+    f.niri().refresh_idle_inhibit();
+    let after = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!after.running);
+    assert_eq!(after.logical_now, held.logical_now);
+    assert!(f.niri().input_activity.is_idle());
+}
+```
+
+  Run `just test-one -p niri optic_settling` and the existing `attention_idle`
+  filter. The fixture has no screencast support: verify screencast-only activity
+  in Task 5's capture control, not by adding fixture infrastructure here.
+  Run existing signal tests for level/accent, attention and finite impulses;
+  add idle cases for finite beam/impulse completion, without virtual time
+  spanning a Niri edge.
 - [ ] Update the three material guides and attention design: shared 30 s
   threshold and 0 escape hatch, logical-only optic frame/deadline contract,
   registry pause/conversion, reading/video caveat and distinct attention resume.
@@ -421,8 +514,10 @@ with self.assertRaises(ValueError):
   Headless mode uses the existing nested launcher. Dedicated mode requires an
   operator-provided real TTY with the desktop stopped, uses dedicated preflight,
   and launches the identified compositor on that session; it must refuse an
-  inherited Wayland/X11 display. Record output topology and expose the session
-  resume/unlock steps for the operator to perform. Do not script a host switch.
+  inherited Wayland/X11 display. Record output topology and expose the TTY
+  session-resume step for the operator to perform. Unlock is covered through
+  the real handler in Task 3; it is not a dedicated-lane operator step.
+  Do not script a host switch.
 - [ ] Own every PID, bound capture/export/waits, and install EXIT/INT/TERM cleanup
   that stops and waits for compositor, client, Weston and capture children before
   analysis/checksums and lock release. Reject reused OUT. Exercise prepare and
@@ -466,9 +561,14 @@ OUT="$NIRI_MATERIAL_WORK_ROOT/optic-settling/pilot-$(date +%s)" \
 - [ ] Run `matrix --lane headless` with a new OUT and `PILOT_DIR` pointing to
   the passed pilot only after pilot acceptance. Run the real-TTY
   and two-output lane pilots/matrices when the user supplies those environments;
-  otherwise leave them unverified and their acceptance work open. A TTY backend
-  resume and an unlock are different stimuli from IPC `power-on-monitors`.
+  otherwise leave them unverified and their acceptance work open. TTY backend
+  resume is distinct from IPC `power-on-monitors`; cite Task 3's real-handler
+  test separately as the unlock wiring evidence.
   Input wake must resume; IPC power-on while idle must keep the field held.
+  Run the screencast-only control here with an actual screencast consumer and
+  no input notification: the paused timeline must stay held, client/capture
+  updates must continue, and no optic cadence may start. Record the consumer
+  and its capture interval; an unavailable screencast lane remains unverified.
   Record a `run:` note for each attempt, including refusal/abort/hang.
 - [ ] Publish the nine-family verdict table with artifact hashes, source/binary
   identity, durations, topology and links to every missing/failed case. Include
