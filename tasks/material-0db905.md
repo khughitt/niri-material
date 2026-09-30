@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-0db905
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-30T10:37:04Z
+updated: 2026-09-30T10:49:04Z
 started: 2026-09-29T23:08:21Z
 depends: []
 parent: material-5d6b2c
@@ -16,6 +16,7 @@ tags: [performance]
 source: docs/notes/2026-09-29-resource-aware-rendering-brief.md
 agent: codex
 spec: docs/specs/2026-09-29-sustained-optic-settling-design.md
+plan: docs/plans/2026-09-30-sustained-optic-settling.md
 ---
 
 Why: Attention motion already uses signal { idle-after-ms } (default 30000; 0 disables), but Tile::optic_frame and AuroraOptic::rate do not read input activity. Finite-motion quiescence has passed the idle-budget trace; the remaining outcome is stopping optional sustained optic motion during extended input inactivity.
@@ -52,7 +53,14 @@ Ideas it wakes: On completion, run tasks note on material-f86183 with the review
   provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-30T10:36:02Z (material-0db905): resumed
   provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
-- 2026-09-30T10:36:02Z (material-0db905): review: spec round 3 — verdict: revise; findings: P2 1; reviewer: human
+- 2026-09-30T10:36:02Z (material-0db905): review: spec round 3 — verdict: revise; findings: P2 1; reviewer: claude-code/claude-opus-5-5
 - 2026-09-30T10:37:04Z (material-0db905): Spec round 3 disposition: P2 narrowed the time-domain invariant to existing mechanisms. Production detector and timer-delay reads retain get_monotonic_time; each edge forwards its exact event timestamp explicitly to layout/timeline pause or resume. Cached/predicted Clock samples are not detector timestamps. Timeline/layout tests use Clock::with_time and explicit virtual timestamps for zero-start and full-cycle coverage; Niri fixtures retain real time and may not freeze or advance set_unadjusted across an activity edge. No Niri clock injection or virtual timer mechanism is required. Verified against activity handlers and attention_idle fixtures; links, placeholders, tasks check and diff checks passed; just test-fast selected zero packages for this docs-only revision.
 - 2026-09-30T10:37:04Z (material-0db905): parked (waiting on user, review): User reviews the round-3 revision at .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md; after acceptance, agent records the next spec review and drafts the implementation plan for separate review. Preserve main power-evidence and worktree review notes when merging. No implementation or captures in this task.
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:40:00Z (material-0db905): resumed
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:40:24Z (material-0db905): review: spec round 4 — verdict: accept; findings: none; reviewer: claude-code/claude-opus-5-5
+- 2026-09-30T10:48:20Z (material-0db905): Corrected the original spec round-3 reviewer field to claude-code/claude-opus-5-5 as explicitly requested. tasks edit rejected the exact reviewer-only change as append-only, so applied that single authorized metadata correction directly and validated the record. CLI gap filed as tasks-45bf05.
+- 2026-09-30T10:49:04Z (material-0db905): Implementation plan drafted at docs/plans/2026-09-30-sustained-optic-settling.md. Self-review checked all spec sections, exact cross-task interfaces, real-vs-virtual timing boundaries, five review-focus cases and pilot/capture gates. Retained Tracy --messages support and CSV headers verified locally. Execution children material-a1d7da, material-5bf79c, material-6e3bda, material-c94dd7 and material-2ee11e belong under material-f86183, with a dependency chain starting at this design task, so this task can finish after plan review without implementing it. Native sequential execution recommended. Spec/plan links, placeholders, tasks check and diff checks passed; docs-only just test-fast selected no packages.
+- 2026-09-30T10:49:04Z (material-0db905): parked (waiting on user, review): User reviews .worktrees/material-0db905/docs/plans/2026-09-30-sustained-optic-settling.md. Agent records plan round 1, revises if needed, then on acceptance notes reviewed decisions on material-f86183 and closes this design task in the result commit. Implementation and captures remain separate blocked execution records; reconcile main power-evidence and worktree notes when integrating.
   provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
