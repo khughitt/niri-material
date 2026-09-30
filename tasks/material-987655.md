@@ -5,7 +5,7 @@ status: idea
 priority: 2
 size: s
 created: 2026-09-02T12:09:35Z
-updated: 2026-09-29T21:32:24Z
+updated: 2026-09-30T23:27:51Z
 depends: [material-a54d89]
 parent: material-0a4093
 tags: [signals, rendering]
@@ -16,3 +16,4 @@ Outcome: decide and, if accepted, implement a desaturation of the window texture
 ## Notes
 
 - 2026-09-29T21:32:24Z (materials-26.04): scope: briefed; confirmed backdrop saturation does not alter client pixels; trigger and client coverage require a visual decision and reviewed design; brief: docs/notes/2026-09-29-glass-signal-responses-brief.md
+- 2026-09-30T23:27:51Z (materials-26.04): related: material-7f5751 designs one opt-in content stage (breaking the opaque-pixel contract) that this desaturation could share
