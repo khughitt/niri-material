@@ -2,37 +2,13 @@
 
 Presently, there is a quirk in the NVIDIA drivers that affects niri's VRAM usage (the driver does not properly release VRAM back into the pool). Niri *should* use on the order of 100 MiB of VRAM (as checked in [nvtop](https://github.com/Syllo/nvtop)); if you see anywhere close to 1 GiB of VRAM in use, you are likely hitting this issue (heap not returning freed buffers to the driver).
 
-Luckily, you can mitigate this by configuring the NVIDIA drivers with a per-process application profile as follows:
+Luckily, you can mitigate this with the [NVIDIA application profile](../../config/nvidia/50-limit-free-buffer-pool-in-wayland-compositors.json) in this repository. From the repository root, install it with:
 
-* `sudo mkdir -p /etc/nvidia/nvidia-application-profiles-rc.d` to make the config dir if it does not exist (it most likely does not if you are reading this)
-* write the following JSON blob to set the `GLVidHeapReuseRatio` config value for the `niri` process into the file `/etc/nvidia/nvidia-application-profiles-rc.d/50-limit-free-buffer-pool-in-wayland-compositors.json`:
-    
-    ```json
-    {
-        "rules": [
-            {
-                "pattern": {
-                    "feature": "procname",
-                    "matches": "niri"
-                },
-                "profile": "Limit Free Buffer Pool On Wayland Compositors"
-            }
-        ],
-        "profiles": [
-            {
-                "name": "Limit Free Buffer Pool On Wayland Compositors",
-                "settings": [
-                    {
-                        "key": "GLVidHeapReuseRatio",
-                        "value": 0
-                    }
-                ]
-            }
-        ]
-    }
-    ```
-    
-    (The file in `/etc/nvidia/nvidia-application-profiles-rc.d/` can be named anything, and does not actually need an extension).
+```sh
+sudo install -Dm644 config/nvidia/50-limit-free-buffer-pool-in-wayland-compositors.json /etc/nvidia/nvidia-application-profiles-rc.d/50-limit-free-buffer-pool-in-wayland-compositors.json
+```
+
+The profile sets `GLVidHeapReuseRatio=0` for the `niri` process. Compare the installed file with the tracked source using `cmp` to check for drift.
 
 Restart niri after writing the config file to apply the change.
 

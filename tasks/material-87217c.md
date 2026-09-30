@@ -1,12 +1,16 @@
 ---
 id: material-87217c
 title: Track the NVIDIA application profile as installable source
-status: todo
+status: done
 priority: 3
 size: xs
 complexity: low
+process: direct
+owner: material-87217c
 created: 2026-09-12T20:53:32Z
-updated: 2026-09-12T20:55:09Z
+updated: 2026-09-30T10:20:50Z
+started: 2026-09-30T10:17:12Z
+completed: 2026-09-30T10:20:50Z
 depends: []
 tags: [configuration]
 source: ops-9be6a9
@@ -17,3 +21,9 @@ source: ops-9be6a9
 ## Notes
 
 - 2026-09-12T20:55:09Z (materials-26.04): Filed from ops-9be6a9; the material pre-commit hook refused the commit: upstream-report reports docs/materials/upstream-divergence.md stale against the staged tree (run just upstream-report and stage the result). Task file left staged and uncommitted in the material checkout for the owner to commit.
+- 2026-09-30T10:17:12Z (material-87217c): started
+  provenance: {"harness_session":"codex:01a0f1cf-cd43-7080-bc37-3f241c0e4093","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:20:50Z (material-87217c): done
+  provenance: {"harness_session":"codex:01a0f1cf-cd43-7080-bc37-3f241c0e4093","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:20:50Z (material-87217c): Tracked the installed NVIDIA profile under config/nvidia and changed the wiki to install that source
+  provenance: {"harness_session":"codex:01a0f1cf-cd43-7080-bc37-3f241c0e4093","harness_session_source":"CODEX_SESSION_ID"}
