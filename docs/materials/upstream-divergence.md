@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-198 paths differ: 48 class B (seam), 128 class A (fork-only), 22 class C (scaffolding).
+201 paths differ: 48 class B (seam), 129 class A (fork-only), 24 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -111,6 +111,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +892/-0 |
 | `tools/ops-check` | C | A | +260/-0 |
+| `tools/optic_settling.py` | C | A | +245/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
@@ -118,6 +119,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +111/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +635/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
+| `tools/test_optic_settling.py` | C | A | +170/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_upstream_report.py` | C | A | +864/-0 |
 | `tools/tt` | C | A | +276/-0 |
