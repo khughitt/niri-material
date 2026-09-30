@@ -1,15 +1,16 @@
 ---
 id: material-0db905
 title: Design sustained optic settling from the resource-aware rendering brief
-status: doing
+status: done
 priority: 1
 size: m
 complexity: high
 process: planned
 owner: material-0db905
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-30T10:56:23Z
+updated: 2026-09-30T11:03:15Z
 started: 2026-09-29T23:08:21Z
+completed: 2026-09-30T11:03:15Z
 depends: []
 parent: material-5d6b2c
 tags: [performance]
@@ -69,4 +70,11 @@ Ideas it wakes: On completion, run tasks note on material-f86183 with the review
 - 2026-09-30T10:54:05Z (material-0db905): review: plan round 1 — verdict: revise; findings: P2 1, P3 3; reviewer: claude-code/claude-opus-5-5
 - 2026-09-30T10:56:23Z (material-0db905): Plan round 1 dispositions: P2-1 adds separate real-time tests through SessionLockHandler::unlock(f.niri_state()) and State::do_action(PowerOnMonitors), with held/resumed timeline assertions; only TTY activation remains an operator lifecycle step. P3-1 drives is_fdo_idle_inhibited plus refresh_idle_inhibit and places the actual screencast-only control in Task 5. P3-2 adds debug_assert_eq on frame/snapshot logical time before pause suppression or arithmetic, plus a cfg(debug_assertions) mismatch test with static optics. P3-3 names the post_uniforms literal in tile.rs. Removed the unclear scoping sentence. Verified entry points and fixture adapter against source; plan links, placeholder/fence checks, tasks check and diff checks passed; docs-only just test-fast selected no packages.
 - 2026-09-30T10:56:23Z (material-0db905): parked (waiting on user, review): User reviews the round-1 revision at .worktrees/material-0db905/docs/plans/2026-09-30-sustained-optic-settling.md. Agent records plan round 2 and revises or, on acceptance, notes reviewed decisions on material-f86183 and closes the design task in the result commit. No implementation or captures here; execution records remain blocked on this task.
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T11:02:31Z (material-0db905): resumed
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T11:02:31Z (material-0db905): review: plan round 2 — verdict: accept; findings: none; reviewer: claude-code/claude-opus-5-5
+- 2026-09-30T11:03:15Z (material-0db905): done
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T11:03:15Z (material-0db905): Completed accepted sustained optic settling design (spec round 4) and implementation plan (plan round 2); accepted decisions recorded on material-f86183 and five execution steps filed. No implementation or captures. Task 1 is dependency-unblocked but parked at the user-requested execution pause.
   provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
