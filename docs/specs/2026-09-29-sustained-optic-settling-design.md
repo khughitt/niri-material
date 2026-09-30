@@ -1,6 +1,6 @@
 # Sustained optic settling after input inactivity
 
-**Status:** revised after spec review round 2; pending owner review. No implementation
+**Status:** revised after spec review round 3; pending owner review. No implementation
 or captures in this task.
 **Task:** `material-0db905`; wakes `material-f86183` after design and plan review.
 **Baseline:** `1767db05` (the subsequent task-start commit changes only the task).
@@ -187,19 +187,25 @@ would change the selected phase or attention contract and is outside this design
 
 ## 5. Activity edges, rendering, and wake bounds
 
-`InputActivity` remains the authority. Activity edges and render samples must
-use the same unadjusted monotonic time source, including when tests replace it
-with a virtual clock. The pause/resume operations take time explicitly; they
-never fetch wall time themselves. Niri passes the same event timestamp used
-for observe/poll/reload to the layout edge update. Production event timestamps
-come from the monotonic source underlying `Clock`; render prediction may advance
-a sample from that source as already described in §4. Niri-level tests inject
-their virtual timestamp into the activity path as well as `Clock::set_unadjusted`;
-no direct `get_monotonic_time()` read may bypass that injection for detector
-startup, observe, poll, reload, or timer-delay calculation. Do not combine a
-real event anchor with a virtual render sample and let `saturating_sub` hide
-the mismatch. Update the
-shared optic clock on **every** activity edge, before deciding whether any tile
+`InputActivity` remains the authority. Production keeps `get_monotonic_time()`
+for detector startup, observe, poll, reload, and timer-delay calculation.
+At each edge, Niri passes the same timestamp used for observe/poll/reload
+explicitly to the layout and timeline pause/resume operations; those operations
+never fetch time themselves. Do not use `clock.now_unadjusted()` as the detector's
+event timestamp: it may contain a cached or predicted presentation time from
+an earlier redraw in the same event-loop pass. Rendering retains that existing
+prediction behavior, with the hold record handling its skew as described in §4.
+
+Edge timestamps and render samples must share a time domain. Timeline and layout
+tests use `Clock::with_time` and explicit virtual times for pause, resume, and
+sampling, including zero-start and full-cycle cases. Niri-level fixture tests
+keep real time, following `src/tests/attention_idle.rs`: calloop timers and the
+detector remain on the real clock. These tests must not use `set_unadjusted`
+to freeze or advance time across an activity edge. This prevents a real event
+anchor meeting a virtual render sample and `saturating_sub` hiding the mismatch.
+No Niri time-source injection or virtual calloop timer mechanism is introduced.
+
+Update the shared optic clock on **every** activity edge, before deciding whether any tile
 needs a redraw. This must work even with no windows, no outputs, or no Aurora
 currently configured. Do not discover idle history lazily at the next tile draw:
 a hidden tile can miss several complete idle/resume cycles that way.
@@ -277,6 +283,9 @@ the eventual implementation must include that updated test front door.
    Assert that out-of-order running queries produce the same values for the same
    timestamps, while the idle hold retains the greatest recorded render sample.
    Queries alone must not alter the hold record or the ordinary animation clock.
+   Timeline and layout tests drive pause, resume, and samples with explicit
+   virtual timestamps on `Clock::with_time`; include a zero-start clock and a
+   full active/idle/resume cycle.
 2. **Participation and uniform identity.** Iterate over every entry in `OPTICS`,
    with non-neutral configurations and a nonzero seed. Hold logical time fixed
    while varying real sample time across buckets and periods in paused timeline
@@ -299,10 +308,10 @@ the eventual implementation must include that updated test front door.
    tile, modulo its seed. Include an interactive-move tile, a new tile created
    while idle, config replacement, no-output state, and output removal/re-add.
 5. **Scheduler edges.** Exercise the existing activity timer startup and reload
-   paths plus registry-derived optic interest. Drive detector timestamps,
-   pause/resume edges, timer delays, and render samples from the same injected
-   time source, including a clock starting at zero; cover a full active/idle/resume
-   cycle so a mixed real/virtual clock cannot falsely pass as settled.
+   paths plus registry-derived optic interest. Niri-level fixtures use real time
+   and real calloop timers as in `src/tests/attention_idle.rs`; no test may use
+   `set_unadjusted` across an activity edge. Explicit virtual-time coverage
+   belongs to the timeline and layout tests in item 1.
    Check no-op scenes, one-shot
    replacement, stale edge callback, repeated input, and wake rearming. An idle
    scene cannot repeatedly rearm a past/logical deadline.
