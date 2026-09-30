@@ -3,9 +3,11 @@
 # (docs/specs/2026-09-19-ring-beam-design.md §6, "Sheets"). Eight sequences
 # from a nested headless instance, each one focus gain recorded as a burst of
 # full-frame screenshots as fast as the async screenshot path allows, plus 4x
-# crops of the focused pane's top-left corner at rest, mid-pass, and as the
-# tail clears, under the capture protocol (tools/capture-meta: preflight,
-# identity, settle before every launch, release). The clips are for the
+# crops of the focused pane's corners: top-left at rest and as the tail
+# clears, and at mid-pass the corner the beam head is nearest (it has left
+# the top-left corner by then), under the capture protocol
+# (tools/capture-meta: preflight, identity, settle before every launch,
+# release). The clips are for the
 # owner's judgment of head, tail, glow, spill and gap; this script records,
 # it does not grade.
 #
@@ -238,20 +240,60 @@ burst_wait() {
 }
 
 # --- sequences ---------------------------------------------------------------
-# 4x crops of the focused pane's top-left corner (the beam launches from the
-# end of the top-left arc): the rest shot taken before the gain, and the
-# burst frames nearest 2 s (mid-pass) and 13 s (tail clear) after its start.
-corner_crops() {   # $1 = label, $2 = rest shot
-    local d=$OUT/$1-corner b=$OUT/$1 at f name
+# 4x corner crops of the focused pane: the rest shot taken before the gain at
+# the top-left corner (the beam launches from the end of the top-left arc),
+# the burst frame nearest 2 s (mid-pass) cropped at the corner the head is
+# nearest by then, and the frame nearest 13 s (tail clear) back at the
+# top-left.
+corner_crops() {   # $1 = label, $2 = rest shot, $3 = config
+    local d=$OUT/$1-corner b=$OUT/$1 at f name atxy
     mkdir -p "$d"
     magick "$2" -crop 320x240+0+0 +repage -scale 400% "$d/rest.png"
     for at in 2 13; do
         f=$(awk -v at="$at" '{ d = $2 - at; if (d < 0) d = -d; if (best == "" || d < bd) { best = $1; bd = d } } END { print best }' "$b/frames.txt")
         [ -n "$f" ] || fail "$1: no frame near $at s in $b/frames.txt"
         name=mid-pass; [ "$at" = 13 ] && name=tail-clear
-        magick "$b/$f" -crop 320x240+0+0 +repage -scale 400% "$d/$name.png"
-        echo "$1-corner: $name is $f (${at} s)" >> "$OUT/clips.txt"
+        atxy=0+0; [ "$at" = 2 ] && atxy=$(head_corner_crop "$3" "$at")
+        magick "$b/$f" -crop "320x240+$atxy" +repage -scale 400% "$d/$name.png"
+        echo "$1-corner: $name is $f (${at} s at +$atxy)" >> "$OUT/clips.txt"
     done
+}
+
+# The 320x240 crop offset for the mid-pass frame: the corner of the focused
+# pane the beam head is nearest at $2 s. The head leaves the top-left corner
+# along the top edge at the config's ring-beam-speed, so its arc position is
+# speed x t and the corners sit at 0, w, w + h and 2w + h on the perimeter.
+# The focused pane sits one gap in from the frame's top-left (the scene's
+# only column and row), so its corners come from the config's gaps plus the
+# focused window's offset and size in its tile. The crop keeps the corner
+# one gap inside it, mirroring the rest and tail-clear crops at the
+# top-left. Prints "x+y" for the crop's geometry suffix.
+head_corner_crop() {   # $1 = config, $2 = seconds
+    local speed gaps geo
+    speed=$(grep -oE 'ring-beam-speed [0-9]+' "$1") || fail "$1: no ring-beam-speed"
+    gaps=$(grep -oE 'gaps [0-9]+' "$1") || fail "$1: no gaps"
+    geo=$(msg -j windows | jq -r '.[] | select(.is_focused) | [.layout.window_size[0], .layout.window_size[1], .layout.window_offset_in_tile[0], .layout.window_offset_in_tile[1]] | @tsv')
+    [ -n "$geo" ] || fail "no focused window for the mid-pass corner"
+    awk -v t="$2" -v s="${speed##* }" -v g="${gaps##* }" '
+        $1 > 0 && $2 > 0 {
+            x = g + $3; y = g + $4; w = $1; h = $2
+            per = 2 * (w + h)
+            a = s * t; a -= int(a / per) * per
+            n = split("0," w "," w + h "," 2 * w + h, ca, ",")
+            split(x "," x + w "," x + w "," x, cx, ",")
+            split(y "," y "," y + h "," y + h, cy, ",")
+            split("top-left,top-right,bottom-right,bottom-left", cn, ",")
+            best = -1
+            for (i = 1; i <= n; i++) {
+                d = a - ca[i]; if (d < 0) d = -d
+                if (per - d < d) d = per - d
+                if (best < 0 || d < best) { best = d; bx = cx[i]; by = cy[i]; bn = cn[i] }
+            }
+            ox = bx - g; oy = by - g
+            if (bn ~ /right/) ox = bx + g - 320
+            if (bn ~ /bottom/) oy = by + g - 240
+            printf "%d+%d\n", ox, oy
+        }' <<< "$geo"
 }
 # One focus gain on a two-pane scene: the right pane focused and settled,
 # the burst started, then focus to the left pane. The burst samples at its
@@ -268,7 +310,7 @@ beam_sequence() {   # $1 = label, $2 = config, $3 = binary
     burst_start "$1" "$RUN_S"
     msg action focus-window --id "${ids[0]}"
     burst_wait "$1"
-    corner_crops "$1" "$OUT/$1-rest.png"
+    corner_crops "$1" "$OUT/$1-rest.png" "$2"
     stop_nested
     NIRI=$saved
 }
