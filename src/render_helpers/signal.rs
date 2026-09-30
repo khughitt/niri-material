@@ -954,4 +954,17 @@ mod tests {
         assert_eq!(idle.accent, active.accent);
         assert_eq!(idle.impulses, active.impulses);
     }
+
+    #[test]
+    fn finite_impulse_finishes_while_optic_time_is_held() {
+        let clock = crate::animation::Clock::with_time(Duration::ZERO);
+        let folded = folded(M::Static, vec![impulse(ImpulseKind::Ping, ms(100))]);
+        let effective = effective(&folded, P::Full, &ResolvedResponse::default(), false);
+        clock.set_optic_active(false, ms(100));
+        let live = solve(&effective, ms(200), 0., FrameInputs::quiet());
+        assert!(live.impulses[0].envelope > 0.);
+        let rest = solve(&effective, ms(1600), 0., FrameInputs::quiet());
+        assert_eq!(rest.impulses[0].envelope, 0.);
+        assert_eq!(clock.optic_time(ms(1600)).logical_now, ms(100));
+    }
 }

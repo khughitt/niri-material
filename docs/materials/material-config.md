@@ -186,16 +186,21 @@ nothing inherits.
 and the error is `aurora drift-hz must be 0 or at least 1`. The field's
 lookup point traces a small circle in noise space once per 600 s, so the
 loop closes seamlessly; the clock
-steps the phase `drift-hz` times per second in buckets anchored to the
-absolute clock, and a lit, visible aurora window redraws at that rate
-whether or not it is focused or carries a signal. `signal { motion
+steps the phase `drift-hz` times per second in buckets on a shared optic clock.
+A lit, visible aurora window redraws at that rate while input is active,
+whether or not it is focused or carries a signal. After the input idle
+threshold, its phase and uniforms hold and it requests no optic redraws.
+Input resumes the held phase without catching up; client and backdrop damage
+still render. Reading or watching video without input can therefore leave
+Aurora held even while the client updates. `signal { motion
 "reduced" }` halves the rate; `motion "off"` and `animations { off }` pin
 the field at phase 0. In the llvmpipe smoke, amount 0.5 at 4 Hz cost 5.552 ms
 per material draw versus 4.308 ms plain (+28.9%); this software-renderer
 measurement does not establish physical-GPU cost. The subsequent
 [RTX 3070 hardware checks](2026-09-11-material-hardware-evidence.md) measured
 9.728 µs for both plain and aurora median material draws in a small scene,
-but clock variation prevented resolving relative overhead. Idle redraws were
+but clock variation prevented resolving relative overhead. Before input
+settling was added, idle redraws were
 exactly 4 Hz, 2 Hz with reduced motion, and zero when pinned or off; whole-board
 power variation prevented attributing a watt cost. The isolated
 [idle-budget measurement](2026-09-11-idle-budget-evidence.md) later resolved it
@@ -403,9 +408,10 @@ including `animations { off }`. The focus filament fades in and out with
 focus-gain sweep.
 
 `idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
-`flash`) settles to the static indication (level and accent lit, no pulse)
-once no input has arrived for this long and resumes in step on the next
-input. Default 30000; `0` disables the gate; at most 3600000, and the error
+`flash`) settles to the static indication (level and accent lit, no pulse),
+and Aurora holds its phase, once no input has arrived for this long. Attention
+resumes on its absolute clock; Aurora resumes from its held phase. Default
+30000; `0` disables both gates; at most 3600000, and the error
 is `idle-after-ms must be at most 3600000`.
 
 ## Window rules and validation

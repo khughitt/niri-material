@@ -2812,11 +2812,23 @@ impl<W: LayoutElement> Layout<W> {
     /// the next `update_render_elements`. Returns whether the change reaches
     /// any tile, so the caller redraws only when something renders
     /// differently.
-    pub fn set_input_active(&mut self, active: bool) -> bool {
+    pub fn set_input_active(&mut self, active: bool, now: Duration) -> bool {
         if self.input_active == active {
             return false;
         }
         self.input_active = active;
+        let time = self.clock.set_optic_active(active, now).unwrap();
+        if let Some(client) = tracy_client::Client::running() {
+            client.message(
+                &format!(
+                    "OpticTimeline active={} real_ns={} logical_ns={}",
+                    u8::from(active),
+                    now.as_nanos(),
+                    time.logical_now.as_nanos(),
+                ),
+                0,
+            );
+        }
         let moving = match &self.interactive_move {
             Some(InteractiveMoveState::Moving(move_)) => Some(&move_.tile),
             _ => None,
@@ -2824,7 +2836,7 @@ impl<W: LayoutElement> Layout<W> {
         self.workspaces()
             .flat_map(|(_, _, ws)| ws.tiles())
             .chain(moving)
-            .any(Tile::attention_gated)
+            .any(Tile::activity_gated)
     }
 
     pub fn input_active(&self) -> bool {
