@@ -1,15 +1,16 @@
 ---
 id: material-07a816
 title: Test + CI iteration cost audit
-status: doing
+status: done
 priority: 2
 size: m
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-07a816
 created: 2026-09-04T21:44:54Z
-updated: 2026-09-30T09:17:42Z
+updated: 2026-09-30T09:34:18Z
 started: 2026-09-30T09:17:42Z
+completed: 2026-09-30T09:34:18Z
 depends: [ops-31f038]
 tags: [testing]
 ---
@@ -28,4 +29,22 @@ Piece of ops-65837b (the cross-project audit in the ops hub). 1. Measure: full-s
 - 2026-09-28T08:36:40Z (materials-26.04): Process direct: ops design §4.6 and §5 steps 3-4 settle the remaining gate, guidance and after-window work; hygiene follows the recorded baseline.
 - 2026-09-28T10:27:17Z (materials-26.04): Step 3 now follows ops docs/specs/2026-09-28-test-ci-act-design.md: copy templates/justfile's test-one, docs_paths/docs_check_cmd/hook-pre-commit-docs, ci_suite_refs/ci_remote/push_fast_cmd/hook-pre-push-fast and both templates/githooks; set ci_suite_refs from the refs CI actually runs the full suite for (say which in a note); add the AGENTS.md Gates line (templates/AGENTS.md). Then the after-window against this piece's baseline note.
 - 2026-09-30T09:17:42Z (materials-26.04): started
+  provenance: {"harness_session":"codex:01a0f19a-9492-77e0-9cd8-f0896dada71f","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T09:18:37Z (material-07a816): resumed
+  provenance: {"harness_session":"codex:01a0f19a-9492-77e0-9cd8-f0896dada71f","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T09:23:09Z (material-07a816): Step 3 choices: CI workflow is active (GitHub read-only API) and ci.yml has an unfiltered push trigger with ci-test/ci-test-release, so ci_suite_refs covers refs/heads/* refs/tags/* on origin. Use a fixed nextest set (all non-visual workspace tests, no doctests) at push; HEAD-based affected selection would miss committed changes. Docs-only allowlist is Markdown under docs/tasks plus named root guides, retaining ops-check, tasks, upstream-report and package-pin checks. Keep Git LFS stdin replay before the gate.
+- 2026-09-30T09:23:09Z (material-07a816): Hygiene: quiet nextest status and captured quiet cargo test output preserve failure diagnostics and tt summaries. Six attention_idle sleeps exercise actual calloop timer behavior (sub-second total); no external-network test calls found in the searched Rust test sources. Existing clippy warnings remain. Trial of matching CI nightly rustfmt exposed pre-existing formatting drift across Rust sources (fix/ci-format-freebsd already exists); retained current stable formatter to avoid folding that separate repair into this audit. Fresh-worktree optional-path ops-check friction filed as ops-b523ae; guide uses plain-text optional destinations per ops-check convention.
+- 2026-09-30T09:25:54Z (material-07a816): Baseline detail: of 96 agent full-suite runs during 2026-09-05..09-24, 5 failed (5.2%; Claude 0/57, Codex 5/39); one additional human run passed. The recorded full-suite median was 19.5s, p90 93.6s. Documentation scan found material-config.md is a Rust test input, so docs/materials/ is excluded from the shortened commit path; it takes the full check.
+- 2026-09-30T09:26:40Z (material-07a816): review: impl round 1 — verdict: revise; findings: P2 1; reviewer: codex/gpt-6.1-sol
+- 2026-09-30T09:27:21Z (material-07a816): review: impl round 1 — verdict: revise; findings: P2 2; reviewer: codex/gpt-6.1-sol
+- 2026-09-30T09:27:21Z (material-07a816): Round 1 consolidated findings supersede the initial one-finding note: exclude wiki Markdown (wiki-parses.rs reads its KDL); preserve failure status of ci_remote evaluation when it emits partial output. The latter comes from the shared ops pre-push template.
+- 2026-09-30T09:28:57Z (material-07a816): review: impl round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6.1-sol
+- 2026-09-30T09:28:57Z (material-07a816): Review disposition: round 1 findings fixed and six local gate tests pass; reviewer accepts round 2. Heavyweight validation and timing evidence remain controller-owned; CI activation was verified read-only, and no live push is required or authorized for this adoption. Shared-template defect filed as ops-ead572.
+- 2026-09-30T09:30:23Z (material-07a816): Measured push-set revision: the first fixed set (all 478 workspace tests under nextest) passed but spent 30.379s executing tests plus 104s compiling this worktree; gate total 170.596s including checks. Use the act design form 3 fixed subset niri-config + niri-ipc instead, covering config/material parameters/wiki KDL and IPC. Compositor tests remain in affected test-fast before commits and the full CI suite. No base-selector logic added.
+- 2026-09-30T09:31:20Z (material-07a816): review: impl round 3 — verdict: accept; findings: none; reviewer: codex/gpt-6.1-sol
+- 2026-09-30T09:34:18Z (material-07a816): after 2026-09-30 (tt-report --project material --since 2026-09-30 --until 2026-09-30, adoption-day snapshot): test 1 run 51.9s / 479 tests / fail 0; test-fast 6 runs median 1.1s p90 1.6s fail 0.33 empty 4; test-one 8 runs successful median 3.7s p90 5.8s fail 0.50 (deliberate red regressions and a corrected test-output ordering assumption); check 3 runs successful 53.2s, two setup/formatter trial failures; hook-pre-commit-docs 1 run 2.675s; full fallback hook 122.382s / 649 combined tests; final shortened hook 55.204s / 268 combined tests. The report pools the rejected all-workspace push pilot (170.596s) with the final shortened gate; final command is config+IPC only (98 Rust tests, 0.862s execution, 23.35s compile) plus 170 tooling tests in check.
+- 2026-09-30T09:34:18Z (material-07a816): Before/after interpretation: original 09-05..09-24 baseline full-suite median 19.5s, pre-commit 19.0s, pre-push 44.2s; this session old task-only commit cost 24.157s versus new docs gate 2.675s. The suite has grown and these worktree runs include compilation, TDD failures and concurrent ordinary host load, so 51.9s full and 55.2s shortened push are validation samples, not evidence of a steady-state suite speedup or changed failure rate. The concrete savings are bypassing Rust/tooling checks for allowed prose commits and replacing 478 push-time workspace tests with 98 config/IPC tests when CI covers the push. Quiet full output retains all 479 result counts and failure diagnostics; no broader fixture/sleep rewrite justified by evidence.
+- 2026-09-30T09:34:18Z (material-07a816): done
+  provenance: {"harness_session":"codex:01a0f19a-9492-77e0-9cd8-f0896dada71f","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T09:34:18Z (material-07a816): Adopted focused test-one, conservative docs-only commits, CI-aware config/IPC push gate with preserved LFS and failure-status validation, quiet Rust reporters and gate guidance. Verified 479 full Rust tests, 98 fixed-set Rust tests, 170 tooling tests (2 skips), affected selector, task checks, and reviewer acceptance. Recorded baseline and adoption-day after numbers with sampling limits; shared tooling feedback ops-b523ae and ops-ead572.
   provenance: {"harness_session":"codex:01a0f19a-9492-77e0-9cd8-f0896dada71f","harness_session_source":"CODEX_SESSION_ID"}

@@ -48,15 +48,15 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-428 paths differ: 46 class B (seam), 361 class A (fork-only), 21 class C (scaffolding).
+429 paths differ: 46 class B (seam), 361 class A (fork-only), 22 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
 | `.githooks/post-checkout` | C | A | +3/-0 |
 | `.githooks/post-commit` | C | A | +3/-0 |
 | `.githooks/post-merge` | C | A | +3/-0 |
-| `.githooks/pre-commit` | C | A | +4/-0 |
-| `.githooks/pre-push` | C | A | +36/-0 |
+| `.githooks/pre-commit` | C | A | +24/-0 |
+| `.githooks/pre-push` | C | A | +64/-0 |
 | `.github/FUNDING.yml` | B | D | +0/-1 |
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
@@ -64,10 +64,10 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +6/-2 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +40/-0 |
+| `AGENTS.md` | C | A | +56/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
-| `justfile` | C | A | +63/-0 |
+| `justfile` | C | A | +91/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1354/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
@@ -113,6 +113,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_meta.py` | C | A | +865/-0 |
+| `tools/test_gates.py` | C | A | +111/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +635/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
