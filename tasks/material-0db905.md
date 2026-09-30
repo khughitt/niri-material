@@ -6,9 +6,9 @@ priority: 1
 size: m
 complexity: high
 process: planned
-owner: materials-26.04
+owner: material-0db905
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-29T23:14:14Z
+updated: 2026-09-30T10:12:53Z
 started: 2026-09-29T23:08:21Z
 depends: []
 parent: material-5d6b2c
@@ -33,3 +33,20 @@ Ideas it wakes: On completion, run tasks note on material-f86183 with the review
 - 2026-09-29T23:13:26Z (material-0db905): parked (waiting on user, review): User reviews .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md; agent records the review and revises as needed, then drafts the implementation plan for separate review. This task implements and captures nothing.
   provenance: {"harness_session":"codex:01a0ef6c-81be-7053-b1db-8781e2ef7949","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-09-29T23:14:14Z (material-0db905): Commit hook initially refused missing optional machine-local Cargo paths in the fresh worktree (ops-3b4a6e filed). Hydrated ignored Cargo config and target link using the existing local build cache; no repository source or host launcher changed.
+- 2026-09-30T01:08:33Z (material-0db905): resumed
+  provenance: {"harness_session":"codex:01a0ef6c-81be-7053-b1db-8781e2ef7949","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T01:08:33Z (material-0db905): review: spec round 1 — verdict: revise; findings: P2 3, P3 3; reviewer: claude-code/claude-fable-5-1
+- 2026-09-30T01:11:43Z (material-0db905): Spec round 1 dispositions: P2-1 running samples are pure and only the idle hold uses the greatest recorded render sample; P2-2 activity interest probes the registry with an as-if-running snapshot, and all optics get the logical-time-only contract and paused real-time invariance checks; P2-3 chose the existing Clock carrier over additional constructor plumbing after checking upstream seams, and added seam-report regeneration. P3-1 separates IPC power-on from session-resume/unlock notifications; P3-2 states reading/video, inhibitor/screencast and shared signal-threshold consequences; P3-3 records the union-of-deadlines trade-off and adds a misaligned combined-motion capture control. Default-on and no extra resume easing remain proposed for owner acceptance.
+- 2026-09-30T01:11:43Z (material-0db905): parked (waiting on user, review): User reviews the revised .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md after spec round 1; agent records the next review and, once accepted, drafts the implementation plan for separate review. No implementation or captures in this task.
+  provenance: {"harness_session":"codex:01a0ef6c-81be-7053-b1db-8781e2ef7949","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T09:59:37Z (material-0db905): resumed
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T09:59:55Z (material-0db905): Resume check: retained the staged spec round-1 revision. Relevant activity, clock, tile, layout and optic sources match the current main checkout. New evidence on main from material-39a46f: Aurora adds +0.96 W at 4 Hz (upper 1.37 W) and +0.77 W at 2 Hz (upper 1.03 W); resting jelly upper 0.19 W. Preserve that main task note when merging. The current main justfile now provides test-one, superseding the older branch recipe note in spec section 7. Owner spec review remains the next gate; no implementation or captures.
+- 2026-09-30T09:59:55Z (material-0db905): parked (waiting on user, review): User reviews .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md; after acceptance, agent records spec review round 2, updates the test-front-door note against the current main justfile, and drafts the implementation plan for separate review. Preserve both worktree review notes and the main power-evidence note when reconciling the task record.
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:10:29Z (material-0db905): resumed
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:10:29Z (material-0db905): review: spec round 2 — verdict: revise; findings: P2 1, P3 4; reviewer: claude-code/claude-opus-5-5
+- 2026-09-30T10:12:53Z (material-0db905): Spec round 2 dispositions: P2-1 OpticFrame exposes only logical_now; entries return logical deadlines; the registry suppresses paused scheduling, converts the minimum to real time, and exposes next_logical_change for activity interest. P3-1 requires explicit edge times and one injected time source for detector, timer delays and render samples. P3-2 uses test-one then test-fast. P3-3 requires transition-only Tracy messages with edge timestamp, direction and held logical time. P3-4 requires a real TTY capture or an unverified result. Owner accepted default-on shared-threshold settling and phase-continuous resume without easing. Added constant-client-damage caveat and current power evidence. Spec links, placeholder checks, tasks check and diff checks passed; just test-fast selected zero packages for this docs-only change.
+- 2026-09-30T10:12:53Z (material-0db905): parked (waiting on user, review): User reviews the round-2 revision at .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md; after acceptance, agent records spec round 3 and drafts the implementation plan for separate review. Reconcile main power-evidence note with worktree review notes when merging. No implementation or captures in this task.
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
