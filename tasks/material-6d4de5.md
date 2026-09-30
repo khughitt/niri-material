@@ -4,7 +4,7 @@ title: "Revisit the dynamics: drag, move, focus, flex, ripple"
 status: idea
 priority: 1
 created: 2026-09-06T00:32:54Z
-updated: 2026-09-30T09:51:39Z
+updated: 2026-09-30T10:00:29Z
 depends: [prism-66b025]
 parent: material-53f873
 tags: [rendering, dynamics]
@@ -19,3 +19,4 @@ Reassess how the glass responds to drag, move, and focus changes. Prism reports 
 - 2026-09-11T10:04:41Z (material-36e968): Motion sweep evidence now in docs/materials/2026-09-11-jelly-motion-sweep.md: installed7526af1d RTX3070 column moves resolve all sampled neighbor steps (flex0/.004/.01/.02, ripple0/.06/.25/.5) above repeat variation; all16 bursts settle pixel-identically. This establishes working response to native animation residuals in the pinned scene, not interactive-pointer drag behavior or appropriate Prism ranges. Reuse experiments results/jelly-motion fixture for redesign comparisons.
 - 2026-09-29T22:44:56Z (materials-26.04): scope: briefed; native column-move response is measured; interactive drag and release need a current baseline before choosing deformation or gain changes; brief: docs/notes/2026-09-29-material-dynamics-brief.md
 - 2026-09-30T09:51:39Z (material-b3ce14): material-b3ce14 finding: during interactive drag and hold the jelly residual is exactly 0 (tile pinned to the pointer, grab offset excluded), so flex and ripple are dead however fast the pointer moves; glass flexes only on lift (tiled 1.46 px, floating 0.18 px) and tiled release (2.96 px, capped at max flex). Smallest missing contract: a follow-lag residual (a critically damped point chasing the pointer-anchored render location on the window-movement spring) fed to jelly during Moving. Owner choices listed in the dynamics brief.
+- 2026-09-30T10:00:29Z (materials-26.04): Drag stimulus design split out to material-4354cf; this idea keeps the max-flex cap, whole-slab shear and ior-independent ripple levers.
