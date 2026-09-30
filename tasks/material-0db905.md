@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-0db905
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-30T10:12:53Z
+updated: 2026-09-30T10:37:04Z
 started: 2026-09-29T23:08:21Z
 depends: []
 parent: material-5d6b2c
@@ -49,4 +49,10 @@ Ideas it wakes: On completion, run tasks note on material-f86183 with the review
 - 2026-09-30T10:10:29Z (material-0db905): review: spec round 2 — verdict: revise; findings: P2 1, P3 4; reviewer: claude-code/claude-opus-5-5
 - 2026-09-30T10:12:53Z (material-0db905): Spec round 2 dispositions: P2-1 OpticFrame exposes only logical_now; entries return logical deadlines; the registry suppresses paused scheduling, converts the minimum to real time, and exposes next_logical_change for activity interest. P3-1 requires explicit edge times and one injected time source for detector, timer delays and render samples. P3-2 uses test-one then test-fast. P3-3 requires transition-only Tracy messages with edge timestamp, direction and held logical time. P3-4 requires a real TTY capture or an unverified result. Owner accepted default-on shared-threshold settling and phase-continuous resume without easing. Added constant-client-damage caveat and current power evidence. Spec links, placeholder checks, tasks check and diff checks passed; just test-fast selected zero packages for this docs-only change.
 - 2026-09-30T10:12:53Z (material-0db905): parked (waiting on user, review): User reviews the round-2 revision at .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md; after acceptance, agent records spec round 3 and drafts the implementation plan for separate review. Reconcile main power-evidence note with worktree review notes when merging. No implementation or captures in this task.
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:36:02Z (material-0db905): resumed
+  provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T10:36:02Z (material-0db905): review: spec round 3 — verdict: revise; findings: P2 1; reviewer: human
+- 2026-09-30T10:37:04Z (material-0db905): Spec round 3 disposition: P2 narrowed the time-domain invariant to existing mechanisms. Production detector and timer-delay reads retain get_monotonic_time; each edge forwards its exact event timestamp explicitly to layout/timeline pause or resume. Cached/predicted Clock samples are not detector timestamps. Timeline/layout tests use Clock::with_time and explicit virtual timestamps for zero-start and full-cycle coverage; Niri fixtures retain real time and may not freeze or advance set_unadjusted across an activity edge. No Niri clock injection or virtual timer mechanism is required. Verified against activity handlers and attention_idle fixtures; links, placeholders, tasks check and diff checks passed; just test-fast selected zero packages for this docs-only revision.
+- 2026-09-30T10:37:04Z (material-0db905): parked (waiting on user, review): User reviews the round-3 revision at .worktrees/material-0db905/docs/specs/2026-09-29-sustained-optic-settling-design.md; after acceptance, agent records the next spec review and drafts the implementation plan for separate review. Preserve main power-evidence and worktree review notes when merging. No implementation or captures in this task.
   provenance: {"harness_session":"codex:01a0f1c0-c05d-71f1-8d5b-ed294adf0239","harness_session_source":"CODEX_SESSION_ID"}
