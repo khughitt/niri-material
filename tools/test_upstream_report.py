@@ -281,6 +281,16 @@ class Inventory(Fixture):
         for own in report.SELF_PATHS:
             self.assertNotIn(own, paths)
 
+    def test_inventory_excludes_task_records(self):
+        """Task records never exist upstream and cannot conflict on a rebase, so
+        filing one must not change the class-A count and stale the report."""
+        tree = self.stage_divergence()
+        self.write("tasks/material-0000aa.md", "---\nid: material-0000aa\n---\n")
+        self.git("add", "-A")
+        paths = [row.path for row in report.inventory(self.root, tree)]
+        self.assertNotIn("tasks/material-0000aa.md", paths)
+        self.assertIn("src/material.rs", paths)
+
     def test_inventory_reads_the_index_not_the_working_tree(self):
         tree = self.stage_divergence()
         (self.root / "src" / "unstaged.rs").write_text("fn unstaged() {}\n")
