@@ -1,7 +1,7 @@
 # Sustained optic settling after input inactivity
 
-**Status:** revised after spec review round 3; pending owner review. No implementation
-or captures in this task.
+**Status:** accepted in spec review round 4; implementation plan pending review.
+No implementation or captures in this task.
 **Task:** `material-0db905`; wakes `material-f86183` after design and plan review.
 **Baseline:** `1767db05` (the subsequent task-start commit changes only the task).
 
