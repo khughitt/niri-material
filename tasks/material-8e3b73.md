@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-29T22:45:28Z
-updated: 2026-09-30T10:19:37Z
+updated: 2026-09-30T10:23:38Z
 started: 2026-09-30T10:08:14Z
 depends: []
 parent: material-53f873
@@ -29,3 +29,5 @@ Ideas it wakes: On completion, run tasks note on material-5a5fff and material-9b
 - 2026-09-30T10:08:14Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:90867bba-6d94-4787-81ee-3e6a3b57b0fe","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-30T10:19:37Z (materials-26.04): run: 0.5 min (est 2, idle); preflight 0.5; refused: cpu_busy 25%, load1 22.7, gpu_util 22%, chromium GPU client (SEQUENCES=swap pilot, focus-swap-3637538-1790763542)
+- 2026-09-30T10:23:38Z (materials-26.04): parked (waiting on user, quiet; idle, 10 min): Quiet capture, then owner review. In .worktrees/material-8e3b73 (commit 870c4694; tests, fixture and finding are committed), with the host idle (browser closed, monitors off, wali-rotate.timer stopped): pilot CAPTURE_TASK=material-8e3b73 SEQUENCES=swap docs/materials/scripts/focus-swap-clips.sh (release build 3 min, preflight 0.5, swap 1) and read swap/diffs.txt and swap.gif; then the full run without SEQUENCES (preflight 0.5, six sequences about 5). Earlier attempt: pilot refused at preflight on CPU, load1, GPU and a Chromium GPU client. After: fill the Clip section of the dynamics brief with the run path and RMSE steps, ask the owner for a verdict on swap/same/seed/move/beam, then in the done commit note material-5a5fff, material-9be53d and material-764d8c and update the adaptive-materials brief.
+  provenance: {"harness_session":"claude-code:90867bba-6d94-4787-81ee-3e6a3b57b0fe","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
