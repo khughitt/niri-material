@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-193 paths differ: 46 class B (seam), 125 class A (fork-only), 22 class C (scaffolding).
+195 paths differ: 47 class B (seam), 126 class A (fork-only), 22 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -67,6 +67,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `AGENTS.md` | C | A | +56/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
+| `docs/wiki/Nvidia.md` | B | M | +7/-31 |
 | `justfile` | C | A | +91/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1354/-0 |
