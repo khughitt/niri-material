@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-29T23:08:21Z
+updated: 2026-09-30T09:10:59Z
 started: 2026-09-29T23:08:21Z
 depends: []
 parent: material-5d6b2c
@@ -27,3 +27,4 @@ Ideas it wakes: On completion, run tasks note on material-f86183 with the review
 
 - 2026-09-29T23:08:21Z (materials-26.04): started
   provenance: {"harness_session":"codex:01a0ef6c-81be-7053-b1db-8781e2ef7949","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-09-30T09:10:59Z (materials-26.04): Input from material-39a46f (power re-run on 48ba40a1, 2026-09-29): aurora drift costs +0.96 W at 4 Hz (upper 1.37 W) and +0.77 W at 2 Hz (upper 1.03 W) over resting jelly. The 4 Hz upper estimate now exceeds 1.0 W because the run-to-run spread widened; resting jelly still costs nothing resolvable (upper 0.19 W). See docs/materials/2026-09-11-idle-budget-evidence.md, Re-run on 48ba40a1.
