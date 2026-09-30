@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-09-30T23:31:51Z
+updated: 2026-09-30T23:32:59Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -27,3 +27,5 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-09-30T23:28:03Z (glass-edges): started
   provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-30T23:31:50Z (glass-edges): spec drafted: docs/specs/2026-09-30-glass-edge-optics-design.md (height-field bevel + bevel-profile, (1-F) composition, reflection and edge-highlight optics, Surface specular hook)
+- 2026-09-30T23:32:59Z (glass-edges): parked (waiting on user, review): User reviews docs/specs/2026-09-30-glass-edge-optics-design.md in .worktrees/glass-edges; on approval the agent runs writing-plans and files the Prism piece
+  provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
