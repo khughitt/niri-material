@@ -5,7 +5,9 @@
 (Task 3, `material-5f9dee`, 2026-09-27). Material at rest passes the idle
 budget: jelly shows no resolvable board-power increase over plain glass at
 the 1.0 W resolution target. A drifting aurora's cost is measured below. A
-product watt allowance for it is a separate decision.
+product watt allowance for it is a separate decision. A full power re-run on a
+binary from `48ba40a1` (`material-39a46f`, 2026-09-29), after the ring-focus
+merge and the attention idle-edge fix, reproduces every verdict.
 
 Design: [idle budget](../specs/2026-09-11-material-idle-budget-design.md).
 Plan: [execution plan](../plans/2026-09-11-material-idle-budget.md).
@@ -137,6 +139,56 @@ provenance
 The recorded source is the worktree head at capture time. Its uncommitted
 files were task notes. The binary was built from `191ad747` (`identity.json`,
 `source.tar`).
+
+### Re-run on `48ba40a1`
+
+The run above predates the ring-focus merge and the attention idle-edge fix
+(`material-cd7deb`, `721b8df7`). The same fixture (experiments `05bf987`), the
+same method and the same output ran again on 2026-09-29 against an
+uninstrumented binary built by `build-power` from `48ba40a1` (SHA-256
+`47d8bc82…`). It ran 22:16–23:49 (93 min) from a TTY with the desktop stopped:
+48 of 48 windows settled and passed, `analysis.json` is complete with no
+integrity failures, and `SHA256SUMS` verifies all 888 files.
+
+| Comparison | Delta | Conservative floor | Upper estimate | Resolved increase |
+| --- | ---: | ---: | ---: | --- |
+| sham A/A | −0.03 W | 0.125 W | 0.095 W | no |
+| plain → jelly at rest (A→B) | +0.005 W | 0.1825 W | 0.19 W | **no** |
+| jelly → aurora 4 Hz (B→C) | +0.96 W | 0.4125 W | 1.37 W | yes |
+| jelly → aurora 2 Hz (B→D) | +0.77 W | 0.26 W | 1.03 W | yes |
+
+- **Idle budget.** It still passes (`budget_passed: true`). The A→B floor is
+  wider than in the first run: block 3 went the other way (−0.13 W against
+  +0.005 and +0.05). The upper estimate of 0.19 W is still far inside 1.0 W.
+- **Aurora.** Both costs are a little higher than in the first run (+0.115 W at
+  4 Hz and +0.09 W at 2 Hz). Each change is smaller than that comparison's
+  floor in either run, so this run does not resolve a change in the aurora's
+  cost. The 4 Hz upper estimate (delta plus floor) now exceeds 1.0 W. B→C's
+  conservative floor widened from 0.265 W to 0.41 W: its block deltas spread
+  from 0.65 to 1.06 W. That matters only once a watt allowance is chosen.
+- **DVFS context.** All 1,488 observation samples were in P8 at 210 MHz,
+  28–32 °C. GPU utilization was 0 % everywhere except C and D, which peaked
+  at 4 %, as in the first run.
+
+```
+run power-full-20260929T221618  task material-265eb0  fixture idle-budget.sh  lane dedicated
+started 2026-09-29T22:16:19-04:00
+
+baseline
+  cpu_busy_pct 1.0  load1 0.79  gpu_util_pct 0.0  gpu_power_w 10.845
+  gpu_power_iqr_w 0.36  gpu_clock_mhz 210  gpu_pstates ['P8']
+
+preflight quiet
+sub-runs: 48 of 48 settled
+
+provenance
+  source 48ba40a18cae6caf4e9ccff7cf1757a7715fc961 materials-26.04 dirty
+  binary niri 47d8bc82a6cfdcf84ca2d5f49ea9efd137400e8eef4303f2ebd31f5705b826c0
+```
+
+The recorded source is the main checkout at capture time. Its only
+uncommitted file was this task's record. The binary's `identity.json` names
+`48ba40a1` with no features and no patch.
 
 ## Findings along the way
 

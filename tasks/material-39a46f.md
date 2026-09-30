@@ -1,18 +1,20 @@
 ---
 id: material-39a46f
 title: Full idle-budget power run on the current binary
-status: doing
+status: done
 priority: 2
 size: s
 complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-28T08:21:20Z
-updated: 2026-09-30T03:52:18Z
+updated: 2026-09-30T03:54:22Z
 started: 2026-09-28T08:21:25Z
+completed: 2026-09-30T03:54:22Z
 depends: []
 parent: material-53f873
 tags: [performance]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 ---
 
@@ -28,3 +30,7 @@ The last full power run (power-full-20260927T031335, 48 windows, 93 min) used a 
   provenance: {"harness_session":"claude-code:3d005be9-3333-4994-97c1-43cddb3eb069","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-30T03:51:30Z (materials-26.04): run: 96 min (est 100, headless); build 3, load wait 3, power 93; passed
 - 2026-09-30T03:52:18Z (materials-26.04): correction to the run note: build start to supervisor exit was 99 min (22:10:35-23:49:29), not 96; phases unchanged (build 2.8, load wait 2.7, power 93.2)
+- 2026-09-30T03:54:22Z (material-39a46f): done
+  provenance: {"harness_session":"claude-code:3d005be9-3333-4994-97c1-43cddb3eb069","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-30T03:54:22Z (material-39a46f): Full power lane re-run on a 48ba40a1 binary (power-full-20260929T221618): 48/48 windows passed, budget passes (A->B +0.005 W, floor 0.18, upper 0.19); aurora +0.96 W at 4 Hz (upper 1.37), +0.77 W at 2 Hz (upper 1.03), no resolved change from the 191ad747 run. Evidence doc updated; experiments results 0282e23.
+  provenance: {"harness_session":"claude-code:3d005be9-3333-4994-97c1-43cddb3eb069","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
