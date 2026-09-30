@@ -1,15 +1,16 @@
 ---
 id: material-05944d
 title: "idle-budget supervisor: stop automated runs with TERM and say so when INT is ignored"
-status: doing
+status: done
 priority: 3
 size: xs
 complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-28T08:44:24Z
-updated: 2026-09-30T14:00:01Z
+updated: 2026-09-30T14:03:42Z
 started: 2026-09-30T14:00:01Z
+completed: 2026-09-30T14:03:42Z
 depends: []
 tags: [capture]
 agent: claude-code/claude-opus-5-5
@@ -20,3 +21,5 @@ On 2026-09-27 an agent started idle-budget-supervise.sh as a background job; a n
 ## Notes
 
 - 2026-09-30T14:00:01Z (materials-26.04): started
+- 2026-09-30T14:03:42Z (materials-26.04): done
+- 2026-09-30T14:03:42Z (materials-26.04): Supervisor (niri-experiments results/idle-budget ffbde3e) prints one stderr line naming TERM when INT is ignored at entry and changes nothing else; SuperviseTests gained a TERM case mirroring the INT one (fixture cleanup finishes, wrapper untouched, exit 143); the results doc's env --default-signal=INT pitfall bullet now says agents stop a background supervised run with TERM and Ctrl-C at a TTY is the human path. Fixture suite: 68 tests OK.
