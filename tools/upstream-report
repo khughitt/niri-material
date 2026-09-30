@@ -29,6 +29,9 @@ BASELINE_PATH = "docs/materials/upstream-baseline.toml"
 CONFLICTS_PATH = "docs/materials/upstream-conflicts.toml"
 REPORT_PATH = "docs/materials/upstream-divergence.md"
 SELF_PATHS = (BASELINE_PATH, CONFLICTS_PATH, REPORT_PATH)
+# Task records never exist upstream and cannot conflict on a rebase; counting them
+# as class A made every `tasks add` stale the report.
+EXCLUDED_PREFIXES = ("tasks/",)
 
 REQUIRED_KEYS = ("tag", "tree", "patched_commit")
 
@@ -138,7 +141,7 @@ def _numstat(root, tree):
 
 def inventory(root, tree):
     """Rows for every path differing between the baseline tree and the index,
-    excluding the tool's own files, sorted by path.
+    excluding the tool's own files and task records, sorted by path.
 
     `previous` is the path the baseline knew, or None. It is carried all the way to
     the drift analysis on purpose: upstream never saw our rename, so a seam file the
@@ -159,7 +162,7 @@ def inventory(root, tree):
     rows = [
         Row(statuses[path][0], path, statuses[path][1], *numbers[path])
         for path in statuses
-        if path not in SELF_PATHS
+        if path not in SELF_PATHS and not path.startswith(EXCLUDED_PREFIXES)
     ]
     return sorted(rows, key=lambda row: row.path)
 
@@ -195,7 +198,7 @@ def render_local(record, rows):
         "upstream counterpart. Class C is listed because `tools/tt` has an "
         "external source of truth in ops. Because class A is counted, editing an "
         "existing class-A file's contents can never make this block stale; only "
-        "adding or removing one can."
+        "adding or removing one can. Task records under `tasks/` are not counted."
     )
     return "\n".join(lines)
 

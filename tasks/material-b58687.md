@@ -1,15 +1,19 @@
 ---
 id: material-b58687
 title: "upstream-report: adding a task file should not make the divergence report stale"
-status: todo
+status: done
 priority: 3
 size: xs
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-09-28T08:21:42Z
-updated: 2026-09-29T22:34:10Z
+updated: 2026-09-30T09:51:33Z
+started: 2026-09-30T09:50:31Z
+completed: 2026-09-30T09:51:33Z
 depends: []
 tags: [tooling]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 ---
 
@@ -19,3 +23,10 @@ tools/upstream-report classifies every added path as class A and prints the tota
 
 - 2026-09-29T21:33:43Z (materials-26.04): Recurred during the 2026-09-29 scope pass: task records and a notes brief were the only staged changes; pre-commit passed format/clippy and 164 tooling tests, then upstream-report --check refused as stale. Regenerating the report is required to commit the pass.
 - 2026-09-29T22:34:10Z (materials-26.04): Recurred during the deferred signal-model scope pass: pre-commit passed clippy and 164 tooling tests (2 skipped), then upstream-report --check refused the task/brief-only staged changes. Refreshing the generated inventory remains necessary; gate feedback filed as ops-50c1ae.
+- 2026-09-30T09:50:31Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:5611586f-ab56-46ad-85c1-77404d632d38","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-30T09:50:31Z (materials-26.04): direct: filter tasks/ in inventory() beside SELF_PATHS so both diff reads stay joined; docs/ left counted — additions there are specs/plans that land with code commits, not routine chores
+- 2026-09-30T09:51:33Z (material-b58687): done
+  provenance: {"harness_session":"claude-code:5611586f-ab56-46ad-85c1-77404d632d38","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-30T09:51:33Z (material-b58687): upstream-report leaves tasks/ out of the inventory (EXCLUDED_PREFIXES beside SELF_PATHS), with a test; report regenerated: 192 paths, 124 class A (was 429/361); design spec notes the exclusion
+  provenance: {"harness_session":"claude-code:5611586f-ab56-46ad-85c1-77404d632d38","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
