@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-197 paths differ: 47 class B (seam), 128 class A (fork-only), 22 class C (scaffolding).
+198 paths differ: 48 class B (seam), 128 class A (fork-only), 22 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -80,6 +80,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `niri-visual-tests/src/test_window.rs` | B | M | +5/-0 |
 | `packaging/arch/.gitignore` | C | A | +6/-0 |
 | `packaging/arch/PKGBUILD` | C | A | +96/-0 |
+| `src/animation/clock.rs` | B | M | +90/-0 |
 | `src/backend/tty.rs` | B | M | +1/-0 |
 | `src/backend/winit.rs` | B | M | +1/-0 |
 | `src/cli.rs` | B | M | +41/-0 |
