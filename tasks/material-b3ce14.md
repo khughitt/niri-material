@@ -1,19 +1,21 @@
 ---
 id: material-b3ce14
 title: Establish glass deformation during pointer drag and release
-status: doing
+status: done
 priority: 1
 size: s
 complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-29T22:45:28Z
-updated: 2026-09-30T09:44:58Z
+updated: 2026-09-30T09:52:55Z
 started: 2026-09-30T09:44:58Z
+completed: 2026-09-30T09:52:55Z
 depends: []
 parent: material-53f873
 tags: [dynamics]
 source: docs/notes/2026-09-29-material-dynamics-brief.md
+model: claude-opus-5-5
 agent: codex
 ---
 
@@ -26,4 +28,9 @@ Ideas it wakes: On completion, run tasks note on material-6d4de5 and material-9b
 ## Notes
 
 - 2026-09-30T09:44:58Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:56be2ffb-8b2b-4784-aced-d868b49b6398","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-30T09:51:39Z (material-b3ce14): Probe (src/layout/tests/drag_dynamics.rs, pinned clock, 16 ms frames, default window-movement spring = live config; flex 0.01 at bevel 12/thickness 20, cap 3 px): scrolling rubber-band 0, lift 1.46 px/240 ms, drag 40 px/frame 0, hold 0, release 2.96 px capped/288 ms, cancel 0.75 px; floating lift 0.18 px (first pointer step), drag/hold/release 0; native column move control 1.11 px/240 ms. Deterministic, zero repeat variation. Absent stimulus, not capture failure. Deviation: no nested pixel capture — zero residual renders settled glass and the jelly-motion sweep already measured shader response to nonzero residuals; a clip for the owner's visual judgment belongs with any follow-lag design.
+- 2026-09-30T09:52:55Z (material-b3ce14): done
+  provenance: {"harness_session":"claude-code:56be2ffb-8b2b-4784-aced-d868b49b6398","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-09-30T09:52:55Z (material-b3ce14): Drag baseline: jelly residual is 0 during drag/hold in both layouts; flex only on lift and tiled release (capped). Probe src/layout/tests/drag_dynamics.rs; finding, follow-lag contract and owner choices in the dynamics brief; noted on material-6d4de5 and material-9be53d.
   provenance: {"harness_session":"claude-code:56be2ffb-8b2b-4784-aced-d868b49b6398","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
