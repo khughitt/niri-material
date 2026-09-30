@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-429 paths differ: 46 class B (seam), 361 class A (fork-only), 22 class C (scaffolding).
+192 paths differ: 46 class B (seam), 124 class A (fork-only), 22 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -117,11 +117,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_glass_optic_smoke.py` | C | A | +635/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
-| `tools/test_upstream_report.py` | C | A | +854/-0 |
+| `tools/test_upstream_report.py` | C | A | +864/-0 |
 | `tools/tt` | C | A | +276/-0 |
-| `tools/upstream-report` | C | A | +686/-0 |
+| `tools/upstream-report` | C | A | +689/-0 |
 
-Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can.
+Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can. Task records under `tasks/` are not counted.
 <!-- END GENERATED: local -->
 
 ## Upstream drift
