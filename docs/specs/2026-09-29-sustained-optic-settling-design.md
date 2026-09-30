@@ -1,6 +1,7 @@
 # Sustained optic settling after input inactivity
 
-**Status:** draft for owner review; no implementation or captures in this task.
+**Status:** revised after spec review round 2; pending owner review. No implementation
+or captures in this task.
 **Task:** `material-0db905`; wakes `material-f86183` after design and plan review.
 **Baseline:** `1767db05` (the subsequent task-start commit changes only the task).
 
@@ -17,7 +18,9 @@ review. It does not implement, capture, install, or change Prism. The
 [resource-aware rendering brief](../notes/2026-09-29-resource-aware-rendering-brief.md)
 sets this boundary. The broader idea's phrase “easing back” is resolved here as
 phase-continuous resume at the configured cadence, without an extra easing
-animation; this is a proposed decision for owner review.
+animation; the owner accepted this decision in round 2.
+An easing animation would add a deadline and a visual contract to conceal a
+normal bucket step in a 600-second field; phase continuity is sufficient here.
 
 ## 2. What the code establishes
 
@@ -47,21 +50,38 @@ being retained. The [idle-budget evidence](../materials/2026-09-11-idle-budget-e
 establishes finite-motion quiescence and active Aurora cadence, not the new
 settling behavior. Its old cadence fixtures must explicitly disable the idle
 gate or provide real input once this behavior lands.
+The 2026-09-29 power re-run on `48ba40a1`, recorded in that evidence document
+on `materials-26.04` by `material-39a46f`, measured Aurora above resting jelly
+at +0.96 W for 4 Hz and +0.77 W for 2 Hz (upper estimates 1.37 W and 1.03 W).
+These static-scene measurements motivate settling; they do not measure the
+proposed implementation's savings.
 
 ## 3. Participation and configuration
 
-**Default-on for Aurora, using the existing threshold.** An Aurora with amount
+**Default-on for Aurora, using the existing threshold; accepted by the owner in
+round 2.** An Aurora with amount
 greater than zero and a nonzero effective drift rate participates automatically.
 No new configuration field, per-window override, second detector, or Prism key
 is introduced. `idle-after-ms 0` disables input settling for both attention and
 Aurora. This deliberately offers no independent “keep Aurora moving but settle
 attention” switch.
 
+Consequences to accept with this default: Aurora freezes after 30 seconds of
+reading or watching without activity notifications, even while the client keeps
+updating. Idle inhibitors and screencasts do not keep it moving: inhibitors feed
+the idle-notifier protocol, not `InputActivity`. Despite its location under
+`signal`, `idle-after-ms` now governs a material optic even on signal-free windows.
+Client rendering and capture continue; only optional sustained optic time stops.
+During video or other constant client damage, the glass effect redraws anyway:
+freezing Aurora is primarily a visual change, with little expected saving.
+The intended saving comes from static scenes where optic deadlines cause the draws.
+
 The other registered optics are already static. Focus beams and their brightness
 noise, crossfades, jelly springs/ripples, and signal impulses remain on their
 existing finite paths. Attention remains gated by `effective(..., input_active)`
 and resumes on its existing absolute clock. No change to client frame callbacks,
-signal expiry, idle inhibitors, or what `notify_activity` counts as input.
+signal expiry, idle inhibitors, or the callers of `notify_activity`. Those callers
+include session resume and unlock as well as input (§6).
 
 | Aurora configuration | While input active | While input idle |
 | --- | --- | --- |
@@ -76,73 +96,123 @@ returns phase 0 and would replace the current image at every idle edge.
 
 ## 4. Phase and time
 
-Use one small shared pausable optic clock per `Layout`, derived from the existing
-unadjusted monotonic clock. All its tiles hold the same handle, including tiles
-on hidden workspaces, tiles moved between outputs, and the interactive-move tile.
-It lives independently of replaceable config/options and material objects.
+Use one small pausable optic timeline carried by the existing shared `Clock`
+handle, derived from its unadjusted monotonic time. Niri, layout, and all its tiles
+already share that handle, including hidden and interactive-move tiles. Keep the
+timeline state in the shared inner allocation so cloning `Clock` shares it;
+constructing a fresh `Clock` initializes a fresh timeline. It lives independently
+of replaceable config/options and material objects.
 Only activity edges pause or resume it; visibility and material selection do not.
-It owns no timer and does not decide whether input is idle.
+It owns no timer and does not decide whether input is idle. Its pause, sample,
+and render-record operations are separate from ordinary `Clock::now`,
+`now_unadjusted`, rate, and complete-instantly behavior: existing animation callers
+and attention continue to see their current clocks.
 
 The clock stores a logical-time anchor and its real-time anchor while running,
-or a held logical instant while paused. It also retains the greatest logical
-sample it has returned. At startup the logical and real anchors are equal, so
+or a held logical instant while paused. It also records the greatest logical
+sample used to build material dynamics during the current active interval.
+At startup the logical and real anchors are equal, so
 before the first idle period Aurora has its current absolute-time phase and
 cross-window bucket alignment. Sampling while running is:
 
 ```
-logical_now = max(last_sample,
-                  logical_anchor + saturating_sub(real_now, real_anchor))
+logical_now = logical_anchor + saturating_sub(real_now, real_anchor)
 ```
 
-At the active-to-idle edge, sample once and hold that logical instant. At resume,
+Running sampling is a pure function of anchors and the supplied real time:
+sampling a later time first does not change an earlier time's result. Material
+rendering records its sample separately; scheduling and interest queries do not.
+At the active-to-idle edge, hold the maximum of `logical(edge_time)` and the
+greatest recorded render sample (if any). At resume,
 set `logical_anchor` to the held instant and `real_anchor` to the event's time.
 The exact resume instant therefore returns exactly the held phase. Subsequent
 samples advance normally; there is no catch-up through the inactive interval,
 reset to phase zero, replay of missed buckets, or additional easing deadline.
-Repeated edges with the same state do nothing.
+Reset the render record for the new active interval. Repeated edges with the
+same state do nothing.
 
-The high-water sample matters because `Niri::redraw` temporarily samples the
-predicted presentation time, which can be ahead of the next event-loop time.
-An idle edge must not rewind a phase already sampled for rendering. The clock
-is sampled only for optic work; it never clamps or changes the ordinary animation
-clock. Tests cover backward raw samples and two outputs sampled out of order.
+The hold-only high-water record matters because `Niri::redraw` temporarily samples
+the predicted presentation time, which can be ahead of the next event-loop time.
+An idle edge must not rewind past a logical instant already used for material
+rendering. It does not clamp running samples or change the ordinary animation
+clock. Tests cover backward raw samples, render recording, and two outputs sampled
+out of order. Removing the record entirely is simpler but permits an idle-edge
+step backward at a bucket boundary (one bucket is 1/2400 of the loop at 4 Hz
+for the usual sub-bucket presentation-time skew); retain it to avoid that artifact.
 The first frame after waking may show the normal advancement to its predicted
 presentation instant, not elapsed idle time.
 
-`OpticFrame` keeps real `now` for the scheduler and adds a coherent snapshot of
-optic logical time, running state, and the running anchors. Aurora evaluates
-`phase_on(AURORA_PERIOD, effective_rate, logical_now, seed)`. While paused its
-`next_change` is `None`. While running, calculate the next logical boundary with
-the existing integer bucket helper and translate it back to real time:
+Rename `OpticFrame.now` to `logical_now`. This is the only time exposed to
+`Optic::values` and `Optic::next_change`; real time, anchors, and running state
+never reach an optic. `Optic::next_change` returns a logical deadline, regardless
+of whether the timeline is paused. Aurora keeps using the existing helpers:
+`phase_on(AURORA_PERIOD, effective_rate, logical_now, seed)` for its value and
+`next_boundary_on(AURORA_PERIOD, effective_rate, logical_now)` for its deadline.
+
+The registry's `optics::next_logical_change(glass, frame)` takes the minimum of
+the entries' logical deadlines. The scheduler-facing `optics::next_change`
+also takes the coherent timeline snapshot, containing real sample time,
+logical sample time, running state, and running anchors. It returns `None`
+while paused. While running, it takes the earliest logical deadline and
+converts it once, in the registry:
 
 ```
 real_deadline = real_anchor + (logical_boundary - logical_anchor)
 ```
 
-It must be strictly later than the supplied real `now`. The snapshot and deadline
-must use the same anchors and logical sample, including under predicted-time
-skew. Passing a logical deadline directly to the output timer is incorrect once
-the clock has paused. Retain integer-duration arithmetic and the helper's ceiling
-division; do not introduce a floating-point accumulated phase.
+The mapping preserves deadline order while running. The result must be strictly
+later than the snapshot's real sample time. Build the frame's `logical_now` from
+that same snapshot, including under predicted-time skew. Passing a logical
+deadline directly to the output timer is incorrect once the clock has paused.
+Retain integer-duration arithmetic and the helper's ceiling division; do not
+introduce a floating-point accumulated phase. Document the logical deadline
+contract on `OpticFrame` and `Optic`; test all entries plus the registry's
+pause suppression and conversion (§7). A future animated optic cannot omit
+pause handling because that handling belongs to the registry.
 
 An idle edge may advance from the previous displayed frame to the edge's normal
 bucket once; that is the final active interval, not a phase reset. After that,
 with unchanged config/seed, repeated optic values are identical. A config change
 can deliberately change the image as described below.
 
+After a pause, Aurora boundaries move off the absolute clock grid. Attention
+retains its absolute grid, so the output's combined wakeups can be the union of
+both schedules rather than the faster schedule alone. For example, 4 Hz Aurora
+and 8 Hz breathe can require up to 12 bucket wakes per second before presentation
+coalescing, instead of 8 when aligned. Accept this active-time trade-off for phase
+continuity and unchanged attention semantics; do not claim wake coalescing or
+net energy savings without measuring. Include one deliberately misaligned combined
+case in the pilot and full matrix (§8). Re-aligning Aurora or pausing attention
+would change the selected phase or attention contract and is outside this design.
+
 ## 5. Activity edges, rendering, and wake bounds
 
-`InputActivity` remains the authority. Niri passes the same explicit monotonic
-timestamp used for observe/poll/reload to the layout edge update. Update the
+`InputActivity` remains the authority. Activity edges and render samples must
+use the same unadjusted monotonic time source, including when tests replace it
+with a virtual clock. The pause/resume operations take time explicitly; they
+never fetch wall time themselves. Niri passes the same event timestamp used
+for observe/poll/reload to the layout edge update. Production event timestamps
+come from the monotonic source underlying `Clock`; render prediction may advance
+a sample from that source as already described in §4. Niri-level tests inject
+their virtual timestamp into the activity path as well as `Clock::set_unadjusted`;
+no direct `get_monotonic_time()` read may bypass that injection for detector
+startup, observe, poll, reload, or timer-delay calculation. Do not combine a
+real event anchor with a virtual render sample and let `saturating_sub` hide
+the mismatch. Update the
 shared optic clock on **every** activity edge, before deciding whether any tile
 needs a redraw. This must work even with no windows, no outputs, or no Aurora
 currently configured. Do not discover idle history lazily at the next tile draw:
 a hidden tile can miss several complete idle/resume cycles that way.
 
 Broaden the current activity-interest query from attention alone to attention OR
-an Aurora with nonzero effective rate, evaluated independently of the current
-idle flag. The latter condition is needed on both edges; asking the paused
-`next_change` whether a wake is necessary would always answer no. Keep attention's
+`optics::next_logical_change(glass, &frame).is_some()`. Use the registry,
+not an Aurora-specific test in layout. The probe uses the ordinary logical frame
+with its material, motion policy, animation switch, seed, and logical sample;
+only the presence of a logical deadline is consumed. No hypothetical running
+snapshot is needed. The probe neither resumes the shared clock nor records a
+render sample.
+This query is independent of the idle flag on both edges; asking the actually
+paused `next_change` whether a wake is necessary would always answer no. Keep attention's
 existing predicate and the existing all-output redraw coalescing. No change is
 required for an edge when all materials are static/neutral/policy-off and no
 attention signal is affected.
@@ -180,9 +250,12 @@ animated client, animated wallpaper, cursor, or another live compositor effect.
 | Hidden workspace/tab or slab out of view | Existing visibility gates schedule no frames for it. Logical time advances while input is active and freezes while idle, even while hidden. Revealing it renders the current logical phase, without replay. |
 | Overview or workspace transition | Every actually rendered slab uses the same timeline and existing view gates, regardless of keyboard focus. The transition itself remains finite and independent. |
 | One output removed/disabled; another lit | Do not pause the shared clock because an output disappears. The lit output retains active cadence or idle holding according to global input state. |
-| Global DPMS off | No material draws through the existing backend gate. Activity detection continues; the timeline pauses if the threshold expires. A programmatic power-on is not input. |
-| DPMS wake by input | Existing input handling resumes the timeline; power-on redraw samples it. A programmatic power-on while idle draws held Aurora and arms no optic timer. |
-| Tile creation, output hotplug, window move, capture | Reuse the layout's clock state. No clock reset, private missed-edge accounting, or capture-only wake timer. |
+| Global DPMS off | No material draws through the existing backend gate. Activity detection continues; the timeline pauses if the threshold expires. |
+| Power-on action without input | `Action::PowerOnMonitors` in `src/input/mod.rs`, invoked through IPC, calls `activate_monitors` without `notify_activity`. While idle it draws held Aurora and arms no optic timer. |
+| DPMS wake by input | Existing input handling calls `notify_activity` and resumes the timeline; power-on redraw samples it. |
+| TTY backend session resume | `src/backend/tty.rs` calls `notify_activity` on session activation, even without an input event. An idle timeline resumes and can settle again after the threshold. |
+| Session unlock | `SessionLockHandler::unlock` in `src/handlers/mod.rs` activates monitors and calls `notify_activity`. It resumes an idle timeline without requiring a separate input event. |
+| Tile creation, output hotplug, window move, capture | Reuse the existing shared `Clock` and its timeline. No clock reset, private missed-edge accounting, or capture-only wake timer. |
 
 Visibility does not promise general occlusion detection. A completely covered
 window that still reaches the current render path is the attribution work in
@@ -191,8 +264,9 @@ window that still reaches the current render path is the attribution work in
 ## 7. Deterministic verification required of implementation
 
 Use the existing Rust tests and `just` front door; no new testing framework.
-The current justfile has no `test-one`, so use `just test-fast` for focused work
-until that recipe is adopted, plus the required commit/push gates.
+Use `just test-one -p niri <filter>` for focused work, then `just test-fast`,
+plus the required commit/push gates. `test-one` is present on `materials-26.04`;
+the eventual implementation must include that updated test front door.
 
 1. **Clock and deadline translation.** Pause at a nonzero, non-period-aligned
    phase, hold across multiple 600-second periods, and resume. Assert exact held
@@ -200,8 +274,19 @@ until that recipe is adopted, plus the required commit/push gates.
    boundary (unchanged one nanosecond before). Cover repeated cycles, repeated
    same-state calls, nonintegral valid drift rates, reduced motion, a bucket/period
    boundary, and predicted timestamps ahead of or behind the edge timestamp.
-2. **Participation and uniform identity.** Exercise every row in §3 with a
-   nonzero seed. Compare the complete optic uniform vector, not just amplitude.
+   Assert that out-of-order running queries produce the same values for the same
+   timestamps, while the idle hold retains the greatest recorded render sample.
+   Queries alone must not alter the hold record or the ordinary animation clock.
+2. **Participation and uniform identity.** Iterate over every entry in `OPTICS`,
+   with non-neutral configurations and a nonzero seed. Hold logical time fixed
+   while varying real sample time across buckets and periods in paused timeline
+   snapshots; build each frame from its snapshot and compare every entry's
+   complete uniform vector. Require no scheduler-facing registry deadline;
+   individual animated entries may still return logical deadlines. Exercise
+   every row in §3 and verify registry-derived interest through
+   `next_logical_change`, without mutating shared state. Check the earliest
+   logical deadline maps to the earliest real deadline while running.
+   Compare complete vectors, not just amplitude.
    Static/neutral cases retain constant values and no deadlines. Test rate/config
    reloads separately from input resume.
 3. **Tile and material integration.** An unfocused, signal-free Aurora tile
@@ -214,13 +299,19 @@ until that recipe is adopted, plus the required commit/push gates.
    tile, modulo its seed. Include an interactive-move tile, a new tile created
    while idle, config replacement, no-output state, and output removal/re-add.
 5. **Scheduler edges.** Exercise the existing activity timer startup and reload
-   paths plus Aurora interest. Check no-op scenes, one-shot replacement, stale
-   edge callback, repeated input, and wake rearming. An idle scene cannot repeatedly
-   rearm a past/logical deadline.
+   paths plus registry-derived optic interest. Drive detector timestamps,
+   pause/resume edges, timer delays, and render samples from the same injected
+   time source, including a clock starting at zero; cover a full active/idle/resume
+   cycle so a mixed real/virtual clock cannot falsely pass as settled.
+   Check no-op scenes, one-shot
+   replacement, stale edge callback, repeated input, and wake rearming. An idle
+   scene cannot repeatedly rearm a past/logical deadline.
 6. **Preservation.** Attention still resumes using its absolute clock and retains
    its level/accent behavior. Finite beam/impulse tests pass while input is idle;
    a signal-free Aurora must not require a signal cache. Existing view-bound and
-   finite-animation tests retain their semantics.
+   finite-animation tests retain their semantics. Exercise the power-on action,
+   session-resume activity notification, and unlock as distinct paths. Verify that
+   idle inhibition and screencast activity alone do not resume the optic timeline.
 
 ## 8. Pilot-first capture acceptance
 
@@ -231,6 +322,15 @@ source and binary identity, configuration, thresholds, input/idle boundaries,
 observation windows, Tracy redraw/material-draw counts, decoded pixels, verdict,
 and cleanup. Use lane preflight and `tasks quiet` for runs requiring an idle host.
 
+Add a Tracy message at each actual optic pause/resume transition, carrying
+the edge's monotonic timestamp, direction, and held logical time (the resume
+anchor on resume). Emit it at the shared transition point so input, timer,
+reload, session-resume, and unlock edges are all covered, including when no
+tile needs a redraw. Repeated same-state calls emit nothing. Use these markers
+to align observation windows and measure the bounded edge flush; the configured
+threshold and `Niri::notify_activity` span alone cannot identify an idle edge.
+This is transition-only instrumentation, not a per-frame stream.
+
 Before a full matrix, run the smallest end-to-end pilot: one cycle per check
 below, with short explicit thresholds (for example 5 seconds) and short hold
 windows. It must reach trace export, pixel comparison, verdict, and cleanup;
@@ -240,11 +340,13 @@ utilization or a blank/missing trace as evidence of compositor quiescence.
 | Check family | Cases and positive controls | Required verdict |
 | --- | --- | --- |
 | Active → idle → input resume | Lit Aurora at 4 Hz/full and 2 Hz/reduced; unfocused and no signal. Record active draws before each quiet window and a real virtual-pointer input afterward. | Expected active cadence, zero redraw/material draws after transition flush, cadence returns without catching up idle phase. |
+| Combined sustained motion | Aurora plus breathe on one output; first aligned, then resume after an idle interval that offsets Aurora from attention's grid. | Record the union of deadlines, redraws and material draws; bounded by the summed bucket schedules with presentation coalescing, not assumed to remain at the faster rate. Both settle again. |
 | Gate/policy controls | `idle-after-ms 0`; amount 0; drift 0; motion off; animations off; startup without input. | Gate-disabled positive control keeps moving; each static control stays quiet; ordinary input/damage proves the trace channel is live. |
 | Client damage while settled | Change a known client region while idle; hold backdrop/static geometry fixed. Also exercise real backdrop damage. | Updated content appears, optic phase stays held, no optic cadence starts. Observe a quiet window afterward. |
 | Finite effects and attention | Programmatic finite impulse/focus gain while idle, then no stimulus; attention active/idle/resume control. | Finite effect draws and ends, static level/accent persists, attention retains its prior resume contract. |
 | Visibility | Hidden workspace, hidden tab, offscreen column; reveal by IPC while still idle; overview and transition. | No invisible-only cadence; revealed idle Aurora is held; active visible control animates. Account separately for transition frames. |
-| Outputs/DPMS | Global DPMS off/on without input and with input; disable/remove one output while another remains lit. | No off-output material draws; lit output respects global activity; power-on alone does not resume an idle field. |
+| Outputs/DPMS | Global DPMS off, then IPC `power-on-monitors` without input; separately wake with input. Disable/remove one output while another remains lit. | No off-output material draws; lit output respects global activity; only the power-on action without input leaves an idle field held. |
+| Session activation/unlock | Exercise the TTY session-resume path on a real TTY and the session-lock unlock path separately from the power-on action. Nested/headless-weston runs cannot cover TTY resume; mark that case unverified unless the real TTY lane runs. Include an idle inhibitor and screencast-only control. | Resume/unlock notifications wake the timeline; inhibitor and screencast alone do not. Each resumed case settles again without further notifications. Deterministic §7 tests cover the logic even when the TTY capture is unavailable. |
 | Reload and clock continuity | Raise/lower/disable threshold; unrelated reload; rate/policy/material changes while held. | §6 behavior; unrelated reload has no phase reset; config changes are distinguished from activity-driven changes. |
 
 Count transition activity separately, with at most the queued redraw and an
@@ -264,11 +366,21 @@ zero compositor draws does not establish a particular watt saving.
 
 ## 9. Alternatives and follow-through
 
-- **Chosen: shared paused logical time, existing detector and scheduler.**
-  Preserves phase and window alignment without a timer per tile. Constructor
-  plumbing follows the existing `Clock` route through layout/monitor/workspace
-  into tiles; keep the small clock implementation with activity timing in
-  `src/activity.rs`, not a general animation framework.
+- **Chosen: shared paused logical time on the existing `Clock` handle.**
+  Preserves phase and Aurora bucket alignment across windows without a timer per tile or
+  another constructor argument. Keep the small timeline arithmetic in the
+  fork-only `src/activity.rs`, with storage/access on `Clock` and no dependence
+  there on material configuration. This adds a seam in `src/animation/clock.rs`,
+  unchanged against the pinned baseline at review time, and gives a general clock
+  one specialized timeline. Its narrow additive accessors leave existing methods
+  intact; tests must prove pause does not affect finite animation or real time.
+- **Rejected: a separate shared handle through layout constructors.** Cleaner
+  separation from `Clock`, but expands plumbing through floating, monitor,
+  scrolling, workspace, and tile code. The current
+  [divergence report](../materials/upstream-divergence.md) lists all five as
+  conflicting with upstream. One new localized clock seam is preferable to
+  deepening that distributed constructor diff; layout and tile still need their
+  actual activity/render integration edits whichever carrier is chosen.
 - **Rate zero or deadline suppression alone.** Smaller patches, but the former
   resets the image and the latter changes it on client damage and jumps on resume.
 - **Per-tile last-rendered phase and custom resume easing.** Can freeze precisely
@@ -279,7 +391,7 @@ zero compositor draws does not establish a particular watt saving.
   The existing threshold is the selected policy and escape hatch.
 
 After owner review of this spec, write the implementation plan under
-`docs/plans/`. It must cover clock plumbing, the shared optic-frame/deadline path,
+`docs/plans/`. It must cover the shared `Clock` timeline, the optic-frame/deadline path,
 activity-interest integration, deterministic verification, capture fixture changes,
 and the evidence/review gates. Implementation is later work, not an execution
 phase of `material-0db905`; do not close that later work through this design task.
@@ -287,7 +399,11 @@ phase of `material-0db905`; do not close that later work through this design tas
 When implementation lands, update `material-config.md` (Aurora and signal motion),
 `render-pipeline.md`, `adding-an-optic.md`, and the attention design's scope/status
 references so they describe the new shared threshold and Aurora time contract.
+The optic guide must specify logical-only frame time and logical deadlines;
+pause suppression and conversion to real deadlines are registry responsibilities.
 Retain attention's distinct resume rule. Existing capture cadence controls must
-state their idle-gate configuration. No parser migration or Prism rollout is needed.
+state their idle-gate configuration. Regenerate and stage the seam inventory with
+`just upstream-report` after staging the implementation changes; `just check`
+runs `upstream-report --check`. No parser migration or Prism rollout is needed.
 At this task's completion, note the reviewed design and plan decisions on
 `material-f86183` in the same commit as the result.
