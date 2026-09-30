@@ -969,6 +969,8 @@ impl<'render> RenderElement<TtyRenderer<'render>> for MaterialRenderElement {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use niri_config::{ResolvedGlass, ResolvedMaterial};
     use smithay::backend::renderer::Color32F;
     use smithay::utils::Point;
@@ -1315,6 +1317,61 @@ mod tests {
         let third = state.advance_commit(RenderTarget::Output, quiet);
         assert_ne!(first, second);
         assert_ne!(second, third);
+
+        let clock = crate::animation::Clock::with_time(Duration::ZERO);
+        clock.set_optic_active(false, Duration::from_millis(100));
+        let glass = ResolvedGlass {
+            aurora: niri_config::ResolvedAurora {
+                amount: 0.5,
+                drift_hz: 4.,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let blur = niri_config::Blur::default();
+        let sample = |real| {
+            let time = clock.optic_time(real);
+            optics::values(
+                &glass,
+                &optics::OpticFrame {
+                    logical_now: time.logical_now,
+                    motion: niri_config::signal::SignalMotionPolicy::Full,
+                    animations_off: false,
+                    backdrop_blur: false,
+                    blur: &blur,
+                    seed: 0.31,
+                },
+            )
+        };
+        let held_optics = sample(Duration::from_secs(1));
+        assert_eq!(sample(Duration::from_secs(2_000)), held_optics);
+        let mut held = fingerprint(1, 1, &background_id, &backdrop_id);
+        held.optics = held_optics;
+        let first = state.advance_commit(RenderTarget::Output, held.clone());
+        assert_eq!(
+            state.advance_commit(RenderTarget::Output, held.clone()),
+            first
+        );
+        let mut client_changed = held.clone();
+        client_changed.window = commit_after(2);
+        assert_ne!(
+            state.advance_commit(RenderTarget::Output, client_changed),
+            first
+        );
+        let mut background_changed = held.clone();
+        background_changed.background = commit_after(2);
+        let background_commit = state.advance_commit(RenderTarget::Output, background_changed);
+        assert_ne!(background_commit, first);
+        let mut backdrop_changed = held.clone();
+        backdrop_changed.backdrop = commit_after(2);
+        let backdrop_commit = state.advance_commit(RenderTarget::Output, backdrop_changed);
+        assert_ne!(backdrop_commit, background_commit);
+
+        let mut replacement = render_config("frost");
+        replacement.material.glass.roughness = 0.2;
+        let mut slot = Some(state);
+        assert!(!apply_resolved(&mut slot, Some(&replacement)));
+        assert_eq!(sample(Duration::from_secs(3_000)), held.optics);
     }
 
     #[test]
