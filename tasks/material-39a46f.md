@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-28T08:21:20Z
-updated: 2026-09-30T03:51:30Z
+updated: 2026-09-30T03:52:18Z
 started: 2026-09-28T08:21:25Z
 depends: []
 parent: material-53f873
@@ -27,3 +27,4 @@ The last full power run (power-full-20260927T031335, 48 windows, 93 min) used a 
 - 2026-09-30T02:09:43Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:3d005be9-3333-4994-97c1-43cddb3eb069","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-30T03:51:30Z (materials-26.04): run: 96 min (est 100, headless); build 3, load wait 3, power 93; passed
+- 2026-09-30T03:52:18Z (materials-26.04): correction to the run note: build start to supervisor exit was 99 min (22:10:35-23:49:29), not 96; phases unchanged (build 2.8, load wait 2.7, power 93.2)
