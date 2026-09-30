@@ -246,21 +246,22 @@ burst_wait() {
 # nearest by then, and the frame nearest 13 s (tail clear) back at the
 # top-left.
 corner_crops() {   # $1 = label, $2 = rest shot, $3 = config
-    local d=$OUT/$1-corner b=$OUT/$1 at f name atxy
+    local d=$OUT/$1-corner b=$OUT/$1 at f fat name atxy
     mkdir -p "$d"
     magick "$2" -crop 320x240+0+0 +repage -scale 400% "$d/rest.png"
     for at in 2 13; do
-        f=$(awk -v at="$at" '{ d = $2 - at; if (d < 0) d = -d; if (best == "" || d < bd) { best = $1; bd = d } } END { print best }' "$b/frames.txt")
+        read -r f fat <<< "$(awk -v at="$at" '{ d = $2 - at; if (d < 0) d = -d; if (best == "" || d < bd) { best = $1; bd = d; bt = $2 } } END { print best, bt }' "$b/frames.txt")"
         [ -n "$f" ] || fail "$1: no frame near $at s in $b/frames.txt"
         name=mid-pass; [ "$at" = 13 ] && name=tail-clear
-        atxy=0+0; [ "$at" = 2 ] && atxy=$(head_corner_crop "$3" "$at")
+        atxy=0+0; [ "$at" = 2 ] && atxy=$(head_corner_crop "$3" "$fat")
         magick "$b/$f" -crop "320x240+$atxy" +repage -scale 400% "$d/$name.png"
-        echo "$1-corner: $name is $f (${at} s at +$atxy)" >> "$OUT/clips.txt"
+        echo "$1-corner: $name is $f (${fat} s at +$atxy)" >> "$OUT/clips.txt"
     done
 }
 
 # The 320x240 crop offset for the mid-pass frame: the corner of the focused
-# pane the beam head is nearest at $2 s. The head leaves the top-left corner
+# pane the beam head is nearest at $2, the selected frame's recorded time.
+# The head leaves the top-left corner
 # along the top edge at the config's ring-beam-speed, so its arc position is
 # speed x t and the corners sit at 0, w, w + h and 2w + h on the perimeter.
 # The focused pane sits one gap in from the frame's top-left (the scene's
