@@ -8,7 +8,8 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-04T21:44:54Z
-updated: 2026-09-28T10:27:17Z
+updated: 2026-09-30T09:17:42Z
+started: 2026-09-30T09:17:42Z
 depends: [ops-31f038]
 tags: [testing]
 ---
@@ -26,3 +27,5 @@ Piece of ops-65837b (the cross-project audit in the ops hub). 1. Measure: full-s
 - 2026-09-28T08:35:07Z (materials-26.04): Baseline window 2026-09-05..09-24 closes the day before ops host-budget worker sizing (09-25), the first timing change after step 1; no step-3 change had landed. Front-door total counts wrapper seconds of test, test-fast, check and both hooks. Next: step 3 (gates to ops design §4.6, the AGENTS.md inner-loop line, hygiene the numbers point at), then an after-window read with tt-report --since/--until.
 - 2026-09-28T08:36:40Z (materials-26.04): Process direct: ops design §4.6 and §5 steps 3-4 settle the remaining gate, guidance and after-window work; hygiene follows the recorded baseline.
 - 2026-09-28T10:27:17Z (materials-26.04): Step 3 now follows ops docs/specs/2026-09-28-test-ci-act-design.md: copy templates/justfile's test-one, docs_paths/docs_check_cmd/hook-pre-commit-docs, ci_suite_refs/ci_remote/push_fast_cmd/hook-pre-push-fast and both templates/githooks; set ci_suite_refs from the refs CI actually runs the full suite for (say which in a note); add the AGENTS.md Gates line (templates/AGENTS.md). Then the after-window against this piece's baseline note.
+- 2026-09-30T09:17:42Z (materials-26.04): started
+  provenance: {"harness_session":"codex:01a0f19a-9492-77e0-9cd8-f0896dada71f","harness_session_source":"CODEX_SESSION_ID"}
