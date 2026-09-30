@@ -3,11 +3,9 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
 > to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Status:** revised after plan review round 1; pending owner review.
-No implementation or capture is authorized
-by this document's creation. `material-0db905` delivers the reviewed spec and
-plan only; the execution records belong under `material-f86183` and depend on
-completion of that design task.
+**Status:** accepted in plan review round 2. `material-0db905` is complete;
+execution is paused at the user's request. No implementation or captures have
+started. The execution records belong under `material-f86183`.
 
 **Goal:** stop optional Aurora deadlines and uniform changes after input
 inactivity, while preserving real client damage and phase-continuous resume.
@@ -91,7 +89,8 @@ would create overlapping edits. Use a whole-change review before integration.
 
 Execution records, in order: `material-a1d7da`, `material-5bf79c`,
 `material-6e3bda`, `material-c94dd7`, `material-2ee11e`. Their dependency chain
-starts at `material-0db905`; none is ready while this plan awaits review.
+starts at the completed `material-0db905`. Task 1 is dependency-unblocked but
+parked for the user's execution resume; the remaining tasks depend on their predecessors.
 
 ### Task 1: Add the shared pausable optic timeline
 
@@ -595,7 +594,8 @@ Coverage: design §§3–4 → Tasks 1–2; §5 → Task 3; §6 → Task 3 tests
 hardware evidence; §7 → Tasks 1–3; §8 → Tasks 4–5; §9 → Task 3 docs and Task 5
 follow-through. All five review-focus cases have an owning test/capture step.
 
-After plan acceptance, finish `material-0db905` with a note on
-`material-f86183` recording the accepted design and plan. Scope that existing
-idea as the execution parent; its child tasks remain blocked until the design
-task is done. Do not execute any implementation step during this planning task.
+`material-0db905` is complete, and the accepted decisions are recorded on
+`material-f86183`. Execution is paused at the user's request. When the user
+resumes it, scope that existing idea as the execution parent and start
+`material-a1d7da`; reuse the accepted spec and plan. Do not execute any
+implementation step during this planning task.
