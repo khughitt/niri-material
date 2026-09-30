@@ -4042,3 +4042,151 @@ fn ipc_tile_pos_in_workspace_view_is_set_for_floating_only() {
     assert_eq!(floating.pos_in_scrolling_layout, None);
     assert!(floating.tile_pos_in_workspace_view.is_some());
 }
+#[test]
+fn optic_settling_updates_shared_clock_without_tiles_or_outputs() {
+    let clock = Clock::with_time(Duration::ZERO);
+    let mut layout: Layout<TestWindow> = Layout::with_options(clock.clone(), Options::default());
+    assert!(!layout.set_input_active(false, Duration::from_secs(1)));
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(100)).logical_now,
+        Duration::from_secs(1)
+    );
+    assert!(!layout.set_input_active(true, Duration::from_secs(100)));
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(101)).logical_now,
+        Duration::from_secs(2)
+    );
+}
+
+#[test]
+fn optic_settling_new_aurora_tile_while_idle_uses_shared_time() {
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    use niri_config::{MaterialRef, ResolvedAurora, ResolvedGlass, ResolvedMaterial};
+
+    let clock = Clock::with_time(Duration::ZERO);
+    let glass = ResolvedGlass {
+        aurora: ResolvedAurora {
+            amount: 0.5,
+            drift_hz: 4.,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let material = ResolvedMaterial {
+        name: "frost".into(),
+        glass,
+        responses: vec![("default".into(), Default::default())],
+    };
+    let options = Options {
+        materials: Rc::new(HashMap::from([("frost".into(), material)])),
+        ..Default::default()
+    };
+    let mut layout: Layout<TestWindow> = Layout::with_options(clock.clone(), options);
+    assert!(!layout.set_input_active(false, Duration::from_millis(100)));
+    let mut params = TestWindowParams::new(1);
+    params.rules = Some(ResolvedWindowRules {
+        material: Some(MaterialRef {
+            name: "frost".into(),
+            response: None,
+        }),
+        ..Default::default()
+    });
+    layout.add_window(
+        TestWindow::new(params),
+        AddWindowTarget::Auto,
+        None,
+        None,
+        false,
+        false,
+        ActivateWindow::default(),
+    );
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(100)).logical_now,
+        Duration::from_millis(100)
+    );
+    assert!(layout.set_input_active(true, Duration::from_secs(100)));
+    assert_eq!(
+        clock.optic_time(Duration::from_millis(100_150)).logical_now,
+        Duration::from_millis(250)
+    );
+    assert!(!layout.set_input_active(true, Duration::from_secs(101)));
+    assert!(layout.set_input_active(false, Duration::from_secs(101)));
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(10_000)).logical_now,
+        Duration::from_millis(1_100)
+    );
+    Op::AddOutput(1).apply(&mut layout);
+    Op::RemoveOutput(1).apply(&mut layout);
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(20_000)).logical_now,
+        Duration::from_millis(1_100)
+    );
+    assert!(layout.set_input_active(true, Duration::from_secs(20_000)));
+    assert_eq!(
+        clock
+            .optic_time(Duration::from_millis(20_000_250))
+            .logical_now,
+        Duration::from_millis(1_350)
+    );
+    Op::AddOutput(1).apply(&mut layout);
+    Op::InteractiveMoveBegin {
+        window: 1,
+        output_idx: 1,
+        px: 0.,
+        py: 0.,
+    }
+    .apply(&mut layout);
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 300.,
+        dy: 300.,
+        output_idx: 1,
+        px: 300.,
+        py: 300.,
+    }
+    .apply(&mut layout);
+    assert!(matches!(
+        layout.interactive_move,
+        Some(InteractiveMoveState::Moving(_))
+    ));
+    assert!(layout.set_input_active(false, Duration::from_secs(20_001)));
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(30_000)).logical_now,
+        Duration::from_millis(2_100)
+    );
+    Op::InteractiveMoveEnd { window: 1 }.apply(&mut layout);
+    assert!(layout.set_input_active(true, Duration::from_secs(30_000)));
+    Op::MoveWindowToWorkspaceDown(false).apply(&mut layout);
+    assert!(layout.set_input_active(false, Duration::from_secs(30_001)));
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(40_000)).logical_now,
+        Duration::from_millis(3_100)
+    );
+    Op::FocusWorkspaceDown.apply(&mut layout);
+    Op::AddWindow {
+        params: TestWindowParams::new(2),
+    }
+    .apply(&mut layout);
+    Op::ConsumeOrExpelWindowLeft { id: None }.apply(&mut layout);
+    Op::SetColumnDisplay(ColumnDisplay::Tabbed).apply(&mut layout);
+    assert!(layout.set_input_active(true, Duration::from_secs(40_000)));
+    assert!(layout.set_input_active(false, Duration::from_secs(40_001)));
+    assert_eq!(
+        clock.optic_time(Duration::from_secs(50_000)).logical_now,
+        Duration::from_millis(4_100)
+    );
+    let pinned = niri_config::Config::parse_mem(
+        "material \"frost\" { glass { aurora 0.5 { drift-hz 0; }; }; };",
+    )
+    .unwrap();
+    layout.update_config(&pinned);
+    assert!(!layout.set_input_active(true, Duration::from_secs(50_000)));
+    let moving = niri_config::Config::parse_mem(
+        "material \"frost\" { glass { aurora 0.5 { drift-hz 4; }; }; };",
+    )
+    .unwrap();
+    layout.update_config(&moving);
+    assert!(layout.set_input_active(false, Duration::from_secs(50_001)));
+}

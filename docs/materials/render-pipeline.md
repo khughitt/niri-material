@@ -74,8 +74,11 @@ signal state, and every glass parameter.
 The program is assembled at compile time from `prelude.frag`, each optic's
 GLSL in `OPTICS` order (`src/render_helpers/material/optics/mod.rs`), and
 `main.frag`. Each optic appends its uniforms and uploads their values through
-`Optic::values`; an animated optic's `next_change` joins the tile's redraw
-deadline.
+`Optic::values` using shared logical time. Each optic's `next_change` returns
+a logical deadline; the registry suppresses it while input is idle and maps
+the earliest one to real time when active. Aurora uniforms hold through idle
+client or backdrop damage and resume from the held phase. Attention keeps its
+separate absolute-clock deadline and resume behavior.
 
 The focus beam is one run on the animation loop — the head's lap plus its
 tail, `(perimeter + tail) / ring-beam-speed` long, or `ring-beam-decay /

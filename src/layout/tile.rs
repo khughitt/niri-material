@@ -2292,6 +2292,19 @@ impl<W: LayoutElement> Tile<W> {
             })
     }
 
+    pub fn activity_gated(&self) -> bool {
+        if self.attention_gated() {
+            return true;
+        }
+        let Some(material) = &self.material else {
+            return false;
+        };
+        let now = self.clock.now_unadjusted();
+        let time = self.clock.optic_time(now);
+        let glass = &material.material().glass;
+        optics::next_logical_change(glass, &self.optic_frame(material, time.logical_now)).is_some()
+    }
+
     /// Next instant this tile needs a redraw for its material: the earliest
     /// of any optic's own change and the sustained-signal bucket boundary,
     /// while the slab band is in view. The focus beam runs on the animation
@@ -2875,11 +2888,15 @@ mod tests {
             },
             ..Default::default()
         };
-        let mut tile = material_tile(lit, niri_config::FocusResponse::None, clock.clone());
+        let mut tile = material_tile(lit.clone(), niri_config::FocusResponse::None, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         tile.update_render_elements(false, true, true, view);
         assert!(!tile.active);
         assert!(tile.signal_frame_cache.borrow().is_none());
+        assert!(
+            tile.activity_gated(),
+            "Aurora alone needs both activity edges"
+        );
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
             Some(Duration::from_millis(250))
@@ -2904,6 +2921,20 @@ mod tests {
             Some(Duration::from_millis(1_150))
         );
 
+        let mut off = material_tile(lit, niri_config::FocusResponse::None, clock.clone());
+        let mut options = (*off.options).clone();
+        options.signal.motion = niri_config::signal::SignalMotionPolicy::Off;
+        off.options = Rc::new(options);
+        assert!(!off.activity_gated(), "motion off needs no edge redraw");
+        let mut options = (*off.options).clone();
+        options.signal.motion = niri_config::signal::SignalMotionPolicy::Reduced;
+        off.options = Rc::new(options);
+        assert!(off.activity_gated(), "reduced motion still changes Aurora");
+        let mut options = (*off.options).clone();
+        options.animations.off = true;
+        off.options = Rc::new(options);
+        assert!(!off.activity_gated(), "animations off pins Aurora");
+
         let pinned = niri_config::ResolvedGlass {
             aurora: niri_config::ResolvedAurora {
                 amount: 0.5,
@@ -2914,6 +2945,10 @@ mod tests {
         };
         let mut tile = material_tile(pinned, niri_config::FocusResponse::None, clock);
         tile.update_render_elements(false, true, true, view);
+        assert!(
+            !tile.activity_gated(),
+            "a pinned optic needs no edge redraw"
+        );
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
             None
@@ -3460,10 +3495,18 @@ mod tests {
             None,
             "frozen attention reports no bucket deadline"
         );
+        clock.set_optic_active(false, Duration::ZERO);
         clock.set_unadjusted(secs(1.));
         tile.update_render_elements(true, false, true, view);
         let dynamics = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "the beam runs");
+        clock.set_unadjusted(secs(30.));
+        tile.advance_animations();
+        tile.update_render_elements(true, false, true, view);
+        assert_eq!(
+            beam_uniforms(&render_dynamics(&tile, 400., 300.)),
+            [0., 0., 0.]
+        );
     }
 
     /// `frost` with the given response, everything else stock.

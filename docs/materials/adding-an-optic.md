@@ -126,9 +126,13 @@ impl Optic for NoiseOptic {
 }
 ```
 
-`OpticFrame` supplies the clock, motion policy, animations switch, effective
-backdrop-blur gate, global `blur` block, and window seed. Uniform values join
-the frame fingerprint, and `next_change` joins the tile redraw deadline.
+`OpticFrame` supplies shared logical time, motion policy, animations switch,
+effective backdrop-blur gate, global `blur` block, and window seed. Values and
+`next_change` must use logical time only; each optic returns a logical deadline.
+The registry suppresses deadlines while input is idle and maps the earliest
+logical deadline to real time when active. Uniform values join the frame
+fingerprint. The shared timeline holds Aurora uniforms through idle client
+damage, then resumes without catch-up.
 Test `values` for each input that affects it in the same file.
 
 Finally, export the module and append `OpticEntry::of::<<name>::<Name>Optic>()`
