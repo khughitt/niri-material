@@ -7,6 +7,7 @@ mod server;
 mod animations;
 mod attention_idle;
 mod floating;
+mod focus_swap;
 mod fullscreen;
 mod layer_shell;
 mod material;
