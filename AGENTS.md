@@ -10,19 +10,13 @@ rendering design assumes.
 
 - `tasks prime`, then `tasks start <id>` before changing anything; `tasks done <id>` in
   the same commit; `tasks check` before every commit.
-- Tests: `just test` runs the suite CI runs. `just check` runs format, clippy, the
-  tooling tests, and `tasks check`; `just gate` is both. Every recipe records its run
-  through `tools/tt`, so run tests through `just`, not `cargo` directly. The host recipes
-  run under ops `host-budget run`, which sets `CARGO_BUILD_JOBS` and
-  `NEXTEST_TEST_THREADS` from the host's CPU budget; the `ci-` recipes do not.
-- Fresh clone: `git config core.hooksPath .githooks` installs the hooks. Pre-commit runs
-  `just check`; pre-push runs `just gate`. They also run the Git LFS hooks, which
-  `core.hooksPath` would otherwise bypass.
-- `.cargo/config.toml` and `target/` are per-machine and must not reach another
+- Fresh clone: `git config core.hooksPath .githooks` installs the hooks, including
+  the Git LFS handoff.
+- .cargo/config.toml and target/ are per-machine and must not reach another
   machine: both carry `user.com.dropbox.ignored=1`, so the shared tree holds neither.
-  Without a `.cargo/config.toml` cargo builds into `target/`, which is what a fresh
+  Without a .cargo/config.toml cargo builds into target/, which is what a fresh
   machine gets. To keep build output on a fast local disk, write your own
-  `.cargo/config.toml` with `build.target-dir` and mark it ignored
+  .cargo/config.toml with `build.target-dir` and mark it ignored
   (`setfattr -n user.com.dropbox.ignored -v 1 .cargo`). A `target-dir` naming a path
   that exists on one machine only fails `cargo fmt` before any gate can run, so no
   commit is possible there.
@@ -38,3 +32,25 @@ rendering design assumes.
   it carries the baseline, the acknowledged conflicts, and the rebase procedure. Never
   use `git merge-base` against upstream — this repository's history was rewritten and it
   returns a 2023 commit.
+
+## Gates
+
+- While editing Rust: `just test-one -p niri <name-filter>` or
+  `just test-one -E 'test(foo) | test(bar)'` (nextest arguments). Then
+  `just test-fast`, which selects changed workspace packages and their dependents
+  against HEAD, excluding the visual viewer. Neither runs doctests.
+- For Python tooling: `just --set one_cmd 'python3 -m unittest' test-one tools.test_gates`;
+  `just --set fast_cmd 'python3 -m unittest discover -s tools 2>&1' test-fast` runs all
+  tooling tests. The Rust affected selector does not select Python tooling.
+- `just check` runs shared hygiene, rustfmt, clippy, tooling tests, task checks,
+  upstream-report freshness, and package-pin checks. Pre-commit uses those checks;
+  commits limited to root guides, tasks, specs, plans, or notes use
+  just hygiene, task, report, and pin checks. Material docs and wiki retain the full
+  check because Rust tests read their parameter tables and KDL examples.
+- CI runs the full suite (including doctests) for every branch/tag pushed to `origin`.
+  Pre-push there runs `check` plus config and IPC tests through nextest;
+  other remotes or unclassified pushes run `just gate` (check plus the full suite).
+  `just test` runs the full suite when explicitly needed; `ci-test-release` adds the
+  release profile, with CI enabling randomized/slow tests through environment variables.
+- Recipes record runs through `tools/tt`. Host recipes use `host-budget run` to set
+  `CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS`; CI recipes do not need ops tooling.

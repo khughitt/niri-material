@@ -61,7 +61,7 @@ new design and implementation plans retain their review gates.
 ## Unanswered questions
 
 - What does drag/hold/release do in each layout, compared with native
-  movement? `material-b3ce14` establishes the baseline and missing stimulus.
+  movement? Answered by `material-b3ce14`: see the drag baseline finding.
 - Is the focus swap visually objectionable, and which parameters need
   continuity? `material-8e3b73` supplies a clip and state inventory; the owner
   judges the appearance before interpolation design is justified.
@@ -70,6 +70,53 @@ new design and implementation plans retain their review gates.
   Prism ownership remains unverified in this local pass.
 - Which concrete window/workspace/session transition needs a hierarchy?
   A reproducible use case must answer before `material-e6036d` is unshelved.
+
+## Drag baseline finding (`material-b3ce14`)
+
+`src/layout/tests/drag_dynamics.rs` drives the layout on a pinned clock at
+16 ms frames with default animations (window-movement spring, matching the
+live config) and records the motion residual the renderer passes to
+`jelly_state` for each frame, next to a native column-move control. Flex is
+reported at jelly-flex 0.01 on the motion sweep's bevel 12 / thickness 20,
+where the cap is 3 px; the live 0.0066 scales magnitudes, not phases. The run
+is deterministic, so repeats do not vary; `-- --nocapture` prints the traces.
+
+| Phase | Scrolling peak flex | Floating peak flex |
+| --- | ---: | ---: |
+| Rubber band below the start threshold | 0 | — (no threshold) |
+| Lift to the pointer | 1.46 px, settles in 240 ms | 0.18 px (first pointer step) |
+| Drag at 40 px/frame | 0 | 0 |
+| Hold | 0 | 0 |
+| Release | 2.96 px (capped), settles in 288 ms | 0 (dropped in place) |
+| Release below the threshold (cancel) | 0.75 px | — |
+| Native column move (control) | 1.11 px, settles in 240 ms | — |
+
+While a window follows the pointer, its tile carries no move animation, and
+`animation_residual` excludes the grab offset. The jelly input is therefore
+exactly zero during drag and hold, whatever the pointer speed. Ripple is
+also off, because its activity gate reads the same residual. Glass only
+flexes on the layout's own animations: lift and release for tiled windows,
+and just the lift catch-up for floating ones. This is an absent stimulus, not
+a capture failure. No pixel capture was run, because a zero residual renders
+settled glass and the sweep already measured the shader's response to a
+nonzero one.
+
+The smallest missing contract is a follow-lag stimulus during an interactive
+move. The tile still renders at the pointer, but a critically damped point
+chases that location on the window-movement spring, and the jelly receives
+the point's lag as the residual. It is velocity-derived, decays to zero on a
+hold (finite settling and idle unaffected), and hands over to the release
+`animate_move_from` without a jump if the release starts from the lagged
+point. Native animation config and the existing jelly parameters express it;
+no named profile or state machine is needed for this behaviour.
+
+The owner still has to decide:
+
+- whether a held drag should deform at all
+- the gain: reuse jelly-flex or add a separate drag gain
+- the spring: window-movement or a dedicated one
+- whether a long tiled drop should keep saturating at the cap
+- whether the rubber band should flex
 
 ## Proposed decomposition
 

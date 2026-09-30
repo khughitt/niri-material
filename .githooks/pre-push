@@ -1,13 +1,20 @@
 #!/bin/sh
-# The full gate, recorded under its own target so the report can price the hook.
+# The push gate, recorded under its own target so the report can price the hook.
 #
 # git opens the connection and discovers refs before running us, because it needs the
 # remote shas for our stdin. A gate long enough to idle that socket out gets it closed
 # by the far end, and git takes SIGPIPE writing the pack: the push fails, silently,
 # after the gate has been paid for. An SSH keepalive on the host prevents it (design
 # §4.6). Refusing here costs nothing; discovering it after the gate costs the gate.
-# The pushed refs on stdin are the hook's own and a project's may read them, so
-# nothing here consumes them.
+# Which gate: the shortened one (check and the fast loop) only when the push goes to
+# the remote CI watches (ci_remote) and CI runs the full suite for every ref in it
+# (ci_suite_refs); otherwise the full gate. Configuration and input are validated before deletions are set aside, so an
+# empty ci_suite_refs or a malformed line always gets the full gate. The recipe gets
+# git's refs byte for byte: project hooks (Git LFS) read them after us.
+# Design: ops docs/specs/2026-09-28-test-ci-act-design.md §3.3.
+refs=$(cat; echo x)
+refs=${refs%x}
+
 url=$2
 host=
 case "$url" in
@@ -30,7 +37,28 @@ MESSAGE
     exit 1
 fi
 
-# core.hooksPath bypasses the hooks `git lfs install` wrote to .git/hooks, so Git LFS
-# runs here first; it reads the pushed refs from stdin, so nothing above consumes them.
-git lfs pre-push "$@" || exit
-exec just hook-pre-push
+recipe=hook-pre-push
+if [ -n "$1" ] && ci_target=$(just --evaluate ci_remote 2>/dev/null) &&
+   [ "$1" = "$ci_target" ] &&
+   globs=$(just --evaluate ci_suite_refs 2>/dev/null) &&
+   printf %s "$refs" | python3 -c '
+import fnmatch, re, sys
+globs = sys.argv[1].split()
+lines = sys.stdin.read().splitlines()
+if not globs or not lines:
+    sys.exit(1)
+fields = [line.split() for line in lines]
+# Validate every line before any shortcut: four fields, two object ids of one hash
+# length (40 hex for SHA-1, 64 for SHA-256).
+oid = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+if any(len(f) != 4 or not oid.fullmatch(f[1]) or not oid.fullmatch(f[3]) or len(f[1]) != len(f[3]) for f in fields):
+    sys.exit(1)
+pushed = [f for f in fields if set(f[1]) != {"0"}]
+sys.exit(0 if all(any(fnmatch.fnmatchcase(f[2], g) for g in globs) for f in pushed) else 1)
+' "$globs"; then
+    recipe=hook-pre-push-fast
+fi
+# core.hooksPath bypasses the installed Git LFS hooks. Replay the original
+# refs to LFS before the gate; classification above consumed its own copy.
+printf %s "$refs" | git lfs pre-push "$@" || exit
+printf %s "$refs" | exec just "$recipe"

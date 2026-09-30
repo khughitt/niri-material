@@ -318,6 +318,10 @@ Two self-reference rules:
 
 - The report **excludes itself and its baseline record** from its own
   inventory. Otherwise regenerating changes the input to regeneration.
+
+The inventory also leaves out `tasks/`: task records never exist upstream and
+cannot conflict on a rebase, and counting them as class A made every
+`tasks add` stale the report until it was regenerated.
 - The locally enforced block **embeds no commit SHA of the commit containing
   it**. That value cannot exist before the commit is made.
 
