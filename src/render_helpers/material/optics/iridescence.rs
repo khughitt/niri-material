@@ -32,7 +32,7 @@ mod tests {
     use super::*;
     fn frame(blur: &Blur) -> OpticFrame<'_> {
         OpticFrame {
-            now: Duration::ZERO,
+            logical_now: Duration::ZERO,
             motion: niri_config::signal::SignalMotionPolicy::Full,
             animations_off: false,
             backdrop_blur: false,

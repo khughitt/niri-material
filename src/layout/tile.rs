@@ -645,9 +645,13 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// What the optics may depend on this frame beyond their configuration.
-    fn optic_frame<'a>(&'a self, material: &MaterialState, now: Duration) -> OpticFrame<'a> {
+    fn optic_frame<'a>(
+        &'a self,
+        material: &MaterialState,
+        logical_now: Duration,
+    ) -> OpticFrame<'a> {
         OpticFrame {
-            now,
+            logical_now,
             motion: self.options.signal.motion,
             animations_off: self.options.animations.off,
             backdrop_blur: material.material().glass.backdrop_blur,
@@ -672,7 +676,9 @@ impl<W: LayoutElement> Tile<W> {
         let glass = &material.material().glass;
         let response = material.material().response(None);
         let now = self.clock.now_unadjusted();
-        let optics = optics::values(glass, &self.optic_frame(material, now));
+        let time = self.clock.optic_time(now);
+        self.clock.record_optic_render(time.logical_now);
+        let optics = optics::values(glass, &self.optic_frame(material, time.logical_now));
         let max_flex = 0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
         let mut jelly = jelly_state(
             motion_residual,
@@ -2307,7 +2313,9 @@ impl<W: LayoutElement> Tile<W> {
         if !slab_in_view(location, self.tile_size(), glass.bevel, view) {
             return None;
         }
-        let optic = optics::next_change(glass, &self.optic_frame(material, now));
+        let time = self.clock.optic_time(now);
+        let optic =
+            optics::next_change(glass, &self.optic_frame(material, time.logical_now), &time);
         let signal = self
             .signal_frame_cache
             .borrow()
@@ -2551,7 +2559,7 @@ mod tests {
         };
         let resolved = resolve_material(Some(&reference), options).unwrap();
         let frame = OpticFrame {
-            now: Duration::ZERO,
+            logical_now: Duration::ZERO,
             motion: options.signal.motion,
             animations_off: options.animations.off,
             backdrop_blur: resolved.material.glass.backdrop_blur,
@@ -2858,7 +2866,7 @@ mod tests {
         // The scheduling gate of the optics design §3: no focus filament, no
         // signal, so no signal frame cache, and still a deadline from the
         // optic while the slab band is in view.
-        let clock = Clock::with_time(Duration::ZERO);
+        let mut clock = Clock::with_time(Duration::ZERO);
         let lit = niri_config::ResolvedGlass {
             aurora: niri_config::ResolvedAurora {
                 amount: 0.5,
@@ -2878,6 +2886,23 @@ mod tests {
         );
         let far = Point::from((10_000., 10_000.));
         assert_eq!(tile.tick_deadline(far, view, Duration::ZERO), None);
+
+        clock.set_unadjusted(Duration::from_millis(100));
+        let held = render_dynamics(&tile, 1280., 720.).optics;
+        clock.set_optic_active(false, Duration::from_millis(100));
+        clock.set_unadjusted(Duration::from_secs(1));
+        assert_eq!(render_dynamics(&tile, 1280., 720.).optics, held);
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::from_secs(1)),
+            None
+        );
+        assert_eq!(tile.tick_deadline(far, view, Duration::from_secs(1)), None);
+        clock.set_optic_active(true, Duration::from_secs(1));
+        assert_eq!(render_dynamics(&tile, 1280., 720.).optics, held);
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::from_secs(1)),
+            Some(Duration::from_millis(1_150))
+        );
 
         let pinned = niri_config::ResolvedGlass {
             aurora: niri_config::ResolvedAurora {
