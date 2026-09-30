@@ -1,13 +1,15 @@
 ---
 id: material-d09741
 title: Attribute hidden-window GPU work to clients or material rendering
-status: todo
+status: doing
 priority: 1
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-29T21:44:30Z
+updated: 2026-09-30T09:13:31Z
+started: 2026-09-30T09:13:31Z
 depends: []
 parent: material-5d6b2c
 tags: [performance]
@@ -20,3 +22,8 @@ Where to start: docs/notes/2026-09-29-resource-aware-rendering-brief.md; src/lay
 Bound: Trace these paths and compare one fixed workload visible, on an inactive workspace, in a hidden tab, offscreen and behind an opaque covering window, plus an empty-workspace control. Include a second lit output and an overview/transition control so visible work is not misclassified. Start with one end-to-end capture pilot using tools/capture-meta, then the bounded matrix only when the lane passes. Attribute client work separately from compositor redraws, material draws and shared backdrop/prefilter rebuilds. No visibility algorithm, client suspension policy, always-on collector, exhaustive sweep or host launcher change.
 Expected result: Record a per-case attribution table and a recommendation: existing gates suffice, or a reproducible gap with the responsible caller and a focused follow-up. Use existing Tracy draw/redraw zones; document any temporary instrumentation and positive draw controls. Host-wide GPU utilization alone is not evidence of compositor rendering. Update this task and the brief.
 Ideas it wakes: On completion, run tasks note on material-7afc31 with the finding, in the same commit as this result.
+
+## Notes
+
+- 2026-09-30T09:13:31Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:753832fc-7ed3-4976-8c1c-9feafc79240f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
