@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-09-30T23:48:19Z
+updated: 2026-10-01T00:14:17Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -38,3 +38,8 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-09-30T23:48:15Z (glass-edges): P2 — Spec lines 82–85 and 97–98: preserving within from the (1-F) multiply does not preserve its attenuation. Both ring terms and aurora currently consume pow(att,.2); replacing att with local-height attenuation changes their brightness even at profile 1. For thickness=chamfer=12, u=.5, attenuation=.1 and distance=10, the shared factor rises from .457708 to .676541. Specify whether interior attenuation remains at its existing depth or intentionally changes, and include ring/aurora-enabled evidence; current default-change captures disable both.
 - 2026-09-30T23:48:15Z (glass-edges): parked (waiting on user, review): User reviews the draft spec together with spec review round 1; the design author revises sections 3.1 and 3.3, settles the interior-light attenuation contract, and resubmits the spec before an implementation plan.
   provenance: {"harness_session":"codex:01a0f4b2-bd63-71f2-9779-d6e88ec61afe","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T00:14:15Z (glass-edges): resumed
+  provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T00:14:15Z (glass-edges): spec revised for round 1: all four findings verified numerically and accepted; ray-to-base-plane path L=h/max(-t.z,.25) for displacement and attenuation (structural normal), two-boundary u=innerDist/(innerDist-outerDist) with blended gradient, highlight tilt weight (continuous for k>1, planar facets flash by design), interior light keeps pow(att,.2) on the new path (face exact, bevel brightens; old-path-for-interior rejected); Rust mirror bevel.rs, ring/aurora-on and jelly motion evidence added
+- 2026-10-01T00:14:15Z (glass-edges): parked (waiting on user, review): User (or a reviewer) runs spec review round 2 on docs/specs/2026-09-30-glass-edge-optics-design.md in .worktrees/glass-edges; on approval the agent runs writing-plans and files the Prism piece
+  provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
