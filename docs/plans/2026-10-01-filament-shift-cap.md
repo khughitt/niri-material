@@ -58,8 +58,9 @@ headless surfaceless GLES, Markdown docs, the `tasks` CLI.
 4. **Unlit or misplaced core.** An all-zero profile, or one whose brightest face
    sample is far from `face_inset + gap`, must fail rather than pass vacuously.
    Task 1 has both unit cases.
-5. **The guard must fail without the cap.** Task 1's mutation step must show
-   failures on `binding` and `ior150`. If it does not, the test does not guard the cap.
+5. **The guard must fail without the cap.** Task 1's mutation gate requires a
+   nonzero exit and second-maximum failures on **both** `binding` and `ior150`,
+   read from the full log. Anything less means the test does not guard the cap.
 
 ---
 
@@ -440,9 +441,16 @@ fn ring_cap_keeps_one_core() {
 }
 ```
 
-- [ ] **Step 8: Run it and read the report**
+- [ ] **Step 8: Run it with captures and read the report**
 
-Run: `just test-one -p niri ring_cap_keeps_one_core --no-capture`
+`dump()` writes only when `RING_PAIR_DUMP` names an existing directory:
+
+```bash
+CAP=$(mktemp -d)/ring-cap && mkdir -p "$CAP"
+RING_PAIR_DUMP="$CAP" just test-one -p niri ring_cap_keeps_one_core --no-capture 2>&1 | tee "$CAP/report.log"
+ls "$CAP"/*-cap-light-ior-*-on.png | wc -l   # expect: 15
+```
+
 Expected: PASS. In the report:
 - `binding` and `ior150` show `0 px` for both comparisons;
 - `ior124` shows `0 px` for 6 vs 12 and a nonzero 1 vs 6;
@@ -452,33 +460,84 @@ If the anchor fails on a left or top edge, stop. Print that edge's samples and
 compare the core's position with `12 + gap` before changing anything: the spec's
 geometry claim is what failed, and the fix belongs in the spec.
 
+Keep the captures on the step task. The sheet has one row per glass row and one
+column per `light-ior`. Each cell is the bottom-right window corner of the ring-on
+render, enlarged 4x. The corner sits at `(gap + 740, gap + 360)`, because the
+mid-resize window is 740x360 at `(gap, gap)`. The `ior124` full renders are the
+task's requested capture of 1.24/bevel 9.
+
+```bash
+cd "$CAP"
+for g in stock:8 binding:2 ior102:5 ior124:8 ior150:5; do
+  n=${g%:*}; gap=${g#*:}; x=$((gap + 740 - 45)); y=$((gap + 360 - 40)); row=()
+  for li in 1 6 12; do
+    magick "$n-cap-light-ior-$li-on.png" -crop 60x50+$x+$y +repage -filter point -resize 400% \
+      -gravity north -background '#222' -fill white -pointsize 18 -splice 0x24 \
+      -annotate +0+2 "$n light-ior $li" "cell-$n-$li.png"
+    row+=("cell-$n-$li.png")
+  done
+  magick "${row[@]}" +append "row-$n.png"
+done
+magick row-stock.png row-binding.png row-ior102.png row-ior124.png row-ior150.png -append +repage ring-cap-sheet.png
+cd -
+tasks attach material-1eab8b "$CAP/ring-cap-sheet.png" --caption "ring_cap_keeps_one_core, capped: bottom-right corners at the frozen mid-resize instant, 4x nearest; rows stock, binding, ior102, ior124, ior150; columns light-ior 1, 6, 12"
+for li in 1 6 12; do
+  tasks attach material-1eab8b "$CAP/ior124-cap-light-ior-$li-on.png" --caption "ior 1.24 / thickness 43.3 / bevel 9 / ring-gap 8, light-ior $li, ring on, frozen mid-resize instant"
+done
+tasks attach material-1eab8b "$CAP/report.log" --caption "ring_cap_keeps_one_core report (capped run)"
+```
+
+Open `ring-cap-sheet.png` and confirm that no cell shows a second line outside the
+band.
+
 - [ ] **Step 9: Mutation check: the test fails without the cap**
 
+The full log and the exit status are kept, and the shader edit is reverted whatever
+the outcome:
+
 ```bash
+MUT=$(mktemp -d)/ring-cap-mutation && mkdir -p "$MUT"
 sed -i 's/float cap = 0.5 \* gap;/float cap = 1e6;/' src/render_helpers/shaders/material/main.frag
 grep -n 'float cap' src/render_helpers/shaders/material/main.frag   # expect: float cap = 1e6;
-just test-one -p niri ring_cap_keeps_one_core --no-capture 2>&1 | grep -E 'light-ior .* (left|right|top|bottom):' | sort | uniq
+just test-one -p niri ring_cap_keeps_one_core --no-capture > "$MUT/mutation.log" 2>&1
+status=$?
 git checkout src/render_helpers/shaders/material/main.frag
 git diff --stat src/render_helpers/shaders/   # expect: empty
+echo "exit $status"
+grep -E '(binding|ior150) light-ior [0-9]+ (left|right|top|bottom): second maximum' "$MUT/mutation.log" | sort -u
 ```
 
-Expected: FAIL, with failure lines for `binding` and `ior150` at `light-ior` 1 and 6,
-at least on the right and bottom edges. Record the result:
+The gate passes only when all three hold:
+- `status` is nonzero;
+- at least one `binding light-ior … : second maximum …` line is present;
+- at least one `ior150 light-ior … : second maximum …` line is present.
+
+The expected lines are at `light-ior` 1 and 6, on at least the right and bottom
+edges. Check the gate mechanically:
 
 ```bash
-tasks note material-1eab8b "mutation: cap removed -> ring_cap_keeps_one_core fails on <rows/light-ior/edges as printed>; shader reverted"
+test "$status" -ne 0 \
+  && grep -qE 'binding light-ior [0-9]+ (left|right|top|bottom): second maximum' "$MUT/mutation.log" \
+  && grep -qE 'ior150 light-ior [0-9]+ (left|right|top|bottom): second maximum' "$MUT/mutation.log" \
+  && echo "mutation gate: passed" || echo "mutation gate: FAILED"
 ```
 
-If neither `binding` nor `ior150` fails, the guard does not do its job: stop and
-report, do not commit.
+On `mutation gate: FAILED` the guard does not do its job: stop and report, and do
+not commit. A failure for another reason, such as a build error or a failure only on
+the anchor, does not count. Otherwise attach the log and record the result:
+
+```bash
+tasks attach material-1eab8b "$MUT/mutation.log" --caption "ring_cap_keeps_one_core with the cap removed (float cap = 1e6), shader reverted after"
+tasks note material-1eab8b "mutation: cap removed -> ring_cap_keeps_one_core exit $status; second-maximum failures: <the sorted lines printed above, rows/light-ior/edges>; shader reverted"
+```
 
 - [ ] **Step 10: Gates and commit**
 
 ```bash
 just test-fast
-tasks done material-1eab8b "ring_cap_keeps_one_core guards the half-gap cap on five glass rows; one_core unit-tested; mutation check failed as expected"
+tasks done material-1eab8b "ring_cap_keeps_one_core guards the half-gap cap on five glass rows; one_core unit-tested; mutation gate passed (binding and ior150 second maxima); captures attached"
 tasks check
-git add src/tests/ring_pair.rs tasks/
+git add src/tests/ring_pair.rs tasks/   # tasks/ includes the attached captures (PNG via LFS)
 git commit -m "test(material): one band core per edge under the ring cap (material-a85a18)"
 ```
 
@@ -524,12 +583,17 @@ normal yields less than the cap, and aurora.
 | 1.28/31.2/10, 2 | every value |
 | 1.5/80/12, 5 | every value |
 
-At `ring-gap 2` the cap is 1 px, and on glass as dense as the last two rows
-the chamfer's shared shift reaches it at any `light-ior`. There `light-ior`
-acts only through the sub-pixel aberration split and, while jelly is
-active, through rippled pixels. `ring_cap_keeps_one_core` in
-`src/tests/ring_pair.rs` renders these rows and fails if a second core
-appears.
+How much `light-ior` still does past the cap depends on those other terms.
+The aberration offsets grow with `chromatic-aberration`: at
+`chromatic-aberration 1`, the 1.5/80/12 row's blue offset is about 1.32 px
+at `light-ior 1`. On Prism's terminal glass (1.28/31.2/10,
+`ring-gap 2`, `chromatic-aberration 0.36`, `distortion 0`, `aurora 0`,
+`jelly-ripple 0.23`), the cap is 1 px and the chamfer's shared shift reaches
+it at any `light-ior`. There `light-ior` acts only through the blue offset
+(about 0.27 px at `light-ior 1`, 0.10 px at 6) and, while jelly is active,
+through rippled pixels. `ring_cap_keeps_one_core` in
+`src/tests/ring_pair.rs` renders the table's rows and fails if a second
+core appears.
 ```
 
 - [ ] **Step 2: Record the decision in the brief**
