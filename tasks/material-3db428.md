@@ -7,8 +7,8 @@ size: s
 complexity: mid
 process: direct
 created: 2026-09-20T10:34:21Z
-updated: 2026-10-01T09:55:04Z
-depends: []
+updated: 2026-10-01T10:00:24Z
+depends: [material-22d78f]
 tags: [rendering]
 agent: claude-code/claude-opus-5
 ---
@@ -18,3 +18,4 @@ The ring beam (98013739) moved the filament band from the slab's outer edge to t
 ## Notes
 
 - 2026-10-01T09:55:04Z (material-0e80c1): From material-0e80c1: focus-ring-light.sh pins no light-ior, jelly or noise, so it inherits Prism (light-ior 6, jelly-flex 0.0066), and case_tiny's comment cites the retired slabChamfer gate (the shader now gates on hasLine, main.frag). Band core measured at ring-gap inside the face edge; the face sits 2*offset in from the window's left/top and flush right/bottom at offset 6 (brief: docs/notes/2026-09-29-glass-measurement-brief.md#matched-state-ring-findings).
+- 2026-10-01T10:00:23Z (materials-26.04): Depends on material-22d78f, which retires case_resize_flex; skip re-deriving that case's row.
