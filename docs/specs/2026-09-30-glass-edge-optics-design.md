@@ -1,8 +1,9 @@
 # Glass edge optics
 
-**Status:** revised after spec review round 1 (ray-consistent path, two-boundary
-profile coordinate, highlight transition, interior-light attenuation),
-2026-09-30; pending review. Task: `material-be611b`.
+**Status:** revised after spec review rounds 1 and 2 (ray-consistent path
+and its bound, two-boundary coordinate with a softened outer gradient,
+highlight transition, interior-light attenuation), 2026-09-30; pending
+review. Task: `material-be611b`.
 Follow-on idea that builds on this geometry: `material-7f5751` (content in the
 glass).
 
@@ -89,11 +90,35 @@ zero at the silhouette. With `thickness > bevel` a vertical wall of
     grad_u = (-outerDist * gIn + innerDist * gOut) / (w * w)
     n      = normalize(vec3(R * f'(u) * grad_u, 1))
 
-`gIn` and `gOut` are the outward unit gradients of the inner and outer
-rounded boxes (`sdRoundedBoxGrad`). At rest they coincide, `grad_u = g /
-chamfer`, and `k = 1` reproduces today's normal exactly. Under motion,
-including at deformed corners, the weighted blend stays continuous. Stable-normal
-policy: the slope `|R * f'(u) * grad_u|` is capped at 20 (`n.z >= 0.05`).
+This is the exact gradient of `u`, equivalently
+`((1 - u) * gIn + u * gOut) / w`. `gIn` is the outward unit gradient of the
+inner rounded box (`sdRoundedBoxGrad`). On the bevel it is continuous, because
+the exterior distance of a convex box is C1.
+
+`gOut` must not use the exact gradient. The fixed outer box's interior
+gradient switches between nearest sides along its medial axis. At rest that
+region lies inside the face. Jelly motion exposes it when the face moves
+further than the corner radius covers. At outer 112, inner 88, chamfer 12,
+inner radius 0 and a 3 px shift, the exact gradient puts a crease in the
+normal: 0.07 at `k = 2` and 0.23 at `k = 1`, and the reflection sample jumps
+with it. `gOut` therefore comes from a softened gradient:
+
+    q  = abs(p) - b + r                      // as in sdRoundedBox
+    qs = s * log(1 + exp(q / s))             // softplus, s = 0.5 logical px
+    gOut = normalize(qs) * sign(p)
+
+On the corner arcs and straight sides `qs` equals `q` to within `s * e^(-|q| / s)`,
+so it agrees with the exact gradient there. In the core it blends the two
+nearest sides smoothly. Under motion, measured normal jumps fall in proportion
+to the sampling step in every case tried: radius 0, 4 and 8 with 3 px
+diagonal and axial shifts, at `k = 1` and `k = 2`. That is continuity. At
+rest, `gIn = gOut` exactly on straight sides, so `k = 1` reproduces today's
+normal there. Within about a pixel of the junctions between corner arcs and
+straight sides, it departs from today's normal by at most 0.03, on at most
+3 % of bevel pixels (inner radius 0, the worst case).
+
+Stable-normal policy: the slope `|R * f'(u) * grad_u|` is capped at 20
+(`n.z >= 0.05`).
 
 **Ray model.** The glass is a height field over the backdrop plane. A ray
 refracted at the surface, `t = refract((0, 0, -1), n, 1 / ior)`, meets that
@@ -113,11 +138,24 @@ Both effects follow this one ray:
   attenuation is today's exactly.
 
 On the face, `n = (0, 0, 1)` gives `L = thickness` and no displacement,
-today's values. Under distortion, face displacement grows by `1 / -t.z`,
-which stays under 1 % for normals within 20 degrees. The 0.25 floor keeps
-today's four-times bound. Since a refracted ray cannot pass the critical
-angle, `-t.z >= sqrt(1 - 1 / ior^2)`, which is 0.62 at ior 1.28: the floor
-binds only below ior 1.033.
+today's values. Under distortion, face displacement grows by `1 / -t.z`. For
+normals within 20 degrees that is 0.3 % at ior 1.28 and 2.8 % at ior 3.
+
+**Bound.** The refracted ray tilts from vertical by `theta_i - theta_t`,
+which increases with the incidence angle. At grazing incidence,
+`theta_t = asin(1 / ior)` and `-t.z = 1 / ior`. For any upward-facing
+normal, therefore, `-t.z >= 1 / ior` and `L <= ior * h`. With the slope cap,
+the rim value sits slightly above that bound: 0.81 at ior 1.28, 0.38 at
+ior 3. The 0.25 floor binds at an effective index above 4. The two kinds of
+ray reach different indices:
+
+- **Attenuation, and the red or single tap**, use the configured `ior`,
+  1 to 3, so the floor never binds and `L` is the true ray length.
+- **Chromatic-aberration taps** use `ior * (1 + spread)` and
+  `ior * (1 + 2 * spread)`, with `spread` up to `chromatic-aberration` (at
+  most 1), so the effective index reaches 9. On steep normals the floor caps
+  those taps at `L = 4 h`: at index 9 the capped rim has `-t.z = 0.16`. The
+  floor is the stable-ray policy for aberration only.
 
 Reference values at chamfer 12, ior 1.28 (`u = 0+` is the bevel side of the
 face edge). These are the test vectors for the Rust mirror (section 6):
@@ -132,10 +170,24 @@ face edge). These are the test vectors for the Rust mirror (section 6):
 | 31.2 (thick) | 1 | 1 | 19.20 | 0.707 | 19.59 | 3.89 | 44.12, 6.20 |
 | 31.2 | 2 | 0.9 | 24.43 | 0.436 | 25.91 | 8.64 | 44.12, 6.20 |
 | 31.2 | 2 | 1 | 19.20 | 0.050 | 23.69 | 13.87 | 44.12, 6.20 |
+| 6 | 2 | 1 | 0.00 | 0.050 | 0.00 | 0.00 | 6.71, 0.64 |
+| 12 | 2 | 1 | 0.00 | 0.050 | 0.00 | 0.00 | 16.97, 2.39 |
+| 75.3 (inactive) | 2 | 0.9 | 68.53 | 0.436 | 72.69 | 24.24 | 106.49, 14.97 |
+| 75.3 | 2 | 1 | 63.30 | 0.050 | 78.10 | 45.74 | 106.49, 14.97 |
 
-The path now falls toward the rim at every thickness, instead of the 1.41×
-plateau. On a rounded bevel the displacement grows toward the rim, which is
-the lens compression of a bullnose edge.
+What the model guarantees:
+
+- `L <= ior * h` everywhere, and `L = thickness` on the face. Today's
+  bevel-wide `1.41 * thickness` plateau is gone.
+- **The path is not monotonic in general.** It falls while the glass thins
+  faster than the ray tilts. On thick glass over a short bevel, the tilt
+  outgrows the height loss near the rim: at thickness 75.3, bevel 12, `k = 2`,
+  the path runs 75.30, then 72.69 at `u = 0.9`, then 78.10 at the rim, 3.7 %
+  above the face. On thin and equal glass it falls to zero at the rim.
+- **Displacement** grows toward the rim on a rounded bevel while a wall
+  remains (`thickness > bevel`), which is the lens compression of a bullnose
+  edge. Where the glass thins to an edge (`thickness <= bevel`) it returns to
+  zero at the rim, because `h` does.
 
 `slabSurface` gains `h`, `u` and `w` as outputs. The ring's spill switches
 from `innerDist / slabChamfer` to `u`: identical at rest, and under jelly the
@@ -181,8 +233,10 @@ where:
 
 - `reach = -outerDist + thickness`: sample just beyond the silhouette,
   outward, one thickness further;
-- `gPerturbed = normalize(n.xy)` from the perturbed normal, so distortion and
-  jelly ripple move the reflection;
+- `gPerturbed = normalize(normalize(grad_u) + nPerturbed.xy - nStructural.xy)`:
+  the across-bevel direction from 3.1, which is continuous and nonzero on the
+  bevel even where `n.xy` vanishes (`k > 1` at the face join), plus the
+  perturbation, so distortion and jelly ripple move the reflection;
 - `wr = reflection * smoothstep(0, 0.1, u)`: zero on the face, where the
   direction is undefined, and continuous for every `k`;
 - the sample goes through the existing prefilter binding, so roughness
@@ -235,13 +289,17 @@ reaches 1 where it tilts as far as `H`. It carries the profile's continuity:
 
 ### 3.4 Specular hook interface
 
-`reflection` needs the fragment position, both normals, `F` and `u`;
+`reflection` needs the fragment position, both normals, `F`, `u` and the
+across-bevel direction;
 `edge-highlight` needs the perturbed normal. The specular hook changes from
 `vec3 <name>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)`
 to
 
     struct Surface { vec2 p; vec2 v; vec3 structural; vec3 perturbed;
-                     float cosine; float fresnel; float across; float outerDist; };
+                     float cosine; float fresnel; float across; vec2 acrossDir;
+                     float outerDist; };
+
+`across` is `u`, and `acrossDir` is `normalize(grad_u)` from 3.1.
     vec3 <name>_specular(vec3 specular, Surface s)
 
 `iridescence` migrates to it unchanged in behaviour. `OPTICS` order within
@@ -258,8 +316,10 @@ reproduce today's pixels. The intended corrections:
 
 - **Face, transmitted:** scaled by `1 - f0`: 1.5 % darker at ior 1.28, 4 % at
   1.5. Face attenuation and the ring band's interior factor are exact.
-- **Face, distortion:** displacement grows by `1 / -t.z`, under 1 % for normals
-  within 20 degrees.
+- **Face, distortion:** displacement grows by `1 / -t.z`. For normals within
+  20 degrees that is 0.3 % at ior 1.28 and 2.8 % at ior 3.
+- **Bevel corners at rest:** the softened outer gradient moves the normal by
+  at most 0.03, within about a pixel of the arc-to-side junctions.
 - **Bevel:** path and displacement follow the ray model (table in 3.1). A
   planar chamfer's tint lightens and its shift shrinks toward the silhouette.
   The largest change is at `thickness <= bevel`.
@@ -286,13 +346,19 @@ multiply. No new textures, passes or redraw clocks.
   coordinate, profile, normal, ray path and highlight weight in f64. A test
   checks that the shader's lines match it, as `ring.rs` does for the beam.
   Its tests cover:
-  - the section 3.1 table, within 0.01;
-  - `k = 1` at rest reproducing today's normal;
+  - the section 3.1 table, within 0.01, including the thick-glass
+    non-monotonic rows and the thin and equal rim rows;
+  - `-t.z >= 1 / ior` for upward normals at ior 1, 1.28 and 3, and the 0.25
+    floor binding only at aberration indices above 4;
+  - `k = 1` at rest reproducing today's normal exactly on straight sides, and
+    within 0.03 near the corner junctions;
+  - normal continuity through deformed corners: outer 112, inner 88,
+    chamfer 12, inner radius 0 and 8, 3 px diagonal and axial shifts, `k = 1`
+    and `k = 2`. The maximum jump between neighbours falls in proportion to the
+    step, from 0.02 px to 0.005 px; the exact gradient fails this at radius 0;
   - `u` exactly 0 at the face and 1 at the silhouette on both opposite sides
     under a 3 px face shift at chamfer 12, and under a jelly resize, with `u`
     strictly increasing across the band (no plateau, no truncated rim);
-  - continuity of `n` and `h` along paths through a corner, at rest and
-    deformed;
   - the highlight weight tending to 0 at the face join for `k = 2`, at
     roughness 0 and 1;
   - a planar facet with `R / chamfer = 0.414` facing the light at full
