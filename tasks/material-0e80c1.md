@@ -1,15 +1,16 @@
 ---
 id: material-0e80c1
 title: Establish matched-state ring capture feasibility and current shift bounds
-status: doing
+status: done
 priority: 2
 size: s
 complexity: high
 process: direct
-owner: materials-26.04
+owner: material-0e80c1
 created: 2026-09-29T22:38:51Z
-updated: 2026-10-01T07:58:11Z
+updated: 2026-10-01T09:55:15Z
 started: 2026-10-01T07:52:48Z
+completed: 2026-10-01T09:55:15Z
 depends: []
 parent: material-49871a
 tags: [harness]
@@ -33,3 +34,11 @@ Ideas it wakes: On completion, run tasks note on material-22d78f and material-a8
   provenance: {"harness_session":"claude-code:601fb2a6-cb37-47f5-a964-59f3bb9f54af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-01T07:58:11Z (materials-26.04): parked (waiting on agent, session): Agent, in .worktrees/material-0e80c1: find why focus "ring-light" draws nothing in ring_pair.rs's in-process render (dump on1/off as PNG; check the tile's focus/ring state and whether the response reload reaches MaterialState), then record the pair's on-off light map at stock and cap-binding geometry, write the brief update and close (note material-22d78f, material-a85a18). No quiet host needed.
   provenance: {"harness_session":"claude-code:601fb2a6-cb37-47f5-a964-59f3bb9f54af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T09:29:59Z (material-0e80c1): resumed
+  provenance: {"harness_session":"claude-code:68659a95-d12c-4918-9df3-6eb8872f5be4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T09:55:04Z (material-0e80c1): Ring not lit, root cause: the test client's single-pixel buffers are never imported as textures, so the resize snapshot was empty and Tile::render fell back to a plain render without the material. Fixed in the test client (attach_new_shm_buffer, fully damaged: an undamaged commit leaves the window offscreen stale). Also turned the hotkey overlay off; it covered the right edge. No production change. Filed material-698875 for the production single-pixel snapshot gap.
+- 2026-10-01T09:55:04Z (material-0e80c1): Result (RTX 3070, surfaceless GLES): repeat 0 px after off/on and after all variant reloads; 10 ms control 22-24k px. Band centroid +20.02/+8.02 (stock gap 8) and +13.61/+1.59 (binding gap 2); mid vs rest within 0.01 px. Flex moves it +0.44/+0.96 px (0.0066/0.02) on the resizing axis. Binding light-ior 1 vs 6: 0 px; stock: 10,861 px, max 2. Opaque client: 0 px inside the window. Recommendation: use ring_pair.rs's centroid-delta as the motion check; tolerance left to the owner. Details in the brief.
+- 2026-10-01T09:55:15Z (material-0e80c1): done
+  provenance: {"harness_session":"claude-code:68659a95-d12c-4918-9df3-6eb8872f5be4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T09:55:15Z (material-0e80c1): Matched-state ring pair works in-process with no production change: src/tests/ring_pair.rs renders on/off at a frozen mid-resize instant byte-reproducibly, with a test-client shm buffer as the missing seam. Light map, flex centroid shift, measured cap binding (light-ior 1 vs 6 identical at binding geometry), opaque bypass and the rederived shift table are in the brief; woken ideas noted.
+  provenance: {"harness_session":"claude-code:68659a95-d12c-4918-9df3-6eb8872f5be4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
