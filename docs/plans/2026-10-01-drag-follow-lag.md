@@ -4,7 +4,7 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** draft, awaiting plan review round 1.
+**Status:** revised after plan review round 1 (revise; P1 4, P2 2, P3 1); awaiting round 2.
 
 **Goal:** during an interactive move, the glass flexes with a spring-lagged follower of the
 pointer. The window keeps rendering at the pointer, and the lag decays to zero on a hold
@@ -53,8 +53,11 @@ owns the code:
 2. **A drag in the overview, where zoom is below 1.** The shift is in workspace units
    (`delta.downscale(zoom)`), so the lag matches the unzoomed one scaled by `1/zoom`.
    Task 2, `overview_drag_shifts_in_workspace_units`.
-3. **A window closed in the middle of a drag.** The unmap snapshot receives the motion
-   residual, lag included, without panicking. Task 2, `unmap_mid_drag_snapshots_lag`.
+3. **A window closed in the middle of a drag, or just after release.** The unmap
+   snapshot receives the motion residual with the lag included, through the same
+   selection functions `store_unmap_snapshot` uses. Task 2,
+   `moving_tile_snapshot_residual_includes_lag` and
+   `placed_tile_snapshot_residual_includes_lag`.
 4. **`animations { off }` turned on while a lag decays.** It completes like every other
    animation. Task 3, `complete_instantly_drops_follower`.
 5. **High-rate pointers (1000 Hz).** The lag does not depend on event rate. Task 3,
@@ -228,6 +231,14 @@ mod tests {
         assert!(settled_at.is_some(), "never settled");
         let (ex, _) = euler(heavy, -40., 0., 0.5);
         assert!((f.lag(ms(500)).x - ex).abs() < 1e-3);
+
+        // An overdamped anchor with velocity reads back exactly, before and at t₀.
+        f.shift(ms(40), p(-12., 3.));
+        let (al, av) = (f.lag(ms(40)), f.velocity(ms(40)));
+        assert!(av.x != 0.);
+        assert_eq!(f.lag(ms(20)), al);
+        assert_eq!(f.velocity(ms(20)), av);
+        assert_eq!(f.velocity(ms(40)), av);
 
         let stiff = FollowSpring {
             damping_ratio: 10.,
@@ -441,7 +452,11 @@ impl DragFollower {
     }
 
     fn state_at(&self, now: Duration) -> (Axis, Axis) {
-        let dt = now.saturating_sub(self.t0).as_secs_f64();
+        // At or before the anchor: the stored state exactly, never a formula at 0.
+        if now <= self.t0 {
+            return (self.x, self.y);
+        }
+        let dt = (now - self.t0).as_secs_f64();
         let step = |a: Axis| {
             let (lag, velocity) = self.spring.evolve(a.lag, a.velocity, dt);
             Axis { lag, velocity }
@@ -535,6 +550,10 @@ git commit -m "feat(material): closed-form drag follower (material-4354cf)"
   - `Tile::motion_residual(&self) -> Point<f64, Logical>`
   - `Tile::has_drag_follower(&self) -> bool`. This one is test-visible
     (`pub(super)`).
+  - `#[cfg(test)] Tile::clear_drag_follower(&mut self)`, for paired runs without the
+    follower.
+  - `InteractiveMoveData::unmap_snapshot_motion_residual(&self) -> Point<f64, Logical>`,
+    the residual the moving tile's unmap snapshot receives.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -717,36 +736,81 @@ fn floating_release_in_motion_keeps_lag_continuous() {
     release_in_motion(layout, 1, pos + Point::from((50., 100.)), true);
 }
 
-#[test]
-fn opposing_release_projects_below_the_release_term() {
-    // Two drags: rightward and leftward from the lifted spot. For each, the lag's sign
-    // against the release term decides whether the stimulus along the release
-    // direction falls short of or exceeds the release term alone (§4.4).
-    let mut signs = Vec::new();
-    for dir in [1., -1.] {
-        let mut layout = two_columns();
-        let mut pointer = Point::from((300., 100.));
-        lifted(&mut layout, 1, &mut pointer);
-        drag_against_reference(&mut layout, 1, pointer, Point::from((40. * dir, 0.)), 6);
-        end(&mut layout, 1);
-        let t = tile(&layout, 1);
-        let r = t.animation_residual();
-        let lag = t.motion_residual() - r;
-        let r_len = r.x.hypot(r.y);
-        assert!(r_len > 1., "release term {r:?}");
-        let along = (t.motion_residual().x * r.x + t.motion_residual().y * r.y) / r_len;
-        let dot = lag.x * r.x + lag.y * r.y;
-        if dot < 0. {
-            assert!(along < r_len);
-            if lag.x.hypot(lag.y) < r_len {
-                assert!(flex(t.motion_residual()) < flex(r));
-            }
-        } else {
-            assert!(along >= r_len);
+/// One release run: lift, drag `steps` (each a per-frame pointer step), release in
+/// the frame of the last step, then 40 frames. With `follow == false` the moving
+/// tile's follower is cleared after every update, so the run is the pre-follower
+/// behaviour with identical layout ops. Returns per-frame (render offset, tile
+/// position in the workspace, motion residual, animation residual), the first row
+/// read at the release instant.
+fn release_run(steps: &[Point<f64, Logical>], follow: bool) -> Vec<(Point<f64, Logical>, Point<f64, Logical>, Point<f64, Logical>, Point<f64, Logical>)> {
+    let mut layout = two_columns();
+    let mut pointer = Point::from((300., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    for step in steps {
+        pointer += *step;
+        Op::InteractiveMoveUpdate { window: 1, dx: step.x, dy: step.y, output_idx: 1, px: pointer.x, py: pointer.y }.apply(&mut layout);
+        if !follow {
+            let Some(InteractiveMoveState::Moving(move_)) = &mut layout.interactive_move else { unreachable!() };
+            move_.tile.clear_drag_follower();
         }
-        signs.push(dot.signum());
+        Op::AdvanceAnimations { msec_delta: FRAME_MS }.apply(&mut layout);
     }
-    assert!(signs.contains(&-1.), "no opposing case: {signs:?}; lengthen or reverse the drags");
+    end(&mut layout, 1);
+    let mut rows = Vec::new();
+    for frame in 0..=40 {
+        if frame > 0 {
+            Op::AdvanceAnimations { msec_delta: FRAME_MS }.apply(&mut layout);
+        }
+        let (_, _, ws) = layout.workspaces().find(|(_, _, ws)| ws.has_window(&1)).unwrap();
+        let (t, pos) = ws.tiles_with_render_positions().find(|(t, _)| *t.window().id() == 1).unwrap();
+        rows.push((t.render_offset(), pos, t.motion_residual(), t.animation_residual()));
+    }
+    rows
+}
+
+/// The pinned opposing fixture (§4.4): a drag right, then a sharp reversal left,
+/// released moving left. Pin `OPPOSING` from the probe in Step 1b.
+const OPPOSING: &[(f64, f64)] = &[(40., 0.), (40., 0.), (40., 0.), (40., 0.), (-40., 0.), (-40., 0.)];
+
+#[test]
+fn opposing_release_lowers_flex_and_keeps_the_trajectory() {
+    let steps: Vec<_> = OPPOSING.iter().map(|&(x, y)| Point::from((x, y))).collect();
+    let with = release_run(&steps, true);
+    let without = release_run(&steps, false);
+    // The fixture is opposing: lag against the release term, smaller than it.
+    let (_, _, motion, release) = with[0];
+    let lag = motion - release;
+    let dot = lag.x * release.x + lag.y * release.y;
+    assert!(dot < 0., "fixture no longer opposing: lag {lag:?} release {release:?}");
+    assert!(lag.x.hypot(lag.y) < release.x.hypot(release.y), "lag {lag:?} reverses, not lowers");
+    assert!(flex(motion) < flex(release));
+    // The paired run without the follower has the same release term and no lag.
+    assert_eq!(without[0].3, release);
+    assert_eq!(without[0].2, without[0].3);
+    // Window trajectory identical frame by frame.
+    for (i, (a, b)) in with.iter().zip(&without).enumerate() {
+        assert_eq!(a.0, b.0, "render offset, frame {i}");
+        assert_eq!(a.1, b.1, "tile position, frame {i}");
+        assert_eq!(a.3, b.3, "release term, frame {i}");
+    }
+}
+
+#[test]
+fn aligned_release_raises_flex_and_keeps_the_trajectory() {
+    // A drag released while still moving the way it went, so the lag adds to the
+    // release term. Pin `ALIGNED` from the same probe.
+    const ALIGNED: &[(f64, f64)] = &[(40., 0.), (40., 0.), (40., 0.), (40., 0.)];
+    let steps: Vec<_> = ALIGNED.iter().map(|&(x, y)| Point::from((x, y))).collect();
+    let with = release_run(&steps, true);
+    let without = release_run(&steps, false);
+    let (_, _, motion, release) = with[0];
+    let lag = motion - release;
+    assert!(lag.x * release.x + lag.y * release.y > 0., "fixture no longer aligned: lag {lag:?} release {release:?}");
+    assert!(flex(motion) >= flex(release));
+    for (i, (a, b)) in with.iter().zip(&without).enumerate() {
+        assert_eq!(a.0, b.0, "render offset, frame {i}");
+        assert_eq!(a.1, b.1, "tile position, frame {i}");
+    }
 }
 
 #[test]
@@ -768,25 +832,63 @@ fn overview_drag_shifts_in_workspace_units() {
 }
 
 #[test]
-fn unmap_mid_drag_snapshots_lag() {
+fn moving_tile_snapshot_residual_includes_lag() {
     let mut layout = two_columns();
     let mut pointer = Point::from((50., 100.));
     lifted(&mut layout, 1, &mut pointer);
     drag_against_reference(&mut layout, 1, pointer, Point::from((40., 10.)), 6);
-    let lag = tile(&layout, 1).motion_residual();
-    Op::CloseWindow(1).apply(&mut layout);
-    // The snapshot path took `motion_residual()`; closing must not panic and the
-    // layout stays consistent.
-    layout.verify_invariants();
-    assert!(lag.x.abs() > 1.);
+    let Some(InteractiveMoveState::Moving(move_)) = &layout.interactive_move else { unreachable!() };
+    // The residual `store_unmap_snapshot` hands the moving tile's snapshot.
+    let snap = move_.unmap_snapshot_motion_residual();
+    let lag = move_.tile.drag_lag();
+    assert!(lag.x.hypot(lag.y) > 1.);
+    assert_eq!(snap, move_.tile.animation_residual() + lag);
+}
+
+#[test]
+fn placed_tile_snapshot_residual_includes_lag() {
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    drag_against_reference(&mut layout, 1, pointer, Point::from((40., 10.)), 6);
+    end(&mut layout, 1);
+    // The residual `Workspace::store_unmap_snapshot_if_empty` selects for a placed tile.
+    let snap = |layout: &Layout<TestWindow>| {
+        layout.workspaces().find_map(|(_, _, ws)| ws.unmap_snapshot_motion_residual(&1)).unwrap()
+    };
+    let with_lag = snap(&layout);
+    let lag = tile(&layout, 1).drag_lag();
+    assert!(lag.x.hypot(lag.y) > 1.);
+    for ws in layout.workspaces_mut() {
+        for t in ws.tiles_mut() {
+            if *t.window().id() == 1 {
+                t.clear_drag_follower();
+            }
+        }
+    }
+    let without = snap(&layout);
+    assert!((with_lag.x - without.x - lag.x).abs() < 1e-9 && (with_lag.y - without.y - lag.y).abs() < 1e-9);
 }
 ```
 
-Before running, check `src/layout/tests.rs` for the exact op names: `ToggleOverview`,
-`CloseWindow`, and whether `verify_invariants` is the invariant check. Use the names you
-find there. The intent is to enter the overview and to remove the window mid-drag. If
-`overview_zoom` is private to the layout module, the tests module can already reach it,
-since `tests` is a child module.
+Before running, check `src/layout/tests.rs` and `src/layout/workspace.rs` for the exact
+names: `Op::ToggleOverview`, `Workspace::has_window`, `tiles_with_render_positions` (it
+may be named `tiles_with_render_positions` on the scrolling space only; use the
+workspace-level iterator that yields `(&Tile, Point)`), `workspaces_mut` and
+`tiles_mut`. The tests module is a child of `layout`, so it can reach `pub(super)`
+items.
+
+- [ ] **Step 1b: Probe and pin the release fixtures**
+
+The opposing and aligned fixtures depend on where the scrolling layout puts the drop.
+Pin them once from a probe instead of trusting the guesses above. Temporarily add an
+`#[ignore]` test that runs `release_run` with `follow == true` for the candidates:
+right ×4 then left ×2, left ×4, and right ×4. Have it print `lag`, `release` and their
+dot product. Run it with `just test-one -p niri drag_dynamics -- --ignored --nocapture`.
+Choose an `OPPOSING` sequence with `dot < 0` and `|lag| < |release|`, and an `ALIGNED`
+sequence with `dot > 0`. Lengthen or shorten the reversal until both hold. Write the
+chosen sequences into the two constants, then delete the probe test. Both release tests
+then assert unconditionally.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -841,6 +943,11 @@ Below `animation_residual`, add:
     pub(super) fn has_drag_follower(&self) -> bool {
         self.drag_follower.is_some()
     }
+
+    #[cfg(test)]
+    pub(super) fn clear_drag_follower(&mut self) {
+        self.drag_follower = None;
+    }
 ```
 
 In `advance_animations`, after the move-animation blocks:
@@ -875,10 +982,26 @@ false; }` guard, add:
 If a `zoom` binding already exists later in that branch, reuse it there or rename this
 one. Keep only one `overview_zoom()` call.
 
-Replace `.animation_residual()` with `.motion_residual()` at the six render and snapshot
-call sites: `src/layout/mod.rs` (two), `src/layout/scrolling.rs` (two),
-`src/layout/floating.rs` (one), `src/layout/workspace.rs` (one). Find them with
-`grep -n 'animation_residual()' src/layout`. Leave the one in
+In `src/layout/mod.rs`, add to `impl<W: LayoutElement> InteractiveMoveData<W>` (next to
+`tile_render_location`):
+
+```rust
+    /// The motion residual the moving tile's unmap snapshot receives.
+    fn unmap_snapshot_motion_residual(&self) -> Point<f64, Logical> {
+        self.tile.motion_residual()
+    }
+```
+
+In the moving-tile branch of `Layout::store_unmap_snapshot` (~4749), pass
+`move_.unmap_snapshot_motion_residual()` in place of `move_.tile.animation_residual()`.
+Compute it into a local before `move_.tile.store_unmap_snapshot_if_empty(..)`, because
+that call borrows `move_.tile` mutably.
+
+Then replace `.animation_residual()` with `.motion_residual()` at the remaining five
+render and snapshot call sites: `src/layout/mod.rs` (two), `src/layout/scrolling.rs` (two),
+`src/layout/floating.rs` (one), `src/layout/workspace.rs` (one): the moving tile's
+render at ~4908, the two in `scrolling.rs`, and the one each in `floating.rs` and
+`workspace.rs`. Find them with `grep -n 'animation_residual()' src/layout`. Leave the one in
 `src/layout/tests.rs:2017` (`scrolling_unmap_snapshot_keeps_view_animation_residual`)
 as it is: it pins the move-animation part.
 
@@ -1149,23 +1272,39 @@ git commit -m "feat(material): drag follower lifecycle edges (material-4354cf)"
 This task needs an idle host for the capture. Build and pilot first. If the host is
 busy, park with `--reason quiet` and give the phase minutes.
 
+The virtual keyboard cannot set niri's grab modifier. The pinned Smithay forwards
+virtual-keyboard modifiers to clients without updating the seat state that niri checks
+for Mod+LMB. The driver therefore takes the spec's §7 move-client path. One stdlib
+client maps its own window (app-id `vdrag`), walks a `zwlr_virtual_pointer_v1` across
+the output until it enters that window, and presses the button. On the
+`wl_pointer.button` it receives, it calls `xdg_toplevel.move`, which starts niri's
+interactive move with no modifier. It then sends the scripted motion, hold and release.
+The client knows its own window, so it needs no window coordinates over IPC.
+`tile_pos_in_workspace_view` covers floating windows only.
+
 **Files:**
-- Create: `docs/materials/scripts/vdrag.py`, a stdlib Wayland client that drives
-  `zwlr_virtual_pointer_v1` and `zwp_virtual_keyboard_v1`.
-- Create: `docs/materials/scripts/drag-lag-clips.sh`
-- Create: `tools/test_vdrag.py`, unit tests for the wire encoding.
+- Create: `docs/materials/scripts/vdrag.py`, a stdlib Wayland client: `wl_shm` window,
+  `xdg_shell` and a virtual pointer.
+- Create: `docs/materials/scripts/drag-lag-clips.sh`, written in full below. It does
+  not copy `ring-motion-clips.sh`.
+- Create: `tools/test_vdrag.py`, tests for wire encoding and event decoding.
 - Modify: `docs/notes/2026-09-29-material-dynamics-brief.md` ("Drag baseline finding":
   a follow-lag column and a clip section)
-- Modify: `docs/specs/2026-10-01-drag-follow-lag-design.md` (status line only)
+- Modify: `docs/specs/2026-10-01-drag-follow-lag-design.md`: the status line, and §7's
+  sentence about the driver, which now records that the move client is the primary
+  path.
 
 **Interfaces:**
 - Consumes: the built niri with Tasks 1–3.
-- Produces: `vdrag.py drag --to X,Y,W,H --dx PX --dy PX --frames N --hz HZ --hold-ms MS
-  [--mod-mask M]`, which places the pointer at (X, Y) on a W×H output, presses Mod and
-  the left button, moves N steps at HZ, holds, then releases. `drag-lag-clips.sh` with `SEQUENCES` drawn from `scroll-fast
-  scroll-slow float-fast float-slow native`.
+- Produces:
+  - `vdrag.py --socket PATH --extent W,H --dx PX --dy PX --frames N --hz HZ
+    --hold-ms MS --ready FILE --go FILE --done FILE`. It maps a window and finds it
+    with the pointer, then writes `--ready`. It waits for `--go` to exist, drags, and
+    writes `--done`. It stays mapped until SIGTERM.
+  - `drag-lag-clips.sh` with `SEQUENCES` drawn from `scroll-fast scroll-slow float-fast
+    float-slow native`.
 
-- [ ] **Step 1: Write the failing wire-encoding tests**
+- [ ] **Step 1: Write the failing tests**
 
 `tools/test_vdrag.py`:
 
@@ -1201,6 +1340,21 @@ class WireTest(unittest.TestCase):
         self.assertEqual(len(s) % 4, 0)
         self.assertEqual(s[4:12], b"wl_seat\0")
 
+    def test_split_messages_handles_partial_tail(self):
+        a = vdrag.message(3, 0, vdrag.u32(5))
+        b = vdrag.message(4, 1, vdrag.string("x"))
+        msgs, rest = vdrag.split_messages(a + b[:6])
+        self.assertEqual([(m[0], m[1]) for m in msgs], [(3, 0)])
+        self.assertEqual(rest, b[:6])
+
+    def test_parse_global(self):
+        body = vdrag.u32(9) + vdrag.string("wl_seat") + vdrag.u32(7)
+        self.assertEqual(vdrag.parse_global(body), (9, "wl_seat", 7))
+
+    def test_stripes_fill_the_buffer(self):
+        data = vdrag.stripes(64, 4)
+        self.assertEqual(len(data), 64 * 4 * 4)
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -1213,24 +1367,33 @@ Expected: FAIL, because `vdrag.py` does not exist yet.
 
 ```python
 #!/usr/bin/env python3
-"""Scripted interactive drag for nested niri: holds Mod and the left button through
-zwp_virtual_keyboard_v1 and zwlr_virtual_pointer_v1, moves at a fixed cadence, holds,
-releases (docs/specs/2026-10-01-drag-follow-lag-design.md §7). Stdlib only."""
+"""Scripted interactive drag for nested niri (docs/specs/2026-10-01-drag-follow-lag-design.md
+§7). Maps a striped wl_shm window (app-id vdrag), finds it with a zwlr_virtual_pointer_v1,
+presses the left button on it and starts the move itself with xdg_toplevel.move, then
+moves at a fixed cadence, holds and releases. Stdlib only; exits non-zero on any
+protocol error or timeout."""
 
 import argparse
+import mmap
 import os
+import pathlib
+import select
+import signal
 import socket
 import struct
-import subprocess
+import sys
 import time
 
 BTN_LEFT = 0x110
-KEY_LEFTALT = 56
-ALT_MASK = 8  # Mod1 in the standard keymap: niri's nested Mod is Alt.
+ARGB8888 = 0
 
 
 def u32(v):
     return struct.pack("<I", v & 0xFFFFFFFF)
+
+
+def i32(v):
+    return struct.pack("<i", v)
 
 
 def fixed(v):
@@ -1247,136 +1410,251 @@ def message(obj, opcode, *args):
     return struct.pack("<II", obj, ((8 + len(body)) << 16) | opcode) + body
 
 
-class Client:
+def split_messages(buf):
+    """Complete (obj, opcode, body) messages from buf, and the incomplete tail."""
+    out = []
+    while len(buf) >= 8:
+        obj, word = struct.unpack("<II", buf[:8])
+        size = word >> 16
+        if len(buf) < size:
+            break
+        out.append((obj, word & 0xFFFF, buf[8:size]))
+        buf = buf[size:]
+    return out, buf
+
+
+def parse_global(body):
+    name, n = struct.unpack("<II", body[:8])
+    iface = body[8 : 8 + n - 1].decode()
+    off = 8 + n + (-n % 4)
+    (version,) = struct.unpack("<I", body[off : off + 4])
+    return name, iface, version
+
+
+def stripes(width, height):
+    """ARGB8888 rows: 32 px vertical stripes, so refraction and flex are visible."""
+    a = struct.pack("<I", 0xFFE8E8E8)
+    b = struct.pack("<I", 0xFF2A5DB0)
+    row = b"".join((a if (x // 32) % 2 == 0 else b) for x in range(width))
+    return row * height
+
+
+class Conn:
     def __init__(self, path):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.sock.connect(path)
-        self.next_id = 2  # 1 is wl_display
+        self.next_id = 2
+        self.handlers = {1: self.on_display}
         self.buf = b""
 
-    def new_id(self):
+    def new_id(self, handler=None):
         i = self.next_id
         self.next_id += 1
+        if handler:
+            self.handlers[i] = handler
         return i
 
-    def send(self, data, fds=()):
+    def send(self, obj, opcode, *args, fds=()):
+        data = message(obj, opcode, *args)
         if fds:
             socket.send_fds(self.sock, [data], list(fds))
         else:
             self.sock.sendall(data)
 
-    def roundtrip(self):
-        """wl_display.sync, then read events until its wl_callback.done; returns them."""
-        cb = self.new_id()
-        self.send(message(1, 0, u32(cb)))
-        events = []
-        while True:
-            while len(self.buf) < 8:
-                chunk = self.sock.recv(65536)
-                if not chunk:
-                    raise SystemExit("compositor closed the connection")
-                self.buf += chunk
-            obj, word = struct.unpack("<II", self.buf[:8])
-            size = word >> 16
-            while len(self.buf) < size:
-                self.buf += self.sock.recv(65536)
-            msg, self.buf = self.buf[:size], self.buf[size:]
-            if obj == 1 and (word & 0xFFFF) == 0:  # wl_display.error
-                oid, code = struct.unpack("<II", msg[8:16])
-                raise SystemExit(f"protocol error on object {oid}, code {code}")
-            if obj == cb:
-                return events
-            events.append((obj, word & 0xFFFF, msg[8:]))
+    def on_display(self, op, body):
+        if op == 0:
+            oid, code = struct.unpack("<II", body[:8])
+            sys.exit(f"vdrag: protocol error on object {oid}, code {code}")
+
+    def dispatch(self, timeout):
+        r, _, _ = select.select([self.sock], [], [], timeout)
+        if not r:
+            return
+        chunk = self.sock.recv(65536)
+        if not chunk:
+            sys.exit("vdrag: compositor closed the connection")
+        msgs, self.buf = split_messages(self.buf + chunk)
+        for obj, op, body in msgs:
+            h = self.handlers.get(obj)
+            if h:
+                h(op, body)
+
+    def roundtrip(self, limit=5.0):
+        done = []
+        cb = self.new_id(lambda op, body: done.append(1))
+        self.send(1, 0, u32(cb))
+        end = time.monotonic() + limit
+        while not done:
+            if time.monotonic() > end:
+                sys.exit("vdrag: roundtrip timed out")
+            self.dispatch(0.1)
 
 
-def globals_of(client):
-    registry = client.new_id()
-    client.send(message(1, 1, u32(registry)))
+class Window:
+    def __init__(self, c, globals_):
+        self.c = c
+        self.size = (640, 480)
+        self.pending = None
+        self.configured = False
+        self.entered = False
+        self.button_serial = None
+
+        def bind(iface, version, handler=None):
+            name, _ = globals_[iface]
+            new = c.new_id(handler)
+            c.send(self.registry, 0, u32(name), string(iface), u32(version), u32(new))
+            return new
+
+        self.registry = globals_["__registry__"]
+        self.compositor = bind("wl_compositor", 4)
+        self.shm = bind("wl_shm", 1)
+        self.wm = bind("xdg_wm_base", 1, self.on_wm)
+        self.seat = bind("wl_seat", 5)
+        self.vpm = bind("zwlr_virtual_pointer_manager_v1", 1)
+        self.surface = c.new_id()
+        c.send(self.compositor, 0, u32(self.surface))
+        self.xdg_surface = c.new_id(self.on_xdg_surface)
+        c.send(self.wm, 2, u32(self.xdg_surface), u32(self.surface))
+        self.toplevel = c.new_id(self.on_toplevel)
+        c.send(self.xdg_surface, 1, u32(self.toplevel))
+        c.send(self.toplevel, 2, string("vdrag"))  # set_title
+        c.send(self.toplevel, 3, string("vdrag"))  # set_app_id
+        self.pointer = c.new_id(self.on_pointer)
+        c.send(self.seat, 0, u32(self.pointer))  # get_pointer
+        self.vp = c.new_id()
+        c.send(self.vpm, 0, u32(self.seat), u32(self.vp))  # create_virtual_pointer
+        c.send(self.surface, 6)  # initial commit, no buffer
+
+    def on_wm(self, op, body):
+        if op == 0:  # ping
+            self.c.send(self.wm, 3, body[:4])
+
+    def on_toplevel(self, op, body):
+        if op == 0:  # configure(width, height, states)
+            w, h = struct.unpack("<ii", body[:8])
+            if w > 0 and h > 0:
+                self.pending = (w, h)
+        elif op == 1:
+            sys.exit("vdrag: closed by the compositor")
+
+    def on_xdg_surface(self, op, body):
+        if op == 0:  # configure(serial)
+            (serial,) = struct.unpack("<I", body[:4])
+            if self.pending:
+                self.size, self.pending = self.pending, None
+            self.c.send(self.xdg_surface, 4, u32(serial))  # ack_configure
+            self.draw()
+            self.configured = True
+
+    def on_pointer(self, op, body):
+        if op == 0:  # enter(serial, surface, x, y)
+            if struct.unpack("<I", body[4:8])[0] == self.surface:
+                self.entered = True
+        elif op == 3:  # button(serial, time, button, state)
+            serial, _, button, state = struct.unpack("<IIII", body[:16])
+            if button == BTN_LEFT and state == 1:
+                self.button_serial = serial
+
+    def draw(self):
+        w, h = self.size
+        stride = w * 4
+        size = stride * h
+        fd = os.memfd_create("vdrag-shm")
+        os.ftruncate(fd, size)
+        with mmap.mmap(fd, size) as m:
+            m.write(stripes(w, h))
+        pool = self.c.new_id()
+        self.c.send(self.shm, 0, u32(pool), u32(size), fds=[fd])  # create_pool(id, fd, size)
+        os.close(fd)
+        buf = self.c.new_id()
+        self.c.send(pool, 0, u32(buf), i32(0), i32(w), i32(h), i32(stride), u32(ARGB8888))
+        self.c.send(pool, 1)  # destroy pool; the buffer keeps the memory
+        self.c.send(self.surface, 1, u32(buf), i32(0), i32(0))  # attach
+        self.c.send(self.surface, 2, i32(0), i32(0), i32(w), i32(h))  # damage
+        self.c.send(self.surface, 6)  # commit
+
+
+def wait_for(c, pred, secs, what):
+    end = time.monotonic() + secs
+    while not pred():
+        if time.monotonic() > end:
+            sys.exit(f"vdrag: timed out waiting for {what}")
+        c.dispatch(0.02)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--socket", required=True, help="absolute path of the nested niri socket")
+    ap.add_argument("--extent", required=True, help="W,H of the output, logical px")
+    ap.add_argument("--dx", type=float, required=True)
+    ap.add_argument("--dy", type=float, default=0.0)
+    ap.add_argument("--frames", type=int, required=True)
+    ap.add_argument("--hz", type=float, default=125.0)
+    ap.add_argument("--hold-ms", type=int, default=600)
+    ap.add_argument("--ready", required=True)
+    ap.add_argument("--go", required=True)
+    ap.add_argument("--done", required=True)
+    args = ap.parse_args()
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    w_ext, h_ext = (int(v) for v in args.extent.split(","))
+
+    c = Conn(args.socket)
     found = {}
-    for obj, op, body in client.roundtrip():
-        if obj == registry and op == 0:
-            name = struct.unpack("<I", body[:4])[0]
-            n = struct.unpack("<I", body[4:8])[0]
-            iface = body[8 : 8 + n - 1].decode()
-            found[iface] = name
-    return registry, found
-
-
-def bind(client, registry, name, iface, version):
-    new = client.new_id()
-    client.send(message(registry, 0, u32(name), string(iface), u32(version), u32(new)))
-    return new
-
-
-def keymap_fd():
-    text = subprocess.run(
-        ["xkbcli", "compile-keymap", "--layout", "us"], check=True, capture_output=True
-    ).stdout + b"\0"
-    fd = os.memfd_create("vdrag-keymap")
-    os.write(fd, text)
-    return fd, len(text)
-
-
-def drag(args):
-    path = os.path.join(os.environ["XDG_RUNTIME_DIR"], os.environ["WAYLAND_DISPLAY"])
-    c = Client(path)
-    registry, g = globals_of(c)
-    for need in ("wl_seat", "zwlr_virtual_pointer_manager_v1", "zwp_virtual_keyboard_manager_v1"):
-        if need not in g:
-            raise SystemExit(f"compositor lacks {need}")
-    seat = bind(c, registry, g["wl_seat"], "wl_seat", 1)
-    pmgr = bind(c, registry, g["zwlr_virtual_pointer_manager_v1"], "zwlr_virtual_pointer_manager_v1", 1)
-    kmgr = bind(c, registry, g["zwp_virtual_keyboard_manager_v1"], "zwp_virtual_keyboard_manager_v1", 1)
-    ptr = c.new_id()
-    c.send(message(pmgr, 0, u32(seat), u32(ptr)))
-    kbd = c.new_id()
-    c.send(message(kmgr, 0, u32(seat), u32(kbd)))
-    fd, size = keymap_fd()
-    c.send(message(kbd, 0, u32(1), u32(size)), fds=[fd])  # format 1: xkb_v1; fd travels out of band
+    registry = c.new_id(
+        lambda op, body: op == 0 and found.__setitem__(parse_global(body)[1], parse_global(body)[0::2])
+    )
+    c.send(1, 1, u32(registry))  # get_registry
     c.roundtrip()
+    for need in ("wl_compositor", "wl_shm", "xdg_wm_base", "wl_seat", "zwlr_virtual_pointer_manager_v1"):
+        if need not in found:
+            sys.exit(f"vdrag: compositor lacks {need}")
+    found["__registry__"] = registry
+    win = Window(c, found)
+    wait_for(c, lambda: win.configured, 5, "first configure")
+    c.roundtrip()
+    time.sleep(0.5)  # open animation
 
     t0 = time.monotonic()
 
     def ms():
         return int((time.monotonic() - t0) * 1000)
 
-    x, y, w, h = (int(float(v)) for v in args.to.split(","))
-    c.send(message(ptr, 1, u32(ms()), u32(x), u32(y), u32(w), u32(h)))  # motion_absolute
-    c.send(message(ptr, 4))
-    c.roundtrip()
+    # Walk the pointer across three rows until it enters our window.
+    for y in (h_ext // 2, h_ext // 3, 2 * h_ext // 3):
+        for x in range(8, w_ext, 16):
+            c.send(win.vp, 1, u32(ms()), u32(x), u32(y), u32(w_ext), u32(h_ext))  # motion_absolute
+            c.send(win.vp, 4)  # frame
+            c.roundtrip()
+            if win.entered:
+                break
+        if win.entered:
+            break
+    if not win.entered:
+        sys.exit("vdrag: pointer never entered the window")
+    pathlib.Path(args.ready).touch()
+    wait_for(c, lambda: os.path.exists(args.go), 60, "go file")
 
-    c.send(message(kbd, 1, u32(ms()), u32(KEY_LEFTALT), u32(1)))
-    c.send(message(kbd, 2, u32(args.mod_mask), u32(0), u32(0), u32(0)))
-    c.send(message(ptr, 2, u32(ms()), u32(BTN_LEFT), u32(1)))
-    c.send(message(ptr, 4))
+    c.send(win.vp, 2, u32(ms()), u32(BTN_LEFT), u32(1))  # button press
+    c.send(win.vp, 4)
+    wait_for(c, lambda: win.button_serial is not None, 2, "button event")
+    c.send(win.toplevel, 5, u32(win.seat), u32(win.button_serial))  # xdg_toplevel.move
     c.roundtrip()
     period = 1.0 / args.hz
     for _ in range(args.frames):
-        c.send(message(ptr, 0, u32(ms()), fixed(args.dx), fixed(args.dy)))
-        c.send(message(ptr, 4))
-        c.roundtrip()
-        time.sleep(period)
-    time.sleep(args.hold_ms / 1000)
-    c.send(message(ptr, 2, u32(ms()), u32(BTN_LEFT), u32(0)))
-    c.send(message(ptr, 4))
-    c.send(message(kbd, 2, u32(0), u32(0), u32(0), u32(0)))
-    c.send(message(kbd, 1, u32(ms()), u32(KEY_LEFTALT), u32(0)))
+        c.send(win.vp, 0, u32(ms()), fixed(args.dx), fixed(args.dy))  # motion
+        c.send(win.vp, 4)
+        end = time.monotonic() + period
+        while time.monotonic() < end:
+            c.dispatch(max(0.0, end - time.monotonic()))
+    end = time.monotonic() + args.hold_ms / 1000
+    while time.monotonic() < end:
+        c.dispatch(max(0.0, end - time.monotonic()))
+    c.send(win.vp, 2, u32(ms()), u32(BTN_LEFT), u32(0))  # release
+    c.send(win.vp, 4)
     c.roundtrip()
-
-
-def main():
-    ap = argparse.ArgumentParser()
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    d = sub.add_parser("drag")
-    d.add_argument("--dx", type=float, required=True)
-    d.add_argument("--dy", type=float, default=0.0)
-    d.add_argument("--frames", type=int, required=True)
-    d.add_argument("--hz", type=float, default=125.0)
-    d.add_argument("--hold-ms", type=int, default=600)
-    d.add_argument("--mod-mask", type=int, default=ALT_MASK)
-    d.add_argument("--to", required=True, help="X,Y,W,H: press point and output size, logical px")
-    args = ap.parse_args()
-    drag(args)
+    pathlib.Path(args.done).touch()
+    while True:
+        c.dispatch(1.0)
 
 
 if __name__ == "__main__":
@@ -1386,90 +1664,237 @@ if __name__ == "__main__":
 Run: `just --set one_cmd 'python3 -m unittest' test-one tools.test_vdrag`
 Expected: PASS.
 
+A compositor honours `xdg_toplevel.move` only for a serial from a press that is still
+held, so the driver sends `move` as soon as the press event arrives and before any
+motion. If niri rejects the request anyway, `niri.log` shows the move handler's
+reason. Start the Step 4 pilot investigation there.
+
 - [ ] **Step 3: Write `drag-lag-clips.sh`**
 
-Copy `docs/materials/scripts/ring-motion-clips.sh` to
-`docs/materials/scripts/drag-lag-clips.sh`, then make these edits:
-
-1. Replace the header comment with one that describes these sequences:
-   - `scroll-fast`: two tiled panes. Drag the left pane right at 20 px per 8 ms event
-     (2500 px/s) for 24 events, hold 600 ms, release.
-   - `scroll-slow`: the same at 5 px per event (625 px/s) for 60 events.
-   - `float-fast` and `float-slow`: the same two speeds on a floating window, which
-     drops in place.
-   - `native`: `move-column-right`, the control.
-
-   Each sequence records one burst of `RUN_S` (default 3 s) that starts just before
-   the press.
-2. Keep the capture-protocol, nested-instance, `shot*`, `settle` and burst functions
-   unchanged. Delete `corner_crops`, `head_corner_crop`, the scratch-build block and the
-   beam sequences.
-3. Replace `write_config` with a fixture that pins the glass and the nested Mod:
-
 ```bash
-write_config() {   # $1 = path; FLOAT=1 makes kitty float
-    cat > "$1" <<EOF
+#!/usr/bin/env bash
+# drag-lag-clips.sh: review clips for the drag follow-lag stimulus
+# (docs/specs/2026-10-01-drag-follow-lag-design.md §7). Each sequence runs a nested
+# headless niri with one kitty and one vdrag client (docs/materials/scripts/vdrag.py).
+# vdrag drags its own window through xdg_toplevel.move, driven by a virtual pointer,
+# while a burst of screenshots records it, under the capture protocol
+# (tools/capture-meta: preflight, identity, settle before every launch, release).
+# The clips are for the owner's judgment against the native column move; this script
+# records, it does not grade. It does check that the window moved during the grab.
+#
+# Sequences (SEQUENCES env, space-separated, default all):
+#   scroll-fast  tiled: drag vdrag left 20 px per 8 ms event (2500 px/s), 24 events,
+#                hold 600 ms, release
+#   scroll-slow  tiled: 5 px per event (625 px/s), 60 events
+#   float-fast   floating vdrag over kitty: right at 20 px per event, 24 events
+#   float-slow   floating: 5 px per event, 60 events
+#   native       tiled, no drag: move-column-left on vdrag (the control)
+#
+# Env: NIRI_MATERIAL_WORK_ROOT (artifacts land under it), CAPTURE_TASK (the task id
+# authorizing the run), NIRI (default: this checkout's release build, built here).
+# Requires: weston, kitty, swaybg, jq, ImageMagick, python3.
+set -euo pipefail
+
+ROOT=$(git rev-parse --show-toplevel)
+cd "$ROOT"
+EVIDENCE=${NIRI_MATERIAL_WORK_ROOT:?set to the evidence root}
+TASK=${CAPTURE_TASK:?task id authorizing this run}
+RUN=drag-lag-$$-$(date +%s)
+OUT=$EVIDENCE/drag-lag-clips-$(git rev-parse --short HEAD)/$RUN
+RT=$XDG_RUNTIME_DIR/$RUN-rt       # short: nested niri panics on long socket paths
+SEQUENCES=${SEQUENCES:-"scroll-fast scroll-slow float-fast float-slow native"}
+RUN_S=3            # press to settled release is under 2 s at both speeds
+GO_DELAY=0.2       # burst start to the go file
+MOVED_FRACTION=0.02
+VDRAG=$ROOT/docs/materials/scripts/vdrag.py
+UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; VDRAG_PID=; HOST_SEQ=0
+mkdir -p "$OUT" "$RT"
+
+capture_meta() { python3 "$ROOT/tools/capture-meta" "$@"; }
+fail() { echo "FAIL: $*" >&2; exit 1; }
+pid_running() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
+msg() { "$NIRI" msg "$@"; }
+app_ids() { msg -j windows | jq -r '.[].app_id'; }
+wait_app() { for _ in $(seq 100); do app_ids | grep -qx "$1" && return; sleep 0.1; done; fail "no $1 window"; }
+app_window() { msg -j windows | jq -r --arg a "$1" '.[] | select(.app_id == $a) | .id'; }
+
+stop_nested() {
+    if [ -n "$VDRAG_PID" ]; then
+        kill "$VDRAG_PID" 2>/dev/null || true; wait "$VDRAG_PID" 2>/dev/null || true; VDRAG_PID=
+    fi
+    if [ -n "$NIRI_PID" ]; then
+        if [ -S "$NIRI_SOCKET" ]; then msg action quit --skip-confirmation >/dev/null 2>&1 || true; fi
+        for _ in $(seq 50); do pid_running "$NIRI_PID" || break; sleep 0.1; done
+        if pid_running "$NIRI_PID"; then kill "$NIRI_PID" 2>/dev/null || true; fi
+        wait "$NIRI_PID" 2>/dev/null || true
+        NIRI_PID=; NIRI_SOCKET=
+    fi
+    if [ -n "$UNIT" ]; then
+        timeout 10 systemctl --user stop "$UNIT" >/dev/null 2>&1 || true
+        for _ in $(seq 50); do [ -e "$HOST_SOCKET" ] || break; sleep 0.1; done
+        UNIT=; HOST_SOCKET=
+        sleep 4   # weston's GL renderer steps the GPU down over about 2 s
+    fi
+    rm -rf "${RT:?}"/*
+}
+cleanup() {
+    local rc=$?
+    stop_nested
+    rm -rf "$RT"
+    capture_meta release "$OUT" || true
+    exit "$rc"
+}
+trap cleanup EXIT INT TERM
+
+# --- capture protocol -------------------------------------------------------
+capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \
+    --owner-pid $$ --tool weston --tool kitty || fail "preflight refused; see $OUT/capture.json"
+
+TARGET=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
+if [ -z "${NIRI:-}" ]; then
+    cargo build --release
+    NIRI=$TARGET/release/niri
+fi
+[ -x "$NIRI" ] || fail "niri binary not found at $NIRI"
+cp "$NIRI" "$OUT/niri"; NIRI=$OUT/niri
+sha256sum "$NIRI" "$VDRAG" | tee -a "$OUT/SHA256SUMS"
+
+# --- configs -----------------------------------------------------------------
+CHECKER=$OUT/checker.png
+magick -size 160x90 pattern:checkerboard -scale 800% "$CHECKER"
+# The glass is pinned (bevel 12, thickness 20, the live jelly-flex 0.0066, ripple
+# off so flex is the only motion cue). The idle gate is off: the nested instance
+# sees only the virtual pointer.
+write_config() {   # $1 = path; FLOAT=1 opens vdrag floating
+    cat > "$1" <<KDL
 material "tg" { glass { bevel 12; thickness 20; jelly-flex 0.0066; jelly-ripple 0; }; }
-window-rule { match app-id="^kitty$"; material "tg"; ${FLOAT:+open-floating true;} }
-input { mod-key-nested "Alt"; }
+window-rule { match app-id="^(kitty|vdrag)$"; material "tg"; }
+window-rule { match app-id="^vdrag$"; open-floating ${FLOAT:-false}; }
 layout { focus-ring { off; }; gaps 24; }
 hotkey-overlay { skip-at-startup; }
 signal { idle-after-ms 0; }
 spawn-at-startup "swaybg" "-i" "$CHECKER"
-spawn-at-startup "kitty" $KITTY_OPTS "--hold" "true"
-EOF
+spawn-at-startup "kitty" "-o" "cursor_blink_interval=0" "-o" "background_opacity=0.6" "--hold" "true"
+KDL
     "$NIRI" validate -c "$1" >/dev/null 2>&1 || { "$NIRI" validate -c "$1"; fail "$1 does not validate"; }
 }
 write_config "$OUT/tiled.kdl"
-FLOAT=1 write_config "$OUT/floating.kdl"
-```
+FLOAT=true write_config "$OUT/floating.kdl"
 
-4. Add the drag sequences and the drag-start check the spec's pilot needs (§7):
+capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" --input "$0" --input "$VDRAG" \
+    --input "$OUT/tiled.kdl" --input "$OUT/floating.kdl" || fail "identity refused"
 
-```bash
-VDRAG="python3 $ROOT/docs/materials/scripts/vdrag.py"
-window_x() { msg -j windows | jq -r --argjson id "$1" '.[] | select(.id == $id) | .layout.tile_pos_in_workspace_view[0] // empty'; }
-press_point() {   # $1 = id: "X,Y,W,H" at the window's centre on its output
-    local out
-    out=$(msg -j outputs | jq -r '[.[]][0].logical | "\(.width),\(.height)"')
-    msg -j windows | jq -r --argjson id "$1" --arg out "$out" '.[] | select(.id == $id) | .layout as $l
-        | "\($l.tile_pos_in_workspace_view[0] + $l.tile_size[0] / 2),\($l.tile_pos_in_workspace_view[1] + $l.tile_size[1] / 2),\($out)"'
+# --- nested instance ---------------------------------------------------------
+NESTED_WAYLAND=
+start_nested() {   # $1 = config, $2 = sub-run name; sets NIRI_SOCKET and NESTED_WAYLAND
+    capture_meta settle "$OUT" --sub-run "$2" --input "$1" || fail "settle refused before $2; see $OUT/capture.json"
+    HOST_SEQ=$((HOST_SEQ + 1))
+    local host=$RUN-h$HOST_SEQ
+    UNIT=$host-weston; HOST_SOCKET=$XDG_RUNTIME_DIR/$host
+    systemd-run --user --unit="$UNIT" --collect weston --backend=headless --renderer=gl \
+        --shell=kiosk-shell.so --width=1280 --height=720 --socket="$host" >/dev/null 2>&1
+    for _ in $(seq 100); do [ -S "$HOST_SOCKET" ] && break; sleep 0.1; done
+    [ -S "$HOST_SOCKET" ] || fail "Weston socket never appeared at $HOST_SOCKET"
+    ln -s "$HOST_SOCKET" "$RT/$host"
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$host "$NIRI" -c "$1" >> "$OUT/niri.log" 2>&1 &
+    NIRI_PID=$!
+    for _ in $(seq 100); do ls "$RT"/niri.*.sock >/dev/null 2>&1 && break; sleep 0.1; done
+    NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1); export NIRI_SOCKET
+    # The nested instance's own Wayland socket, by absolute path: the driver must not
+    # resolve it against the outer XDG_RUNTIME_DIR.
+    NESTED_WAYLAND=$(ls -t "$RT"/wayland-* 2>/dev/null | grep -v '\.lock$' | grep -vx "$RT/$host" | head -1)
+    [ -S "$NESTED_WAYLAND" ] || fail "nested Wayland socket not found under $RT"
+    wait_app kitty
 }
-drag_sequence() {   # $1 = label, $2 = config, $3 = px per event, $4 = events, $5 = floating 0|1
-    local ids before after
+shot_request() { rm -f "$1"; msg action screenshot-screen --write-to-disk true --show-pointer false --path "$1"; }
+shot_wait() { for _ in $(seq 200); do [ -s "$1" ] && magick identify "$1" >/dev/null 2>&1 && return; sleep 0.05; done; fail "shot $1"; }
+shot() { shot_request "$1"; shot_wait "$1"; }
+settle() {   # two shots 0.6 s apart agree
+    local a=$OUT/settle-a.png b=$OUT/settle-b.png n
+    for _ in $(seq 20); do
+        shot "$a"; sleep 0.6; shot "$b"
+        n=$(magick compare -metric AE "$a" "$b" null: 2>&1 | awk '{print $1}' || true)
+        [ "${n%.*}" = 0 ] && return
+    done
+    fail "scene never settled"
+}
+
+# --- bursts ------------------------------------------------------------------
+BURST_PID=; BURST_T0=
+burst_start() {   # $1 = label, $2 = seconds
+    local d=$OUT/$1; mkdir -p "$d"
+    BURST_T0=$(date +%s.%N)
+    (
+        local now i=0 f
+        while :; do
+            now=$(date +%s.%N)
+            awk -v a="$now" -v b="$BURST_T0" -v s="$2" 'BEGIN { exit !(a - b < s) }' || break
+            i=$((i + 1)); f=$d/f$(printf %03d "$i").png
+            printf '%s %s\n' "$(basename "$f")" "$(awk -v a="$now" -v b="$BURST_T0" 'BEGIN { printf "%.3f", a - b }')" >> "$d/frames.txt"
+            shot "$f"
+        done
+        echo "$1: $i frames in $2 s" >> "$OUT/timing.txt"
+    ) &
+    BURST_PID=$!
+}
+burst_wait() {
+    wait "$BURST_PID"; BURST_PID=
+    local d=$OUT/$1
+    [ -n "$(ls "$d"/f*.png 2>/dev/null)" ] || fail "$1: no frames"
+    magick -delay 8 -loop 0 "$d"/f*.png -scale 50% "$OUT/$1.gif"
+    magick montage "$d"/f*.png -tile 8x -geometry 320x180+2+2 -background '#111' "$OUT/$1-sheet.png"
+    echo "$1: $d ($(ls "$d"/f*.png | wc -l) frames); gif $OUT/$1.gif" | tee -a "$OUT/clips.txt"
+}
+# The frame nearest $2 seconds after the burst start.
+frame_at() { awk -v t="$2" '{ d = $2 - t; if (d < 0) d = -d; if (!n || d < best) { best = d; f = $1; n = 1 } } END { print f }' "$OUT/$1/frames.txt"; }
+
+# --- sequences ---------------------------------------------------------------
+drag_sequence() {   # $1 = label, $2 = config, $3 = dx per event, $4 = events
+    local ready=$RT/$1.ready go=$RT/$1.go done=$RT/$1.done drag_s mid frame changed
     start_nested "$2" "$1"
-    spawn_kitty_to 2
-    ids=($(kitty_ids)); msg action focus-window --id "${ids[0]}"; settle
-    before=$(window_x "${ids[0]}")
-    [ -n "$before" ] || fail "$1: no tile_pos_in_workspace_view for ${ids[0]}"
+    python3 "$VDRAG" --socket "$NESTED_WAYLAND" --extent 1280,720 --dx "$3" --frames "$4" \
+        --hz 125 --hold-ms 600 --ready "$ready" --go "$go" --done "$done" >> "$OUT/vdrag.log" 2>&1 &
+    VDRAG_PID=$!
+    for _ in $(seq 150); do [ -e "$ready" ] && break; pid_running "$VDRAG_PID" || fail "$1: vdrag exited; see $OUT/vdrag.log"; sleep 0.1; done
+    [ -e "$ready" ] || fail "$1: vdrag never found its window"
+    settle
     shot "$OUT/$1-rest.png"
     burst_start "$1" "$RUN_S"
-    sleep 0.2
-    WAYLAND_DISPLAY=$(basename "$NESTED_WAYLAND") $VDRAG drag --to "$(press_point "${ids[0]}")" --dx "$3" --frames "$4" --hz 125 --hold-ms 600
+    sleep "$GO_DELAY"
+    touch "$go"
     burst_wait "$1"
-    after=$(window_x "${ids[0]}")
-    [ "$before" != "$after" ] || fail "$1: the drag did not move the window (Mod not seen by niri bindings? see spec §7 fallback)"
-    echo "$1: window x $before -> $after" | tee -a "$OUT/clips.txt"
+    [ -e "$done" ] || fail "$1: vdrag did not finish the drag; see $OUT/vdrag.log"
+    # Moved during the grab: the frame at mid-drag differs from rest in more than
+    # MOVED_FRACTION of the pixels. The final slot can equal the original one.
+    drag_s=$(awk -v n="$4" 'BEGIN { print n / 125 }')
+    mid=$(awk -v g="$GO_DELAY" -v d="$drag_s" 'BEGIN { print g + d / 2 }')
+    frame=$(frame_at "$1" "$mid")
+    changed=$(magick compare -metric AE -fuzz 5% "$OUT/$1-rest.png" "$OUT/$1/$frame" null: 2>&1 | awk '{print $1}' || true)
+    awk -v c="${changed%.*}" -v f="$MOVED_FRACTION" 'BEGIN { exit !(c > f * 1280 * 720) }' \
+        || fail "$1: window did not move during the grab ($changed px changed at $frame)"
+    echo "$1: moved during grab ($changed px changed at $frame, ${mid}s)" | tee -a "$OUT/clips.txt"
     stop_nested
 }
 seq_native() {
-    local ids
     start_nested "$OUT/tiled.kdl" native
-    spawn_kitty_to 2
-    ids=($(kitty_ids)); msg action focus-window --id "${ids[0]}"; settle
+    python3 "$VDRAG" --socket "$NESTED_WAYLAND" --extent 1280,720 --dx 0 --frames 0 \
+        --ready "$RT/native.ready" --go "$RT/native.never" --done "$RT/native.done" >> "$OUT/vdrag.log" 2>&1 &
+    VDRAG_PID=$!
+    for _ in $(seq 150); do [ -e "$RT/native.ready" ] && break; sleep 0.1; done
+    msg action focus-window --id "$(app_window vdrag)"; settle
     shot "$OUT/native-rest.png"
-    burst_start native "$RUN_S"; sleep 0.2
-    msg action move-column-right
+    burst_start native "$RUN_S"; sleep "$GO_DELAY"
+    msg action move-column-left
     burst_wait native
     stop_nested
 }
-SEQUENCES=${SEQUENCES:-"scroll-fast scroll-slow float-fast float-slow native"}
+
 for s in $SEQUENCES; do
     case $s in
-        scroll-fast) drag_sequence scroll-fast "$OUT/tiled.kdl" 20 24 0 ;;
-        scroll-slow) drag_sequence scroll-slow "$OUT/tiled.kdl" 5 60 0 ;;
-        float-fast)  drag_sequence float-fast "$OUT/floating.kdl" 20 24 1 ;;
-        float-slow)  drag_sequence float-slow "$OUT/floating.kdl" 5 60 1 ;;
+        scroll-fast) drag_sequence scroll-fast "$OUT/tiled.kdl" -20 24 ;;
+        scroll-slow) drag_sequence scroll-slow "$OUT/tiled.kdl" -5 60 ;;
+        float-fast)  drag_sequence float-fast "$OUT/floating.kdl" 20 24 ;;
+        float-slow)  drag_sequence float-slow "$OUT/floating.kdl" 5 60 ;;
         native)      seq_native ;;
         *) fail "unknown sequence $s" ;;
     esac
@@ -1477,21 +1902,22 @@ done
 echo "clips: OK; $OUT/clips.txt, capture record $OUT/capture.json"
 ```
 
-`start_nested` in the copied script sets `NIRI_SOCKET`. Add one line there that exports
-the nested instance's Wayland socket path as `NESTED_WAYLAND`. It is the
-`WAYLAND_DISPLAY` niri reports in its startup log line "listening on Wayland socket",
-which the copied `start_nested` already waits on. `tile_pos_in_workspace_view` and
-`tile_size` are fields of the window layout in `niri-ipc`. On a single-output nested
-instance, workspace-view coordinates are output coordinates, which is what
-`motion_absolute` takes.
+`magick compare` exits 1 when the images differ. Under `set -e` and `pipefail` that
+would abort the script, so every `compare` above ends in `|| true` and reads the count
+from its output. The `material-8e3b73` run hit this failure.
 
-Run `bash -n docs/materials/scripts/drag-lag-clips.sh` and
-`shellcheck docs/materials/scripts/drag-lag-clips.sh` if shellcheck is installed.
-Commit the scripts and the test:
+Check before running:
+- `bash -n docs/materials/scripts/drag-lag-clips.sh`.
+- `shellcheck` on the script, if it is installed.
+- `"$NIRI" validate -c` on both configs, which the script also does. If `open-floating
+  false` does not validate, drop that line from the tiled config and keep it as
+  `open-floating true` for the floating one.
+
+Commit:
 
 ```bash
 git add docs/materials/scripts/vdrag.py docs/materials/scripts/drag-lag-clips.sh tools/test_vdrag.py
-git commit -m "test(material): drag-lag clip driver and fixture (material-4354cf)"
+git commit -m "test(material): drag-lag move client and clip fixture (material-4354cf)"
 ```
 
 - [ ] **Step 4: Pilot one sequence**
@@ -1503,17 +1929,21 @@ desktop session. Run:
 CAPTURE_TASK=material-55f8a0 SEQUENCES=scroll-fast docs/materials/scripts/drag-lag-clips.sh
 ```
 
-Read `clips.txt` and `scroll-fast.gif`. The pilot passes when the window moved (the
-script fails otherwise), the burst has frames, and the frames show the glass flexing
-during the drag. If the window did not move, Mod did not reach niri's bindings. Stop,
-record a `run:` note, and park the task with `--reason decision`, naming the spec §7
-fallback (a minimal client that calls `xdg_toplevel.move`). That fallback is not part
-of this plan. If the preflight refuses on host load, park with `--reason quiet
---waiting-on user --minutes 8` and list the phases: build 3, preflight 0.5, pilot 1,
-full 3.
+Read `clips.txt`, `vdrag.log` and `scroll-fast.gif`. The pilot passes when all of these
+hold:
+- vdrag found its window (`ready`).
+- The drag finished (`done`).
+- The "moved during grab" check passed.
+- The frames show the glass flexing during the drag.
 
-Every attempt ends with a `tasks note material-55f8a0 "run: …"` line in the form the tasks
-skill gives.
+If vdrag reports a protocol error or that the move never started, read `niri.log` for
+the xdg-shell move handling and fix the client. That case is a driver bug in this
+task, not a design question. If the preflight refuses on host load, park with
+`--reason quiet --waiting-on user --minutes 8` and list the phases: build 3, preflight
+0.5, pilot 1, full 3.
+
+Every attempt ends with a `tasks note material-55f8a0 "run: …"` line in the form the
+tasks skill gives.
 
 - [ ] **Step 5: Full run and the brief**
 
@@ -1522,12 +1952,15 @@ Run without `SEQUENCES`. Then:
 1. Add to "Drag baseline finding" in `docs/notes/2026-09-29-material-dynamics-brief.md`
    a "Follow-lag" column holding the Task 2 trace peaks (drag, hold-settle ms, release)
    from `just test-one -p niri drag_dynamics -- --nocapture`. Keep the baseline column.
-2. Add a "Follow-lag clips" subsection: the run directory, the five clips, and a
-   `capture.json` reference.
+2. Add a "Follow-lag clips" subsection: the run directory, the five clips, the
+   per-sequence "moved during grab" lines, and a `capture.json` reference.
 3. Publish the five GIFs and contact sheets on a review page, the same way the
    `material-8e3b73` clips were published. Put its link in the subsection.
-4. Change the spec's status line to: "accepted (spec round 6); implemented in
-   material-4354cf, clips awaiting owner judgment."
+4. In the spec, change the status line to "accepted (spec round 6); implemented in
+   material-4354cf, clips awaiting owner judgment". In §7, replace the virtual-keyboard
+   driver sentence with: "The driver is a move client: it maps its own window, presses
+   a virtual-pointer button on it and calls `xdg_toplevel.move`. The pinned Smithay does
+   not let virtual-keyboard modifiers reach niri's Mod check (plan review round 1)."
 
 ```bash
 git add docs/notes/2026-09-29-material-dynamics-brief.md docs/specs/2026-10-01-drag-follow-lag-design.md
@@ -1541,4 +1974,3 @@ the owner to judge the five clips against the native control: does the drag read
 glass responding to the hand, and does release read as one motion? On acceptance, the
 agent closes the Task 4 step and the parent in one commit and merges the branch into
 `materials-26.04`. If the owner rejects a §4 decision, the agent amends the spec first.
-```
