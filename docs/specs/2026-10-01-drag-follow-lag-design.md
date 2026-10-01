@@ -1,7 +1,8 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** revised after spec round 5 (codex review, verdict revise); rounds
-1–2 and 4 revised, round 3 accepted. Awaiting re-review.
+**Status:** accepted (spec round 6); follower implemented in `material-4354cf`;
+capture preflight refused on host load; no clips captured, owner visual judgment
+still required after a quiet-host retry.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
 **Baseline:** `b172940e` (the task-start commits after it change only the task).
@@ -321,17 +322,10 @@ the layout test, because 2000 px of pointer travel would leave the
 The task's acceptance includes a nested drag, hold and release clip beside
 the native column-move control, for the owner to judge. It runs on a headless
 weston host, never the desktop session, and goes through the same preflight
-and capture-metadata path as `ring-motion-clips.sh`. A scripted drag needs
-a held button and a held Mod. `wlrctl` cannot hold a button, so the plan
-supplies a small driver for `zwlr_virtual_pointer_v1` and
-`zwp_virtual_keyboard_v1`, both of which niri serves: Mod down, button down,
-motion at a fixed cadence and speed, a hold, then release. Smithay may pass
-virtual-keyboard modifiers to the focused client without niri's bindings
-seeing them, so the pilot's first check is that the drag starts at all
-(`niri msg` shows the window moving). If it does not, the fallback is a
-minimal test client that starts the move itself with `xdg_toplevel.move` on
-a button press. The glass values
-are pinned in the script and recorded with the clips. The pilot runs one
+and capture-metadata path as `ring-motion-clips.sh`. The driver is a move client:
+it maps its own window, presses a virtual-pointer button on it and calls
+`xdg_toplevel.move`. The pinned Smithay does not let virtual-keyboard modifiers
+reach niri's Mod check (plan review round 1). The glass values are pinned in the script and recorded with the clips. The pilot runs one
 scrolling drag before the full set: scrolling and floating, a slow and a
 fast speed, each with a hold, plus the native column-move control.
 
