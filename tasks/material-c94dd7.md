@@ -8,7 +8,7 @@ complexity: high
 process: direct
 owner: material-a1d7da
 created: 2026-09-30T10:47:21Z
-updated: 2026-09-30T12:48:28Z
+updated: 2026-10-01T04:15:52Z
 started: 2026-09-30T12:09:27Z
 depends: [material-6e3bda]
 parent: material-f86183
@@ -29,3 +29,6 @@ Implement the pilot-first driver and stdlib analyzer with marker-aligned windows
 - 2026-09-30T12:43:08Z (material-a1d7da): run: headless development pilot preflight refused at load1 4.31 > 2.0; no compositor or trace started; artifact /mnt/ssd3/niri-material/optic-settling/pilot-dev-20260930-1; continue offline fixture work, then queue live pilot for tasks quiet.
 - 2026-09-30T12:48:28Z (material-a1d7da): parked (waiting on agent, quiet; headless, 10 min): On the quiet host, resume this task and run the 18-second headless active-idle pilot with the identified binary; inspect marker/CSV timing and cleanup, then implement the remaining headless check families before matrix capture.
   provenance: {"harness_session":"codex:01a0f202-290f-70e2-b161-8b244605074f","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T04:15:51Z (material-a1d7da): resumed
+  provenance: {"harness_session":"claude-code:601fb2a6-cb37-47f5-a964-59f3bb9f54af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T04:15:51Z (material-a1d7da): run: 8 min (est 1, headless); load wait 0.5, preflight 0.5, probe wait 0.2, hung cleanup 7; failed: on HEAD e4f3337a with a fresh Tracy build (the 02fc43c0 sidecar no longer matched HEAD), the probe kitty never mapped: the driver set WAYLAND_DISPLAY to the IPC socket's basename, so kitty blocked connecting, and on_exit's unbounded wait sat on it (TERM blocked) until killed by hand; capture lock released, no trace (pilot-dev-20261001-1)
