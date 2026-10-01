@@ -1,7 +1,7 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** revised after spec round 4 (codex review, verdict revise); rounds
-1–2 revised and round 3 accepted by agent review. Awaiting re-review.
+**Status:** revised after spec round 5 (codex review, verdict revise); rounds
+1–2 and 4 revised, round 3 accepted. Awaiting re-review.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
 **Baseline:** `b172940e` (the task-start commits after it change only the task).
@@ -70,14 +70,21 @@ the pointer.
    render at the predicted presentation time, after `advance_animations` ran
    at the current time, and the move animations it adds to are read at that
    presentation time too. A stepped follower would lag them by part of a frame.
-3. **Signed time.** `dt = now − t₀` is a signed `f64`. `Clock::now()` can step
-   backwards: after a frame sets the presentation time and `clear()` runs, the
-   next input event reads the earlier real time, and several outputs set
-   different targets in one loop. The linear closed form is exact for
-   negative `dt`, so a backwards read needs no clamp and never panics.
+3. **Backwards time.** `Clock::now()` can step backwards. After a frame sets
+   the presentation time and `clear()` runs, the next input event reads the
+   earlier real time, and several outputs set different targets in one
+   loop. The closed form is not evaluated at negative `dt`: its decaying
+   exponentials grow backwards in time. A probe at damping ratio 10 and
+   stiffness 1e8 overflowed to infinity on a 16 ms backwards read. Time is
+   therefore clamped at the anchor. A read at `now < t₀` returns the anchor
+   state `(L₀, V₀)`, and the anchor time never decreases (§3.4). Every read
+   is a forward evaluation over `dt = max(now − t₀, 0)` and stays finite.
+   The cost is at most a frame's presentation lead of extra decay already
+   applied, which is invisible.
 4. **Drive.** For each pointer delta `d` (logical, downscaled by the overview
-   zoom), the follower re-anchors at `now`: `t₀ = now`,
-   `L₀ = L(now) − d` and `V₀ = V(now)`. The target moves by `d`, the follower
+   zoom), the follower re-anchors at `t = max(now, t₀)`: `t₀ = t`,
+   `L₀ = L(t) − d` and `V₀ = V(t)`. A shift that arrives before the anchor
+   applies its `d` at the anchor, so the anchor time is monotonic. The target moves by `d`, the follower
    does not, and its velocity carries across the event. Events at the same
    instant compose exactly, and events at different instants match the
    continuous integration of the delivered events.
@@ -273,8 +280,10 @@ sample is the one just before the next event.
   `set_unadjusted`. The residual at each frame boundary matches a reference
   follower stepped through those exact times (within 1e-9), and matches a
   fine Euler integration of the same path (within 1e-3 px).
-- **Backwards clock.** Reading after the clock steps back gives the closed
-  form at the earlier time, does not panic, and leaves the anchor unchanged.
+- **Backwards clock.** After the clock steps back, a read returns the anchor
+  state exactly and leaves the anchor unchanged. A shift applies at the
+  anchor time, and the anchor time never decreases. The boundary is
+  continuous: a read at `t₀` and a read 1 ns after it agree within 1e-6 px.
 - **Regrab.** A tile grabbed again while its lag decays keeps the same
   follower through `Starting` with a continuous lag, and `Moving` then
   shifts it. `stop_move_animations` leaves it in place.
@@ -294,11 +303,13 @@ sample is the one just before the next event.
 
 `DragFollower` unit tests cover the closed form against fine Euler
 integration for damping ratios 0.6, 1 and 1.5, the velocity against a
-finite difference of the position, signed `dt`, a shift that carries
+finite difference of the position, the pre-anchor clamp, a shift that carries
 velocity, the settle rule, high damping, and the steady drag. The
 high-damping test (damping ratio 10, stiffness 800, lag −40 px) requires a
 finite lag and velocity at every 16 ms sample out to 60 s, agreement with
-fine Euler integration, and settling in bounded time. The steady-drag test drives 50
+fine Euler integration, and settling in bounded time. At damping ratio 10
+and stiffness 1e8, reads 16 ms before the anchor return the finite anchor
+state. The steady-drag test drives 50
 events of 40 px, each followed by a 16 ms read, at critical damping. The
 recorded lag must reach the discrete fixed point within 1e-6 px (156.79 px,
 computed in the test by iterating the closed form). It lives here, not in

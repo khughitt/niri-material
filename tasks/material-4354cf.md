@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T12:10:35Z
+updated: 2026-10-01T12:26:08Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -40,3 +40,6 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 - 2026-10-01T12:10:21Z (material-4354cf): Spec round 4 dispositions: P1 the follower uses its own closed form, with the overdamped case as two decaying exponentials (λ = −β ± ω₂), leaving upstream Spring untouched; debug-asserts a finite state; high-damping unit test (ratio 10, 60 s, finite, Euler match, settles). P2 §4.4 now says the cap and window trajectory are unchanged while release flex can fall, cancel, briefly reverse or saturate sooner, with an opposing-release test. P2 a separate release-in-motion trace per layout asserts a lag above 10 px before release continuity is checked.
 - 2026-10-01T12:10:35Z (material-4354cf): parked (waiting on user, review): Owner re-reviews .worktrees/material-4354cf/docs/specs/2026-10-01-drag-follow-lag-design.md after round-4 revisions (c89f803a): §5 stable overdamped closed form, §4.4 release flex may change while cap and trajectory stay, §6 release-in-motion and opposing-release tests. On acceptance the agent records the round and drafts the implementation plan for separate review.
   provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T12:21:09Z (material-4354cf): review: spec round 5 — verdict: revise; findings: P2 1; reviewer: codex/gpt-6
+- 2026-10-01T12:21:09Z (material-4354cf): Round 5: all three round-4 findings are addressed by the revised design. The damping-ratio-10 / stiffness-800 forward closed form remains finite through 60 s and matches an independent Euler calculation (maximum lag error 0.000105 px at 10 us steps). Remaining P2 (§3.3 and §5): negative dt makes the new exponentials grow, so they can still overflow for supported parameters. A Rust probe of the proposed formula with damping-ratio 10, stiffness 100000000, lag -40, velocity 0, dt -0.016 returns lag inf and velocity -inf. This conflicts with exact backwards reads that never panic plus finite-state debug assertions, and can retain non-finite state in release builds. Define bounded backwards-time behavior, preferably clamping pre-anchor reads to the anchor state, and add a rollback test at the numerical boundary. The design author owns this contract revision; the release-flex and live-release changes need no further revision.
+- 2026-10-01T12:26:08Z (material-4354cf): Spec round 5 disposition: reads before the anchor return the anchor state, and shifts apply at max(now, t₀), so the anchor time is monotonic and the closed form only ever runs forward; §3.3 now explains why (a 16 ms backwards read at ratio 10 and stiffness 1e8 overflows). Tests: the clamp returns the exact anchor and is continuous at the boundary, and a high-stiffness backwards read stays finite.
