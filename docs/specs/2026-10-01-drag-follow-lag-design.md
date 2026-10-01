@@ -202,9 +202,9 @@ Rejected: following the banded offset in `Starting`.
   would schedule frames forever. The follower writes the overdamped case as
   `C₁e^(λ₁t) + C₂e^(λ₂t)`, with `λ₁,₂ = −β ± ω₂` both negative. It writes
   the critically and underdamped cases in their usual bounded forms, with
-  velocity as the analytic derivative of each. This leaves `Spring`, which
-  is upstream code and only ever evaluated within its own clamped duration,
-  unchanged. A non-finite `L` or `V` is a bug: debug builds assert on it.
+  velocity as the analytic derivative of each. `Spring` is upstream code,
+  so it stays unchanged here. Whether its own overdamped animations can
+  reach the overflow is a separate question. A non-finite `L` or `V` is a bug: debug builds assert on it.
   The follower does not depend on the layout and is unit-tested on its
   own. The tile
   passes `Clock::now()`, so animation slowdown scales the follower like every
