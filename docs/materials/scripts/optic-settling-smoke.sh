@@ -21,11 +21,20 @@ HERE=$(dirname "$(readlink -f "$0")")
 # The library owns Weston and niri. This driver also owns the capture timeout
 # and its clients; a signal must stop all of them before releasing preflight.
 PROBE_PID=; OTHER_PID=; EXPORT_PID=
+alive() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
+# A client stuck before its event loop (kitty blocks TERM until then) must not
+# hold cleanup open: TERM, then KILL after 5 s.
+reap() {
+    kill "$1" 2>/dev/null || true
+    for _ in $(seq 50); do alive "$1" || break; sleep 0.1; done
+    kill -KILL "$1" 2>/dev/null || true
+    wait "$1" 2>/dev/null || true
+}
 on_exit() {
     local rc=$?
     trap - EXIT INT TERM
     for pid in "$CAP_PID" "$EXPORT_PID" "$PROBE_PID" "$OTHER_PID" "$NIRI_PID" "$WESTON_PID"; do
-        [ -z "$pid" ] || { kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; }
+        [ -z "$pid" ] || reap "$pid"
     done
     remove_runtime_dir || rc=1
     capture_meta release "$OUT" || rc=1
@@ -109,13 +118,17 @@ tools_ready
 reserve_tracy_port
 capture_identity --config threshold-ms=5000 --config case=active-idle-resume
 start_nested "$NIRI" "$OUT/active-idle-resume/case.kdl" active-idle-resume
-XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$(basename "$NIRI_SOCKET") \
+# Clients connect to the nested Wayland socket, which the IPC socket's name
+# carries (niri.<display>.<pid>.sock); the IPC socket itself is not one.
+DISPLAY_NAME=$(basename "$NIRI_SOCKET" | sed -E 's/^niri\.(.+)\.[0-9]+\.sock$/\1/')
+[ -S "$RT/$DISPLAY_NAME" ] || fail "no nested Wayland socket $RT/$DISPLAY_NAME"
+XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME \
     kitty --config NONE --class gos-probe -o background_opacity=0 \
     -o cursor_blink_interval=0 sh -c "$IDLE" >> "$OUT/probe.log" 2>&1 &
 PROBE_PID=$!
 for _ in $(seq 100); do [ "$(windows_with "$NIRI" gos-probe)" -ge 1 ] && break; sleep 0.1; done
 [ "$(windows_with "$NIRI" gos-probe)" -eq 1 ] || fail 'probe never opened'
-XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$(basename "$NIRI_SOCKET") \
+XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME \
     kitty --config NONE --class gos-other -o cursor_blink_interval=0 \
     sh -c "$IDLE" >> "$OUT/other.log" 2>&1 &
 OTHER_PID=$!
