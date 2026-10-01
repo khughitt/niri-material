@@ -344,19 +344,7 @@ fn drag_against_reference(
         reference
             .get_or_insert_with(|| DragFollower::new(live_spring(), now))
             .shift(now, step);
-        Op::InteractiveMoveUpdate {
-            window: id,
-            dx: step.x,
-            dy: step.y,
-            output_idx: 1,
-            px: pointer.x,
-            py: pointer.y,
-        }
-        .apply(layout);
-        Op::AdvanceAnimations {
-            msec_delta: FRAME_MS,
-        }
-        .apply(layout);
+        drag_frame(layout, id, pointer, step);
         let got = tile(layout, id).drag_lag();
         let want = reference.as_ref().unwrap().lag(layout.clock.now());
         assert!(
@@ -691,4 +679,312 @@ fn placed_tile_snapshot_residual_includes_lag() {
         (with_lag.x - without.x - lag.x).abs() < 1e-9
             && (with_lag.y - without.y - lag.y).abs() < 1e-9
     );
+}
+
+/// One pointer update followed by one frame, shared by both drag drivers.
+fn drag_frame(
+    layout: &mut Layout<TestWindow>,
+    id: usize,
+    pointer: Point<f64, Logical>,
+    step: Point<f64, Logical>,
+) {
+    Op::InteractiveMoveUpdate {
+        window: id,
+        dx: step.x,
+        dy: step.y,
+        output_idx: 1,
+        px: pointer.x,
+        py: pointer.y,
+    }
+    .apply(layout);
+    Op::AdvanceAnimations {
+        msec_delta: FRAME_MS,
+    }
+    .apply(layout);
+}
+
+fn drag_against_reference_unchecked(
+    layout: &mut Layout<TestWindow>,
+    id: usize,
+    mut pointer: Point<f64, Logical>,
+    step: Point<f64, Logical>,
+    frames: usize,
+) {
+    for _ in 0..frames {
+        pointer += step;
+        drag_frame(layout, id, pointer, step);
+    }
+}
+
+fn options_with_movement(anim: niri_config::Animation) -> Options {
+    let mut options = Options::default();
+    options.animations.window_movement.0 = anim;
+    options
+}
+
+#[test]
+fn regrab_keeps_the_decaying_follower() {
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    drag_against_reference(&mut layout, 1, pointer, Point::from((40., 0.)), 6);
+    end(&mut layout, 1);
+    Op::AdvanceAnimations {
+        msec_delta: FRAME_MS,
+    }
+    .apply(&mut layout);
+    let before = tile(&layout, 1).drag_lag();
+    assert!(before.x.abs() > 1.);
+    // Grab again: Starting must neither drop nor shift it.
+    begin(&mut layout, 1, pointer);
+    Op::InteractiveMoveUpdate {
+        window: 1,
+        dx: 5.,
+        dy: 0.,
+        output_idx: 1,
+        px: pointer.x + 5.,
+        py: pointer.y,
+    }
+    .apply(&mut layout);
+    assert!(matches!(
+        layout.interactive_move,
+        Some(InteractiveMoveState::Starting { .. })
+    ));
+    let t = tile(&layout, 1);
+    assert!(t.has_drag_follower());
+    assert_eq!(t.drag_lag(), before);
+}
+
+#[test]
+fn stop_move_animations_leaves_the_follower() {
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    drag_against_reference(&mut layout, 1, pointer, Point::from((40., 0.)), 4);
+    let Some(InteractiveMoveState::Moving(move_)) = &mut layout.interactive_move else {
+        unreachable!()
+    };
+    let lag = move_.tile.drag_lag();
+    move_.tile.stop_move_animations();
+    assert_eq!(move_.tile.drag_lag(), lag);
+}
+
+#[test]
+fn no_follower_without_a_movement_spring_or_in_starting() {
+    use niri_config::animations::{Animation, Curve, EasingParams, Kind};
+    for anim in [
+        Animation {
+            off: true,
+            ..niri_config::Animations::default().window_movement.0
+        },
+        Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 250,
+                curve: Curve::EaseOutCubic,
+            }),
+        },
+    ] {
+        let mut layout = two_columns();
+        layout.update_options(options_with_movement(anim));
+        let mut pointer = Point::from((50., 100.));
+        lifted(&mut layout, 1, &mut pointer);
+        drag_against_reference_unchecked(&mut layout, 1, pointer, Point::from((40., 0.)), 6);
+        assert!(!tile(&layout, 1).has_drag_follower());
+    }
+    // Starting alone on a fresh tile.
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    begin(&mut layout, 1, pointer);
+    let mut trace = Trace::default();
+    trace.drag(
+        &mut layout,
+        1,
+        "rubber-band",
+        &mut pointer,
+        Point::from((20., 0.)),
+        12,
+    );
+    assert!(!tile(&layout, 1).has_drag_follower());
+    assert_eq!(trace.peak("rubber-band"), 0.);
+}
+
+#[test]
+fn reload_mid_drag_drops_or_reanchors() {
+    use niri_config::animations::{Animation, Curve, EasingParams, Kind, SpringParams};
+    // Off and eased drop the follower.
+    for anim in [
+        Animation {
+            off: true,
+            ..niri_config::Animations::default().window_movement.0
+        },
+        Animation {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 250,
+                curve: Curve::EaseOutCubic,
+            }),
+        },
+    ] {
+        let mut layout = two_columns();
+        let mut pointer = Point::from((50., 100.));
+        lifted(&mut layout, 1, &mut pointer);
+        drag_against_reference(&mut layout, 1, pointer, Point::from((40., 0.)), 4);
+        layout.update_options(options_with_movement(anim));
+        assert!(!tile(&layout, 1).has_drag_follower());
+    }
+    // A new spring keeps the lag continuous and takes the new parameters.
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    let mut reference = drag_against_reference(&mut layout, 1, pointer, Point::from((40., 0.)), 4);
+    let lag = tile(&layout, 1).drag_lag();
+    layout.update_options(options_with_movement(Animation {
+        off: false,
+        kind: Kind::Spring(SpringParams {
+            damping_ratio: 0.7,
+            stiffness: 300,
+            epsilon: 0.0001,
+        }),
+    }));
+    assert_eq!(tile(&layout, 1).drag_lag(), lag);
+    reference.set_spring(
+        layout.clock.now(),
+        crate::layout::drag_follower::FollowSpring {
+            damping_ratio: 0.7,
+            stiffness: 300.,
+        },
+    );
+    for _ in 0..4 {
+        Op::AdvanceAnimations {
+            msec_delta: FRAME_MS,
+        }
+        .apply(&mut layout);
+        let got = tile(&layout, 1).drag_lag();
+        let want = reference.lag(layout.clock.now());
+        assert!(
+            (got.x - want.x).abs() < 1e-9 && (got.y - want.y).abs() < 1e-9,
+            "{got:?} vs {want:?}"
+        );
+    }
+}
+
+#[test]
+fn complete_instantly_drops_follower() {
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    drag_against_reference(&mut layout, 1, pointer, Point::from((40., 0.)), 4);
+    end(&mut layout, 1);
+    assert!(tile(&layout, 1).has_drag_follower());
+    Op::CompleteAnimations.apply(&mut layout);
+    assert!(!tile(&layout, 1).has_drag_follower());
+    assert_eq!(tile(&layout, 1).drag_lag(), Point::from((0., 0.)));
+}
+
+#[test]
+fn staggered_events_match_reference_and_euler() {
+    use crate::layout::drag_follower::DragFollower;
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    let start = layout.clock.now_unadjusted();
+    layout.clock.set_unadjusted(start);
+    let base = layout.clock.now().as_secs_f64();
+    let quarter = Point::from((10., 2.5));
+    let mut reference: Option<DragFollower> = None;
+    // Euler reference on x: integrate the same impulses at 0.1 µs.
+    let spring = live_spring();
+    let (k, c) = (
+        spring.stiffness,
+        2. * spring.damping_ratio * spring.stiffness.sqrt(),
+    );
+    let (mut ex, mut ev, mut et) = (0f64, 0f64, 0f64);
+    for frame in 0..15u64 {
+        for q in 0..4u64 {
+            let t = start + Duration::from_millis(frame * 16 + q * 4);
+            layout.clock.set_unadjusted(t);
+            let now = layout.clock.now();
+            reference
+                .get_or_insert_with(|| DragFollower::new(spring, now))
+                .shift(now, quarter);
+            while et < now.as_secs_f64() - base - 1e-12 {
+                ev += (-k * ex - c * ev) * 1e-7;
+                ex += ev * 1e-7;
+                et += 1e-7;
+            }
+            ex -= quarter.x;
+            pointer += quarter;
+            Op::InteractiveMoveUpdate {
+                window: 1,
+                dx: quarter.x,
+                dy: quarter.y,
+                output_idx: 1,
+                px: pointer.x,
+                py: pointer.y,
+            }
+            .apply(&mut layout);
+        }
+        let boundary = start + Duration::from_millis((frame + 1) * 16);
+        layout.clock.set_unadjusted(boundary);
+        layout.advance_animations();
+        let got = tile(&layout, 1).drag_lag();
+        let frame_now = layout.clock.now();
+        let want = reference.as_ref().unwrap().lag(frame_now);
+        assert!(
+            (got.x - want.x).abs() < 1e-9 && (got.y - want.y).abs() < 1e-9,
+            "frame {frame}"
+        );
+        while et < frame_now.as_secs_f64() - base - 1e-12 {
+            ev += (-k * ex - c * ev) * 1e-7;
+            ex += ev * 1e-7;
+            et += 1e-7;
+        }
+        assert!(
+            (got.x - ex).abs() < 1e-3,
+            "frame {frame}: {} vs euler {ex}",
+            got.x
+        );
+    }
+}
+
+#[test]
+fn reload_zero_stiffness_drops_follower() {
+    use niri_config::animations::{Animation, Kind, SpringParams};
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    drag_against_reference(&mut layout, 1, pointer, Point::from((40., 0.)), 4);
+    assert!(tile(&layout, 1).has_drag_follower());
+    layout.update_options(options_with_movement(Animation {
+        off: false,
+        kind: Kind::Spring(SpringParams {
+            damping_ratio: 1.,
+            stiffness: 0,
+            epsilon: 0.0001,
+        }),
+    }));
+    assert!(!tile(&layout, 1).has_drag_follower());
+    assert_eq!(tile(&layout, 1).drag_lag(), Point::from((0., 0.)));
+}
+
+#[test]
+fn zero_stiffness_never_creates_follower() {
+    use niri_config::animations::{Animation, Kind, SpringParams};
+    let mut layout = two_columns();
+    let mut pointer = Point::from((50., 100.));
+    lifted(&mut layout, 1, &mut pointer);
+    assert!(!tile(&layout, 1).has_drag_follower());
+    // Lift with the normal spring: upstream move animations cannot use stiffness 0.
+    layout.update_options(options_with_movement(Animation {
+        off: false,
+        kind: Kind::Spring(SpringParams {
+            damping_ratio: 1.,
+            stiffness: 0,
+            epsilon: 0.0001,
+        }),
+    }));
+    drag_against_reference_unchecked(&mut layout, 1, pointer, Point::from((40., 0.)), 6);
+    assert!(!tile(&layout, 1).has_drag_follower());
+    assert_eq!(tile(&layout, 1).drag_lag(), Point::from((0., 0.)));
 }
