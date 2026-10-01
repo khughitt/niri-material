@@ -180,7 +180,7 @@ burst_wait() {
     [ -f "${frames[0]}" ] || fail "$1: no frames"
     magick -delay 8 -loop 0 "$d"/f*.png -scale 50% "$OUT/$1.gif"
     magick montage "$d"/f*.png -tile 8x -geometry 320x180+2+2 -background '#111' "$OUT/$1-sheet.png"
-    echo "$1: $d (${#frames[@]} frames); gif $OUT/$1.gif" | tee -a "$OUT/clips.txt"
+    echo "$1: $d (${#frames[@]} frames); gif $OUT/$1.gif (approximate playback: fixed 80 ms/frame; use frames.txt for request intervals, not GIF duration)" | tee -a "$OUT/clips.txt"
 }
 
 # --- sequences ---------------------------------------------------------------

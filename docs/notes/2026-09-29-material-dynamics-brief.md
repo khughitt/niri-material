@@ -130,6 +130,9 @@ the release build had passed in 6 min 2 s. Evidence is under
 No clip, frame, interactive-move confirmation, or review page exists. The pilot
 and full five-sequence capture need a quiet-host retry; the fixture does not
 relax thresholds or stop competing applications.
+When clips are produced, GIF playback is approximate: every frame uses a fixed
+80 ms delay while `frames.txt` records varying request intervals. Judge timing
+from `frames.txt`, not GIF duration; neither source measures display cadence.
 
 The fixture pins jelly-flex 0.0066, bevel 12, thickness 20
 and ripple off; runs `scroll-fast`, `scroll-slow`, `float-fast`, `float-slow` and
