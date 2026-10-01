@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-01T02:18:13Z
+updated: 2026-10-01T02:23:28Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -72,3 +72,11 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-01T02:18:11Z (glass-edges): spec revised for round 3: all four P2 and the P3 verified and accepted. gOut softened gradient now odd (tanhs replaces sign; stadium centerline continuous), log-domain stable (fp32 2M-point sweep: no non-finite off the parallel-side ridge, <=0.0005 rad vs f64), ridge guard gOut=gIn with the slab-centerline crease accepted; tap normals lifted to n.z>=0.05 before refraction (no upward rays, bound holds); displacement stated non-monotonic with 12.1 rows; capped rim F=0.777 at ior 1.28
 - 2026-10-01T02:18:11Z (glass-edges): parked (waiting on user, review): Reviewer runs spec review round 4 on docs/specs/2026-09-30-glass-edge-optics-design.md in .worktrees/glass-edges; on approval the agent runs writing-plans and files the Prism piece
   provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T02:23:23Z (glass-edges): resumed
+  provenance: {"harness_session":"codex:01a0f4b2-bd63-71f2-9779-d6e88ec61afe","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T02:23:24Z (glass-edges): review: spec round 4 — verdict: accept; findings: P3 2; reviewer: codex
+- 2026-10-01T02:23:24Z (glass-edges): Round 3 disposition: all four P2 findings and the capped-Fresnel P3 are addressed by 222c6ed6. Independent checks: prior fp32 overflow and zero-vector inputs now yield finite unit directions; the stadium centerline and deformed diagonal cases converge with sampling step. A seeded 20000-point fp32/f64 sample over half-sizes 2–4000 had no non-finite output and maximum angular difference .000196653 rad; 10000 lifted normals passed -t.z>=1/ior and the inactive .25 floor for ior 1,1.28,3. Accepted parallel-side ridge behavior remains an explicit approximation. Numerical review only; no GPU render or implementation tests run.
+- 2026-10-01T02:23:24Z (glass-edges): P3 — Spec lines 178–180: remove the universal distortion-above-.93 claim. The threshold depends on the starting structural normal; at the rounded slope cap n.z=.04994, distortion .1 with noise z=-.6 already tips it below horizontal. This does not invalidate the lift, but it is an ordinary rounded-rim case rather than only an extreme-distortion case. Fold the wording correction into planning; no new spec-review round is required.
+- 2026-10-01T02:23:24Z (glass-edges): P3 — Spec lines 185–190: normalize(vec3(n.xy,max(n.z,.05))) guarantees z>=.05/sqrt(1+.05^2)=1/sqrt(401)=.0499376, not exactly .05. The formula is sound, matches the structural slope-20 minimum, and retains the upward-ray guarantee. State the exact bound or write approximately .05; no algorithm change or additional spec-review round is required.
+- 2026-10-01T02:23:25Z (glass-edges): parked (waiting on agent): Review assignment complete: spec 222c6ed6 is accepted for planning. Hand back to the design author to fold in the two P3 wording corrections, write the implementation plan under .worktrees/glass-edges/docs/plans, and file the Prism settings task; submit the plan for review before implementation.
+  provenance: {"harness_session":"codex:01a0f4b2-bd63-71f2-9779-d6e88ec61afe","harness_session_source":"CODEX_SESSION_ID"}
