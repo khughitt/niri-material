@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T11:44:53Z
+updated: 2026-10-01T12:10:21Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -35,3 +35,6 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 - 2026-10-01T11:44:45Z (material-4354cf): Spec round 3 disposition: the 50-event fixed-point check moved to the DragFollower unit tests, because 2000 px of pointer travel would leave the 1280×720 test output; the layout test keeps the per-frame reference comparison.
 - 2026-10-01T11:44:53Z (material-4354cf): parked (waiting on user, review): Owner reviews .worktrees/material-4354cf/docs/specs/2026-10-01-drag-follow-lag-design.md, especially the §4 decisions (no held deformation, reuse jelly-flex, window-movement spring, tiled drops unchanged, no rubber-band flex) and the residual-only lag in §3. Then the agent records the owner round, revises or, on acceptance, drafts the implementation plan for separate review.
   provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T12:07:16Z (material-4354cf): review: spec round 4 — verdict: revise; findings: P1 1, P2 2; reviewer: codex/gpt-6
+- 2026-10-01T12:07:16Z (material-4354cf): Spec round 4 findings: P1 (§5 lines 189–191): direct Rust probe of existing Spring::value_at, damping-ratio 10 / stiffness 800 / from -40 / velocity 0, yields -inf at 2.512 s and NaN at 3 s before the physical lag settles; require a stable overdamped evaluation and a high-damping hold-to-settle check. P2 (§4.4 lines 168–171): adding L can cancel or reverse pointer-minus-slot residual, so only the cap and position animation are unchanged, not release flex or saturation; document the accepted behavior and check opposing residuals. P2 (§6 lines 239–244): existing traces hold for 30 frames before release, settling the follower; require a release during motion with an asserted nonzero lag in both layouts so release continuity cannot pass vacuously.
+- 2026-10-01T12:10:21Z (material-4354cf): Spec round 4 dispositions: P1 the follower uses its own closed form, with the overdamped case as two decaying exponentials (λ = −β ± ω₂), leaving upstream Spring untouched; debug-asserts a finite state; high-damping unit test (ratio 10, 60 s, finite, Euler match, settles). P2 §4.4 now says the cap and window trajectory are unchanged while release flex can fall, cancel, briefly reverse or saturate sooner, with an opposing-release test. P2 a separate release-in-motion trace per layout asserts a lag above 10 px before release continuity is checked.

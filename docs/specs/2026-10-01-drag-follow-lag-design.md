@@ -1,7 +1,7 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** accepted by agent review in spec round 3, after revisions in
-rounds 1 and 2; awaiting owner review.
+**Status:** revised after spec round 4 (codex review, verdict revise); rounds
+1–2 revised and round 3 accepted by agent review. Awaiting re-review.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
 **Baseline:** `b172940e` (the task-start commits after it change only the task).
@@ -165,11 +165,18 @@ disables it as it disables every move animation. Rejected: a dedicated
 
 ### 4.4 Long tiled drops saturating at the cap
 
-**Recommendation: unchanged.** A tiled release still starts from `pointer − slot`
-and saturates at the cap, as in the baseline (2.96 px). The follower adds at
-most its lag at the release instant, so it neither creates nor removes that
-saturation. Reshaping release flex is the max-flex cap question on
-`material-6d4de5`. Rejected: scaling the release term here.
+**Recommendation: leave the cap and the release trajectory unchanged.** A
+tiled release still animates the window from `pointer − slot`, and the cap
+still bounds the flex. Release flex itself can change, though. The residual
+is the release term plus the live lag, and the lag points against the
+pointer's last motion. When the drop slot lies behind the drag direction
+(the user overshoots and the window springs back), the lag opposes the
+release term. Flex at the release can then be lower than the baseline's,
+cancelled, or briefly reversed. When the slot lies ahead, the lag adds and
+the flex saturates sooner. Both follow from treating the follower as one
+more motion stimulus, and the clip review (§7) judges them. Reshaping
+release flex is the max-flex cap question on `material-6d4de5`. Rejected:
+scaling or clamping the release term here.
 
 ### 4.5 Does the rubber band flex?
 
@@ -185,11 +192,21 @@ Rejected: following the banded offset in `Starting`.
 - **`DragFollower`** (new, `src/layout/drag_follower.rs`): its only state is
   the anchor `(t₀, L₀, V₀)`, with `L₀` and `V₀` per axis, and the spring parameters. Its operations
   are `shift(now, d)`, `lag(now)`, `is_settled(now)` and `set_params(now, p)`,
-  each taking a time so the type stays pure. Position comes from
-  `Spring::value_at` (`from = L₀`, `to = 0`, `initial_velocity = V₀`),
-  extended to signed time. Velocity comes from a new `Spring::velocity_at`,
-  the analytic derivative of all three `oscillate` branches. The follower
-  does not depend on the layout and is unit-tested on its own. The tile
+  each taking a time so the type stays pure. Position and velocity come from
+  the follower's own closed form for all three damping regimes, not from
+  `Spring::value_at`. `Spring::oscillate` writes the overdamped branch as
+  `e^(−βt) · cosh(ω₂t)`. At large `t` the exponential underflows to 0 and
+  `cosh` overflows to infinity, and their product is NaN. A direct probe of
+  damping ratio 10, stiffness 800 and a lag of −40 px gave infinity at
+  2.5 s and NaN at 3 s. A NaN lag never compares as settled, so the tile
+  would schedule frames forever. The follower writes the overdamped case as
+  `C₁e^(λ₁t) + C₂e^(λ₂t)`, with `λ₁,₂ = −β ± ω₂` both negative. It writes
+  the critically and underdamped cases in their usual bounded forms, with
+  velocity as the analytic derivative of each. This leaves `Spring`, which
+  is upstream code and only ever evaluated within its own clamped duration,
+  unchanged. A non-finite `L` or `V` is a bug: debug builds assert on it.
+  The follower does not depend on the layout and is unit-tested on its
+  own. The tile
   passes `Clock::now()`, so animation slowdown scales the follower like every
   other animation.
 - **`Tile`**: holds `drag_follower: Option<DragFollower>`. `drag_follow(d)`
@@ -236,12 +253,21 @@ sample is the one just before the next event.
 - **Hold decays to zero.** After the drag stops, the residual falls below the
   settle threshold. The tile then drops its follower, and
   `are_animations_ongoing()` turns false within a bounded number of frames.
-- **Release continuity.** At the zero-time read straight after
-  `interactive_move_end`, before any advance, `motion_residual()` minus the
-  release move animation's residual equals `lag(now)` read just before the
-  end. One frame later it equals that lag evaluated 16 ms on. In floating,
-  where the drop is in place, the whole residual is the lag, and it decays
-  to zero.
+- **Release continuity.** A separate trace in each layout releases during
+  motion, in the same frame as the last drag step. The existing traces hold
+  for 30 frames first, which lets the follower settle. The test asserts a
+  nonzero lag (above 10 px) just before `interactive_move_end`. At the
+  zero-time read straight after the end, before any advance,
+  `motion_residual()` minus the release move animation's residual equals
+  `lag(now)` read just before the end. One frame later it equals that lag
+  evaluated 16 ms on. In floating, where the drop is in place, the whole
+  residual is the lag, and it decays to zero.
+- **Opposing release.** A scrolling drag that moves away from the drop
+  slot and releases in motion, so the lag opposes the release term, records
+  release flex below the same release with the follower disabled. A drag
+  toward the slot records release flex at least as large. Neither changes
+  the window's release trajectory: `render_offset()` is identical with and
+  without the follower.
 - **Rate independence.** One pointer path is delivered once as one event per
   frame and once as four events per frame, staggered at 4 ms with
   `set_unadjusted`. The residual at each frame boundary matches a reference
@@ -267,9 +293,12 @@ sample is the one just before the next event.
   brief gets a column for the new run.
 
 `DragFollower` unit tests cover the closed form against fine Euler
-integration for damping ratios 0.6, 1 and 1.5, `velocity_at` against a
-finite difference of `value_at`, signed `dt`, a shift that carries velocity,
-the settle rule, and the steady drag. The steady-drag test drives 50
+integration for damping ratios 0.6, 1 and 1.5, the velocity against a
+finite difference of the position, signed `dt`, a shift that carries
+velocity, the settle rule, high damping, and the steady drag. The
+high-damping test (damping ratio 10, stiffness 800, lag −40 px) requires a
+finite lag and velocity at every 16 ms sample out to 60 s, agreement with
+fine Euler integration, and settling in bounded time. The steady-drag test drives 50
 events of 40 px, each followed by a 16 ms read, at critical damping. The
 recorded lag must reach the discrete fixed point within 1e-6 px (156.79 px,
 computed in the test by iterating the closed form). It lives here, not in
