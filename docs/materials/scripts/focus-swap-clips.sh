@@ -216,8 +216,12 @@ drive() {   # $1 = label, $2... = niri msg action
 # halves of the 1280 x 720 output; the pair with the largest step is kept
 # side by side as <label>-step.png.
 pane_rmse() {   # $1 $2 = frames, $3 = x offset
-    magick compare -metric RMSE <(magick "$1" -crop 640x720+"$3"+0 +repage png:-) \
-        <(magick "$2" -crop 640x720+"$3"+0 +repage png:-) null: 2>&1 | sed -n 's/.*(\([0-9.e-]*\)).*/\1/p'
+    # compare exits 1 when the images differ, which is the measurement; 2 is an error.
+    local out rc=0
+    out=$(magick compare -metric RMSE <(magick "$1" -crop 640x720+"$3"+0 +repage png:-) \
+        <(magick "$2" -crop 640x720+"$3"+0 +repage png:-) null: 2>&1) || rc=$?
+    [ "$rc" -le 1 ] || fail "compare $1 $2 failed ($rc): $out"
+    sed -n 's/.*(\([0-9.e-]*\)).*/\1/p' <<< "$out"
 }
 diffs() {   # $1 = label
     local d=$OUT/$1 prev='' f t left right
