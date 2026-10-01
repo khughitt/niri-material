@@ -136,14 +136,23 @@ for _ in $(seq 100); do [ "$(windows_with "$NIRI" gos-other)" -ge 1 ] && break; 
 [ "$(windows_with "$NIRI" gos-other)" -eq 1 ] || fail 'focus thief never opened'
 sleep 1
 case_dir=$OUT/active-idle-resume
-capture_seconds=18
-[ "$MODE" = matrix ] && capture_seconds=610
+# Tracy records GPU zones only several seconds into a capture (6.5 s and
+# 10.6 s observed; CPU zones start at once), so a pause in the first seconds
+# has no GPU active-before control. Pointer motion every 3 s until 12 s
+# keeps input active under the 5 s threshold; the pause follows about 5 s
+# later, then a 14 s (pilot) or 610 s (matrix) wait until the resuming motion.
+capture_seconds=32
+[ "$MODE" = matrix ] && capture_seconds=630
+pointer() { msg "$NIRI" action spawn -- wlrctl pointer move 1 0; }
+pointer
 timeout "$((capture_seconds + 60))" "$TOOLS/tracy-capture" -o "$case_dir/capture.tracy" \
     -a 127.0.0.1 -p "$TRACY_PORT" -s "$capture_seconds" > "$case_dir/capture.log" 2>&1 &
 CAP_PID=$!
 capture_ready active-idle-resume
-[ "$MODE" = matrix ] && sleep 606 || sleep 14
-msg "$NIRI" action spawn -- wlrctl pointer move 1 0
+pointer
+for _ in 1 2 3 4; do sleep 3; pointer; done
+[ "$MODE" = matrix ] && sleep 610 || sleep 14
+pointer
 capture_wait
 csvexport --messages "$case_dir/capture.tracy" "$case_dir/messages.csv"
 csvexport --unwrap "$case_dir/capture.tracy" "$case_dir/cpu.csv"
@@ -154,6 +163,8 @@ import json, pathlib, sys
 sys.path.insert(0, sys.argv[1])
 from tools.optic_settling import csv_rows, parse_edges, zones, BEAT
 directory = pathlib.Path(sys.argv[2])
+manifest = json.loads((directory.parent / 'manifest.json').read_text())
+hold_ns, = (case['hold_ns'] for case in manifest['cases'] if case['name'] == directory.name)
 edges = parse_edges(csv_rows(directory / 'messages.csv', ('MessageName', 'total_ns')))
 if len(edges) != 2:
     raise ValueError(f'expected pause and resume markers, got {len(edges)}')
@@ -163,7 +174,9 @@ if not beats:
     raise ValueError('capture contains no heartbeat')
 observation = dict(trace_start_ns=0, trace_end_ns=max(t + d for t, d in beats),
                    active_before=[pause - 2_000_000_000, pause - 500_000_000],
-                   hold=[pause + 1_000_000_000, pause + 6_000_000_000],
+                   # The edge flush lands about 1.1 s after the pause marker
+                   # (pilot-dev-20261001-2); the zero-draw hold starts after it.
+                   hold=[pause + 2_000_000_000, pause + 2_000_000_000 + hold_ns],
                    active_after=[resume + 500_000_000, resume + 2_500_000_000],
                    expected_pixels='equal', before_rgb='before.rgb', after_rgb='after.rgb',
                    topology=['headless-1'], stimuli_intervals=[])
