@@ -2312,7 +2312,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                     scene_motion_residual(
                         view_residual,
                         col.render_offset(),
-                        tile.animation_residual(),
+                        tile.motion_residual(),
                     )
                 })
         })
@@ -2979,7 +2979,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
                 let motion_residual = scene_motion_residual(
                     self.target_view_pos() - self.view_pos(),
                     col_render_off,
-                    tile.animation_residual(),
+                    tile.motion_residual(),
                 );
                 tile.render(
                     ctx.r(),

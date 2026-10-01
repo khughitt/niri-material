@@ -13,6 +13,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram};
 use smithay::backend::renderer::Texture as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
+use super::drag_follower::{DragFollower, FollowSpring};
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::shadow::Shadow;
@@ -106,6 +107,10 @@ pub struct Tile<W: LayoutElement> {
 
     /// The animation of a tile visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
+
+    /// Follow-lag of an interactive move: decays on the tile through release
+    /// (docs/specs/2026-10-01-drag-follow-lag-design.md §3).
+    drag_follower: Option<DragFollower>,
 
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
@@ -450,6 +455,7 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
+            drag_follower: None,
             alpha_animation: None,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
@@ -934,6 +940,12 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
 
+        if self.drag_follower.as_ref().is_some_and(|f| {
+            self.clock.should_complete_instantly() || f.is_settled(self.clock.now())
+        }) {
+            self.drag_follower = None;
+        }
+
         if let Some(alpha) = &mut self.alpha_animation {
             if !alpha.hold_after_done && alpha.anim.is_done() {
                 self.alpha_animation = None;
@@ -970,8 +982,11 @@ impl<W: LayoutElement> Tile<W> {
     /// but is not a layout transition, and `are_transitions_ongoing` also
     /// gates the pointer-focus refresh in `Niri::refresh_pointer_contents`,
     /// which a 16–24 s run must not hold up (design 2026-09-19 §2).
+    /// The drag follower lives here for the same reason: it is cosmetic and must
+    /// not hold up pointer focus after a drop.
     pub fn are_animations_ongoing(&self) -> bool {
         self.are_transitions_ongoing()
+            || self.has_drag_follower()
             || self.window.rules().baba_is_float == Some(true)
             || self.signal_render_visible
                 && self
@@ -1180,6 +1195,43 @@ impl<W: LayoutElement> Tile<W> {
             offset.y += move_.from * move_.anim.value();
         }
         offset
+    }
+
+    /// The target moved by `delta` (workspace logical units) during an interactive
+    /// move; the follower lags behind it.
+    pub fn drag_follow(&mut self, delta: Point<f64, Logical>) {
+        if self.clock.should_complete_instantly() {
+            return;
+        }
+        let Some(spring) = FollowSpring::from_config(&self.options.animations.window_movement.0)
+        else {
+            return;
+        };
+        let now = self.clock.now();
+        self.drag_follower
+            .get_or_insert_with(|| DragFollower::new(spring, now))
+            .shift(now, delta);
+    }
+
+    pub fn drag_lag(&self) -> Point<f64, Logical> {
+        match &self.drag_follower {
+            Some(f) if !self.clock.should_complete_instantly() => f.lag(self.clock.now()),
+            _ => Point::from((0., 0.)),
+        }
+    }
+
+    /// The jelly's motion stimulus: move animations plus the drag follow-lag.
+    pub fn motion_residual(&self) -> Point<f64, Logical> {
+        self.animation_residual() + self.drag_lag()
+    }
+
+    pub(super) fn has_drag_follower(&self) -> bool {
+        self.drag_follower.is_some()
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear_drag_follower(&mut self) {
+        self.drag_follower = None;
     }
 
     pub fn start_open_animation(&mut self) {
