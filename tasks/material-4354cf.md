@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T11:42:00Z
+updated: 2026-10-01T11:44:04Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -29,3 +29,5 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
   provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-01T11:40:48Z (material-4354cf): review: spec round 1 — verdict: revise; findings: P1 3, P2 6, P3 4; reviewer: claude-code/claude-opus-5-5
 - 2026-10-01T11:42:00Z (material-4354cf): Spec round 1 dispositions: P1-1 follower anchored at last shift and read lazily at clock.now(), never stepped in advance_animations; P1-2 signed f64 dt with backwards-clock test; P1-3 steady-lag test pins the discrete fixed point (156.79 px recorded) and the ±d/2 band, flex figures corrected to 1.00–1.22 px live. P2-4 staggered 4 ms events via set_unadjusted against a reference follower and Euler; P2-5 replaced baseline assertions named; P2-6 follower survives regrab and ignores stop_move_animations; P2-7 all damping ratios plus Spring::velocity_at; P2-8 update_config drops on off/easing/complete-instantly and re-anchors on spring change; P2-9 clip driver adds virtual keyboard, pilot checks drag starts, xdg_toplevel.move client fallback. P3 zoom rescale, release read timing, unmap snapshot freeze and pointer warps stated.
+- 2026-10-01T11:43:46Z (material-4354cf): review: spec round 2 — verdict: revise; findings: P1 1, P2 1, P3 5; reviewer: claude-code/claude-opus-5-5
+- 2026-10-01T11:44:04Z (material-4354cf): Spec round 2 dispositions: P1 drag check compares every recorded frame to a reference DragFollower driven through the same events (1e-9), plus the 156.79 px fixed point on a separate 50-frame drag; the ±d/2 band is dropped. P2 complete-instantly is checked where Animation::is_done checks it (advance_animations drops the follower, lag reads zero), not in update_config, which a reload calls before it sets the flag; tested through Op::CompleteAnimations. P3: 485 px reset figure, ±10/±5 px sawtooth, 'delivered events' wording, the anchor is the only state, are_animations_ongoing tests presence.
