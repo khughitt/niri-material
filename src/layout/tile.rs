@@ -493,6 +493,19 @@ impl<W: LayoutElement> Tile<W> {
         self.view_size = view_size;
         self.scale = scale;
         self.options = options;
+        // Off, easing, or a spring that cannot settle ends drag lag. A changed
+        // spring takes over continuously; instant completion is handled on advance.
+        match FollowSpring::from_config(&self.options.animations.window_movement.0) {
+            None => self.drag_follower = None,
+            Some(spring) if spring.stiffness <= 0. => self.drag_follower = None,
+            Some(spring) => {
+                if let Some(f) = &mut self.drag_follower {
+                    if f.spring() != spring {
+                        f.set_spring(self.clock.now(), spring);
+                    }
+                }
+            }
+        }
         self.cut_beam_if_forbidden();
 
         let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
@@ -1207,6 +1220,9 @@ impl<W: LayoutElement> Tile<W> {
         else {
             return;
         };
+        if spring.stiffness <= 0. {
+            return;
+        }
         let now = self.clock.now();
         self.drag_follower
             .get_or_insert_with(|| DragFollower::new(spring, now))
