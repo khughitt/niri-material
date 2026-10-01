@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T13:29:51Z
+updated: 2026-10-01T13:43:04Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -63,3 +63,7 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 - 2026-10-01T13:29:47Z (material-4354cf): Plan round 2 dispositions: P1 vdrag lifts 260 px vertically after xdg_toplevel.move (the grab picks a view pan for mostly horizontal tiled motion past 8 px; the lift crosses the 256 px threshold), pauses 500 ms, then runs the timed segment; the script confirms Moving by IPC workspace_id null during the segment (Layout::with_windows), replacing the pixel check a pan could pass. P2 stripes are premultiplied translucent (alpha 0.6) with a test. P2 fixture probe moved to Step 5b after wiring. P2 tiles_with_render_positions destructured as a 3-tuple. P2 stop_nested kills and reaps the burst worker first, from the EXIT/INT/TERM trap. Extracted vdrag.py compiles, its 6 unit tests pass, the script passes bash -n and shellcheck -S warning.
 - 2026-10-01T13:29:51Z (material-4354cf): parked (waiting on user, review): Owner re-reviews .worktrees/material-4354cf/docs/plans/2026-10-01-drag-follow-lag.md (plan round 3: vertical lift and IPC Moving check, translucent stripes, Step 5b probe, 3-tuple iterator, burst cleanup) and picks execution (subagent-driven recommended). Then the agent records the round and starts material-0daa80 in this worktree.
   provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T13:36:54Z (material-4354cf): review: plan round 3 — verdict: accept; findings: none; reviewer: codex/gpt-6
+- 2026-10-01T13:36:54Z (material-4354cf): Plan round 3: all five round-2 findings are addressed. Source tracing confirms vertical recognition selects Move, the 260 px lift crosses the tiled threshold, and workspace_id null distinguishes Moving from a view pan. Stripe pixels have alpha 153 and premultiplied channels. Release fixture probing follows follower wiring; release_run uses the iterator 3-tuple. stop_nested kills and waits for the screenshot worker before niri. Independently checked the planned Python syntax and every stripe pixel, lift bounds/threshold, bash -n and shellcheck -S warning; all passed. No Rust compilation or nested capture was performed. Review assignment complete; the plan author owns implementation and the required nested pilot.
+- 2026-10-01T13:43:04Z (material-4354cf): resumed
+  provenance: {"harness_session":"codex:01a0f7b2-5d00-73d3-8722-9fc32e652fbd","harness_session_source":"CODEX_SESSION_ID"}
