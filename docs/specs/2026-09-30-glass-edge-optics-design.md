@@ -1,6 +1,8 @@
 # Glass edge optics
 
-**Status:** draft for review, 2026-09-30. Task: `material-be611b`.
+**Status:** revised after spec review round 1 (ray-consistent path, two-boundary
+profile coordinate, highlight transition, interior-light attenuation),
+2026-09-30; pending review. Task: `material-be611b`.
 Follow-on idea that builds on this geometry: `material-7f5751` (content in the
 glass).
 
@@ -52,37 +54,92 @@ Total internal reflection lines on thick edges are out of scope (section 8).
 
 ### 3.1 Height-field bevel (core)
 
-Let `u = clamp(innerDist / chamfer, 0, 1)`, 0 at the face edge and 1 at the
-silhouette, and `R = min(chamfer, thickness)` the rise. The bevel drops from
-the face by
+**Coordinate.** The bevel lies between two boundaries. The inner face
+(`innerDist`) trails the jelly move and resize. The silhouette (`outerDist`,
+negative inside) stays fixed. A coordinate measured against `chamfer` alone
+breaks under motion: a 3 px face shift at chamfer 12 leaves widths of 9 and
+15 on opposite sides. The profile is therefore measured against both
+boundaries:
 
-    drop(u) = R * (1 - (1 - u^k)^(1/k))
+    w = innerDist - outerDist         // local bevel width
+    u = innerDist / w                 // 0 at the face edge, 1 at the silhouette
+
+`u` reaches both ends on every side, however the face is displaced. At rest
+the two boxes are concentric offsets (`outer_r = inner_r + chamfer`), so
+`w = chamfer` and `u = innerDist / chamfer` everywhere, corners included.
+Where `w` falls below one physical pixel (`1 / niri_scale`) the fragment is
+rim (`u = 1`).
+
+**Profile.** `R = min(chamfer, thickness)` is the rise, constant around the
+perimeter: the face is a rigid plane at height `thickness`, and the silhouette
+sits `R` below it whatever the jelly does. Local height is
+
+    h = thickness - R * f(u),   f(u) = 1 - (1 - u^k)^(1/k)
 
 with `k = bevel-profile`. `k = 1` is today's planar chamfer. `k = 2` is a
 circular quarter-round, and larger `k` a squircle that stays flat longer and
-rolls off harder. For `k > 1` the slope is 0 at the face, so the face joins
-the bevel without a crease, and vertical at the silhouette, so Fresnel
-reaches 1 there.
+rolls off harder. For `k > 1`, `f'(0) = 0`, so the face joins the bevel
+without a crease, and `f'(1)` is unbounded, so Fresnel reaches 1 at the rim.
+On the face, `h = thickness`. With `thickness <= bevel` the glass thins to
+zero at the silhouette. With `thickness > bevel` a vertical wall of
+`thickness - R` remains, as today.
 
-- **Normal.** `n = normalize(vec3(g * s, 1))` with `g` the inner-face outward
-  gradient, as today, and `s = drop'(u) / chamfer`. `s` is capped at 20
-  (normal z of about 0.05): the analytic slope is infinite at `u = 1`.
-- **Local height.** `h = thickness - drop(u)` on the bevel and `thickness` on
-  the face. At `k = 1` with `thickness <= bevel` the glass thins to zero at the
-  silhouette. With `thickness > bevel` a vertical wall of `thickness - R`
-  remains, as today.
-- **Refraction** displaces by `refract(...).xy * h`, and the anisotropic smear
-  scales from `h`. Near the rim the image of the window's interior is drawn
-  outward and compressed, which is the lens look of a rounded edge. At `k = 1`
-  the displacement now falls linearly to `thickness - R` rather than holding
-  constant.
-- **Attenuation** uses `h / max(cos, 0.25)`. The tint thins with the glass
-  instead of peaking on the bevel.
+**Normal.** From the height field:
 
-`slabSurface` gains `h` and `u` as outputs. Ring and aurora keep their
-existing depth of `0.2 * thickness`: the ring lands near the face, where
-`h = thickness`, and the spill already fades with `u`. The ring's tuning is
-not reopened.
+    grad_u = (-outerDist * gIn + innerDist * gOut) / (w * w)
+    n      = normalize(vec3(R * f'(u) * grad_u, 1))
+
+`gIn` and `gOut` are the outward unit gradients of the inner and outer
+rounded boxes (`sdRoundedBoxGrad`). At rest they coincide, `grad_u = g /
+chamfer`, and `k = 1` reproduces today's normal exactly. Under motion,
+including at deformed corners, the weighted blend stays continuous. Stable-normal
+policy: the slope `|R * f'(u) * grad_u|` is capped at 20 (`n.z >= 0.05`).
+
+**Ray model.** The glass is a height field over the backdrop plane. A ray
+refracted at the surface, `t = refract((0, 0, -1), n, 1 / ior)`, meets that
+plane after the length
+
+    L = h / max(-t.z, 0.25)
+
+Both effects follow this one ray:
+
+- **Refraction.** Each tap displaces by `t.xy * L`, using its own normal
+  (perturbed), its own ior (chromatic aberration) and its own height
+  (`h * (1 + anisotropic-blur * (i + r) / count)`, today's smear rule applied
+  to `h`).
+- **Attenuation.** Beer-Lambert takes `L` from the structural normal at
+  `ior`: `att = attenuation-color ^ (L / attenuation-distance)`. Distortion is
+  surface microstructure: it moves taps but does not lengthen the path, so face
+  attenuation is today's exactly.
+
+On the face, `n = (0, 0, 1)` gives `L = thickness` and no displacement,
+today's values. Under distortion, face displacement grows by `1 / -t.z`,
+which stays under 1 % for normals within 20 degrees. The 0.25 floor keeps
+today's four-times bound. Since a refracted ray cannot pass the critical
+angle, `-t.z >= sqrt(1 - 1 / ior^2)`, which is 0.62 at ior 1.28: the floor
+binds only below ior 1.033.
+
+Reference values at chamfer 12, ior 1.28 (`u = 0+` is the bevel side of the
+face edge). These are the test vectors for the Rust mirror (section 6):
+
+| thickness | k | u | h | n.z | L | displacement | today: path, displacement |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 6 (thin) | 1 | 0+ | 6.00 | 0.894 | 6.03 | 0.64 | 6.71, 0.64 |
+| 6 | 1 | 0.9 | 0.60 | 0.894 | 0.60 | 0.06 | 6.71, 0.64 |
+| 6 | 2 | 0.9 | 2.62 | 0.696 | 2.67 | 0.55 | 6.71, 0.64 |
+| 12 (equal) | 1 | 0.5 | 6.00 | 0.707 | 6.12 | 1.22 | 16.97, 2.39 |
+| 12 | 2 | 0.9 | 5.23 | 0.436 | 5.55 | 1.85 | 16.97, 2.39 |
+| 31.2 (thick) | 1 | 1 | 19.20 | 0.707 | 19.59 | 3.89 | 44.12, 6.20 |
+| 31.2 | 2 | 0.9 | 24.43 | 0.436 | 25.91 | 8.64 | 44.12, 6.20 |
+| 31.2 | 2 | 1 | 19.20 | 0.050 | 23.69 | 13.87 | 44.12, 6.20 |
+
+The path now falls toward the rim at every thickness, instead of the 1.41×
+plateau. On a rounded bevel the displacement grows toward the rim, which is
+the lens compression of a bullnose edge.
+
+`slabSurface` gains `h`, `u` and `w` as outputs. The ring's spill switches
+from `innerDist / slabChamfer` to `u`: identical at rest, and under jelly the
+spill now reaches the silhouette on every side.
 
 `bevel-profile` is a core parameter, `FloatOrInt<1, 8>`, default 1. Prism
 key: `glass.bevelProfile`.
@@ -94,16 +151,31 @@ becomes
 
     glass = (1 - F) * transmitted + within + specular + emissive
 
-with `F` the existing Schlick term on the structural normal. `within` (ring,
-aurora) stays unscaled so the ring's tuning holds. At the rim of a rounded
-bevel `F -> 1`, so the edge shows what it reflects rather than a tinted
-backdrop.
+with `F` the existing Schlick term on the structural normal. At the rim of a
+rounded bevel `F -> 1`, so the edge shows what it reflects rather than a
+tinted backdrop. `within` is not scaled by `1 - F`: it is light already
+inside the glass, and its exit through the surface is part of the ring and
+aurora gains, which stay as tuned.
+
+**Interior light attenuation.** Ring and aurora keep their `pow(att, 0.2)`
+factor, applied to the new `att`. Interior light crosses the same slab, so it
+follows the same ray, a fifth of the path. This is an intended change, and
+it is confined to the bevel:
+
+- on the face, where the ring band runs, `L = thickness` and the factor is
+  today's exactly;
+- on the bevel, spill and aurora brighten where the glass thins. Example:
+  thickness = chamfer = 12, `u = 0.5`, `k = 1`, attenuation 0.1 at distance
+  10: the factor rises from 0.458 to 0.754.
+
+Rejected alternative: keeping today's path for interior light only. That
+gives one slab two path models, a compatibility layer under another name.
 
 What a pane edge reflects is the room around it. The nearest stand-in the
 compositor has is the scene just beyond the window. The `reflection` optic
 adds
 
-    F * w * srgbToLinear(sampleBackground(v + gPerturbed * reach / area))
+    F * wr * srgbToLinear(sampleBackground(v + gPerturbed * reach / area))
 
 where:
 
@@ -111,8 +183,8 @@ where:
   outward, one thickness further;
 - `gPerturbed = normalize(n.xy)` from the perturbed normal, so distortion and
   jelly ripple move the reflection;
-- `w = reflection * smoothstep(0, 0.1, u)`, zero on the face so the
-  undefined face direction never produces a seam;
+- `wr = reflection * smoothstep(0, 0.1, u)`: zero on the face, where the
+  direction is undefined, and continuous for every `k`;
 - the sample goes through the existing prefilter binding, so roughness
   softens the reflection as it softens refraction, and a smooth pane reflects
   sharply.
@@ -131,20 +203,35 @@ at 0 the optic returns its input. Prism key: `glass.reflection`.
 The `edge-highlight` optic adds a light reflection lobe that lands where the
 bevel's normal bisects the view and the key light:
 
-    L = normalize(vec3(normalize(mat_sig_light.xy), 1))   // 45 degree elevation
-    H = normalize(L + vec3(0, 0, 1))
-    highlight = edge-highlight * D(dot(nPerturbed, H)) / D(1)
+    L     = normalize(vec3(normalize(mat_sig_light.xy), 1))   // 45 degree elevation
+    H     = normalize(L + vec3(0, 0, 1))                      // 22.5 degrees off vertical
+    tilt  = smoothstep(0, 1, (1 - nStructural.z) / (1 - cos(22.5 degrees)))
+    highlight = edge-highlight * tilt * D(max(dot(nPerturbed, H), 0)) / D(1)
 
-`D` is GGX with `alpha = mix(0.04, 0.5, roughness)`, normalized to peak 1, so
-the parameter is peak added linear brightness. On a rounded bevel this draws
-a thin line along the light-facing sides and nothing on the far sides. On a
-planar chamfer the normal never reaches `H` (`n.H = 0.92`), so the line
-appears only as `k` rises: the highlight is a property of rounded edges, as
-in the world. It uses `mat_sig_light`, so `attention "rim-orbit"` sways it
-with the glint. It is not multiplied by `F`: the lobe stands for a bright
-source whose reflected radiance survives `F`, and the gain is art-directed
-like the glint. `FloatOrInt<0, 1>`, default 0; neutral at 0. It is gated to
-the bevel (`u > 0`). Prism key: `glass.edgeHighlight`.
+`D` is GGX (Trowbridge-Reitz) with `alpha = mix(0.04, 0.5, roughness)`,
+normalized to peak 1, so the parameter is peak added linear brightness. The
+lobe stands for a bright source whose reflected radiance survives `F`, so it
+is not multiplied by `F`; the gain is art-directed like the glint. It uses
+`mat_sig_light`, so `attention "rim-orbit"` sways it with the glint.
+
+`tilt` is the transition. It is 0 where the structural surface is flat and
+reaches 1 where it tilts as far as `H`. It carries the profile's continuity:
+
+- **`k > 1`.** `n.z -> 1` at the face join, so the highlight falls to zero
+  there continuously at every roughness. Without `tilt`, roughness 1 and
+  gain 0.5 would add 0.24 there, beside an unlit face.
+- **`k = 1`.** A planar facet has one normal, so its highlight is uniform
+  across the facet and steps at the crease, as the geometry does. Planar
+  facets do flash, intentionally: this is the cut-glass facet catching the
+  light. A facet whose slope equals `H`'s (`R / chamfer = tan 22.5 degrees =
+  0.414`) lights at full gain on its light-facing side. A 45 degree facet
+  receives `D(cos 22.5 degrees) / D(1)`: 0.0001 of the gain at roughness 0,
+  0.48 at roughness 1.
+- **Far sides.** `n.H` is clamped at 0. A far-side facet is lit only by the
+  rough tail of the lobe, and its brightness is bounded by `D` at that angle.
+
+`FloatOrInt<0, 1>`, default 0; neutral at 0. Prism key:
+`glass.edgeHighlight`.
 
 ### 3.4 Specular hook interface
 
@@ -167,22 +254,27 @@ in the same change.
 ## 4. What changes at default values
 
 Defaults (`bevel-profile 1`, `reflection 0`, `edge-highlight 0`) do not
-reproduce today's pixels. There are two intended corrections:
+reproduce today's pixels. The intended corrections:
 
-- **Face:** transmitted light is scaled by `1 - f0`: 1.5 % darker at ior 1.28,
-  4 % at 1.5.
-- **Bevel:** refraction displacement and attenuation path use the local
-  height, so a planar chamfer's tint lightens and its shift shrinks toward
-  the silhouette. The largest change is at `thickness <= bevel`.
+- **Face, transmitted:** scaled by `1 - f0`: 1.5 % darker at ior 1.28, 4 % at
+  1.5. Face attenuation and the ring band's interior factor are exact.
+- **Face, distortion:** displacement grows by `1 / -t.z`, under 1 % for normals
+  within 20 degrees.
+- **Bevel:** path and displacement follow the ray model (table in 3.1). A
+  planar chamfer's tint lightens and its shift shrinks toward the silhouette.
+  The largest change is at `thickness <= bevel`.
+- **Bevel, interior light:** spill and aurora brighten where the glass thins
+  (3.2). Under jelly, the spill reaches the silhouette on every side.
 
 Pixels outside the slab, and opaque window pixels, are unchanged. No
 compatibility switch restores the old bevel.
 
 ## 5. Cost
 
-Bevel fragments gain one background sample (reflection) and a GGX
-evaluation. Both are skipped at their neutral values and on the face. The
-height-field adds a `pow` pair per bevel fragment. Face fragments gain one
+Each bevel fragment gains a second rounded-box gradient, a `pow` pair for
+the profile and one `refract` for the attenuation path. With the optics on,
+it gains one background sample (reflection) and a GGX evaluation; both are
+skipped at their neutral values and on the face. Face fragments gain one
 multiply. No new textures, passes or redraw clocks.
 
 ## 6. Verification
@@ -190,12 +282,40 @@ multiply. No new textures, passes or redraw clocks.
 - **Config:** parse, default and bound tests for the three parameters.
   `material_parameter_specs_match_the_parser` covers them through their
   `ParamSpec`s. Docs tables are updated where Rust tests read them.
-- **Intended-change evidence (step 1):** before/after captures on the
-  headless Weston host at default glass (`glass-optic-smoke-lib.sh`), with
-  the ring and aurora off and a fully transparent client. Pixels outside the
-  slab are decoded-identical. Face pixels match the before pixel re-derived
-  under `(1 - f0)` scaling of transmitted light (the face's specular is the
-  constant `0.15 * f0`), within one code value. Bevel pixels differ.
+- **Rust mirror.** `src/render_helpers/material/bevel.rs` holds the
+  coordinate, profile, normal, ray path and highlight weight in f64. A test
+  checks that the shader's lines match it, as `ring.rs` does for the beam.
+  Its tests cover:
+  - the section 3.1 table, within 0.01;
+  - `k = 1` at rest reproducing today's normal;
+  - `u` exactly 0 at the face and 1 at the silhouette on both opposite sides
+    under a 3 px face shift at chamfer 12, and under a jelly resize, with `u`
+    strictly increasing across the band (no plateau, no truncated rim);
+  - continuity of `n` and `h` along paths through a corner, at rest and
+    deformed;
+  - the highlight weight tending to 0 at the face join for `k = 2`, at
+    roughness 0 and 1;
+  - a planar facet with `R / chamfer = 0.414` facing the light at full
+    gain;
+  - a 45 degree facet at 0.0001 and 0.48 of the gain at roughness 0 and 1.
+- **Intended-change evidence (step 1).** Before/after captures on the
+  headless Weston host at default glass (`glass-optic-smoke-lib.sh`), with a
+  fully transparent client, each build captured with ring and aurora off and
+  with both on:
+  - outside the slab, decoded-identical;
+  - off: face pixels match the before pixel re-derived under `(1 - f0)`
+    scaling of transmitted light (the face's specular is the constant
+    `0.15 * f0`), within one code value;
+  - on: face pixels, ring band included, match
+    `(1 - f0) * T + S + W`, with `T + S` from the off capture and
+    `W = before_on - before_off` in linear light, within one code value. This
+    shows the ring's face attenuation is unchanged;
+  - bevel differences are reported, not asserted.
+- **Motion.** The jelly motion companion
+  (`2026-09-11-jelly-motion-sweep.md`) at `bevel-profile 2`, mid-move and
+  mid-resize frames. On the leading and the trailing side, the brightness
+  profile across the bevel ROI runs from the face to the silhouette with no
+  flat run before the outline. Settled frames are captured as well.
 - **Refactor and neutrality evidence:** the step 2 build is decoded-identical
   to step 1 across the iridescence smoke. At default values, the step 3 and
   step 4 builds are decoded-identical to step 2.
@@ -203,13 +323,15 @@ multiply. No new textures, passes or redraw clocks.
   `glass-parameter-sweep.sh`, with the bevel ROI crop: `bevel-profile` in
   {1, 2, 4}, crossed with {live focused material, live inactive material,
   weak tint on thin glass}, each with `reflection` 0 and 0.6 and
-  `edge-highlight` 0 and 0.5. This is the review gate for the look and for
-  Prism's starting values.
+  `edge-highlight` 0 and 0.5 at roughness 0 and 1. A thin-chamfer facet row
+  (`R / chamfer = 0.414`) shows the planar flash. This is the review gate for
+  the look and for Prism's starting values.
 
 ## 7. Delivery
 
-1. niri: height-field bevel and `bevel-profile`, local height in refraction
-   and attenuation, `(1 - F)` composition; neutral-change evidence.
+1. niri: two-boundary coordinate, height-field bevel and `bevel-profile`, the
+   ray model for refraction and attenuation, `(1 - F)` composition, spill on
+   `u`; Rust mirror; intended-change and motion evidence.
 2. niri: `Surface` specular hook; `iridescence` migration.
 3. niri: `reflection` optic.
 4. niri: `edge-highlight` optic; contact sheet for review.
