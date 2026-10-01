@@ -1,6 +1,7 @@
 # Filament shift cap: keep the half-gap bound, document and guard it
 
-**Status:** draft for owner review.
+**Status:** draft for owner review, revision 2 (spec review round 1:
+anchored check, fixture-scoped optical claims, corrected numbers).
 
 **Task:** `material-a85a18`, within `material-49871a`.
 **Changes:** `src/tests/ring_pair.rs`, `docs/materials/material-config.md`,
@@ -11,14 +12,24 @@
 The task asked which model should govern the ring's refracted light shift on
 dense glass: the half-`ring-gap` cap, a bevel-relative depth, or an automatic
 `light-ior`. On the owner's live Prism glass (`ior 1.28`, `thickness 31.2`,
-`bevel 10`, `ring-gap 2`) the cap binds at every `light-ior`, so the
-configured `light-ior 6` changes no pixel.
+`bevel 10`, `ring-gap 2`) the shared shift on the chamfer reaches the cap at
+every `light-ior`. In the fixture, with chromatic aberration, distortion and
+jelly ripple off, `light-ior` 1, 6 and 12 render byte-identically.
 
 Decided with the owner on 2026-10-01, from the pilot below: the second ring
 image that appears without the cap is the defect, and the hard half-gap cap is
-the intended model. `light-ior` is inert wherever the cap binds, and that is
-accepted. The work makes the bound explicit in the documentation and adds a
-regression test that fails if the second image returns.
+the intended model. Wherever the shared shift reaches the cap, `light-ior` no
+longer moves it, and that is accepted. The work makes the bound explicit in
+the documentation and adds a regression test that fails if the second image
+returns.
+
+The live glass is not the fixture: it sets `chromatic-aberration 0.36` and
+`jelly-ripple 0.23`. There `light-ior` still changes the per-channel
+aberration offsets, which are not capped. By the formula below, the blue
+offset is about 0.27 px at `light-ior 1` and 0.10 px at 6. It also changes
+any pixel whose ripple-tilted normal yields a shift below the cap, which
+happens only while jelly is active. Both stay within about a pixel. This spec
+neither measures nor changes them.
 
 ## Evidence
 
@@ -44,32 +55,44 @@ Corner crops of every combination are attached to the task as
   render `light-ior` 1, 6 and 12 byte-identically. 1.24/43.3/9 renders 6
   and 12 identically. Stock glass (1.5/20/12, gap 8) never reaches the cap
   in the 1–12 range.
-- **Rejected alternatives at the live glass.** Measuring the depth from the
-  bevel rise instead of the thickness gives 0.99 px at `light-ior 6`
-  against a 1 px cap, so the knob stays inert. A smooth saturation toward
-  the cap gives about 0.85 px at `light-ior 1` and 1.0 px at 6, which
-  barely changes the image. Redefining `light-ior` as a fraction of the cap
-  needs a grammar change and a Prism migration, and still has only 1 px of
-  room at gap 2. All three change the shader or config for less than a
-  pixel on the glass that motivated them.
+- **Rejected alternatives at the live glass.**
+  - Measuring the depth from the bevel rise instead of the thickness
+    (`0.2 * min(bevel, thickness)`) keeps the knob live, but within a narrow
+    range: about 0.40 px at `light-ior 1` and 0.99 px at 6, under the 1 px
+    cap.
+  - A smooth saturation toward the cap gives about 0.85 px at
+    `light-ior 1` and 1.0 px at 6.
+  - Redefining `light-ior` as a fraction of the cap needs a grammar change
+    and a Prism migration, and still has only 1 px of room at gap 2.
+
+  Each changes the shader or the config grammar to move the chamfer's
+  landing point by less than a pixel on the glass that motivated it. The
+  owner chose to keep the hard cap.
 
 ## The model (unchanged)
 
 The model below is how the shader already works; it is restated here as
 the contract that the documentation and the test pin.
 
-On the chamfer, the shared ring shift is
-`refract(-z, n, 1 / ior_eff).xy * 0.2 * thickness`, with
-`ior_eff = 1 + (ior - 1) * light-ior`. Its length is clamped to
-`0.5 * ring-gap`. The face normal is flat, so the band core on the face
-never moves. Only chamfer pixels sample a shifted landing point. A chamfer
-pixel `e` px outside the face edge lands at most `0.5 * ring-gap - e` inside
-it, which is short of the core at `ring-gap`. The chamfer therefore shows
-the band's outer flank and halo, never a second core. Per-channel aberration
-offsets ride on top of the clamped shift, as they do now. Aurora uses the
-same index without the cap and is out of scope.
+The shared ring shift is `refract(-z, n, 1 / ior_eff).xy * 0.2 * thickness`,
+with `ior_eff = 1 + (ior - 1) * light-ior`, and its length is clamped to
+`0.5 * ring-gap`. `n` is the surface normal after distortion and jelly
+ripple perturb it (`main.frag` applies both before the ring). The cap bounds
+this shared shift only. The green and blue channels add offsets of
+`lightShift(n, ior_eff * (1 + k * ca)) - lightShift(n, ior_eff)` on top
+(k = 1 and 2, `ca = chromatic-aberration * 0.1`). These offsets are
+uncapped and depend on `light-ior`.
 
-The cap binds when
+With unperturbed normals, as in the fixture, the face normal is flat, so
+face pixels sample their own position and the band core stays put; only
+chamfer pixels shift. A chamfer pixel `e` px outside the face edge then
+lands at most `0.5 * ring-gap - e` inside the face. That is short of the
+core at `ring-gap`, so the chamfer shows the band's outer flank and halo and
+never a second core. Distortion, ripple and aberration add small tilts and
+offsets on both the face and the chamfer. Aurora uses the same index without
+the cap and is out of scope.
+
+For the unperturbed chamfer normal, the shared shift reaches the cap when
 `sin(a - asin(sin(a) / ior_eff)) * 0.2 * thickness >= 0.5 * ring-gap`. Here
 `a = atan(min(bevel, thickness) / bevel)` is the chamfer tilt, 45° whenever
 `thickness >= bevel`. With that tilt, the threshold `light-ior` for the
@@ -78,10 +101,10 @@ pilot rows is:
 | glass (ior/thickness/bevel, gap) | binds from `light-ior` |
 |---|---|
 | stock 1.5/20/12, gap 8 | never within 1–12 |
-| live Prism 1.28/31.2/10, gap 2 | every value (≤ 1) |
+| live Prism 1.28/31.2/10, gap 2 | every value (from about 0.75) |
 | 1.24/43.3/9, gap 8 | about 5.6 |
-| 1.02/80/12, gap 5 | about 10.4 |
-| 1.5/80/12, gap 5 | every value (≤ 1) |
+| 1.02/80/12, gap 5 | about 10.1 |
+| 1.5/80/12, gap 5 | every value (from about 0.41) |
 
 ## Changes
 
@@ -92,6 +115,11 @@ from `ring_pair_is_reproducible_at_a_frozen_instant` so nextest runs them in
 parallel. Move the fixture setup that `matched_pairs` performs into a helper
 both tests call: the fixture, output, and shm client window, and the resize
 frozen at `MID`.
+
+The test config pins `offset-x 6` and `offset-y 6` (the defaults) and keeps
+the fixture's flex 0, distortion 0, ripple 0 and chromatic aberration 0. With
+those offsets the face edge sits 12 px inside the window edge on the left and
+top, and flush with it on the right and bottom (`face_inset` 12 and 0).
 
 Glass rows, chosen to cover the task's ior 1.02, 1.24 and 1.5 and the live
 glass:
@@ -109,14 +137,29 @@ pair at `MID` with flex 0. Take the light map's profile on the line through
 the window centre across each of the four window edges, using the sample
 range `profile` already uses.
 
-**The check.** Let `P` be the profile's peak. Walk outward from the peak,
-toward smaller inward distance, to the first local minimum: the first sample
-whose next outward neighbour is strictly greater. Every sample beyond that
-point must stay below `P / 2`. On the pilot's right-edge profiles (the
-only edge measured), this check passes on every capped render. With the cap removed, it fails on `binding` and `ior150` at
-`light-ior` 1 and 6. It does not catch the faint uncapped ghost on `ior124`
-at 12 (17 against a peak of 83). That is acceptable for a guard against
-removal of the cap.
+**The check.** Per edge profile:
+
+1. **Anchor on the face core.** The core `C` is the largest sample whose
+   inward distance exceeds `face_inset`, that is, on the face. `C` must be
+   positive, and its inward distance must lie within 2 px of
+   `face_inset + ring-gap`. An all-zero profile, or a core in the wrong
+   place, fails here.
+2. **Scan outward from `C`.** Walk toward smaller inward distance to the
+   first local minimum, the first sample whose next outward neighbour is
+   strictly greater. Every sample beyond that minimum must be below
+   `C / 2`.
+
+A ghost brighter than the core cannot become the anchor, because it lies
+outside the face. The outward profile `[82, 60, 20, 83, 50, 0]` fails at
+the 83.
+
+On the pilot's right-edge profiles (the only edge measured), this check
+passes on every capped render. With the cap removed, it fails on `binding`
+and `ior150` at `light-ior` 1 and 6, where the ghost reaches 65–83 against
+a core of about 82. It does not catch the faint uncapped ghost on `ior124`
+at 12 (17 against 83). That is acceptable for a guard against removal of
+the cap. The anchor's expected position has not yet been verified on the
+left and top edges; the first implementation run checks it there.
 
 **The report.** The test prints each row's ring-on difference between
 `light-ior` 1 and 6 and between 6 and 12 (pixels changed, largest delta).
@@ -138,10 +181,15 @@ call the 1.24/43.3 glass below the cap. State:
 - the cap as the model, with the reason (it keeps a second core off the
   chamfer);
 - the binding condition from *The model (unchanged)* above;
-- that `light-ior` has no effect on the ring wherever the cap binds, and
-  still drives aurora and the aberration split there;
-- a short form of the table above, with the live-glass row stated plainly:
-  at `ring-gap 2` the cap is 1 px and any `light-ior` reaches it.
+- that the cap bounds the shared shift only: where that shift reaches the
+  cap, `light-ior` no longer moves it. `light-ior` still sets the
+  per-channel aberration offsets, the shift at pixels whose (distorted or
+  rippled) normal yields less than the cap, and aurora's landing point;
+- a short form of the table above, for unperturbed normals, with the
+  live-glass row stated plainly: at `ring-gap 2` the cap is 1 px, and the
+  chamfer's shared shift reaches it at any `light-ior`. On that glass,
+  `light-ior` affects only the sub-pixel aberration split and, while jelly
+  is active, rippled pixels.
 
 `docs/notes/2026-09-29-glass-measurement-brief.md`: under the matched-state
 findings, a short "Cap decision" paragraph that links this spec and the new
@@ -153,17 +201,18 @@ correctly and stays.
 
 ### Prism
 
-Prism's niri sink emits `light-ior 6` on the live glass, where it has no
-effect on the ring but still bends aurora. File an `idea` in the `prism`
-project that records this, so the palette's definition can say so or drop
-the value. That decision belongs to Prism; no Prism change is part of this
+Prism's niri sink emits `light-ior 6` on the live glass. There it no longer
+moves the ring's shared shift on the chamfer, and it acts only through the
+sub-pixel aberration split, rippled pixels and aurora. File an `idea` in the
+`prism` project that records this, so the palette's definition can say so. That decision belongs to Prism; no Prism change is part of this
 task.
 
 ## Testing and verification
 
-- `just test-one -p niri ring_pair`: both tests pass. The report shows the
-  `binding` and `ior150` rows byte-identical across `light-ior`, and
-  `ior124` identical between 6 and 12.
+- `just test-one -p niri ring_pair`: both tests pass. Under the fixture's
+  conditions the report shows the `binding` and `ior150` rows
+  byte-identical across `light-ior`, and `ior124` identical between 6 and
+  12.
 - The mutation check above fails on `binding` and `ior150` with the cap
   removed.
 - `just test-fast` before commit. `just check` covers the material-config
@@ -179,6 +228,8 @@ rebases onto the helper; neither changes the other's assertions.
 
 - Aurora's uncapped landing shift.
 - Any new `light-ior` grammar, warning, or validation.
-- Corners, moving beam, chromatic aberration on, textured backdrop and
-  fractional scale. The pilot and the test use the existing fixture's
-  conditions only.
+- Measuring `light-ior`'s residual effect through aberration and ripple on
+  the live glass.
+- Corners, moving beam, chromatic aberration on, distortion and ripple on,
+  textured backdrop and fractional scale. The pilot and the test use the
+  existing fixture's conditions only.
