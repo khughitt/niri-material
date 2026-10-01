@@ -208,10 +208,12 @@ cases = [
 for item in cases:
     item['hold_ns'] = 5 * S
     item['repetitions'] = 1
-    if item['lane'] == 'headless':
+    if item['lane'] == 'headless' and item['edges']:
         # Tracy collects a frame's GPU zones only when a later frame renders,
-        # so every case ends with one more client frame (min 0: its own zones
+        # so a case ends with one more client frame (min 0: its own zones
         # stay uncollected) that flushes the draws of the frames before it.
+        # A journal aligns through optic edges, so an edge-free case (the
+        # gate-off control, whose cadence never stops) has none.
         item['stimuli'].append(dict(label='collect'))
 if mode == 'matrix':
     # Three active/idle/resume cycles of each rate, the first held for 600 s.
@@ -483,7 +485,10 @@ run_case() {
     capture_ready "$CASE"
     T0=$(mono)
     "drive_$fn"
-    at "$(awk -v s="$CAPTURE_S" 'BEGIN { print s - 1 }')"; stim collect 0.6 print_line collect
+    if jq -e --arg n "$CASE" '.cases[] | select(.name == $n) | .stimuli | any(.label == "collect")' \
+        "$OUT/manifest.json" > /dev/null; then
+        at "$(awk -v s="$CAPTURE_S" 'BEGIN { print s - 1 }')"; stim collect 0.6 print_line collect
+    fi
     capture_wait
     if declare -F "post_$fn" > /dev/null; then "post_$fn"; fi
     csvexport --messages "$CASE_DIR/capture.tracy" "$CASE_DIR/messages.csv"

@@ -259,3 +259,7 @@ class PrepareTests(unittest.TestCase):
             again = subprocess.run(['bash', str(script), 'prepare'], env=env, capture_output=True, text=True)
             self.assertNotEqual(again.returncode, 0)
             self.assertIn('fresh directory', again.stderr)
+            # A journal aligns through optic edges: an edge-free case journals nothing.
+            for case in manifest['cases']:
+                if case['lane'] == 'headless' and not case['edges']:
+                    self.assertEqual(case['stimuli'], [], case['name'])
