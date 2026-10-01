@@ -1,7 +1,7 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** revised after spec rounds 1 and 2 (agent reviews, verdict revise); awaiting
-owner review.
+**Status:** accepted by agent review in spec round 3, after revisions in
+rounds 1 and 2; awaiting owner review.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
 **Baseline:** `b172940e` (the task-start commits after it change only the task).
@@ -231,11 +231,8 @@ sample is the one just before the next event.
   both reach a nonzero drag peak. Every recorded drag frame matches a
   reference `DragFollower` driven through the same events and clock times
   within 1e-9 px. That comparison needs no convergence, so the existing
-  15-frame phases stay as they are. Separately, a 50-frame scrolling drag
-  must reach the critically damped discrete fixed point within 1e-6 px
-  (156.79 px at the baseline, which the test computes by iterating the
-  closed form). A follower that resets `V` on each event records about
-  485 px and fails both checks.
+  15-frame phases stay as they are. A follower that resets `V` on each
+  event records about 485 px and fails the comparison.
 - **Hold decays to zero.** After the drag stops, the residual falls below the
   settle threshold. The tile then drops its follower, and
   `are_animations_ongoing()` turns false within a bounded number of frames.
@@ -272,7 +269,12 @@ sample is the one just before the next event.
 `DragFollower` unit tests cover the closed form against fine Euler
 integration for damping ratios 0.6, 1 and 1.5, `velocity_at` against a
 finite difference of `value_at`, signed `dt`, a shift that carries velocity,
-and the settle rule.
+the settle rule, and the steady drag. The steady-drag test drives 50
+events of 40 px, each followed by a 16 ms read, at critical damping. The
+recorded lag must reach the discrete fixed point within 1e-6 px (156.79 px,
+computed in the test by iterating the closed form). It lives here, not in
+the layout test, because 2000 px of pointer travel would leave the
+1280×720 test output.
 
 ## 7. Clip acceptance
 
