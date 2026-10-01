@@ -1,6 +1,6 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** revised after spec round 1 (agent review, verdict revise); awaiting
+**Status:** revised after spec rounds 1 and 2 (agent reviews, verdict revise); awaiting
 owner review.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
@@ -79,8 +79,8 @@ the pointer.
    zoom), the follower re-anchors at `now`: `t₀ = now`,
    `L₀ = L(now) − d` and `V₀ = V(now)`. The target moves by `d`, the follower
    does not, and its velocity carries across the event. Events at the same
-   instant compose exactly, and events at different instants match one
-   integration of the same pointer path, whatever the event rate.
+   instant compose exactly, and events at different instants match the
+   continuous integration of the delivered events.
 5. **Residual.** `motion_residual() = animation_residual() + L`.
    `render_offset()` does not include `L`.
 6. **Hold.** With no pointer motion, `L` decays to zero, and the residual,
@@ -92,12 +92,19 @@ the pointer.
    starts at `tile_render_loc − slot`, exactly as today (§4.4).
 8. **Settle.** The follower is settled when `|L(now)| < 0.05` px and
    `|V(now)| < 1` px/s, and `advance_animations` then drops it. At the live jelly-flex of 0.0066 that is below 0.0004 px
-   of flex. Until then the follower counts in `are_animations_ongoing`, so
-   frames are scheduled until it settles and no longer.
+   of flex. `are_animations_ongoing` tests that a follower is present, not
+   `!is_settled(now)`. `advance_animations` runs at real time before the
+   presentation-time read, so presence guarantees the one further frame that
+   drops it, and frames are scheduled until it settles and no longer.
 9. **Off.** Only `Moving` drives a follower. `Starting` (§4.5) and anything
    outside an interactive move never create or shift one. No follower is
-   created when window-movement is `off` or uses an easing curve (§4.3), or
-   while the clock completes animations instantly.
+   created when window-movement is `off` or uses an easing curve (§4.3).
+   While the clock completes animations instantly
+   (`should_complete_instantly()`, the same check `Animation::is_done`
+   makes), `lag()` reads zero, `drag_follow` creates nothing, and
+   `advance_animations` drops any live follower. A follower therefore
+   completes with every other animation under `animations { off }` and
+   `Op::CompleteAnimations`.
 10. **Lifetime.** A follower ends only by settling or by a configuration
     change (§5, `update_config`). It ignores `stop_move_animations`, which
     resets position bookkeeping at lift and on a scrolling-to-floating move.
@@ -112,7 +119,7 @@ event per 16 ms frame) it runs from 157 to 197 px around 177 px. That gives
 1.00–1.22 px of flex at the live jelly-flex of 0.0066 and 1.44–1.73 px at the
 test's 0.01. The native column-move control peaks at 1.11 px, so a fast drag
 bends the glass about as much as a native move. At realistic event rates
-(4–8 ms) the sawtooth narrows to a few pixels.
+(8 ms and 4 ms events) the sawtooth narrows to ±10 px and ±5 px.
 
 ### Why the tile does not lag
 
@@ -175,8 +182,8 @@ Rejected: following the banded offset in `Starting`.
 
 ## 5. Components
 
-- **`DragFollower`** (new, `src/layout/drag_follower.rs`): `L` and `V` per axis,
-  the anchor `(t₀, L₀, V₀)` per axis and the spring parameters. Its operations
+- **`DragFollower`** (new, `src/layout/drag_follower.rs`): its only state is
+  the anchor `(t₀, L₀, V₀)`, with `L₀` and `V₀` per axis, and the spring parameters. Its operations
   are `shift(now, d)`, `lag(now)`, `is_settled(now)` and `set_params(now, p)`,
   each taking a time so the type stays pure. Position comes from
   `Spring::value_at` (`from = L₀`, `to = 0`, `initial_velocity = V₀`),
@@ -187,10 +194,12 @@ Rejected: following the banded offset in `Starting`.
   other animation.
 - **`Tile`**: holds `drag_follower: Option<DragFollower>`. `drag_follow(d)`
   creates the follower if needed and shifts it. `advance_animations` drops it
-  once settled and never steps it. `update_config` drops it when
-  window-movement becomes `off` or an easing curve, or when
-  `should_complete_instantly()` holds. It re-anchors it with the new
-  parameters when the spring changes, keeping `L` and `V` continuous. `motion_residual()` returns the residual and
+  once settled or under complete-instantly (§3.9), and never steps it.
+  `update_config` drops it when window-movement becomes `off` or an easing
+  curve. It re-anchors it with the new parameters when the spring changes,
+  keeping `L` and `V` continuous. Complete-instantly is not checked there,
+  because a reload calls `layout.update_config` before it sets the clock's
+  complete-instantly flag. `motion_residual()` returns the residual and
   replaces `animation_residual()` at the six call sites, and
   `are_animations_ongoing` includes the follower. It is deliberately left
   out of `are_transitions_ongoing`, which also gates the pointer-focus
@@ -218,12 +227,15 @@ In `src/layout/tests/drag_dynamics.rs`, on the existing pinned 16 ms clock. The
 harness applies an update, advances 16 ms, then records, so a recorded drag
 sample is the one just before the next event.
 
-- **Drag flexes.** At 40 px/frame, scrolling and floating both reach a nonzero
-  drag peak. Under critical damping, the steady recorded lag matches the
-  discrete fixed point within 1e-6 px. The test computes that fixed point by
-  iterating the closed form: 156.79 px at the baseline. The lag also lies in
-  `[2v/ω − d/2, 2v/ω + d/2]`. A follower that resets `V` on each event gives
-  about 525 px and fails both checks.
+- **Drag flexes.** At 40 px/frame, scrolling and floating (step (40, 10))
+  both reach a nonzero drag peak. Every recorded drag frame matches a
+  reference `DragFollower` driven through the same events and clock times
+  within 1e-9 px. That comparison needs no convergence, so the existing
+  15-frame phases stay as they are. Separately, a 50-frame scrolling drag
+  must reach the critically damped discrete fixed point within 1e-6 px
+  (156.79 px at the baseline, which the test computes by iterating the
+  closed form). A follower that resets `V` on each event records about
+  485 px and fails both checks.
 - **Hold decays to zero.** After the drag stops, the residual falls below the
   settle threshold. The tile then drops its follower, and
   `are_animations_ongoing()` turns false within a bounded number of frames.
@@ -246,8 +258,9 @@ sample is the one just before the next event.
 - **Off and reload paths.** On a fresh tile, a window-movement `off` or easing
   config, or `Starting` alone, never creates a follower, and the rubber
   band's residual stays zero. Mid-drag, switching window-movement to `off`
-  or easing, or setting complete-instantly, drops the follower on the next
-  `update_config`. A spring parameter change keeps `L` continuous.
+  or easing drops the follower on the next `update_config`, and a spring
+  parameter change keeps `L` continuous. With complete-instantly set,
+  `Op::CompleteAnimations` drops a live follower and the lag reads zero.
 - **Render untouched.** `render_offset()` and the tile's render location
   during drag are identical with and without the follower.
 - **Replaced baseline assertions.** These assert the old zero stimulus and are
