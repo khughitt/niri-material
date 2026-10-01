@@ -108,9 +108,9 @@ at `light-ior 1`. On Prism's terminal glass (1.28/31.2/10,
 `jelly-ripple 0.23`), the cap is 1 px and the chamfer's shared shift reaches
 it at any `light-ior`. There `light-ior` acts only through the per-channel
 aberration offsets (blue, the larger, is about 0.27 px at `light-ior 1` and
-0.10 px at 6) and, while jelly is active, through rippled pixels. `ring_cap_keeps_one_core` in
-`src/tests/ring_pair.rs` renders the table's rows and fails if a second
-core appears.
+0.10 px at 6) and, while jelly is active, through rippled pixels.
+`ring_cap_keeps_one_core` in `src/tests/ring_pair.rs` renders the table's
+rows and fails if a second core at least half the peak's brightness appears.
 
 `backdrop-blur` makes the glass refract the blurred backdrop rather than the
 sharp one, which is what produces a frosted appearance: blur and refraction

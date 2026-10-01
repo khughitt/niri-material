@@ -154,8 +154,9 @@ the intended model. Without it, dense glass shows a second copy of the band
 core on the chamfer. Where the shared shift reaches the cap, `light-ior` no
 longer moves it. The [design](../specs/2026-10-01-filament-shift-cap-design.md)
 records the alternatives and why they were rejected. `ring_cap_keeps_one_core`
-in `src/tests/ring_pair.rs` guards the cap at ior 1.02, 1.24 (bevel 9), 1.28
-and 1.5.
+in `src/tests/ring_pair.rs` renders ior 1.02, 1.24 (bevel 9), 1.28 and 1.5
+and fails without the cap on 1.28 and 1.5; the faint ghost at 1.02 and 1.24
+stays under its threshold.
 
 **Opaque-client bypass.** With an opaque client at rest, the ring lights
 0 px inside the window rect. It lights 5,962 px (stock) and 10,799 px
