@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T11:44:46Z
+updated: 2026-10-01T11:44:53Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -33,3 +33,5 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 - 2026-10-01T11:44:04Z (material-4354cf): Spec round 2 dispositions: P1 drag check compares every recorded frame to a reference DragFollower driven through the same events (1e-9), plus the 156.79 px fixed point on a separate 50-frame drag; the ±d/2 band is dropped. P2 complete-instantly is checked where Animation::is_done checks it (advance_animations drops the follower, lag reads zero), not in update_config, which a reload calls before it sets the flag; tested through Op::CompleteAnimations. P3: 485 px reset figure, ±10/±5 px sawtooth, 'delivered events' wording, the anchor is the only state, are_animations_ongoing tests presence.
 - 2026-10-01T11:44:45Z (material-4354cf): review: spec round 3 — verdict: accept; findings: P3 1; reviewer: claude-code/claude-opus-5-5
 - 2026-10-01T11:44:45Z (material-4354cf): Spec round 3 disposition: the 50-event fixed-point check moved to the DragFollower unit tests, because 2000 px of pointer travel would leave the 1280×720 test output; the layout test keeps the per-frame reference comparison.
+- 2026-10-01T11:44:53Z (material-4354cf): parked (waiting on user, review): Owner reviews .worktrees/material-4354cf/docs/specs/2026-10-01-drag-follow-lag-design.md, especially the §4 decisions (no held deformation, reuse jelly-flex, window-movement spring, tiled drops unchanged, no rubber-band flex) and the residual-only lag in §3. Then the agent records the owner round, revises or, on acceptance, drafts the implementation plan for separate review.
+  provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
