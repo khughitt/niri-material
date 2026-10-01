@@ -1,9 +1,9 @@
 # Glass edge optics
 
-**Status:** revised after spec review rounds 1 and 2 (ray-consistent path
-and its bound, two-boundary coordinate with a softened outer gradient,
-highlight transition, interior-light attenuation), 2026-09-30; pending
-review. Task: `material-be611b`.
+**Status:** revised after spec review rounds 1 to 3 (ray-consistent path
+and its bound, lifted tap normals, two-boundary coordinate with a stable,
+odd softened outer gradient, highlight transition, interior-light
+attenuation), 2026-09-30; pending review. Task: `material-be611b`.
 Follow-on idea that builds on this geometry: `material-7f5751` (content in the
 glass).
 
@@ -80,7 +80,9 @@ sits `R` below it whatever the jelly does. Local height is
 with `k = bevel-profile`. `k = 1` is today's planar chamfer. `k = 2` is a
 circular quarter-round, and larger `k` a squircle that stays flat longer and
 rolls off harder. For `k > 1`, `f'(0) = 0`, so the face joins the bevel
-without a crease, and `f'(1)` is unbounded, so Fresnel reaches 1 at the rim.
+without a crease, and `f'(1)` is unbounded, so analytically Fresnel reaches 1
+at the rim. The slope cap below stops it at `n.z = 0.05`, where Schlick
+gives `F = 0.777` at ior 1.28.
 On the face, `h = thickness`. With `thickness <= bevel` the glass thins to
 zero at the silhouette. With `thickness > bevel` a vertical wall of
 `thickness - R` remains, as today.
@@ -101,19 +103,51 @@ region lies inside the face. Jelly motion exposes it when the face moves
 further than the corner radius covers. At outer 112, inner 88, chamfer 12,
 inner radius 0 and a 3 px shift, the exact gradient puts a crease in the
 normal: 0.07 at `k = 2` and 0.23 at `k = 1`, and the reflection sample jumps
-with it. `gOut` therefore comes from a softened gradient:
+with it. `gOut` therefore comes from a softened gradient. Per axis `i`,
+with `s = 0.5` logical px:
 
-    q  = abs(p) - b + r                      // as in sdRoundedBox
-    qs = s * log(1 + exp(q / s))             // softplus, s = 0.5 logical px
-    gOut = normalize(qs) * sign(p)
+    q_i  = abs(p_i) - b_i + r                // as in sdRoundedBox
+    l_i  = lsp(q_i / s)                      // log(softplus), evaluated stably
+    c_i  = exp(l_i - max(l_x, l_y)) * tanhs(p_i / s)
+    gOut = c / length(c)
 
-On the corner arcs and straight sides `qs` equals `q` to within `s * e^(-|q| / s)`,
-so it agrees with the exact gradient there. In the core it blends the two
-nearest sides smoothly. Under motion, measured normal jumps fall in proportion
-to the sampling step in every case tried: radius 0, 4 and 8 with 3 px
-diagonal and axial shifts, at `k = 1` and `k = 2`. That is continuity. At
-rest, `gIn = gOut` exactly on straight sides, so `k = 1` reproduces today's
-normal there. Within about a pixel of the junctions between corner arcs and
+Each part has a reason:
+
+- **Softplus** replaces each positive part `max(q_i, 0)`. On corner arcs and
+  straight sides it equals `q_i` to within `s * e^(-|q_i| / s)`, so it agrees
+  with the exact gradient there. In the core it blends the two nearest sides
+  smoothly.
+- **`tanhs(t) = tanh(clamp(t, -10, 10))`**, written with `exp`, since GLSL
+  ES 1.00 has no `tanh`. It replaces `sign(p_i)`. Softplus is positive even
+  where `p_i = 0`, so a hard sign would reverse a nonzero component across
+  the box's centerline. At maximum radius (outer half-size (10, 100),
+  chamfer 6, inner radius 4, `k = 2`) that is a 0.038 normal jump even at
+  rest. With `tanhs` the component passes through zero continuously, as the
+  exact radial gradient does.
+- **Log domain.** Literal softplus overflows in fp32 (`exp(128)` at
+  `q = 64`) and rounds to zero far inside (`1 + exp(-20) = 1`). Working with
+  `l_i` and subtracting the maximum keeps the dominant component's magnitude
+  at exactly 1. The other component lies in (0, 1], so the normalization
+  never sees infinity, and sees zero only on the ridge below. `lsp(t)` is
+  `log(t + log(1 + exp(-t)))` for `t > 0`, and `t + log(log(1 + x) / x)`
+  with `x = exp(t)` for `t <= 0`, replacing the ratio by `1 - x / 2` when
+  `x < 1e-3`. Every `exp` argument is at most 0, except in `tanhs`, whose
+clamp bounds it at 20.
+- **Ridge guard.** Where `length(c) < 1e-4`, `gOut = gIn`. In a 2 million
+  point fp32 sweep (half-sizes 2 to 4000 px, every radius) that happens only
+  on the outer box's ridge between parallel sides. That ridge is the slab's
+  centerline at depth equal to its half-size, a true crease of any distance
+  field. It reaches the bevel only if jelly moves the face further than
+  `min(half-size) - chamfer`, which is at least 1 px under the tiny-slab
+  guard. That crease is accepted. Everywhere else in the sweep the fp32
+  direction is within 0.0005 rad of f64.
+
+Under motion, measured normal jumps fall in proportion to the sampling step
+in every case tried: radius 0, 4 and 8 with 3 px diagonal and axial shifts,
+and the maximum-radius stadium at rest and shifted 2 px, crossing both
+centerlines, at `k = 1` and `k = 2`. That is continuity. At rest,
+`gIn = gOut` exactly on straight sides, so `k = 1` reproduces today's normal
+there. Within about a pixel of the junctions between corner arcs and
 straight sides, it departs from today's normal by at most 0.03, on at most
 3 % of bevel pixels (inner radius 0, the worst case).
 
@@ -129,7 +163,7 @@ plane after the length
 Both effects follow this one ray:
 
 - **Refraction.** Each tap displaces by `t.xy * L`, using its own normal
-  (perturbed), its own ior (chromatic aberration) and its own height
+  (perturbed, then lifted as below), its own ior (chromatic aberration) and its own height
   (`h * (1 + anisotropic-blur * (i + r) / count)`, today's smear rule applied
   to `h`).
 - **Attenuation.** Beer-Lambert takes `L` from the structural normal at
@@ -141,16 +175,34 @@ On the face, `n = (0, 0, 1)` gives `L = thickness` and no displacement,
 today's values. Under distortion, face displacement grows by `1 / -t.z`. For
 normals within 20 degrees that is 0.3 % at ior 1.28 and 2.8 % at ior 3.
 
+**Tap normals.** Distortion and jelly ripple can tip the perturbed normal
+past horizontal. With unit noise components that takes distortion above
+about 0.93. A downward-facing normal sends the refracted ray sideways or
+upward: reproducing today's noise formula gives `-t.z = 0.12` at ior 3, with
+no aberration. Before refraction, each tap's normal is lifted into the
+structural cap:
+
+    nTap = normalize(vec3(n.xy, max(n.z, 0.05)))
+
+This is continuous: a normalized `n` with `n.z = 0.05` is returned
+unchanged. It leaves every normal at or above the cap untouched, so it
+changes today's output only where the normal tipped past 87 degrees. With
+`nTap.z >= 0.05`, the refracted ray always points downward, so no tap
+receives an upward ray. The structural normal is already capped by the
+slope policy, and attenuation uses it.
+
 **Bound.** The refracted ray tilts from vertical by `theta_i - theta_t`,
 which increases with the incidence angle. At grazing incidence,
 `theta_t = asin(1 / ior)` and `-t.z = 1 / ior`. For any upward-facing
-normal, therefore, `-t.z >= 1 / ior` and `L <= ior * h`. With the slope cap,
-the rim value sits slightly above that bound: 0.81 at ior 1.28, 0.38 at
-ior 3. The 0.25 floor binds at an effective index above 4. The two kinds of
+normal, therefore, `-t.z >= 1 / ior` and `L <= ior * h`. That covers the
+structural normal and every lifted tap normal. With the cap at
+`n.z >= 0.05`, the lowest value sits slightly above the bound: 0.81 at
+ior 1.28, 0.38 at ior 3. The 0.25 floor binds at an effective index above 4. The two kinds of
 ray reach different indices:
 
 - **Attenuation, and the red or single tap**, use the configured `ior`,
-  1 to 3, so the floor never binds and `L` is the true ray length.
+  1 to 3, on upward normals (structural, or lifted), so the floor never binds
+  and `L` is the true ray length.
 - **Chromatic-aberration taps** use `ior * (1 + spread)` and
   `ior * (1 + 2 * spread)`, with `spread` up to `chromatic-aberration` (at
   most 1), so the effective index reaches 9. On steep normals the floor caps
@@ -174,6 +226,8 @@ face edge). These are the test vectors for the Rust mirror (section 6):
 | 12 | 2 | 1 | 0.00 | 0.050 | 0.00 | 0.00 | 16.97, 2.39 |
 | 75.3 (inactive) | 2 | 0.9 | 68.53 | 0.436 | 72.69 | 24.24 | 106.49, 14.97 |
 | 75.3 | 2 | 1 | 63.30 | 0.050 | 78.10 | 45.74 | 106.49, 14.97 |
+| 12.1 (just above bevel) | 2 | 0.9 | 5.33 | 0.436 | 5.65 | 1.89 | 17.11, 2.41 |
+| 12.1 | 2 | 1 | 0.10 | 0.050 | 0.12 | 0.07 | 17.11, 2.41 |
 
 What the model guarantees:
 
@@ -184,10 +238,14 @@ What the model guarantees:
   outgrows the height loss near the rim: at thickness 75.3, bevel 12, `k = 2`,
   the path runs 75.30, then 72.69 at `u = 0.9`, then 78.10 at the rim, 3.7 %
   above the face. On thin and equal glass it falls to zero at the rim.
-- **Displacement** grows toward the rim on a rounded bevel while a wall
-  remains (`thickness > bevel`), which is the lens compression of a bullnose
-  edge. Where the glass thins to an edge (`thickness <= bevel`) it returns to
-  zero at the rim, because `h` does.
+- **Displacement is not monotonic in general either.** It is the product of
+  the ray's sideways tilt, which grows toward the rim, and the remaining
+  height, which falls. On a rounded bevel over a tall wall, the tilt wins and
+  the image compresses toward the rim: the lens look of a bullnose edge
+  (31.2: 3.64, then 8.64, then 13.87). Where little or no wall remains,
+  height wins near the rim and the displacement falls back. At 12.1, just
+  above the bevel, it drops from 1.89 at `u = 0.9` to 0.07 at the rim; at or
+  below the bevel it reaches 0.
 
 `slabSurface` gains `h`, `u` and `w` as outputs. The ring's spill switches
 from `innerDist / slabChamfer` to `u`: identical at rest, and under jelly the
@@ -204,7 +262,8 @@ becomes
     glass = (1 - F) * transmitted + within + specular + emissive
 
 with `F` the existing Schlick term on the structural normal. At the rim of a
-rounded bevel `F -> 1`, so the edge shows what it reflects rather than a
+rounded bevel `F` rises to 0.777 (ior 1.28, at the slope cap; 1 in the
+analytic limit), so the edge shows mostly what it reflects rather than a
 tinted backdrop. `within` is not scaled by `1 - F`: it is light already
 inside the glass, and its exit through the surface is part of the ring and
 aurora gains, which stay as tuned.
@@ -356,6 +415,14 @@ multiply. No new textures, passes or redraw clocks.
     chamfer 12, inner radius 0 and 8, 3 px diagonal and axial shifts, `k = 1`
     and `k = 2`. The maximum jump between neighbours falls in proportion to the
     step, from 0.02 px to 0.005 px; the exact gradient fails this at radius 0;
+  - the same test across both centerlines of a maximum-radius stadium (outer
+    half-size (10, 100), chamfer 6, inner radius 4), at rest and with a 2 px
+    shift;
+  - an fp32 build of the softened gradient against f64 over half-sizes 2 to
+    4000 px and every radius. It must have no non-finite value, agree within
+    0.001 rad, and trip the ridge guard only on the parallel-side ridge;
+  - lifted tap normals: continuity at `n.z = 0.05`, normals above the cap
+    unchanged, and `-t.z >= 1 / ior` for lifted normals at ior 1, 1.28 and 3;
   - `u` exactly 0 at the face and 1 at the silhouette on both opposite sides
     under a 3 px face shift at chamfer 12, and under a jelly resize, with `u`
     strictly increasing across the band (no plateau, no truncated rim);

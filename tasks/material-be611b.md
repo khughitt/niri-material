@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-01T02:03:10Z
+updated: 2026-10-01T02:18:13Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -67,3 +67,8 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-01T02:03:05Z (glass-edges): P3 — Spec lines 82–83 and 206–208 still state F reaches or tends to 1 at the rim. The slope-20 cap yields n.z=1/sqrt(401) and Schlick F=.777442933 at ior 1.28. Distinguish the uncapped analytic limit from the implemented capped value; no change to the selected cap is required by this finding.
 - 2026-10-01T02:03:05Z (glass-edges): parked (waiting on user, review): User reviews spec round 3 findings; design author fixes the outer-gradient axis seam and f32 evaluation, qualifies perturbed-ray and displacement guarantees, and corrects capped-Fresnel wording before resubmitting for implementation planning.
   provenance: {"harness_session":"codex:01a0f4b2-bd63-71f2-9779-d6e88ec61afe","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T02:18:11Z (glass-edges): resumed
+  provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T02:18:11Z (glass-edges): spec revised for round 3: all four P2 and the P3 verified and accepted. gOut softened gradient now odd (tanhs replaces sign; stadium centerline continuous), log-domain stable (fp32 2M-point sweep: no non-finite off the parallel-side ridge, <=0.0005 rad vs f64), ridge guard gOut=gIn with the slab-centerline crease accepted; tap normals lifted to n.z>=0.05 before refraction (no upward rays, bound holds); displacement stated non-monotonic with 12.1 rows; capped rim F=0.777 at ior 1.28
+- 2026-10-01T02:18:11Z (glass-edges): parked (waiting on user, review): Reviewer runs spec review round 4 on docs/specs/2026-09-30-glass-edge-optics-design.md in .worktrees/glass-edges; on approval the agent runs writing-plans and files the Prism piece
+  provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
