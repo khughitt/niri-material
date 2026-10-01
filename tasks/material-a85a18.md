@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-a85a18
 created: 2026-09-05T17:14:14Z
-updated: 2026-10-01T10:57:22Z
+updated: 2026-10-01T11:02:27Z
 started: 2026-10-01T10:02:43Z
 depends: []
 parent: material-49871a
@@ -84,3 +84,11 @@ owner's own glass has evidence.
 - 2026-10-01T10:56:54Z (material-a85a18): resumed
   provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-01T10:57:22Z (material-a85a18): plan revision 3 for plan review round 2: mutation run moved into a bash script that sets the restoring trap before the shader edit and writes the exit code to a file (mutation_rc; no zsh status); probed in a scratch repo with a stub just: rc 101 captured, shader restored after failure and after SIGINT. Docs paragraph says per-channel aberration offsets, blue as the example
+- 2026-10-01T10:57:25Z (material-a85a18): parked (waiting on user, review): Owner re-reviews docs/plans/2026-10-01-filament-shift-cap.md (plan round 3) in .worktrees/material-a85a18; on approval the agent runs it natively, starting with Task 1 (material-1eab8b)
+  provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T11:02:24Z (material-a85a18): resumed
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T11:02:25Z (material-a85a18): review: plan round 3 — verdict: accept; findings: none; reviewer: codex
+- 2026-10-01T11:02:25Z (material-a85a18): Reviewed b30988f3: explicit bash scope installs EXIT restoration before mutation and routes INT/TERM through exit; expected test failure is captured by if/else into an rc file and read as mutation_rc; setup/interruption errors stop rather than count as mutation evidence. Per-channel wording fixes the blue-only claim. Prior capture and both-row mutation requirements remain intact. Accepted for Native execution with one fresh review of the completed branch. Review was source inspection; the author reports scratch failure/interruption probes, which were not rerun here. No rendering, repository tests, or shader mutation performed.
+- 2026-10-01T11:02:25Z (material-a85a18): parked (waiting on agent): Plan b30988f3 accepted; review assignment complete. Hand back to the implementation author: start material-1eab8b and execute both plan tasks natively in .worktrees/material-a85a18, including captures, mutation evidence, and required gates; obtain one fresh review of the completed branch.
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}

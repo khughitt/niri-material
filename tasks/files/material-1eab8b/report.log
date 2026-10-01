@@ -1,0 +1,30 @@
+warning: ignoring --test-threads because --no-capture is specified
+   Compiling niri v26.4.0 (<worktree>)
+warning: unused import: `MergeWith`
+ --> src/layout/tests.rs:3:32
+  |
+3 | use niri_config::utils::{Flag, MergeWith as _};
+  |                                ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `niri` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.39s
+────────────
+ Nextest run ID bb41cd79-c054-4944-bef0-ebc07c3396d9 with nextest profile: default
+    Starting 1 test across 2 binaries (391 tests skipped)
+       START [         ] (1/1) niri tests::ring_pair::ring_cap_keeps_one_core
+
+running 1 test
+stock: ring on, light-ior 1 vs 6: 10861 px, max 2; 6 vs 12: 6467 px, max 1
+binding: ring on, light-ior 1 vs 6: 0 px, max 0; 6 vs 12: 0 px, max 0
+ior102: ring on, light-ior 1 vs 6: 20695 px, max 6; 6 vs 12: 19617 px, max 9
+ior124: ring on, light-ior 1 vs 6: 16286 px, max 7; 6 vs 12: 0 px, max 0
+ior150: ring on, light-ior 1 vs 6: 0 px, max 0; 6 vs 12: 0 px, max 0
+test tests::ring_pair::ring_cap_keeps_one_core ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 391 filtered out; finished in 13.28s
+
+        PASS [  13.317s] (1/1) niri tests::ring_pair::ring_cap_keeps_one_core
+────────────
+     Summary [  13.318s] 1 test run: 1 passed, 391 skipped
