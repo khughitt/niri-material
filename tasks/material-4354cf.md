@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T13:43:04Z
+updated: 2026-10-01T15:06:47Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -66,4 +66,8 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 - 2026-10-01T13:36:54Z (material-4354cf): review: plan round 3 — verdict: accept; findings: none; reviewer: codex/gpt-6
 - 2026-10-01T13:36:54Z (material-4354cf): Plan round 3: all five round-2 findings are addressed. Source tracing confirms vertical recognition selects Move, the 260 px lift crosses the tiled threshold, and workspace_id null distinguishes Moving from a view pan. Stripe pixels have alpha 153 and premultiplied channels. Release fixture probing follows follower wiring; release_run uses the iterator 3-tuple. stop_nested kills and waits for the screenshot worker before niri. Independently checked the planned Python syntax and every stripe pixel, lift bounds/threshold, bash -n and shellcheck -S warning; all passed. No Rust compilation or nested capture was performed. Review assignment complete; the plan author owns implementation and the required nested pilot.
 - 2026-10-01T13:43:04Z (material-4354cf): resumed
+  provenance: {"harness_session":"codex:01a0f7b2-5d00-73d3-8722-9fc32e652fbd","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T15:01:53Z (material-4354cf): review: impl round 1 — verdict: accept; findings: P3 2; reviewer: codex/gpt-6-astra
+- 2026-10-01T15:06:46Z (material-4354cf): review: impl round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6-sol
+- 2026-10-01T15:06:46Z (material-4354cf): parked (waiting on agent, dependency): Agent: resume material-55f8a0 from .worktrees/material-4354cf when its quiet host is handed over tonight; run pilot through verdict, then full capture and review-page publication, obtain owner visual judgment, then close child and parent together and integrate materials-26.04. Rust Tasks 1–3 and prepared fixture are committed and independently reviewed; no further code-review work remains. Capture child is parked quiet, 11 min estimate; preflight previously refused before launch on host load.
   provenance: {"harness_session":"codex:01a0f7b2-5d00-73d3-8722-9fc32e652fbd","harness_session_source":"CODEX_SESSION_ID"}
