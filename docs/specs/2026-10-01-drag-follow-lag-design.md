@@ -1,6 +1,7 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** draft, awaiting owner review (spec round 1).
+**Status:** revised after spec round 1 (agent review, verdict revise); awaiting
+owner review.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
 **Baseline:** `b172940e` (the task-start commits after it change only the task).
@@ -54,42 +55,64 @@ window moves on screen.
 
 ## 3. Contract
 
-A critically damped follower chases the pointer during
-`InteractiveMoveState::Moving`. The jelly receives its lag `L = follower − target`
+A spring follower chases the pointer during `InteractiveMoveState::Moving`. The jelly receives its lag `L = follower − target`
 as the motion residual, added to the move animations. The tile still renders at
 the pointer.
 
-1. **Drive.** For each pointer delta `d` (logical, downscaled by the overview
-   zoom), the target moves by `d` and the follower does not move, so `L −= d`.
-   The follower's velocity is unchanged.
-2. **Integrate.** `L` and its velocity `V` follow
-   `L̈ = −k·L − c·L̇`. The spring parameters are those of window-movement
-   (§4.3), stepped in closed form from the tile's `Clock`. The step is
-   independent of event rate: advancing to `now` and then applying `d` gives
-   the same state for one event of `2d` as for two events of `d` at the same
-   instant.
-3. **Residual.** `motion_residual() = animation_residual() + L`.
+1. **State.** The follower stores an anchor: the clock time `t₀` and the lag
+   `L₀` and velocity `V₀` at that time. `L(t)` and `V(t)` are the closed-form
+   solution of `L̈ = −k·L − c·L̇` from that anchor, using window-movement's
+   spring parameters (§4.3). The follower supports every damping ratio, not
+   only 1, because `oscillate` already has under-, critically and overdamped
+   branches.
+2. **Read lazily.** Every read (`lag()`, `is_settled()`) evaluates the solution
+   at `clock.now()`. Nothing steps the follower in `advance_animations`. Frames
+   render at the predicted presentation time, after `advance_animations` ran
+   at the current time, and the move animations it adds to are read at that
+   presentation time too. A stepped follower would lag them by part of a frame.
+3. **Signed time.** `dt = now − t₀` is a signed `f64`. `Clock::now()` can step
+   backwards: after a frame sets the presentation time and `clear()` runs, the
+   next input event reads the earlier real time, and several outputs set
+   different targets in one loop. The linear closed form is exact for
+   negative `dt`, so a backwards read needs no clamp and never panics.
+4. **Drive.** For each pointer delta `d` (logical, downscaled by the overview
+   zoom), the follower re-anchors at `now`: `t₀ = now`,
+   `L₀ = L(now) − d` and `V₀ = V(now)`. The target moves by `d`, the follower
+   does not, and its velocity carries across the event. Events at the same
+   instant compose exactly, and events at different instants match one
+   integration of the same pointer path, whatever the event rate.
+5. **Residual.** `motion_residual() = animation_residual() + L`.
    `render_offset()` does not include `L`.
-4. **Hold.** With no pointer motion, `L` decays to zero, and the residual,
+6. **Hold.** With no pointer motion, `L` decays to zero, and the residual,
    flex and ripple activity decay with it.
-5. **Release.** The follower state lives on the tile and survives
+7. **Release.** The follower state lives on the tile and survives
    `interactive_move_end`. After release `L` keeps decaying from its value at
    the release instant, added to the release move animation. The window does
    not jump, and the lag term stays continuous. The release term itself still
    starts at `tile_render_loc − slot`, exactly as today (§4.4).
-6. **Settle.** The tile drops the follower when `|L| < 0.05` px and
-   `|V| < 1` px/s. At the live jelly-flex of 0.0066 that is below 0.0004 px
+8. **Settle.** The follower is settled when `|L(now)| < 0.05` px and
+   `|V(now)| < 1` px/s, and `advance_animations` then drops it. At the live jelly-flex of 0.0066 that is below 0.0004 px
    of flex. Until then the follower counts in `are_animations_ongoing`, so
    frames are scheduled until it settles and no longer.
-7. **Off.** No follower exists when window-movement is `off` or uses an easing
-   curve (§4.3), during `Starting` (§4.5), or outside an interactive move.
+9. **Off.** Only `Moving` drives a follower. `Starting` (§4.5) and anything
+   outside an interactive move never create or shift one. No follower is
+   created when window-movement is `off` or uses an easing curve (§4.3), or
+   while the clock completes animations instantly.
+10. **Lifetime.** A follower ends only by settling or by a configuration
+    change (§5, `update_config`). It ignores `stop_move_animations`, which
+    resets position bookkeeping at lift and on a scrolling-to-floating move.
+    The lag is a decaying stimulus, not a position. A tile grabbed again while
+    its lag is still decaying keeps decaying through `Starting`, and `Moving`
+    shifts the same follower, so flex never jumps to zero on a regrab.
 
-The steady lag at velocity `v` is `2v/ω`: 177 px at the baseline's
-40 px/frame (2500 px/s). Read just after a pointer event, the lag also carries
-part of that event's step, up to `d`: 187 px at one event per 16 ms frame. That
-gives 1.1–1.2 px of flex at the live jelly-flex of 0.0066 and 1.6–1.7 px at
-the test's 0.01. The native column-move control peaks
-at 1.11 px, so a fast drag bends the glass about as much as a native move.
+Under a steady drag at velocity `v` with critical damping, the lag is a
+sawtooth of ±`d/2` around `2v/ω`. It is largest just after each event and
+smallest just before the next. At the baseline's 40 px/frame (2500 px/s, one
+event per 16 ms frame) it runs from 157 to 197 px around 177 px. That gives
+1.00–1.22 px of flex at the live jelly-flex of 0.0066 and 1.44–1.73 px at the
+test's 0.01. The native column-move control peaks at 1.11 px, so a fast drag
+bends the glass about as much as a native move. At realistic event rates
+(4–8 ms) the sawtooth narrows to a few pixels.
 
 ### Why the tile does not lag
 
@@ -153,16 +176,21 @@ Rejected: following the banded offset in `Starting`.
 ## 5. Components
 
 - **`DragFollower`** (new, `src/layout/drag_follower.rs`): `L` and `V` per axis,
-  the spring parameters, and the `Clock` time of its last step. Its operations
-  are `step_to(now)`, `shift(d)`, `lag()` and `is_settled()`. It uses the
-  closed-form `Spring` solution (`from = L`, `to = 0`,
-  `initial_velocity = V`), and the velocity at `dt` comes from the same
-  solution. It does not depend on the layout and is unit-tested on its own.
-  The clock time comes from `Clock::now()`, so animation slowdown scales the
-  follower like every other animation.
+  the anchor `(t₀, L₀, V₀)` per axis and the spring parameters. Its operations
+  are `shift(now, d)`, `lag(now)`, `is_settled(now)` and `set_params(now, p)`,
+  each taking a time so the type stays pure. Position comes from
+  `Spring::value_at` (`from = L₀`, `to = 0`, `initial_velocity = V₀`),
+  extended to signed time. Velocity comes from a new `Spring::velocity_at`,
+  the analytic derivative of all three `oscillate` branches. The follower
+  does not depend on the layout and is unit-tested on its own. The tile
+  passes `Clock::now()`, so animation slowdown scales the follower like every
+  other animation.
 - **`Tile`**: holds `drag_follower: Option<DragFollower>`. `drag_follow(d)`
-  creates the follower if needed and shifts it. `advance_animations` steps
-  it and drops it once settled. `motion_residual()` returns the residual and
+  creates the follower if needed and shifts it. `advance_animations` drops it
+  once settled and never steps it. `update_config` drops it when
+  window-movement becomes `off` or an easing curve, or when
+  `should_complete_instantly()` holds. It re-anchors it with the new
+  parameters when the spring changes, keeping `L` and `V` continuous. `motion_residual()` returns the residual and
   replaces `animation_residual()` at the six call sites, and
   `are_animations_ongoing` includes the follower. It is deliberately left
   out of `are_transitions_ongoing`, which also gates the pointer-focus
@@ -173,37 +201,65 @@ Rejected: following the banded offset in `Starting`.
   receives.
 
 Crossing outputs or workspaces during a drag changes `pointer_pos_within_output`
-by an output offset, but `delta` is the real pointer motion. The follower
-therefore sees only motion the user made. A window unmapped mid-drag passes
+by an output offset. `delta` is the pointer's own `new − last` location in the
+move grab, once per pointer frame, so the follower sees only motion the user
+made. A pointer warp during a drag would feed its jump into the follower and
+produce one transient. That is accepted, because warps during a grab are
+rare. `L` is in workspace (unzoomed) units, so an animating overview zoom
+rescales the on-screen lag with everything else. That is accepted too. A window unmapped mid-drag passes
 its residual, lag included, to the unmap snapshot through the same
-`motion_residual()`.
+`motion_residual()`. The snapshot holds that value through the close
+animation, as it already does for move residuals. Making snapshots decay is
+out of scope.
 
 ## 6. Deterministic verification
 
-In `src/layout/tests/drag_dynamics.rs`, on the existing pinned 16 ms clock:
+In `src/layout/tests/drag_dynamics.rs`, on the existing pinned 16 ms clock. The
+harness applies an update, advances 16 ms, then records, so a recorded drag
+sample is the one just before the next event.
 
 - **Drag flexes.** At 40 px/frame, scrolling and floating both reach a nonzero
-  drag peak. The steady lag lies between `2v/ω` and `2v/ω + d`, where `d`
-  is the per-frame step. This replaces the
-  baseline's assertion that the drag peak is zero.
+  drag peak. Under critical damping, the steady recorded lag matches the
+  discrete fixed point within 1e-6 px. The test computes that fixed point by
+  iterating the closed form: 156.79 px at the baseline. The lag also lies in
+  `[2v/ω − d/2, 2v/ω + d/2]`. A follower that resets `V` on each event gives
+  about 525 px and fails both checks.
 - **Hold decays to zero.** After the drag stops, the residual falls below the
   settle threshold. The tile then drops its follower, and
   `are_animations_ongoing()` turns false within a bounded number of frames.
-- **Release continuity.** At the release frame, `motion_residual()` minus the
-  release move animation equals the lag stepped one frame from its
-  pre-release value. In floating, where the drop is in place, the whole
-  residual is that lag and decays to zero.
-- **Rate independence.** The same pointer path, delivered as one event per
-  frame and as four events per frame, gives the same residual at each frame
-  boundary (within 1e-9).
-- **Off paths.** No follower under window-movement `off` or an easing curve,
-  none during `Starting`, and the rubber band's residual stays zero.
+- **Release continuity.** At the zero-time read straight after
+  `interactive_move_end`, before any advance, `motion_residual()` minus the
+  release move animation's residual equals `lag(now)` read just before the
+  end. One frame later it equals that lag evaluated 16 ms on. In floating,
+  where the drop is in place, the whole residual is the lag, and it decays
+  to zero.
+- **Rate independence.** One pointer path is delivered once as one event per
+  frame and once as four events per frame, staggered at 4 ms with
+  `set_unadjusted`. The residual at each frame boundary matches a reference
+  follower stepped through those exact times (within 1e-9), and matches a
+  fine Euler integration of the same path (within 1e-3 px).
+- **Backwards clock.** Reading after the clock steps back gives the closed
+  form at the earlier time, does not panic, and leaves the anchor unchanged.
+- **Regrab.** A tile grabbed again while its lag decays keeps the same
+  follower through `Starting` with a continuous lag, and `Moving` then
+  shifts it. `stop_move_animations` leaves it in place.
+- **Off and reload paths.** On a fresh tile, a window-movement `off` or easing
+  config, or `Starting` alone, never creates a follower, and the rubber
+  band's residual stays zero. Mid-drag, switching window-movement to `off`
+  or easing, or setting complete-instantly, drops the follower on the next
+  `update_config`. A spring parameter change keeps `L` continuous.
 - **Render untouched.** `render_offset()` and the tile's render location
   during drag are identical with and without the follower.
+- **Replaced baseline assertions.** These assert the old zero stimulus and are
+  rewritten to the checks above: the scrolling drag and hold peaks of zero
+  (`drag_dynamics.rs`, around line 191), and floating's drag, hold and
+  release peaks below 1e-9 (around lines 273–275). The table in the dynamics
+  brief gets a column for the new run.
 
 `DragFollower` unit tests cover the closed form against fine Euler
-integration, critically damped decay, a shift with velocity carried, and
-the settle rule.
+integration for damping ratios 0.6, 1 and 1.5, `velocity_at` against a
+finite difference of `value_at`, signed `dt`, a shift that carries velocity,
+and the settle rule.
 
 ## 7. Clip acceptance
 
@@ -211,9 +267,15 @@ The task's acceptance includes a nested drag, hold and release clip beside
 the native column-move control, for the owner to judge. It runs on a headless
 weston host, never the desktop session, and goes through the same preflight
 and capture-metadata path as `ring-motion-clips.sh`. A scripted drag needs
-a held button. `wlrctl` cannot hold one, so the plan supplies a small
-`zwlr_virtual_pointer_v1` driver, which niri already serves: Mod+button down,
-motion at a fixed cadence and speed, a hold, then release. The glass values
+a held button and a held Mod. `wlrctl` cannot hold a button, so the plan
+supplies a small driver for `zwlr_virtual_pointer_v1` and
+`zwp_virtual_keyboard_v1`, both of which niri serves: Mod down, button down,
+motion at a fixed cadence and speed, a hold, then release. Smithay may pass
+virtual-keyboard modifiers to the focused client without niri's bindings
+seeing them, so the pilot's first check is that the drag starts at all
+(`niri msg` shows the window moving). If it does not, the fallback is a
+minimal test client that starts the move itself with `xdg_toplevel.move` on
+a button press. The glass values
 are pinned in the script and recorded with the clips. The pilot runs one
 scrolling drag before the full set: scrolling and floating, a slow and a
 fast speed, each with a hold, plus the native column-move control.

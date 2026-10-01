@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T11:35:47Z
+updated: 2026-10-01T11:42:00Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -27,3 +27,5 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
   provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-01T11:31:58Z (material-4354cf): resumed
   provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T11:40:48Z (material-4354cf): review: spec round 1 — verdict: revise; findings: P1 3, P2 6, P3 4; reviewer: claude-code/claude-opus-5-5
+- 2026-10-01T11:42:00Z (material-4354cf): Spec round 1 dispositions: P1-1 follower anchored at last shift and read lazily at clock.now(), never stepped in advance_animations; P1-2 signed f64 dt with backwards-clock test; P1-3 steady-lag test pins the discrete fixed point (156.79 px recorded) and the ±d/2 band, flex figures corrected to 1.00–1.22 px live. P2-4 staggered 4 ms events via set_unadjusted against a reference follower and Euler; P2-5 replaced baseline assertions named; P2-6 follower survives regrab and ignores stop_move_animations; P2-7 all damping ratios plus Spring::velocity_at; P2-8 update_config drops on off/easing/complete-instantly and re-anchors on spring change; P2-9 clip driver adds virtual keyboard, pilot checks drag starts, xdg_toplevel.move client fallback. P3 zoom rescale, release read timing, unmap snapshot freeze and pointer warps stated.
