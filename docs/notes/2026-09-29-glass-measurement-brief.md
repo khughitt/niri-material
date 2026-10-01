@@ -60,7 +60,9 @@ in this pass already answers the two questions below.
    leaves motion skew unresolved. Share calibration before making this change.
 3. Add production clock controls or redesign the ring cap now. Defer both:
    the existing test seam may suffice, and no current cap-binding visual
-   defect has been established by this pass.
+   defect has been established by this pass. Since closed: the test seam
+   sufficed (`material-0e80c1`), and the cap stays as it is
+   (`material-a85a18`, see *Cap decision* under the findings).
 
 ## Unanswered questions
 
@@ -146,6 +148,15 @@ byte-identically (0 px): the cap holds both, as the formula predicts
 (1.24 and 3.09 px against 1.0). At stock geometry, below the cap, the same
 change alters 10,861 px by at most 2 levels. The shift acts only on tilted
 normals (the chamfer), never on the flat face where the band core lies.
+
+**Cap decision.** `material-a85a18`, 2026-10-01: the hard half-gap cap is
+the intended model. Without it, dense glass shows a second copy of the band
+core on the chamfer. Where the shared shift reaches the cap, `light-ior` no
+longer moves it. The [design](../specs/2026-10-01-filament-shift-cap-design.md)
+records the alternatives and why they were rejected. `ring_cap_keeps_one_core`
+in `src/tests/ring_pair.rs` renders ior 1.02, 1.24 (bevel 9), 1.28 and 1.5
+and fails without the cap on 1.28 and 1.5; the faint ghost at 1.02 and 1.24
+stays under its threshold.
 
 **Opaque-client bypass.** With an opaque client at rest, the ring lights
 0 px inside the window rect. It lights 5,962 px (stock) and 10,799 px
