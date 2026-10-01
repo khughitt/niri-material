@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-a85a18
 created: 2026-09-05T17:14:14Z
-updated: 2026-10-01T10:33:12Z
+updated: 2026-10-01T10:47:22Z
 started: 2026-10-01T10:02:43Z
 depends: []
 parent: material-49871a
@@ -62,3 +62,14 @@ owner's own glass has evidence.
 - 2026-10-01T10:27:17Z (material-a85a18): Correction to the preceding review detail: the arithmetic output was blue offsets 0.2671 px at light-ior 1 and 0.0988 px at 6, matching the spec rounded to 0.27/0.10. The extra digits in the preceding note were transcribed incorrectly; the acceptance verdict is unchanged.
 - 2026-10-01T10:29:38Z (material-a85a18): resumed
   provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T10:33:47Z (material-a85a18): parked (waiting on user, review): Owner reviews docs/plans/2026-10-01-filament-shift-cap.md in .worktrees/material-a85a18 and picks an execution method; then the agent runs Task 1 (material-1eab8b)
+  provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T10:38:51Z (material-a85a18): resumed
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T10:38:51Z (material-a85a18): review: plan round 1 — verdict: revise; findings: P2 3; reviewer: codex
+- 2026-10-01T10:38:51Z (material-a85a18): Plan cc563ead review: P2 lines 458-473: preserve the mutation test exit status and full log, and require second-maximum failures for BOTH binding and ior150 at the specified light-ior/edges; the pipeline hides status and the neither condition allows only one row to fail. P2 lines 527-532: the generic dense-glass paragraph reintroduces the optical overclaim; static distortion can still affect below-cap pixels, aurora is omitted, and aberration is not universally subpixel (allowed chromatic-aberration 1 on ior150 yields a blue offset above 1 px). Restrict the numeric live-glass statement to its parameters or retain the general shared-shift-only wording. P2 line 445: add a passing run with RING_PAIR_DUMP set to an existing directory and retain requested density-row captures, including ior124/bevel9; dump silently returns without that environment variable and the plan never sets it. Core algorithm and extraction inspected; no repository tests or renders run. Recommend Native implementation then one fresh branch review, after these plan corrections.
+- 2026-10-01T10:38:52Z (material-a85a18): parked (waiting on agent): Plan review complete, verdict revise. Hand back to the plan author: correct the mutation verdict gate, qualify the dense-glass documentation, and add the requested capture run and retention; submit the revised plan for review, then use Native execution with one fresh branch review.
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T10:46:41Z (material-a85a18): resumed
+  provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T10:47:22Z (material-a85a18): plan revision 2 for plan review round 1: mutation gate keeps the full log and exit status and requires second-maximum failures in both binding and ior150; the material-config paragraph scopes the residual light-ior effects to the named live settings (ca 1 gives ~1.32 px blue on 1.5/80/12); Step 8 sets RING_PAIR_DUMP and attaches a corner sheet, the ior124 renders and the report to material-1eab8b
