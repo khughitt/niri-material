@@ -89,6 +89,10 @@ cp "$NIRI_BIN" "$OUT/binary"
 cp "$NIRI_BIN.identity.json" "$OUT/binary.identity.json"
 NIRI=$OUT/binary
 
+# The shared helper's idle client exits after 600 s, and a closing window
+# redraws: the matrix holds for 600 s, so its clients idle without end.
+IDLE='printf "\033[?25l"; exec sleep infinity'
+
 # --- configs ------------------------------------------------------------------
 # The probe is an unfocused kitty under glass (focus "none", no beam). Aurora
 # 0.5 at 4 Hz is the sustained optic unless a case says otherwise.
