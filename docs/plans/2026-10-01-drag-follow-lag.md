@@ -4,8 +4,9 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** revised after plan review rounds 1 (revise; P1 4, P2 2, P3 1) and 2
-(revise; P1 1, P2 4); awaiting round 3.
+**Status:** accepted (plan round 3); Tasks 1–3 implemented and reviewed;
+Task 4 fixture implemented; pilot preflight refused on host load before launch.
+The pilot, full capture, review-page publishing and owner judgment remain outstanding.
 
 **Goal:** during an interactive move, the glass flexes with a spring-lagged follower of the
 pointer. The window keeps rendering at the pointer, and the lag decays to zero on a hold
@@ -87,7 +88,7 @@ owns the code:
   - `DragFollower::set_spring(&mut self, now: Duration, spring: FollowSpring)`
   - `DragFollower::spring(&self) -> FollowSpring`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Create `src/layout/drag_follower.rs` containing only the test module below. Add
 `pub mod drag_follower;` after `pub mod closing_window;` in `src/layout/mod.rs`.
@@ -335,12 +336,12 @@ Before running, check `niri-config/src/animations.rs` for the exact `EasingParam
 fields and a `Curve` variant name. If `EaseOutCubic` does not exist, use any variant
 listed there.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `just test-one -p niri drag_follower`
 Expected: compile errors (`cannot find type FollowSpring`, `DragFollower`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Put this above the test module in `src/layout/drag_follower.rs`:
 
@@ -507,14 +508,14 @@ The `w0 == 0.` branch covers a configured stiffness of 0. Such a follower never 
 on its own. Task 3 makes `drag_follow` refuse to create one, so this branch only keeps
 the type total.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `just test-one -p niri drag_follower`
 Expected: all ten tests PASS. If `closed_form_matches_euler_in_all_regimes` misses on
 velocity by a small margin, check the Euler step before you touch the tolerance. The
 1 µs semi-implicit step is accurate to about 1e-4 there.
 
-- [ ] **Step 5: Gate and commit**
+- [x] **Step 5: Gate and commit**
 
 Run: `just test-fast`, `cargo fmt --all`, `tasks check`. Then mark the step task done
 and commit:
@@ -556,7 +557,7 @@ git commit -m "feat(material): closed-form drag follower (material-4354cf)"
   - `InteractiveMoveData::unmap_snapshot_motion_residual(&self) -> Point<f64, Logical>`,
     the residual the moving tile's unmap snapshot receives.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 In `src/layout/tests/drag_dynamics.rs`:
 
@@ -878,12 +879,12 @@ names: `Op::ToggleOverview`, `Workspace::has_window`,
 `workspaces_mut` and `tiles_mut`. The tests module is a child of `layout`, so it can reach `pub(super)`
 items.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `just test-one -p niri drag_dynamics`
 Expected: compile errors for `motion_residual`, `drag_lag` and `has_drag_follower`.
 
-- [ ] **Step 3: Implement in `Tile`**
+- [x] **Step 3: Implement in `Tile`**
 
 In `src/layout/tile.rs`, add the import
 `use super::drag_follower::{DragFollower, FollowSpring};`. Then add the field after
@@ -955,7 +956,7 @@ a drop."
 
 Do **not** touch `are_transitions_ongoing`, `render_offset` or `stop_move_animations`.
 
-- [ ] **Step 4: Drive it from the layout and switch the call sites**
+- [x] **Step 4: Drive it from the layout and switch the call sites**
 
 In `src/layout/mod.rs`, `interactive_move_update`, `InteractiveMoveState::Moving(mut
 move_)` branch: right after the `if window != move_.tile.window().id() { … return
@@ -993,7 +994,7 @@ render at ~4908, the two in `scrolling.rs`, and the one each in `floating.rs` an
 `src/layout/tests.rs:2017` (`scrolling_unmap_snapshot_keeps_view_animation_residual`)
 as it is: it pins the move-animation part.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `just test-one -p niri drag_dynamics`, then `just test-one -p niri tile`.
 Expected: all PASS. `-- --nocapture` prints the traces. Record the new drag peak and
@@ -1003,7 +1004,7 @@ brief.
 If `opposing_release_projects_below_the_release_term` finds no opposing case, change
 the drag directions or lengths until it does. The asserted relation must not change.
 
-- [ ] **Step 5b: Probe and pin the release fixtures**
+- [x] **Step 5b: Probe and pin the release fixtures**
 
 This step runs once Steps 3–4 have wired `motion_residual`, `clear_drag_follower` and
 the follower into the layout, because `release_run` needs them. Until then, the two
@@ -1019,7 +1020,7 @@ chosen sequences into the two constants, then delete the probe test. Rerun
 `just test-one -p niri drag_dynamics`: both release tests must now pass and assert
 unconditionally.
 
-- [ ] **Step 6: Gate and commit**
+- [x] **Step 6: Gate and commit**
 
 Run: `just test-fast`, `cargo fmt --all`, `cargo clippy --all --all-targets`,
 `tasks check`.
@@ -1043,7 +1044,7 @@ git commit -m "feat(material): drag follow-lag jelly stimulus (material-4354cf)"
   `DragFollower::{set_spring, spring}` (Task 1).
 - Produces: no new API.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```rust
 fn options_with_movement(anim: niri_config::Animation) -> Options {
@@ -1214,7 +1215,7 @@ Check `src/layout/tests.rs` for how tests swap options mid-run. It is
 `layout.update_options(..)` or `Op::UpdateConfig`; use whichever exists. For the
 `Curve` variant, use the one Task 1 used.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `just test-one -p niri drag_dynamics`
 Expected: `reload_mid_drag_drops_or_reanchors` fails, because the follower survives
@@ -1222,7 +1223,7 @@ Expected: `reload_mid_drag_drops_or_reanchors` fails, because the follower survi
 complete-instantly follow from Task 2's design. A test that passes here is still kept,
 because it pins behaviour the spec requires.
 
-- [ ] **Step 3: Implement `update_config`**
+- [x] **Step 3: Implement `update_config`**
 
 In `Tile::update_config`, right after `self.options = options;`:
 
@@ -1253,12 +1254,12 @@ add:
 
 Add the same `stiffness <= 0.` → drop case to the `update_config` match.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `just test-one -p niri drag_dynamics`, then `just test-one -p niri drag_follower`.
 Expected: all PASS.
 
-- [ ] **Step 5: Gate and commit**
+- [x] **Step 5: Gate and commit**
 
 Run: `just test-fast`, `cargo fmt --all`, `cargo clippy --all --all-targets`,
 `tasks check`.
@@ -1311,7 +1312,7 @@ The client knows its own window, so it needs no window coordinates over IPC.
   - `drag-lag-clips.sh` with `SEQUENCES` drawn from `scroll-fast scroll-slow float-fast
     float-slow native`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tools/test_vdrag.py`:
 
@@ -1375,7 +1376,7 @@ if __name__ == "__main__":
 Run: `just --set one_cmd 'python3 -m unittest' test-one tools.test_vdrag`
 Expected: FAIL, because `vdrag.py` does not exist yet.
 
-- [ ] **Step 2: Write `vdrag.py`**
+- [x] **Step 2: Write `vdrag.py`**
 
 ```python
 #!/usr/bin/env python3
@@ -1705,7 +1706,7 @@ held, so the driver sends `move` as soon as the press event arrives and before a
 motion. If niri rejects the request anyway, `niri.log` shows the move handler's
 reason. Start the Step 4 pilot investigation there.
 
-- [ ] **Step 3: Write `drag-lag-clips.sh`**
+- [x] **Step 3: Write `drag-lag-clips.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -1780,6 +1781,7 @@ stop_nested() {
 }
 cleanup() {
     local rc=$?
+    trap - EXIT INT TERM
     stop_nested
     rm -rf "$RT"
     capture_meta release "$OUT" || true

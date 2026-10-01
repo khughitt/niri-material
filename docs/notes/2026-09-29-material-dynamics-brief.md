@@ -15,10 +15,11 @@ goal `material-53f873`; this brief is not an approved implementation design.
   native column movement and returned to identical settled pixels. It did
   not test pointer dragging, physical-panel perceptibility or suitable gains.
 - `src/layout/tile.rs::animation_residual` excludes the interactive grab
-  offset. Scrolling rendering combines it with column/view residuals;
-  floating and interactive-move rendering pass the tile residual directly.
-  `material_dynamics` still limits flex to one quarter of bevel depth.
-  Missing drag-driven deformation is plausible, not a new capture finding.
+  offset. `material-4354cf` adds `motion_residual`, combining move animations
+  with drag-follower lag for rendering and unmap snapshots. Scrolling also
+  includes column/view residuals. `material_dynamics` still limits flex to
+  one quarter of bevel depth. Deterministic drag/hold/release traces are
+  recorded below; headless capture and owner judgment remain outstanding.
 - `src/render_helpers/material/mod.rs::apply_resolved` updates parameters
   in place for the same definition name and replaces `MaterialState` on a
   name change. Replacement changes the offscreen buffer, element identity
@@ -81,18 +82,19 @@ reported at jelly-flex 0.01 on the motion sweep's bevel 12 / thickness 20,
 where the cap is 3 px; the live 0.0066 scales magnitudes, not phases. The run
 is deterministic, so repeats do not vary; `-- --nocapture` prints the traces.
 
-| Phase | Scrolling peak flex | Floating peak flex |
-| --- | ---: | ---: |
-| Rubber band below the start threshold | 0 | — (no threshold) |
-| Lift to the pointer | 1.46 px, settles in 240 ms | 0.18 px (first pointer step) |
-| Drag at 40 px/frame | 0 | 0 |
-| Hold | 0 | 0 |
-| Release | 2.96 px (capped), settles in 288 ms | 0 (dropped in place) |
-| Release below the threshold (cancel) | 0.75 px | — |
-| Native column move (control) | 1.11 px, settles in 240 ms | — |
+| Phase | Scrolling baseline peak flex | Floating baseline peak flex | Follow-lag (scrolling / floating) |
+| --- | ---: | ---: | --- |
+| Rubber band below the start threshold | 0 | — (no threshold) | 0 / — (unchanged) |
+| Lift to the pointer | 1.46 px, settles in 240 ms | 0.18 px (first pointer step) | 1.4554 px, 240 ms / 0.1845 px, 224 ms |
+| Drag at 40 px/frame | 0 | 0 | 1.4705 px / 1.4705 px |
+| Hold | 0 | 0 | both below 1% of drag peak after 208 ms |
+| Release | 2.96 px (capped), settles in 288 ms | 0 (dropped in place) | 2.9622 px, 288 ms / zero after settled hold |
+| Release below the threshold (cancel) | 0.75 px | — | unchanged (no follower created) |
+| Native column move (control) | 1.11 px, settles in 240 ms | — | 1.1054 px, 240 ms / — (unchanged) |
 
-While a window follows the pointer, its tile carries no move animation, and
-`animation_residual` excludes the grab offset. The jelly input is therefore
+In the baseline, while a window follows the pointer, its tile carries no move
+animation, and `animation_residual` excludes the grab offset. The baseline jelly
+input is therefore
 exactly zero during drag and hold, whatever the pointer speed. Ripple is
 also off, because its activity gate reads the same residual. Glass only
 flexes on the layout's own animations: lift and release for tiled windows,
@@ -101,22 +103,40 @@ a capture failure. No pixel capture was run, because a zero residual renders
 settled glass and the sweep already measured the shader's response to a
 nonzero one.
 
-The smallest missing contract is a follow-lag stimulus during an interactive
-move. The tile still renders at the pointer, but a critically damped point
-chases that location on the window-movement spring, and the jelly receives
-the point's lag as the residual. It is velocity-derived, decays to zero on a
-hold (finite settling and idle unaffected), and hands over to the release
-`animate_move_from` without a jump if the release starts from the lagged
-point. Native animation config and the existing jelly parameters express it;
-no named profile or state machine is needed for this behaviour.
+`material-4354cf` now adds the follow-lag stimulus. The tile still renders at
+the pointer, while a spring follower contributes lag only to the jelly residual.
+The lag decays on a hold and survives release as an added decaying residual;
+release position and its existing animation remain unchanged. The
+[accepted design](../specs/2026-10-01-drag-follow-lag-design.md) reuses jelly-flex
+and window-movement's spring, keeps the existing flex cap, and leaves rubber-band
+flex off. Owner judgment of drag and release appearance remains outstanding.
 
-The owner still has to decide:
+The follow-lag column comes from Task 2's recorded
+`just test-one -p niri drag_dynamics -- --nocapture` run on `d9631ff8`, with
+14/14 checks passing. Both columns use jelly-flex 0.01 and bevel 12 / thickness 20.
+The settle times measure the last 16 ms sample at or above 1% of phase peak,
+not the follower's lag/velocity removal threshold. Hold release was measured
+after settling; moving-release continuity has separate deterministic checks.
 
-- whether a held drag should deform at all
-- the gain: reuse jelly-flex or add a separate drag gain
-- the spring: window-movement or a dedicated one
-- whether a long tiled drop should keep saturating at the cap
-- whether the rubber band should flex
+### Follow-lag clips (`material-55f8a0`)
+
+The stdlib move client and `docs/materials/scripts/drag-lag-clips.sh` fixture are
+implemented. The 2026-10-01 `scroll-fast` pilot attempt refused at preflight
+before launching Weston: CPU busy 46.4% (limit 10%), load1 23.33 (limit 2),
+GPU utilization 12% (limit 5%), non-idle GPU states, power IQR 8.475 W
+(limit 1 W), and a BitwigStudio compute client. The attempt took 26.491 s;
+the release build had passed in 6 min 2 s. Evidence is under
+`$NIRI_MATERIAL_WORK_ROOT/drag-lag-clips-81ec2a1f/drag-lag-1752426-1790865687/capture.json`.
+No clip, frame, interactive-move confirmation, or review page exists. The pilot
+and full five-sequence capture need a quiet-host retry; the fixture does not
+relax thresholds or stop competing applications.
+
+The fixture pins jelly-flex 0.0066, bevel 12, thickness 20
+and ripple off; runs `scroll-fast`, `scroll-slow`, `float-fast`, `float-slow` and
+`native`; and verifies the drag enters an interactive move through IPC. Owner
+judgment follows a successful headless pilot and full capture. Budget 11 min
+for the quiet-host retry: build 6.5, preflight 0.5, pilot 1, full run 3. The agent
+runs the pilot through its verdict before attempting the full set.
 
 ## Proposed decomposition
 
