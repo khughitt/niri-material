@@ -1,15 +1,16 @@
 ---
 id: material-a85a18
 title: Revisit the filament shift cap versus light-ior for dense glass
-status: doing
+status: done
 priority: 2
 size: m
 complexity: high
 process: planned
 owner: material-a85a18
 created: 2026-09-05T17:14:14Z
-updated: 2026-10-01T11:02:27Z
+updated: 2026-10-01T11:10:46Z
 started: 2026-10-01T10:02:43Z
+completed: 2026-10-01T11:10:46Z
 depends: []
 parent: material-49871a
 tags: [rendering]
@@ -92,3 +93,8 @@ owner's own glass has evidence.
 - 2026-10-01T11:02:25Z (material-a85a18): Reviewed b30988f3: explicit bash scope installs EXIT restoration before mutation and routes INT/TERM through exit; expected test failure is captured by if/else into an rc file and read as mutation_rc; setup/interruption errors stop rather than count as mutation evidence. Per-channel wording fixes the blue-only claim. Prior capture and both-row mutation requirements remain intact. Accepted for Native execution with one fresh review of the completed branch. Review was source inspection; the author reports scratch failure/interruption probes, which were not rerun here. No rendering, repository tests, or shader mutation performed.
 - 2026-10-01T11:02:25Z (material-a85a18): parked (waiting on agent): Plan b30988f3 accepted; review assignment complete. Hand back to the implementation author: start material-1eab8b and execute both plan tasks natively in .worktrees/material-a85a18, including captures, mutation evidence, and required gates; obtain one fresh review of the completed branch.
   provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T11:10:45Z (material-a85a18): prism idea filed: prism-067fc5
+- 2026-10-01T11:10:46Z (material-a85a18): done
+  provenance: {"harness_session":"claude-code:a67c31bc-8dd6-4172-ac6a-b8a3d5ec3118","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T11:10:46Z (material-a85a18): Half-gap cap kept as the intended model; ring_cap_keeps_one_core guards it on five glass rows; docs and brief updated; prism idea prism-067fc5
+  provenance: {"harness_session":"claude-code:a67c31bc-8dd6-4172-ac6a-b8a3d5ec3118","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
