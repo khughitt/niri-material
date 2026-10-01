@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.optic_settling import FAMILIES, analyze_run, check_window, parse_edges
+from tools.optic_settling import FAMILIES, analyze_run, check_window, config_identity, parse_edges
 
 
 class EdgeTests(unittest.TestCase):
@@ -38,7 +38,12 @@ class EdgeTests(unittest.TestCase):
             check_window([], [], 800, 20, 0, 0)
 
 
+S = 1_000_000_000
+
+
 class RunTests(unittest.TestCase):
+    """A synthetic 4 Hz Aurora case: active to 10 s, settled to 20 s, active to 24 s."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -48,42 +53,45 @@ class RunTests(unittest.TestCase):
         (self.run / 'binary').write_bytes(b'identified binary')
         (self.case / 'case.kdl').write_text('valid config')
         self.manifest = {
-            'schema': 1, 'mode': 'pilot', 'lane': 'headless', 'source_commit': 'a' * 40,
-            'binary_sha256': __import__('hashlib').sha256(b'identified binary').hexdigest(),
+            'schema': 2, 'mode': 'pilot', 'lane': 'headless', 'source_commit': 'a' * 40,
+            'binary_sha256': hashlib.sha256(b'identified binary').hexdigest(),
             'cases': [{'name': 'active-idle-resume', 'family': 'active-idle-resume',
-                       'lane': 'headless', 'config_sha256': __import__('hashlib').sha256(b'valid config').hexdigest(),
-                       'stimuli': ['pointer'], 'repetitions': 1, 'hold_ns': 5_000_000_000,
-                       'required': True}],
+                       'lane': 'headless', 'config_sha256': config_identity(self.case),
+                       'repetitions': 1, 'hold_ns': 5 * S, 'required': True,
+                       'edges': [0, 1],
+                       'segments': [{'state': 'active', 'min_hz': 4, 'max_hz': 4},
+                                    {'state': 'settled'},
+                                    {'state': 'active', 'min_hz': 4, 'max_hz': 4}],
+                       'stimuli': [{'label': 'damage', 'min_redraws': 1, 'min_draws': 1}],
+                       'pixels': [{'before': 'before.rgb', 'after': 'after.rgb', 'expect': 'equal'}]}],
         }
         self.manifest['cases'] += [
-            {'name': family, 'family': family, 'lane': 'dedicated',
-             'config_sha256': '0' * 64, 'stimuli': [], 'repetitions': 1,
-             'hold_ns': 5_000_000_000, 'required': False}
+            {'name': family, 'family': family, 'lane': 'dedicated', 'required': False}
             for family in FAMILIES if family != 'active-idle-resume'
         ]
+        # Trace time is monotonic time minus 1000 s.
         self.observation = {
-            'trace_start_ns': 0, 'trace_end_ns': 11_000_000_000,
-            'active_before': [0, 2_000_000_000], 'hold': [3_000_000_000, 8_000_000_000],
-            'active_after': [9_000_000_000, 11_000_000_000],
-            'expected_pixels': 'equal', 'before_rgb': 'before.rgb', 'after_rgb': 'after.rgb',
-            'topology': ['headless-1'], 'stimuli_intervals': [],
+            'journal': [{'label': 'damage', 'start_mono_ns': 1000 * S + 14 * S,
+                         'end_mono_ns': 1000 * S + 15 * S}],
+            'topology': ['headless-1'],
         }
-        (self.run / 'manifest.json').write_text(json.dumps(self.manifest))
-        (self.case / 'observation.json').write_text(json.dumps(self.observation))
+        self.save()
         (self.case / 'export.json').write_text(json.dumps({'messages': True, 'cpu': True, 'gpu': True}))
         (self.case / 'before.rgb').write_bytes(b'pixels')
         (self.case / 'after.rgb').write_bytes(b'pixels')
-        self.write_csv('messages.csv', ['MessageName', 'total_ns'], [
-            ['OpticTimeline active=0 real_ns=3000000000 logical_ns=3000000000', 3_000_000_000],
-            ['OpticTimeline active=1 real_ns=8000000000 logical_ns=3000000000', 8_000_000_000],
-        ])
-        cpu = [['Niri::redraw', 1_000_000_000, 1000], ['Niri::redraw', 9_500_000_000, 1000]]
-        cpu += [['Niri::refresh_idle_inhibit', t * 1_000_000_000, 1000] for t in range(0, 12)]
-        self.write_csv('cpu.csv', ['name', 'ns_since_start', 'exec_time_ns'], cpu)
-        self.write_csv('gpu.csv', ['name', 'Time from start of program', 'GPU execution time'], [
-            ['MaterialRenderElement::draw', 1_000_000_000, 1000],
-            ['MaterialRenderElement::draw', 9_500_000_000, 1000],
-        ])
+        self.messages = [
+            ['OpticTimeline active=0 real_ns=1010000000000 logical_ns=10000000000', 10 * S],
+            ['OpticTimeline active=1 real_ns=1020000000000 logical_ns=10000000000', 20 * S],
+        ]
+        self.write_csv('messages.csv', ['MessageName', 'total_ns'], self.messages)
+        ticks = [t * S // 4 for t in range(0, 40)] + [t * S // 4 for t in range(80, 96)]
+        self.cpu = [['Niri::redraw', t, 1000] for t in ticks]
+        self.cpu += [['Niri::redraw', 14 * S + S // 2, 1000]]          # the stimulus
+        self.cpu += [['Niri::refresh_idle_inhibit', t * S, 1000] for t in range(0, 25)]
+        self.cpu += [['Niri::notify_activity', 4 * S, 1000], ['Niri::notify_activity', 20 * S, 1000]]
+        self.gpu = [['MaterialRenderElement::draw', t, 1000] for t in ticks]
+        self.gpu += [['MaterialRenderElement::draw', 14 * S + S // 2, 1000]]
+        self.write_tables()
 
     def write_csv(self, name, header, rows):
         with (self.case / name).open('w', newline='') as stream:
@@ -91,54 +99,137 @@ class RunTests(unittest.TestCase):
             writer.writerow(header)
             writer.writerows(rows)
 
+    def write_tables(self):
+        self.write_csv('cpu.csv', ['name', 'ns_since_start', 'exec_time_ns'], self.cpu)
+        self.write_csv('gpu.csv', ['name', 'Time from start of program', 'GPU execution time'], self.gpu)
+
     def save(self):
         (self.run / 'manifest.json').write_text(json.dumps(self.manifest))
         (self.case / 'observation.json').write_text(json.dumps(self.observation))
 
+    def rejects(self, message=None):
+        with self.assertRaises(ValueError) as caught:
+            analyze_run(self.run)
+        if message:
+            self.assertIn(message, str(caught.exception))
+
     def test_complete_pilot_passes(self):
-        self.assertEqual(analyze_run(self.run)['verdict'], 'passed')
+        result = analyze_run(self.run)
+        self.assertEqual(result['verdict'], 'passed')
+        case = result['cases'][0]
+        self.assertEqual([s['state'] for s in case['segments']], ['active', 'settled', 'active'])
+        self.assertEqual(case['segments'][1]['redraws'], 1)
+        self.assertEqual({r['verdict'] for r in result['cases'][1:]}, {'unverified'})
 
     def test_rejects_absent_edges_headers_export_and_controls(self):
         for name, mutate in (
             ('edges', lambda: (self.case / 'messages.csv').write_text('MessageName,total_ns\n')),
             ('headers', lambda: (self.case / 'gpu.csv').write_text('name,bad,time\n')),
             ('export', lambda: (self.case / 'export.json').write_text('{"messages": false, "cpu": true, "gpu": true}')),
-            ('cpu control', lambda: (self.case / 'cpu.csv').write_text('name,ns_since_start,exec_time_ns\n')),
-            ('gpu control', lambda: (self.case / 'gpu.csv').write_text('name,Time from start of program,GPU execution time\n')),
+            ('cpu control', lambda: (self.case / 'cpu.csv').write_text(
+                'name,ns_since_start,exec_time_ns\n' + ''.join(f'Niri::refresh_idle_inhibit,{t * S},1\n' for t in range(25)))),
+            ('gpu control', lambda: (self.case / 'gpu.csv').write_text(
+                'name,Time from start of program,GPU execution time\nrender,1,1\n')),
         ):
             with self.subTest(name=name):
                 saved = {p: p.read_bytes() for p in self.case.iterdir() if p.is_file()}
                 mutate()
-                with self.assertRaises(ValueError):
-                    analyze_run(self.run)
+                self.rejects()
                 for p, data in saved.items():
                     p.write_bytes(data)
 
     def test_rejects_missing_duplicate_short_and_false_hardware_cases(self):
         for name, mutate in (
-            ('missing', lambda: self.manifest['cases'].append({**self.manifest['cases'][0], 'name': 'absent'})),
+            ('missing', lambda: self.manifest['cases'].pop(0)),
             ('duplicate', lambda: self.manifest['cases'].append(dict(self.manifest['cases'][0]))),
-            ('short', lambda: self.observation['hold'].__setitem__(1, 4_000_000_000)),
+            ('short', lambda: self.manifest['cases'][0].update(hold_ns=20 * S)),
             ('tty', lambda: self.manifest['cases'][0].update(lane='dedicated')),
+            ('edge plan', lambda: self.manifest['cases'][0].update(edges=[0])),
+            ('pixels', lambda: self.manifest['cases'][0]['pixels'][0].update(expect='different')),
+            ('cadence', lambda: self.manifest['cases'][0]['segments'][0].update(min_hz=8, max_hz=8)),
+            ('stimulus effect', lambda: self.manifest['cases'][0]['stimuli'][0].update(min_redraws=2)),
+            ('journal', lambda: self.observation['journal'].clear()),
         ):
             with self.subTest(name=name):
                 old_manifest = json.loads(json.dumps(self.manifest))
                 old_observation = json.loads(json.dumps(self.observation))
                 mutate(); self.save()
-                with self.assertRaises(ValueError):
-                    analyze_run(self.run)
+                self.rejects()
                 self.manifest = old_manifest; self.observation = old_observation; self.save()
 
-    def test_rejects_third_flush_and_heartbeat_gap(self):
-        cpu = (self.case / 'cpu.csv').read_text()
-        (self.case / 'cpu.csv').write_text(cpu + 'Niri::redraw,4000000000,1000\n'
-                                            'Niri::redraw,5000000000,1000\n'
-                                            'Niri::redraw,6000000000,1000\n')
-        with self.assertRaises(ValueError):
-            analyze_run(self.run)
-        (self.case / 'cpu.csv').write_text(cpu.replace('Niri::refresh_idle_inhibit,5000000000,1000\n', ''))
-        with self.assertRaises(ValueError):
-            analyze_run(self.run)
+    def test_bounds_the_edge_flush_and_settled_redraws(self):
+        self.cpu += [['Niri::redraw', 10 * S + t * S // 10, 1000] for t in (1, 2)]
+        self.write_tables()
+        analyze_run(self.run)                       # two flush redraws are allowed
+        self.cpu += [['Niri::redraw', 10 * S + 3 * S // 10, 1000]]
+        self.write_tables()
+        self.rejects('edge flush')                  # a third is not
+        self.cpu.pop()
+        self.cpu += [['Niri::redraw', 17 * S, 1000]]
+        self.write_tables()
+        self.rejects('while settled')               # nor one after the flush
+
+    def test_stimulus_exempts_only_its_interval(self):
+        self.cpu += [['Niri::redraw', 15 * S + S // 10, 1000]]
+        self.write_tables()
+        self.rejects('while settled')
+
+    def test_rejects_heartbeat_gap(self):
+        self.cpu = [row for row in self.cpu if not (row[0] == 'Niri::refresh_idle_inhibit' and 15 * S < row[1] < 19 * S)]
+        self.write_tables()
+        self.rejects('heartbeat')
+
+    def test_journal_needs_consistent_alignment(self):
+        self.messages[1][0] = 'OpticTimeline active=1 real_ns=1020100000000 logical_ns=10000000000'
+        self.write_csv('messages.csv', ['MessageName', 'total_ns'], self.messages)
+        self.rejects('monotonic offset')
+
+
+    def test_setup_segment_is_unchecked_only_before_a_pause(self):
+        case = self.manifest['cases'][0]
+        case['segments'][0] = {'state': 'setup'}
+        self.cpu += [['Niri::redraw', 5 * S + k, 1000] for k in range(1, 40)]   # launch activity
+        self.write_tables(); self.save()
+        analyze_run(self.run)
+        case['segments'][2] = {'state': 'setup'}
+        self.save()
+        self.rejects('setup')
+
+    def test_development_subset_never_passes_as_a_pilot(self):
+        self.manifest['development'] = True
+        self.manifest['cases'].append({'name': 'extra', 'family': 'gate-policy', 'lane': 'headless',
+                                       'selected': False, 'required': False})
+        self.save()
+        result = analyze_run(self.run)
+        self.assertEqual(result['verdict'], 'development-passed')
+        self.assertIn('not_run', {r['verdict'] for r in result['cases']})
+        self.manifest['cases'][-1]['required'] = True
+        self.save()
+        self.rejects('not run')
+
+    def test_trace_without_messages(self):
+        case = self.manifest['cases'][0]
+        case.update(edges=[], segments=[{'state': 'active', 'min_hz': 4, 'max_hz': 4}], stimuli=[])
+        self.observation['journal'] = []
+        self.save()
+        (self.case / 'messages.csv').write_bytes(b'There are currently no messages!\n')
+        self.cpu = [row for row in self.cpu if not (row[0] == 'Niri::redraw' and 10 * S <= row[1] < 20 * S)]
+        self.cpu += [['Niri::redraw', t * S // 4, 1000] for t in range(40, 80)]
+        self.gpu = [['MaterialRenderElement::draw', row[1], 1000] for row in self.cpu if row[0] == 'Niri::redraw']
+        self.write_tables()
+        analyze_run(self.run)
+        (self.case / 'messages.csv').write_bytes(b'garbage\n')
+        self.rejects()
+
+    def test_unverified_lanes_carry_their_reason(self):
+        self.manifest['cases'][1]['why'] = 'needs a real TTY'
+        self.save()
+        result = analyze_run(self.run)
+        self.assertEqual(result['cases'][1], {'name': self.manifest['cases'][1]['name'],
+                                              'family': self.manifest['cases'][1]['family'],
+                                              'verdict': 'unverified', 'lane': 'dedicated',
+                                              'why': 'needs a real TTY'})
+        self.assertFalse(result['complete'])
 
 
 class PrepareTests(unittest.TestCase):
