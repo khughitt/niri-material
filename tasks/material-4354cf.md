@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T12:26:11Z
+updated: 2026-10-01T12:52:03Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -16,6 +16,7 @@ tags: [dynamics]
 source: docs/notes/2026-09-29-material-dynamics-brief.md
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-10-01-drag-follow-lag-design.md
+plan: docs/plans/2026-10-01-drag-follow-lag.md
 ---
 
 Outcome: glass responds to pointer drag, not only to the layout's lift and release animations. material-b3ce14 measured the jelly residual at exactly 0 during drag and hold in both layouts (src/layout/tests/drag_dynamics.rs; brief section 'Drag baseline finding'). Candidate contract: during InteractiveMoveState::Moving the tile renders at the pointer while a critically damped point chases that location on the window-movement spring; the point's lag is the jelly residual, decaying to 0 on a hold, and release animate_move_from starts from the lagged point so there is no jump. Owner decisions the spec must put to review: whether a held drag deforms at all, gain (jelly-flex or a separate drag gain), spring (window-movement or dedicated), whether long tiled drops keep saturating at max flex, whether the rubber band flexes. Acceptance: extend drag_dynamics.rs to pin lag decay to zero on hold and release continuity; a nested drag/hold/release clip beside the native column-move control for owner judgment. Preserve finite settling, idle-budget and render order. Out of scope: the max-flex cap, whole-slab shear and ior-independent ripple levers, which stay on material-6d4de5.
@@ -44,4 +45,9 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 - 2026-10-01T12:21:09Z (material-4354cf): Round 5: all three round-4 findings are addressed by the revised design. The damping-ratio-10 / stiffness-800 forward closed form remains finite through 60 s and matches an independent Euler calculation (maximum lag error 0.000105 px at 10 us steps). Remaining P2 (§3.3 and §5): negative dt makes the new exponentials grow, so they can still overflow for supported parameters. A Rust probe of the proposed formula with damping-ratio 10, stiffness 100000000, lag -40, velocity 0, dt -0.016 returns lag inf and velocity -inf. This conflicts with exact backwards reads that never panic plus finite-state debug assertions, and can retain non-finite state in release builds. Define bounded backwards-time behavior, preferably clamping pre-anchor reads to the anchor state, and add a rollback test at the numerical boundary. The design author owns this contract revision; the release-flex and live-release changes need no further revision.
 - 2026-10-01T12:26:08Z (material-4354cf): Spec round 5 disposition: reads before the anchor return the anchor state, and shifts apply at max(now, t₀), so the anchor time is monotonic and the closed form only ever runs forward; §3.3 now explains why (a 16 ms backwards read at ratio 10 and stiffness 1e8 overflows). Tests: the clamp returns the exact anchor and is continuous at the boundary, and a high-stiffness backwards read stays finite.
 - 2026-10-01T12:26:11Z (material-4354cf): parked (waiting on user, review): Owner re-reviews .worktrees/material-4354cf/docs/specs/2026-10-01-drag-follow-lag-design.md after round-5 revision (§3.3 pre-anchor clamp, §3.4 monotonic anchor, §6 boundary tests). On acceptance the agent records the round and drafts the implementation plan for separate review.
+  provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T12:31:54Z (material-4354cf): review: spec round 6 — verdict: accept; findings: none; reviewer: codex/gpt-6
+- 2026-10-01T12:31:54Z (material-4354cf): Round 6 accepts the design revised in 66c28f89. The pre-anchor read clamp and monotonic shift time resolve round 5: no spring evaluation needs negative elapsed time. An independent contract probe checked exact pre-anchor state, unchanged anchors on reads, boundary continuity, backwards shifts retaining anchor time and velocity, same-time composition, and finite high-stiffness forward evaluations. Round-4 release-flex and live-release revisions remain accepted. Implementation and visual behavior are still to be verified by the specified tests and clips. Review assignment complete; the design author owns drafting the implementation plan for its separate review.
+- 2026-10-01T12:52:00Z (material-4354cf): Plan drafted: docs/plans/2026-10-01-drag-follow-lag.md, four sequential steps material-0daa80 (DragFollower), material-8540ac (Tile + layout wiring + drag_dynamics), material-e866b0 (lifecycle edges), material-55f8a0 (clip driver, pilot, clips, brief). Self-reviewed against spec §3–§7; test op names verified in src/layout/tests.rs.
+- 2026-10-01T12:52:03Z (material-4354cf): parked (waiting on user, review): Owner reviews .worktrees/material-4354cf/docs/plans/2026-10-01-drag-follow-lag.md (plan round 1) and picks execution (subagent-driven recommended). Agent records the round, revises, or on acceptance starts material-0daa80 in this worktree.
   provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
