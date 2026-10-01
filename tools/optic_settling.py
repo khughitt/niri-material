@@ -152,6 +152,19 @@ def config_identity(directory):
     return digest.hexdigest()
 
 
+def run_config_identity(directory):
+    """config_identity with the run's own directory written as $OUT: configs name
+    files inside their run (the backdrop), so only this form compares across runs."""
+    directory = Path(directory)
+    run = str(directory.resolve().parent).encode()
+    digest = hashlib.sha256()
+    for path in sorted(directory.glob('*.kdl')):
+        if path.name == 'live.kdl':
+            continue
+        digest.update(path.name.encode() + b'\0' + path.read_bytes().replace(run, b'$OUT') + b'\0')
+    return digest.hexdigest()
+
+
 def merge(intervals):
     merged = []
     for start, end in sorted(intervals):
