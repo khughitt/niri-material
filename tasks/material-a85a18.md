@@ -4,7 +4,7 @@ title: Revisit the filament shift cap versus light-ior for dense glass
 status: idea
 priority: 2
 created: 2026-09-05T17:14:14Z
-updated: 2026-09-29T22:38:51Z
+updated: 2026-10-01T09:55:04Z
 depends: []
 parent: material-49871a
 tags: []
@@ -24,3 +24,4 @@ owner's own glass has evidence.
 ## Notes
 
 - 2026-09-29T22:38:51Z (materials-26.04): scope: briefed; current shader caps shared shift at half ring-gap with a 0.2-thickness path; old numeric examples need recomputation before any cap redesign; brief: docs/notes/2026-09-29-glass-measurement-brief.md
+- 2026-10-01T09:55:04Z (material-0e80c1): material-0e80c1 result: formula table rederived in the brief. The cap binds at Prism active 1.28/31.2/10 gap 2 even at light-ior 1 (1.24 vs 1.0 px), and ring_pair.rs measures light-ior 1 vs 6 there as byte-identical (0 px). Stock 1.5/20/12 gap 8 stays under the cap (1.16/2.28 vs 4); light-ior 1 vs 6 changes 10,861 px by at most 2 levels. ior 1.24/thickness 43.3/bevel 9/gap 8 binds from light-ior 6 (4.09 vs 4). The shift acts only on tilted chamfer normals, never on the band core on the flat face, so dense glass changes the halo tail, not the band position. The 1.24/bevel 9 capture is a new Glass row in ring_pair.rs. Brief: docs/notes/2026-09-29-glass-measurement-brief.md#matched-state-ring-findings
