@@ -104,7 +104,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
 | `src/render_helpers/shaders/mod.rs` | B | M | +175/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/client.rs` | B | M | +48/-0 |
+| `src/tests/client.rs` | B | M | +105/-0 |
 | `src/tests/mod.rs` | B | M | +4/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
