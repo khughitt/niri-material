@@ -4,12 +4,12 @@
 # active kitty and `terminal-glass-inactive` for the others; a focus change
 # replaces both tiles' MaterialState, so the glass changes in one frame. Each
 # sequence is one focus drive on a two-pane scene, recorded as a burst of
-# full-frame screenshots (about ten a second, the async screenshot path's
-# rate) under the capture protocol (tools/capture-meta: preflight, identity,
-# settle before every launch, release). Per sequence it writes a GIF, a
-# contact sheet, per-pane frame-to-frame RMSE (diffs.txt) and the largest
-# step's before/after pair. The clips are for the owner's judgment; this
-# script records, it does not grade.
+# full-frame screenshots (about three a second on the headless host, the
+# async screenshot path's rate) under the capture protocol (tools/capture-meta:
+# preflight, identity, settle before every launch, release). Per sequence it
+# writes a GIF, a contact sheet, per-pane frame-to-frame RMSE (diffs.txt) and
+# the largest step's before/after pair. The clips are for the owner's
+# judgment; this script records, it does not grade.
 #
 # The two definitions are pinned from prism.kdl of 2026-09-30 (the harness
 # never reads the generated file, which drifts). Every sequence except

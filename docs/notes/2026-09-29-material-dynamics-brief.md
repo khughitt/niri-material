@@ -219,15 +219,48 @@ swaps.
 `docs/materials/scripts/focus-swap-clips.sh` records six sequences on a
 two-pane headless scene: `swap`, `same`, `seed`, `reversal`, `move` and
 `beam`. The script header describes each one. Each sequence produces a
-10 fps burst, a GIF, per-pane frame-to-frame RMSE and the largest step's
-before and after frames.
+screenshot burst, a GIF, per-pane frame-to-frame RMSE and the largest
+step's before and after frames.
 
 The swap sequences turn the beam off. This separates the glass cut and the
 seed replacement from the focus beam, which only the `beam` sequence shows.
 
-Pending: the pilot of 2026-09-30 was refused by the capture preflight on
-host load. The capture is parked for a quiet host, and visual acceptance
-waits on the owner's review of the clip.
+Recorded 2026-10-01 from a TTY with the desktop stopped, at `d1cd7685`
+(release binary SHA-256 `7d2a1b44…e824e`), every sequence `settled` under
+`tools/capture-meta`: run `focus-swap-3831771-1790827068` under
+`$NIRI_MATERIAL_WORK_ROOT/focus-swap-clips-d1cd7685/`. The burst samples at
+about 3.2 frames a second (0.31 s apart), not the ten the script header
+assumed, so a step is resolved to one 0.31 s interval. Focus changes about
+0.52 s into each burst. Per-pane RMSE against the previous frame, on the
+two 640 px halves (left / right):
+
+| Sequence | Step at the change | Next frame | Then |
+| --- | --- | --- | --- |
+| `swap` | 0.033 / 0.033 | 0.0007 / 0.0009 | 0 |
+| `same` (control) | 0.017 / 0.017 | 0.0005 / 0.0005 | 0 |
+| `seed` | 0.029 / 0.027 | 0.0008 / 0.0008, then 0.0001 | 0 |
+| `reversal` (back after 120 ms) | 0.033 / 0.033, twice | 0.0002 / 0.0002 | 0 |
+| `move` (focus 100 ms into a column move) | 0.22 / 0.22, twice | 0.0002 / 0.0002 | 0 |
+| `beam` (live response) | 0.033 / 0.033 | 0.0008 / 0.0010 | 0 |
+
+Reading:
+
+- The swap is a one-interval cut, with a small residue from the 400 ms
+  ring-light crossfade in the next frame. Half of the step is present in the
+  same-definition control too: kitty's focused cursor and the ring light
+  change on any focus change. The definition swap roughly doubles it.
+- `seed` isolates the replaced `MaterialState`: two definitions identical
+  but for their names still step by 0.029, and the pinned Aurora field
+  visibly jumps to a new pattern (`seed-step.png`). Seed replacement is the
+  largest part of the swap's own contribution.
+- A reversal inside 120 ms produces two full cuts, not a partial one.
+- During a column move, the motion dominates (0.22) and the cut is not
+  separable at this sample rate.
+- `beam` matches `swap`: at 0.31 s spacing the burst does not catch the beam
+  pass, so it is not evidence about the beam.
+
+Visual acceptance is pending: the owner judges `swap`, `same`, `seed`,
+`move` and `beam` from the GIFs and step images.
 
 ### Recommendation
 
