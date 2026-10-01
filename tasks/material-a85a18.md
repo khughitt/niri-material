@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-a85a18
 created: 2026-09-05T17:14:14Z
-updated: 2026-10-01T10:47:22Z
+updated: 2026-10-01T10:57:22Z
 started: 2026-10-01T10:02:43Z
 depends: []
 parent: material-49871a
@@ -73,3 +73,14 @@ owner's own glass has evidence.
 - 2026-10-01T10:46:41Z (material-a85a18): resumed
   provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-01T10:47:22Z (material-a85a18): plan revision 2 for plan review round 1: mutation gate keeps the full log and exit status and requires second-maximum failures in both binding and ior150; the material-config paragraph scopes the residual light-ior effects to the named live settings (ca 1 gives ~1.32 px blue on 1.5/80/12); Step 8 sets RING_PAIR_DUMP and attaches a corner sheet, the ior124 renders and the report to material-1eab8b
+- 2026-10-01T10:47:25Z (material-a85a18): parked (waiting on user, review): Owner re-reviews docs/plans/2026-10-01-filament-shift-cap.md (plan round 2) in .worktrees/material-a85a18; on approval the agent runs it natively, starting with Task 1 (material-1eab8b)
+  provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T10:51:46Z (material-a85a18): resumed
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T10:51:46Z (material-a85a18): review: plan round 2 — verdict: revise; findings: P2 1, P3 1; reviewer: codex
+- 2026-10-01T10:51:46Z (material-a85a18): Reviewed 34e67d68: prior capture-retention and scoped-optics findings addressed; mutation now requires nonzero test status plus second-maximum diagnostics from both rows. P2 lines 499-504: status is a read-only special variable in zsh; harmless zsh -f probe confirmed assignment exits 1 before subsequent cleanup. Use mutation_rc, capture expected failure in an if/else so errexit cannot skip cleanup, and install a restoration trap before editing the shader (EXIT/INT/TERM) in an explicit shell scope. Sequential git checkout alone does not guarantee restoration on interruption. P3 lines 592-593: only through the blue offset incorrectly excludes the green offset; say per-channel aberration offsets, giving blue as the numerical example. No rendering, repository tests, or shader mutation performed in this review. Native execution plus one fresh branch review remains recommended.
+- 2026-10-01T10:51:47Z (material-a85a18): parked (waiting on agent): Plan round 2 review complete. Hand back to the plan author: make mutation cleanup unconditional with a scoped trap, use mutation_rc and if/else status capture, and correct blue-only wording to per-channel offsets; submit the corrected plan for review before Native execution.
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T10:56:54Z (material-a85a18): resumed
+  provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T10:57:22Z (material-a85a18): plan revision 3 for plan review round 2: mutation run moved into a bash script that sets the restoring trap before the shader edit and writes the exit code to a file (mutation_rc; no zsh status); probed in a scratch repo with a stub just: rc 101 captured, shader restored after failure and after SIGINT. Docs paragraph says per-channel aberration offsets, blue as the example

@@ -492,23 +492,41 @@ band.
 
 - [ ] **Step 9: Mutation check: the test fails without the cap**
 
-The full log and the exit status are kept, and the shader edit is reverted whatever
-the outcome:
+The run goes through a bash script, because zsh reserves `status`. The script
+installs the restoring trap before it edits the shader, so the shader is restored on
+success, failure, `errexit` or interruption. It keeps the full log and writes the
+test's exit code to a file.
 
 ```bash
 MUT=$(mktemp -d)/ring-cap-mutation && mkdir -p "$MUT"
-sed -i 's/float cap = 0.5 \* gap;/float cap = 1e6;/' src/render_helpers/shaders/material/main.frag
-grep -n 'float cap' src/render_helpers/shaders/material/main.frag   # expect: float cap = 1e6;
-just test-one -p niri ring_cap_keeps_one_core --no-capture > "$MUT/mutation.log" 2>&1
-status=$?
-git checkout src/render_helpers/shaders/material/main.frag
+cat > "$MUT/run.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+out=$1
+frag=src/render_helpers/shaders/material/main.frag
+restore() { git checkout -- "$frag"; }
+trap restore EXIT
+trap 'exit 130' INT TERM
+sed -i 's/float cap = 0.5 \* gap;/float cap = 1e6;/' "$frag"
+grep -q 'float cap = 1e6;' "$frag" || { echo "mutation not applied" >&2; exit 2; }
+if just test-one -p niri ring_cap_keeps_one_core --no-capture > "$out/mutation.log" 2>&1; then
+  echo 0 > "$out/rc"
+else
+  echo $? > "$out/rc"
+fi
+EOF
+bash "$MUT/run.sh" "$MUT"
 git diff --stat src/render_helpers/shaders/   # expect: empty
-echo "exit $status"
+mutation_rc=$(cat "$MUT/rc")
+echo "exit $mutation_rc"
 grep -E '(binding|ior150) light-ior [0-9]+ (left|right|top|bottom): second maximum' "$MUT/mutation.log" | sort -u
 ```
 
+If `run.sh` exits nonzero itself, the mutation was not applied and no `rc` file
+exists. Stop and report; that is not a gate result.
+
 The gate passes only when all three hold:
-- `status` is nonzero;
+- `mutation_rc` is nonzero;
 - at least one `binding light-ior … : second maximum …` line is present;
 - at least one `ior150 light-ior … : second maximum …` line is present.
 
@@ -516,10 +534,12 @@ The expected lines are at `light-ior` 1 and 6, on at least the right and bottom
 edges. Check the gate mechanically:
 
 ```bash
-test "$status" -ne 0 \
+if [ "$mutation_rc" -ne 0 ] \
   && grep -qE 'binding light-ior [0-9]+ (left|right|top|bottom): second maximum' "$MUT/mutation.log" \
-  && grep -qE 'ior150 light-ior [0-9]+ (left|right|top|bottom): second maximum' "$MUT/mutation.log" \
-  && echo "mutation gate: passed" || echo "mutation gate: FAILED"
+  && grep -qE 'ior150 light-ior [0-9]+ (left|right|top|bottom): second maximum' "$MUT/mutation.log"
+then echo "mutation gate: passed"
+else echo "mutation gate: FAILED"
+fi
 ```
 
 On `mutation gate: FAILED` the guard does not do its job: stop and report, and do
@@ -528,7 +548,7 @@ the anchor, does not count. Otherwise attach the log and record the result:
 
 ```bash
 tasks attach material-1eab8b "$MUT/mutation.log" --caption "ring_cap_keeps_one_core with the cap removed (float cap = 1e6), shader reverted after"
-tasks note material-1eab8b "mutation: cap removed -> ring_cap_keeps_one_core exit $status; second-maximum failures: <the sorted lines printed above, rows/light-ior/edges>; shader reverted"
+tasks note material-1eab8b "mutation: cap removed -> ring_cap_keeps_one_core exit $mutation_rc; second-maximum failures: <the sorted lines printed above, rows/light-ior/edges>; shader reverted"
 ```
 
 - [ ] **Step 10: Gates and commit**
@@ -589,9 +609,9 @@ The aberration offsets grow with `chromatic-aberration`: at
 at `light-ior 1`. On Prism's terminal glass (1.28/31.2/10,
 `ring-gap 2`, `chromatic-aberration 0.36`, `distortion 0`, `aurora 0`,
 `jelly-ripple 0.23`), the cap is 1 px and the chamfer's shared shift reaches
-it at any `light-ior`. There `light-ior` acts only through the blue offset
-(about 0.27 px at `light-ior 1`, 0.10 px at 6) and, while jelly is active,
-through rippled pixels. `ring_cap_keeps_one_core` in
+it at any `light-ior`. There `light-ior` acts only through the per-channel
+aberration offsets (blue, the larger, is about 0.27 px at `light-ior 1` and
+0.10 px at 6) and, while jelly is active, through rippled pixels. `ring_cap_keeps_one_core` in
 `src/tests/ring_pair.rs` renders the table's rows and fails if a second
 core appears.
 ```
