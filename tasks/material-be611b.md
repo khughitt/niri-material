@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-01T00:48:38Z
+updated: 2026-10-01T01:40:36Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -52,3 +52,8 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-01T00:48:34Z (glass-edges): P2 — Spec lines 115–120 and 261–262: the critical-angle cosine is relative to the surface normal, not global z. For the downward incident ray and upward-facing normals, -t.z >= 1/ior; at ior=3 and slope cap 20, -t.z=.379591, contradicting the claimed >=sqrt(1-1/9)=.942809. The .25 floor never binds for structural ior in [1,3]; larger effective chromatic-aberration indices and perturbed normals need their own domain statement. Also, the face-displacement increase at 20 degrees is 2.82% at ior=3, so the under-1% statement needs an ior qualification. Correct the bounds and include base/effective-index endpoints in the numeric checks. Reference: PBRT 4e Specular Reflection and Transmission, Snell law (angles about the surface normal).
 - 2026-10-01T00:48:34Z (glass-edges): parked (waiting on user, review): User reviews spec round 2 findings; design author settles the small-radius deformed-corner contract and corrects the ray-envelope claims and reference cases, then resubmits the spec before implementation planning.
   provenance: {"harness_session":"codex:01a0f4b2-bd63-71f2-9779-d6e88ec61afe","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T01:40:34Z (glass-edges): resumed
+  provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T01:40:34Z (glass-edges): spec revised for round 2: three findings verified and accepted. Corner: exact outer gradient creases under motion (0.07 k=2, 0.23 k=1 at r=0, 3 px); gOut now softplus-softened (s=0.5 px), continuous in all tried cases, rest deviation <=0.03 near arc junctions only; reflection direction from grad_u. Bound corrected to -t.z>=1/ior (floor binds only for aberration taps above index 4). Path non-monotonic on thick glass (75.3: 75.30->72.69->78.10) stated with L<=ior*h; rows added
+- 2026-10-01T01:40:34Z (glass-edges): parked (waiting on user, review): Reviewer runs spec review round 3 on docs/specs/2026-09-30-glass-edge-optics-design.md in .worktrees/glass-edges; on approval the agent runs writing-plans and files the Prism piece
+  provenance: {"harness_session":"claude-code:52bcce0a-1e96-461e-8253-b540ad01dd61","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
