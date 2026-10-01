@@ -1,19 +1,21 @@
 ---
 id: material-c94dd7
 title: Build a bounded settling capture and offline verdict
-status: doing
+status: done
 priority: 1
 size: m
 complexity: high
 process: direct
 owner: material-a1d7da
 created: 2026-09-30T10:47:21Z
-updated: 2026-10-01T06:28:34Z
+updated: 2026-10-01T07:52:17Z
 started: 2026-09-30T12:09:27Z
+completed: 2026-10-01T07:52:15Z
 depends: [material-6e3bda]
 parent: material-f86183
 tags: [performance]
 source: "docs/plans/2026-09-30-sustained-optic-settling.md#task-4"
+model: claude-opus-5-5
 agent: codex
 spec: docs/specs/2026-09-29-sustained-optic-settling-design.md
 plan: docs/plans/2026-09-30-sustained-optic-settling.md
@@ -40,3 +42,9 @@ Implement the pilot-first driver and stdlib analyzer with marker-aligned windows
 - 2026-10-01T05:55:44Z (material-a1d7da): run: 9 min (est 27, headless); build 1.5, six cases 7.5; aborted by the agent (TERM, clean teardown): gate-off could not align its new collect stimulus without an optic edge, so the full pilot could not pass; collect now only joins cases with edges (pilot-20261001-1; aurora-full, aurora-reduced, combined, amount-0, drift-0 passed)
 - 2026-10-01T06:27:05Z (material-a1d7da): run: 26 min (est 27, headless); build 1.5, 23 cases 24.5; passed: first full pilot on 54d93893 (pre-review development evidence; Task 5 material-2ee11e still owes the code review before its acceptance pilot): all 23 nested cases passed, output-removal/tty-resume/unlock/idle-inhibitor unverified with their reasons, complete=false by design (pilot-20261001-2). Matrix started on the same binary gated on it
 - 2026-10-01T06:28:34Z (material-a1d7da): run: 0.5 min (est 45, headless); refused by its own pilot gate before preflight capture: case configs embed their run's backdrop path, so raw config hashes never match across runs; the matrix gate now compares run_config_identity (run directory as $OUT) (matrix-20261001-1)
+- 2026-10-01T07:40:30Z (material-a1d7da): run: 27 min (est 27, headless); passed: pilot on 067fc5e3, 23 passed, 4 unverified (pilot-20261001-3)
+- 2026-10-01T07:40:30Z (material-a1d7da): run: 45 min (est 45, headless); failed on one case: matrix on 067fc5e3 gated on pilot-20261001-3; 26 of 27 run cases passed, including aurora-full-r2/r3 and aurora-reduced-r2/r3 and default-threshold; aurora-full (600 s hold) failed with 9 redraws at 604.4 s, alongside client commits: the focus-thief kitty's shared 'exec sleep 600' exited and its window closed inside the hold (fixture, not the optic: logical time held, 334606130807025 at pause and resume). Driver idles its clients with sleep infinity; rerunning only the 600 s case as a development subset against the same binary and pilot (matrix-20261001-2)
+- 2026-10-01T07:52:15Z (material-a1d7da): run: 12 min (est 12, headless); passed: the 600 s case alone as a development matrix subset against the same binary and pilot, clients idling with sleep infinity (uncommitted driver change, committed next): one flush redraw, 601.9 s settled with zero redraws and material draws, 4 Hz before and after (matrix-dev-20261001-3)
+- 2026-10-01T07:52:15Z (material-a1d7da): done
+  provenance: {"harness_session":"claude-code:601fb2a6-cb37-47f5-a964-59f3bb9f54af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T07:52:15Z (material-a1d7da): result: Task 4 implemented and exercised on the quiet host: pilot-20261001-3 passed (23/23 nested cases, 4 unverified lanes), matrix-20261001-2 passed 26/27 with the 600 s case failing on a fixture client exit, fixed and passed in matrix-dev-20261001-3. Pre-review evidence only: material-2ee11e owns the whole-change code review, the acceptance pilot and matrix on the reviewed binary, the owner's idle/resume clip and the evidence doc. Its runs need a quiet headless host (pilot ~27 min, matrix ~45 min).
