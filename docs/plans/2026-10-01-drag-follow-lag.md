@@ -4,7 +4,8 @@
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 > Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** revised after plan review round 1 (revise; P1 4, P2 2, P3 1); awaiting round 2.
+**Status:** revised after plan review rounds 1 (revise; P1 4, P2 2, P3 1) and 2
+(revise; P1 1, P2 4); awaiting round 3.
 
 **Goal:** during an interactive move, the glass flexes with a spring-lagged follower of the
 pointer. The window keeps rendering at the pointer, and the lag decays to zero on a hold
@@ -762,14 +763,14 @@ fn release_run(steps: &[Point<f64, Logical>], follow: bool) -> Vec<(Point<f64, L
             Op::AdvanceAnimations { msec_delta: FRAME_MS }.apply(&mut layout);
         }
         let (_, _, ws) = layout.workspaces().find(|(_, _, ws)| ws.has_window(&1)).unwrap();
-        let (t, pos) = ws.tiles_with_render_positions().find(|(t, _)| *t.window().id() == 1).unwrap();
+        let (t, pos, _) = ws.tiles_with_render_positions().find(|(t, _, _)| *t.window().id() == 1).unwrap();
         rows.push((t.render_offset(), pos, t.motion_residual(), t.animation_residual()));
     }
     rows
 }
 
 /// The pinned opposing fixture (§4.4): a drag right, then a sharp reversal left,
-/// released moving left. Pin `OPPOSING` from the probe in Step 1b.
+/// released moving left. Pin `OPPOSING` from the probe in Step 5b.
 const OPPOSING: &[(f64, f64)] = &[(40., 0.), (40., 0.), (40., 0.), (40., 0.), (-40., 0.), (-40., 0.)];
 
 #[test]
@@ -872,23 +873,10 @@ fn placed_tile_snapshot_residual_includes_lag() {
 ```
 
 Before running, check `src/layout/tests.rs` and `src/layout/workspace.rs` for the exact
-names: `Op::ToggleOverview`, `Workspace::has_window`, `tiles_with_render_positions` (it
-may be named `tiles_with_render_positions` on the scrolling space only; use the
-workspace-level iterator that yields `(&Tile, Point)`), `workspaces_mut` and
-`tiles_mut`. The tests module is a child of `layout`, so it can reach `pub(super)`
+names: `Op::ToggleOverview`, `Workspace::has_window`,
+`Workspace::tiles_with_render_positions` (it yields `(&Tile, Point, visible)`),
+`workspaces_mut` and `tiles_mut`. The tests module is a child of `layout`, so it can reach `pub(super)`
 items.
-
-- [ ] **Step 1b: Probe and pin the release fixtures**
-
-The opposing and aligned fixtures depend on where the scrolling layout puts the drop.
-Pin them once from a probe instead of trusting the guesses above. Temporarily add an
-`#[ignore]` test that runs `release_run` with `follow == true` for the candidates:
-right ×4 then left ×2, left ×4, and right ×4. Have it print `lag`, `release` and their
-dot product. Run it with `just test-one -p niri drag_dynamics -- --ignored --nocapture`.
-Choose an `OPPOSING` sequence with `dot < 0` and `|lag| < |release|`, and an `ALIGNED`
-sequence with `dot > 0`. Lengthen or shorten the reversal until both hold. Write the
-chosen sequences into the two constants, then delete the probe test. Both release tests
-then assert unconditionally.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -1014,6 +1002,22 @@ brief.
 
 If `opposing_release_projects_below_the_release_term` finds no opposing case, change
 the drag directions or lengths until it does. The asserted relation must not change.
+
+- [ ] **Step 5b: Probe and pin the release fixtures**
+
+This step runs once Steps 3–4 have wired `motion_residual`, `clear_drag_follower` and
+the follower into the layout, because `release_run` needs them. Until then, the two
+release tests may fail on their fixture-shape assertions and nothing else. The opposing
+and aligned fixtures depend on where the scrolling layout puts the drop, so pin them
+from a probe rather than trusting the candidates written in Step 1. Temporarily add an
+`#[ignore]` test that runs `release_run` with `follow == true` for the candidates:
+right ×4 then left ×2, left ×4, and right ×4. Have it print `lag`, `release` and their
+dot product. Run it with `just test-one -p niri drag_dynamics -- --ignored --nocapture`.
+Choose an `OPPOSING` sequence with `dot < 0` and `|lag| < |release|`, and an `ALIGNED`
+sequence with `dot > 0`. Lengthen or shorten the reversal until both hold. Write the
+chosen sequences into the two constants, then delete the probe test. Rerun
+`just test-one -p niri drag_dynamics`: both release tests must now pass and assert
+unconditionally.
 
 - [ ] **Step 6: Gate and commit**
 
@@ -1284,7 +1288,8 @@ The client knows its own window, so it needs no window coordinates over IPC.
 
 **Files:**
 - Create: `docs/materials/scripts/vdrag.py`, a stdlib Wayland client: `wl_shm` window,
-  `xdg_shell` and a virtual pointer.
+  `xdg_shell` and a virtual pointer. It lifts the window vertically before the timed
+  horizontal segment.
 - Create: `docs/materials/scripts/drag-lag-clips.sh`, written in full below. It does
   not copy `ring-motion-clips.sh`.
 - Create: `tools/test_vdrag.py`, tests for wire encoding and event decoding.
@@ -1298,9 +1303,11 @@ The client knows its own window, so it needs no window coordinates over IPC.
 - Consumes: the built niri with Tasks 1–3.
 - Produces:
   - `vdrag.py --socket PATH --extent W,H --dx PX --dy PX --frames N --hz HZ
-    --hold-ms MS --ready FILE --go FILE --done FILE`. It maps a window and finds it
-    with the pointer, then writes `--ready`. It waits for `--go` to exist, drags, and
-    writes `--done`. It stays mapped until SIGTERM.
+    --hold-ms MS --lift-ms MS --ready FILE --go FILE --done FILE`. It maps a window
+    and finds it with the pointer, then writes `--ready`. It waits for `--go` to exist,
+    presses, starts the move, lifts 260 px vertically and pauses `--lift-ms`. It then
+    runs the timed segment, holds, releases and writes `--done`. It stays mapped until
+    SIGTERM.
   - `drag-lag-clips.sh` with `SEQUENCES` drawn from `scroll-fast scroll-slow float-fast
     float-slow native`.
 
@@ -1351,9 +1358,14 @@ class WireTest(unittest.TestCase):
         body = vdrag.u32(9) + vdrag.string("wl_seat") + vdrag.u32(7)
         self.assertEqual(vdrag.parse_global(body), (9, "wl_seat", 7))
 
-    def test_stripes_fill_the_buffer(self):
+    def test_stripes_fill_the_buffer_translucent_and_premultiplied(self):
         data = vdrag.stripes(64, 4)
         self.assertEqual(len(data), 64 * 4 * 4)
+        for (px,) in struct.iter_unpack("<I", data):
+            a = px >> 24
+            self.assertLess(a, 255)
+            for shift in (0, 8, 16):
+                self.assertLessEqual((px >> shift) & 0xFF, a)
 
 
 if __name__ == "__main__":
@@ -1432,9 +1444,10 @@ def parse_global(body):
 
 
 def stripes(width, height):
-    """ARGB8888 rows: 32 px vertical stripes, so refraction and flex are visible."""
-    a = struct.pack("<I", 0xFFE8E8E8)
-    b = struct.pack("<I", 0xFF2A5DB0)
+    """Premultiplied ARGB8888 rows: translucent 32 px stripes at alpha 0.6. Opaque
+    pixels skip the material shader and would show glass only on the bevel."""
+    a = struct.pack("<I", 0x998B8B8B)  # (0xE8, 0xE8, 0xE8) × 0.6
+    b = struct.pack("<I", 0x9919386A)  # (0x2A, 0x5D, 0xB0) × 0.6
     row = b"".join((a if (x // 32) % 2 == 0 else b) for x in range(width))
     return row * height
 
@@ -1497,6 +1510,7 @@ class Window:
         self.pending = None
         self.configured = False
         self.entered = False
+        self.walk_y = 0
         self.button_serial = None
 
         def bind(iface, version, handler=None):
@@ -1574,6 +1588,11 @@ class Window:
         self.c.send(self.surface, 6)  # commit
 
 
+def win_entered_y(win):
+    """The pointer's output y when the walk entered the window."""
+    return win.walk_y
+
+
 def wait_for(c, pred, secs, what):
     end = time.monotonic() + secs
     while not pred():
@@ -1591,6 +1610,7 @@ def main():
     ap.add_argument("--frames", type=int, required=True)
     ap.add_argument("--hz", type=float, default=125.0)
     ap.add_argument("--hold-ms", type=int, default=600)
+    ap.add_argument("--lift-ms", type=int, default=500, help="pause after the vertical lift")
     ap.add_argument("--ready", required=True)
     ap.add_argument("--go", required=True)
     ap.add_argument("--done", required=True)
@@ -1622,6 +1642,7 @@ def main():
     # Walk the pointer across three rows until it enters our window.
     for y in (h_ext // 2, h_ext // 3, 2 * h_ext // 3):
         for x in range(8, w_ext, 16):
+            win.walk_y = y
             c.send(win.vp, 1, u32(ms()), u32(x), u32(y), u32(w_ext), u32(h_ext))  # motion_absolute
             c.send(win.vp, 4)  # frame
             c.roundtrip()
@@ -1640,6 +1661,21 @@ def main():
     c.send(win.toplevel, 5, u32(win.seat), u32(win.button_serial))  # xdg_toplevel.move
     c.roundtrip()
     period = 1.0 / args.hz
+    # Lift vertically first. The grab decides between a window move and a view pan
+    # after 8 px: mostly horizontal motion on a tiled window pans the view, which never
+    # reaches the follower. Vertical motion selects the move, and 260 px crosses the
+    # 256 px lift threshold. Then a pause lets the lift's own flex settle before the
+    # timed segment.
+    lift_dy = -10.0 if win_entered_y(win) > h_ext // 3 else 10.0
+    for _ in range(26):
+        c.send(win.vp, 0, u32(ms()), fixed(0.0), fixed(lift_dy))
+        c.send(win.vp, 4)
+        end = time.monotonic() + period
+        while time.monotonic() < end:
+            c.dispatch(max(0.0, end - time.monotonic()))
+    end = time.monotonic() + args.lift_ms / 1000
+    while time.monotonic() < end:
+        c.dispatch(max(0.0, end - time.monotonic()))
     for _ in range(args.frames):
         c.send(win.vp, 0, u32(ms()), fixed(args.dx), fixed(args.dy))  # motion
         c.send(win.vp, 4)
@@ -1680,7 +1716,8 @@ reason. Start the Step 4 pilot investigation there.
 # while a burst of screenshots records it, under the capture protocol
 # (tools/capture-meta: preflight, identity, settle before every launch, release).
 # The clips are for the owner's judgment against the native column move; this script
-# records, it does not grade. It does check that the window moved during the grab.
+# records, it does not grade. It does check that the timed segment ran as an
+# interactive move (IPC reports no workspace for a window being moved), not a view pan.
 #
 # Sequences (SEQUENCES env, space-separated, default all):
 #   scroll-fast  tiled: drag vdrag left 20 px per 8 ms event (2500 px/s), 24 events,
@@ -1703,11 +1740,11 @@ RUN=drag-lag-$$-$(date +%s)
 OUT=$EVIDENCE/drag-lag-clips-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # short: nested niri panics on long socket paths
 SEQUENCES=${SEQUENCES:-"scroll-fast scroll-slow float-fast float-slow native"}
-RUN_S=3            # press to settled release is under 2 s at both speeds
+RUN_S=4            # lift 0.7 s, slow segment 0.5 s, hold 0.6 s, release settling under 1 s
 GO_DELAY=0.2       # burst start to the go file
-MOVED_FRACTION=0.02
+LIFT_S=0.71        # 26 lift events at 125 Hz, then --lift-ms 500
 VDRAG=$ROOT/docs/materials/scripts/vdrag.py
-UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; VDRAG_PID=; HOST_SEQ=0
+UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; VDRAG_PID=; BURST_PID=; HOST_SEQ=0
 mkdir -p "$OUT" "$RT"
 
 capture_meta() { python3 "$ROOT/tools/capture-meta" "$@"; }
@@ -1719,6 +1756,10 @@ wait_app() { for _ in $(seq 100); do app_ids | grep -qx "$1" && return; sleep 0.
 app_window() { msg -j windows | jq -r --arg a "$1" '.[] | select(.app_id == $a) | .id'; }
 
 stop_nested() {
+    # The screenshot worker first: it talks to the niri being stopped.
+    if [ -n "$BURST_PID" ]; then
+        kill "$BURST_PID" 2>/dev/null || true; wait "$BURST_PID" 2>/dev/null || true; BURST_PID=
+    fi
     if [ -n "$VDRAG_PID" ]; then
         kill "$VDRAG_PID" 2>/dev/null || true; wait "$VDRAG_PID" 2>/dev/null || true; VDRAG_PID=
     fi
@@ -1802,7 +1843,8 @@ start_nested() {   # $1 = config, $2 = sub-run name; sets NIRI_SOCKET and NESTED
     NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1); export NIRI_SOCKET
     # The nested instance's own Wayland socket, by absolute path: the driver must not
     # resolve it against the outer XDG_RUNTIME_DIR.
-    NESTED_WAYLAND=$(ls -t "$RT"/wayland-* 2>/dev/null | grep -v '\.lock$' | grep -vx "$RT/$host" | head -1)
+    NESTED_WAYLAND=
+    for f in "$RT"/wayland-*; do [ -S "$f" ] && NESTED_WAYLAND=$f; done
     [ -S "$NESTED_WAYLAND" ] || fail "nested Wayland socket not found under $RT"
     wait_app kitty
 }
@@ -1820,7 +1862,7 @@ settle() {   # two shots 0.6 s apart agree
 }
 
 # --- bursts ------------------------------------------------------------------
-BURST_PID=; BURST_T0=
+BURST_T0=
 burst_start() {   # $1 = label, $2 = seconds
     local d=$OUT/$1; mkdir -p "$d"
     BURST_T0=$(date +%s.%N)
@@ -1845,12 +1887,10 @@ burst_wait() {
     magick montage "$d"/f*.png -tile 8x -geometry 320x180+2+2 -background '#111' "$OUT/$1-sheet.png"
     echo "$1: $d ($(ls "$d"/f*.png | wc -l) frames); gif $OUT/$1.gif" | tee -a "$OUT/clips.txt"
 }
-# The frame nearest $2 seconds after the burst start.
-frame_at() { awk -v t="$2" '{ d = $2 - t; if (d < 0) d = -d; if (!n || d < best) { best = d; f = $1; n = 1 } } END { print f }' "$OUT/$1/frames.txt"; }
 
 # --- sequences ---------------------------------------------------------------
 drag_sequence() {   # $1 = label, $2 = config, $3 = dx per event, $4 = events
-    local ready=$RT/$1.ready go=$RT/$1.go done=$RT/$1.done drag_s mid frame changed
+    local ready=$RT/$1.ready go=$RT/$1.go done=$RT/$1.done drag_s moving
     start_nested "$2" "$1"
     python3 "$VDRAG" --socket "$NESTED_WAYLAND" --extent 1280,720 --dx "$3" --frames "$4" \
         --hz 125 --hold-ms 600 --ready "$ready" --go "$go" --done "$done" >> "$OUT/vdrag.log" 2>&1 &
@@ -1862,17 +1902,23 @@ drag_sequence() {   # $1 = label, $2 = config, $3 = dx per event, $4 = events
     burst_start "$1" "$RUN_S"
     sleep "$GO_DELAY"
     touch "$go"
+    # During the timed segment the window must be under interactive move: niri's IPC
+    # reports `workspace_id: null` only for the moving window (Layout::with_windows).
+    # A view pan keeps it on its workspace, so this rejects the pan a pixel check
+    # would accept.
+    drag_s=$(awk -v n="$4" 'BEGIN { print n / 125 }')
+    sleep "$LIFT_S"
+    moving=0
+    for _ in $(seq 20); do
+        if [ "$(msg -j windows | jq -r '.[] | select(.app_id == "vdrag") | .workspace_id')" = null ]; then
+            moving=1; break
+        fi
+        sleep "$(awk -v d="$drag_s" 'BEGIN { print d / 20 }')"
+    done
     burst_wait "$1"
     [ -e "$done" ] || fail "$1: vdrag did not finish the drag; see $OUT/vdrag.log"
-    # Moved during the grab: the frame at mid-drag differs from rest in more than
-    # MOVED_FRACTION of the pixels. The final slot can equal the original one.
-    drag_s=$(awk -v n="$4" 'BEGIN { print n / 125 }')
-    mid=$(awk -v g="$GO_DELAY" -v d="$drag_s" 'BEGIN { print g + d / 2 }')
-    frame=$(frame_at "$1" "$mid")
-    changed=$(magick compare -metric AE -fuzz 5% "$OUT/$1-rest.png" "$OUT/$1/$frame" null: 2>&1 | awk '{print $1}' || true)
-    awk -v c="${changed%.*}" -v f="$MOVED_FRACTION" 'BEGIN { exit !(c > f * 1280 * 720) }' \
-        || fail "$1: window did not move during the grab ($changed px changed at $frame)"
-    echo "$1: moved during grab ($changed px changed at $frame, ${mid}s)" | tee -a "$OUT/clips.txt"
+    [ "$moving" = 1 ] || fail "$1: the timed segment never ran as an interactive move (a view pan, or the lift failed)"
+    echo "$1: interactive move confirmed during the timed segment" | tee -a "$OUT/clips.txt"
     stop_nested
 }
 seq_native() {
@@ -1903,8 +1949,10 @@ echo "clips: OK; $OUT/clips.txt, capture record $OUT/capture.json"
 ```
 
 `magick compare` exits 1 when the images differ. Under `set -e` and `pipefail` that
-would abort the script, so every `compare` above ends in `|| true` and reads the count
-from its output. The `material-8e3b73` run hit this failure.
+would abort the script, so the `compare` in `settle` ends in `|| true` and reads the
+count from its output. The `material-8e3b73` run hit this failure. `stop_nested` stops
+the screenshot worker before niri. It runs from the `EXIT`, `INT` and `TERM` trap, so a
+failure partway through a burst, or an interrupt, still reaps it.
 
 Check before running:
 - `bash -n docs/materials/scripts/drag-lag-clips.sh`.
@@ -1933,7 +1981,7 @@ Read `clips.txt`, `vdrag.log` and `scroll-fast.gif`. The pilot passes when all o
 hold:
 - vdrag found its window (`ready`).
 - The drag finished (`done`).
-- The "moved during grab" check passed.
+- The interactive-move check passed (`clips.txt`).
 - The frames show the glass flexing during the drag.
 
 If vdrag reports a protocol error or that the move never started, read `niri.log` for
@@ -1953,7 +2001,7 @@ Run without `SEQUENCES`. Then:
    a "Follow-lag" column holding the Task 2 trace peaks (drag, hold-settle ms, release)
    from `just test-one -p niri drag_dynamics -- --nocapture`. Keep the baseline column.
 2. Add a "Follow-lag clips" subsection: the run directory, the five clips, the
-   per-sequence "moved during grab" lines, and a `capture.json` reference.
+   per-sequence interactive-move lines, and a `capture.json` reference.
 3. Publish the five GIFs and contact sheets on a review page, the same way the
    `material-8e3b73` clips were published. Put its link in the subsection.
 4. In the spec, change the status line to "accepted (spec round 6); implemented in
