@@ -255,19 +255,26 @@ for case in manifest['cases']:
 PY
 if [ "$MODE" = matrix ]; then
     : "${PILOT_DIR:?passed pilot directory}"
-    python3 - "$PILOT_DIR" "$OUT/manifest.json" <<'PY'
+    python3 - "$PILOT_DIR" "$OUT/manifest.json" "$ROOT" <<'PY'
 import json, pathlib, re, sys
+sys.path.insert(0, sys.argv[3])
+from tools.optic_settling import run_config_identity
 pilot = pathlib.Path(sys.argv[1]); current = json.loads(pathlib.Path(sys.argv[2]).read_text())
+out = pathlib.Path(sys.argv[2]).parent
 analysis = json.loads((pilot / 'analysis.json').read_text())
 planned = json.loads((pilot / 'manifest.json').read_text())
 assert analysis['verdict'] == 'passed' and planned['mode'] == 'pilot' and not planned.get('development'), \
     'a passed full pilot is required'
 assert planned['lane'] == current['lane'], 'matching lane pilot required'
 assert planned['binary_sha256'] == current['binary_sha256'] and planned['source_commit'] == current['source_commit'], 'pilot binary mismatch'
-old = {case['name']: case['config_sha256'] for case in planned['cases']}
+# Configs name files inside their own run, so compare them with the run
+# directory normalized; the pilot's own analysis already checked its raw hashes.
+old = {case['name']: run_config_identity(pilot / case['name']) if (pilot / case['name']).is_dir() else None
+       for case in planned['cases']}
 for case in current['cases']:
     base = re.sub(r'-r[0-9]+$', '', case['name'])
-    assert old.get(base, 'absent') == case['config_sha256'], f"{case['name']}: config differs from the pilot's {base}"
+    here = run_config_identity(out / case['name']) if (out / case['name']).is_dir() else None
+    assert base in old and old[base] == here, f"{case['name']}: config differs from the pilot's {base}"
 assert set(old) <= {case['name'] for case in current['cases']}, 'the matrix drops pilot cases'
 PY
 fi

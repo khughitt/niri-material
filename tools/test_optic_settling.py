@@ -232,6 +232,22 @@ class RunTests(unittest.TestCase):
         self.assertFalse(result['complete'])
 
 
+class IdentityTests(unittest.TestCase):
+    def test_run_identity_ignores_the_run_directory_only(self):
+        from tools.optic_settling import run_config_identity
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            for run in ('a', 'b'):
+                case = base / run / 'case'
+                case.mkdir(parents=True)
+                (case / 'case.kdl').write_text(f'spawn-at-startup "swaybg" "-i" "{base / run}/warm.png"\n')
+                (case / 'live.kdl').write_text(f'anything {run}')
+            self.assertNotEqual(config_identity(base / 'a/case'), config_identity(base / 'b/case'))
+            self.assertEqual(run_config_identity(base / 'a/case'), run_config_identity(base / 'b/case'))
+            (base / 'b/case/case.kdl').write_text('gaps 41\n')
+            self.assertNotEqual(run_config_identity(base / 'a/case'), run_config_identity(base / 'b/case'))
+
+
 class PrepareTests(unittest.TestCase):
     def test_prepare_validates_inventory_and_cleans_runtime(self):
         root = Path(__file__).resolve().parents[1]
