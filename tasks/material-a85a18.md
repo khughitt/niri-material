@@ -8,12 +8,13 @@ complexity: high
 process: planned
 owner: material-a85a18
 created: 2026-09-05T17:14:14Z
-updated: 2026-10-01T10:25:47Z
+updated: 2026-10-01T10:33:12Z
 started: 2026-10-01T10:02:43Z
 depends: []
 parent: material-49871a
 tags: [rendering]
 spec: docs/specs/2026-10-01-filament-shift-cap-design.md
+plan: docs/plans/2026-10-01-filament-shift-cap.md
 ---
 
 The render-order change shortened the filament's remaining path from 0.6 to
@@ -50,3 +51,14 @@ owner's own glass has evidence.
 - 2026-10-01T10:24:32Z (material-a85a18): resumed
   provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-01T10:25:47Z (material-a85a18): spec revision 2 for review round 1: check anchored on a positive face core at face_inset + ring-gap (+-2 px) before the outward scan; optical claims scoped to the fixture's unperturbed normals and zero aberration (cap bounds the shared shift only; live glass has ca 0.36 and ripple 0.23, so light-ior still moves the uncapped aberration offsets, blue ~0.27 px at li 1 vs 0.10 at 6); bevel-relative depth 0.40->0.99 px (live, not inert); 1.02/80/12 threshold 10.1
+- 2026-10-01T10:25:50Z (material-a85a18): parked (waiting on user, review): Re-review the revised spec docs/specs/2026-10-01-filament-shift-cap-design.md (round 2) in .worktrees/material-a85a18; on owner approval the agent writes the implementation plan there
+  provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T10:27:05Z (material-a85a18): resumed
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T10:27:05Z (material-a85a18): review: spec round 2 — verdict: accept; findings: none; reviewer: codex
+- 2026-10-01T10:27:05Z (material-a85a18): Reviewed spec revision 87400ac0 against all round-1 findings: positive face-core anchoring fixes the brighter-ghost and zero-profile cases; fixture-scoped optics and corrected arithmetic address the other findings. Confirmed face insets 12/0 for all proposed bevels from material_frame and slabSurface, and blue offsets 0.2707/0.1024 px by formula. Accepted for implementation planning. Left/top rendered anchoring and cap-removal mutation remain implementation verification gates; no rendering or repository test suite was run for this spec review.
+- 2026-10-01T10:27:06Z (material-a85a18): parked (waiting on agent): Second review complete: spec 87400ac0 accepted for planning. Hand back to the design author to write the implementation plan under .worktrees/material-a85a18/docs/plans, including all-edge anchor validation and cap-removal mutation verification, and submit it for review before implementation.
+  provenance: {"harness_session":"codex:01a0f6fb-670e-7b72-88db-56a76f8642ea","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-01T10:27:17Z (material-a85a18): Correction to the preceding review detail: the arithmetic output was blue offsets 0.2671 px at light-ior 1 and 0.0988 px at 6, matching the spec rounded to 0.27/0.10. The extra digits in the preceding note were transcribed incorrectly; the acceptance verdict is unchanged.
+- 2026-10-01T10:29:38Z (material-a85a18): resumed
+  provenance: {"harness_session":"claude-code:fd411147-f51a-4dff-8930-c6c5a1318ace","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
