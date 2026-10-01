@@ -122,28 +122,34 @@ start_nested "$NIRI" "$OUT/active-idle-resume/case.kdl" active-idle-resume
 # carries (niri.<display>.<pid>.sock); the IPC socket itself is not one.
 DISPLAY_NAME=$(basename "$NIRI_SOCKET" | sed -E 's/^niri\.(.+)\.[0-9]+\.sock$/\1/')
 [ -S "$RT/$DISPLAY_NAME" ] || fail "no nested Wayland socket $RT/$DISPLAY_NAME"
+# Input activity from launch: the 5 s threshold must not expire during setup,
+# or the trace carries an extra pause/resume pair before the planned one.
+pointer() { msg "$NIRI" action spawn -- wlrctl pointer move 1 0; }
+pointer
 XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME \
     kitty --config NONE --class gos-probe -o background_opacity=0 \
     -o cursor_blink_interval=0 sh -c "$IDLE" >> "$OUT/probe.log" 2>&1 &
 PROBE_PID=$!
 for _ in $(seq 100); do [ "$(windows_with "$NIRI" gos-probe)" -ge 1 ] && break; sleep 0.1; done
 [ "$(windows_with "$NIRI" gos-probe)" -eq 1 ] || fail 'probe never opened'
+pointer
 XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME \
     kitty --config NONE --class gos-other -o cursor_blink_interval=0 \
     sh -c "$IDLE" >> "$OUT/other.log" 2>&1 &
 OTHER_PID=$!
 for _ in $(seq 100); do [ "$(windows_with "$NIRI" gos-other)" -ge 1 ] && break; sleep 0.1; done
 [ "$(windows_with "$NIRI" gos-other)" -eq 1 ] || fail 'focus thief never opened'
+pointer
 sleep 1
 case_dir=$OUT/active-idle-resume
 # Tracy records GPU zones only several seconds into a capture (6.5 s and
 # 10.6 s observed; CPU zones start at once), so a pause in the first seconds
-# has no GPU active-before control. Pointer motion every 3 s until 12 s
-# keeps input active under the 5 s threshold; the pause follows about 5 s
+# has no GPU active-before control. Trace time counts from the compositor's
+# start. Pointer motion every 3 s until 12 s after the capture connects keeps
+# input active under the 5 s threshold; the pause follows about 5 s
 # later, then a 14 s (pilot) or 610 s (matrix) wait until the resuming motion.
 capture_seconds=32
 [ "$MODE" = matrix ] && capture_seconds=630
-pointer() { msg "$NIRI" action spawn -- wlrctl pointer move 1 0; }
 pointer
 timeout "$((capture_seconds + 60))" "$TOOLS/tracy-capture" -o "$case_dir/capture.tracy" \
     -a 127.0.0.1 -p "$TRACY_PORT" -s "$capture_seconds" > "$case_dir/capture.log" 2>&1 &
