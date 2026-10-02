@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 5
+# ops-check version 6
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -13,7 +13,8 @@ exits 2 when it cannot run at all.
   prefix right before the backticks (ops `bin/tt`) resolves against that project, and
   since Markdown wraps freely a reference opening a line takes the prefix from the end
   of the line above; a `just recipe` must be a recipe in the justfile. Fenced and indented code is not
-  scanned. A destination or an example is written without backticks.
+  scanned. A destination or an example is written without backticks. A missing path git
+  ignores is still a finding, worded as unbuilt: run `just setup` or its producer first.
 - Conflicted copies: no tracked path may be a Dropbox conflicted copy.
 - Agent scratch: no tracked path may lie under a `.agents/` directory. The global ignore
   keeps one out of `git add`; only `git add -f` gets past it, and only the index shows that.
@@ -220,11 +221,14 @@ def references(root, projects, basenames, doc):
             before = line[:found.start()]
             separated = not before.strip() or before[-1] == " "
             prefix = project_prefix(before, previous) if separated else None
-            if prefix in projects:
-                if not (projects[prefix] / token).exists():
-                    yield doc, number, f"`{token}` does not exist in {prefix}"
-            elif not (root / token).exists():
-                yield doc, number, f"`{token}` does not exist"
+            base, where = (projects[prefix], f" in {prefix}") if prefix in projects else (root, "")
+            if (base / token).exists():
+                continue
+            if git(base, "check-ignore", "-q", token) is not None:
+                yield doc, number, (f"`{token}` is git-ignored{where} and was not produced: "
+                                    "run `just setup` (or its producer) first")
+            else:
+                yield doc, number, f"`{token}` does not exist{where}"
         previous = line
 
 
