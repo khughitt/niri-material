@@ -31,8 +31,10 @@ pub trait Optic {
     const UNIFORMS: &'static [(&'static str, UniformType)];
     /// This frame's uniforms, one per entry of `UNIFORMS`, in the same order.
     fn values(glass: &ResolvedGlass, ctx: &OpticFrame<'_>) -> Vec<Uniform<'static>>;
-    /// The next instant `values` changes with no config change; `None` for
-    /// a static optic.
+    /// The next instant `values` changes with no config change, as a logical
+    /// instant on the shared optic timeline (`ctx.logical_now`'s domain), not
+    /// a real scheduler time: the module-level `next_change` maps it. `None` for a
+    /// static optic.
     fn next_change(_glass: &ResolvedGlass, _ctx: &OpticFrame<'_>) -> Option<Duration> {
         None
     }

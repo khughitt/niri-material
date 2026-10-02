@@ -80,7 +80,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `niri-visual-tests/src/test_window.rs` | B | M | +5/-0 |
 | `packaging/arch/.gitignore` | C | A | +6/-0 |
 | `packaging/arch/PKGBUILD` | C | A | +96/-0 |
-| `src/animation/clock.rs` | B | M | +90/-0 |
+| `src/animation/clock.rs` | B | M | +95/-0 |
 | `src/backend/tty.rs` | B | M | +1/-0 |
 | `src/backend/winit.rs` | B | M | +1/-0 |
 | `src/cli.rs` | B | M | +41/-0 |
@@ -90,11 +90,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
 | `src/layout/floating.rs` | B | M | +16/-5 |
-| `src/layout/mod.rs` | B | M | +108/-9 |
+| `src/layout/mod.rs` | B | M | +104/-9 |
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
-| `src/layout/tests.rs` | B | M | +265/-4 |
-| `src/layout/tile.rs` | B | M | +2431/-78 |
+| `src/layout/tests.rs` | B | M | +304/-4 |
+| `src/layout/tile.rs` | B | M | +2444/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
 | `src/niri.rs` | B | M | +293/-0 |
