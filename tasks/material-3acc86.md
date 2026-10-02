@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T20:07:58Z
+updated: 2026-10-02T20:09:21Z
 started: 2026-10-02T20:06:27Z
 depends: []
 parent: material-f86183
@@ -29,3 +29,5 @@ Remaining screencast acceptance from material-2ee11e. Run with an actual screenc
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T20:07:56Z (material-3acc86): finding 2026-10-02: the screencast cannot run in the headless lane. Nested niri (winit) has no GBM device: Backend::gbm_device returns None for Winit and Headless, and StartCast fails 'error starting screencast: no GBM device available' (smoke: private dbus-daemon, debug dbus-interfaces-in-non-session-instances, CreateSession/RecordMonitor winit/Start all succeed, then the cast stops). A real consumer needs the TTY/DRM backend, i.e. the same dedicated real-TTY lane as material-f7eb0b. The D-Bus + GStreamer consumer (docs/materials/scripts/screencast-consumer.py) is kept for that lane.
 - 2026-10-02T20:07:56Z (material-3acc86): process -> planned: the real-TTY lane leaves unresolved design (DRM takeover of the desktop output, privileged VT switching, unlock authentication); spec §8 requires the cases but not their mechanics
+- 2026-10-02T20:09:21Z (material-3acc86): parked (waiting on user, decision): Owner: decide how the real-TTY lane may drive the host (NOPASSWD rule for chvt or another VT-switch route; unlock via swaylock with a dedicated test password or a PAM-free lock client; whether the lane may take DP-1 from a stopped desktop). Then agent: brainstorm one spec covering material-f7eb0b and this task in .worktrees/material-3acc86 (consumer committed in 7c142439; needs gst-plugin-pipewire installed).
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
