@@ -15,9 +15,11 @@ run at once:
    `quiet` means a TTY with the desktop stopped, for power, timing and settle evidence.
    On top of any of these, the owner may have to judge sheets.
    Only the `quiet` class serialises.
-2. **Shared mechanisms.** Several ideas in different goals are really the same
-   abstraction: an ordered layer stack, a named time envelope, the bevel height
-   field, or the cost model. Built once, each one unblocks several lanes.
+2. **Shared mechanisms.** Two are established: frozen-time fixtures and the bevel
+   height field. Each one, built once, unblocks several lanes. Two are hypotheses
+   to test against a second concrete consumer before extracting them: an ordered
+   layer stack and named time envelopes. The cost model is shared as measurements
+   and conditions, not as summed per-effect prices.
 
 ## Current behaviour and evidence
 
@@ -52,44 +54,72 @@ run at once:
 
 ## Alternatives
 
-- **A. Lanes as parent goals, with a `needs-quiet` tag (taken).** `tasks tree`
-  shows each lane. `tasks ready` minus `needs-quiet` lists work that can run at any
-  time. Existing goals and their briefs keep their scope.
+- **A. Lanes as parent goals, scheduled by step (taken).** `tasks tree` shows each
+  lane, and existing goals and their briefs keep their scope. A lane mixes
+  preparation, shared renderer changes and quiet verification, so a step is
+  scheduled by its own constraints, not by its lane. Tags mark known gates:
+  `needs-quiet`, `needs-nested` (a nested compositor) and `needs-owner` (the owner
+  supplies or judges an image). They are not exhaustive: a task without a tag is not
+  automatically runnable anytime, and its checks name their host class. Where a task
+  bundles preparation with a quiet run, split the two when it is taken up
+  (`material-31074f`).
 - B. Lane tags only. This leaves the tree flat, and the 9-29 briefs never get a
   common place to live.
 - C. Re-scope everything into new goals. This throws away the 9-29 handoffs for no gain.
 
 ## Unanswered questions
 
-- **Order of the optics lane.** Does the ring embedding (`material-4e3e9c`, which
-  the owner prioritised on 10-01) wait for the bevel height field, or go first on
-  the current chamfer? Owner, after the `material-be611b` plan.
-- **Layer-stack contract.** Is the stack a uniform-packed fixed fan-out, as in
-  `material-3fcba2`, or a device chain in Prism (`prism-a03862`)? Answer this with
-  the noise-layers design, which is the smallest instance.
-- **Envelope abstraction.** Can one named-envelope type serve animation profiles
-  (`material-9be53d`), transients (`material-d873bf`), impulse shapes
-  (`material-1cc048`, shelved), frost-on-idle (`material-4bf8b8`) and the weather
-  cycle (`material-f3e4e4`)? A design under the dynamics lane can answer this. It
-  is not filed yet; file it when the lane is taken up.
+- **Order of the optics lane.** Answered: bevel first. `material-4e3e9c` already
+  scopes itself after `material-be611b`'s edge profile, because the band follows
+  innerDist/chamfer. It now depends on `material-be611b`; its comparison scenes and
+  acceptance criteria can be prepared meanwhile.
+- **Layer-stack contract (hypothesis).** Noise modifies the transmitted backdrop
+  before attenuation; interior light, embedded textures and profile composition
+  have different semantics. An ordered list with weights is not yet a common
+  rendering operation. Build bounded noise layers (`material-3fcba2`) first and
+  extract a contract only when a second concrete consumer fits it.
+- **Envelope abstraction (hypothesis).** Reuse native animations and named
+  responses first, as the dynamics brief recommends. A focus transient
+  (`material-d873bf`), a signal expiry and a weather cycle (`material-f3e4e4`) may
+  share curve evaluation but need different clocks and settle behaviour. Revisit
+  with `material-9be53d` only when an existing mechanism demonstrably cannot express
+  a wanted behaviour.
+- **Cost model.** Share measurements and their conditions. Preset estimates must
+  account for shared blur/prefilter caches and interactions; summing per-effect
+  prices will miss them.
 
 ## Proposed decomposition
 
-| Lane | Goal | Host | Shared mechanism it supplies | Next ready step |
+| Lane | Goal | Host | Established shared ground | First milestone |
 |---|---|---|---|---|
-| Evidence instruments | `material-2834d7` (new, P1) | none, then shrinks quiet | frozen-clock fixtures; a host class for each check | `material-3a17b8` shared fixture helpers, then `material-22d78f`, `material-bb8480`; `material-925518`/`material-188aaa` cut quiet refusals |
-| Quiescence and cost | `material-5d6b2c` (existing) | **quiet** | the cost model; the settle contract | the queue in `tasks quiet`; `material-31074f` once the lifecycle captures clear |
-| Glass optics | `material-6062fd` (new, P1) | headless + owner | the bevel height field | `material-be611b` plan (glass-edges worktree); `material-ad1780` diagnosis on the fixture |
-| Material library and composition | `material-3aa1f2` (new) | none/headless | the ordered layer stack | `material-3fcba2` as the stack's first instance; `material-bb3fe5` ice |
-| Motion and time | `material-53f873` (existing) | headless + owner; idle for clips | named envelopes | `material-77db8a` merge step (needs no host); `material-6d4de5` scope |
-| Signals | `material-6f606b` (new) | none | source to store to response | `material-c1330b`, `material-07bac9`, `material-3bdffc` |
+| Evidence instruments | `material-2834d7` (new, P1) | none, then shrinks quiet | frozen-time fixtures (visual behaviour only) | `material-3a17b8` helpers, then `material-22d78f` migrated; `material-bb8480` calibration runs independently; `material-77be96` before more concurrent builds |
+| Quiescence and cost | `material-5d6b2c` (existing) | **quiet** for verification; preparation none | measurements and their conditions; the settle contract | remaining settle lifecycle evidence, then a bounded cost pilot; `material-233295` needs no host |
+| Glass optics | `material-6062fd` (new, P1) | headless, plus owner review | the bevel height field | `material-be611b` implemented and reviewed |
+| Material library and composition | `material-3aa1f2` (new) | none or headless | none yet; layer stack is a hypothesis | `material-3fcba2` with single-layer identity preserved |
+| Motion and time | `material-53f873` (existing, retitled "Responsive glass that settles completely") | headless/owner; idle for clips | native animations and named responses | `material-77db8a` brought current and verified |
+| Signals | `material-6f606b` (new) | none; `material-07bac9` needs a nested compositor | source to store to response | `material-c1330b` replay finding and `material-07bac9` transport/attribution finding |
 
-Loose bug and hygiene work runs when the larger lanes are blocked, on any host:
-`material-698875`, `material-c8732f`, `material-e88df7`, `material-77be96`,
-`material-fa4eec`.
+**Next parallel push.** Instruments: `material-3a17b8`, then `material-22d78f`, and
+investigate `material-77be96` first. All three checkouts (main, glass-edges,
+material-77db8a) share one `target-dir`, checked 2026-10-02; that the configuration
+persists is established, the cause of the reported failures is not. Signals:
+`material-c1330b`, with `material-07bac9` as a separate nested-host demonstration.
+Optics: finish and review the `material-be611b` plan and prepare ring comparison
+cases. Bring `material-77db8a` current soon: its recorded conflicts touch the shader
+and configuration files the optics work will change, so it competes for code
+ownership although it needs no quiet host.
 
-How the lanes feed each other: instruments → every lane's acceptance checks. Cost →
-budgets for composition, fireflies and lighting, and Fresnel's reflected sample.
+The opaque-content opt-in contract stays visible across lanes: content depth
+(`material-7f5751`) and inactive desaturation (`material-987655`) settle that
+boundary together.
+
+Loose bug and hygiene work fills gaps when the larger lanes are blocked:
+`material-698875`, `material-c8732f`, `material-e88df7`, and `material-fa4eec`
+(`needs-owner`: the owner supplies the screenshot). `material-77be96` moved to the
+instruments lane.
+
+How the lanes feed each other: instruments → the visual acceptance checks of every lane. Cost
+measurements → budgets for composition, fireflies and lighting, and Fresnel's reflected sample.
 Bevel → `material-7f5751`, `material-4e3e9c`, `material-933a8b`. Settle contract →
 the motion and signals lanes.
 
