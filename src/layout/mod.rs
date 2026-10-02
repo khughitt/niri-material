@@ -77,6 +77,7 @@ use crate::utils::{
 use crate::window::ResolvedWindowRules;
 
 pub mod closing_window;
+pub mod drag_follower;
 pub mod floating;
 pub mod focus_ring;
 pub mod insert_hint_element;
@@ -602,6 +603,11 @@ impl<W: LayoutElement> InteractiveMoveState<W> {
 }
 
 impl<W: LayoutElement> InteractiveMoveData<W> {
+    /// The motion residual the moving tile's unmap snapshot receives.
+    fn unmap_snapshot_motion_residual(&self) -> Point<f64, Logical> {
+        self.tile.motion_residual()
+    }
+
     fn tile_render_location(&self, zoom: f64) -> Point<f64, Logical> {
         let scale = Scale::from(self.output.current_scale().fractional_scale());
         let window_size = self.tile.window_size();
@@ -2812,11 +2818,23 @@ impl<W: LayoutElement> Layout<W> {
     /// the next `update_render_elements`. Returns whether the change reaches
     /// any tile, so the caller redraws only when something renders
     /// differently.
-    pub fn set_input_active(&mut self, active: bool) -> bool {
+    pub fn set_input_active(&mut self, active: bool, now: Duration) -> bool {
         if self.input_active == active {
             return false;
         }
         self.input_active = active;
+        let time = self.clock.set_optic_active(active, now).unwrap();
+        if let Some(client) = tracy_client::Client::running() {
+            client.message(
+                &format!(
+                    "OpticTimeline active={} real_ns={} logical_ns={}",
+                    u8::from(active),
+                    now.as_nanos(),
+                    time.logical_now.as_nanos(),
+                ),
+                0,
+            );
+        }
         let moving = match &self.interactive_move {
             Some(InteractiveMoveState::Moving(move_)) => Some(&move_.tile),
             _ => None,
@@ -2824,7 +2842,7 @@ impl<W: LayoutElement> Layout<W> {
         self.workspaces()
             .flat_map(|(_, _, ws)| ws.tiles())
             .chain(moving)
-            .any(Tile::attention_gated)
+            .any(Tile::activity_gated)
     }
 
     pub fn input_active(&self) -> bool {
@@ -4092,6 +4110,10 @@ impl<W: LayoutElement> Layout<W> {
                     return false;
                 }
 
+                // The follower sees the pointer's own motion, in workspace units (§3.4).
+                let zoom = self.overview_zoom();
+                move_.tile.drag_follow(delta.downscale(zoom));
+
                 let mut ws_id = None;
                 if let Some(mon) = self.monitor_for_output(&output) {
                     let (insert_ws, _) = mon.insert_position(move_.pointer_pos_within_output);
@@ -4741,12 +4763,13 @@ impl<W: LayoutElement> Layout<W> {
                     .tile
                     .update_render_elements(false, true, false, view_rect);
 
+                let motion_residual = move_.unmap_snapshot_motion_residual();
                 move_.tile.store_unmap_snapshot_if_empty(
                     renderer,
                     xray,
                     xray_has_blocked_out_layers,
                     XrayPos::new(pos_within_output, zoom),
-                    move_.tile.animation_residual(),
+                    motion_residual,
                 );
                 return;
             }
@@ -4905,7 +4928,7 @@ impl<W: LayoutElement> Layout<W> {
             pos_in_backdrop,
             xray_pos,
             true,
-            move_.tile.animation_residual(),
+            move_.tile.motion_residual(),
             &mut |elem| {
                 push(RescaleRenderElement::from_element(
                     elem,

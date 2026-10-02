@@ -6652,8 +6652,9 @@ impl Niri {
         // The attention gate (design 2026-09-18 §3). The timer is armed only
         // on the idle→active edge; while active, an early fire re-arms
         // itself, so per-input work is one `observe`.
-        if self.input_activity.observe(get_monotonic_time()) {
-            if self.layout.set_input_active(true) {
+        let now = get_monotonic_time();
+        if self.input_activity.observe(now) {
+            if self.layout.set_input_active(true, now) {
                 self.queue_redraw_all();
             }
             self.arm_input_idle_timer();
@@ -6681,9 +6682,10 @@ impl Niri {
                 // and stores its token. Never `TimeoutAction::ToDuration`:
                 // it would keep this source alive with no token to cancel it.
                 state.niri.input_idle_timer = None;
-                match state.niri.input_activity.poll(get_monotonic_time()) {
+                let now = get_monotonic_time();
+                match state.niri.input_activity.poll(now) {
                     crate::activity::Poll::Idle => {
-                        if state.niri.layout.set_input_active(false) {
+                        if state.niri.layout.set_input_active(false, now) {
                             state.niri.queue_redraw_all();
                         }
                     }
@@ -6697,10 +6699,13 @@ impl Niri {
 
     /// Config reload changed `signal { idle-after-ms }`.
     pub fn set_input_idle_threshold(&mut self, threshold: Duration) {
-        let changed = self
-            .input_activity
-            .set_threshold(threshold, get_monotonic_time());
-        if changed && self.layout.set_input_active(!self.input_activity.is_idle()) {
+        let now = get_monotonic_time();
+        let changed = self.input_activity.set_threshold(threshold, now);
+        if changed
+            && self
+                .layout
+                .set_input_active(!self.input_activity.is_idle(), now)
+        {
             self.queue_redraw_all();
         }
         self.arm_input_idle_timer();

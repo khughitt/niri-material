@@ -11,7 +11,8 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-use niri_config::Config;
+use niri_config::{Action, Config};
+use smithay::wayland::session_lock::SessionLockHandler;
 
 use super::fixture::Fixture;
 use crate::niri::RedrawState;
@@ -23,6 +24,73 @@ fn fixture(idle_after: Duration) -> Fixture {
     let mut f = Fixture::with_config(config);
     f.add_output(1, (1280, 720));
     f
+}
+
+fn aurora_fixture() -> (Fixture, super::client::ClientId) {
+    let config = Config::parse_mem(
+        r#"
+        signal {
+            idle-after-ms 60
+        }
+        material "frost" {
+            glass {
+                aurora 0.5 {
+                    drift-hz 4
+                }
+            }
+        }
+        window-rule {
+            material "frost"
+        }
+        "#,
+    )
+    .unwrap();
+    let mut f = Fixture::with_config(config);
+    f.add_output(1, (1280, 720));
+    let id = f.add_client();
+    let window = f.client(id).create_window();
+    let surface = window.surface.clone();
+    window.commit();
+    f.roundtrip(id);
+    let window = f.client(id).window(&surface);
+    window.attach_new_buffer();
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+    (f, id)
+}
+
+#[test]
+fn optic_settling_aurora_startup_pointer_and_reload_edges() {
+    let (mut f, id) = aurora_fixture();
+    assert_eq!(f.niri().layout.windows().count(), 1);
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    assert!(!f.niri().clock.optic_time(get_monotonic_time()).running);
+    assert!(f.niri().input_activity.is_idle());
+    assert!(f.niri().input_idle_timer.is_none());
+
+    f.niri().notified_activity_this_iteration = false;
+    f.client(id).nudge_pointer();
+    f.roundtrip(id);
+    assert!(f.niri().clock.optic_time(get_monotonic_time()).running);
+    assert!(f.niri().input_idle_timer.is_some());
+
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    let held = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held.running);
+    f.niri()
+        .set_input_idle_threshold(Duration::from_millis(200));
+    assert!(f.niri().clock.optic_time(get_monotonic_time()).running);
+    assert!(f.niri().input_idle_timer.is_some());
+    f.niri().set_input_idle_threshold(Duration::from_millis(10));
+    let held_after_reload = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held_after_reload.running);
+    f.niri().set_input_idle_threshold(Duration::ZERO);
+    let resumed = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(resumed.running);
+    assert_eq!(resumed.logical_anchor, held_after_reload.logical_now);
+    assert!(f.niri().input_idle_timer.is_none());
 }
 
 #[test]
@@ -147,4 +215,54 @@ fn an_idle_edge_that_changes_no_tile_queues_no_redraw() {
             .all(|state| matches!(state.redraw_state, RedrawState::Idle)),
         "the idle edge queued a redraw"
     );
+}
+
+#[test]
+fn optic_settling_power_on_keeps_the_timeline_paused() {
+    let mut f = fixture(Duration::from_millis(60));
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    let held = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held.running);
+    f.niri_state().do_action(Action::PowerOffMonitors, false);
+    f.niri_state().do_action(Action::PowerOnMonitors, false);
+    let after = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!after.running);
+    assert_eq!(after.logical_now, held.logical_now);
+    assert!(f.niri().input_activity.is_idle());
+}
+
+#[test]
+fn optic_settling_unlock_handler_resumes_the_timeline() {
+    let mut f = fixture(Duration::from_millis(60));
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    let held = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held.running);
+    f.niri().notified_activity_this_iteration = false;
+    SessionLockHandler::unlock(f.niri_state());
+    let after = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(after.running);
+    assert_eq!(after.logical_anchor, held.logical_now);
+    assert!(!f.niri().input_activity.is_idle());
+    assert!(f.niri().input_idle_timer.is_some());
+}
+
+#[test]
+fn optic_settling_idle_inhibitor_does_not_resume_the_timeline() {
+    let mut f = fixture(Duration::from_millis(60));
+    sleep(Duration::from_millis(80));
+    f.state.server.dispatch();
+    let held = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held.running);
+    for inhibited in [true, false] {
+        f.niri()
+            .is_fdo_idle_inhibited
+            .store(inhibited, std::sync::atomic::Ordering::SeqCst);
+        f.niri().refresh_idle_inhibit();
+        let after = f.niri().clock.optic_time(get_monotonic_time());
+        assert!(!after.running);
+        assert_eq!(after.logical_now, held.logical_now);
+        assert!(f.niri().input_activity.is_idle());
+    }
 }
