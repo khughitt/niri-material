@@ -1,13 +1,15 @@
 ---
 id: material-4354cf
 title: Design a follow-lag jelly stimulus for interactive drag
-status: todo
+status: doing
 priority: 1
 size: m
 complexity: high
 process: planned
+owner: materials-26.04
 created: 2026-09-30T10:00:19Z
-updated: 2026-09-30T10:00:29Z
+updated: 2026-10-01T11:31:55Z
+started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
 tags: [dynamics]
@@ -20,3 +22,5 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 ## Notes
 
 - 2026-09-30T10:00:29Z (materials-26.04): concerns: material-b3ce14 extension — design the drag stimulus the baseline found missing
+- 2026-10-01T11:31:55Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:12fc6cfe-a05c-422d-9279-35d443d3ffb2","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

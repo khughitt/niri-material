@@ -1,15 +1,16 @@
 ---
 id: material-28c5e3
 title: "ring-motion-clips.sh: the mid-pass corner crop should follow the head"
-status: doing
+status: done
 priority: 3
 size: xs
 complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-09-21T09:39:49Z
-updated: 2026-09-30T09:54:03Z
+updated: 2026-09-30T10:11:13Z
 started: 2026-09-30T09:54:03Z
+completed: 2026-09-30T09:59:19Z
 depends: []
 tags: [tooling]
 agent: claude-code/claude-opus-5
@@ -20,3 +21,6 @@ docs/materials/scripts/ring-motion-clips.sh crops the focused pane's top-left co
 ## Notes
 
 - 2026-09-30T09:54:03Z (materials-26.04): started
+- 2026-09-30T09:59:19Z (materials-26.04): done
+- 2026-09-30T09:59:19Z (materials-26.04): ring-motion-clips.sh mid-pass corner crop now follows the beam head: arc = speed x t on the pane perimeter picks the nearest corner (top-right at 2 s at the default speed, bottom-left for beam-fast); rest and tail-clear crops stay at the top-left
+- 2026-09-30T10:11:13Z (materials-26.04): review: impl round 1 — verdict: revise; findings: P2 1; reviewer: human

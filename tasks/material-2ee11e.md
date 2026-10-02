@@ -1,15 +1,16 @@
 ---
 id: material-2ee11e
 title: "Run the pilot and matrix, review evidence and integrate"
-status: doing
+status: done
 priority: 1
 size: m
 complexity: mid
 process: direct
 owner: material-a1d7da
 created: 2026-09-30T10:47:21Z
-updated: 2026-10-02T08:06:32Z
+updated: 2026-10-02T08:21:19Z
 started: 2026-10-02T03:25:21Z
+completed: 2026-10-02T08:21:19Z
 depends: [material-c94dd7]
 parent: material-f86183
 tags: [performance]
@@ -35,3 +36,8 @@ Run an end-to-end pilot before the nine-family matrix, retain unavailable hardwa
   provenance: {"harness_session":"codex:01a0fba2-4318-7890-9b41-bbe036afaf06","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-02T08:06:31Z (material-a1d7da): review: impl round 1 — verdict: accept; findings: none; reviewer: human
 - 2026-10-02T08:06:31Z (material-a1d7da): Owner accepted the idle/resume clip and authorized finishing validation and local integration. Fresh offline reduction reproduced both lane-passed verdicts: pilot 23 passed / 5 unverified, matrix 27 passed / 5 unverified; all 610 artifact hashes verified. Preserve the five missing lifecycle cases and the deferred review minors as open acceptance work; do not close material-f86183.
+- 2026-10-02T08:18:08Z (material-a1d7da): Integration: merged current materials-26.04 into the execution worktree. Preserved both resource-aware evidence updates and the complete design-task history (the two task versions contained identical lines in different order); regenerated the divergence report from the combined index. Required combined-tree checks precede local fast-forward integration.
+- 2026-10-02T08:21:19Z (material-a1d7da): done
+  provenance: {"harness_session":"codex:01a0fba2-4318-7890-9b41-bbe036afaf06","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-02T08:21:19Z (material-a1d7da): Accepted owner idle/resume judgment and reproduced headless pilot/matrix verdicts (23/27 passed, five lifecycle cases remain unverified); verified all 610 artifact hashes. Updated spec, plan, evidence and resource-aware brief; filed four acceptance follow-ups under material-f86183, which remains open with deferred review minors. Combined-tree just test-fast passed 504/504; focused Rust 13/13 and capture tooling 26/26 passed. Integrated current materials-26.04 into the execution branch, preserving evidence and task histories; local integration is the validated branch fast-forward.
+  provenance: {"harness_session":"codex:01a0fba2-4318-7890-9b41-bbe036afaf06","harness_session_source":"CODEX_SESSION_ID"}

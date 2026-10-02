@@ -77,16 +77,40 @@ interactive-drag behavior or a new perceptual range.
 paths only; the background taps are unaffected. The light-path index is
 `1 + (ior - 1) * light-ior`.
 
-Only the ring's shared refracted shift is capped at half `ring-gap` — 4 px
-at the default gap of 8. Aurora uses the same index without that ring cap.
-The ring shift grows roughly as
-`sin(45deg - asin(sin 45deg / n)) * 0.2 * thickness`. At
-`light-ior 1`, the minimum, it is about 1.16 px on the stock default glass
-(`ior 1.5`, `thickness 20`) and about 1.54 px on thick glass near `ior 1.24`
-with `thickness 43.3`, both below the cap. At the default `light-ior 6`, the
-stock glass is about 2.3 px, still just below it. The cap remains a safety
-limit for sufficiently dense or high-`light-ior` settings; it does not make
-every value saturate or reduce the knob to chromatic split alone.
+The ring's shared refracted shift is capped at half `ring-gap`, 4 px at the
+default gap of 8. The cap keeps a second copy of the band core off the
+chamfer. Without it, dense glass shows one there, with a seam at the face
+edge. The cap bounds the shared shift only: the per-channel aberration
+offsets ride on top of it uncapped, and aurora uses the same index with no
+cap at all.
+
+For an undistorted chamfer normal, the shared shift reaches the cap when
+`sin(a - asin(sin(a) / n)) * 0.2 * thickness >= 0.5 * ring-gap`. Here `n`
+is the light-path index and `a = atan(min(bevel, thickness) / bevel)` is
+the chamfer tilt, 45° whenever `thickness >= bevel`. Beyond that point a
+higher `light-ior` no longer moves the ring's landing point on the chamfer.
+It still changes the aberration split, pixels whose distorted or rippled
+normal yields less than the cap, and aurora.
+
+| glass (`ior`/`thickness`/`bevel`, `ring-gap`) | reaches the cap from `light-ior` |
+| --- | --- |
+| 1.5/20/12, 8 (stock) | never within 1–12 |
+| 1.24/43.3/9, 8 | about 5.6 |
+| 1.02/80/12, 5 | about 10.1 |
+| 1.28/31.2/10, 2 | every value |
+| 1.5/80/12, 5 | every value |
+
+How much `light-ior` still does past the cap depends on those other terms.
+The aberration offsets grow with `chromatic-aberration`: at
+`chromatic-aberration 1`, the 1.5/80/12 row's blue offset is about 1.32 px
+at `light-ior 1`. On Prism's terminal glass (1.28/31.2/10,
+`ring-gap 2`, `chromatic-aberration 0.36`, `distortion 0`, `aurora 0`,
+`jelly-ripple 0.23`), the cap is 1 px and the chamfer's shared shift reaches
+it at any `light-ior`. There `light-ior` acts only through the per-channel
+aberration offsets (blue, the larger, is about 0.27 px at `light-ior 1` and
+0.10 px at 6) and, while jelly is active, through rippled pixels.
+`ring_cap_keeps_one_core` in `src/tests/ring_pair.rs` renders the table's
+rows and fails if a second core at least half the peak's brightness appears.
 
 `backdrop-blur` makes the glass refract the blurred backdrop rather than the
 sharp one, which is what produces a frosted appearance: blur and refraction
@@ -249,6 +273,7 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ring-beam-decay` | 0–20000 logical px | 0 (no decay) |
 | `ring-gap` | 0–128 logical px | 8 logical px |
 | `ring-glow` | 0–3 | 1.0 |
+| `ring-rest` | 0–3 | 1.0 |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
 | `ring-color` | `"#rrggbb"` | `#ccccff` |
 
@@ -275,6 +300,7 @@ material "terminal-glass" {
         ring-beam-decay 0
         ring-gap 8
         ring-glow 1.0
+        ring-rest 1.0
         ring-width 2.6
         ring-color "#ccccff"
     }
@@ -312,6 +338,11 @@ without a beam; `signal { motion "reduced" }`, `motion "off"`, and
 restarts the beam on the newly focused window; focus loss ends it at once.
 `ring-glow` scales the whole focus light — head, tail, resting glow and
 spill together — so their ratios hold while the total is tuned.
+`ring-rest` scales only the resting glow, the ring that stays on a focused
+window once the beam has passed: `0` leaves no resting ring while the beam
+still runs on every focus gain, and above `1` the resting ring is brighter
+than the beam's base. The comet rides on top of the resting level, so it
+keeps its own brightness at any `ring-rest`.
 
 `ring-beam-noise` makes the head's brightness wander as it travels, so the
 comet reads as a living light rather than a lamp on a track. It is the
@@ -341,6 +372,15 @@ short decay also stops the redraws sooner; the resting glow is unaffected.
 lap, as every earlier release did. A decay longer than the lap and its tail
 still dims the comet along the way but never shortens the run. The motion
 policies that skip the beam skip the decay with it.
+
+`accepted_ring_look` in `src/tests/ring_look.rs` holds the owner's accepted
+terminal glass and ring (2026-10-01: `ring-beam-decay 4150`, speed 4350,
+`ring-gap 6`, `ring-glow 1.2`). It renders that look through a real focus
+gain, on a pane longer than the decay and on one shorter than it, from the
+inactive material through the comet to rest. The renders are frozen and
+byte-identical from run to run. Set `RING_LOOK_DUMP=<dir>` before and after
+a change to ring or edge rendering, and compare the PNGs. The backdrop is
+flat gray, so refraction of the backdrop does not show there.
 
 `accent "ring"` lets a window signal light and tint the same band on any
 window. Both together show the filament in the accent color. The band sits
