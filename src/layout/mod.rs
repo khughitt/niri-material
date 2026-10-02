@@ -362,9 +362,6 @@ pub struct Layout<W: LayoutElement> {
     clock: Clock,
     /// Time that we last updated render elements for.
     update_render_elements_time: Duration,
-    /// Input-activity gate for sustained attention motion (design 2026-09-18 §3): false while
-    /// the user has been idle for `signal { idle-after-ms }`.
-    input_active: bool,
     /// Whether the overview is open.
     ///
     /// This is a boolean flag that controls things like where input goes to. The actual animation
@@ -728,7 +725,6 @@ impl<W: LayoutElement> Layout<W> {
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
-            input_active: true,
             overview_open: false,
             overview_progress: None,
             options: Rc::new(options),
@@ -754,7 +750,6 @@ impl<W: LayoutElement> Layout<W> {
             dnd: None,
             clock,
             update_render_elements_time: Duration::ZERO,
-            input_active: true,
             overview_open: false,
             overview_progress: None,
             options: opts,
@@ -2814,16 +2809,16 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     /// Input-activity gate for sustained attention motion (design
-    /// 2026-09-18 §3). Set by `Niri` when its idle state changes; read on
-    /// the next `update_render_elements`. Returns whether the change reaches
+    /// 2026-09-18 §3): false while the user has been idle for
+    /// `signal { idle-after-ms }`. The shared clock's optic timeline holds
+    /// the state. Set by `Niri` when its idle state changes; read on the
+    /// next `update_render_elements`. Returns whether the change reaches
     /// any tile, so the caller redraws only when something renders
     /// differently.
     pub fn set_input_active(&mut self, active: bool, now: Duration) -> bool {
-        if self.input_active == active {
+        let Some(time) = self.clock.set_optic_active(active, now) else {
             return false;
-        }
-        self.input_active = active;
-        let time = self.clock.set_optic_active(active, now).unwrap();
+        };
         if let Some(client) = tracy_client::Client::running() {
             client.message(
                 &format!(
@@ -2846,7 +2841,7 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn input_active(&self) -> bool {
-        self.input_active
+        self.clock.optic_active()
     }
 
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
@@ -2854,6 +2849,7 @@ impl<W: LayoutElement> Layout<W> {
 
         self.update_render_elements_time = self.clock.now();
 
+        let input_active = self.input_active();
         let zoom = self.overview_zoom();
         if let Some(InteractiveMoveState::Moving(move_)) = &mut self.interactive_move {
             if output.is_none_or(|output| move_.output == *output) {
@@ -2872,7 +2868,7 @@ impl<W: LayoutElement> Layout<W> {
 
                 move_
                     .tile
-                    .update_render_elements(true, self.input_active, true, view_rect);
+                    .update_render_elements(true, input_active, true, view_rect);
             }
         }
 
@@ -2896,7 +2892,7 @@ impl<W: LayoutElement> Layout<W> {
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
                 mon.set_overview_progress(self.overview_progress.as_ref());
-                mon.update_render_elements(is_active, self.input_active);
+                mon.update_render_elements(is_active, input_active);
             }
         }
     }
