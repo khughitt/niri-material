@@ -361,6 +361,15 @@ lap, as every earlier release did. A decay longer than the lap and its tail
 still dims the comet along the way but never shortens the run. The motion
 policies that skip the beam skip the decay with it.
 
+`accepted_ring_look` in `src/tests/ring_look.rs` holds the owner's accepted
+terminal glass and ring (2026-10-01: `ring-beam-decay 4150`, speed 4350,
+`ring-gap 6`, `ring-glow 1.2`). It renders that look through a real focus
+gain, on a pane longer than the decay and on one shorter than it, from the
+inactive material through the comet to rest. The renders are frozen and
+byte-identical from run to run. Set `RING_LOOK_DUMP=<dir>` before and after
+a change to ring or edge rendering, and compare the PNGs. The backdrop is
+flat gray, so refraction of the backdrop does not show there.
+
 `accent "ring"` lets a window signal light and tint the same band on any
 window. Both together show the filament in the accent color. The band sits
 `ring-gap` px inward from the edge of the flat face (where the chamfer ends),
