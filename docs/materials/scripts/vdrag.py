@@ -184,6 +184,11 @@ class Window:
         if op == 0:  # enter(serial, surface, x, y)
             if struct.unpack("<I", body[4:8])[0] == self.surface:
                 self.entered = True
+        elif op == 1:  # leave(serial, surface)
+            # The pointer starts at the output centre, over a centred floating window,
+            # so the walk's first step leaves it again.
+            if struct.unpack("<I", body[4:8])[0] == self.surface:
+                self.entered = False
         elif op == 3:  # button(serial, time, button, state)
             serial, _, button, state = struct.unpack("<IIII", body[:16])
             if button == BTN_LEFT and state == 1:
