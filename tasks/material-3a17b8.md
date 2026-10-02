@@ -7,8 +7,9 @@ size: s
 complexity: low
 process: direct
 created: 2026-10-02T00:54:22Z
-updated: 2026-10-02T00:54:22Z
+updated: 2026-10-02T23:07:56Z
 depends: []
+parent: material-2834d7
 tags: [harness, testing]
 agent: claude-code/claude-opus-5-5
 ---

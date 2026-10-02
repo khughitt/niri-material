@@ -6,9 +6,9 @@ priority: 1
 size: l
 complexity: high
 created: 2026-09-11T00:47:47Z
-updated: 2026-09-12T19:24:28Z
+updated: 2026-10-02T23:08:33Z
 depends: []
-tags: [quick-add, dynamics, rendering]
+tags: [quick-add, dynamics, rendering, lane]
 source: "mindful:thought:3f94e656b70f4e5585c1cb60c166e4da"
 ---
 
@@ -26,3 +26,5 @@ Source: mindful:thought:3f94e656b70f4e5585c1cb60c166e4da
 ## Notes
 
 - 2026-09-12T19:24:28Z (materials-26.04): Complexity high: Dynamics behavior still needs design across interactive drag, settling, occasional motion, and optical response; the completed motion sweep does not settle those choices.
+- 2026-10-02T23:08:32Z (materials-26.04): workstreams: now a lane (tag lane); scope unchanged; brief: docs/notes/2026-10-02-workstreams-brief.md
+- 2026-10-02T23:08:32Z (materials-26.04): workstreams: adopted lighting ideas material-1c5a30 and material-f3e4e4 (time-varying light); material-77db8a joins when its claim ends

@@ -4,8 +4,9 @@ title: Alternate glass pane x-offset per column so adjacent edges point toward o
 status: idea
 priority: 2
 created: 2026-09-06T00:32:54Z
-updated: 2026-09-06T00:32:54Z
+updated: 2026-10-02T23:07:57Z
 depends: []
+parent: material-6062fd
 tags: [layout, rendering]
 ---
 

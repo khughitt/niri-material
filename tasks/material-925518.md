@@ -4,8 +4,9 @@ title: "capture-meta: an llvmpipe lane that doesn't gate on the NVIDIA GPU"
 status: idea
 priority: 2
 created: 2026-09-23T19:47:41Z
-updated: 2026-09-23T19:47:41Z
+updated: 2026-10-02T23:07:56Z
 depends: []
+parent: material-2834d7
 tags: [capture]
 agent: claude-code/claude-opus-5-5
 ---
