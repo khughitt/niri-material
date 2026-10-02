@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Every host item is an owner action; no task installs packages, edits sudoers or grants device access (spec §3, `docs/materials/capture-host-setup.md`).
-- VT switches go through `sudo -n chvt <n>` only; each is verified by reading `/sys/class/tty/tty0/active` back within 2 s (spec §4).
+- VT switches go through `sudo -n chvt <n>` only, the command bounded to 2 s (kill 1 s later); each is verified by reading `/sys/class/tty/tty0/active` back within 2 s (spec §4).
 - VT restoration on every exit: up to three verified attempts; outcome `not-needed`, `restored` or `failed` in `vt-restore.json`; a failed restoration exits nonzero even when every case passed; it runs before the capture lock is released (spec §4).
 - niri on DRM runs with a private `dbus-daemon` per case, `debug { dbus-interfaces-in-non-session-instances; }`, and `PIPEWIRE_RUNTIME_DIR` at the user's daemon; no compositor interface reaches the user's bus (spec §4).
 - DP-1's mode and `scale 1` are pinned in every dedicated case config (spec §4).
@@ -24,13 +24,24 @@
 
 ## Review Focus
 
-1. niri's PipeWire stream offers only buffers GStreamer cannot map: the consumer must fail with a clear message, not hang; the development check (Task 7) catches it before the pilot.
+1. niri's DMA-BUFs (its only buffer type) fail to import through EGL on this GPU: the consumer must exit nonzero with GStreamer's error, not hang. Task 3 Step 5b probes the import against a real niri before any driver work depends on it.
 2. A frame with row padding (stride ≠ width × 3): saved samples must be tightly packed so crops align (Task 3 test).
 3. A frame that arrived before the request was armed must never be saved as the sample (Task 3 and Task 4 tests).
 4. A resume edge outside the VT switch or unlock window, for example from a stray pointer event, must fail the case (Task 4 test).
 5. A refused return switch must leave a `failed` record and a nonzero exit, not a silent success (Task 1 test).
 
 **Plan-level correction to the spec.** Spec §5 says crops are "computed from the window geometry niri reports". niri's IPC gives no on-screen position for tiled windows (`tile_pos_in_workspace_view` is unset; `src/layout/tests.rs` pins this), so the dedicated lane calibrates the probe rectangle from a screenshot of an opaque geometry probe, exactly as `glass-optic-smoke-lib.sh`'s `calibrate_probe_rect` does for the headless lanes. Task 6 updates the spec sentence.
+
+**Second plan-level correction (buffer path).** Spec §4 says the consumer
+"requests the linear modifier" when niri offers no CPU-mappable buffers.
+niri offers DMA-BUFs only (`src/screencasting/pw_utils.rs`, dataType
+`DmaBuf`), and a system-memory `videoconvert` cannot take them. The consumer
+instead imports whatever modifier niri fixates through GStreamer GL on
+headless EGL (`glupload ! glcolorconvert ! gldownload`). Probed on
+2026-10-02 against the owner's desktop niri (owner-approved): node 106
+negotiated `XR24:0x0300000000606012` / `XR24:0x0300000000e08014` (NVIDIA
+tiled), imported, and delivered RGB to EOS with exit 0. Task 6 updates the
+spec sentence.
 
 ---
 
@@ -67,7 +78,8 @@ import unittest
 from pathlib import Path
 
 LIB = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/vt-lib.sh'
-CHVT = '#!/bin/sh\necho "$1" >> "$STUB_DIR/chvt.log"\n[ -z "${STUB_STUCK:-}" ] || exit 0\nprintf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n'
+CHVT = ('#!/bin/sh\necho "$1" >> "$STUB_DIR/chvt.log"\n[ -z "${STUB_HANG:-}" ] || exec sleep 60\n'
+        '[ -z "${STUB_STUCK:-}" ] || exit 0\nprintf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n')
 LOGINCTL = ('#!/bin/sh\ncase $1 in\n    list-sessions) printf "1 1000 keith seat0 tty1\\n7 1000 keith seat0 tty2\\n" ;;\n'
             '    show-session) case $2 in 1) echo 1 ;; 7) echo 2 ;; esac ;;\nesac\n')
 
@@ -85,6 +97,13 @@ class VtLibTests(unittest.TestCase):
         self.env = dict(os.environ, STUB_DIR=str(self.dir), VT_ACTIVE_FILE=str(self.active),
                         VT_CHVT=str(self.dir / 'chvt'), VT_LOGINCTL=str(self.dir / 'loginctl'))
 
+    def kill_group(self, process):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        process.wait()
+
     def script(self, body):
         return f'fail() {{ echo "FAIL: $*" >&2; exit 1; }}\n. "{LIB}"\n{body}\n'
 
@@ -99,6 +118,21 @@ class VtLibTests(unittest.TestCase):
         self.assertEqual(stuck.returncode, 1)
         self.assertEqual(self.active.read_text(), 'tty5\n')
 
+    def test_a_hanging_chvt_is_bounded(self):
+        # chvt waits for the VT to activate; a blocked switch must not stall
+        # the lane or its restoration.
+        started = time.monotonic()
+        run = self.bash('vt_switch 5', STUB_HANG='1')
+        self.assertEqual(run.returncode, 1)
+        self.assertLess(time.monotonic() - started, 6)
+        out = self.dir / 'vt-restore.json'
+        self.active.write_text('tty5\n')
+        started = time.monotonic()
+        run = self.bash(f'VT_HOME=1; vt_restore "{out}"', STUB_HANG='1')
+        self.assertEqual(run.returncode, 1)
+        self.assertLess(time.monotonic() - started, 20)
+        self.assertEqual(json.loads(out.read_text())['outcome'], 'failed')
+
     def test_spare_skips_home_and_logind_sessions(self):
         run = self.bash('vt_record_home; vt_spare')
         self.assertEqual(run.stdout.strip(), '3', run.stderr)
@@ -111,11 +145,15 @@ class VtLibTests(unittest.TestCase):
 
     def test_term_while_away_restores_home(self):
         out = self.dir / 'vt-restore.json'
+        # The away wait is a recorded child the trap reaps, as the driver's
+        # SLEEP_PID is: an unreaped sleep would hold the pipes open.
         body = (f'vt_record_home\n'
-                f'trap \'vt_restore "{out}" || exit 3; exit 143\' TERM\n'
-                f'vt_switch 5\n: > "$STUB_DIR/away"\nsleep 60 & wait')
-        driver = subprocess.Popen(['bash', '-c', self.script(body)], env=self.env,
+                f'trap \'kill "$AWAY" 2>/dev/null; wait "$AWAY" 2>/dev/null; '
+                f'vt_restore "{out}" || exit 3; exit 143\' TERM\n'
+                f'vt_switch 5\nsleep 60 & AWAY=$!\n: > "$STUB_DIR/away"\nwait "$AWAY"')
+        driver = subprocess.Popen(['bash', '-c', self.script(body)], env=self.env, start_new_session=True,
                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.kill_group, driver)
         deadline = time.monotonic() + 10
         while not (self.dir / 'away').exists():
             self.assertLess(time.monotonic(), deadline, 'never switched away')
@@ -158,8 +196,13 @@ Expected: FAIL (every test; `vt-lib.sh` does not exist).
 VT_ACTIVE_FILE=${VT_ACTIVE_FILE:-/sys/class/tty/tty0/active}
 VT_HOME=
 vt_active() { local name; name=$(cat "$VT_ACTIVE_FILE"); echo "${name#tty}"; }
-vt_chvt() { if [ -n "${VT_CHVT:-}" ]; then "$VT_CHVT" "$1"; else sudo -n chvt "$1"; fi; }
-vt_switch() {   # N: 0 when VT N is active within 2 s
+# chvt blocks until the VT activates (kbd's chvt waits on VT_WAITACTIVE), so
+# the command itself is bounded: 2 s, then KILL 1 s later.
+vt_chvt() {
+    if [ -n "${VT_CHVT:-}" ]; then timeout -k 1 2 "$VT_CHVT" "$1"
+    else timeout -k 1 2 sudo -n chvt "$1"; fi
+}
+vt_switch() {   # N: 0 when VT N is active within 2 s of a bounded chvt
     vt_chvt "$1" || return 1
     local _
     for _ in $(seq 20); do [ "$(vt_active)" = "$1" ] && return 0; sleep 0.1; done
@@ -205,7 +248,7 @@ vt_restore() {   # OUT_JSON: put VT_HOME back; 1 only when that failed
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `just --set one_cmd 'python3 -m unittest' test-one tools.test_vt_lib`
-Expected: PASS (5 tests). Then `bash -n docs/materials/scripts/vt-lib.sh`.
+Expected: PASS (6 tests). Then `bash -n docs/materials/scripts/vt-lib.sh`.
 
 - [ ] **Step 5: Commit**
 
@@ -473,10 +516,11 @@ frame after an armed request, tightly packed (spec 2026-10-02 real-TTY §4)."""
 
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
-from tools.screencast_consumer import Sampler, packed_rgb
+from tools.screencast_consumer import PIPELINE, Sampler, packed_rgb, wait_for
 
 
 class SamplerTests(unittest.TestCase):
@@ -506,6 +550,42 @@ class SamplerTests(unittest.TestCase):
 
     def test_nothing_is_saved_without_a_request(self):
         self.assertFalse(Sampler().offer(b'frame', 1, 1, 5))
+
+
+try:
+    import gi
+    gi.require_version('GLib', '2.0')
+    from gi.repository import GLib
+except (ImportError, ValueError):
+    GLib = None
+
+
+@unittest.skipIf(GLib is None, 'PyGObject is not installed')
+class WaitForTests(unittest.TestCase):
+    def test_the_discovery_deadline_cannot_stop_consumption(self):
+        def subscribe(deliver):
+            GLib.timeout_add(50, lambda: deliver(42) or GLib.SOURCE_REMOVE)
+            return lambda: None
+
+        self.assertEqual(wait_for(subscribe, 0.3), 42)
+        # The consumption loop outlives the discovery deadline (0.3 s).
+        loop = GLib.MainLoop()
+        GLib.timeout_add(700, lambda: loop.quit() or GLib.SOURCE_REMOVE)
+        started = time.monotonic()
+        loop.run()
+        self.assertGreater(time.monotonic() - started, 0.65)
+
+    def test_times_out_without_a_node(self):
+        started = time.monotonic()
+        self.assertIsNone(wait_for(lambda deliver: (lambda: None), 0.2))
+        self.assertLess(time.monotonic() - started, 1)
+
+
+class PipelineTests(unittest.TestCase):
+    def test_imports_dma_bufs_through_gl(self):
+        description = PIPELINE.format(node=7)
+        self.assertIn('pipewiresrc path=7 ! video/x-raw(memory:DMABuf),format=DMA_DRM ! glupload', description)
+        self.assertIn('gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink', description)
 
 
 class PackedRgbTests(unittest.TestCase):
@@ -540,7 +620,8 @@ docs/specs/2026-10-02-real-tty-settling-lane-design.md §4).
 Opens an org.gnome.Mutter.ScreenCast session on the session bus (the case's
 private bus, where niri on DRM serves it), records one monitor with the
 cursor hidden, and consumes the PipeWire node through GStreamer
-(pipewiresrc ! videoconvert ! RGB appsink). Every received frame is
+(pipewiresrc ! glupload ! gldownload ! RGB appsink: niri sends DMA-BUFs only,
+imported through EGL without a display). Every received frame is
 journalled as one CLOCK_MONOTONIC line in FRAMES, the clock of niri's optic
 edges. "ready <node>" goes to stdout once the pipeline plays: niri sends no
 frame without damage, so readiness cannot wait for one.
@@ -554,6 +635,7 @@ after it is saved as packed RGB to <target>, then its times and size to
 """
 
 import json
+import os
 import signal
 import sys
 import time
@@ -562,6 +644,40 @@ from pathlib import Path
 BUS_NAME = 'org.gnome.Mutter.ScreenCast'
 NODE_TIMEOUT_S = 10
 CURSOR_HIDDEN = 0
+PIPELINE = ('pipewiresrc path={node} ! video/x-raw(memory:DMABuf),format=DMA_DRM '
+            '! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB '
+            '! appsink name=sink emit-signals=true sync=false')
+# A TTY has no display server: GStreamer GL uses EGL with a pbuffer surface.
+GL_ENV = {'GST_GL_PLATFORM': 'egl', 'GST_GL_WINDOW': 'surfaceless'}
+
+
+def wait_for(subscribe, timeout_s):
+    """Run a private main loop until subscribe's deliver(value) or the timeout.
+
+    subscribe(deliver) starts the wait and returns an unsubscribe callable.
+    The timeout source is removed before returning, so it can never stop a
+    later loop: the consumer's frames run long after this deadline."""
+    from gi.repository import GLib
+
+    loop = GLib.MainLoop()
+    found = []
+
+    def deliver(value):
+        if not found:
+            found.append(value)
+            loop.quit()
+
+    def expire():
+        loop.quit()
+        return GLib.SOURCE_REMOVE
+
+    unsubscribe = subscribe(deliver)
+    timer = GLib.timeout_add(int(timeout_s * 1000), expire)
+    loop.run()
+    if found:
+        GLib.source_remove(timer)
+    unsubscribe()
+    return found[0] if found else None
 
 
 def packed_rgb(data, width, height, stride):
@@ -605,13 +721,13 @@ def main():
     from gi.repository import Gio, GLib, Gst, GstVideo
 
     connector, frames_path, summary_path, request_file = sys.argv[1:5]
+    os.environ.update(GL_ENV)
     Gst.init(None)
     factory = Gst.ElementFactory.find('pipewiresrc')
     if factory is None:
         sys.exit('screencast-consumer: no pipewiresrc element (gst-plugin-pipewire)')
 
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
-    loop = GLib.MainLoop()
 
     def call(path, interface, method, args, reply):
         return bus.call_sync(BUS_NAME, path, interface, method, args, GLib.VariantType(reply),
@@ -622,24 +738,24 @@ def main():
     properties = {'cursor-mode': GLib.Variant('u', CURSOR_HIDDEN)}
     (stream,) = call(session, 'org.gnome.Mutter.ScreenCast.Session', 'RecordMonitor',
                      GLib.Variant('(sa{sv})', (connector, properties)), '(o)')
-    node = []
 
-    def on_stream_added(_bus, _sender, _path, _interface, _signal, params):
-        node.append(params.unpack()[0])
-        loop.quit()
+    def subscribe(deliver):
+        handle = bus.signal_subscribe(
+            BUS_NAME, 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded', stream, None,
+            Gio.DBusSignalFlags.NONE, lambda *args: deliver(args[-1].unpack()[0]))
+        call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Start', None, '()')
+        return lambda: bus.signal_unsubscribe(handle)
 
-    bus.signal_subscribe(BUS_NAME, 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded',
-                         stream, None, Gio.DBusSignalFlags.NONE, on_stream_added)
-    call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Start', None, '()')
-    GLib.timeout_add_seconds(NODE_TIMEOUT_S, loop.quit)
-    loop.run()
-    if not node:
+    node = wait_for(subscribe, NODE_TIMEOUT_S)
+    if node is None:
         sys.exit(f'screencast-consumer: no PipeWireStreamAdded within {NODE_TIMEOUT_S} s')
 
-    pipeline = Gst.parse_launch(
-        f'pipewiresrc path={node[0]} ! videoconvert ! video/x-raw,format=RGB '
-        '! appsink name=sink emit-signals=true sync=false')
+    # niri offers DMA-BUFs only (pw_utils: dataType DmaBuf) with the modifier
+    # it fixates from the consumer's list. glupload imports any of them
+    # through EGL; gldownload brings the frame to system memory.
+    pipeline = Gst.parse_launch(PIPELINE.format(node=node))
     sink = pipeline.get_by_name('sink')
+    loop = GLib.MainLoop()
     frames = open(frames_path, 'w', buffering=1)
     times = []
     sampler = Sampler()
@@ -696,7 +812,7 @@ def main():
     call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Stop', None, '()')
     frames.close()
     summary = dict(
-        consumer='gstreamer pipewiresrc ! videoconvert ! appsink',
+        consumer='gstreamer pipewiresrc ! glupload ! gldownload ! videoconvert ! appsink',
         gstreamer=Gst.version_string(),
         pipewiresrc=f'{factory.get_plugin_name()} {factory.get_plugin().get_version()}',
         connector=connector, node=node[0], frames=len(times),
@@ -715,7 +831,61 @@ if __name__ == '__main__':
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `just --set one_cmd 'python3 -m unittest' test-one tools.test_screencast_consumer`
-Expected: PASS (5 tests). Then `python3 -c 'import ast,sys; ast.parse(open("tools/screencast_consumer.py").read())'`.
+Expected: PASS (8 tests; the two `WaitForTests` skip where PyGObject is absent).
+
+- [ ] **Step 5a: Verify the GL path offline on this host**
+
+```bash
+env -u WAYLAND_DISPLAY -u DISPLAY GST_GL_PLATFORM=egl GST_GL_WINDOW=surfaceless \
+    GST_DEBUG='glcontext:4' gst-launch-1.0 -q videotestsrc num-buffers=3 ! glupload ! glcolorconvert \
+    ! gldownload ! videoconvert ! video/x-raw,format=RGB ! fakesink 2>&1 | grep GL_RENDERER
+gst-inspect-1.0 glupload | sed -n '/SINK template/,/SRC template/p' | grep -c 'format: DMA_DRM'
+```
+
+Expected: a `GL_RENDERER` line naming the GPU (no display server involved), and a nonzero count. The import of niri's own DMA-BUFs is verified in Step 5b.
+
+- [ ] **Step 5b: Probe the import of niri's own DMA-BUFs**
+
+Only a niri on DRM has a GBM device, and the one available outside a TTY session is the owner's desktop. This step is host use and needs the owner's yes at the time it runs: a 5-second cast of the desktop output into a fakesink, no pixels kept, no window opened.
+
+```bash
+NODE_PROBE=$(mktemp -d)
+python3 - "$NODE_PROBE" <<'PY'
+import sys, time
+sys.path.insert(0, '.')
+import gi
+gi.require_version('Gio', '2.0')
+from gi.repository import Gio, GLib
+from tools.screencast_consumer import BUS_NAME, wait_for
+bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+call = lambda p, i, m, a, r: bus.call_sync(BUS_NAME, p, i, m, a, GLib.VariantType(r), 0, 5000, None).unpack()
+(session,) = call('/org/gnome/Mutter/ScreenCast', 'org.gnome.Mutter.ScreenCast', 'CreateSession',
+                  GLib.Variant('(a{sv})', ({},)), '(o)')
+(stream,) = call(session, 'org.gnome.Mutter.ScreenCast.Session', 'RecordMonitor',
+                 GLib.Variant('(sa{sv})', ('DP-1', {'cursor-mode': GLib.Variant('u', 0)})), '(o)')
+def subscribe(deliver):
+    h = bus.signal_subscribe(BUS_NAME, 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded',
+                             stream, None, 0, lambda *a: deliver(a[-1].unpack()[0]))
+    call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Start', None, '()')
+    return lambda: bus.signal_unsubscribe(h)
+node = wait_for(subscribe, 10)
+open(sys.argv[1] + '/node', 'w').write(f'{node}
+')
+time.sleep(6)
+call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Stop', None, '()')
+PY
+```
+
+Run that in the background, then, within its 6 s, with `N=$(cat "$NODE_PROBE/node")`:
+
+```bash
+GST_GL_PLATFORM=egl GST_GL_WINDOW=surfaceless timeout 5 gst-launch-1.0 -v \
+    pipewiresrc path=$N num-buffers=3 ! 'video/x-raw(memory:DMABuf),format=DMA_DRM' \
+    ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! fakesink \
+    2>&1 | grep -E 'drm-format|format=\(string\)RGB|ERROR|not-negotiated'
+```
+
+Expected: a `drm-format` caps line (niri's fourcc and modifier), an RGB caps line after `gldownload`, and no `ERROR` or `not-negotiated`. (Already observed once during planning: `XR24` with NVIDIA tiled modifiers, exit 0. Rerun it at execution, since the GStreamer or driver stack may have changed.) Record the negotiated `drm-format` in a task note. A negotiation or import error stops the plan here: note the exact error and return the spec to the owner, since the accepted design depends on this path.
 
 - [ ] **Step 6: Commit**
 
@@ -744,12 +914,23 @@ Add to `RunTests` in `tools/test_optic_settling.py` (the fixture's `damage` stim
 
 ```python
     def test_edge_must_fall_inside_its_named_stimulus(self):
+        # A second stimulus around the resume edge (trace 20 s); the damage
+        # stimulus and its draws at 14.5 s stay where they are. It ends the
+        # settled quiet span at 19.5 s (4.5 s after damage), so the declared
+        # hold drops to 4 s for this case.
+        self.manifest['cases'][0]['hold_ns'] = 4 * S
+        self.manifest['cases'][0]['stimuli'].append({'label': 'resume'})
+        self.observation['journal'].append({'label': 'resume', 'start_mono_ns': 1019 * S + S // 2,
+                                            'end_mono_ns': 1020 * S + S // 2})
         self.manifest['cases'][0]['edge_in'] = [[1, 'damage']]
         self.save()
         self.rejects('edge 1 is not inside stimulus damage')
-        self.observation['journal'][0].update(start_mono_ns=1019 * S, end_mono_ns=1021 * S)
+        self.manifest['cases'][0]['edge_in'] = [[1, 'resume']]
         self.save()
         analyze_run(self.run)
+        self.manifest['cases'][0]['edge_in'] = [[2, 'resume']]   # no such edge
+        self.save()
+        self.rejects('edge 2 is not inside stimulus resume')
 
     def cast(self, frames, stopped=True, samples=()):
         (self.case / 'cast-frames.tsv').write_text(''.join(f'{t}\n' for t in frames))
@@ -959,6 +1140,22 @@ dedicated_prerequisites() {
 
 Note: `${DRM_MODE:?}` already fails on an empty value; the explicit line documents it.
 
+After the `OPTIC_SETTLING_STUB_TOOLS` / `CAPTURE_META` check, add the stub-only overrides the cleanup tests use to reach casting, a held lock and a switched VT within seconds:
+
+```bash
+# Offline stub runs only: a time scale for the drive schedule and stand-ins
+# for the consumer and lock client. A recorded run never uses them.
+TIMESCALE=${OPTIC_SETTLING_STUB_TIMESCALE:-1}
+CAST_CONSUMER=${OPTIC_SETTLING_STUB_CONSUMER:-$ROOT/tools/screencast_consumer.py}
+if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
+    [ "$TIMESCALE" = 1 ] && [ -z "${OPTIC_SETTLING_STUB_CONSUMER:-}${OPTIC_SETTLING_STUB_LOCK:-}" ] \
+        || fail 'stub timescale, consumer and lock client need OPTIC_SETTLING_STUB_TOOLS'
+fi
+```
+
+In `at()`, scale the target: pass `"$TIMESCALE"` as a third argument to its Python and read
+`t0, s = int(sys.argv[1]), float(sys.argv[2]) * float(sys.argv[3])`.
+
 Directly after `[ "$MODE" = prepare ] || capture_preflight "$LANE"`, add:
 
 ```bash
@@ -1093,7 +1290,9 @@ if selected idle-inhibitor; then
     build_client idle-inhibit-client "$PROTOCOLS/stable/xdg-shell/xdg-shell.xml" \
         "$PROTOCOLS/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml"
 fi
-if selected unlock; then
+if [ -n "${OPTIC_SETTLING_STUB_LOCK:-}" ]; then
+    LOCK_BIN=$OPTIC_SETTLING_STUB_LOCK
+elif selected unlock; then
     build_client session-lock-client "$PROTOCOLS/staging/ext-session-lock/ext-session-lock-v1.xml"
 fi
 if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
@@ -1196,7 +1395,7 @@ post_drm_aurora() { post_held; }
 # notify_activity. Both switches are verified; the window stays under 6 s.
 vt_away() {
     vt_switch "$VT_SPARE" || fail "$CASE: did not reach spare VT $VT_SPARE"
-    sleep 3
+    nap 3   # backgrounded, so TERM while away is handled at once
     vt_switch "$VT_HOME" || fail "$CASE: the return to VT $VT_HOME did not land"
 }
 drive_tty_resume() { keepalive; at 26; stim vt-away 1.5 vt_away; }
@@ -1216,7 +1415,7 @@ unlock_now() {
 drive_unlock() { keepalive; at 26; stim lock 2 lock_start; at 30; stim unlock 1.5 unlock_now; }
 cast_start() {
     : > "$CASE_DIR/cast.out"
-    DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" python3 "$ROOT/tools/screencast_consumer.py" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" python3 "$CAST_CONSUMER" \
         "$DRM_OUTPUT" "$CASE_DIR/cast-frames.tsv" "$CASE_DIR/cast-summary.json" "$CASE_DIR/sample-request" \
         > "$CASE_DIR/cast.out" 2>> "$OUT/cast.log" &
     CAST_PID=$!
@@ -1288,13 +1487,93 @@ Add stubs to `STUBS`:
     'bin/sudo': 'exit 0\n',
     'bin/pgrep': 'exit 1\n',
     'bin/gst-inspect-1.0': 'exit 0\n',
-    'vt/chvt': 'printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n',
+    'vt/chvt': ('printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\necho "chvt $1" >> "$STUB_DIR/meta.log"\n'
+                '[ "$1" = 1 ] || : > "$STUB_DIR/away"\n'),
     'vt/loginctl': 'exit 0\n',
+    'tools/lock': ('echo "lock $$" >> "$STUB_DIR/pids"\ntrap \'exit 0\' USR1\necho locked\n'
+                   ': > "$STUB_DIR/locked"\nwhile :; do sleep 0.1; done\n'),
 ```
+
+Change the `bin/magick` stub so calibration can measure a rectangle, and let the `bin/niri` stub write screenshots:
+
+```python
+    'bin/magick': 'case "$*" in *info:*) echo 100x100+10+10; exit 0 ;; esac\nfor arg do :; done\nprintf image > "$arg"\n',
+```
+
+and in the `bin/niri` stub's `msg)` branch, before `exit 0`, add
+`for a do case $prev in --path) printf png > "$a" ;; esac; prev=$a; done; `.
+
+Add a stub consumer next to `SERVE`:
+
+```python
+CONSUMER = """
+import json, os, pathlib, signal, sys, time
+stub = pathlib.Path(os.environ['STUB_DIR'])
+with open(stub / 'pids', 'a') as pids:
+    pids.write(f'consumer {os.getpid()}\\n')
+def stop(*_):
+    pathlib.Path(sys.argv[3]).write_text(json.dumps({'stopped_by_signal': True}))
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+print('ready 1', flush=True)
+(stub / 'cast-ready').touch()
+while True:
+    time.sleep(0.1)
+"""
+```
+
+written in `setUp` with `(self.stubs / 'tools/consumer.py').write_text(CONSUMER)`.
 
 Add to `DriverCleanupTests`:
 
 ```python
+    def dedicated(self, case, marker):
+        """TERM a stub dedicated run once `marker` appears; everything is reaped."""
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start(case, STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05',
+                            OPTIC_SETTLING_STUB_CONSUMER=str(self.stubs / 'tools/consumer.py'),
+                            OPTIC_SETTLING_STUB_LOCK=str(self.stubs / 'tools/lock'),
+                            LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, marker, 60)
+        elapsed, stderr = self.terminate(driver)
+        self.assertEqual(driver.returncode, 143, stderr)
+        self.assertLess(elapsed, self.BOUND_S, stderr)
+        self.assert_cleaned_up(case)
+        return active
+
+    def started(self, name):
+        return [line for line in (self.stubs / 'pids').read_text().splitlines() if line.startswith(name)]
+
+    def test_term_while_casting_reaps_the_consumer_and_the_bus(self):
+        self.dedicated('screencast', 'cast-ready')
+        self.assertTrue(self.started('consumer'))
+        self.assertTrue(self.started('dbus-daemon'))
+
+    def test_term_with_the_session_locked_reaps_the_lock_client(self):
+        self.dedicated('unlock', 'locked')
+        self.assertTrue(self.started('lock'))
+
+    def test_term_while_switched_away_restores_the_vt_before_release(self):
+        active = self.dedicated('tty-resume', 'away')
+        self.assertEqual(active.read_text(), 'tty1\n')
+        record = json.loads((self.out / 'vt-restore.json').read_text())
+        self.assertEqual((record['outcome'], record['home'], record['from']), ('restored', 1, 2))
+        meta = (self.stubs / 'meta.log').read_text().splitlines()
+        self.assertLess(meta.index('chvt 1'), max(i for i, line in enumerate(meta) if line.startswith('release ')))
+
+    def test_stub_overrides_need_stub_tools(self):
+        env = dict(self.env, OPTIC_SETTLING_STUB_TIMESCALE='0.05')
+        env.pop('OPTIC_SETTLING_STUB_TOOLS')
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
+                             capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn('need OPTIC_SETTLING_STUB_TOOLS', run.stderr)
+
     def test_term_during_a_dedicated_capture_reaps_the_bus_and_records_the_vt(self):
         active = self.base / 'active'
         active.write_text('tty1\n')
@@ -1374,6 +1653,18 @@ calibrated once per run from an opaque geometry probe in the same
 two-window layout (niri's IPC reports no on-screen position for tiled
 windows), as the headless lanes' `calibrate_probe_rect` does:
 ```
+
+In §4's screencast-consumer paragraph, replace the sentence beginning "If niri's stream offers no CPU-mappable buffers" with:
+
+```markdown
+niri offers DMA-BUFs only, so the consumer imports whatever modifier niri
+fixates through GStreamer GL on headless EGL (`glupload ! glcolorconvert !
+gldownload`) and converts to RGB; a probe on 2026-10-02 imported niri's
+NVIDIA-tiled `XR24` buffers this way. The development check (§7) proves
+sampling works before the pilot.
+```
+
+and its pipeline to `pipewiresrc ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink`.
 
 - [ ] **Step 2: Evidence document**
 
@@ -1472,7 +1763,7 @@ HEAD, so `run:` notes stay uncommitted until Step 6.
 - [ ] **Step 3: Development check**
 
 Run the command in `capture-host-setup.md` ("Running the dedicated lane") with `CASES='drm-aurora tty-resume screencast'`.
-Expected: exit 0, `analysis.json` verdict `development-passed`; read it: `tty-resume` edges `[0, 1, 0]` with edge 1 inside `vt-away`; `screencast` three samples with `client-1`≠`client-2`, `client-2`=`client-3`, Aurora crops equal; `vt-restore.json` outcome `not-needed`. If the consumer reports it cannot map a frame or the pipeline is `not-negotiated`, stop: record the error in a note and park `--reason capability` (Review Focus 1), do not change crops or thresholds.
+Expected: exit 0, `analysis.json` verdict `development-passed`; read it: `tty-resume` edges `[0, 1, 0]` with edge 1 inside `vt-away`; `screencast` three samples with `client-1`≠`client-2`, `client-2`=`client-3`, Aurora crops equal; `vt-restore.json` outcome `not-needed`. A consumer error here, after Step 5b passed, is a regression in the TTY environment (for example no EGL device without a display server): record the exact error, do not change crops or thresholds, and investigate before the pilot.
 
 - [ ] **Step 4: Pilot**
 
