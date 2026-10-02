@@ -66,9 +66,12 @@ requires reviewed design and plan documents after a concrete gap is established.
   `material-31074f` can answer the measured cost part; owner-rated examples and
   an explicit consumer are still needed before claiming preferred subspaces.
 - What desired base/Familiar/focus combination cannot the current mechanisms
-  express? `material-8e3b73` supplies the state/parameter inventory and visual
-  baseline; the owner judges the result. Its evidence may clarify this question
-  without settling generic override, blend or constrain semantics.
+  express? `material-8e3b73` supplied the state/parameter inventory and visual
+  baseline; the owner kept the hard cut (2026-10-02). Focus can select a
+  definition (hard cut, fresh state), a named response (in place, ring and
+  signal values only) or signal accents (folded and crossfaded independently),
+  so focus-dependent glass needs two definitions today. This clarifies the
+  question without settling generic override, blend or constrain semantics.
 - Which orders could legally vary, and what objective justifies learning them?
   A future renderer design and reproducible comparison must answer. Verify
   `prism-a03862` and `prism-542904` then; their old references do not prove that
@@ -80,8 +83,8 @@ requires reviewed design and plan documents after a concrete gap is established.
   high complexity, planned. No duplicate research or design task is filed.
 - `material-0c7eed`: **briefed**; reuse `material-31074f`. Its completion note
   must wake this idea alongside its existing waiting ideas and update this brief.
-- `material-764d8c`: **briefed**; reuse `material-8e3b73`. Its completion note
-  must also wake this idea and update this brief. No additional capture lane
+- `material-764d8c`: **briefed**; reuse `material-8e3b73`, now complete: its
+  composition finding is recorded above and noted on this idea. No additional capture lane
   is required; remaining profile questions stay explicit.
 - `material-e2f01a`: **shelved** until a renderer-supported constrained reorder
   mechanism exists and a reproducible visual or cost objective justifies

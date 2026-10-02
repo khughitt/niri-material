@@ -1,19 +1,21 @@
 ---
 id: material-8e3b73
 title: Establish whether focus material swaps need interpolation
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-8e3b73
 created: 2026-09-29T22:45:28Z
-updated: 2026-10-01T04:55:24Z
+updated: 2026-10-02T16:03:39Z
 started: 2026-09-30T10:08:14Z
+completed: 2026-10-02T16:03:37Z
 depends: []
 parent: material-53f873
 tags: [dynamics]
 source: docs/notes/2026-09-29-material-dynamics-brief.md
+model: claude-opus-5-5
 agent: codex
 ---
 
@@ -39,3 +41,10 @@ Ideas it wakes: On completion, run tasks note on material-5a5fff and material-9b
 - 2026-10-01T04:55:23Z (materials-26.04): Clip section filled in the dynamics brief (.worktrees/material-8e3b73 21f73a73); review page with the six clips and step images: https://claude.ai/artifact/Df32vBpd48gbbkiPSn6vuP
 - 2026-10-01T04:55:23Z (materials-26.04): parked (waiting on user, review): Owner: judge swap/same/seed/move/beam on https://claude.ai/artifact/Df32vBpd48gbbkiPSn6vuP (recommendation: keep the hard cut; the seed jump is the strongest case for change). Then agent, in .worktrees/material-8e3b73: record the verdict in the brief's Clip section, note material-5a5fff, material-9be53d and material-764d8c, update the adaptive-materials brief, merge and close in one commit
   provenance: {"harness_session":"claude-code:601fb2a6-cb37-47f5-a964-59f3bb9f54af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T16:03:37Z (material-8e3b73): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T16:03:37Z (material-8e3b73): review: impl round 1 — verdict: accept; findings: none; reviewer: human
+- 2026-10-02T16:03:37Z (material-8e3b73): done
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T16:03:37Z (material-8e3b73): owner kept the hard cut; verdict recorded in the dynamics brief, adaptive brief updated, ideas noted
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
