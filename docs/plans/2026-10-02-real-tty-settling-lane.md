@@ -491,6 +491,7 @@ git commit -m "feat(material): PAM-free session-lock client for the TTY lane (ma
 **Files:**
 - Move: `docs/materials/scripts/screencast-consumer.py` → `tools/screencast_consumer.py` (`git mv`)
 - Modify: `tools/screencast_consumer.py`
+- Create: `tools/fake_screencast.py` (a minimal ScreenCast D-Bus service for the end-to-end test)
 - Test: `tools/test_screencast_consumer.py`
 
 **Interfaces:**
@@ -499,7 +500,8 @@ git commit -m "feat(material): PAM-free session-lock client for the TTY lane (ma
   - stdout: `ready <node>` once the pipeline is PLAYING (not on the first frame: niri sends no frame without damage).
   - On SIGUSR1: reads the target path from `REQUEST_FILE`, writes `<target>.armed` containing the request time, then saves the first frame arriving after it as tightly packed RGB to `<target>` and `<target>.json` (`request_mono_ns`, `frame_mono_ns`, `width`, `height`), in that order.
   - `FRAMES`: one CLOCK_MONOTONIC ns per received frame. `SUMMARY`: `consumer`, `gstreamer`, `pipewiresrc`, `connector`, `node`, `frames`, `first_mono_ns`, `last_mono_ns`, `stopped_by_signal`.
-  - Module API (tested): `Sampler.request(path, now_ns)`, `Sampler.offer(data, width, height, arrival_ns) -> bool`, `Sampler.pending`, `packed_rgb(data, width, height, stride) -> bytes`.
+  - Module API (tested): `Sampler.request(path, now_ns)`, `Sampler.offer(data, width, height, arrival_ns) -> bool`, `Sampler.pending`, `packed_rgb(data, width, height, stride) -> bytes`, `wait_for(subscribe, timeout_s) -> value | None`, `PIPELINE` (format string with `{node}`).
+  - Test seam: `SCREENCAST_CONSUMER_PIPELINE` replaces `PIPELINE` (offline tests only; the driver never sets it).
 
 - [ ] **Step 1: Move the consumer**
 
@@ -515,12 +517,19 @@ git mv docs/materials/scripts/screencast-consumer.py tools/screencast_consumer.p
 frame after an armed request, tightly packed (spec 2026-10-02 real-TTY §4)."""
 
 import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
 from tools.screencast_consumer import PIPELINE, Sampler, packed_rgb, wait_for
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class SamplerTests(unittest.TestCase):
@@ -588,6 +597,48 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink', description)
 
 
+# Startup through summary on a private bus, with a fake ScreenCast service and
+# a test source in place of PipeWire. 6x3-byte rows are padded to 20 bytes by
+# GStreamer, so the sample's size also proves packing.
+@unittest.skipUnless(shutil.which('dbus-daemon') and shutil.which('gst-launch-1.0'), 'needs dbus-daemon and GStreamer')
+class ConsumerEndToEndTests(unittest.TestCase):
+    def test_startup_sampling_and_summary(self):
+        tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, tmp)
+        bus = subprocess.Popen(['dbus-daemon', '--session', '--nofork', f'--address=unix:path={tmp}/bus'])
+        self.addCleanup(lambda: (bus.kill(), bus.wait()))
+        for _ in range(50):
+            if (tmp / 'bus').exists(): break
+            time.sleep(0.1)
+        env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS=f'unix:path={tmp}/bus',
+                   SCREENCAST_CONSUMER_PIPELINE='videotestsrc is-live=true ! video/x-raw,width=6,height=4 '
+                   '! videoconvert ! video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false')
+        service = subprocess.Popen([sys.executable, str(ROOT / 'tools/fake_screencast.py'), '7'], env=env,
+                                   stdout=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: (service.kill(), service.wait()))
+        time.sleep(0.5)
+        request = tmp / 'request'; target = tmp / 'sample-1.raw'
+        consumer = subprocess.Popen([sys.executable, str(ROOT / 'tools/screencast_consumer.py'), 'DP-1',
+                                     str(tmp / 'frames'), str(tmp / 'summary.json'), str(request)],
+                                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: consumer.poll() is None and consumer.kill())
+        self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
+        request.write_text(f'{target}\n')
+        consumer.send_signal(signal.SIGUSR1)
+        for _ in range(50):
+            if Path(f'{target}.json').exists(): break
+            time.sleep(0.1)
+        consumer.send_signal(signal.SIGTERM)
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertEqual(consumer.returncode, 0, stderr)
+        summary = json.loads((tmp / 'summary.json').read_text())
+        self.assertEqual((summary['node'], summary['connector'], summary['stopped_by_signal']), (7, 'DP-1', True))
+        self.assertGreater(summary['frames'], 0)
+        sample = json.loads(Path(f'{target}.json').read_text())
+        self.assertEqual((sample['width'], sample['height']), (6, 4))
+        self.assertEqual(len(target.read_bytes()), 6 * 4 * 3)
+        self.assertLess(sample['request_mono_ns'], sample['frame_mono_ns'])
+
+
 class PackedRgbTests(unittest.TestCase):
     def test_strips_row_padding(self):
         # 2x2 RGB, stride 8: two pad bytes per row.
@@ -601,6 +652,48 @@ class PackedRgbTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+```
+
+- [ ] **Step 2a: Write the fake ScreenCast service**
+
+```python
+# tools/fake_screencast.py
+"""A minimal org.gnome.Mutter.ScreenCast service for consumer tests."""
+import sys
+import gi
+gi.require_version('Gio', '2.0')
+from gi.repository import Gio, GLib
+
+NODE = int(sys.argv[1])
+XML = '''<node>
+<interface name="org.gnome.Mutter.ScreenCast"><method name="CreateSession"><arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method></interface>
+<interface name="org.gnome.Mutter.ScreenCast.Session"><method name="RecordMonitor"><arg type="s" direction="in"/><arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method><method name="Start"/><method name="Stop"/></interface>
+<interface name="org.gnome.Mutter.ScreenCast.Stream"><signal name="PipeWireStreamAdded"><arg type="u"/></signal></interface>
+</node>'''
+info = Gio.DBusNodeInfo.new_for_xml(XML)
+loop = GLib.MainLoop()
+calls = []
+
+def handle(connection, sender, path, interface, method, params, invocation):
+    calls.append(method)
+    print(method, flush=True)
+    if method == 'CreateSession':
+        invocation.return_value(GLib.Variant('(o)', ('/s',)))
+    elif method == 'RecordMonitor':
+        invocation.return_value(GLib.Variant('(o)', ('/st',)))
+    elif method == 'Start':
+        invocation.return_value(None)
+        connection.emit_signal(None, '/st', 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded',
+                               GLib.Variant('(u)', (NODE,)))
+    else:
+        invocation.return_value(None)
+
+def on_bus(connection, name):
+    for path, iface in (('/org/gnome/Mutter/ScreenCast', 0), ('/s', 1)):
+        connection.register_object(path, info.interfaces[iface], handle, None, None)
+
+Gio.bus_own_name(Gio.BusType.SESSION, 'org.gnome.Mutter.ScreenCast', 0, on_bus, None, lambda *a: loop.quit())
+loop.run()
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
@@ -753,7 +846,9 @@ def main():
     # niri offers DMA-BUFs only (pw_utils: dataType DmaBuf) with the modifier
     # it fixates from the consumer's list. glupload imports any of them
     # through EGL; gldownload brings the frame to system memory.
-    pipeline = Gst.parse_launch(PIPELINE.format(node=node))
+    # SCREENCAST_CONSUMER_PIPELINE: offline tests substitute a test source.
+    description = os.environ.get('SCREENCAST_CONSUMER_PIPELINE', PIPELINE)
+    pipeline = Gst.parse_launch(description.format(node=node))
     sink = pipeline.get_by_name('sink')
     loop = GLib.MainLoop()
     frames = open(frames_path, 'w', buffering=1)
@@ -805,7 +900,7 @@ def main():
     GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGINT, stop)
     if pipeline.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
         sys.exit('screencast-consumer: the pipeline did not start')
-    print(f'ready {node[0]}', flush=True)
+    print(f'ready {node}', flush=True)
     loop.run()
 
     pipeline.set_state(Gst.State.NULL)
@@ -815,7 +910,7 @@ def main():
         consumer='gstreamer pipewiresrc ! glupload ! gldownload ! videoconvert ! appsink',
         gstreamer=Gst.version_string(),
         pipewiresrc=f'{factory.get_plugin_name()} {factory.get_plugin().get_version()}',
-        connector=connector, node=node[0], frames=len(times),
+        connector=connector, node=node, frames=len(times),
         first_mono_ns=times[0] if times else None, last_mono_ns=times[-1] if times else None,
         stopped_by_signal=bool(stopping),
     )
@@ -831,7 +926,7 @@ if __name__ == '__main__':
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `just --set one_cmd 'python3 -m unittest' test-one tools.test_screencast_consumer`
-Expected: PASS (8 tests; the two `WaitForTests` skip where PyGObject is absent).
+Expected: PASS (9 tests; `WaitForTests` skip where PyGObject is absent, the end-to-end test where `dbus-daemon` or GStreamer is).
 
 - [ ] **Step 5a: Verify the GL path offline on this host**
 
@@ -861,31 +956,36 @@ bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 call = lambda p, i, m, a, r: bus.call_sync(BUS_NAME, p, i, m, a, GLib.VariantType(r), 0, 5000, None).unpack()
 (session,) = call('/org/gnome/Mutter/ScreenCast', 'org.gnome.Mutter.ScreenCast', 'CreateSession',
                   GLib.Variant('(a{sv})', ({},)), '(o)')
-(stream,) = call(session, 'org.gnome.Mutter.ScreenCast.Session', 'RecordMonitor',
-                 GLib.Variant('(sa{sv})', ('DP-1', {'cursor-mode': GLib.Variant('u', 0)})), '(o)')
-def subscribe(deliver):
-    h = bus.signal_subscribe(BUS_NAME, 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded',
-                             stream, None, 0, lambda *a: deliver(a[-1].unpack()[0]))
-    call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Start', None, '()')
-    return lambda: bus.signal_unsubscribe(h)
-node = wait_for(subscribe, 10)
-open(sys.argv[1] + '/node', 'w').write(f'{node}
-')
-time.sleep(6)
-call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Stop', None, '()')
+try:
+    (stream,) = call(session, 'org.gnome.Mutter.ScreenCast.Session', 'RecordMonitor',
+                     GLib.Variant('(sa{sv})', ('DP-1', {'cursor-mode': GLib.Variant('u', 0)})), '(o)')
+    def subscribe(deliver):
+        h = bus.signal_subscribe(BUS_NAME, 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded',
+                                 stream, None, 0, lambda *a: deliver(a[-1].unpack()[0]))
+        call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Start', None, '()')
+        return lambda: bus.signal_unsubscribe(h)
+    node = wait_for(subscribe, 10)
+    open(sys.argv[1] + '/node', 'w').write(f'{node}\n')
+    time.sleep(6)
+finally:
+    call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Stop', None, '()')
 PY
 ```
 
 Run that in the background, then, within its 6 s, with `N=$(cat "$NODE_PROBE/node")`:
 
 ```bash
+rc=0
 GST_GL_PLATFORM=egl GST_GL_WINDOW=surfaceless timeout 5 gst-launch-1.0 -v \
-    pipewiresrc path=$N num-buffers=3 ! 'video/x-raw(memory:DMABuf),format=DMA_DRM' \
+    pipewiresrc path=$N num-buffers=1 ! 'video/x-raw(memory:DMABuf),format=DMA_DRM' \
     ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! fakesink \
-    2>&1 | grep -E 'drm-format|format=\(string\)RGB|ERROR|not-negotiated'
+    > "$NODE_PROBE/gst.log" 2>&1 || rc=$?
+echo "gst-launch exit $rc"          # 124 is a timeout: no frame reached the sink
+grep -oE 'drm-format=\(string\)[A-Za-z0-9:x]+|format=\(string\)RGB|ERROR.*|not-negotiated' \
+    "$NODE_PROBE/gst.log" | sort | uniq -c
 ```
 
-Expected: a `drm-format` caps line (niri's fourcc and modifier), an RGB caps line after `gldownload`, and no `ERROR` or `not-negotiated`. (Already observed once during planning: `XR24` with NVIDIA tiled modifiers, exit 0. Rerun it at execution, since the GStreamer or driver stack may have changed.) Record the negotiated `drm-format` in a task note. A negotiation or import error stops the plan here: note the exact error and return the spec to the owner, since the accepted design depends on this path.
+Expected: `gst-launch exit 0`, which with `num-buffers=1` means a frame was imported, converted and reached EOS; a `drm-format` caps line (niri's fourcc and modifier); an RGB caps line after `gldownload`; no `ERROR` or `not-negotiated`. Caps lines alone are not a pass: any nonzero exit, a timeout (124) included, fails the step. (Already observed once during planning: `XR24` with NVIDIA tiled modifiers, exit 0. Rerun it at execution, since the GStreamer or driver stack may have changed.) Record the negotiated `drm-format` in a task note. A negotiation or import error stops the plan here: note the exact error and return the spec to the owner, since the accepted design depends on this path.
 
 - [ ] **Step 6: Commit**
 
