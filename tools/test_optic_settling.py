@@ -181,6 +181,17 @@ class RunTests(unittest.TestCase):
         self.write_tables()
         self.rejects('while settled')
 
+    def test_stimulus_requires_its_messages_inside_its_window(self):
+        self.manifest['cases'][0]['stimuli'][0]['messages'] = ['IdleInhibit inhibited=1']
+        self.save()
+        self.rejects("stimulus damage never traced 'IdleInhibit inhibited=1'")
+        late = ['IdleInhibit inhibited=1', 16 * S]          # after the 14-15 s window
+        self.write_csv('messages.csv', ['MessageName', 'total_ns'], self.messages + [late])
+        self.rejects("stimulus damage never traced 'IdleInhibit inhibited=1'")
+        inside = ['IdleInhibit inhibited=1', 14 * S + S // 2]
+        self.write_csv('messages.csv', ['MessageName', 'total_ns'], self.messages + [inside])
+        analyze_run(self.run)
+
     def test_rejects_heartbeat_gap(self):
         self.cpu = [row for row in self.cpu if not (row[0] == 'Niri::refresh_idle_inhibit' and 15 * S < row[1] < 19 * S)]
         self.write_tables()
@@ -388,6 +399,13 @@ class PrepareTests(unittest.TestCase):
             self.assertEqual((by_name['screencast']['lane'], by_name['screencast']['why']),
                              ('screencast-consumer', 'no screencast consumer in the headless lane'))
             self.assertFalse(by_name['screencast']['required'])
+            # The idle inhibitor runs in this lane: a real client, traced taking hold.
+            inhibitor = by_name['idle-inhibitor']
+            self.assertEqual((inhibitor['lane'], inhibitor['edges']), ('headless', [0]))
+            self.assertEqual(
+                [(stimulus['label'], stimulus.get('messages')) for stimulus in inhibitor['stimuli']],
+                [('inhibit', ['IdleInhibit inhibited=1']), ('client', None),
+                 ('release', ['IdleInhibit inhibited=0']), ('collect', None)])
 
 
 # Stubs for every program the driver launches. Each long-lived one records

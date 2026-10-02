@@ -245,7 +245,8 @@ def analyze_case(run, case, lane):
     if not all(export.get(kind) is True for kind in ('messages', 'cpu', 'gpu')):
         raise ValueError(f'{name}: failed trace export')
     # A trace without any message exports a notice instead of a header.
-    edges = parse_edges(csv_rows(directory / 'messages.csv', ('MessageName', 'total_ns'), allow_empty=True))
+    message_rows = csv_rows(directory / 'messages.csv', ('MessageName', 'total_ns'), allow_empty=True)
+    edges = parse_edges(message_rows)
     expected_edges = case.get('edges')
     if [edge['active'] for edge in edges] != expected_edges:
         raise ValueError(f'{name}: optic edges {[e["active"] for e in edges]}, expected {expected_edges}')
@@ -295,6 +296,13 @@ def analyze_case(run, case, lane):
         for label, times, key in (('redraws', redraws, 'min_redraws'), ('draws', draws, 'min_draws')):
             if count(times, start, end) < integer(stimulus.get(key, 0), key):
                 raise ValueError(f"{name}: stimulus {stimulus['label']} produced too few {label}")
+        # A stimulus that must change compositor state names the trace
+        # message proving it did, inside its own journaled interval.
+        for message in stimulus.get('messages', []):
+            if not any(row.get('MessageName') == message
+                       and start <= integer(row.get('total_ns'), 'message trace time') < end
+                       for row in message_rows):
+                raise ValueError(f"{name}: stimulus {stimulus['label']} never traced {message!r}")
 
     bounds = [0] + [edge['trace_ns'] for edge in edges] + [trace_end]
     report = []

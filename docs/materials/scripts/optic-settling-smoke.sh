@@ -14,8 +14,11 @@
 # tools/optic_settling.py derives its own observation windows from those
 # declarations; this driver only records configs, a stimulus journal on
 # CLOCK_MONOTONIC (the clock of the edges' real_ns) and decoded pixels.
-# Cases outside the lane (TTY resume, unlock, an idle inhibitor, a second
-# output, a screencast consumer) are recorded unverified, never run. The
+# Cases outside the lane (TTY resume, unlock, a second output, a screencast
+# consumer) are recorded unverified, never run. The idle-inhibitor case runs a
+# real zwp_idle_inhibit_manager_v1 client (idle-inhibit-client.c, built per
+# run with wayland-scanner and cc) and proves from niri's IdleInhibit trace
+# messages that the inhibition took hold and released. The
 # screencopy case is a capture without input (grim, wlr-screencopy), not a
 # screencast: niri's PipeWire cast path renders and schedules separately.
 #
@@ -49,7 +52,7 @@ HERE=$(dirname "$(readlink -f "$0")")
 # The library owns Weston and niri. This driver also owns the capture timeout,
 # its clients and the export; a signal must stop all of them before releasing
 # preflight.
-PROBE_PID=; OTHER_PID=; EXPORT_PID=; BG_PID=; SLEEP_PID=
+PROBE_PID=; OTHER_PID=; EXPORT_PID=; BG_PID=; SLEEP_PID=; INHIBIT_PID=
 alive() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
 # A client stuck before its event loop (kitty blocks TERM until then) must not
 # hold cleanup open: TERM, then KILL after 5 s.
@@ -62,7 +65,7 @@ reap() {
 on_exit() {
     local rc=$?
     trap - EXIT INT TERM
-    for pid in "$SLEEP_PID" "$CAP_PID" "$EXPORT_PID" "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$NIRI_PID" "$WESTON_PID"; do
+    for pid in "$SLEEP_PID" "$CAP_PID" "$EXPORT_PID" "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$INHIBIT_PID" "$NIRI_PID" "$WESTON_PID"; do
         [ -z "$pid" ] || reap "$pid"
     done
     remove_runtime_dir || rc=1
@@ -135,7 +138,7 @@ write_case_configs() {   # $1 case name, $2 dir
     local base=${1%-r[0-9]*}
     mkdir -p "$2"
     case $base in
-        aurora-full|combined|client-damage|impulse-idle|vis-workspace|vis-tab|vis-offscreen|vis-overview|dpms-ipc|dpms-input|screencopy)
+        aurora-full|combined|client-damage|impulse-idle|vis-workspace|vis-tab|vis-offscreen|vis-overview|dpms-ipc|dpms-input|screencopy|idle-inhibitor)
             case_config "$2" "$AURORA" "$SIGNAL5" ;;
         aurora-reduced) case_config "$2" "$AURORA" 'signal { motion "reduced"; idle-after-ms 5000; }' ;;
         attention-cycle) case_config "$2" '' "$SIGNAL5" ;;
@@ -166,7 +169,7 @@ input { keyboard { repeat-rate 31; }; }' 6-raise.kdl ;;
         reload-disable)
             case_config "$2" "$AURORA" "$SIGNAL5"
             case_config "$2" "$AURORA" 'signal { idle-after-ms 0; }' 1-disable.kdl ;;
-        tty-resume|unlock|idle-inhibitor|output-removal|screencast) : ;;   # outside every lane this driver runs
+        tty-resume|unlock|output-removal|screencast) : ;;   # outside every lane this driver runs
         *) fail "no config for case $1" ;;
     esac
     local kdl
@@ -232,8 +235,11 @@ cases = [
          why='TTY session resume needs a real TTY session'),
     case('unlock', 'session-activation', [], [], lane='dedicated',
          why='unlocking needs an authenticating lock client on a real session'),
-    case('idle-inhibitor', 'session-activation', [], [], lane='inhibitor-client',
-         why='no idle-inhibit client is installed'),
+    # A real inhibitor while held: no input activity, so no resume edge, and
+    # ordinary client updates still draw.
+    case('idle-inhibitor', 'session-activation', [0], [A4, HELD],
+         [dict(label='inhibit', min_redraws=1, messages=['IdleInhibit inhibited=1']), damage,
+          dict(label='release', min_redraws=1, messages=['IdleInhibit inhibited=0'])], capture_s=36),
     case('reload-held', 'reload-clock', [0, 1], [A4, HELD, dict(state='active', min_hz=1, max_hz=1)],
          [dict(label=label) for label in ('same-side', 'unrelated', 'drift', 'policy', 'amount', 'raise')],
          capture_s=54),
@@ -318,7 +324,29 @@ fi
 : "${CAPTURE_TASK:?task authorizing this capture}"
 if [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then TOOLS=$OPTIC_SETTLING_STUB_TOOLS; else tools_ready; fi
 reserve_tracy_port
-capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}"
+# The idle-inhibitor case's client, built against the installed protocols and
+# identified with its source like the binary.
+INHIBIT_BIN=
+build_inhibit_client() {
+    local dir=$OUT/inhibit-client protocols=/usr/share/wayland-protocols xml name
+    mkdir -p "$dir"
+    for xml in "$protocols/stable/xdg-shell/xdg-shell.xml" \
+        "$protocols/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml"; do
+        name=$(basename "$xml" .xml)
+        wayland-scanner client-header "$xml" "$dir/$name-client-protocol.h"
+        wayland-scanner private-code "$xml" "$dir/$name-protocol.c"
+    done
+    cc -std=c11 -Wall -Wextra -Werror -O2 -I"$dir" -o "$dir/idle-inhibit-client" \
+        "$HERE/idle-inhibit-client.c" "$dir/xdg-shell-protocol.c" "$dir/idle-inhibit-unstable-v1-protocol.c" \
+        -lwayland-client > "$dir/build.log" 2>&1 || fail "the idle-inhibit client did not build; see $dir/build.log"
+    INHIBIT_BIN=$dir/idle-inhibit-client
+}
+IDENTITY_EXTRA=()
+if [[ " ${RUN_CASES[*]} " == *" idle-inhibitor "* ]]; then
+    build_inhibit_client
+    IDENTITY_EXTRA=(--binary "$INHIBIT_BIN" --input "$HERE/idle-inhibit-client.c")
+fi
+capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" "${IDENTITY_EXTRA[@]}"
 
 # --- stimuli ------------------------------------------------------------------
 mono() { python3 -c 'import time; print(time.monotonic_ns())'; }
@@ -468,6 +496,29 @@ drive_dpms_ipc() {
 }
 drive_dpms_input() { keepalive; at 25; stim power-off 1 msg "$NIRI" action power-off-monitors; at 27; pointer; }
 drive_screencopy() { keepalive; at 25; stim screencopy 0.5 grab_screencopy; }
+start_inhibitor() {
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME "$INHIBIT_BIN" >> "$OUT/inhibit.log" 2>&1 &
+    INHIBIT_PID=$!
+    for _ in $(seq 50); do [ "$(windows_with "$NIRI" gos-inhibit)" -ge 1 ] && break; sleep 0.1; done
+    [ "$(windows_with "$NIRI" gos-inhibit)" -eq 1 ] || fail "$CASE: the idle inhibitor never mapped"
+}
+stop_inhibitor() {
+    local rc=0
+    kill -TERM "$INHIBIT_PID"
+    wait "$INHIBIT_PID" || rc=$?
+    INHIBIT_PID=
+    [ "$rc" -eq 0 ] || fail "$CASE: the idle inhibitor exited $rc"
+    for _ in $(seq 50); do [ "$(windows_with "$NIRI" gos-inhibit)" -eq 0 ] && break; sleep 0.1; done
+    [ "$(windows_with "$NIRI" gos-inhibit)" -eq 0 ] || fail "$CASE: the idle inhibitor window stayed mapped"
+}
+# Inhibit about 3.5 s into the held interval, draw a client line while
+# inhibited, then release; held throughout, with no resume edge.
+drive_idle_inhibitor() {
+    keepalive
+    at 21; stim inhibit 3 start_inhibitor
+    at 26; stim client 1.5 print_line 1
+    at 29; stim release 3 stop_inhibitor
+}
 # niri's config watcher notices a replaced file within about half a second;
 # each reload's journaled effect covers that and the frame it causes.
 drive_reload_held() {
@@ -556,8 +607,8 @@ observation = dict(capture_start_mono_ns=int(sys.argv[2]), journal=journal, topo
 (directory / 'observation.json').write_text(json.dumps(observation, indent=2) + '\n')
 PY
     stop_nested
-    for pid in "$BG_PID" "$PROBE_PID" "$OTHER_PID"; do [ -z "$pid" ] || reap "$pid"; done
-    BG_PID=; PROBE_PID=; OTHER_PID=
+    for pid in "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$INHIBIT_PID"; do [ -z "$pid" ] || reap "$pid"; done
+    BG_PID=; PROBE_PID=; OTHER_PID=; INHIBIT_PID=
     rm -f "$FIFO"
     await_gpu_rest
 }
