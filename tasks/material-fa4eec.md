@@ -7,9 +7,9 @@ size: xs
 complexity: low
 process: direct
 created: 2026-09-27T17:36:46Z
-updated: 2026-09-27T17:36:46Z
+updated: 2026-10-02T23:47:23Z
 depends: []
-tags: [docs]
+tags: [docs, needs-owner]
 agent: claude-code/claude-opus-5-5
 ---
 

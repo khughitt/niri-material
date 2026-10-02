@@ -4,8 +4,8 @@ title: "Embed the ring in the glass: refraction, scatter and noise interaction"
 status: idea
 priority: 2
 created: 2026-10-02T00:08:50Z
-updated: 2026-10-02T23:07:56Z
-depends: []
+updated: 2026-10-02T23:47:23Z
+depends: [material-be611b]
 parent: material-6062fd
 tags: [rendering, material]
 agent: claude-code/claude-opus-5-5
