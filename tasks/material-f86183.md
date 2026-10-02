@@ -7,7 +7,7 @@ size: l
 complexity: high
 process: direct
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-02T08:19:52Z
+updated: 2026-10-02T08:23:38Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance, dynamics]
@@ -29,3 +29,5 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-10-02T05:07:10Z (materials-26.04): parked (waiting on user, review): Owner: judge the settling clip (material-2ee11e); then agent finishes material-2ee11e in .worktrees/material-a1d7da and closes this goal once its children and follow-ups are settled.
   provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T08:19:52Z (material-a1d7da): Owner accepted the idle/resume clip on 2026-10-02 and authorized local integration. Implementation Tasks 1–4 and headless evidence are complete; material-2ee11e owns combined-tree validation and integration. This goal remains open for material-f7eb0b (real TTY/unlock), material-3acc86 (screencast), material-80caf4 (idle inhibitor), material-1af3c6 (two-output removal) and material-285f81 (deferred review minors).
+- 2026-10-02T08:23:38Z (materials-26.04): parked (waiting on agent, dependency): Agent: complete material-285f81 review minors in a new .worktrees/ task checkout, then implement the remaining bounded lifecycle capture lanes in material-f7eb0b, material-3acc86, material-80caf4 and material-1af3c6; arrange real-TTY/two-output environments and pilot-first runs before closing this goal. The owner accepted the clip; material-2ee11e is done and the implementation is locally integrated.
+  provenance: {"harness_session":"codex:01a0fba2-4318-7890-9b41-bbe036afaf06","harness_session_source":"CODEX_SESSION_ID"}
