@@ -1970,7 +1970,7 @@ git add docs/materials/scripts/vdrag.py docs/materials/scripts/drag-lag-clips.sh
 git commit -m "test(material): drag-lag move client and clip fixture (material-4354cf)"
 ```
 
-- [ ] **Step 4: Pilot one sequence**
+- [x] **Step 4: Pilot one sequence**
 
 The host must be idle and the run must go on the headless weston host, never the
 desktop session. Run:
@@ -1995,7 +1995,7 @@ task, not a design question. If the preflight refuses on host load, park with
 Every attempt ends with a `tasks note material-55f8a0 "run: …"` line in the form the
 tasks skill gives.
 
-- [ ] **Step 5: Full run and the brief**
+- [x] **Step 5: Full run and the brief**
 
 Run without `SEQUENCES`. Then:
 

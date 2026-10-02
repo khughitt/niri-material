@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-01T15:06:47Z
+updated: 2026-10-02T03:24:02Z
 started: 2026-10-01T11:31:55Z
 depends: []
 parent: material-53f873
@@ -71,3 +71,7 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
 - 2026-10-01T15:06:46Z (material-4354cf): review: impl round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6-sol
 - 2026-10-01T15:06:46Z (material-4354cf): parked (waiting on agent, dependency): Agent: resume material-55f8a0 from .worktrees/material-4354cf when its quiet host is handed over tonight; run pilot through verdict, then full capture and review-page publication, obtain owner visual judgment, then close child and parent together and integrate materials-26.04. Rust Tasks 1–3 and prepared fixture are committed and independently reviewed; no further code-review work remains. Capture child is parked quiet, 11 min estimate; preflight previously refused before launch on host load.
   provenance: {"harness_session":"codex:01a0f7b2-5d00-73d3-8722-9fc32e652fbd","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-02T03:24:01Z (material-4354cf): resumed
+  provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T03:24:01Z (material-4354cf): parked (waiting on user, review): Owner: judge drag-lag clips on https://claude.ai/artifact/4jJWy7VAMfvHtUFzJxGcb8 (see material-55f8a0). Then agent closes child and parent in one commit and merges .worktrees/material-4354cf into materials-26.04.
+  provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

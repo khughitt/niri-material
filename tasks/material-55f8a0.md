@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-4354cf
 created: 2026-10-01T12:51:50Z
-updated: 2026-10-02T03:23:50Z
+updated: 2026-10-02T03:24:01Z
 started: 2026-10-01T14:31:57Z
 depends: [material-e866b0]
 parent: material-4354cf
@@ -33,3 +33,5 @@ step: "Task 4: Clip driver, pilot, clips and the brief"
 - 2026-10-02T03:14:23Z (material-4354cf): run: 2.3 min (est 3, idle); preflight+settle 0.3, scroll-fast 0.7, scroll-slow 0.7, float-fast 0.6; failed: float-fast vdrag timed out waiting for button event (reproduced alone). Cause: pointer starts at output centre over the centred floating window, so vdrag sees enter at map, then the walk's first step leaves; vdrag ignored leave and pressed over kitty. Fix: clear entered on wl_pointer.leave.
 - 2026-10-02T03:20:35Z (material-4354cf): run: 5.2 min (est 3, idle); preflight 0.3, 5 sequences with per-sequence settle 4.9; passed: all five clips, interactive move confirmed on all four drags; run drag-lag-1388014-1790910915 at 7e80e25f
 - 2026-10-02T03:23:50Z (material-4354cf): Clips published for owner judgment: https://claude.ai/artifact/4jJWy7VAMfvHtUFzJxGcb8; brief clip section and spec status updated
+- 2026-10-02T03:24:01Z (material-4354cf): parked (waiting on user, review): Owner: judge the five clips against native on https://claude.ai/artifact/4jJWy7VAMfvHtUFzJxGcb8 (drag reads as glass responding to the hand? release reads as one motion?). Then agent, in .worktrees/material-4354cf: on acceptance close material-55f8a0 and material-4354cf in one commit and merge into materials-26.04; on a §4 rejection amend the spec first.
+  provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
