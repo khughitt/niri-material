@@ -1,13 +1,15 @@
 ---
 id: material-1d70db
 title: "Ring: separate the resting ring's level from the moving beam's glow"
-status: todo
+status: doing
 priority: 1
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-10-02T00:08:50Z
-updated: 2026-10-02T00:09:33Z
+updated: 2026-10-02T00:39:57Z
+started: 2026-10-02T00:39:57Z
 depends: []
 tags: [rendering, prism]
 agent: claude-code/claude-opus-5-5
@@ -18,3 +20,5 @@ Owner ask (2026-10-01): turn the resting ring off, or down, without losing the c
 ## Notes
 
 - 2026-10-02T00:09:33Z (materials-26.04): Prism half: prism-f71919 (glass.ring.rest), which depends on this task
+- 2026-10-02T00:39:57Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:cebfaf5f-51dd-49c1-ae0b-f56f976f9f14","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
