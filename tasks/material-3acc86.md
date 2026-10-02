@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T22:25:37Z
+updated: 2026-10-02T22:52:44Z
 started: 2026-10-02T20:06:27Z
 depends: [material-6bf694]
 parent: material-f86183
@@ -59,4 +59,10 @@ Remaining screencast acceptance from material-2ee11e. Run with an actual screenc
 - 2026-10-02T22:25:35Z (material-3acc86): resumed
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T22:25:35Z (material-3acc86): parked (waiting on user, review): Owner: re-review docs/plans/2026-10-02-real-tty-settling-lane.md in .worktrees/material-3acc86 (round 2) and choose an execution method (recommended: subagent-driven). Then agent executes Tasks 1-6 in this worktree; Task 7 (material-6bf694) goes to tasks quiet.
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T22:51:12Z (material-3acc86): review: plan round 2 — verdict: revise; findings: Important 3; reviewer: human
+- 2026-10-02T22:52:42Z (material-3acc86): plan round 2 addressed: node is an int through ready and summary, with an end-to-end consumer test (fake ScreenCast service on a private bus, videotestsrc in place of PipeWire: ready, armed sample of padded rows, summary) run green from the plan text; probe f-string fixed and its session stops in finally; probe requires gst-launch exit 0 from a log, not a pipe. Every python block and heredoc in the plan now parses.
+- 2026-10-02T22:52:42Z (material-3acc86): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T22:52:42Z (material-3acc86): parked (waiting on user, review): Owner: re-review docs/plans/2026-10-02-real-tty-settling-lane.md in .worktrees/material-3acc86 (round 3) and choose an execution method (recommended: subagent-driven). Then agent executes Tasks 1-6 in this worktree; Task 7 (material-6bf694) goes to tasks quiet.
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
