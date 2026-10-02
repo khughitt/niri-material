@@ -56,7 +56,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.githooks/post-commit` | C | A | +3/-0 |
 | `.githooks/post-merge` | C | A | +3/-0 |
 | `.githooks/pre-commit` | C | A | +24/-0 |
-| `.githooks/pre-push` | C | A | +64/-0 |
+| `.githooks/pre-push` | C | A | +67/-0 |
 | `.github/FUNDING.yml` | B | D | +0/-1 |
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
