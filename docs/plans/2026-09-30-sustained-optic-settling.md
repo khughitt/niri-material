@@ -3,9 +3,12 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
 > to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Status:** accepted in plan review round 2. `material-0db905` is complete;
-execution is paused at the user's request. No implementation or captures have
-started. The execution records belong under `material-f86183`.
+**Status:** accepted in plan review round 2. `material-0db905` and execution
+Tasks 1–4 are complete. Task 5's headless pilot and matrix passed; the owner
+accepted the idle/resume clip and authorized local integration on 2026-10-02.
+The [acceptance evidence](../materials/2026-09-30-optic-settling-evidence.md)
+records five unverified lifecycle cases and their follow-up tasks.
+`material-f86183` remains open for these cases and deferred review minors.
 
 **Goal:** stop optional Aurora deadlines and uniform changes after input
 inactivity, while preserving real client damage and phase-continuous resume.
@@ -72,7 +75,7 @@ Bash, Python stdlib, Just and nextest. No new dependency, IPC request or config 
 ## File map and sequence
 
 Paths in this document are source-root relative. The draft lives in
-`.worktrees/material-0db905`; execution records the worktree it actually uses.
+`.worktrees/material-0db905`; execution uses `.worktrees/material-a1d7da`.
 
 | Task | Files | Responsibility |
 | --- | --- | --- |
@@ -89,8 +92,8 @@ would create overlapping edits. Use a whole-change review before integration.
 
 Execution records, in order: `material-a1d7da`, `material-5bf79c`,
 `material-6e3bda`, `material-c94dd7`, `material-2ee11e`. Their dependency chain
-starts at the completed `material-0db905`. Task 1 is dependency-unblocked but
-parked for the user's execution resume; the remaining tasks depend on their predecessors.
+starts at the completed `material-0db905`. Tasks 1–4 are complete; Task 5
+records the accepted headless evidence and local integration.
 
 ### Task 1: Add the shared pausable optic timeline
 
@@ -595,7 +598,8 @@ hardware evidence; §7 → Tasks 1–3; §8 → Tasks 4–5; §9 → Task 3 docs
 follow-through. All five review-focus cases have an owning test/capture step.
 
 `material-0db905` is complete, and the accepted decisions are recorded on
-`material-f86183`. Execution is paused at the user's request. When the user
-resumes it, scope that existing idea as the execution parent and start
-`material-a1d7da`; reuse the accepted spec and plan. Do not execute any
-implementation step during this planning task.
+`material-f86183`. Implementation and headless evidence live in
+`.worktrees/material-a1d7da`; the owner accepted the clip on 2026-10-02.
+Missing lifecycle evidence remains open under the execution parent, as does
+`material-285f81` for deferred review minors. The design/planning task itself
+implemented and captured nothing.

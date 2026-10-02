@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-a1d7da
 created: 2026-09-30T10:47:21Z
-updated: 2026-10-02T05:06:28Z
+updated: 2026-10-02T08:06:32Z
 started: 2026-10-02T03:25:21Z
 depends: [material-c94dd7]
 parent: material-f86183
@@ -31,3 +31,7 @@ Run an end-to-end pilot before the nine-family matrix, retain unavailable hardwa
 - 2026-10-02T05:04:46Z (material-a1d7da): Idle/resume clip (outside capture protocol, same binary): 0 changed pixels across the hold, resume step 44,203 px vs ~45,000 per active half-second step; evidence doc and review page https://claude.ai/artifact/4b8iRwZA54qojFr3T3EEYU
 - 2026-10-02T05:06:28Z (material-a1d7da): parked (waiting on user, review): Owner: judge the idle/resume clip on https://claude.ai/artifact/4b8iRwZA54qojFr3T3EEYU (field still while held, no jump on resume). Then agent, in .worktrees/material-a1d7da: update spec/plan status and the resource-aware brief, close material-2ee11e (5 lanes stay unverified: file follow-ups for tty-resume, screencast, idle-inhibitor, output-removal), then merge materials-26.04 in, rerun gates and integrate via the finishing workflow.
   provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T08:03:06Z (material-a1d7da): resumed
+  provenance: {"harness_session":"codex:01a0fba2-4318-7890-9b41-bbe036afaf06","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-02T08:06:31Z (material-a1d7da): review: impl round 1 — verdict: accept; findings: none; reviewer: human
+- 2026-10-02T08:06:31Z (material-a1d7da): Owner accepted the idle/resume clip and authorized finishing validation and local integration. Fresh offline reduction reproduced both lane-passed verdicts: pilot 23 passed / 5 unverified, matrix 27 passed / 5 unverified; all 610 artifact hashes verified. Preserve the five missing lifecycle cases and the deferred review minors as open acceptance work; do not close material-f86183.
