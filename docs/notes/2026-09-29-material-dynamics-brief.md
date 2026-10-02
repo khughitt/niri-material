@@ -65,8 +65,8 @@ new design and implementation plans retain their review gates.
   movement? Answered by `material-b3ce14`: see the drag baseline finding.
 - Is the focus swap visually objectionable, and which parameters need
   continuity? `material-8e3b73` supplies the state and parameter inventory
-  (see the focus swap finding) and a clip fixture; the owner judges the clip
-  before interpolation design is justified.
+  (see the focus swap finding) and a clip fixture. The owner judged the clip on
+  2026-10-02 and kept the hard cut, so no interpolation design is justified.
 - Do the resulting behaviors need profile semantics beyond named responses,
   and where should those live? Revisit `material-9be53d` with both findings;
   Prism ownership remains unverified in this local pass.
@@ -286,12 +286,13 @@ Reading:
 - `beam` matches `swap`: at 0.31 s spacing the burst does not catch the beam
   pass, so it is not evidence about the beam.
 
-Visual acceptance is pending: the owner judges `swap`, `same`, `seed`,
-`move` and `beam` from the GIFs and step images.
+Verdict (2026-10-02): the owner judged `swap`, `same`, `seed`, `move` and
+`beam` from the GIFs and step images and kept the hard cut.
 
 ### Recommendation
 
-Keep the hard cut until the owner judges the clip. The composition finding
+Keep the hard cut; the owner confirmed it on 2026-10-02. Revisit only if a
+new clip shows a problem the seed jump does not already cover. The composition finding
 matters for `material-764d8c` and `material-9be53d`: focus can select a
 definition or a named response, and these behave differently.
 
