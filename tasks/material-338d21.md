@@ -1,15 +1,16 @@
 ---
 id: material-338d21
 title: "Ring beam: tunable decay so the comet can die before the lap closes"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-22T15:33:56Z
-updated: 2026-09-28T11:40:27Z
+updated: 2026-10-02T00:08:51Z
 started: 2026-09-28T11:05:34Z
+completed: 2026-10-02T00:08:50Z
 depends: [prism-cd219b]
 tags: [rendering, prism]
 agent: claude-code/claude-opus-5
@@ -47,3 +48,9 @@ Shares its plumbing with material-9704b0 (noise on the head's brightness): the s
 - 2026-09-28T11:40:27Z (materials-26.04): Steps 2-3 done 2026-09-28: niri-material 26.04.r560.ga18ca619 installed (niri validate clean); prism main fast-forwarded to 3f29db5 (490/490 against the installed niri), prism-cd219b worktree and branch removed; prism migrate had nothing to do; prism apply emits ring-beam-decay 0 and niri validate passes. The running compositor (19bec72e) rejects the reload with 'unexpected node ring-beam-decay' and keeps its previous config until the session restarts.
 - 2026-09-28T11:40:27Z (materials-26.04): parked (waiting on user, review): Judge the look. Owner: restart the session so the running compositor is a18ca619 (until then it rejects the applied config and keeps the old one), then set glass.ring.decay to about 1500 in Prism and watch a focus gain. On acceptance, agent closes material-338d21 with the chosen value.
   provenance: {"harness_session":"claude-code:59949da0-e47e-4228-9027-05bf99914943","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T00:08:50Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:cebfaf5f-51dd-49c1-ae0b-f56f976f9f14","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T00:08:50Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:cebfaf5f-51dd-49c1-ae0b-f56f976f9f14","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T00:08:50Z (materials-26.04): Owner accepted 2026-10-01 on live a18ca619: glass.ring.decay 4150 with beamSpeed 4350, beamNoise 0.55 @ 12 Hz, gap 6, width 1.1, glow 1.2, lightIor 4.5; owner calls these good defaults
+  provenance: {"harness_session":"claude-code:cebfaf5f-51dd-49c1-ae0b-f56f976f9f14","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
