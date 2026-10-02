@@ -1,6 +1,7 @@
 # Real-TTY lane for optic settling acceptance
 
-**Status:** draft for owner review.
+**Status:** draft, revised after owner review round 1 (VT restoration on
+every exit; pixel evidence during the cast).
 **Tasks:** `material-f7eb0b` (TTY resume and unlock), `material-3acc86`
 (screencast consumer), under `material-f86183`. The display-dimming helper
 is `ops-a1715a` (see §6).
@@ -9,8 +10,10 @@ is `ops-a1715a` (see §6).
 
 ## 1. Intent
 
-The headless lane passed every case it can run. Three acceptance cases
-remain unverified because they need niri on real DRM:
+The headless lane passed every case it ran on 2026-10-02; its
+`idle-inhibitor` case (`material-80caf4`) is implemented but awaits its
+capture. Three acceptance cases remain unverified because they need niri on
+real DRM:
 
 - **`tty-resume`:** session activation after a VT switch resumes a held
   timeline, with no catch-up.
@@ -42,14 +45,16 @@ to the installed compositor or its launcher.
 
 ## 3. Host prerequisites (owner actions)
 
-The driver checks each one and refuses with the missing item named; none is
-installed or granted by an agent.
+The commands are recorded in [capture host setup](../materials/capture-host-setup.md),
+which covers every capture lane; the reference host completed these on
+2026-10-02. The driver checks items 1, 2 and 4 and refuses with the missing
+item named; none is installed or granted by an agent.
 
 1. `sudo -n chvt <n>` succeeds (NOPASSWD rule for `/usr/bin/chvt` only).
 2. `gst-inspect-1.0 pipewiresrc` finds the element.
-3. `ddcutil detect` lists DP-1's monitor without sudo (package `ddcutil`; the
-   user in group `i2c`, or the package's uaccess rule on the active seat).
-   A monitor that rejects DDC is not a prerequisite failure: see §6.
+3. `ddcutil detect` lists DP-1's monitor without sudo (the package's
+   uaccess rule on the active seat). This serves dimming only: a missing
+   `ddcutil` or a monitor that rejects DDC leaves the run undimmed (§6).
 4. The session starts from a TTY login with the desktop stopped, the
    existing `quiet --needs headless` contract.
 
@@ -79,9 +84,24 @@ at the user's PipeWire daemon.
 virtual-pointer protocol and stays the pointer stimulus here.
 
 **VT switch.** `vt_away` runs `sudo -n chvt <spare VT>`, waits, then
-`sudo -n chvt <niri's VT>`. niri's VT is read from `/sys/class/tty/tty0/active`
-before launch. The spare VT is the lowest unused one (no logind session on
-it), chosen before the run and recorded.
+`sudo -n chvt <home VT>`. The home VT is the one active when the driver
+starts (`/sys/class/tty/tty0/active`), which is the TTY the session runs on
+and the one niri takes. The spare VT is the lowest one with no logind
+session, chosen before the run and recorded. Each switch is verified by
+reading `tty0/active` back within 2 s; a return switch that does not land
+fails the case.
+
+**VT restoration on every exit.** libseat's logind backend releases seat
+control on exit without switching back, so a TERM or a failed return during
+`vt_away` would leave the host showing the spare VT. The driver therefore
+records the home VT before the first switch, and `on_exit`, after reaping
+its processes, restores it when `tty0/active` differs: up to three
+`sudo -n chvt <home>` attempts, each verified within 2 s. The outcome
+(`not-needed`, `restored`, or `failed` with the observed VT) is written to
+the run's `vt-restore.json` and printed. A failed restoration makes the run
+exit nonzero, even when every case passed, and is named in its `run:` note.
+Restoration runs before the capture lock is released, so the next queued
+run never starts on the wrong VT.
 
 **Lock client.** `session-lock-client.c`, built per run like
 `idle-inhibit-client.c` and identified with its source: it binds
@@ -92,12 +112,20 @@ calls `unlock_and_destroy` and exits 0. It never authenticates; niri's
 
 **Screencast consumer.** `screencast-consumer.py` (committed in
 `material-3acc86`): a ScreenCast session on the private bus, `RecordMonitor`
-DP-1, `pipewiresrc ! appsink`; one CLOCK_MONOTONIC line per received frame,
-`ready <node>` on the first, and on SIGTERM a summary with consumer identity,
-node, frame count and capture interval.
+DP-1, `pipewiresrc ! videoconvert ! video/x-raw,format=RGB ! appsink`; one
+CLOCK_MONOTONIC line per received frame, `ready <node>` on the first, and on
+SIGTERM a summary with consumer identity, node, frame count and capture
+interval. It also keeps frames, not only their times: on SIGUSR1 it writes
+the **next frame received after the signal** as raw RGB to the path named in
+a request file, with that frame's arrival time and the request time in a
+sidecar. A sample can therefore never be a frame the consumer already held.
+If niri's stream offers no CPU-mappable buffers (dmabuf with a non-linear
+modifier only), the consumer requests the linear modifier; the development
+check (§7) proves sampling works before the pilot.
 
 **Cleanup.** The driver owns niri, the bus, the consumer and the lock
-client; `on_exit` and the per-case reap cover all four. A run interrupted
+client; `on_exit` and the per-case reap cover all four, then VT restoration
+runs as described above. A run interrupted
 while the lock client holds the session leaves niri locked; killing niri
 ends that, and the next case starts a fresh niri.
 
@@ -111,7 +139,25 @@ All start from the headless lane's scene (probe kitty under Aurora 0.5 at
 | `aurora-full` (lane control) | 0, 1 | none; pointer resume | Proves DRM cadence and settling are measured like headless. |
 | `tty-resume` | 0, 1, 0 | `vt-away` (switch out about 4 s, then back) | The resume edge falls inside `vt-away`, carries the held logical time, and the timeline settles again before the end. |
 | `unlock` | 0, 1, 0 | `lock` (client locks), then `unlock` (SIGUSR1) | No edge during `lock`; the resume edge falls inside `unlock`; a second pause follows without input. |
-| `screencast` | 0 | `cast-start`, `client` damage, `cast-stop` | No resume edge; consumer frames arrive during `client`; held pixel pair equal. |
+| `screencast` | 0 | `cast-start`, `sample-1`, `client` damage, `sample-2`, `sample-3`, `cast-stop` | No resume edge; consumer frames arrive during `client`; cast samples show changed client content and unchanged Aurora (below). |
+
+**Cast pixel evidence.** Frame arrival alone would pass a stale stream, and
+the headless lane's held pair is a screenshot taken after the capture, not
+a cast frame. While the cast runs and input stays idle, the driver requests
+three cast samples: `sample-1` before the client line, `sample-2` after it,
+and `sample-3` about 2 s later with no further stimulus. From each it crops
+two regions in output pixels (DP-1's scale is pinned to 1), computed from
+the window geometry niri reports:
+
+- **client:** the probe's text rows where the client line appears;
+- **aurora:** a glass region of the probe with no text, the region the
+  headless `client-damage` case already uses for its Aurora crop.
+
+The verdict requires the client crop to differ from `sample-1` to `sample-2`
+(new content reached the cast), the Aurora crop to be equal across all three
+samples (the cast renders held optics), and each sample's frame to have
+arrived after its request and inside its stimulus window (no stale frame).
+Equality is exact on decoded bytes, as for the headless pixel pairs.
 
 New analyzer inputs, all generic:
 
@@ -121,6 +167,9 @@ New analyzer inputs, all generic:
 - `consumer_frames`: for the screencast case, the consumer's frame journal
   must hold at least one frame inside each named stimulus window, and its
   summary must report a clean signal stop.
+- `samples`: a cast sample's frame must arrive after its request and inside
+  its stimulus window; its crops enter the existing pixel pairs
+  (`expect: equal` or `different`).
 - The idle-inhibitor's `messages` check (`material-80caf4`) is reused as is.
 
 The second pause in `tty-resume` and `unlock` shows the timeline returns to
@@ -177,6 +226,12 @@ cases out of Unverified only on a passed lane.
   stimulus and a consumer with no frame in a window.
 - Driver: the existing stub-tools cleanup tests extended so the dedicated
   lane's bus, consumer and lock client are reaped on TERM.
+- VT restoration: with a stub `chvt` and a stub `tty0/active` file, TERM
+  during `vt_away` ends on the home VT with `restored`; a stub that refuses
+  to switch back yields `failed`, a nonzero exit and the observed VT; a run
+  that never switched records `not-needed`.
+- Consumer sampling: a unit test drives the sample request against a
+  synthetic frame source and rejects a frame that arrived before the request.
 - Lock client: built with `-Wall -Wextra -Werror` in the driver; a headless
   Weston smoke shows lock, `locked`, SIGUSR1 unlock and exit 0 before any
   TTY run (nested niri supports session lock).

@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T20:25:59Z
+updated: 2026-10-02T20:37:26Z
 started: 2026-10-02T20:06:27Z
 depends: []
 parent: material-f86183
@@ -35,3 +35,6 @@ Remaining screencast acceptance from material-2ee11e. Run with an actual screenc
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T20:25:58Z (material-3acc86): parked (waiting on user, review): Owner: review docs/specs/2026-10-02-real-tty-settling-lane-design.md in .worktrees/material-3acc86 (covers this task and material-f7eb0b), and complete the §3 host prerequisites (NOPASSWD chvt, gst-plugin-pipewire, ddcutil with i2c access). Then agent: write the implementation plan in the same worktree and submit it for review.
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T20:35:45Z (material-3acc86): review: spec round 1 — verdict: revise; findings: Important 2, Minor 1; reviewer: human
+- 2026-10-02T20:35:45Z (material-3acc86): host prerequisites done 2026-10-02: gst-plugin-pipewire and ddcutil installed, NOPASSWD chvt rule, udev uaccess on i2c-dev applied; ddcutil detect finds DP-1 (Gigabyte G34WQC A, i2c-4), VCP 0x10 = 58 of 100
+- 2026-10-02T20:37:26Z (material-3acc86): spec round 1 addressed: VT restoration on every exit (bounded, verified, reported in vt-restore.json, nonzero on failure, tested with stub chvt), cast pixel evidence (consumer samples next frame after a request; client crop differs, Aurora crop equal across three samples, no stale frame), §1 qualified for material-80caf4. Host setup recorded in docs/materials/capture-host-setup.md, linked from AGENTS.md (README is upstream's, left alone).
