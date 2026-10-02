@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T20:37:26Z
+updated: 2026-10-02T20:38:20Z
 started: 2026-10-02T20:06:27Z
 depends: []
 parent: material-f86183
@@ -38,3 +38,7 @@ Remaining screencast acceptance from material-2ee11e. Run with an actual screenc
 - 2026-10-02T20:35:45Z (material-3acc86): review: spec round 1 — verdict: revise; findings: Important 2, Minor 1; reviewer: human
 - 2026-10-02T20:35:45Z (material-3acc86): host prerequisites done 2026-10-02: gst-plugin-pipewire and ddcutil installed, NOPASSWD chvt rule, udev uaccess on i2c-dev applied; ddcutil detect finds DP-1 (Gigabyte G34WQC A, i2c-4), VCP 0x10 = 58 of 100
 - 2026-10-02T20:37:26Z (material-3acc86): spec round 1 addressed: VT restoration on every exit (bounded, verified, reported in vt-restore.json, nonzero on failure, tested with stub chvt), cast pixel evidence (consumer samples next frame after a request; client crop differs, Aurora crop equal across three samples, no stale frame), §1 qualified for material-80caf4. Host setup recorded in docs/materials/capture-host-setup.md, linked from AGENTS.md (README is upstream's, left alone).
+- 2026-10-02T20:38:19Z (material-3acc86): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T20:38:19Z (material-3acc86): parked (waiting on user, review): Owner: re-review docs/specs/2026-10-02-real-tty-settling-lane-design.md in .worktrees/material-3acc86 (round 2: VT restoration §4, cast pixel evidence §5, §1 qualified). On acceptance, agent writes the implementation plan in the same worktree and submits it for review.
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
