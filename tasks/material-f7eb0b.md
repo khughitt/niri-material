@@ -7,7 +7,7 @@ size: m
 complexity: mid
 process: planned
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T22:52:42Z
+updated: 2026-10-02T23:29:08Z
 depends: []
 parent: material-f86183
 tags: [performance]
@@ -30,3 +30,5 @@ Remaining acceptance cases tty-resume and unlock from material-2ee11e. Task 3 re
 - 2026-10-02T22:25:35Z (material-3acc86): plan round 1 addressed: node-discovery timeout removed after discovery (separate loop, tested); DMA-BUF import via GStreamer GL on headless EGL, probed on the desktop niri with owner approval (node 106, XR24:0x0300000000606012/0x0300000000e08014, RGB to EOS, rc 0); chvt bounded (timeout -k 1 2) with a hanging-stub test; TERM test reaps its sleep; edge test uses a separate resume stimulus (hold 4 s); driver TERM tests while casting, locked and switched away (restoration before release). Tasks 1, 3 and 4 tests run green against their planned code in a scratch copy.
 - 2026-10-02T22:51:12Z (material-3acc86): review: plan round 2 — verdict: revise; findings: Important 3; reviewer: human
 - 2026-10-02T22:52:42Z (material-3acc86): plan round 2 addressed: node is an int through ready and summary, with an end-to-end consumer test (fake ScreenCast service on a private bus, videotestsrc in place of PipeWire: ready, armed sample of padded rows, summary) run green from the plan text; probe f-string fixed and its session stops in finally; probe requires gst-launch exit 0 from a log, not a pipe. Every python block and heredoc in the plan now parses.
+- 2026-10-02T23:28:37Z (material-3acc86): review: plan round 3 — verdict: revise; findings: Important 1, Minor 1; reviewer: human
+- 2026-10-02T23:29:08Z (material-3acc86): plan round 3 addressed: Task 3 stages tools/fake_screencast.py; the end-to-end test also skips without PyGObject and Gio/GLib/Gst/GstVideo introspection. Extracted Task 3 tests green; every task's file list checked against its git add.

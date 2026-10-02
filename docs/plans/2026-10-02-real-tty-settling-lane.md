@@ -600,7 +600,20 @@ class PipelineTests(unittest.TestCase):
 # Startup through summary on a private bus, with a fake ScreenCast service and
 # a test source in place of PipeWire. 6x3-byte rows are padded to 20 bytes by
 # GStreamer, so the sample's size also proves packing.
-@unittest.skipUnless(shutil.which('dbus-daemon') and shutil.which('gst-launch-1.0'), 'needs dbus-daemon and GStreamer')
+def consumer_bindings():
+    """PyGObject with the introspection data the consumer and fake service load."""
+    try:
+        import gi
+        for namespace, version in (('Gio', '2.0'), ('GLib', '2.0'), ('Gst', '1.0'), ('GstVideo', '1.0')):
+            gi.require_version(namespace, version)
+        from gi.repository import Gio, GLib, Gst, GstVideo  # noqa: F401
+    except (ImportError, ValueError):
+        return False
+    return True
+
+
+@unittest.skipUnless(shutil.which('dbus-daemon') and shutil.which('gst-launch-1.0') and consumer_bindings(),
+                     'needs dbus-daemon, GStreamer and PyGObject with Gio, Gst and GstVideo')
 class ConsumerEndToEndTests(unittest.TestCase):
     def test_startup_sampling_and_summary(self):
         tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, tmp)
@@ -990,7 +1003,7 @@ Expected: `gst-launch exit 0`, which with `num-buffers=1` means a frame was impo
 - [ ] **Step 6: Commit**
 
 ```bash
-git add tools/screencast_consumer.py tools/test_screencast_consumer.py
+git add tools/screencast_consumer.py tools/fake_screencast.py tools/test_screencast_consumer.py
 git commit -m "feat(material): screencast consumer samples the next frame after an armed request (material-3acc86)"
 ```
 
