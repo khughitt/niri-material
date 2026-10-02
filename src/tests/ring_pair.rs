@@ -157,7 +157,7 @@ fn config(glass: &Glass, v: Variant) -> Config {
     .unwrap()
 }
 
-fn set_time(f: &mut Fixture, time: Duration) {
+pub(super) fn set_time(f: &mut Fixture, time: Duration) {
     let niri = f.niri();
     let now = niri.clock.now();
     niri.clock.set_unadjusted(now);
@@ -176,7 +176,7 @@ fn reload(f: &mut Fixture, glass: &Glass, v: Variant) {
 }
 
 /// The output as a screenshot renders it, at `time`, as RGBA bytes.
-fn render_at(f: &mut Fixture, time: Duration) -> Vec<u8> {
+pub(super) fn render_at(f: &mut Fixture, time: Duration) -> Vec<u8> {
     set_time(f, time);
     f.niri().advance_animations();
     let output = f.niri_output(1);
@@ -224,7 +224,7 @@ fn dump(name: &str, pixels: &[u8]) {
 }
 
 /// Differing pixels and the largest channel delta.
-fn diff(a: &[u8], b: &[u8]) -> (usize, u8) {
+pub(super) fn diff(a: &[u8], b: &[u8]) -> (usize, u8) {
     assert_eq!(a.len(), b.len());
     let map = light_map(a, b);
     (
