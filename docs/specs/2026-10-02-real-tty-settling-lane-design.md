@@ -1,7 +1,8 @@
 # Real-TTY lane for optic settling acceptance
 
-**Status:** draft, revised after owner review round 1 (VT restoration on
-every exit; pixel evidence during the cast).
+**Status:** draft, revised after owner review rounds 1 (VT restoration on
+every exit; pixel evidence during the cast) and 2 (damage-driven cast
+samples; screencast in the development check).
 **Tasks:** `material-f7eb0b` (TTY resume and unlock), `material-3acc86`
 (screencast consumer), under `material-f86183`. The display-dimming helper
 is `ops-a1715a` (see §6).
@@ -139,24 +140,42 @@ All start from the headless lane's scene (probe kitty under Aurora 0.5 at
 | `aurora-full` (lane control) | 0, 1 | none; pointer resume | Proves DRM cadence and settling are measured like headless. |
 | `tty-resume` | 0, 1, 0 | `vt-away` (switch out about 4 s, then back) | The resume edge falls inside `vt-away`, carries the held logical time, and the timeline settles again before the end. |
 | `unlock` | 0, 1, 0 | `lock` (client locks), then `unlock` (SIGUSR1) | No edge during `lock`; the resume edge falls inside `unlock`; a second pause follows without input. |
-| `screencast` | 0 | `cast-start`, `sample-1`, `client` damage, `sample-2`, `sample-3`, `cast-stop` | No resume edge; consumer frames arrive during `client`; cast samples show changed client content and unchanged Aurora (below). |
+| `screencast` | 0 | `cast-start`, `sample-1`, `sample-2`, quiet ≥ 2 s, `sample-3`, `cast-stop` | No resume edge; every sample's frame was produced by its own journaled damage; cast samples show changed client content and unchanged Aurora (below). |
 
 **Cast pixel evidence.** Frame arrival alone would pass a stale stream, and
 the headless lane's held pair is a screenshot taken after the capture, not
-a cast frame. While the cast runs and input stays idle, the driver requests
-three cast samples: `sample-1` before the client line, `sample-2` after it,
-and `sample-3` about 2 s later with no further stimulus. From each it crops
-two regions in output pixels (DP-1's scale is pinned to 1), computed from
-the window geometry niri reports:
+a cast frame. niri renders no cast frame without damage
+(`src/screencasting/pw_utils.rs`, "no damage, skipping frame"), so a sample
+requested in a static scene would wait forever. Every sample is therefore
+one journaled stimulus that **arms the request first, then causes bounded
+client damage**, and its window covers both:
+
+- **`sample-1`:** arm, then one line in the focus thief (`gos-other`).
+- **`sample-2`:** arm, then one line in the probe: the client change the
+  sample must show.
+- **`sample-3`:** at least 2 s after `sample-2`'s window ends with no
+  stimulus (the held interval the analyzer observes as quiet), arm, then one
+  more line in the focus thief.
+
+In this case the focus thief reads lines from a FIFO, like the probe, so
+its damage is bounded and falls outside both sampled regions: the thief is
+a separate column, never under the probe's crops. The consumer saves the
+first frame that arrives after the request, which is the frame that
+damage produced. From each sample the driver crops two regions in output
+pixels (DP-1's scale is pinned to 1), computed from the window geometry
+niri reports:
 
 - **client:** the probe's text rows where the client line appears;
 - **aurora:** a glass region of the probe with no text, the region the
   headless `client-damage` case already uses for its Aurora crop.
 
 The verdict requires the client crop to differ from `sample-1` to `sample-2`
-(new content reached the cast), the Aurora crop to be equal across all three
-samples (the cast renders held optics), and each sample's frame to have
+(new content reached the cast) and to be equal from `sample-2` to `sample-3`
+(the thief's damage did not touch it), the Aurora crop to be equal across all
+three samples (the cast renders held optics), and each sample's frame to have
 arrived after its request and inside its stimulus window (no stale frame).
+A request with no frame inside its window fails the case; it is never
+retried.
 Equality is exact on decoded bytes, as for the headless pixel pairs.
 
 New analyzer inputs, all generic:
@@ -168,8 +187,10 @@ New analyzer inputs, all generic:
   must hold at least one frame inside each named stimulus window, and its
   summary must report a clean signal stop.
 - `samples`: a cast sample's frame must arrive after its request and inside
-  its stimulus window; its crops enter the existing pixel pairs
-  (`expect: equal` or `different`).
+  its stimulus window, and a sample stimulus must hold a frame at all; its
+  crops enter the existing pixel pairs (`expect: equal` or `different`).
+  The existing stimulus-free window check covers the quiet interval before
+  `sample-3`.
 - The idle-inhibitor's `messages` check (`material-80caf4`) is reused as is.
 
 The second pause in `tty-resume` and `unlock` shows the timeline returns to
@@ -207,13 +228,16 @@ fraction stays in the instructions (0.15–0.35 is the owner's range).
 
 ## 7. Pilot and matrix
 
-Before the lane pilot, the smallest end-to-end check runs `aurora-full` and
-`tty-resume` alone (`CASES`, a development run), through export, analysis
-and cleanup, and its result is read. The pilot then runs the four cases
+Before the lane pilot, the smallest end-to-end check runs `aurora-full`,
+`tty-resume` and `screencast` (`CASES`, a development run), through export,
+cast sampling, pixel comparison, analysis and cleanup, and its result is
+read. The `screencast` case there is complete: it proves the consumer gets
+CPU-readable frames from niri's stream and that every sample request is
+answered by its own damage before any longer run depends on either. The pilot then runs the four cases
 once; the matrix repeats `tty-resume` and `unlock` three times each, gated
 on the passed pilot with identical binary and configs, as the headless
 lane's matrix is. Estimated wall-clock: build 4 min, development check
-4 min, pilot 8 min, matrix 15 min. Every attempt gets a `run:` note.
+5 min, pilot 8 min, matrix 15 min. Every attempt gets a `run:` note.
 
 The evidence document gains a dedicated-lane verdict table with topology,
 consumer identity, lock-client and consumer hashes, and moves the three
@@ -232,6 +256,8 @@ cases out of Unverified only on a passed lane.
   that never switched records `not-needed`.
 - Consumer sampling: a unit test drives the sample request against a
   synthetic frame source and rejects a frame that arrived before the request.
+- Analyzer: a sample stimulus with no frame in its window fails the case,
+  and so does a `sample-3` whose preceding quiet interval held a redraw.
 - Lock client: built with `-Wall -Wextra -Werror` in the driver; a headless
   Weston smoke shows lock, `locked`, SIGUSR1 unlock and exit 0 before any
   TTY run (nested niri supports session lock).
