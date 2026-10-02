@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upstream divergence report: `python3 tools/upstream-report [--check] [--drift] [--against REF]`.
+"""Upstream divergence report: `python3 tools/upstream-report [--check|--stage] [--drift] [--against REF]`.
 
 Reports what this fork changes relative to upstream niri, and whether upstream has
 moved into our seams. Everything is measured against the baseline recorded in
@@ -12,8 +12,12 @@ never the working tree and never a branch name, so one code path serves both the
 pre-commit hook (where the index is the tree about to be committed) and CI (where it
 is the checked-out commit). Output is written to the working tree.
 
-Exit status: 0 success, 1 a reportable finding (stale report, unacknowledged
-conflict), 2 an error (bad baseline, git failure, missing markers).
+`--stage` is the pre-commit hook's half: it regenerates from the index, splices
+into the staged document, and stages the result, refusing when the report itself
+has unstaged edits. `--check` stays the gate everywhere else.
+
+Exit status: 0 success, 1 a reportable finding (stale report, unstaged report
+edits under --stage, unacknowledged conflict), 2 an error (bad baseline, git failure, missing markers).
 
 Design: docs/specs/2026-09-06-upstream-divergence-design.md.
 """
@@ -595,6 +599,27 @@ def check(root, record):
     return []
 
 
+def stage(root, record):
+    """(findings, changed): regenerate the report from the index and stage it, so
+    the pre-commit hook does steps 2 and 3 of the regeneration order itself and the
+    commit still cannot land without its inventory. The staged document is the
+    splice target, and an unstaged edit to the report is refused rather than swept
+    into the commit or overwritten."""
+    staged = read_index(root, REPORT_PATH)
+    target = root / REPORT_PATH
+    if target.read_text() != staged:
+        return [
+            f"{REPORT_PATH} has unstaged edits; stage or drop them, or run "
+            f"`just upstream-report` and stage the result"
+        ], False
+    fresh = render_report(root, record, staged)
+    if fresh == staged:
+        return [], False
+    target.write_text(fresh)
+    git(root, "add", "--", REPORT_PATH)
+    return [], True
+
+
 def run(root, args):
     """The whole job. Returns 0 for success and 1 for a finding; every operational
     failure raises and is caught by the boundary in main()."""
@@ -607,6 +632,14 @@ def run(root, args):
         findings = check(root, record)
         for finding in findings:
             print(f"upstream-report: {finding}", file=sys.stderr)
+        return 1 if findings else 0
+
+    if args.stage:
+        findings, changed = stage(root, record)
+        for finding in findings:
+            print(f"upstream-report: {finding}", file=sys.stderr)
+        if changed:
+            print(f"upstream-report: regenerated and staged {REPORT_PATH}")
         return 1 if findings else 0
 
     target = root / REPORT_PATH
@@ -655,6 +688,9 @@ def main(argv=None):
                         help="resolve and print the baseline, then exit")
     parser.add_argument("--check", action="store_true",
                         help="fail if the staged report is stale; write nothing")
+    parser.add_argument("--stage", action="store_true",
+                        help="regenerate the report from the index and stage it; "
+                             "refuses if the report has unstaged edits")
     parser.add_argument("--drift", action="store_true",
                         help="also regenerate the drift block; needs a fetched upstream")
     parser.add_argument("--against", default="upstream/main",

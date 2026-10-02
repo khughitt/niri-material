@@ -58,7 +58,7 @@ uniform vec3 mat_sig_impulse_rgb2;
 uniform vec3 mat_sig_impulse_rgb3;
 uniform ivec4 mat_sig_impulse_resp;
 uniform ivec3 mat_sig_response;
-uniform vec3 mat_sig_ring;
+uniform vec4 mat_sig_ring;
 uniform vec4 mat_sig_focus;
 uniform vec3 mat_sig_ring_color;
 uniform float mat_light_ior;

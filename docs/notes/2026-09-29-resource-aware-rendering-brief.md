@@ -17,8 +17,9 @@ open under `material-f86183`.
   §§2–3 remains in force; its focus sweep was subsequently replaced by the
   beam. `signal { idle-after-ms }` defaults to 30000; 0 disables the gate.
   The [smoke evidence](../materials/2026-09-18-ring-focus-motion-evidence.md)
-  records zero material draws for hidden workspaces, hidden tabs, offscreen
-  columns, DPMS-off and idle attention, plus a successful input resume.
+  records zero redraws (its counts are `Niri::redraw`, not material draws)
+  for hidden workspaces, hidden tabs, offscreen columns, DPMS-off and idle
+  attention, plus a successful input resume.
 - `src/layout/monitor.rs::update_render_elements` clears tile visibility
   before updating rendered workspaces. `Tile::render` reports deadlines;
   `Tile::tick_deadline` rejects an out-of-view slab. This establishes gates,
@@ -79,8 +80,14 @@ that lowering one unfocused window's blur saves a whole blur pass.
 ## Unanswered questions
 
 - Does a hidden/covered material cause compositor work beyond the known gates,
-  or is the reported load client-driven? `material-d09741` answers with attribution
-  and visible/hidden/empty controls, including another output and overview.
+  or is the reported load client-driven? Answered by `material-d09741`
+  ([evidence](../materials/2026-09-30-hidden-window-attribution-evidence.md)):
+  hidden material tiles draw nothing, the prefilter is never rebuilt, and the
+  hidden client drops to the 1 Hz fallback cadence. The residue is one output
+  redraw per hidden-client commit and, for an offscreen column or a tile under
+  an opaque window, an offscreen-buffer re-render per commit that nothing
+  draws. A sustained optic under an opaque cover and a second lit output were
+  not captured.
 - Sustained-optic participation and resume are settled by the accepted
   `material-0db905` design: Aurora participates by default, freezes logical
   time and resumes without catch-up or easing. Remaining lifecycle evidence

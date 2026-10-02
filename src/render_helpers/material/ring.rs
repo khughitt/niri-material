@@ -337,11 +337,12 @@ pub fn tail_term(behind: f32, tail: f32) -> f32 {
 }
 
 /// The focus light at arc position `s`: the shader's formula in `f32`, so
-/// its constants are tested here.
-pub fn comet(s: f32, frame: BeamFrame, perimeter: f32, glow: f32) -> f32 {
+/// its constants are tested here. `glow` scales all of it; `rest` scales
+/// only the resting glow, so the comet keeps its brightness at `rest` 0.
+pub fn comet(s: f32, frame: BeamFrame, perimeter: f32, glow: f32, rest: f32) -> f32 {
     let tail = tail_length(f64::from(perimeter)) as f32;
     let moving = head_term(s, frame.head, frame.env, perimeter) + tail_term(frame.head - s, tail);
-    BEAM_BASE * glow * (frame.decay * moving + BEAM_REST)
+    BEAM_BASE * glow * (frame.decay * moving + BEAM_REST * rest)
 }
 
 #[cfg(test)]
@@ -646,7 +647,7 @@ mod tests {
         assert!(wandered, "env never left 1 under an 0.8 wander");
         // and the resting frame is untouched: the quiet ring keeps one value
         for s in [0., 1500., p - 1.] {
-            let v = comet(s as f32, BeamFrame::REST, p as f32, 1.);
+            let v = comet(s as f32, BeamFrame::REST, p as f32, 1., 1.);
             assert!((v - BEAM_BASE * BEAM_REST).abs() < 1e-6, "s = {s}: {v}");
         }
     }
@@ -723,7 +724,7 @@ mod tests {
             let end = Duration::from_secs_f64(run_length(p, length) / 300.);
             let frame = beam_frame(end, 300., p, Envelope::Plateau, HeadNoise::NONE, length);
             for s in [0., 1000., 1499., 2999.] {
-                let v = comet(s, frame, p as f32, 1.);
+                let v = comet(s, frame, p as f32, 1., 1.);
                 assert!(
                     (v - BEAM_BASE * BEAM_REST).abs() < 1e-6,
                     "length {length}, s {s}: {v}"
@@ -806,7 +807,7 @@ mod tests {
         };
         let expected =
             BEAM_BASE * (0.5 * (head_term(0., 20., 1., p) + tail_term(20., l)) + BEAM_REST);
-        assert!((comet(0., f, p, 1.) - expected).abs() < 1e-6);
+        assert!((comet(0., f, p, 1., 1.) - expected).abs() < 1e-6);
         // at launch s = 0 sees head *and* the tail's first 20 px: about 0.964 before BASE/decay
         assert!(((head_term(0., 20., 1., p) + tail_term(20., l)) - 0.964).abs() < 2e-3);
     }
@@ -815,7 +816,7 @@ mod tests {
     fn rest_is_finite_in_f32_everywhere() {
         let p = 4000.;
         for s in [0., 1., 2000., p - 1., p] {
-            let v = comet(s, BeamFrame::REST, p, 1.);
+            let v = comet(s, BeamFrame::REST, p, 1., 1.);
             assert!(v.is_finite(), "s = {s}: {v}");
             assert!((v - BEAM_BASE * BEAM_REST).abs() < 1e-6, "s = {s}: {v}");
         }
@@ -826,11 +827,11 @@ mod tests {
             decay: 1.,
         };
         assert!(
-            (comet(50., drain, p, 1.) - BEAM_BASE * BEAM_REST).abs() < 1e-6,
+            (comet(50., drain, p, 1., 1.) - BEAM_BASE * BEAM_REST).abs() < 1e-6,
             "no head at s = 50"
         );
         assert!(
-            comet(p - 50., drain, p, 1.) > BEAM_BASE * BEAM_REST,
+            comet(p - 50., drain, p, 1., 1.) > BEAM_BASE * BEAM_REST,
             "tail at s = P − 50"
         );
     }
@@ -853,15 +854,39 @@ mod tests {
     }
 
     #[test]
+    fn rest_scales_only_the_resting_glow() {
+        let p = 4000.;
+        assert_eq!(
+            comet(3000., BeamFrame::REST, p, 1., 0.),
+            0.,
+            "no resting ring"
+        );
+        assert!(
+            (comet(3000., BeamFrame::REST, p, 1., 2.) - 2. * BEAM_BASE * BEAM_REST).abs() < 1e-7
+        );
+        // The comet rides on top of the rest level and keeps its brightness
+        // when the rest is off.
+        let f = BeamFrame {
+            head: 100.,
+            env: 1.,
+            decay: 1.,
+        };
+        let moving = comet(100., f, p, 1., 1.) - comet(100., BeamFrame::REST, p, 1., 1.);
+        assert!(moving > 0.);
+        assert!((comet(100., f, p, 1., 0.) - moving).abs() < 1e-6);
+    }
+
+    #[test]
     fn glow_scales_the_whole_focus_light() {
         let f = BeamFrame {
             head: 100.,
             env: 1.,
             decay: 1.,
         };
-        assert!((comet(100., f, 4000., 2.) - 2. * comet(100., f, 4000., 1.)).abs() < 1e-6);
+        assert!((comet(100., f, 4000., 2., 1.) - 2. * comet(100., f, 4000., 1., 1.)).abs() < 1e-6);
         assert!(
-            (comet(3000., BeamFrame::REST, 4000., 0.5) - 0.5 * BEAM_BASE * BEAM_REST).abs() < 1e-7
+            (comet(3000., BeamFrame::REST, 4000., 0.5, 1.) - 0.5 * BEAM_BASE * BEAM_REST).abs()
+                < 1e-7
         );
     }
 }
