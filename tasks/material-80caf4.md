@@ -6,9 +6,9 @@ priority: 1
 size: s
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-80caf4
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T19:52:11Z
+updated: 2026-10-02T19:52:14Z
 started: 2026-10-02T19:52:10Z
 depends: []
 parent: material-f86183
@@ -25,3 +25,5 @@ Remaining idle-inhibitor capture acceptance from material-2ee11e; the real-handl
 - 2026-10-02T19:52:10Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T19:52:10Z (materials-26.04): approach: real Wayland idle-inhibit client (C, built per run with wayland-scanner; no client is installed), a Tracy 'IdleInhibit inhibited=N' message on niri's inhibited-state change so the trace proves inhibition took hold, the idle-inhibitor case moved into the headless lane, and an analyzer check that a stimulus's required messages fall inside its journaled window. The pilot needs the headless host and is parked for tasks quiet.
+- 2026-10-02T19:52:14Z (material-80caf4): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
