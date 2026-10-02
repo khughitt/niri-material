@@ -5,8 +5,9 @@ status: todo
 priority: 2
 size: s
 created: 2026-10-02T19:21:48Z
-updated: 2026-10-02T19:21:48Z
+updated: 2026-10-02T23:07:56Z
 depends: []
+parent: material-6062fd
 tags: [quick-add]
 source: "mindful:thought:6258221f80b07e869303a0449ee939cc"
 agent: claude-code/claude-opus-5-5

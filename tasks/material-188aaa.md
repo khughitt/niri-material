@@ -7,8 +7,9 @@ size: s
 complexity: mid
 process: planned
 created: 2026-09-24T20:09:46Z
-updated: 2026-09-24T20:56:53Z
+updated: 2026-10-02T23:07:56Z
 depends: []
+parent: material-2834d7
 tags: [performance]
 agent: claude-code/claude-opus-5-5
 ---

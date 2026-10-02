@@ -7,8 +7,9 @@ size: m
 complexity: high
 process: planned
 created: 2026-09-29T22:56:20Z
-updated: 2026-09-29T22:56:20Z
+updated: 2026-10-02T23:07:57Z
 depends: []
+parent: material-3aa1f2
 tags: [adaptive]
 source: docs/notes/2026-09-29-adaptive-materials-brief.md
 agent: codex

@@ -6,10 +6,10 @@ priority: 2
 size: m
 complexity: high
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-29T22:56:49Z
+updated: 2026-10-02T23:07:57Z
 depends: []
 parent: material-5d6b2c
-tags: [quick-add, performance]
+tags: [quick-add, performance, needs-quiet]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
 ---
 

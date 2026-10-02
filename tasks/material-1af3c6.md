@@ -7,10 +7,10 @@ size: m
 complexity: mid
 process: direct
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T08:06:31Z
+updated: 2026-10-02T23:07:57Z
 depends: []
 parent: material-f86183
-tags: [performance]
+tags: [performance, needs-quiet]
 source: "docs/materials/2026-09-30-optic-settling-evidence.md#unverified-output-removal"
 agent: codex
 spec: docs/specs/2026-09-29-sustained-optic-settling-design.md

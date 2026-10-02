@@ -7,8 +7,9 @@ size: l
 complexity: high
 process: planned
 created: 2026-09-29T22:06:32Z
-updated: 2026-09-29T22:06:32Z
+updated: 2026-10-02T23:07:57Z
 depends: []
+parent: material-6f606b
 tags: [signals, sources]
 source: docs/notes/2026-09-29-signal-sources-brief.md
 agent: codex
