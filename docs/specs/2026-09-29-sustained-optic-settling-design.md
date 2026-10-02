@@ -1,8 +1,11 @@
 # Sustained optic settling after input inactivity
 
 **Status:** accepted in spec review round 4; implementation plan accepted in
-plan review round 2. Design task complete; execution paused at the user's request.
-No implementation or captures in this task.
+plan review round 2. Execution Tasks 1–4 are complete; headless pilot and matrix
+passed, and the owner accepted the idle/resume clip on 2026-10-02.
+The [acceptance evidence](../materials/2026-09-30-optic-settling-evidence.md)
+records five unverified lifecycle cases and their follow-up tasks.
+The design task itself implemented and captured nothing.
 **Task:** `material-0db905`; wakes `material-f86183` after design and plan review.
 **Baseline:** `1767db05` (the subsequent task-start commit changes only the task).
 

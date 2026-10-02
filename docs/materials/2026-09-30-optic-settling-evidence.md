@@ -1,7 +1,8 @@
 # Sustained optic settling: acceptance evidence
 
-**Status:** headless lane passed (pilot and matrix, 2026-10-02); owner visual
-judgment of the idle/resume clip outstanding; five lanes unverified.
+**Status:** headless lane passed (pilot and matrix, 2026-10-02); owner accepted
+the idle/resume clip and authorized local integration on 2026-10-02;
+five lifecycle cases remain unverified.
 **Task:** `material-2ee11e` under `material-f86183`.
 **Design:** [accepted spec, round 4](../specs/2026-09-29-sustained-optic-settling-design.md);
 [plan, Task 5](../plans/2026-09-30-sustained-optic-settling.md).
@@ -51,6 +52,19 @@ implemented), `unlock` (wiring covered by Task 3's real-handler test),
 (needs a real screencast consumer; the `screencopy` case is not a substitute).
 These stay open.
 
+| Remaining acceptance | Task |
+| --- | --- |
+| Real TTY resume and unlock | `material-f7eb0b` |
+| Real screencast consumer | `material-3acc86` |
+| Real idle inhibitor | `material-80caf4` |
+| Removal of one of two outputs | `material-1af3c6` |
+
+All four follow-ups remain children of `material-f86183`, alongside the
+deferred review minors in `material-285f81`; the goal is not complete.
+
+On resume, the offline reducer reproduced both recorded verdicts, and all
+277 pilot and 333 matrix artifact hashes matched `SHA256SUMS`.
+
 ## Idle and resume clip
 
 A probe kitty under the `aurora-full` glass with a 4 s threshold. Pointer
@@ -61,6 +75,7 @@ exactly 0 from 10.3 s to 18.6 s, and 44,203 at the resume step, an
 ordinary step with no catch-up. The clip, the step chart and the
 changed-pixel masks are on the review page. The clip used the same binary
 outside the capture protocol; it is visual evidence, not a measurement.
+The owner accepted the held field and phase-continuous resume on 2026-10-02.
 
 ## Review before capture
 
