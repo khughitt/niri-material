@@ -404,6 +404,13 @@ commit or overwrite them. The hooks then run `--check` as before, and `just
 check` and CI only check, so a commit still cannot land without its
 inventory.
 
+A pathspec commit (`git commit <paths>`) runs the hook on a temporary
+`next-index` that git discards afterwards, so a report staged there would
+reach the commit but leave the real index trailing HEAD. There `--stage`
+refuses a stale report and says to stage the paths and run a plain
+`git commit` instead (material-7cd141). Regenerating by hand would not do:
+it reads the real index, which lacks the unstaged paths.
+
 Keying on the index rather than on a branch or on `HEAD` is what lets one code
 path serve both callers. In the pre-commit hook the index is the tree about to
 be committed, so a commit cannot land source changes without the matching
