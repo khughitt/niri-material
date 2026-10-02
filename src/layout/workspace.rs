@@ -1693,7 +1693,7 @@ impl<W: LayoutElement> Workspace<W> {
                 self.floating
                     .tiles_with_render_positions()
                     .find_map(|(tile, _)| {
-                        (tile.window().id() == window).then(|| tile.animation_residual())
+                        (tile.window().id() == window).then(|| tile.motion_residual())
                     })
             })
     }
