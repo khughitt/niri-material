@@ -7,13 +7,13 @@ size: m
 complexity: mid
 process: planned
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T20:07:57Z
+updated: 2026-10-02T20:25:48Z
 depends: []
 parent: material-f86183
 tags: [performance]
 source: "docs/materials/2026-09-30-optic-settling-evidence.md#unverified-session"
 agent: codex
-spec: docs/specs/2026-09-29-sustained-optic-settling-design.md
+spec: docs/specs/2026-10-02-real-tty-settling-lane-design.md
 ---
 
 Remaining acceptance cases tty-resume and unlock from material-2ee11e. Task 3 real-handler tests cover unlock wiring, but a real session capture is still unverified. Use the accepted spec §§6–8 and explicitly identified worktree binary, add the missing dedicated real-TTY lane, then run its end-to-end pilot before matrix on an idle host. Distinguish backend TTY resume from IPC power-on; input/session activation must resume from held phase without catch-up, and later idle must stop optic deadlines. Retain provenance, trace liveness, owned-process cleanup, run notes and evidence links. No host launcher changes or installation; mark unavailable environments unverified.
@@ -21,3 +21,4 @@ Remaining acceptance cases tty-resume and unlock from material-2ee11e. Task 3 re
 ## Notes
 
 - 2026-10-02T20:07:56Z (material-3acc86): process -> planned (2026-10-02): the dedicated real-TTY lane needs a design for DRM takeover, VT switching (privileged) and an authenticating unlock; material-3acc86's screencast also needs this lane (nested winit has no GBM device). Design both in one spec.
+- 2026-10-02T20:25:48Z (material-3acc86): spec drafted: docs/specs/2026-10-02-real-tty-settling-lane-design.md (owner decisions: NOPASSWD chvt, PAM-free lock client, DP-1 takeover, gst pipewiresrc consumer, DDC/CI dimming). Dimming helper filed as ops-a1715a; it never gates a capture, so no dependency.
