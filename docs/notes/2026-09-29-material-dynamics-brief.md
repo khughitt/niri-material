@@ -120,26 +120,30 @@ after settling; moving-release continuity has separate deterministic checks.
 
 ### Follow-lag clips (`material-55f8a0`)
 
-The stdlib move client and `docs/materials/scripts/drag-lag-clips.sh` fixture are
-implemented. The 2026-10-01 `scroll-fast` pilot attempt refused at preflight
-before launching Weston: CPU busy 46.4% (limit 10%), load1 23.33 (limit 2),
-GPU utilization 12% (limit 5%), non-idle GPU states, power IQR 8.475 W
-(limit 1 W), and a BitwigStudio compute client. The attempt took 26.491 s;
-the release build had passed in 6 min 2 s. Evidence is under
-`$NIRI_MATERIAL_WORK_ROOT/drag-lag-clips-81ec2a1f/drag-lag-1752426-1790865687/capture.json`.
-No clip, frame, interactive-move confirmation, or review page exists. The pilot
-and full five-sequence capture need a quiet-host retry; the fixture does not
-relax thresholds or stop competing applications.
-When clips are produced, GIF playback is approximate: every frame uses a fixed
-80 ms delay while `frames.txt` records varying request intervals. Judge timing
-from `frames.txt`, not GIF duration; neither source measures display cadence.
+The 2026-10-02 run captured all five sequences from a TTY with the desktop
+stopped, under `$NIRI_MATERIAL_WORK_ROOT/drag-lag-clips-7e80e25f/drag-lag-1388014-1790910915/`
+(capture record `capture.json`). Clips: `scroll-fast` (39 frames),
+`scroll-slow` (38), `float-fast` (39), `float-slow` (38) and `native` (40), each a
+4 s burst at about 100 ms per frame with a GIF and contact sheet. IPC confirmed an
+interactive move during the timed segment of all four drags
+(`<sequence>: interactive move confirmed during the timed segment` in `clips.txt`).
+Review page: <https://claude.ai/artifact/4jJWy7VAMfvHtUFzJxGcb8>.
+
+At 125 Hz the fast segment lasts 192 ms, about two burst frames, and the slow one
+480 ms, about five; the lift and release are the better-sampled phases. The first
+full attempt on `03f249ec` failed at `float-fast`: the pointer starts at the
+output centre, over the centred floating window, so `vdrag` received an enter at
+map and ignored the leave the walk's first step produced. It then pressed over
+kitty. `vdrag` now clears its entered state on `wl_pointer.leave` (`7e80e25f`).
+The earlier 2026-10-01 pilot refused at preflight on host load and captured nothing.
+GIF playback is approximate: every frame uses a fixed 80 ms delay while
+`frames.txt` records varying request intervals. Judge timing from `frames.txt`,
+not GIF duration; neither source measures display cadence.
 
 The fixture pins jelly-flex 0.0066, bevel 12, thickness 20
 and ripple off; runs `scroll-fast`, `scroll-slow`, `float-fast`, `float-slow` and
 `native`; and verifies the drag enters an interactive move through IPC. Owner
-judgment follows a successful headless pilot and full capture. Budget 11 min
-for the quiet-host retry: build 6.5, preflight 0.5, pilot 1, full run 3. The agent
-runs the pilot through its verdict before attempting the full set.
+judgment of the published clips is outstanding.
 
 ## Proposed decomposition
 
