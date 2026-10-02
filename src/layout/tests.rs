@@ -4059,6 +4059,32 @@ fn optic_settling_updates_shared_clock_without_tiles_or_outputs() {
 }
 
 #[test]
+fn input_active_reads_the_shared_clock_it_was_built_on() {
+    let clock = Clock::with_time(Duration::ZERO);
+    clock.set_optic_active(false, Duration::from_secs(1));
+    let mut layout: Layout<TestWindow> = Layout::with_options(clock.clone(), Options::default());
+    assert!(!layout.input_active());
+    // Already paused on the shared clock: no change and no panic.
+    assert!(!layout.set_input_active(false, Duration::from_secs(2)));
+    assert!(!layout.set_input_active(true, Duration::from_secs(3)));
+    assert!(layout.input_active());
+    assert!(clock.optic_time(Duration::from_secs(3)).running);
+}
+
+/// The optic uniforms window 1's tile renders at real time `at`.
+fn window_optics(
+    layout: &Layout<TestWindow>,
+    at: Duration,
+) -> Vec<smithay::backend::renderer::gles::Uniform<'static>> {
+    let tile = layout
+        .workspaces()
+        .flat_map(|(_, _, ws)| ws.tiles())
+        .find(|tile| *tile.window().id() == 1)
+        .unwrap();
+    tile.render_optics(tile.material().unwrap(), at)
+}
+
+#[test]
 fn optic_settling_new_aurora_tile_while_idle_uses_shared_time() {
     use std::collections::HashMap;
     use std::rc::Rc;
@@ -4177,6 +4203,19 @@ fn optic_settling_new_aurora_tile_while_idle_uses_shared_time() {
         clock.optic_time(Duration::from_secs(50_000)).logical_now,
         Duration::from_millis(4_100)
     );
+
+    // The tile those cycles hid renders from the shared timeline: held while
+    // idle whatever the real time, resumed without catch-up, then moving.
+    let held = window_optics(&layout, Duration::from_secs(45_000));
+    assert_eq!(window_optics(&layout, Duration::from_secs(49_000)), held);
+    assert!(layout.set_input_active(true, Duration::from_secs(49_000)));
+    assert_eq!(window_optics(&layout, Duration::from_secs(49_000)), held);
+    assert_ne!(
+        window_optics(&layout, Duration::from_millis(49_000_250)),
+        held,
+        "one drift bucket after resume"
+    );
+    assert!(layout.set_input_active(false, Duration::from_millis(49_000_250)));
     let pinned = niri_config::Config::parse_mem(
         "material \"frost\" { glass { aurora 0.5 { drift-hz 0; }; }; };",
     )

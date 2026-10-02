@@ -60,6 +60,11 @@ impl Clock {
             .record_render(logical_now);
     }
 
+    /// Whether the optic timeline is running: the input-activity gate.
+    pub(crate) fn optic_active(&self) -> bool {
+        self.inner.borrow().optic_timeline.is_running()
+    }
+
     pub(crate) fn set_optic_active(&self, active: bool, now: Duration) -> Option<OpticTime> {
         self.inner
             .borrow_mut()

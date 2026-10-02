@@ -1,18 +1,20 @@
 ---
 id: material-285f81
 title: "Settling review minors: layout unwrap, Niri-level redraw/timer assertions, flaky reload test"
-status: doing
+status: done
 priority: 3
 size: s
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-285f81
 created: 2026-10-02T03:36:04Z
-updated: 2026-10-02T16:06:16Z
+updated: 2026-10-02T16:20:59Z
 started: 2026-10-02T16:06:16Z
+completed: 2026-10-02T16:20:59Z
 depends: []
 parent: material-f86183
 tags: [performance]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 ---
 
@@ -21,4 +23,12 @@ Deferred Minor findings from the whole-change review of sustained optic settling
 ## Notes
 
 - 2026-10-02T16:06:16Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T16:06:25Z (material-285f81): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T16:06:31Z (material-285f81): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T16:20:59Z (material-285f81): done
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T16:20:59Z (material-285f81): Layout reads input_active from the shared clock (no second copy, no unwrap); Niri-level test asserts idle/resume edges queue a redraw and the optic timer drops when held and re-arms on resume, same-side reloads and repeated input queue nothing (mutation-checked); reload test raises to 10 s instead of racing 200 ms; signal test no longer pauses a clock the solver never reads; Optic::next_change documents its logical deadline; hidden-tile test asserts the tile's rendered optics hold, resume without catch-up, and move
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
