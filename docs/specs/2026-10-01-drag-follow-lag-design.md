@@ -1,8 +1,6 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** accepted (spec round 6); follower implemented in `material-4354cf`;
-capture preflight refused on host load; no clips captured, owner visual judgment
-still required after a quiet-host retry.
+**Status:** accepted (spec round 6); implemented in `material-4354cf`, clips awaiting owner judgment.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
 **Baseline:** `b172940e` (the task-start commits after it change only the task).
