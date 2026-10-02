@@ -284,6 +284,8 @@ pub struct Response {
     #[knuffel(child, unwrap(argument))]
     pub ring_glow: Option<FloatOrInt<0, 3>>,
     #[knuffel(child, unwrap(argument))]
+    pub ring_rest: Option<FloatOrInt<0, 3>>,
+    #[knuffel(child, unwrap(argument))]
     pub ring_beam_speed: Option<FloatOrInt<0, 5000>>,
     #[knuffel(child, unwrap(argument))]
     pub ring_beam_noise: Option<FloatOrInt<0, 1>>,
@@ -318,6 +320,9 @@ pub struct ResolvedResponse {
     pub ring_width: f64,
     /// Focus light scale; multiplies head, tail, rest and spill.
     pub ring_glow: f64,
+    /// Resting ring level, 0–3: scales only the glow that stays once the
+    /// beam has passed. Zero is no resting ring; the beam still runs.
+    pub ring_rest: f64,
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
     pub ring_color: Color,
@@ -344,6 +349,7 @@ impl Default for ResolvedResponse {
             ring_gap: 8.,
             ring_width: 2.6,
             ring_glow: 1.,
+            ring_rest: 1.,
             focus: FocusResponse::RingLight,
             ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
             ring_beam_speed: 300.,
@@ -365,6 +371,7 @@ impl ResolvedResponse {
             ring_gap: response.ring_gap.map_or(base.ring_gap, |x| x.0),
             ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
             ring_glow: response.ring_glow.map_or(base.ring_glow, |x| x.0),
+            ring_rest: response.ring_rest.map_or(base.ring_rest, |x| x.0),
             focus: response.focus.unwrap_or(base.focus),
             ring_color: response.ring_color.unwrap_or(base.ring_color),
             ring_beam_speed: response

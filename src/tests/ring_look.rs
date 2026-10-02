@@ -158,7 +158,7 @@ const SMALL: Pane = Pane {
     h: 300,
 };
 
-fn config() -> Config {
+fn config(look: &str) -> Config {
     Config::parse_mem(&format!(
         r##"
         hotkey-overlay {{ skip-at-startup; }}
@@ -168,7 +168,7 @@ fn config() -> Config {
             border {{ off; }}
             shadow {{ off; }}
         }}
-        {ACCEPTED}
+        {look}
         "##
     ))
     .unwrap()
@@ -199,10 +199,11 @@ fn open(f: &mut Fixture, id: ClientId, (w, h): (u16, u16)) -> WlSurface {
     surface
 }
 
-/// Renders `pane` while another window holds focus, through its focus gain,
-/// and at rest. Returns the report and (tag, render) in order.
-fn sequence(pane: &Pane) -> (String, Vec<(String, Vec<u8>)>) {
-    let mut f = Fixture::with_config(config());
+/// Renders `pane` under `look` while another window holds focus, through
+/// its focus gain, and at rest. Returns the report and (tag, render) in
+/// order; dumps are named `<prefix><pane>-<tag>`.
+fn sequence(pane: &Pane, look: &str, prefix: &str) -> (String, Vec<(String, Vec<u8>)>) {
+    let mut f = Fixture::with_config(config(look));
     f.niri_state().backend.headless().add_renderer().unwrap();
     f.add_output(1, (OUT_W, OUT_H));
     let id = f.add_client();
@@ -238,7 +239,7 @@ fn sequence(pane: &Pane) -> (String, Vec<(String, Vec<u8>)>) {
     let mut report = String::new();
     let rest = &renders[renders.len() - 2].1;
     for (tag, pixels) in &renders {
-        dump(&format!("{}-{tag}", pane.name), pixels);
+        dump(&format!("{prefix}{}-{tag}", pane.name), pixels);
         let (px, max) = diff(rest, pixels);
         let _ = writeln!(report, "{tag}: vs rest {px} px, max {max}");
     }
@@ -249,7 +250,7 @@ fn sequence(pane: &Pane) -> (String, Vec<(String, Vec<u8>)>) {
 fn accepted_ring_look() {
     let mut failures = Vec::new();
     for pane in [&LARGE, &SMALL] {
-        let (report, renders) = sequence(pane);
+        let (report, renders) = sequence(pane, ACCEPTED, "");
         eprintln!("{} {}x{}:\n{report}", pane.name, pane.w, pane.h);
         let get = |tag: &str| &renders.iter().find(|(t, _)| t == tag).unwrap().1;
         let mut check = |ok: bool, what: &str| {
@@ -271,4 +272,43 @@ fn accepted_ring_look() {
         );
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// `ACCEPTED` with every response's `ring-glow` line followed by `extra`.
+fn with_response(extra: &str) -> String {
+    ACCEPTED.replace(
+        "ring-glow 1.2\n",
+        &format!("ring-glow 1.2\n        {extra}\n"),
+    )
+}
+
+/// `ring-rest 0` (material-1d70db) removes the resting ring and nothing
+/// else: at rest the pane renders exactly as with no focus light, and the
+/// comet still runs after the gain.
+#[test]
+fn ring_rest_zero_keeps_the_comet() {
+    let (report, renders) = sequence(&LARGE, &with_response("ring-rest 0"), "rest0-");
+    eprintln!("ring-rest 0:\n{report}");
+    let get = |tag: &str| &renders.iter().find(|(t, _)| t == tag).unwrap().1;
+    assert!(
+        diff(get("rest"), get("beam-150ms")).0 > 0,
+        "no comet\n{report}"
+    );
+
+    let unlit = ACCEPTED.replace(r#"focus "ring-light""#, r#"focus "none""#);
+    let (_, dark) = sequence(&LARGE, &unlit, "unlit-");
+    let dark_rest = &dark.iter().find(|(t, _)| t == "rest").unwrap().1;
+    let (px, max) = diff(get("rest"), dark_rest);
+    assert_eq!(
+        (px, max),
+        (0, 0),
+        "ring-rest 0 at rest differs from no focus light"
+    );
+
+    let (_, lit) = sequence(&LARGE, ACCEPTED, "");
+    let lit_rest = &lit.iter().find(|(t, _)| t == "rest").unwrap().1;
+    assert!(
+        diff(get("rest"), lit_rest).0 > 0,
+        "ring-rest 0 left the resting ring"
+    );
 }

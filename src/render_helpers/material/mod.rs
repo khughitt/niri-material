@@ -272,8 +272,8 @@ pub struct SignalUniforms {
     pub impulse_rgb: [[f32; 3]; 4],
     pub impulse_resp: [i32; 4],
     pub response: [i32; 3],
-    /// Gap from the face edge, band width, glow.
-    pub ring: [f32; 3],
+    /// Gap from the face edge, band width, glow, rest level.
+    pub ring: [f32; 4],
     /// Focus, beam head px, head cutoff, decay.
     pub focus: [f32; 4],
     /// Filament base color, linear RGB.
@@ -301,6 +301,7 @@ impl SignalUniforms {
                 response.ring_gap as f32,
                 response.ring_width as f32,
                 response.ring_glow as f32,
+                response.ring_rest as f32,
             ],
             focus: [0., 0., 0., 0.],
             ring_color: color_linear(response.ring_color),
@@ -355,6 +356,7 @@ impl SignalUniforms {
                 response.ring_gap as f32,
                 response.ring_width as f32,
                 response.ring_glow as f32,
+                response.ring_rest as f32,
             ],
             focus: [
                 frame.focus,
@@ -1831,7 +1833,7 @@ mod tests {
         let mut r = ResolvedResponse::default();
         let quiet = SignalUniforms::quiet(&r);
         assert_eq!(quiet.focus, [0., 0., 0., 0.]);
-        assert_eq!(quiet.ring, [8., 2.6, 1.], "gap, width, glow");
+        assert_eq!(quiet.ring, [8., 2.6, 1., 1.], "gap, width, glow, rest");
         assert_eq!(quiet.ring_color, color_linear(r.ring_color));
         assert_eq!(quiet.response, [1, 1, 1], "ring, rim-orbit, ring-light");
         assert_eq!(quiet.accent[3], 0.);
@@ -1857,7 +1859,9 @@ mod tests {
             "straight rgb, presence in alpha"
         );
         assert_eq!(u.focus, [1., 1234.5, 0.5, 1.], "focus, head, env, decay");
-        assert_eq!(u.ring, [8., 2.6, 1.]);
+        assert_eq!(u.ring, [8., 2.6, 1., 1.]);
+        r.ring_rest = 0.;
+        assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).ring[3], 0.);
 
         r.focus = FocusResponse::None;
         assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).response[2], 0);

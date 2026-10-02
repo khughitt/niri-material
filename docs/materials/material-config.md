@@ -268,6 +268,7 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ring-beam-decay` | 0–20000 logical px | 0 (no decay) |
 | `ring-gap` | 0–128 logical px | 8 logical px |
 | `ring-glow` | 0–3 | 1.0 |
+| `ring-rest` | 0–3 | 1.0 |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
 | `ring-color` | `"#rrggbb"` | `#ccccff` |
 
@@ -294,6 +295,7 @@ material "terminal-glass" {
         ring-beam-decay 0
         ring-gap 8
         ring-glow 1.0
+        ring-rest 1.0
         ring-width 2.6
         ring-color "#ccccff"
     }
@@ -331,6 +333,11 @@ without a beam; `signal { motion "reduced" }`, `motion "off"`, and
 restarts the beam on the newly focused window; focus loss ends it at once.
 `ring-glow` scales the whole focus light — head, tail, resting glow and
 spill together — so their ratios hold while the total is tuned.
+`ring-rest` scales only the resting glow, the ring that stays on a focused
+window once the beam has passed: `0` leaves no resting ring while the beam
+still runs on every focus gain, and above `1` the resting ring is brighter
+than the beam's base. The comet rides on top of the resting level, so it
+keeps its own brightness at any `ring-rest`.
 
 `ring-beam-noise` makes the head's brightness wander as it travels, so the
 comet reads as a living light rather than a lamp on a track. It is the
