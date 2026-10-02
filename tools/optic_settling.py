@@ -201,6 +201,14 @@ def cadence_bounds(min_hz, max_hz, duration_ns):
     return max(low, 1 if min_hz > 0 else 0), high
 
 
+def monotonic_offset(edges):
+    """CLOCK_MONOTONIC minus trace time, from the edges' own stamps."""
+    offsets = [edge['real_ns'] - edge['trace_ns'] for edge in edges]
+    if max(offsets) - min(offsets) > OFFSET_SLACK_NS:
+        raise ValueError('optic edges disagree on the monotonic offset')
+    return offsets[0]
+
+
 def journal_intervals(observation, edges, declared):
     """Journaled stimuli in trace time, aligned through the edges' monotonic stamps."""
     journal = observation.get('journal')
@@ -213,10 +221,7 @@ def journal_intervals(observation, edges, declared):
         return []
     if not edges:
         raise ValueError('journaled stimuli need an optic edge to align them')
-    offsets = [edge['real_ns'] - edge['trace_ns'] for edge in edges]
-    if max(offsets) - min(offsets) > OFFSET_SLACK_NS:
-        raise ValueError('optic edges disagree on the monotonic offset')
-    offset = offsets[0]
+    offset = monotonic_offset(edges)
     intervals = []
     for entry in journal:
         start = integer(entry.get('start_mono_ns'), 'stimulus start') - offset
@@ -260,6 +265,24 @@ def analyze_case(run, case, lane):
     trace_end = max(t + d for t, d in beats)
     if any(edge['trace_ns'] >= trace_end for edge in edges):
         raise ValueError(f'{name}: truncated CPU trace')
+    # The last heartbeat is only where the trace stops, not where the capture
+    # was declared to stop: a wedged compositor or a dropped Tracy connection
+    # ends the trace early, and a settled tail would then read as quiet.
+    capture_start = integer(observation.get('capture_start_mono_ns'), 'capture start')
+    capture_ns = integer(case.get('capture_s'), 'declared capture duration') * 1_000_000_000
+    if edges:
+        declared_end = capture_start - monotonic_offset(edges) + capture_ns
+    else:
+        # No edge aligns the monotonic clock. Trace time counts from the
+        # compositor's start, which precedes the capture, so the capture's
+        # length is a lower bound on the trace's end.
+        declared_end = capture_ns
+    if trace_end < declared_end - GAP_NS:
+        raise ValueError(f'{name}: trace ends at {trace_end / 1e9:.3f} s, '
+                         f'{(declared_end - trace_end) / 1e9:.3f} s before the declared capture end')
+    for stimulus, (start, _) in zip(declared, stimuli):
+        if start >= trace_end:
+            raise ValueError(f"{name}: stimulus {stimulus['label']} journaled after the trace ends")
     redraws = [t for t, _ in cpu.get(REDRAW, [])]
     draws = [t for t, _ in gpu.get(MATERIAL, [])]
     gpu_live = min((t for events in gpu.values() for t, _ in events), default=None)
@@ -360,7 +383,25 @@ def analyze_case(run, case, lane):
     return {'name': name, 'family': case['family'], 'verdict': 'passed',
             'edges': [{'active': e['active'], 'trace_ns': e['trace_ns'], 'logical_ns': e['logical_ns']}
                       for e in edges],
-            'segments': report, 'redraws_settled': held, 'topology': topology}
+            'segments': report, 'redraws_settled': held, 'topology': topology,
+            'trace_end_ns': trace_end, 'declared_end_ns': declared_end}
+
+
+PANIC = re.compile(r'panicked at')
+
+
+def panic_line(log):
+    """The first panic the nested compositors logged, or None."""
+    try:
+        text = log.read_text(errors='replace')
+    except OSError as error:
+        raise ValueError(f'missing {log.name}') from error
+    return next((line.strip() for line in text.splitlines() if PANIC.search(line)), None)
+
+
+# Exit status 0: the lane's evidence passed. 'lane-passed' leaves only the
+# declared other-lane cases unverified (complete is false); 'passed' is complete.
+PASSING = ('passed', 'lane-passed', 'development-passed')
 
 
 def analyze_run(run: Path) -> dict:
@@ -397,29 +438,40 @@ def analyze_run(run: Path) -> dict:
             results.append({'name': case['name'], 'family': case['family'], 'verdict': 'not_run'})
             continue
         results.append(analyze_case(run, case, lane))
+    if any(result['verdict'] == 'passed' for result in results):
+        panic = panic_line(run / 'niri.log')
+        if panic:
+            raise ValueError(f'niri.log records a panic: {panic}')
     complete = all(result['verdict'] == 'passed' for result in results)
     required_passed = all(result['verdict'] == 'passed' for case, result in zip(cases, results)
                           if case.get('required'))
+    unverified = [result['name'] for result in results if result['verdict'] == 'unverified']
     if manifest.get('development'):
         # A CASES subset never stands for a pilot or matrix verdict.
         verdict = 'development-passed' if required_passed else 'incomplete'
+    elif not required_passed or any(result['verdict'] not in ('passed', 'unverified') for result in results):
+        verdict = 'incomplete'
     else:
-        verdict = 'passed' if required_passed and (complete or manifest['mode'] == 'pilot') else 'incomplete'
-    return {'verdict': verdict, 'complete': complete, 'cases': results}
+        # Pilot and matrix alike: every case of this lane passed. Cases that
+        # need another lane stay unverified, and only their absence makes the
+        # verdict complete.
+        verdict = 'passed' if complete else 'lane-passed'
+    return {'verdict': verdict, 'complete': complete, 'unverified': unverified, 'cases': results}
 
 
-def main():
-    if len(sys.argv) != 2:
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if len(argv) != 1:
         print('usage: optic_settling.py RUN_DIR', file=sys.stderr)
         return 2
-    run = Path(sys.argv[1])
+    run = Path(argv[0])
     try:
         result = analyze_run(run)
     except (IndexError, KeyError, OSError, ValueError) as error:
         result = {'verdict': 'invalid', 'error': str(error)}
     (run / 'analysis.json').write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result, indent=2))
-    return 0 if result['verdict'] in ('passed', 'development-passed') else 1
+    return 0 if result['verdict'] in PASSING else 1
 
 
 if __name__ == '__main__':
