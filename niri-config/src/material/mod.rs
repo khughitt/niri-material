@@ -286,6 +286,8 @@ pub struct Response {
     #[knuffel(child, unwrap(argument))]
     pub ring_rest: Option<FloatOrInt<0, 3>>,
     #[knuffel(child, unwrap(argument))]
+    pub ring_accent: Option<FloatOrInt<0, 3>>,
+    #[knuffel(child, unwrap(argument))]
     pub ring_beam_speed: Option<FloatOrInt<0, 5000>>,
     #[knuffel(child, unwrap(argument))]
     pub ring_beam_noise: Option<FloatOrInt<0, 1>>,
@@ -323,6 +325,9 @@ pub struct ResolvedResponse {
     /// Resting ring level, 0–3: scales only the glow that stays once the
     /// beam has passed. Zero is no resting ring; the beam still runs.
     pub ring_rest: f64,
+    /// Signal accent level, 0–3: scales only the band's own accent glow. The
+    /// accent still tints the focus light at 0.
+    pub ring_accent: f64,
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
     pub ring_color: Color,
@@ -350,6 +355,7 @@ impl Default for ResolvedResponse {
             ring_width: 2.6,
             ring_glow: 1.,
             ring_rest: 1.,
+            ring_accent: 1.,
             focus: FocusResponse::RingLight,
             ring_color: Color::from_rgba8_unpremul(0xcc, 0xcc, 0xff, 0xff),
             ring_beam_speed: 300.,
@@ -372,6 +378,7 @@ impl ResolvedResponse {
             ring_width: response.ring_width.map_or(base.ring_width, |x| x.0),
             ring_glow: response.ring_glow.map_or(base.ring_glow, |x| x.0),
             ring_rest: response.ring_rest.map_or(base.ring_rest, |x| x.0),
+            ring_accent: response.ring_accent.map_or(base.ring_accent, |x| x.0),
             focus: response.focus.unwrap_or(base.focus),
             ring_color: response.ring_color.unwrap_or(base.ring_color),
             ring_beam_speed: response

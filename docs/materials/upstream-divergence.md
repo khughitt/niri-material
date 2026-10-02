@@ -70,7 +70,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
 | `justfile` | C | A | +95/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1388/-0 |
+| `niri-config/src/lib.rs` | B | M | +1422/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -103,7 +103,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
 | `src/render_helpers/mod.rs` | B | M | +27/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +175/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +177/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
 | `src/tests/client.rs` | B | M | +105/-0 |
 | `src/tests/mod.rs` | B | M | +5/-0 |
