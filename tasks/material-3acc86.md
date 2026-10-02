@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T21:02:12Z
+updated: 2026-10-02T22:25:37Z
 started: 2026-10-02T20:06:27Z
 depends: [material-6bf694]
 parent: material-f86183
@@ -53,4 +53,10 @@ Remaining screencast acceptance from material-2ee11e. Run with an actual screenc
 - 2026-10-02T20:53:31Z (material-3acc86): resumed
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T21:02:10Z (material-3acc86): parked (waiting on user, review): Owner: review docs/plans/2026-10-02-real-tty-settling-lane.md in .worktrees/material-3acc86 and choose an execution method (recommended: subagent-driven). Then agent executes Tasks 1-6 (material-76c35e, -47bb4a, -d4e0f6, -c096d2, -7b3838, -a3ca2b) in this worktree; Task 7 (material-6bf694) goes to tasks quiet.
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T22:07:23Z (material-3acc86): review: plan round 1 — verdict: revise; findings: Important 6; reviewer: human
+- 2026-10-02T22:25:35Z (material-3acc86): plan round 1 addressed: node-discovery timeout removed after discovery (separate loop, tested); DMA-BUF import via GStreamer GL on headless EGL, probed on the desktop niri with owner approval (node 106, XR24:0x0300000000606012/0x0300000000e08014, RGB to EOS, rc 0); chvt bounded (timeout -k 1 2) with a hanging-stub test; TERM test reaps its sleep; edge test uses a separate resume stimulus (hold 4 s); driver TERM tests while casting, locked and switched away (restoration before release). Tasks 1, 3 and 4 tests run green against their planned code in a scratch copy.
+- 2026-10-02T22:25:35Z (material-3acc86): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T22:25:35Z (material-3acc86): parked (waiting on user, review): Owner: re-review docs/plans/2026-10-02-real-tty-settling-lane.md in .worktrees/material-3acc86 (round 2) and choose an execution method (recommended: subagent-driven). Then agent executes Tasks 1-6 in this worktree; Task 7 (material-6bf694) goes to tasks quiet.
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
