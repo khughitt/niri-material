@@ -19,7 +19,7 @@ goal `material-53f873`; this brief is not an approved implementation design.
   with drag-follower lag for rendering and unmap snapshots. Scrolling also
   includes column/view residuals. `material_dynamics` still limits flex to
   one quarter of bevel depth. Deterministic drag/hold/release traces are
-  recorded below; headless capture and owner judgment remain outstanding.
+  recorded below; the owner accepted the headless clips on 2026-10-02.
 - `src/render_helpers/material/mod.rs::apply_resolved` updates parameters
   in place for the same definition name and replaces `MaterialState` on a
   name change. Replacement changes the offscreen buffer, element identity
@@ -109,7 +109,7 @@ The lag decays on a hold and survives release as an added decaying residual;
 release position and its existing animation remain unchanged. The
 [accepted design](../specs/2026-10-01-drag-follow-lag-design.md) reuses jelly-flex
 and window-movement's spring, keeps the existing flex cap, and leaves rubber-band
-flex off. Owner judgment of drag and release appearance remains outstanding.
+flex off. The owner accepted the drag and release appearance on 2026-10-02.
 
 The follow-lag column comes from Task 2's recorded
 `just test-one -p niri drag_dynamics -- --nocapture` run on `d9631ff8`, with
@@ -142,8 +142,8 @@ not GIF duration; neither source measures display cadence.
 
 The fixture pins jelly-flex 0.0066, bevel 12, thickness 20
 and ripple off; runs `scroll-fast`, `scroll-slow`, `float-fast`, `float-slow` and
-`native`; and verifies the drag enters an interactive move through IPC. Owner
-judgment of the published clips is outstanding.
+`native`; and verifies the drag enters an interactive move through IPC. The
+owner accepted the published clips on 2026-10-02.
 
 ## Proposed decomposition
 

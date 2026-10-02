@@ -1,6 +1,6 @@
 # Follow-lag jelly stimulus for interactive drag
 
-**Status:** accepted (spec round 6); implemented in `material-4354cf`, clips awaiting owner judgment.
+**Status:** accepted (spec round 6); implemented in `material-4354cf`; clips accepted by the owner 2026-10-02.
 **Task:** `material-4354cf`, under the dynamics goal `material-53f873`; extends
 `material-b3ce14`.
 **Baseline:** `b172940e` (the task-start commits after it change only the task).
@@ -330,6 +330,8 @@ fast speed, each with a hold, plus the native column-move control.
 The verdict is the owner's: whether the drag reads as glass responding to the
 hand, and whether release still reads as one motion. The deterministic checks
 in §6 hold regardless.
+
+Verdict (2026-10-02): the owner accepted the five clips against native.
 
 ## 8. Alternatives
 
