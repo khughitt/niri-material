@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-a1d7da
 created: 2026-09-30T10:47:21Z
-updated: 2026-10-02T03:25:21Z
+updated: 2026-10-02T05:04:47Z
 started: 2026-10-02T03:25:21Z
 depends: [material-c94dd7]
 parent: material-f86183
@@ -26,3 +26,6 @@ Run an end-to-end pilot before the nine-family matrix, retain unavailable hardwa
 
 - 2026-10-02T03:25:21Z (material-a1d7da): started
   provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T04:20:28Z (material-a1d7da): run: 25 min (est 27, headless); 28 cases incl. setup, export and analysis; passed: acceptance pilot on reviewed 2f3b5b6a (binary sha256 9c2cc1c1…): lane-passed, 23 passed, 5 unverified (output-removal, screencast, tty-resume, unlock, idle-inhibitor), worst trace-end gap 0.88 s of 1.5, no panics, no leftover processes (pilot-20261002-1)
+- 2026-10-02T05:04:46Z (material-a1d7da): run: 39 min (est 45, headless); 32 cases incl. export and analysis; passed: matrix on 2f3b5b6a gated on pilot-20261002-1: lane-passed, 27 passed, 5 unverified, aurora-full held 601.9 s with one flush and equal logical time at pause/resume, worst trace-end gap 0.85 s, no panics, no leftovers (matrix-20261002-1)
+- 2026-10-02T05:04:46Z (material-a1d7da): Idle/resume clip (outside capture protocol, same binary): 0 changed pixels across the hold, resume step 44,203 px vs ~45,000 per active half-second step; evidence doc and review page https://claude.ai/artifact/4b8iRwZA54qojFr3T3EEYU
