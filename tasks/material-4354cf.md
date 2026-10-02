@@ -1,19 +1,21 @@
 ---
 id: material-4354cf
 title: Design a follow-lag jelly stimulus for interactive drag
-status: doing
+status: done
 priority: 1
 size: m
 complexity: high
 process: planned
 owner: material-4354cf
 created: 2026-09-30T10:00:19Z
-updated: 2026-10-02T03:24:02Z
+updated: 2026-10-02T15:58:39Z
 started: 2026-10-01T11:31:55Z
+completed: 2026-10-02T15:58:38Z
 depends: []
 parent: material-53f873
 tags: [dynamics]
 source: docs/notes/2026-09-29-material-dynamics-brief.md
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-10-01-drag-follow-lag-design.md
 plan: docs/plans/2026-10-01-drag-follow-lag.md
@@ -75,3 +77,9 @@ Outcome: glass responds to pointer drag, not only to the layout's lift and relea
   provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T03:24:01Z (material-4354cf): parked (waiting on user, review): Owner: judge drag-lag clips on https://claude.ai/artifact/4jJWy7VAMfvHtUFzJxGcb8 (see material-55f8a0). Then agent closes child and parent in one commit and merges .worktrees/material-4354cf into materials-26.04.
   provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T15:58:38Z (material-4354cf): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T15:58:38Z (material-4354cf): done
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T15:58:38Z (material-4354cf): follow-lag jelly stimulus for interactive drag implemented; owner accepted the clips 2026-10-02
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

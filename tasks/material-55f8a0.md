@@ -1,18 +1,20 @@
 ---
 id: material-55f8a0
 title: "Drag-lag clip driver, pilot, clips and brief"
-status: doing
+status: done
 priority: 1
 size: m
 complexity: mid
 process: direct
 owner: material-4354cf
 created: 2026-10-01T12:51:50Z
-updated: 2026-10-02T03:24:01Z
+updated: 2026-10-02T15:58:40Z
 started: 2026-10-01T14:31:57Z
+completed: 2026-10-02T15:58:38Z
 depends: [material-e866b0]
 parent: material-4354cf
 tags: [dynamics, capture]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 plan: docs/plans/2026-10-01-drag-follow-lag.md
 step: "Task 4: Clip driver, pilot, clips and the brief"
@@ -35,3 +37,10 @@ step: "Task 4: Clip driver, pilot, clips and the brief"
 - 2026-10-02T03:23:50Z (material-4354cf): Clips published for owner judgment: https://claude.ai/artifact/4jJWy7VAMfvHtUFzJxGcb8; brief clip section and spec status updated
 - 2026-10-02T03:24:01Z (material-4354cf): parked (waiting on user, review): Owner: judge the five clips against native on https://claude.ai/artifact/4jJWy7VAMfvHtUFzJxGcb8 (drag reads as glass responding to the hand? release reads as one motion?). Then agent, in .worktrees/material-4354cf: on acceptance close material-55f8a0 and material-4354cf in one commit and merge into materials-26.04; on a §4 rejection amend the spec first.
   provenance: {"harness_session":"claude-code:2396c14b-dc41-43ce-a03a-8efc21e78f8a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T15:58:38Z (material-4354cf): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T15:58:38Z (material-4354cf): review: impl round 1 — verdict: accept; findings: none; reviewer: human
+- 2026-10-02T15:58:38Z (material-4354cf): done
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T15:58:38Z (material-4354cf): owner accepted the five drag-lag clips against native
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
