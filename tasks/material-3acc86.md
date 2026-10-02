@@ -8,14 +8,15 @@ complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T20:44:12Z
+updated: 2026-10-02T21:02:12Z
 started: 2026-10-02T20:06:27Z
-depends: []
+depends: [material-6bf694]
 parent: material-f86183
 tags: [performance]
 source: "docs/materials/2026-09-30-optic-settling-evidence.md#unverified-screencast"
 agent: codex
 spec: docs/specs/2026-10-02-real-tty-settling-lane-design.md
+plan: docs/plans/2026-10-02-real-tty-settling-lane.md
 ---
 
 Remaining screencast acceptance from material-2ee11e. Run with an actual screencast consumer and client updates while input remains idle; screencopy is not equivalent. Extend the existing bounded capture driver and offline verdict for this control, pilot before matrix, and record consumer identity and capture interval. Assert held optic phase/uniforms and no resumed optic cadence while client frames and capture continue. Use an explicit worktree binary, fresh provenance and owned-process cleanup. Publish evidence and run notes, without claiming watt savings or changing the installed compositor.
@@ -47,4 +48,9 @@ Remaining screencast acceptance from material-2ee11e. Run with an actual screenc
 - 2026-10-02T20:44:10Z (material-3acc86): resumed
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-02T20:44:10Z (material-3acc86): parked (waiting on user, review): Owner: re-review docs/specs/2026-10-02-real-tty-settling-lane-design.md in .worktrees/material-3acc86 (round 3: damage-driven cast samples §5, screencast in the development check §7). On acceptance, agent writes the implementation plan in the same worktree and submits it for review.
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T20:53:31Z (material-3acc86): review: spec round 3 — verdict: accept; findings: none; reviewer: human
+- 2026-10-02T20:53:31Z (material-3acc86): resumed
+  provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-02T21:02:10Z (material-3acc86): parked (waiting on user, review): Owner: review docs/plans/2026-10-02-real-tty-settling-lane.md in .worktrees/material-3acc86 and choose an execution method (recommended: subagent-driven). Then agent executes Tasks 1-6 (material-76c35e, -47bb4a, -d4e0f6, -c096d2, -7b3838, -a3ca2b) in this worktree; Task 7 (material-6bf694) goes to tasks quiet.
   provenance: {"harness_session":"claude-code:97c4dfdd-6c16-4570-9bae-fe749a5862c1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
