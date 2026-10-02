@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 
 # Git exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE into hook processes, and they
 # OVERRIDE `git -C <dir>`. `check_cmd` runs this suite from the pre-commit hook, so
@@ -489,6 +490,26 @@ class Stage(Fixture):
         self.assertIn("unstaged", findings[0])
         self.assertEqual(self.staged_report(), before)
         self.assertEqual(target.read_text(), edited)
+
+    def test_pathspec_commit_index_is_refused_only_when_stale(self):
+        """`git commit <paths>` runs the hook on a temporary next-index; a report
+        staged there never reaches the real index, which then trails HEAD."""
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        temporary = str(self.root / ".git" / "next-index-1234.lock")
+        shutil.copy(self.root / ".git" / "index", temporary)
+        before = self.staged_report()
+        with unittest.mock.patch.dict(os.environ, {"GIT_INDEX_FILE": temporary}):
+            findings, changed = report.stage(self.root, record)
+        self.assertFalse(changed)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("git commit <paths>", findings[0])
+        self.assertEqual(self.staged_report(), before)
+
+        report.stage(self.root, record)
+        shutil.copy(self.root / ".git" / "index", temporary)
+        with unittest.mock.patch.dict(os.environ, {"GIT_INDEX_FILE": temporary}):
+            self.assertEqual(report.stage(self.root, record), ([], False), "fresh: no refusal")
 
     def test_unstaged_source_change_stays_out_of_the_staged_report(self):
         self.stage_document()

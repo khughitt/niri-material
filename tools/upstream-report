@@ -24,6 +24,7 @@ Design: docs/specs/2026-09-06-upstream-divergence-design.md.
 import argparse
 import collections
 import datetime
+import os
 import pathlib
 import subprocess
 import sys
@@ -615,6 +616,16 @@ def stage(root, record):
     fresh = render_report(root, record, staged)
     if fresh == staged:
         return [], False
+    # `git commit <paths>` runs the hook on a temporary next-index that git
+    # discards after the commit, so a report staged there would reach the commit
+    # but never the real index, which would then trail HEAD.
+    index_file = pathlib.Path(os.environ.get("GIT_INDEX_FILE", "index")).name
+    if index_file.startswith("next-index"):
+        return [
+            f"{REPORT_PATH} is stale and `git commit <paths>` cannot stage it; "
+            f"`git add` those paths and run a plain `git commit`, which stages "
+            f"the report itself"
+        ], False
     target.write_text(fresh)
     git(root, "add", "--", REPORT_PATH)
     return [], True
