@@ -15,7 +15,16 @@
 # declarations; this driver only records configs, a stimulus journal on
 # CLOCK_MONOTONIC (the clock of the edges' real_ns) and decoded pixels.
 # Cases outside the lane (TTY resume, unlock, an idle inhibitor, a second
-# output) are recorded unverified, never run.
+# output, a screencast consumer) are recorded unverified, never run. The
+# screencopy case is a capture without input (grim, wlr-screencopy), not a
+# screencast: niri's PipeWire cast path renders and schedules separately.
+#
+# Exit status is the analyzer's: 0 when every case of the lane passed, with
+# analysis.json verdict "passed" (complete) or "lane-passed" (complete=false,
+# the other-lane cases listed under "unverified"); nonzero for a failed or
+# invalid case, a compositor panic, or a refused/interrupted run. Every exit
+# keeps the partial evidence and writes SHA256SUMS over it (capture.json, which
+# the lock release still updates, excepted) before releasing the capture lock.
 #
 # CASES (space-separated) limits pilot/matrix to named cases for
 # development; such a run is never a passed pilot.
@@ -40,7 +49,7 @@ HERE=$(dirname "$(readlink -f "$0")")
 # The library owns Weston and niri. This driver also owns the capture timeout,
 # its clients and the export; a signal must stop all of them before releasing
 # preflight.
-PROBE_PID=; OTHER_PID=; EXPORT_PID=; BG_PID=
+PROBE_PID=; OTHER_PID=; EXPORT_PID=; BG_PID=; SLEEP_PID=
 alive() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
 # A client stuck before its event loop (kitty blocks TERM until then) must not
 # hold cleanup open: TERM, then KILL after 5 s.
@@ -53,17 +62,31 @@ reap() {
 on_exit() {
     local rc=$?
     trap - EXIT INT TERM
-    for pid in "$CAP_PID" "$EXPORT_PID" "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$NIRI_PID" "$WESTON_PID"; do
+    for pid in "$SLEEP_PID" "$CAP_PID" "$EXPORT_PID" "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$NIRI_PID" "$WESTON_PID"; do
         [ -z "$pid" ] || reap "$pid"
     done
     remove_runtime_dir || rc=1
+    write_sums || rc=1
     capture_meta release "$OUT" || rc=1
     exit "$rc"
+}
+write_sums() {
+    (cd "$OUT" && find . -type f ! -name SHA256SUMS ! -name capture.json -print0 | LC_ALL=C sort -z \
+        | xargs -0 -r sha256sum > SHA256SUMS)
 }
 trap 'exit 130' INT
 trap 'exit 143' TERM
 trap on_exit EXIT
 
+# Bash runs a trap only once its foreground child exits, so every wait that
+# can last (sleeps, the stimulus schedule, exports) runs in the background
+# under `wait`, which a signal interrupts at once, with its pid recorded for
+# on_exit to reap.
+nap() {
+    sleep "$1" & SLEEP_PID=$!
+    wait "$SLEEP_PID"
+    SLEEP_PID=
+}
 # Keep exports interruptible; the shared helper's foreground export cannot
 # be reaped promptly when the driver receives TERM.
 csvexport() {
@@ -84,6 +107,11 @@ assert identity.get('source_commit') == source, 'binary source differs from work
 assert identity.get('features') == ['profile-with-tracy'], 'binary lacks requested Tracy feature identity'
 assert identity.get('binary_sha256') == hashlib.sha256(binary.read_bytes()).hexdigest(), 'binary hash differs from sidecar'
 PY
+# Offline tests substitute stub Tracy tools; only a stubbed capture record
+# (CAPTURE_META) may accompany them, so no recorded run uses unidentified tools.
+if [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
+    [ -n "${CAPTURE_META:-}" ] || fail 'OPTIC_SETTLING_STUB_TOOLS needs a stub CAPTURE_META'
+fi
 [ "$MODE" = prepare ] || capture_preflight "$LANE"
 cp "$NIRI_BIN" "$OUT/binary"
 cp "$NIRI_BIN.identity.json" "$OUT/binary.identity.json"
@@ -107,7 +135,7 @@ write_case_configs() {   # $1 case name, $2 dir
     local base=${1%-r[0-9]*}
     mkdir -p "$2"
     case $base in
-        aurora-full|combined|client-damage|impulse-idle|vis-workspace|vis-tab|vis-offscreen|vis-overview|dpms-ipc|dpms-input|screencast)
+        aurora-full|combined|client-damage|impulse-idle|vis-workspace|vis-tab|vis-offscreen|vis-overview|dpms-ipc|dpms-input|screencopy)
             case_config "$2" "$AURORA" "$SIGNAL5" ;;
         aurora-reduced) case_config "$2" "$AURORA" 'signal { motion "reduced"; idle-after-ms 5000; }' ;;
         attention-cycle) case_config "$2" '' "$SIGNAL5" ;;
@@ -138,7 +166,7 @@ input { keyboard { repeat-rate 31; }; }' 6-raise.kdl ;;
         reload-disable)
             case_config "$2" "$AURORA" "$SIGNAL5"
             case_config "$2" "$AURORA" 'signal { idle-after-ms 0; }' 1-disable.kdl ;;
-        tty-resume|unlock|idle-inhibitor|output-removal) : ;;   # outside every lane this driver runs
+        tty-resume|unlock|idle-inhibitor|output-removal|screencast) : ;;   # outside every lane this driver runs
         *) fail "no config for case $1" ;;
     esac
     local kdl
@@ -195,8 +223,11 @@ cases = [
     case('dpms-input', 'outputs-dpms', [0, 1], [A4, HELD, A4], [dict(label='power-off')], capture_s=31),
     case('output-removal', 'outputs-dpms', [], [], lane='two-output',
          why='the nested winit backend has one output'),
-    case('screencast', 'session-activation', [0], [A4, HELD], [dict(label='screencopy', min_draws=1)],
-         [dict(before='cast-1.rgb', after='cast-2.rgb', expect='equal')], capture_s=40),
+    # grim is wlr-screencopy: a capture without input, not a screencast.
+    case('screencopy', 'session-activation', [0], [A4, HELD], [dict(label='screencopy', min_draws=1)],
+         [dict(before='copy-1.rgb', after='copy-2.rgb', expect='equal')], capture_s=40),
+    case('screencast', 'session-activation', [], [], lane='screencast-consumer',
+         why='no screencast consumer in the headless lane'),
     case('tty-resume', 'session-activation', [], [], lane='dedicated',
          why='TTY session resume needs a real TTY session'),
     case('unlock', 'session-activation', [], [], lane='dedicated',
@@ -214,11 +245,12 @@ for item in cases:
     item['repetitions'] = 1
     if item['lane'] == 'headless' and item['edges']:
         # Tracy collects a frame's GPU zones only when a later frame renders,
-        # so a case ends with one more client frame (min 0: its own zones
-        # stay uncollected) that flushes the draws of the frames before it.
+        # so a case ends with one more client frame that flushes the draws of
+        # the frames before it. Its own GPU zones stay uncollected, but its
+        # redraw must reach the trace: that proves the trace ran to the end.
         # A journal aligns through optic edges, so an edge-free case (the
         # gate-off control, whose cadence never stops) has none.
-        item['stimuli'].append(dict(label='collect'))
+        item['stimuli'].append(dict(label='collect', min_redraws=1))
 if mode == 'matrix':
     # Three active/idle/resume cycles of each rate, the first held for 600 s.
     extra = []
@@ -267,8 +299,8 @@ pilot = pathlib.Path(sys.argv[1]); current = json.loads(pathlib.Path(sys.argv[2]
 out = pathlib.Path(sys.argv[2]).parent
 analysis = json.loads((pilot / 'analysis.json').read_text())
 planned = json.loads((pilot / 'manifest.json').read_text())
-assert analysis['verdict'] == 'passed' and planned['mode'] == 'pilot' and not planned.get('development'), \
-    'a passed full pilot is required'
+assert analysis['verdict'] in ('passed', 'lane-passed') and planned['mode'] == 'pilot' \
+    and not planned.get('development'), 'a passed full pilot is required'
 assert planned['lane'] == current['lane'], 'matching lane pilot required'
 assert planned['binary_sha256'] == current['binary_sha256'] and planned['source_commit'] == current['source_commit'], 'pilot binary mismatch'
 # Configs name files inside their own run, so compare them with the run
@@ -284,7 +316,7 @@ PY
 fi
 [ "$MODE" = prepare ] && exit 0
 : "${CAPTURE_TASK:?task authorizing this capture}"
-tools_ready
+if [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then TOOLS=$OPTIC_SETTLING_STUB_TOOLS; else tools_ready; fi
 reserve_tracy_port
 capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}"
 
@@ -293,8 +325,9 @@ mono() { python3 -c 'import time; print(time.monotonic_ns())'; }
 # at S: sleep until S seconds after the capture connected. Every drive is a
 # schedule of absolute times, so IPC latency (about 0.5 s per pointer motion)
 # cannot push a stimulus past its window or the capture's end.
+# The wait runs in the background (see nap): the matrix waits up to 609 s here.
 at() {
-    python3 - "$T0" "$1" <<'PY2'
+    python3 - "$T0" "$1" <<'PY2' & SLEEP_PID=$!
 import sys, time
 t0, s = int(sys.argv[1]), float(sys.argv[2])
 delay = t0 + s * 1e9 - time.monotonic_ns()
@@ -302,6 +335,10 @@ if delay < -0.5e9:
     sys.exit(f'schedule slipped: {s} s came {-delay / 1e9:.2f} s late')
 time.sleep(max(0, delay) / 1e9)
 PY2
+    local rc=0
+    wait "$SLEEP_PID" || rc=$?
+    SLEEP_PID=
+    [ "$rc" -eq 0 ] || fail "stimulus schedule failed at $1 s"
 }
 pointer() { msg "$NIRI" action spawn -- wlrctl pointer move 1 0; }
 keepalive() {   # motions at 0, 3, 6, 9 and 12 s: the pause comes about 17.5 s in
@@ -335,14 +372,14 @@ swap_backdrop() {
     sleep 0.5
     pkill -x -f "swaybg -m fill -i $WALL" || fail 'the startup swaybg was not running'
 }
-screencopy() {
+grab_screencopy() {   # wlr-screencopy through grim; no screencast consumer
     local k
     for k in 1 2 3 4 5; do
-        XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME grim "$OUT/$CASE-cast-$k.png"
+        XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME grim "$OUT/$CASE-copy-$k.png"
         sleep 0.5
     done
-    magick "$OUT/$CASE-cast-1.png" -depth 8 rgb:- > "$CASE_DIR/cast-1.rgb"
-    magick "$OUT/$CASE-cast-5.png" -depth 8 rgb:- > "$CASE_DIR/cast-2.rgb"
+    magick "$OUT/$CASE-copy-1.png" -depth 8 rgb:- > "$CASE_DIR/copy-1.rgb"
+    magick "$OUT/$CASE-copy-5.png" -depth 8 rgb:- > "$CASE_DIR/copy-2.rgb"
 }
 # The GPU leaves P8 for a few seconds after a compositor exits; the next
 # case's settle must not see that tail.
@@ -364,7 +401,7 @@ await_gpu_rest() {
 # after the capture ends. The keepalive's pause comes at about 17.5 s; a
 # settled interval holds at least 5 s before its first stimulus.
 drive_cycle() { keepalive; at "$((CAPTURE_S - 4))"; pointer; }   # resume 4 s before the end, before the next pause
-post_held() { sleep 4; shot_rgb held-1; sleep 1; shot_rgb held-2; }
+post_held() { nap 4; shot_rgb held-1; nap 1; shot_rgb held-2; }
 drive_aurora_full() { drive_cycle; }
 post_aurora_full() { post_held; }
 drive_aurora_reduced() { drive_cycle; }
@@ -384,7 +421,7 @@ drive_startup_no_input() { at 10; stim client 1.5 print_line 1; }
 drive_default_threshold() { keepalive; }
 drive_client_damage() { keepalive; at 25; stim client 1.5 print_line 1; at 32.5; stim backdrop 3 swap_backdrop; }
 post_client_damage() {
-    sleep 2; shot_rgb before; print_line 2; sleep 1; shot_rgb after
+    nap 2; shot_rgb before; print_line 2; nap 1; shot_rgb after
     crop_rgb before damage-1 1280x720+0+0; crop_rgb after damage-2 1280x720+0+0
     # Below kitty's few printed lines, inside the probe: Aurora alone.
     crop_rgb before aurora-1 400x200+80+450; crop_rgb after aurora-2 400x200+80+450
@@ -430,7 +467,7 @@ drive_dpms_ipc() {
     at 28; stim power-on 1.5 msg "$NIRI" action power-on-monitors
 }
 drive_dpms_input() { keepalive; at 25; stim power-off 1 msg "$NIRI" action power-off-monitors; at 27; pointer; }
-drive_screencast() { keepalive; at 25; stim screencopy 0.5 screencopy; }
+drive_screencopy() { keepalive; at 25; stim screencopy 0.5 grab_screencopy; }
 # niri's config watcher notices a replaced file within about half a second;
 # each reload's journaled effect covers that and the frame it causes.
 drive_reload_held() {
@@ -485,7 +522,7 @@ run_case() {
     [ "$(msg "$NIRI" -j windows | jq -r '.[] | select(.app_id=="gos-probe") | .is_focused')" = false ] \
         || fail "$CASE: the probe is focused"
     [ -n "$no_pointer" ] || pointer
-    sleep 1
+    nap 1
     # Tracy records GPU zones only several seconds into a trace (6.5-10.6 s
     # observed) while CPU zones start at once; trace time counts from the
     # compositor's start. The keepalive puts the pause after GPU zones begin.
@@ -506,14 +543,17 @@ run_case() {
     csvexport --unwrap "$CASE_DIR/capture.tracy" "$CASE_DIR/cpu.csv"
     csvexport --gpu "$CASE_DIR/capture.tracy" "$CASE_DIR/gpu.csv"
     printf '{"messages":true,"cpu":true,"gpu":true}\n' > "$CASE_DIR/export.json"
-    python3 - "$CASE_DIR" <<'PY'
+    python3 - "$CASE_DIR" "$T0" <<'PY'
 import json, pathlib, sys
 directory = pathlib.Path(sys.argv[1])
 journal = []
 for line in (directory / 'journal.tsv').read_text().splitlines():
     label, start, end = line.split('\t')
     journal.append(dict(label=label, start_mono_ns=int(start), end_mono_ns=int(end)))
-(directory / 'observation.json').write_text(json.dumps(dict(journal=journal, topology=['headless-1']), indent=2) + '\n')
+# The capture connected at capture_start_mono_ns and was declared to run
+# capture_s from there: the analyzer requires the trace to reach that end.
+observation = dict(capture_start_mono_ns=int(sys.argv[2]), journal=journal, topology=['headless-1'])
+(directory / 'observation.json').write_text(json.dumps(observation, indent=2) + '\n')
 PY
     stop_nested
     for pid in "$BG_PID" "$PROBE_PID" "$OTHER_PID"; do [ -z "$pid" ] || reap "$pid"; done
