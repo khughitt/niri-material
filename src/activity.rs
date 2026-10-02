@@ -46,6 +46,10 @@ impl OpticTimeline {
         }
     }
 
+    pub fn is_running(&self) -> bool {
+        self.running
+    }
+
     pub fn record_render(&mut self, logical_now: Duration) {
         if self.running {
             self.rendered = Some(

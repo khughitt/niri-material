@@ -679,6 +679,21 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
+    /// The optic uniforms for a frame at real time `now`, sampled from the
+    /// shared optic timeline; records the render sample the idle hold keeps.
+    pub(super) fn render_optics(
+        &self,
+        material: &MaterialState,
+        now: Duration,
+    ) -> Vec<smithay::backend::renderer::gles::Uniform<'static>> {
+        let time = self.clock.optic_time(now);
+        self.clock.record_optic_render(time.logical_now);
+        optics::values(
+            &material.material().glass,
+            &self.optic_frame(material, time.logical_now),
+        )
+    }
+
     /// The per-frame material state for the rendered `frame` and the
     /// `corner_radius` the element gets: jelly, signal, optics. The one place
     /// the beam's frame values are computed and its run is ended, on the
@@ -695,9 +710,7 @@ impl<W: LayoutElement> Tile<W> {
         let glass = &material.material().glass;
         let response = material.material().response(None);
         let now = self.clock.now_unadjusted();
-        let time = self.clock.optic_time(now);
-        self.clock.record_optic_render(time.logical_now);
-        let optics = optics::values(glass, &self.optic_frame(material, time.logical_now));
+        let optics = self.render_optics(material, now);
         let max_flex = 0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
         let mut jelly = jelly_state(
             motion_residual,
