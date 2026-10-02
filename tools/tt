@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tt version 2
+# tt version 3
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
@@ -14,12 +14,13 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import time
 import tomllib
 
-VERSION = 2
+VERSION = 3
 FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source"]
 
 PYTEST_WORD = r"(?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?|rerun)"
@@ -222,21 +223,41 @@ def record(path, line):
 
 def run(command, capture):
     """Runs the command with stdio passed through. When `capture`, stdout is teed so the
-    summary lines can be parsed; the caller still sees every byte. Returns (exit, lines)."""
+    summary lines can be parsed; the caller still sees every byte. Returns (exit, lines).
+
+    Ctrl-C at a terminal reaches the command and tt alike, as one process group. While
+    the command runs tt catches SIGINT and does nothing with it, so the command's own
+    cleanup runs to the end and its status is recorded; a caught signal is reset to the
+    default when the command starts, so the command still receives it. An ignored SIGINT
+    (a shell's background job) stays ignored, and the command inherits that."""
+    previous = signal.getsignal(signal.SIGINT)
+    if previous != signal.SIG_IGN:
+        signal.signal(signal.SIGINT, lambda signum, frame: None)
     try:
-        if not capture:
-            return subprocess.run(command).returncode, []
-        process = subprocess.Popen(command, stdout=subprocess.PIPE)
-    except FileNotFoundError:
-        sys.stderr.write(f"tt: {command[0]}: command not found\n")
-        return 127, []
-    lines = []
-    assert process.stdout is not None
-    for raw in process.stdout:
-        sys.stdout.buffer.write(raw)
-        sys.stdout.buffer.flush()
-        lines.append(raw.decode("utf-8", errors="replace").rstrip("\n"))
-    return process.wait(), lines
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE if capture else None)
+        except FileNotFoundError:
+            sys.stderr.write(f"tt: {command[0]}: command not found\n")
+            return 127, []
+        lines = []
+        if capture:
+            assert process.stdout is not None
+            for raw in process.stdout:
+                sys.stdout.buffer.write(raw)
+                sys.stdout.buffer.flush()
+                lines.append(raw.decode("utf-8", errors="replace").rstrip("\n"))
+        return process.wait(), lines
+    finally:
+        signal.signal(signal.SIGINT, previous)
+
+
+def exit_as(status):
+    """Exits with the command's status; a command killed by SIGINT kills tt with SIGINT, so
+    a shell or `just` above sees the interrupt rather than an exit code."""
+    if status == -signal.SIGINT:
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGINT)
+    return status
 
 
 def main(argv, env, cwd):
@@ -273,4 +294,4 @@ def main(argv, env, cwd):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:], os.environ, pathlib.Path.cwd()))
+    sys.exit(exit_as(main(sys.argv[1:], os.environ, pathlib.Path.cwd())))

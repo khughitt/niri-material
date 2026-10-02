@@ -35,7 +35,7 @@ mod tests {
 
     fn frame(backdrop_blur: bool, blur: &Blur) -> OpticFrame<'_> {
         OpticFrame {
-            now: Duration::ZERO,
+            logical_now: Duration::ZERO,
             motion: niri_config::signal::SignalMotionPolicy::Full,
             animations_off: false,
             backdrop_blur,

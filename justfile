@@ -29,6 +29,9 @@ check_cmd := "python3 tools/ops-check && cargo fmt --all -- --check && cargo cli
 # Keep the repository-specific consistency checks in both commit paths.
 docs_paths := "README.md AGENTS.md CONTRIBUTING.md docs/specs/*.md docs/plans/*.md docs/notes/*.md tasks/*.md"
 docs_check_cmd := "python3 tools/ops-check && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
+# The hooks regenerate and stage the divergence report before checking it: its
+# seam line counts move with nearly every source commit. `check` and CI only check.
+stage_report_cmd := "python3 tools/upstream-report --stage"
 
 # ci.yml has an unfiltered push trigger; its test job runs the full suite on origin.
 ci_suite_refs := "refs/heads/* refs/tags/*"
@@ -56,13 +59,14 @@ check:
 
 gate: check test
 
-# What the pre-commit hook runs: `check`'s command under its own hook target.
+# What the pre-commit hook runs: the report staged, then `check`'s command,
+# under its own hook target.
 hook-pre-commit:
-    {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{check_cmd}}'
+    {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_cmd}}'
 
 # Docs/task-only commits retain consistency checks without compiling Rust.
 hook-pre-commit-docs:
-    {{tt}} hook-pre-commit-docs -- host-budget run -- sh -c '{{docs_check_cmd}}'
+    {{tt}} hook-pre-commit-docs -- host-budget run -- sh -c '{{stage_report_cmd}} && {{docs_check_cmd}}'
 
 # CI-covered pushes: checks plus the fixed nextest set.
 hook-pre-push-fast:

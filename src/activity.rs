@@ -5,6 +5,75 @@
 use std::time::Duration;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct OpticTime {
+    pub real_now: Duration,
+    pub logical_now: Duration,
+    pub running: bool,
+    pub real_anchor: Duration,
+    pub logical_anchor: Duration,
+}
+
+#[derive(Debug)]
+pub(crate) struct OpticTimeline {
+    real_anchor: Duration,
+    logical_anchor: Duration,
+    running: bool,
+    rendered: Option<Duration>,
+}
+
+impl OpticTimeline {
+    pub fn new(now: Duration) -> Self {
+        Self {
+            real_anchor: now,
+            logical_anchor: now,
+            running: true,
+            rendered: None,
+        }
+    }
+
+    pub fn sample(&self, now: Duration) -> OpticTime {
+        let logical_now = if self.running {
+            self.logical_anchor + now.saturating_sub(self.real_anchor)
+        } else {
+            self.logical_anchor
+        };
+        OpticTime {
+            real_now: now,
+            logical_now,
+            running: self.running,
+            real_anchor: self.real_anchor,
+            logical_anchor: self.logical_anchor,
+        }
+    }
+
+    pub fn record_render(&mut self, logical_now: Duration) {
+        if self.running {
+            self.rendered = Some(
+                self.rendered
+                    .map_or(logical_now, |prev| prev.max(logical_now)),
+            );
+        }
+    }
+
+    pub fn set_active(&mut self, active: bool, now: Duration) -> Option<OpticTime> {
+        if self.running == active {
+            return None;
+        }
+        if active {
+            self.real_anchor = now;
+        } else {
+            self.logical_anchor = self
+                .rendered
+                .unwrap_or_default()
+                .max(self.sample(now).logical_now);
+        }
+        self.running = active;
+        self.rendered = None;
+        Some(self.sample(now))
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Poll {
     /// The threshold has elapsed; the caller drops its timer.
     Idle,
@@ -74,6 +143,24 @@ impl InputActivity {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optic_timeline_holds_and_resumes_without_catchup() {
+        let ms = Duration::from_millis;
+        let mut t = OpticTimeline::new(Duration::ZERO);
+        assert_eq!(t.sample(ms(90)).logical_now, ms(90));
+        assert_eq!(t.sample(ms(20)).logical_now, ms(20));
+        t.record_render(ms(110));
+        assert_eq!(t.set_active(false, ms(100)).unwrap().logical_now, ms(110));
+        assert_eq!(t.sample(ms(1_300_000)).logical_now, ms(110));
+        assert!(t.set_active(false, ms(1_300_000)).is_none());
+        assert_eq!(
+            t.set_active(true, ms(1_300_000)).unwrap().logical_now,
+            ms(110)
+        );
+        assert_eq!(t.sample(ms(1_300_040)).logical_now, ms(150));
+        assert!(t.set_active(true, ms(1_300_040)).is_none());
+    }
 
     fn s(secs: u64) -> Duration {
         Duration::from_secs(secs)

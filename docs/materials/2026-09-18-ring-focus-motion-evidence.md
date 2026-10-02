@@ -39,8 +39,10 @@ Exit 0; log `$NIRI_MATERIAL_WORK_ROOT/ring-motion-cases.log`; rates in
 The nested `niri.log` holds no error or panic. Every fixture carries
 `signal { idle-after-ms 0 }` except the two idle cases, so each case
 measures what it measured before the gate existed. Counts are
-`MaterialRenderElement::draw` zones in the final 20 s of a 30 s Tracy
-capture unless a window is named.
+`Niri::redraw` zones (exact name) in the final 20 s of a 30 s Tracy
+capture unless a window is named. An earlier revision called them
+`MaterialRenderElement::draw` zones; the smoke has always counted redraws
+([correction](2026-09-30-hidden-window-attribution-evidence.md#correction-to-the-2026-09-18-evidence)).
 
 | Case | Result | Expectation | Met |
 | --- | --- | --- | --- |

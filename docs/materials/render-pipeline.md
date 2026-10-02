@@ -74,8 +74,11 @@ signal state, and every glass parameter.
 The program is assembled at compile time from `prelude.frag`, each optic's
 GLSL in `OPTICS` order (`src/render_helpers/material/optics/mod.rs`), and
 `main.frag`. Each optic appends its uniforms and uploads their values through
-`Optic::values`; an animated optic's `next_change` joins the tile's redraw
-deadline.
+`Optic::values` using shared logical time. Each optic's `next_change` returns
+a logical deadline; the registry suppresses it while input is idle and maps
+the earliest one to real time when active. Aurora uniforms hold through idle
+client or backdrop damage and resume from the held phase. Attention keeps its
+separate absolute-clock deadline and resume behavior.
 
 The focus beam is one run on the animation loop — the head's lap plus its
 tail, `(perimeter + tail) / ring-beam-speed` long, or `ring-beam-decay /
@@ -105,7 +108,7 @@ runs only where the window is transparent or outside the window.
 | 3a | **Behind: saturation.** Encode the averaged linear sample, apply `mix(luma(encoded), encoded, saturation)`, then decode. Neutral returns before conversion. | — | `saturation`; neutral 1 |
 | 3b | **Behind: noise.** Grain the averaged backdrop once, using the existing sRGB white/fine formulas or Oklab lightness formula, then return linear light. Grain stays screen-seeded; lightness keeps its gamut clamp. | — | `noise`, `noise type=`; neutral 0 |
 | 4 | **Beer-Lambert attenuation.** `attenuation-color ^ (optical distance / attenuation-distance)`, where optical distance is `thickness / cos(structural normal)`, floored at a quarter, so the chamfer tints more than the face. | — | `attenuation-color`, `attenuation-distance`, `thickness` |
-| 5 | **Within: ring and aurora.** The ring beam lands through the light-path index at 20 % of thickness, measured from the face edge (`ring-gap` inward from where the flat face begins, on the face globals `slabSurface` stores); its brightness along the band is an arc-length comet — a Gaussian head at `arcPosition`, whose amplitude carries the `ring-beam-noise` wander, a tail behind it, both darkened together over `ring-beam-decay` px — over a resting glow; edge spill on the chamfer, fading from the face edge to the outer edge. Aurora lands the same way. Each contributes `att ^ 0.2`. The ring has no face mask; roughness scatters its Gaussian core and halo with integral conservation. | — | `light-ior`, `roughness`, `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, response `focus` / `accent` / `attention`, `aurora`, `aurora drift-hz`, `aurora color` (optic `aurora`; neutral 0) |
+| 5 | **Within: ring and aurora.** The ring beam lands through the light-path index at 20 % of thickness, measured from the face edge (`ring-gap` inward from where the flat face begins, on the face globals `slabSurface` stores); its brightness along the band is an arc-length comet — a Gaussian head at `arcPosition`, whose amplitude carries the `ring-beam-noise` wander, a tail behind it, both darkened together over `ring-beam-decay` px — over a resting glow scaled by `ring-rest`; edge spill on the chamfer, fading from the face edge to the outer edge. Aurora lands the same way. Each contributes `att ^ 0.2`. The ring has no face mask; roughness scatters its Gaussian core and halo with integral conservation. | — | `light-ior`, `roughness`, `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent`, response `focus` / `accent` / `attention`, `aurora`, `aurora drift-hz`, `aurora color` (optic `aurora`; neutral 0) |
 | 6 | **Fresnel glint.** Schlick from `ior` on the structural normal, weighted toward the signal light direction; accent-tinted under `attention "rim-orbit"`. Additive. Then the `iridescence` optic hues the glint from the view angle, before the accent mix. | — | `ior`, `iridescence` (optic `iridescence`; neutral 0), response `attention`, signal accent |
 | 7 | **Emissive: sweeps.** A diagonal Gaussian sweep per impulse whose response is `sweep`. The other impulse responses act earlier: `ripple` adds to the jelly activity of step 2, `flash` raises aberration and distortion for steps 2 and 3. Additive. | — | response `ping` / `done` / `error` |
 | 8 | **Encode.** `glass = linearToSrgb(transmitted + within + specular + emissive)`. | — | — |
@@ -165,7 +168,7 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
 | `attenuation-color` | `glass.attenuationColor` | 4 |
 | `attenuation-distance` | `glass.attenuationDistance` | 4 |
 | `light-ior` | (pending, prism-0ea68f) | 5 |
-| `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow` | `glass.ring.gap`, (none), `glass.ring.color`, `glass.ring.beamSpeed`, `glass.ring.beamNoise`, `glass.ring.beamNoiseHz`, `glass.ring.decay`, `glass.ring.glow` (`gap`, `beamSpeed`, `glow` on Prism's `prism-1514d3`, merged at the rollout) | 5 |
+| `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent` | `glass.ring.gap`, (none), `glass.ring.color`, `glass.ring.beamSpeed`, `glass.ring.beamNoise`, `glass.ring.beamNoiseHz`, `glass.ring.decay`, `glass.ring.glow`, `glass.ring.rest`, `glass.ring.accent` (prism-f67834, pending) (`gap`, `beamSpeed`, `glow` on Prism's `prism-1514d3`, merged at the rollout) | 5 |
 | `saturation` | `glass.saturation` | 3a |
 | `noise` `type=` | `glass.noise`; `type=` (pending, prism-51f23b) | 3b |
 
