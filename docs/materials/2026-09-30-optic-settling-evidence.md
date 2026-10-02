@@ -52,6 +52,16 @@ implemented), `unlock` (wiring covered by Task 3's real-handler test),
 (needs a real screencast consumer; the `screencopy` case is not a substitute).
 These stay open.
 
+`idle-inhibitor` now has a headless case (`material-80caf4`). A real
+`zwp_idle_inhibit_manager_v1` client (`scripts/idle-inhibit-client.c`, built
+per run and identified with its source) maps a window and inhibits while the
+probe is held. Then a client line draws, and the inhibitor is released.
+The case passes only with a single pause edge and no resume. Each of the
+`inhibit` and `release` stimuli must carry niri's `IdleInhibit inhibited=1`
+or `inhibited=0` trace message inside its own window. That proves the
+inhibition took hold, and the absent resume edge proves it did not count as
+input activity. It is unverified until a pilot runs it.
+
 | Remaining acceptance | Task |
 | --- | --- |
 | Real TTY resume and unlock | `material-f7eb0b` |

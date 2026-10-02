@@ -4214,6 +4214,15 @@ impl Niri {
                     surface_primary_scanout_output(surface, states).is_some()
                 })
             });
+        // The settling capture proves an inhibitor took hold from this message.
+        if self.idle_notifier_state.is_inhibited() != is_inhibited {
+            if let Some(client) = tracy_client::Client::running() {
+                client.message(
+                    &format!("IdleInhibit inhibited={}", u8::from(is_inhibited)),
+                    0,
+                );
+            }
+        }
         self.idle_notifier_state.set_is_inhibited(is_inhibited);
     }
 
