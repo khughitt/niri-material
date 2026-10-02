@@ -1,13 +1,15 @@
 ---
 id: material-48b514
 title: "Signal accent strength and edge tint, apart from the focus light"
-status: todo
+status: doing
 priority: 1
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-10-02T10:32:21Z
-updated: 2026-10-02T10:33:26Z
+updated: 2026-10-02T10:38:39Z
+started: 2026-10-02T10:38:39Z
 depends: []
 tags: [rendering, signals, prism]
 agent: claude-code/claude-opus-5-5
@@ -19,3 +21,5 @@ Owner report (2026-10-02, live c93180be): with ring-rest 0, Claude Code windows 
 
 - 2026-10-02T10:32:22Z (materials-26.04): Prism half: prism-f67834
 - 2026-10-02T10:33:26Z (materials-26.04): Prism half: prism-f67834
+- 2026-10-02T10:38:39Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:cebfaf5f-51dd-49c1-ae0b-f56f976f9f14","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
