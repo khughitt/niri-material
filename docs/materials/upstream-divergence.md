@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-208 paths differ: 48 class B (seam), 136 class A (fork-only), 24 class C (scaffolding).
+214 paths differ: 48 class B (seam), 141 class A (fork-only), 25 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -90,11 +90,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
 | `src/layout/floating.rs` | B | M | +16/-5 |
-| `src/layout/mod.rs` | B | M | +97/-9 |
+| `src/layout/mod.rs` | B | M | +108/-9 |
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
 | `src/layout/tests.rs` | B | M | +265/-4 |
-| `src/layout/tile.rs` | B | M | +2363/-78 |
+| `src/layout/tile.rs` | B | M | +2431/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
 | `src/niri.rs` | B | M | +293/-0 |
@@ -122,6 +122,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_optic_settling.py` | C | A | +577/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_upstream_report.py` | C | A | +946/-0 |
+| `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/tt` | C | A | +297/-0 |
 | `tools/upstream-report` | C | A | +736/-0 |
 
