@@ -1,8 +1,8 @@
 # Real-TTY lane for optic settling acceptance
 
-**Status:** draft, revised after owner review rounds 1 (VT restoration on
-every exit; pixel evidence during the cast) and 2 (damage-driven cast
-samples; screencast in the development check).
+**Status:** accepted (owner review round 3, 2026-10-02), after revisions for
+VT restoration on every exit, pixel evidence during the cast, damage-driven
+cast samples and screencast in the development check.
 **Tasks:** `material-f7eb0b` (TTY resume and unlock), `material-3acc86`
 (screencast consumer), under `material-f86183`. The display-dimming helper
 is `ops-a1715a` (see §6).
