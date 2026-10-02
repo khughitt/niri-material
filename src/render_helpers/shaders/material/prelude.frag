@@ -61,6 +61,7 @@ uniform ivec3 mat_sig_response;
 uniform vec4 mat_sig_ring;
 uniform vec4 mat_sig_focus;
 uniform vec3 mat_sig_ring_color;
+uniform float mat_sig_ring_accent;
 uniform float mat_light_ior;
 
 // Slab geometry published by slabSurface for the focus filament: the outer

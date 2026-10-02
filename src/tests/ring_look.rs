@@ -202,7 +202,12 @@ fn open(f: &mut Fixture, id: ClientId, (w, h): (u16, u16)) -> WlSurface {
 /// Renders `pane` under `look` while another window holds focus, through
 /// its focus gain, and at rest. Returns the report and (tag, render) in
 /// order; dumps are named `<prefix><pane>-<tag>`.
-fn sequence(pane: &Pane, look: &str, prefix: &str) -> (String, Vec<(String, Vec<u8>)>) {
+fn sequence(
+    pane: &Pane,
+    look: &str,
+    prefix: &str,
+    signal: bool,
+) -> (String, Vec<(String, Vec<u8>)>) {
     let mut f = Fixture::with_config(config(look));
     f.niri_state().backend.headless().add_renderer().unwrap();
     f.add_output(1, (OUT_W, OUT_H));
@@ -214,6 +219,9 @@ fn sequence(pane: &Pane, look: &str, prefix: &str) -> (String, Vec<(String, Vec<
     f.niri_state().update_keyboard_focus();
     f.niri().refresh_window_rules();
     set_time(&mut f, Duration::ZERO);
+    if signal {
+        signal_pane(&mut f);
+    }
     f.niri_complete_animations();
 
     let mut renders = Vec::new();
@@ -250,7 +258,7 @@ fn sequence(pane: &Pane, look: &str, prefix: &str) -> (String, Vec<(String, Vec<
 fn accepted_ring_look() {
     let mut failures = Vec::new();
     for pane in [&LARGE, &SMALL] {
-        let (report, renders) = sequence(pane, ACCEPTED, "");
+        let (report, renders) = sequence(pane, ACCEPTED, "", false);
         eprintln!("{} {}x{}:\n{report}", pane.name, pane.w, pane.h);
         let get = |tag: &str| &renders.iter().find(|(t, _)| t == tag).unwrap().1;
         let mut check = |ok: bool, what: &str| {
@@ -287,7 +295,7 @@ fn with_response(extra: &str) -> String {
 /// comet still runs after the gain.
 #[test]
 fn ring_rest_zero_keeps_the_comet() {
-    let (report, renders) = sequence(&LARGE, &with_response("ring-rest 0"), "rest0-");
+    let (report, renders) = sequence(&LARGE, &with_response("ring-rest 0"), "rest0-", false);
     eprintln!("ring-rest 0:\n{report}");
     let get = |tag: &str| &renders.iter().find(|(t, _)| t == tag).unwrap().1;
     assert!(
@@ -296,7 +304,7 @@ fn ring_rest_zero_keeps_the_comet() {
     );
 
     let unlit = ACCEPTED.replace(r#"focus "ring-light""#, r#"focus "none""#);
-    let (_, dark) = sequence(&LARGE, &unlit, "unlit-");
+    let (_, dark) = sequence(&LARGE, &unlit, "unlit-", false);
     let dark_rest = &dark.iter().find(|(t, _)| t == "rest").unwrap().1;
     let (px, max) = diff(get("rest"), dark_rest);
     assert_eq!(
@@ -305,10 +313,93 @@ fn ring_rest_zero_keeps_the_comet() {
         "ring-rest 0 at rest differs from no focus light"
     );
 
-    let (_, lit) = sequence(&LARGE, ACCEPTED, "");
+    let (_, lit) = sequence(&LARGE, ACCEPTED, "", false);
     let lit_rest = &lit.iter().find(|(t, _)| t == "rest").unwrap().1;
     assert!(
         diff(get("rest"), lit_rest).0 > 0,
         "ring-rest 0 left the resting ring"
+    );
+}
+
+/// A familiar-style signal on `pane`, the first window: an accent at
+/// Active, static, as familiar sets on an agent's terminal.
+fn signal_pane(f: &mut Fixture) {
+    use crate::niri::SetWindowSignalArgs;
+    use niri_ipc::{SignalLevel, SignalMotion};
+
+    let id = f.niri().layout.windows().next().unwrap().1.id().get();
+    f.niri()
+        .set_window_signal(SetWindowSignalArgs {
+            id,
+            source: String::from("familiar"),
+            accent: Some(String::from("#5990cf")),
+            level: SignalLevel::Active,
+            motion: SignalMotion::Static,
+            tag: None,
+            ttl_ms: None,
+            after_level: None,
+            after_motion: None,
+            until_focus: false,
+        })
+        .unwrap();
+}
+
+/// `pane` unfocused next to the focused other window, at rest, with or
+/// without a signal on it.
+fn unfocused_at_rest(look: &str, signal: bool) -> Vec<u8> {
+    let mut f = Fixture::with_config(config(look));
+    f.niri_state().backend.headless().add_renderer().unwrap();
+    f.add_output(1, (OUT_W, OUT_H));
+    let id = f.add_client();
+    open(&mut f, id, (LARGE.w, LARGE.h));
+    open(&mut f, id, OTHER);
+    f.niri_state().update_keyboard_focus();
+    f.niri().refresh_window_rules();
+    set_time(&mut f, Duration::ZERO);
+    if signal {
+        signal_pane(&mut f);
+    }
+    f.niri_complete_animations();
+    // The tile starts the signal's crossfade on the first frame that sees it.
+    let _ = render_at(&mut f, REST);
+    render_at(&mut f, REST_LATER)
+}
+
+/// `ring-accent 0` (material-48b514) takes the session hue's own outline away:
+/// with the resting ring and the edge tint off too, an unfocused window with a
+/// signal renders exactly like one without, while at `ring-accent 1` the band
+/// shows.
+#[test]
+fn ring_accent_zero_leaves_no_signal_outline() {
+    let quiet = with_response("ring-rest 0\n        ring-accent 0\n        attention \"none\"");
+    let (px, max) = diff(
+        &unfocused_at_rest(&quiet, false),
+        &unfocused_at_rest(&quiet, true),
+    );
+    assert_eq!(
+        (px, max),
+        (0, 0),
+        "a signal still marks the unfocused window"
+    );
+
+    let banded = with_response("ring-rest 0\n        attention \"none\"");
+    let (px, _) = diff(
+        &unfocused_at_rest(&banded, false),
+        &unfocused_at_rest(&banded, true),
+    );
+    assert!(px > 0, "ring-accent 1 shows no band");
+
+    // The hue still colors the focus light: the comet differs with the signal.
+    let beam = |signal| {
+        let (_, renders) = sequence(&LARGE, &quiet, "accent0-", signal);
+        renders
+            .into_iter()
+            .find(|(t, _)| t == "beam-150ms")
+            .unwrap()
+            .1
+    };
+    assert!(
+        diff(&beam(false), &beam(true)).0 > 0,
+        "the comet lost the session hue"
     );
 }

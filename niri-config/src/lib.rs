@@ -1082,6 +1082,40 @@ mod tests {
     }
 
     #[test]
+    fn ring_accent_defaults_to_today_bounds_and_inherits() {
+        let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
+        let d = parsed.materials[0].resolve().response(None);
+        assert_eq!(
+            d.ring_accent, 1.,
+            "the accent band is unchanged unless asked"
+        );
+
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { ring-accent 0; }; response "still" {}; }"#,
+        )])
+        .unwrap();
+        let m = parsed.materials[0].resolve();
+        assert_eq!(m.response(None).ring_accent, 0.);
+        assert_eq!(
+            m.response(Some("still")).ring_accent,
+            0.,
+            "inherits from default"
+        );
+
+        for line in ["ring-accent 3.5;", "ring-accent -1;"] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ {line} }}; }}"#),
+            )]);
+            assert!(
+                err.contains("value must be between 0 and 3"),
+                "{line}: {err}"
+            );
+        }
+    }
+
+    #[test]
     fn ring_rest_defaults_to_today_bounds_and_inherits() {
         let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
         let d = parsed.materials[0].resolve().response(None);

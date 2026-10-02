@@ -128,8 +128,10 @@ void main() {
                              gap, width, mat_scatter));
             float presence = mat_sig_accent.w;
             float pulse = mat_sig_response.y == 2 ? mat_sig_breath : 0.0;
+            // The accent's own light on the band; at ring-accent 0 the accent
+            // only tints the focus light through `color` below.
             float accentGlow = showAccent
-                ? (0.15 + 0.35 * mat_sig_level) * (1.0 + pulse * mat_sig_level)
+                ? (0.15 + 0.35 * mat_sig_level) * (1.0 + pulse * mat_sig_level) * mat_sig_ring_accent
                 : 0.0;
             float focusGlow = 0.0;
             float spill = 0.0;

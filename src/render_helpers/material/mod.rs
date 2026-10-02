@@ -278,6 +278,8 @@ pub struct SignalUniforms {
     pub focus: [f32; 4],
     /// Filament base color, linear RGB.
     pub ring_color: [f32; 3],
+    /// Scale of the signal accent's own glow on the band.
+    pub ring_accent: f32,
 }
 
 impl SignalUniforms {
@@ -305,6 +307,7 @@ impl SignalUniforms {
             ],
             focus: [0., 0., 0., 0.],
             ring_color: color_linear(response.ring_color),
+            ring_accent: response.ring_accent as f32,
         }
     }
 
@@ -365,6 +368,7 @@ impl SignalUniforms {
                 frame.beam.decay,
             ],
             ring_color: color_linear(response.ring_color),
+            ring_accent: response.ring_accent as f32,
         }
     }
 }
@@ -904,6 +908,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_sig_ring", self.signal.ring),
             Uniform::new("mat_sig_focus", self.signal.focus),
             Uniform::new("mat_sig_ring_color", self.signal.ring_color),
+            Uniform::new("mat_sig_ring_accent", self.signal.ring_accent),
             Uniform::new("mat_light_ior", g.light_ior as f32),
         ];
         uniforms.extend(self.optics.iter().cloned());
@@ -1891,6 +1896,7 @@ mod tests {
         let quiet = SignalUniforms::quiet(&r);
         assert_eq!(quiet.focus, [0., 0., 0., 0.]);
         assert_eq!(quiet.ring, [8., 2.6, 1., 1.], "gap, width, glow, rest");
+        assert_eq!(quiet.ring_accent, 1.);
         assert_eq!(quiet.ring_color, color_linear(r.ring_color));
         assert_eq!(quiet.response, [1, 1, 1], "ring, rim-orbit, ring-light");
         assert_eq!(quiet.accent[3], 0.);
@@ -1919,6 +1925,8 @@ mod tests {
         assert_eq!(u.ring, [8., 2.6, 1., 1.]);
         r.ring_rest = 0.;
         assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).ring[3], 0.);
+        r.ring_accent = 0.;
+        assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).ring_accent, 0.);
 
         r.focus = FocusResponse::None;
         assert_eq!(SignalUniforms::from_frame(&frame, &g, &r).response[2], 0);

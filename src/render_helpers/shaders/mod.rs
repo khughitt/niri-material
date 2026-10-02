@@ -72,6 +72,7 @@ pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>> {
         UniformName::new("mat_sig_ring", UniformType::_4f),
         UniformName::new("mat_sig_focus", UniformType::_4f),
         UniformName::new("mat_sig_ring_color", UniformType::_3f),
+        UniformName::new("mat_sig_ring_accent", UniformType::_1f),
         UniformName::new("mat_light_ior", UniformType::_1f),
     ];
     names.extend(optics::uniform_names());
@@ -517,6 +518,7 @@ mod tests {
         assert!(source.contains("filamentBand(q0, gap, width, mat_scatter)"));
         assert!(source.contains("uniform vec4 mat_sig_focus;"));
         assert!(source.contains("uniform vec4 mat_sig_ring;"));
+        assert!(source.contains("uniform float mat_sig_ring_accent;"));
         assert!(material_uniform_names()
             .iter()
             .any(|name| { name.name == "mat_scatter" && name.type_ == UniformType::_1f }));

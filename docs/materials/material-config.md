@@ -274,6 +274,7 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ring-gap` | 0–128 logical px | 8 logical px |
 | `ring-glow` | 0–3 | 1.0 |
 | `ring-rest` | 0–3 | 1.0 |
+| `ring-accent` | 0–3 | 1.0 |
 | `ring-width` | > 0, up to 128 logical px | 2.6 logical px |
 | `ring-color` | `"#rrggbb"` | `#ccccff` |
 
@@ -301,6 +302,7 @@ material "terminal-glass" {
         ring-gap 8
         ring-glow 1.0
         ring-rest 1.0
+        ring-accent 1.0
         ring-width 2.6
         ring-color "#ccccff"
     }
@@ -383,7 +385,12 @@ a change to ring or edge rendering, and compare the PNGs. The backdrop is
 flat gray, so refraction of the backdrop does not show there.
 
 `accent "ring"` lets a window signal light and tint the same band on any
-window. Both together show the filament in the accent color. The band sits
+window. Both together show the filament in the accent color. `ring-accent`
+scales only the accent's own light on the band: at `0` a signal no longer
+outlines its window, but the accent still colors the focus light, so the
+comet and the resting ring run in the window's hue. The edge glint that
+`attention "rim-orbit"` tints with the accent is separate; `attention "none"`
+turns it off. The band sits
 `ring-gap` px inward from the edge of the flat face (where the chamfer ends),
 so it is always under the face and the bevel may shrink to make room; the
 light is refracted through the glass at its remaining interior depth and
