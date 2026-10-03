@@ -23,6 +23,7 @@ use super::signal::{color_linear, ImpulseFrame, SignalFingerprint, SignalFrame};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::RenderTarget;
 
+pub mod bevel;
 pub mod optics;
 pub mod ring;
 
