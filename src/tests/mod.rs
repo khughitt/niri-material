@@ -4,6 +4,7 @@ mod client;
 mod fixture;
 mod server;
 
+mod accent_tint;
 mod animations;
 mod attention_idle;
 mod floating;
