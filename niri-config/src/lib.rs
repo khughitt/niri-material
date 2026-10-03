@@ -1466,6 +1466,7 @@ mod tests {
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
                 bevel: 20.,
+                bevel_profile: 1.,
                 offset_x: -8.,
                 offset_y: 4.,
                 noise: ResolvedNoise::default(),
@@ -1588,6 +1589,25 @@ mod tests {
         );
         assert_eq!(ResolvedNoise::default().kind, NoiseType::White);
         assert_eq!(ResolvedNoise::default().amount, None);
+    }
+
+    #[test]
+    fn bevel_profile_parses_and_defaults_to_planar() {
+        let written = do_parse(r##"material "edge" { glass { bevel-profile 2.5; }; }"##);
+        assert_eq!(written.materials[0].resolve().glass.bevel_profile, 2.5);
+        let omitted = do_parse(r##"material "edge" { glass {}; }"##);
+        assert_eq!(omitted.materials[0].resolve().glass.bevel_profile, 1.);
+        assert_eq!(ResolvedGlass::default().bevel_profile, 1.);
+    }
+
+    #[test]
+    fn bevel_profile_rejects_values_outside_one_and_eight() {
+        for value in ["0.99", "8.01"] {
+            let err = do_parse_err(&format!(
+                "material \"edge\" {{ glass {{ bevel-profile {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 1 and 8"), "{err}");
+        }
     }
 
     #[test]

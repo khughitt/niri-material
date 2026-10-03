@@ -51,6 +51,7 @@ lengths are logical pixels.
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
 | `bevel` | float | 12 | 0–128 | logical px |
+| `bevel-profile` | float | 1 | 1–8 | — |
 | `light-ior` | float | 6 | 1–12 | — |
 | `offset-x` | float | 6 | −64–64 | logical px |
 | `offset-y` | float | 6 | −64–64 | logical px |
