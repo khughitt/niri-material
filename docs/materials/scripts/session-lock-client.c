@@ -4,7 +4,12 @@
 // "locked" when the compositor confirms, and on SIGUSR1 unlocks and exits 0.
 // It never authenticates: niri's SessionLockHandler::unlock runs exactly as
 // for any lock client. SIGTERM/SIGINT exit 2 without unlocking; a refused or
-// ended lock ("finished") exits 1.
+// ended lock ("finished") exits 1. An unlock request (SIGUSR1) that arrives
+// before the compositor sent `locked` also exits 1: the driver treats any
+// nonzero exit as a failed case and kills niri. Any protocol or setup failure
+// (a failed roundtrip, more than MAX_OUTPUTS outputs, an output that appears
+// after the lock was requested, a zero-size configure) exits 1 rather than
+// leaving an output unlocked or hanging.
 #define _GNU_SOURCE
 #include <errno.h>
 #include <poll.h>
@@ -35,6 +40,7 @@ static struct ext_session_lock_manager_v1 *manager;
 static struct lock_output outputs[MAX_OUTPUTS];
 static int n_outputs;
 static int locked;
+static int lock_requested;
 static volatile sig_atomic_t unlock_requested, stop_requested;
 
 static void die(int status, const char *what) {
@@ -62,14 +68,23 @@ static void registry_global(void *data, struct wl_registry *registry, uint32_t n
         shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
     else if (strcmp(interface, ext_session_lock_manager_v1_interface.name) == 0)
         manager = wl_registry_bind(registry, name, &ext_session_lock_manager_v1_interface, 1);
-    else if (strcmp(interface, wl_output_interface.name) == 0 && n_outputs < MAX_OUTPUTS)
+    else if (strcmp(interface, wl_output_interface.name) == 0) {
+        // An unlocked output means niri never sends `locked`; a late one gets
+        // no lock surface. Both fail loudly instead of hanging.
+        if (lock_requested)
+            die(1, "output hotplug while locked is unsupported");
+        if (n_outputs >= MAX_OUTPUTS)
+            die(1, "more outputs than MAX_OUTPUTS");
         outputs[n_outputs++].output = wl_registry_bind(registry, name, &wl_output_interface, 1);
+    }
 }
 
 static void registry_remove(void *data, struct wl_registry *registry, uint32_t name) {
     (void)data;
     (void)registry;
     (void)name;
+    // A removed output is not handled: the lane runs fixed heads, and niri
+    // destroys the lock surface of a vanished output itself.
 }
 
 static const struct wl_registry_listener registry_listener = {
@@ -99,6 +114,8 @@ static struct wl_buffer *solid_buffer(uint32_t width, uint32_t height) {
 static void lock_surface_configure(void *data, struct ext_session_lock_surface_v1 *lock_surface,
                                    uint32_t serial, uint32_t width, uint32_t height) {
     struct lock_output *out = data;
+    if (width == 0 || height == 0)
+        die(1, "the compositor configured a zero-size lock surface");
     ext_session_lock_surface_v1_ack_configure(lock_surface, serial);
     if (out->buffer)
         wl_buffer_destroy(out->buffer);
@@ -150,12 +167,14 @@ int main(void) {
         die(1, "cannot connect to the Wayland display");
     struct wl_registry *registry = wl_display_get_registry(display);
     wl_registry_add_listener(registry, &registry_listener, NULL);
-    wl_display_roundtrip(display);
+    if (wl_display_roundtrip(display) < 0)
+        die(1, "the startup roundtrip failed");
     if (!compositor || !shm || !manager || n_outputs == 0)
         die(1, "missing wl_compositor, wl_shm, ext_session_lock_manager_v1 or an output");
 
     struct ext_session_lock_v1 *lock = ext_session_lock_manager_v1_lock(manager);
     ext_session_lock_v1_add_listener(lock, &lock_listener, NULL);
+    lock_requested = 1;
     for (int i = 0; i < n_outputs; i++) {
         outputs[i].surface = wl_compositor_create_surface(compositor);
         outputs[i].lock_surface =
@@ -188,7 +207,8 @@ int main(void) {
         die(1, "unlock requested before the compositor confirmed the lock");
 
     ext_session_lock_v1_unlock_and_destroy(lock);
-    wl_display_roundtrip(display);
+    if (wl_display_roundtrip(display) < 0)
+        die(1, "the roundtrip after unlock failed");
     wl_display_disconnect(display);
     return 0;
 }
