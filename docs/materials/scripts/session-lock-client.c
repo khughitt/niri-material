@@ -132,6 +132,14 @@ static const struct ext_session_lock_v1_listener lock_listener = {
 };
 
 int main(void) {
+    // Block the signals so one arriving between the loop check and the wait
+    // stays pending; ppoll unblocks them atomically while it waits.
+    sigset_t blocked, orig_mask;
+    sigemptyset(&blocked);
+    sigaddset(&blocked, SIGUSR1);
+    sigaddset(&blocked, SIGTERM);
+    sigaddset(&blocked, SIGINT);
+    sigprocmask(SIG_BLOCK, &blocked, &orig_mask);
     struct sigaction usr1 = {.sa_handler = on_usr1}, stop = {.sa_handler = on_stop};
     sigaction(SIGUSR1, &usr1, NULL);
     sigaction(SIGTERM, &stop, NULL);
@@ -164,7 +172,7 @@ int main(void) {
             wl_display_cancel_read(display);
             die(1, "flush failed");
         }
-        if (poll(&fd, 1, -1) < 0) {
+        if (ppoll(&fd, 1, NULL, &orig_mask) < 0) {
             wl_display_cancel_read(display);
             if (errno == EINTR)
                 continue;
