@@ -103,8 +103,9 @@ run at once:
 investigate `material-77be96` first. All three checkouts (main, glass-edges,
 material-77db8a) share one `target-dir`, checked 2026-10-02. That sharing is the cause
 (`material-77be96`, reproduced): cargo keys workspace crates by root-relative path and
-checks them by mtime, so one tree's build is served to another as fresh. Worktrees now
-build into their own target dirs, and `tools/target-dir-check` refuses one that shares.
+checks them by mtime, so one tree's build is served to another as fresh. Worktrees build
+into their own target dirs (every worktree except `material-3acc86` moved 2026-10-02),
+and `tools/target-dir-check` refuses one that shares once its branch carries the tool.
 Signals:
 `material-c1330b`, with `material-07bac9` as a separate nested-host demonstration.
 Optics: finish and review the `material-be611b` plan and prepare ring comparison

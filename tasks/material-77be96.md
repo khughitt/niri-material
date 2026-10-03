@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-77be96
 created: 2026-09-23T19:47:41Z
-updated: 2026-10-03T00:38:38Z
+updated: 2026-10-03T00:51:21Z
 started: 2026-10-03T00:33:02Z
 completed: 2026-10-03T00:38:36Z
 depends: []
@@ -36,3 +36,5 @@ Worktrees share one build.target-dir. After a build of another branch or commit 
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T00:38:36Z (material-77be96): tools/target-dir-check with tests, wired into just setup and check_cmd; AGENTS.md: one target dir per checkout, worktrees build into their own target/
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T00:47:50Z (material-77be96): review: impl round 1 — verdict: revise; findings: Important 4, Minor 7; reviewer: claude-code/claude-opus-5-5
+- 2026-10-03T00:51:21Z (material-77be96): Review round 1 fixes: the check now compares cargo's target_directory and build_directory (a shared build.build-dir collides the same way), skips with a note any other checkout that is missing (locked worktrees are never prunable), bare, or whose manifest cargo cannot read, exits 2 on its own failures, and its tests run with an empty CARGO_HOME. Corrections to the earlier notes: a build.build-dir with {workspace-path-hash} does separate intermediates (not the final binaries in a shared target dir); staleness is per crate, so a binary built while sharing can mix another tree's crates with its own, compiling silently when the APIs match; glass-edges also shared. Moved off the shared dir on 2026-10-02 (config replaced by a comment-only .cargo/config.toml, kept because older branches' AGENTS.md makes ops-check require the file): fix-ci, material-5b3107, material-5b3107-baseline, material-77db8a, material-80caf4, glass-edges. material-3acc86 still shares: a live session holds it, so it moves when that session merges this change and its check refuses.
