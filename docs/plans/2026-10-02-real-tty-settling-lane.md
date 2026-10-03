@@ -1145,6 +1145,8 @@ git commit -m "feat(material): settling analyzer checks edge windows, cast frame
 
 ### Task 5: The dedicated lane in the settling driver
 
+> Later change: `tty-resume`'s single `vt-away` stimulus was split into `vt-out` and `vt-return`, with the resume edge required inside `vt-return`; the spec (`docs/specs/2026-10-02-real-tty-settling-lane-design.md`) is the authority.
+
 **Files:**
 - Modify: `docs/materials/scripts/optic-settling-smoke.sh` (header comment; lane refusal stub; `on_exit`; configs; case table; matrix repeats; client builds; host start/stop; `run_case`; new drive/post functions)
 - Test: `tools/test_optic_settling.py` (`PrepareTests`, `DriverCleanupTests`, `STUBS`, `SERVE`)
