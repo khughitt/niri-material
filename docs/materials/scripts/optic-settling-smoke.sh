@@ -56,7 +56,7 @@ if [ "$LANE" = dedicated ]; then
 fi
 # Host items are owner actions (docs/materials/capture-host-setup.md); refuse naming the missing one.
 dedicated_prerequisites() {
-    local root link exe pid status connector
+    local root link exe pid status connector found=
     [ -z "${WAYLAND_DISPLAY:-}" ] || fail 'the dedicated lane runs from a TTY login, not inside a Wayland session'
     ! pgrep -x niri > /dev/null || fail 'a niri is already running: stop the desktop session first'
     # A killed earlier run can leave its niri holding DRM; it runs the run's
@@ -71,7 +71,8 @@ dedicated_prerequisites() {
                 fail "a niri from an earlier run is still running: pid ${pid%/exe} runs $exe" ;;
         esac
     done
-    # One output: a second connected one would fail only at analysis.
+    # One output, DRM_OUTPUT: a second connected one, or none, would fail
+    # only at analysis.
     for status in "$DRM_SYSFS"/card*-*/status; do
         [ -e "$status" ] || continue
         [ "$(cat "$status")" = connected ] || continue
@@ -80,7 +81,9 @@ dedicated_prerequisites() {
         connector=${connector#card*-}
         [ "$connector" = "$DRM_OUTPUT" ] \
             || fail "output $connector is connected besides DRM_OUTPUT $DRM_OUTPUT: disconnect it for the dedicated lane"
+        found=1
     done
+    [ -n "$found" ] || fail "DRM_OUTPUT $DRM_OUTPUT is not connected (no connected connector under $DRM_SYSFS)"
     sudo -n -l /usr/bin/chvt > /dev/null 2>&1 \
         || fail 'no NOPASSWD rule for /usr/bin/chvt (docs/materials/capture-host-setup.md)'
     gst-inspect-1.0 pipewiresrc > /dev/null 2>&1 || fail 'no pipewiresrc element: install gst-plugin-pipewire'
@@ -661,6 +664,7 @@ drive_dpms_ipc() {
 drive_dpms_input() { keepalive; at 25; stim power-off 1 msg "$NIRI" action power-off-monitors; at 27; pointer; }
 drive_screencopy() { keepalive; at 25; stim screencopy 0.5 grab_screencopy; }
 start_inhibitor() {
+    : "${INHIBIT_BIN:?the idle inhibit client was not built for this run}"
     XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME "$INHIBIT_BIN" >> "$OUT/inhibit.log" 2>&1 &
     INHIBIT_PID=$!
     for _ in $(seq 50); do [ "$(windows_with "$NIRI" gos-inhibit)" -ge 1 ] && break; sleep 0.1; done
@@ -696,6 +700,7 @@ vt_out() {
 vt_return() { vt_switch "$VT_HOME" || fail "$CASE: the return to VT $VT_HOME did not land"; }
 drive_tty_resume() { keepalive; at 26; stim vt-out 0 vt_out; stim vt-return 1.5 vt_return; }
 lock_start() {
+    : "${LOCK_BIN:?the session lock client was not built for this run}"
     XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME "$LOCK_BIN" > "$CASE_DIR/lock.out" 2>> "$OUT/lock.log" &
     LOCK_PID=$!
     for _ in $(seq 50); do grep -qx locked "$CASE_DIR/lock.out" && return; alive "$LOCK_PID" || break; sleep 0.1; done

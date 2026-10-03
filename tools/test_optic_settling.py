@@ -1108,6 +1108,15 @@ class DriverCleanupTests(unittest.TestCase):
         stderr = self.refused(OPTIC_SETTLING_STUB_DRM_SYSFS=str(drm))
         self.assertIn('HDMI-A-1 is connected besides DRM_OUTPUT DP-1', stderr)
 
+    def test_an_unconnected_drm_output_is_refused_before_launch(self):
+        for index, connectors in enumerate((
+                {'card1-DP-1': 'disconnected', 'card1-HDMI-A-1': 'disconnected'},  # none connected
+                {})):                                                                # no connector
+            with self.subTest(connectors=connectors):
+                drm = self.sysfs(connectors)
+                stderr = self.refused(OPTIC_SETTLING_STUB_DRM_SYSFS=str(drm), OUT=str(self.base / f'out-{index}'))
+                self.assertIn('DRM_OUTPUT DP-1 is not connected', stderr)
+
     def test_a_leftover_niri_from_an_earlier_run_is_refused(self):
         # pgrep -x niri misses it: the run's snapshot copy is named binary.
         old = self.base / 'optic-settling/pilot-old'
