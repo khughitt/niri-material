@@ -70,7 +70,8 @@ extensions; no open local research task was found answering workspace replay.
 
 - **Workspace summaries:** Can snapshot/event replay maintain a candidate
   maximum attention level through moves, expiry, clearing, closing and
-  reconnect? `material-c1330b` answers this. Which bar/overview needs which
+  reconnect? Yes, with the gaps recorded under
+  [Workspace replay](#workspace-replay) (`material-c1330b`). Which bar/overview needs which
   fields or cross-workspace consistency? The consuming feature's design
   must answer; no consumer implementation was established here.
 - **Level rules:** What appearance should external Demand trigger beyond
@@ -80,6 +81,115 @@ extensions; no open local research task was found answering workspace replay.
   invalidation and cost; no benchmark result is claimed here.
 - **Impulse timing:** Which kind is poorly served by the shared envelope?
   A repeatable visual comparison and the owner's judgment can answer.
+
+## Workspace replay
+
+Result of `material-c1330b` (2026-10-02). The replay is
+`niri-ipc/tests/workspace_signal_replay.rs`: it feeds compositor-shaped
+events through the existing reducer (`niri_ipc::state::EventStreamState`),
+keeps a compositor-side mirror beside one client as `server.rs` does, and
+folds `max(Window.signal.level)` per known workspace from the reducer's window
+map, with `None` (no signalled window) kept distinct from `Some(Quiet)`. The
+fold is a candidate summary, not an approved accent, motion or impulse fold.
+
+**Emit order, from the compositor code** (line numbers at `6c62457f`):
+
+- One refresh per event-loop dispatch (`src/main.rs:270`) runs
+  `refresh_signal_deadlines` then `ipc_refresh_layout` (`src/niri.rs:844-846`),
+  which runs workspaces, then windows, then overview
+  (`src/ipc/server.rs:674-678`). Each event is applied to the compositor's
+  mirror, then sent to every stream individually (`server.rs:785-788`,
+  `897-900`, `send_event` at `115`). Nothing on the wire marks a refresh
+  boundary.
+- A known window whose `workspace_id`, floating state, title or app id changed
+  gets one full `WindowOpenedOrChanged` built by `make_ipc_window`, which folds
+  the signal at refresh time (`server.rs:824-835`, `617-620`); the function
+  returns, so no `WindowSignalChanged` for that window follows in that
+  refresh. A move therefore updates both workspaces in one event.
+- Otherwise a folded-signal difference emits `WindowSignalChanged`
+  (`server.rs:857-865`). The compared value includes impulses, so impulse
+  appearance and expiry emit events whose level is unchanged.
+- TTL demotion: `signal_deadline_fired` (`src/niri.rs:2381-2393`) mutates the
+  slots via `advance` and queues a redraw; it sends no IPC itself. The refresh
+  after that dispatch emits `WindowSignalChanged`. `fold` also applies an
+  expired TTL lazily (`src/window/signal.rs:339-342`), so any refresh at or
+  after the deadline already reports the after-level. Demotion keeps the slot,
+  so the window keeps `Some(signal)`.
+- Clearing the last slot makes `fold` return `None`
+  (`signal.rs:242-251`, `335-338`) and emits `WindowSignalChanged` with
+  `signal: None`.
+- Close: windows missing from the layout get a bare `WindowClosed`, after all
+  per-window events and the layout batch (`server.rs:879-885`).
+- An interactively moved window is reported with `workspace_id: None`
+  (`src/layout/mod.rs:1696-1700`), which changes `workspace_id` and so emits
+  `WindowOpenedOrChanged` on pickup and drop.
+- New stream client: the reply, then `replicate()` of the mirror —
+  `WorkspacesChanged`, `WindowsChanged`, then the other parts
+  (`niri-ipc/src/state.rs:99-108`) — queued before the sender joins the
+  stream list, with no await in between (`server.rs:246-264`). The snapshot
+  is the mirror as of the last refresh. A client that falls 64 events behind
+  is dropped (`server.rs:42`, `115-131`) and must reconnect.
+
+**Replay and observed levels** (workspaces 1, 2, 3; windows 10, 11 on 1, 20
+on 2, 30 alone on 3 with Demand before connect):
+
+| Step | Event(s) | ws1 | ws2 | ws3 |
+| --- | --- | --- | --- | --- |
+| S0 connect | snapshot | none | none | Demand |
+| S1 Quiet on 20 | `WindowSignalChanged` | none | Quiet | Demand |
+| S2 Notice on 10 | `WindowSignalChanged` | Notice | Quiet | Demand |
+| S3 Demand+TTL+Ping on 11 | `WindowSignalChanged` | Demand | Quiet | Demand |
+| S4 impulse expiry on 11 | `WindowSignalChanged`, same level | Demand | Quiet | Demand |
+| S5 11 to ws2 | one `WindowOpenedOrChanged` | Notice | Demand | Demand |
+| S6 TTL demotes 11 to Active | `WindowSignalChanged` | Notice | Active | Demand |
+| S7a ws3 removed | `WorkspacesChanged` | Notice | Active | gone; 30 unattributed |
+| S7b 30 to ws1 | `WindowOpenedOrChanged` | Demand | Active | — |
+| S8a drag 30 | `WindowOpenedOrChanged`, ws `None` | Notice | Active | 30 unattributed |
+| S8b drop 30 on ws2 | `WindowOpenedOrChanged` | Notice | Demand | — |
+| S9 clear 10's last source | `WindowSignalChanged`, `None` | none | Demand | — |
+| S10 close 30, close 11 | `WindowClosed` ×2 | none | Active, then Quiet | — |
+| S11 reconnect after missing a clear on 20 and a Notice window 12 opening on ws1 | snapshot | none, then Notice | none | — |
+
+At every step the client's fold equals the fold of the compositor mirror.
+In S11 the stale client would have kept ws2 at Quiet; a fresh state folds
+every workspace to `none` after the snapshot's first event and to the correct
+levels after `WindowsChanged`. Reusing the old reducer state also converges,
+because `WindowsChanged` replaces the whole window map.
+
+**State gaps.**
+
+- No refresh boundary on the wire: per-event folds expose intermediate
+  states. S7 shows one: if a workspace removal and the move off it land in
+  one refresh, `WorkspacesChanged` arrives first and the moved window's
+  Demand belongs to no known workspace until its `WindowOpenedOrChanged`.
+  Whether two windows changing in one refresh can be observed as one
+  cross-workspace update is unknown; the replay cannot show it, and nothing
+  in the code guarantees it.
+- Reconnect has a transient all-`none` state between `WorkspacesChanged` and
+  `WindowsChanged`.
+- A dragged window has no workspace, so its level leaves every workspace for
+  the duration of the drag.
+- Impulse-only changes cost an event and a re-fold without a level change.
+- Nothing measured cost or latency; none is claimed.
+
+**Recommendation.** Keep the summary client-side; do not add a compositor
+summary event now. The existing events carry enough to maintain a correct
+candidate maximum through moves, TTL demotion, clearing, closing and
+reconnect, provided the client recomputes from reducer state rather than
+keeping incremental counters, folds only over known workspace ids, keeps
+`None` distinct from `Quiet`, and resyncs from a fresh snapshot on reconnect.
+A compositor summary becomes worth designing only if a consumer needs
+refresh-atomic summaries across workspaces, a defined attribution for dragged
+windows, a fold beyond level defined in one place, or a measured client cost
+it cannot bear.
+
+**Consumer requirements still unknown.** Which bar or overview consumes the
+summary, and which fields (level only, or accent, motion, impulses, source
+count); whether intermediate per-event states and the reconnect blank are
+acceptable or need coalescing; how a dragged window should count; whether
+Quiet should render differently from no signal; whether native urgency
+(already `Workspace.is_urgent`) should merge with the summary; and the cost
+and latency budget per event.
 
 ## Proposed decomposition
 
