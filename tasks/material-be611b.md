@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-03T10:14:51Z
+updated: 2026-10-03T11:32:46Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -106,3 +106,5 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-03T09:56:31Z (glass-edges): review: plan round 6 — verdict: accept; findings: none; reviewer: codex
 - 2026-10-03T09:56:31Z (glass-edges): Go-ahead for implementation: reviewed the plan revisions through 21a07022 and the round 4-5 dispositions. Both round 3 findings are addressed by paired rounded/planar renders and the patterned-backdrop reflection isolate with a shader-mutation control. The Task 7 ordering and frozen-rectangle fixes are present. Acceptance is for implementation; real-render thresholds and mutation separation remain execution gates. No builds, renders, or implementation changes were made in this review. Implementation owner can resume from Task 1 under the recorded plan.
 - 2026-10-03T10:14:51Z (glass-edges-t3): glass edge evidence root: /mnt/ssd3/niri-material/material-be611b/20261003T061451
+- 2026-10-03T11:32:46Z (glass-edges): parked (waiting on user, review): When the parked contact sheet (material-124f1f, quiet queue) has run on an idle host, the owner judges the sheet attached here and picks Prism starting values; then the agent merges glass-edges into materials-26.04 (implementation reviewed, final review clean)
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
