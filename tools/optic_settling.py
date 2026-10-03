@@ -373,7 +373,12 @@ def analyze_case(run, case, lane, pin=None):
             lines = (directory / 'cast-frames.tsv').read_text().split()
         except (OSError, UnicodeError) as error:
             raise ValueError(f'{name}: missing or invalid cast-frames.tsv') from error
-        frames = [integer(line, 'cast frame') - offset for line in lines]
+        frames = []
+        for line in lines:
+            try:
+                frames.append(integer(line, 'cast frame') - offset)
+            except ValueError as error:
+                raise ValueError(f'{name}: invalid cast frame {line!r} in cast-frames.tsv') from error
         if read_json(directory / 'cast-summary.json').get('stopped_by_signal') is not True:
             raise ValueError(f'{name}: the screencast consumer did not stop on a signal')
         for label in consumer.get('frames_in', []):
