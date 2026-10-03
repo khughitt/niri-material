@@ -1,7 +1,8 @@
 # Accent tint of the glass attenuation color
 
-**Status:** draft for spec review round 2 (round 1: revise; §5 now matches
-density on the face transmittance).
+**Status:** draft for spec review round 3 (round 1: revise, density moved to
+the face transmittance; round 2: revise, tint chromaticity crossfades between
+endpoints, interior-light and colored-backdrop effects restated).
 **Task:** `material-3bdffc`; wakes `material-6f45a0` after design and plan review.
 **Baseline:** `63538aef` (the task-start commit; it changes only the task).
 **Brief:** [glass signal responses](../notes/2026-09-29-glass-signal-responses-brief.md#unanswered-questions).
@@ -21,8 +22,9 @@ change. Once the accent and its crossfade have settled, the tint adds no redraw.
 The owner chose the tint model on 2026-10-03: the tint moves hue and
 saturation toward the accent and keeps the glass's own density, so dark glass
 stays dark and light glass stays light (§5). Density is held exactly where
-the glass is seen most, on the flat face. The chamfer and the interior ring
-and aurora light still move with the tint (§5, §4).
+the glass is seen most, on the flat face, for a neutral backdrop. A colored
+backdrop shifts brighter or darker with the tint, and the chamfer and the
+interior ring and aurora light move with it too (§5, §4).
 
 This task delivers the reviewed design and then an implementation plan for
 separate review. It implements, captures and installs nothing, and changes
@@ -61,7 +63,10 @@ other briefed responses are out of scope.
   floored at 0.25: exactly `thickness` on the flat face, up to four times it
   on the chamfer.
 - Stage 0 returns opaque window pixels before attenuation. Stage 5 (ring,
-  aurora) multiplies its light by `att ^ 0.2`, the same `att`.
+  aurora) multiplies its light by `att ^ 0.2`, the same `att`. The ring's
+  light color is `mix(ring-color, accent, presence)` under `accent "ring"`,
+  for the accent band and the focus filament alike, and `ring-color` under
+  `accent "none"`.
 - Signal-free tiles skip `solve` and upload `GlassSignalInputs::quiet(glass)`.
 
 ## 3. Configuration
@@ -106,13 +111,23 @@ band alone. The glass body has its own control, as the attention glint
 already does.
 
 Ring and aurora light passes the same attenuation at a fifth of the face's
-path (`att ^ 0.2`, §2), so the tint colors and can dim that interior light.
-This is the physical rule `attenuation-color` already follows, and the design
-does not compensate for it; it is not slight with saturated accents. On the
-accepted look at weight 1, the ring's light falls to 0.43× with a magenta
-accent (`#ff00ff`), 0.83× with blue (`#0066ff`) and 0.91× with orange
-(`#ff6600`); at weight 0.5 all three stay within 3 %. The owner judges this
-on the §8 dumps, which frame the ring band.
+path (`att ^ 0.2`, §2), so the tint changes that interior light. This is the
+physical rule `attenuation-color` already follows, and the design does not
+compensate for it. The direction depends on the light's color. Luminance of
+the ring's light relative to untinted glass, on the accepted look with the
+accent settled:
+
+| Accent | Accent band (`accent "ring"`), w = 0.5 / 1 | `ring-color` band (`accent "none"`), w = 0.5 / 1 |
+| --- | --- | --- |
+| magenta `#ff00ff` | 1.50× / 1.69× | 1.02× / 0.47× |
+| blue `#0066ff` | 1.08× / 1.10× | 0.98× / 0.86× |
+| orange `#ff6600` | 1.37× / 1.46× | 1.02× / 0.87× |
+
+Under `accent "ring"`, the band and the focus filament carry the accent, and
+tinting the glass toward the accent's hue opens the channels that light lives
+in, so the ring brightens, by half already at weight 0.5 with magenta. Under
+`accent "none"`, the near-white `ring-color` loses the channels the tint
+closes. The owner judges both on the §8 dumps, which frame the ring band.
 
 ## 5. Tint model
 
@@ -134,13 +149,15 @@ hue the ring band draws. Let:
 
 **Target.** The accent's hue at the face's density:
 
-1. If `Y(a) < 1e-6`, take the gray `T_t = (Y(T_c), Y(T_c), Y(T_c))`. This is
-   a stated choice: a black accent has no hue, so it desaturates the glass
-   toward a neutral gray at its own density, as any exactly neutral accent
-   does through step 2.
-2. Else `T_t = a × Y(T_c) / Y(a)`. The target depends only on the accent's
-   chromaticity, not its brightness: a near-black *colored* accent tints as
-   strongly as a bright one of the same hue.
+1. The tint chromaticity `k` of a settled accent `a` is `a / Y(a)`, or
+   `(1, 1, 1)` when `Y(a) < 1e-6`. `Y(k) = 1` either way. This is a stated
+   choice: a black accent has no hue, so it desaturates the glass toward a
+   neutral gray at its own density, as any exactly neutral accent does. `k`
+   depends only on the accent's chromaticity, not its brightness, so a
+   near-black *colored* accent tints as strongly as a bright one of the same
+   hue. During a crossfade, `k` is not derived from the interpolated accent;
+   it interpolates between the endpoints' `k` (§6).
+2. `T_t = k × Y(T_c)`.
 3. Gamut: if any channel of `T_t` lies outside `[lo, 1]`, pull `T_t` toward
    the gray `Y(T_c)` by the largest factor `s ∈ [0, 1]` that brings every
    channel inside, `T_t = Y(T_c) + s (T_t − Y(T_c))`. The gray lies inside,
@@ -150,7 +167,7 @@ hue the ring band draws. Let:
 **Mix and upload.** `T = T_c + w (T_t − T_c)` per channel, then upload
 `T ^ (1 / p_f)` with alpha unchanged from the configured color. Luminance is
 linear in `T` and `Y(T_t) = Y(T_c)`, so the face transmits exactly the
-untinted luminance at every weight. Every channel of `T` lies in `[lo, 1]`,
+untinted luminance of a neutral backdrop at every weight. Every channel of `T` lies in `[lo, 1]`,
 so the uploaded coefficient lies in `[0.001, 1]` and the shader's clamp
 changes nothing. At weight 1 without a gamut pull, the face's transmitted
 chromaticity is the accent's linear chromaticity.
@@ -161,12 +178,23 @@ chromaticity is the accent's linear chromaticity.
 attenuation to tint), or when `Y(T_c)` underflows to 0 (a face that
 transmits nothing). This is a branch, not a computation that rounds back.
 
+**Colored backdrops.** The shader renders `sampled × T` per channel, so
+`Y(T)` fixes the transmitted luminance only when the backdrop is neutral.
+Through a saturated backdrop, channels the tint opens brighten and the others
+darken. On the accepted look at weight 1, an orange tint passes a pure red
+backdrop 25.8× brighter, a pure green one at 0.35× and a pure blue one at
+almost nothing; magenta passes red 27.9× and blue 2.6×. The model keeps this
+simple behavior: compensating would mean reading the backdrop per pixel and
+changing the shader, which makes the tint a different response. The density
+promise is stated for neutral and near-neutral backdrops, and the §8 dumps
+include saturated ones.
+
 **Where density still moves.** Only the face is matched. The chamfer's path
 runs up to `4 p_f` and the ring and aurora light's `0.2 p_f`, and at
 exponents other than `p_f` the tinted coefficient no longer transmits the
 untinted luminance. On the accepted look the chamfer at weight 1 transmits
 13× to 50× its untinted luminance, but from about `2e-11` to under `1e-9`,
-still black. The interior light is §4's dimming.
+still black. The interior light is §4's change.
 
 **Light glass has little room for hue.** Keeping density is the owner's
 choice, and near-white glass has almost no saturation left at its own
@@ -186,6 +214,10 @@ so.
   weight 1 brightened the face 8.7×. Treating encoded accent numbers as
   transmittance also shifted the hue (`#ff6600` showed as about `#ff4d00`),
   away from the band's color.
+- *A luminance knee near black* (fading `k` toward gray as `Y(a)` falls)
+  instead of interpolating `k` between endpoints. A black → colored fade
+  would still cross the knee in the first few percent of its fraction, and
+  near-black colored accents would lose the hue that step 1 gives them.
 - *Oklab or another perceptual space.* Face luminance is the property that
   matters, it is linear, and matching it exactly needs no further
   conversion.
@@ -197,11 +229,20 @@ The tint has no clock of its own. It follows the frame's `accent` and
 
 - **Accent appears:** presence rises 0 → 1 over the crossfade with the color
   held; `w` rises with it.
-- **Accent replaced** (A → B): presence stays 1. The color interpolates in
-  linear light and its target is recomputed each frame (§5), so face
-  luminance holds at `Y(T_c)` throughout.
-- **Accent removed:** presence falls 1 → 0 with A held; the tint fades out to
-  exactly the configured color (neutral path once `w` reaches 0).
+- **Accent replaced** (A → B): presence stays 1. The accent the ring draws
+  still interpolates in linear light. The tint chromaticity interpolates
+  separately, `k = k(A) + f (k(B) − k(A))` with the crossfade's fraction `f`,
+  and the target is recomputed each frame from it (§5), so face luminance
+  holds at `Y(T_c)` throughout. Interpolating `k` rather than normalizing the
+  interpolated accent is what makes black ↔ colored continuous: from black,
+  the interpolated accent is `f × B`, and normalizing it would jump to `k(B)`
+  on the first frame (and, in reverse, hold `k(A)` until the last).
+- **Interrupted crossfade:** a new crossfade starts its `k` from the running
+  one's current `k`, as level, accent and presence already do in
+  `crossfade_origin`.
+- **Accent removed:** presence falls 1 → 0 with A and `k(A)` held; the tint
+  fades out to exactly the configured color (neutral path once `w` reaches
+  0).
 - **Idle input, `motion "off"`/`"reduced"`:** the accent is static and kept,
   so the tint stays. It adds nothing that moves.
 - **Level** does not scale the tint. The tint is identity, not urgency.
@@ -211,10 +252,16 @@ The tint has no clock of its own. It follows the frame's `accent` and
 
 ## 7. Rendering site
 
+- `accent_chroma(a) -> [f32; 3]` in `src/render_helpers/signal.rs` computes
+  `k`. `SignalCrossfade` holds `k` for both endpoints next to the accents,
+  `SignalCrossfade::current` and `crossfade_origin` return it, and
+  `FrameInputs` and `SignalFrame` carry it as `tint_chroma: Option<[f32; 3]>`
+  (`None` exactly when `accent` is `None`). The accent itself and every
+  existing consumer of it are unchanged.
 - `glass_signal_inputs(frame, glass, response)` gains the response and a new
   `attenuation_color: [f32; 4]` field on `GlassSignalInputs`, computed by a pure
   function in a new `src/render_helpers/material/tint.rs`
-  (`accent_tint(base, thickness, attenuation_distance, accent_linear,
+  (`accent_tint(base, thickness, attenuation_distance, tint_chroma,
   weight) -> [f32; 4]`).
   `GlassSignalInputs::quiet` sets it to the glass's own value.
 - The element uploads `mat_attenuation_color` from `GlassSignalInputs`
@@ -240,6 +287,15 @@ Unit tests (`tint.rs`, `material/mod.rs`):
   glass, the accepted look, and a mid-density glass with `p_f < 1`.
 - At weight 1 the face transmittance's chromaticity (`x ^ p_f / Σ`) equals
   the accent's linear chromaticity within 1e-5, when no gamut pull applies.
+- `accent_chroma`: `Y(k) = 1`; a near-black colored accent has the same `k`
+  as its bright counterpart; black and mid gray give `(1, 1, 1)`.
+- Black ↔ colored continuity: for black → `#ff6600` and the reverse,
+  `SignalCrossfade::current`'s `k` equals the endpoint interpolation at
+  fractions 0, 1e-5, ¼, ½, ¾ and 1. The uploaded attenuation color at
+  fraction 1e-5 differs from the fraction-0 value by less than 1e-2 per
+  channel, and likewise at 1 − 1e-5 against fraction 1, where round 2's
+  model jumped to the endpoint hue. The same holds for an interrupted
+  crossfade restarted mid-way.
 - Gamut: every uploaded channel lies in `[0.001, 1]`. On the default glass
   with a saturated accent, saturation is reduced and luminance is not.
 - The neutral cases of §5: zero thickness and an underflowing face return the
@@ -261,8 +317,9 @@ helpers):
 - **Visible tint:** `accent-tint 1` with an accent differs from weight 0 in
   the slab band and through translucent content.
 - **Replacement and removal:** at crossfade fractions 0, ½ and 1 the uploaded
-  attenuation color equals `accent_tint` of the interpolated frame. After
-  removal completes, the render equals the never-tinted render.
+  attenuation color equals `accent_tint` of the frame's interpolated
+  `tint_chroma`, for orange → blue and black ↔ orange. After removal
+  completes, the render equals the never-tinted render.
 - **Settled:** once the crossfade is done, two further renders keep the
   element's commit counter, `are_animations_ongoing` and
   `are_transitions_ongoing` are false, and the output arms no signal timer.
@@ -274,22 +331,27 @@ look:
 - the accepted terminal-glass look and the default glass, each with orange
   (`#ff6600`), blue (`#0066ff`) and magenta (`#ff00ff`) accents, at weights
   0, 0.25, 0.5 and 1, framed so the ring band and chamfer are in view
-  alongside the face;
-- an A → B replacement and an A → none removal at crossfade fractions 0, ¼,
-  ½, ¾ and 1.
+  alongside the face, under both `accent "ring"` and `accent "none"`;
+- the same weights over a neutral gray, a saturated red and a saturated blue
+  backdrop (`layout { background-color }`, which the glass refracts);
+- an orange → blue replacement, black → orange and orange → black
+  replacements, and an orange → none removal, at crossfade fractions 0, ¼, ½,
+  ¾ and 1.
 
 The owner judges whether the hue reads as identity without changing the
-glass's darkness, whether the ring's dimming under saturated accents (§4) is
-acceptable, and how little shows on light glass (§5); and picks the weight to
-recommend in the docs. The default
+glass's darkness over a neutral backdrop; whether the brighter accent band
+and the dimmer `ring-color` band (§4) are acceptable; how far saturated
+backdrops shift (§5); and how little shows on light glass (§5). They pick
+the weight to recommend in the docs. The default
 stays 0 whatever the pick.
 
 ## 9. Documentation and follow-ups
 
 - `docs/materials/material-config.md`: a row in the signal-response table,
   and a paragraph beside the `accent`/`ring-accent` explanation stating the
-  §4 independence, the §5 face-density rule, the interior-light dimming, and
-  the near-invisible tint on light glass.
+  §4 independence, the §5 face-density rule for neutral backdrops, the
+  interior-light change, colored backdrops, and the near-invisible tint on
+  light glass.
 - `docs/materials/render-pipeline.md`: stage 4's parameter column and §5
   table gain response `accent-tint`.
 - Prism exposure of the field is separate scope: the implementation's
