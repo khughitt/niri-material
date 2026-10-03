@@ -75,3 +75,20 @@ All fourteen ring-look PNGs differ from the base (13 to 67 thousand pixels each,
 - The within predictions (face with ring and aurora) hold at worst 1 code value in both stock and live, so the ring's face attenuation is unchanged.
 - Bevel deltas (reported, not asserted): stock bevel rmse 1.360 (max 2) off and 1.046 (max 2) on; live bevel rmse 10.376 (max 29) off and 15.768 (max 29) on. The stock bevel, over a light backdrop at ior 1.5, moves little; the live bevel, over a dark window with a bright backdrop refracted in, moves a lot, as the profile bends the normals.
 - Review Focus 4 (translucent client over the face): the live-translucent face delta is rmse 0.000, max 0 code values. The predicted darkening, (1 - win.a) * f0 * T, is about 0.4 * 0.015 * 15 = 0.09 code values at ior 1.28, below one code value, so it rounds to 0. A build that never applied (1 - F) under the translucent window would also measure 0, so this case neither confirms nor refutes Review Focus 4. "Expected" here means only that the measurement does not contradict the plan's "within a code value".
+
+## Step 2
+
+The `Surface` specular hook (material-d63184) is a signature refactor: renders are decoded-identical to step 1 across iridescence.
+
+```
+$ python3 glass-edge-compare.py identical /mnt/ssd3/niri-material/material-be611b/20261003T061451/step1 /mnt/ssd3/niri-material/material-be611b/20261003T061451/step2 stock-off stock-on stock-iridescence live-off live-on live-iridescence live-translucent live-opaque
+stock-off all: 0 differing pixels
+stock-on all: 0 differing pixels
+stock-iridescence all: 0 differing pixels
+live-off all: 0 differing pixels
+live-on all: 0 differing pixels
+live-iridescence all: 0 differing pixels
+live-translucent all: 0 differing pixels
+live-opaque all: 0 differing pixels
+[exit 0]
+```

@@ -86,6 +86,19 @@ const float BEVEL_TANH_CLAMP = 10.0;
 const float RAY_PATH_FLOOR = 0.25;
 const float TAP_MIN_Z = 0.05;
 
+// What a specular hook sees of the surface at this fragment (spec §3.4).
+struct Surface {
+    vec2 p;            // element-local logical px
+    vec2 v;            // element UV
+    vec3 structural;   // the slab's normal
+    vec3 perturbed;    // after distortion and jelly ripple
+    float cosine;      // structural.z, clamped to [0, 1]
+    float fresnel;     // Schlick at the structural normal
+    float across;      // u: 0 at the face edge, 1 at the silhouette, 0 on the face
+    vec2 acrossDir;    // normalize(grad u), outward across the bevel
+    float outerDist;   // signed distance to the silhouette, negative inside
+};
+
 bool inRect(vec2 v, vec4 rect) {
     return all(greaterThanEqual(v, rect.xy))
         && all(lessThan(v, rect.xy + rect.zw));
