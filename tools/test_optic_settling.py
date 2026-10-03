@@ -120,6 +120,64 @@ class RunTests(unittest.TestCase):
         if message:
             self.assertIn(message, str(caught.exception))
 
+    def test_edge_must_fall_inside_its_named_stimulus(self):
+        # A second stimulus around the resume edge (trace 20 s); the damage
+        # stimulus and its draws at 14.5 s stay where they are. It ends the
+        # settled quiet span at 19.5 s (4.5 s after damage), so the declared
+        # hold drops to 4 s for this case.
+        self.manifest['cases'][0]['hold_ns'] = 4 * S
+        self.manifest['cases'][0]['stimuli'].append({'label': 'resume'})
+        self.observation['journal'].append({'label': 'resume', 'start_mono_ns': 1019 * S + S // 2,
+                                            'end_mono_ns': 1020 * S + S // 2})
+        self.manifest['cases'][0]['edge_in'] = [[1, 'damage']]
+        self.save()
+        self.rejects('edge 1 is not inside stimulus damage')
+        self.manifest['cases'][0]['edge_in'] = [[1, 'resume']]
+        self.save()
+        analyze_run(self.run)
+        self.manifest['cases'][0]['edge_in'] = [[2, 'resume']]   # no such edge
+        self.save()
+        self.rejects('edge 2 is not inside stimulus resume')
+
+    def cast(self, frames, stopped=True, samples=()):
+        (self.case / 'cast-frames.tsv').write_text(''.join(f'{t}\n' for t in frames))
+        (self.case / 'cast-summary.json').write_text(json.dumps({'stopped_by_signal': stopped}))
+        for label, request, frame in samples:
+            (self.case / f'{label}.raw.json').write_text(json.dumps(
+                {'request_mono_ns': request, 'frame_mono_ns': frame, 'width': 1, 'height': 1}))
+
+    def test_consumer_frames_and_samples(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': ['damage'], 'samples': ['damage']}
+        self.save()
+        inside = 1014 * S + S // 2
+        self.cast([1013 * S], samples=[('damage', 1014 * S + S // 4, inside)])
+        self.rejects('no cast frame inside stimulus damage')
+        self.cast([inside], samples=[('damage', 1014 * S + S // 4, inside)])
+        analyze_run(self.run)
+        self.cast([inside], stopped=False, samples=[('damage', 1014 * S + S // 4, inside)])
+        self.rejects('did not stop on a signal')
+
+    def test_rejects_stale_missing_and_late_samples(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': [], 'samples': ['damage']}
+        self.save()
+        inside = 1014 * S + S // 2
+        for label, request, frame in (
+            ('stale', inside, inside),                         # the frame did not follow the request
+            ('early request', 1013 * S, inside),               # armed before the stimulus began
+            ('late frame', 1014 * S + S // 4, 1016 * S),       # answered after the window
+        ):
+            with self.subTest(label):
+                self.cast([inside], samples=[('damage', request, frame)])
+                self.rejects('sample damage is stale or outside its window')
+        (self.case / 'damage.raw.json').unlink()
+        self.rejects('damage.raw.json')
+
+    def test_a_redraw_between_samples_breaks_the_quiet_interval(self):
+        # The settled-segment check is what keeps the gap before sample-3 quiet.
+        self.cpu += [['Niri::redraw', 17 * S, 1000]]
+        self.write_tables()
+        self.rejects('while settled')
+
     def test_complete_pilot_passes(self):
         result = analyze_run(self.run)
         self.assertEqual(result['verdict'], 'lane-passed')
