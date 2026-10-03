@@ -692,4 +692,33 @@ mod tests {
             assert_eq!(ray_path(ray(s.normal, IOR), s.height), 0.);
         }
     }
+
+    #[test]
+    fn the_shader_names_the_same_constants_and_formulas() {
+        let frag = include_str!("../shaders/material/prelude.frag");
+        for (name, value, literal) in [
+            ("BEVEL_SLOPE_CAP", BEVEL_SLOPE_CAP, "20.0"),
+            ("BEVEL_OUTER_SOFTEN", BEVEL_OUTER_SOFTEN, "0.5"),
+            ("BEVEL_RIDGE_EPS", BEVEL_RIDGE_EPS, "0.0001"),
+            ("BEVEL_PROFILE_EPS", BEVEL_PROFILE_EPS, "0.000001"),
+            ("BEVEL_LSP_SMALL", BEVEL_LSP_SMALL, "0.001"),
+            ("BEVEL_TANH_CLAMP", BEVEL_TANH_CLAMP, "10.0"),
+            ("RAY_PATH_FLOOR", RAY_PATH_FLOOR, "0.25"),
+            ("TAP_MIN_Z", TAP_MIN_Z, "0.05"),
+        ] {
+            assert_eq!(literal.parse::<f64>().unwrap(), value, "{name}");
+            let line = format!("const float {name} = {literal};");
+            assert!(frag.contains(&line), "prelude.frag lacks `{line}`");
+        }
+        for line in [
+            "float w = di - d;",
+            "gradU = (-d * gIn + di * gOut) / (w * w);",
+            "height = mat_thickness - rise * bevelProfile(across, k);",
+            "vec2 slope = rise * bevelProfileSlope(across, k) * gradU;",
+            "return h / max(-t.z, RAY_PATH_FLOOR);",
+            "return normalize(vec3(n.xy, max(n.z, TAP_MIN_Z)));",
+        ] {
+            assert!(frag.contains(line), "prelude.frag lacks `{line}`");
+        }
+    }
 }

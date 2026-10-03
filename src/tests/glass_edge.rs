@@ -306,3 +306,232 @@ fn every_case_renders_frozen() {
         );
     }
 }
+
+const MOTION: &str = r#"animations {
+            window-resize { duration-ms 1000; curve "linear"; }
+            horizontal-view-movement { duration-ms 1000; curve "linear"; }
+        }"#;
+
+/// The live look at full flex with profile `k`.
+fn motion_glass(k: f64, distortion: &str) -> String {
+    format!(
+        "{}\nbevel-profile {k}\njelly-flex 0.02\n{distortion}",
+        LIVE.glass
+    )
+}
+
+/// A glass-parameter reload: it keeps the material state, its seed and any
+/// running animation (see ring_pair.rs), so the next render is the same
+/// instant under the new glass.
+fn reload(f: &mut Fixture, config: Config) {
+    f.niri_state().reload_config(Ok(config));
+    f.niri_state().refresh_and_flush_clients();
+}
+
+fn px(pixels: &[u8], x: i32, y: i32) -> Option<[u8; 3]> {
+    if x < 0 || y < 0 || x >= i32::from(OUT_W) || y >= i32::from(OUT_H) {
+        return None;
+    }
+    let i = ((y * i32::from(OUT_W) + x) * 4) as usize;
+    Some([pixels[i], pixels[i + 1], pixels[i + 2]])
+}
+
+/// Per side of `rect` whose middle lies on the output, scanning outward from
+/// 20 px inside the window along its middle row or column to the first three
+/// backdrop pixels: the rim ratio, the rise of the last pixel before the
+/// anti-aliased one over the mean rise of the four pixels before it, in summed
+/// RGB. A planar facet rises about linearly (at most 1.85 at rest on the live
+/// look, 2.67 under ±6 px of jelly); a rounded profile climbs into the rim (at
+/// least 4.3 at rest). A flat run before the outline gives 0.
+fn rim_ratios(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>) -> Vec<(&'static str, f64)> {
+    let backdrop = px(pixels, 2, 2).unwrap();
+    let cx = (rect.loc.x + rect.size.w / 2.) as i32;
+    let cy = (rect.loc.y + rect.size.h / 2.) as i32;
+    let sides = [
+        ("left", (rect.loc.x as i32 + 20, cy), (-1, 0)),
+        (
+            "right",
+            ((rect.loc.x + rect.size.w) as i32 - 20, cy),
+            (1, 0),
+        ),
+        ("top", (cx, rect.loc.y as i32 + 20), (0, -1)),
+        (
+            "bottom",
+            (cx, (rect.loc.y + rect.size.h) as i32 - 20),
+            (0, 1),
+        ),
+    ];
+    let mut ratios = Vec::new();
+    for (side, (x0, y0), (dx, dy)) in sides {
+        let at = |i: i32| px(pixels, x0 + dx * i, y0 + dy * i);
+        if at(0).is_none() {
+            continue;
+        }
+        let outline = (0..)
+            .take_while(|&i| at(i + 2).is_some())
+            .find(|&i| (0..3).all(|j| at(i + j) == Some(backdrop)))
+            .unwrap_or_else(|| panic!("{tag} {side}: no outline before the output's edge"));
+        let sum = |i: i32| at(i).unwrap().iter().map(|&c| f64::from(c)).sum::<f64>();
+        let p: Vec<f64> = (0..6).map(|i| sum(outline - 2 - i)).collect();
+        ratios.push((side, (p[0] - p[1]) / ((p[1] - p[5]).abs() / 4.).max(0.5)));
+    }
+    ratios
+}
+
+/// Renders `at` under profile 2, then under a forced profile 1 at the same
+/// instant, and returns both renders and the window rectangles.
+fn both_profiles(
+    f: &mut Fixture,
+    distortion: &str,
+    at: Duration,
+) -> (Vec<u8>, Vec<u8>, Vec<Rectangle<f64, Logical>>) {
+    let rounded = render_at(f, at);
+    let rects = window_rects(f);
+    reload(f, config(&motion_glass(1., distortion), RING_OFF, MOTION));
+    let planar = render_at(f, at);
+    assert_eq!(
+        window_rects(f),
+        rects,
+        "the reload moved the frozen instant"
+    );
+    reload(f, config(&motion_glass(2., distortion), RING_OFF, MOTION));
+    (rounded, planar, rects)
+}
+
+#[test]
+fn the_rounded_rim_is_rounded_at_rest_mid_resize_and_mid_scroll() {
+    for (tag, distortion) in [("plain", ""), ("distorted", "distortion 1 scale=0.5")] {
+        // At rest: an absolute check on all four sides, with the forced
+        // planar render as its negative control.
+        let mut f = fixture(config(&motion_glass(2., distortion), RING_OFF, MOTION));
+        let id = f.add_client();
+        let surface = open(&mut f, id, (W, H), CLEAR);
+        f.niri_state().update_keyboard_focus();
+        f.double_roundtrip(id);
+        set_time(&mut f, Duration::ZERO);
+        f.niri_complete_animations();
+        let (rounded, planar, rects) = both_profiles(&mut f, distortion, Duration::ZERO);
+        dump(
+            &format!("profile-{tag}-rest-k2"),
+            &rounded,
+            None,
+            rects[0],
+            "",
+        );
+        dump(
+            &format!("profile-{tag}-rest-k1"),
+            &planar,
+            None,
+            rects[0],
+            "",
+        );
+        let k2 = rim_ratios("rest k2", &rounded, rects[0]);
+        let k1 = rim_ratios("rest k1", &planar, rects[0]);
+        eprintln!("{tag} rest k2 {k2:?} k1 {k1:?}");
+        assert_eq!(k2.len(), 4, "rest: sides {k2:?}");
+        for (side, r) in &k2 {
+            assert!(
+                *r >= 3.,
+                "{tag} rest {side}: rim ratio {r} is not rounded ({k2:?})"
+            );
+        }
+        for (side, r) in &k1 {
+            assert!(
+                *r < 3.,
+                "{tag} rest {side}: the forced planar bevel reads rounded, ratio {r}"
+            );
+        }
+
+        // Mid-resize: the column 200 px wider, half way through. Paired at
+        // one instant: the rounded rim must out-climb the planar one on every
+        // side (at least 1.56 times under ±6 px of jelly in the model).
+        f.niri()
+            .layout
+            .set_column_width(niri_ipc::SizeChange::AdjustFixed(200));
+        f.double_roundtrip(id);
+        let window = f.client(id).window(&surface);
+        window.attach_new_shm_buffer(CLEAR);
+        window.set_size(W + 200, H);
+        window.ack_last_and_commit();
+        f.roundtrip(id);
+        let mid = Duration::from_millis(500);
+        let (rounded, planar, rects) = both_profiles(&mut f, distortion, mid);
+        dump(
+            &format!("profile-{tag}-resize-k2"),
+            &rounded,
+            None,
+            rects[0],
+            "",
+        );
+        dump(
+            &format!("profile-{tag}-resize-k1"),
+            &planar,
+            None,
+            rects[0],
+            "",
+        );
+        let k2 = rim_ratios("resize k2", &rounded, rects[0]);
+        let k1 = rim_ratios("resize k1", &planar, rects[0]);
+        eprintln!("{tag} resize k2 {k2:?} k1 {k1:?}");
+        assert_eq!(k2.len(), 4, "mid-resize: sides {k2:?}");
+        for ((side, r2), (_, r1)) in k2.iter().zip(&k1) {
+            assert!(
+                *r2 >= 1.3 * r1.max(1.),
+                "{tag} mid-resize {side}: k2 {r2} vs k1 {r1}"
+            );
+        }
+
+        // Mid-scroll: two 800 px columns; focusing the second scrolls the
+        // view, so at 500 ms the first tile's right edge trails and the
+        // second's left edge leads, both on the output.
+        let mut f = fixture(config(&motion_glass(2., distortion), RING_OFF, MOTION));
+        let id = f.add_client();
+        let first = open(&mut f, id, (W, H), CLEAR);
+        let second = open(&mut f, id, (W, H), CLEAR);
+        // The newest window has focus: widen its column, then the first's,
+        // each client committing the new width as mid_resize_fixture does.
+        for surface in [&second, &first] {
+            f.niri()
+                .layout
+                .set_column_width(niri_ipc::SizeChange::SetFixed(800));
+            f.double_roundtrip(id);
+            let window = f.client(id).window(surface);
+            window.attach_new_shm_buffer(CLEAR);
+            window.set_size(800, H);
+            window.ack_last_and_commit();
+            f.double_roundtrip(id);
+            f.niri().layout.focus_left();
+        }
+        f.niri_state().update_keyboard_focus();
+        f.double_roundtrip(id);
+        set_time(&mut f, Duration::ZERO);
+        f.niri_complete_animations();
+        let _ = render_at(&mut f, Duration::ZERO);
+        f.niri().layout.focus_right();
+        let (rounded, planar, rects) = both_profiles(&mut f, distortion, mid);
+        let mut sides = Vec::new();
+        for (i, rect) in rects.iter().enumerate() {
+            dump(
+                &format!("profile-{tag}-scroll-{i}-k2"),
+                &rounded,
+                None,
+                *rect,
+                "",
+            );
+            let k2 = rim_ratios("scroll k2", &rounded, *rect);
+            let k1 = rim_ratios("scroll k1", &planar, *rect);
+            eprintln!("{tag} scroll tile {i} k2 {k2:?} k1 {k1:?}");
+            for ((side, r2), (_, r1)) in k2.iter().zip(&k1) {
+                assert!(
+                    *r2 >= 1.3 * r1.max(1.),
+                    "{tag} mid-scroll tile {i} {side}: k2 {r2} vs k1 {r1}"
+                );
+                sides.push(*side);
+            }
+        }
+        assert!(
+            sides.contains(&"left") && sides.contains(&"right"),
+            "mid-scroll checked only {sides:?}: no leading and trailing edge on the output"
+        );
+    }
+}
