@@ -56,6 +56,7 @@ pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocu
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::material::optics::aurora::{Aurora, ResolvedAurora};
+pub use crate::material::optics::edge_highlight::{EdgeHighlight, ResolvedEdgeHighlight};
 pub use crate::material::optics::iridescence::{Iridescence, ResolvedIridescence};
 pub use crate::material::optics::noise::{Noise, NoiseType, ResolvedNoise};
 pub use crate::material::optics::reflection::{Reflection, ResolvedReflection};
@@ -1463,6 +1464,7 @@ mod tests {
                 roughness: 0.08,
                 iridescence: ResolvedIridescence::default(),
                 reflection: ResolvedReflection::default(),
+                edge_highlight: ResolvedEdgeHighlight::default(),
                 aurora: ResolvedAurora::default(),
                 backdrop_blur: false,
                 jelly_flex: 0.01,
@@ -1653,6 +1655,30 @@ mod tests {
         for value in ["-0.01", "1.01"] {
             let err = do_parse_err(&format!(
                 "material \"edge\" {{ glass {{ reflection {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 0 and 1"), "{err}");
+        }
+    }
+
+    #[test]
+    fn edge_highlight_resolves_through_its_optic() {
+        let written = do_parse(r##"material "edge" { glass { edge-highlight 0.5; }; }"##);
+        assert_eq!(
+            written.materials[0].resolve().glass.edge_highlight,
+            ResolvedEdgeHighlight { amount: 0.5 }
+        );
+        let omitted = do_parse(r##"material "edge" { glass {}; }"##);
+        assert_eq!(
+            omitted.materials[0].resolve().glass.edge_highlight.amount,
+            0.
+        );
+    }
+
+    #[test]
+    fn glass_edge_highlight_rejects_values_outside_zero_and_one() {
+        for value in ["-0.01", "1.01"] {
+            let err = do_parse_err(&format!(
+                "material \"edge\" {{ glass {{ edge-highlight {value}; }}; }}\n"
             ));
             assert!(err.contains("value must be between 0 and 1"), "{err}");
         }

@@ -1998,4 +1998,37 @@ mod tests {
             "no accent falls back to white"
         );
     }
+
+    #[test]
+    fn the_signal_light_is_never_vertical() {
+        // The glint and edge-highlight normalize the light's xy.
+        for attention in [
+            niri_config::AttentionResponse::None,
+            niri_config::AttentionResponse::RimOrbit,
+        ] {
+            let r = niri_config::ResolvedResponse {
+                attention,
+                ..niri_config::ResolvedResponse::default()
+            };
+            for level in [0., 0.5, 1.] {
+                for breath in [0., 0.5, 1.] {
+                    let frame = SignalFrame {
+                        accent: None,
+                        level,
+                        breath,
+                        impulses: Default::default(),
+                        presence: 0.,
+                        focus: 0.,
+                        beam: BeamFrame::REST,
+                    };
+                    let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+                    let [x, y, _] = SignalUniforms::from_frame(&frame, &g, &r).light;
+                    assert!(
+                        x.hypot(y) >= 0.99,
+                        "{attention:?} {level} {breath}: ({x}, {y})"
+                    );
+                }
+            }
+        }
+    }
 }

@@ -275,6 +275,35 @@ pub fn displacement(n: DVec3, ior: f64, h: f64) -> DVec2 {
     t.truncate() * ray_path(t, h)
 }
 
+/// GGX alpha for the edge highlight: mix(0.04, 0.5, roughness).
+pub fn highlight_alpha(roughness: f64) -> f64 {
+    0.04 + (0.5 - 0.04) * roughness
+}
+
+/// D(x) / D(1) for GGX (Trowbridge-Reitz): 1 where the normal meets H.
+/// Mirrors `ggxPeakRatio`.
+pub fn ggx_peak_ratio(x: f64, alpha: f64) -> f64 {
+    let a2 = alpha * alpha;
+    let t = x * x * (a2 - 1.) + 1.;
+    a2 * a2 / (t * t)
+}
+
+fn smoothstep(e0: f64, e1: f64, x: f64) -> f64 {
+    let t = ((x - e0) / (e1 - e0)).clamp(0., 1.);
+    t * t * (3. - 2. * t)
+}
+
+/// The edge highlight's weight before its gain (spec §3.3): a GGX lobe where
+/// the perturbed normal bisects the view and a key light at 45 degrees'
+/// elevation, faded in by the structural tilt. Mirrors
+/// `edge_highlight_specular`.
+pub fn highlight_weight(structural: DVec3, perturbed: DVec3, light: DVec2, roughness: f64) -> f64 {
+    let l = light.normalize().extend(1.).normalize();
+    let h = (l + DVec3::Z).normalize();
+    let tilt = smoothstep(0., 1., (1. - structural.z) / (1. - h.z));
+    tilt * ggx_peak_ratio(perturbed.dot(h).max(0.), highlight_alpha(roughness))
+}
+
 #[cfg(test)]
 mod tests {
     use std::f64::consts::PI;
@@ -720,5 +749,73 @@ mod tests {
         ] {
             assert!(frag.contains(line), "prelude.frag lacks `{line}`");
         }
+    }
+
+    /// The light from the top left, as `mat_sig_light` carries it at rest.
+    const LIGHT: DVec2 = DVec2::new(-1., -1.);
+
+    fn toward_light(tilt_deg: f64) -> DVec3 {
+        let a = tilt_deg.to_radians();
+        (LIGHT.normalize() * a.sin()).extend(a.cos())
+    }
+
+    #[test]
+    fn the_highlight_shader_names_the_same_formulas() {
+        let frag = include_str!("../shaders/material/edge_highlight.frag");
+        for line in [
+            "return a2 * a2 / (t * t);",
+            "vec3 l = normalize(vec3(normalize(mat_sig_light.xy), 1.0));",
+            "vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));",
+            "float tilt = smoothstep(0.0, 1.0, (1.0 - s.structural.z) / (1.0 - h.z));",
+            "float lobe = ggxPeakRatio(max(dot(s.perturbed, h), 0.0), mat_edge_highlight_alpha);",
+        ] {
+            assert!(frag.contains(line), "edge_highlight.frag lacks `{line}`");
+        }
+    }
+
+    #[test]
+    fn the_highlight_vanishes_at_a_rounded_face_join() {
+        for roughness in [0., 1.] {
+            let s =
+                Slab::at_rest(DVec2::splat(56.), 12., 0., 20., 2.).surface(DVec2::new(44.001, 0.));
+            let w = highlight_weight(s.normal, s.normal, DVec2::new(1., 0.), roughness);
+            assert!(w < 1e-6, "roughness {roughness}: {w}");
+        }
+    }
+
+    #[test]
+    fn a_facet_at_the_half_angle_lights_at_full_gain() {
+        // R / chamfer = tan 22.5°: the planar facet's normal is H.
+        for roughness in [0., 1.] {
+            let n = toward_light(22.5);
+            assert!((highlight_weight(n, n, LIGHT, roughness) - 1.).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn a_45_degree_facet_takes_the_lobe_tail() {
+        let n = toward_light(45.);
+        assert!((highlight_weight(n, n, LIGHT, 0.) - 0.000117).abs() < 2e-6);
+        assert!((highlight_weight(n, n, LIGHT, 1.) - 0.4827).abs() < 1e-3);
+    }
+
+    #[test]
+    fn far_side_facets_take_only_the_lobe_tail() {
+        // A 45 degree facet facing away: 67.5 degrees from H.
+        let n = toward_light(-45.);
+        let x = 67.5f64.to_radians().cos();
+        for roughness in [0., 1.] {
+            let w = highlight_weight(n, n, LIGHT, roughness);
+            assert!((w - ggx_peak_ratio(x, highlight_alpha(roughness))).abs() < 1e-12);
+        }
+        assert!(highlight_weight(n, n, LIGHT, 0.) < 1e-5);
+        // Past 90 degrees from H the clamp leaves only D(0).
+        let under = toward_light(-89.);
+        let past = (under + DVec3::new(0., 0., -0.5)).normalize();
+        assert!(past.dot((LIGHT.normalize().extend(1.).normalize() + DVec3::Z).normalize()) < 0.);
+        assert_eq!(
+            highlight_weight(under, past, LIGHT, 1.),
+            ggx_peak_ratio(0., highlight_alpha(1.))
+        );
     }
 }

@@ -103,6 +103,11 @@ edge, 1 at the silhouette, 0 on the face), `acrossDir` (`normalize(grad u)`,
 outward across the bevel), and `outerDist` (signed distance to the silhouette,
 negative inside).
 
+A hyphenated optic name keeps its hyphen in `NAME`, `ORDER` and the KDL node,
+and becomes underscores in file, module, hook and uniform names
+(`edge-highlight`: `edge_highlight.frag`, `edge_highlight_specular`,
+`mat_edge_highlight`).
+
 The file is concatenated after `prelude.frag`, which provides `snoise`,
 `snoiseFractal`, `hash12`, `fineGrain`, the colour conversions,
 `sdRoundedBox`, the slab globals, `mat_jelly_seed`, `mat_thickness`, and

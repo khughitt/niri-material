@@ -126,6 +126,16 @@ fn cases() -> Vec<Case> {
         cases.push(case(look, "reflection-0", "reflection 0", RING_OFF));
         cases.push(case(look, "reflection", "reflection 0.6", RING_OFF));
     }
+    for look in [STOCK, LIVE] {
+        cases.push(case(look, "highlight-0", "edge-highlight 0", RING_OFF));
+        cases.push(case(look, "k2", "bevel-profile 2", RING_OFF));
+        cases.push(case(
+            look,
+            "highlight",
+            "bevel-profile 2\nedge-highlight 0.5",
+            RING_OFF,
+        ));
+    }
     cases
 }
 

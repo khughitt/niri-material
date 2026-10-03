@@ -147,3 +147,52 @@ live-off vs live-reflection bevel: 24279 differing pixels (expect differ)
 Every existing case is decoded-identical to step 2; `reflection 0` renders exactly as no node; `reflection 0.6` leaves the face and everything outside the slab untouched and changes the bevel (stock 23864 pixels, live 24279).
 
 By eye (`live-reflection.png`): the dark live bevel takes a faint backdrop-coloured lift that is largest at the silhouette. Row 200, left edge, live-off to live-reflection, (r,g,b): x=306 (47,43,39) to (49,44,40); x=312 (37,35,34) to (40,38,35); x=318 (33,32,32) to (36,34,33). The lift is small because Fresnel at ior 1.28 is small; it is warm, the backdrop's hue.
+
+## Step 4
+
+The `edge-highlight` optic (material-5e64ef). Dumps are in `/mnt/ssd3/niri-material/material-be611b/20261003T061451/step4` (before: `step4-before`, taken at the Task 7 head `a39d0088`). Gate commands exit 0 as shown.
+
+```
+$ identical step4-before step4 ...
+stock-off all: 0 differing pixels
+stock-on all: 0 differing pixels
+stock-iridescence all: 0 differing pixels
+live-off all: 0 differing pixels
+live-on all: 0 differing pixels
+live-iridescence all: 0 differing pixels
+live-translucent all: 0 differing pixels
+live-opaque all: 0 differing pixels
+stock-reflection-0 all: 0 differing pixels
+stock-reflection all: 0 differing pixels
+live-reflection-0 all: 0 differing pixels
+live-reflection all: 0 differing pixels
+[exit 0]
+$ pair step4 stock-off stock-highlight-0 --region all --expect same
+stock-off vs stock-highlight-0 all: 0 differing pixels (expect same)
+[exit 0]
+$ pair step4 stock-k2 stock-highlight --region face --expect same
+stock-k2 vs stock-highlight face: 0 differing pixels (expect same)
+[exit 0]
+$ pair step4 stock-k2 stock-highlight --region outside --expect same
+stock-k2 vs stock-highlight outside: 0 differing pixels (expect same)
+[exit 0]
+$ pair step4 stock-k2 stock-highlight --region bevel --expect differ
+stock-k2 vs stock-highlight bevel: 990 differing pixels (expect differ)
+[exit 0]
+$ pair step4 live-off live-highlight-0 --region all --expect same
+live-off vs live-highlight-0 all: 0 differing pixels (expect same)
+[exit 0]
+$ pair step4 live-k2 live-highlight --region face --expect same
+live-k2 vs live-highlight face: 0 differing pixels (expect same)
+[exit 0]
+$ pair step4 live-k2 live-highlight --region outside --expect same
+live-k2 vs live-highlight outside: 0 differing pixels (expect same)
+[exit 0]
+$ pair step4 live-k2 live-highlight --region bevel --expect differ
+live-k2 vs live-highlight bevel: 24997 differing pixels (expect differ)
+[exit 0]
+```
+
+Every existing case is decoded-identical to step 3 at the default edge-highlight 0; `edge-highlight 0` renders exactly as no node; with `bevel-profile 2`, `edge-highlight 0.5` leaves the face and everything outside the slab untouched and lights the bevel (stock 990 pixels, live 24997; the stock bevel is thin).
+
+By eye (`live-highlight.png` against `live-k2.png`, (r,g,b)): the lobe sits on the top-left bevel. Row 200, left edge: x=312 (31,30,30) to (45,44,44). Top edge, x=640: y=34 (31,30,30) to (50,50,49). The bottom-right bevel barely moves (x=950, y=200: (14,12,11) to (15,13,12)). Summed channel difference by quadrant of the changed region: top-left 172904, top-right 116894, bottom-left 78787, bottom-right 29853.

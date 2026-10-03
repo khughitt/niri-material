@@ -63,6 +63,7 @@ lengths are logical pixels.
 | `aurora` `color` | color | `#3dffb0` | any color | — |
 | `aurora` `color` | color | `#7a5cff` | any color | — |
 | `reflection` | float | 0 | 0–1 | — |
+| `edge-highlight` | float | 0 | 0–1 | — |
 | `iridescence` | float | 0 | 0–1 | — |
 
 <!-- params:end -->
@@ -216,6 +217,17 @@ surface), so a dark edge still shows the wallpaper's colours, and it goes
 through the same prefilter as the refracted image, so `roughness` softens it.
 Distortion and jelly ripple bend its direction. Its explicit neutral is 0, and
 omission is 0; nothing inherits.
+
+### edge-highlight
+
+Stage 6. `edge-highlight <amount>` adds a key-light lobe on the bevel where
+its normal bisects the view and a light at 45 degrees' elevation in the signal
+light's direction (top left at rest; `attention "rim-orbit"` sways it with the
+glint). The lobe is GGX, peak-normalized so the amount is the peak added
+linear brightness, and `roughness` widens it. It fades in with the bevel's
+tilt, so a rounded face join stays dark; a planar facet lights uniformly and
+flashes when its slope matches the light's half-angle (`R / bevel = 0.414`).
+Its explicit neutral is 0, and omission is 0; nothing inherits.
 
 ### aurora
 
