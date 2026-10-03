@@ -262,6 +262,7 @@ blocks. A material with no response blocks gets this built-in `default`:
 | Parameter | Values | Default |
 | --- | --- | --- |
 | `accent` | `ring`, `none` | `ring` |
+| `accent-tint` | 0–1 | 0 (off) |
 | `focus` | `ring-light`, `none` | `ring-light` |
 | `attention` | `rim-orbit`, `ring-pulse`, `none` | `rim-orbit` |
 | `ping` | `ripple`, `flash`, `sweep`, `none` | `ripple` |
@@ -290,6 +291,7 @@ material "terminal-glass" {
 
     response "default" {
         accent "ring"
+        accent-tint 0
         focus "ring-light"
         attention "rim-orbit"
         ping "ripple"
@@ -397,6 +399,20 @@ light is refracted through the glass at its remaining interior depth and
 shows through translucent window pixels. On the chamfer the beam spills a
 little light outward from the face edge, fading to the outer edge, so the
 frame reads as lit by the beam. `ring-width` must be positive.
+
+`accent-tint` tints the glass body toward the signal accent's hue,
+independently of `accent`: `accent "none"` takes the accent off the band and
+leaves the tint. The weight moves hue and saturation only. The flat face
+transmits the same luminance as the untinted glass over a neutral backdrop,
+so dark glass stays dark; a saturated backdrop shifts, brighter in the
+channels the tint opens and darker in the others. The chamfer and the ring's
+light pass the same tinted glass: under `accent "ring"` the band and the
+focus light brighten with the tint (magenta at weight 1 by about 1.7× on
+dark glass), and under `accent "none"` a near-white `ring-color` band dims.
+Near-white glass has little room for hue at its own luminance, so the tint
+barely shows on the default glass. Without an accent the glass is unchanged,
+and the tint follows the accent's crossfade in and out. Design:
+[accent tint](../specs/2026-10-03-accent-tint-design.md).
 
 Two limits follow from the placement. An opaque window shows no ring: the
 band lies wholly under the face and there is no fallback band on the
