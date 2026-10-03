@@ -7,8 +7,9 @@ size: m
 complexity: mid
 process: direct
 created: 2026-09-29T22:31:07Z
-updated: 2026-09-29T22:31:07Z
+updated: 2026-10-02T23:07:57Z
 depends: []
+parent: material-6f606b
 tags: [signals]
 source: docs/notes/2026-09-29-signal-model-extensions-brief.md
 agent: codex

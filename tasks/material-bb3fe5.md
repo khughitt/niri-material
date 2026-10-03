@@ -6,8 +6,9 @@ priority: 2
 size: m
 complexity: mid
 created: 2026-09-06T22:27:52Z
-updated: 2026-09-12T19:24:31Z
+updated: 2026-10-02T23:07:57Z
 depends: [material-397fcb]
+parent: material-3aa1f2
 tags: [material, rendering]
 source: "mindful:thought:5778c060e57d47dd808e20347223cfd5"
 spec: docs/specs/2026-09-10-material-optics-design.md

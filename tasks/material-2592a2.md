@@ -5,8 +5,9 @@ status: idea
 priority: 2
 defer: 2026-10-05
 created: 2026-09-21T09:39:49Z
-updated: 2026-10-02T00:08:50Z
+updated: 2026-10-02T23:07:57Z
 depends: []
+parent: material-6062fd
 tags: [rendering]
 agent: claude-code/claude-opus-5
 ---

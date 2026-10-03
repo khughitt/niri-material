@@ -4,8 +4,9 @@ title: "Composite materials: compose two materials"
 status: idea
 priority: 2
 created: 2026-09-11T00:47:47Z
-updated: 2026-09-11T00:52:15Z
+updated: 2026-10-02T23:07:57Z
 depends: [prism-a03862]
+parent: material-3aa1f2
 tags: [quick-add, rendering]
 source: "mindful:thought:3f94e656b70f4e5585c1cb60c166e4da"
 ---
