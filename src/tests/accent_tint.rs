@@ -350,6 +350,13 @@ fn settled_tint_neither_commits_nor_animates_nor_arms_a_timer() {
     assert_eq!(first, second, "a settled tint commits damage");
     assert!(!armed, "a settled tint arms a signal timer");
     assert!(!f.niri().layout.are_animations_ongoing(None));
+    let output = f.niri_output(1);
+    let niri = f.niri();
+    let monitor = niri.layout.monitor_for_output(&output).unwrap();
+    assert!(
+        !monitor.are_transitions_ongoing(),
+        "a settled tint keeps a transition going"
+    );
 }
 
 #[test]
@@ -428,8 +435,16 @@ fn reload_of_only_the_weight_commits_damage_and_rerenders() {
 
 #[test]
 fn neighbor_accent_does_not_reach_a_window() {
+    // Every other accent path is off (band, focus light, attention glint):
+    // only the body tint can differ. A mid-gray backdrop: over near-black the
+    // luminance-keeping tint rounds away at 8 bits.
     let scene = |neighbor: &str| {
-        let mut f = Fixture::with_config(look(ACCEPTED_GLASS, "accent-tint 1", "#202020", ""));
+        let mut f = Fixture::with_config(look(
+            ACCEPTED_GLASS,
+            "accent \"none\"\n focus \"none\"\n attention \"none\"\n accent-tint 1",
+            "#808080",
+            "",
+        ));
         f.niri_state().backend.headless().add_renderer().unwrap();
         f.add_output(1, (OUT_W, OUT_H));
         let id = f.add_client();
@@ -441,9 +456,18 @@ fn neighbor_accent_does_not_reach_a_window() {
         f.niri_complete_animations();
         let _ = render_at(&mut f, REST);
         let pixels = render_at(&mut f, REST_LATER);
-        region(&pixels, rect_of(&mut f, 0), 24.)
+        [0, 1].map(|index| region(&pixels, rect_of(&mut f, index), 24.))
     };
-    assert_eq!(scene("#0066ff"), scene("#ff00ff"));
+    let [own_blue, neighbor_blue] = scene("#0066ff");
+    let [own_magenta, neighbor_magenta] = scene("#ff00ff");
+    assert_eq!(
+        own_blue, own_magenta,
+        "the neighbor's accent reached window 0"
+    );
+    assert_ne!(
+        neighbor_blue, neighbor_magenta,
+        "the neighbor tints by its own accent"
+    );
 }
 
 #[test]
