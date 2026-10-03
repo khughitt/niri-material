@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-03T01:43:39Z
+updated: 2026-10-03T01:43:47Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -91,3 +91,5 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-03T01:39:50Z (glass-edges): Plan revised for round 1: harness renders twice in one fixture (seed note), distortion owned by glass lines, centered window and outline-bounded scan with explicit leading/trailing edges, rounded-prediction tolerance, face/slab/window regions from the json (ring band included), live-opaque case, k2 base for the highlight, SHEET_PILOT knob, ring_look before/after dumps, cargo fmt rule, task ids filled, highlight lines pinned, sheet-script deviation declared.
 - 2026-10-03T01:43:38Z (glass-edges): review: plan round 2 — verdict: accept; findings: P2 1, P3 2; reviewer: claude-code/claude-opus-5-5
 - 2026-10-03T01:43:38Z (glass-edges): Plan round 2 fixes folded in: mkdir before the RING_LOOK_DUMP dumps, integer-look note on face_and_slab, live-face sensitivity caveat for (1 - F).
+- 2026-10-03T01:43:47Z (glass-edges): parked (waiting on user, approval): Owner reads docs/plans/2026-10-02-glass-edge-optics.md in .worktrees/glass-edges (plan review accepted in round 2) and says go; then execute it subagent-driven from Task 1 (material-10e12e), Tasks 1-3 independent, 4-9 in order
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
