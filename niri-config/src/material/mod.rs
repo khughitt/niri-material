@@ -485,6 +485,8 @@ pub struct Glass {
     pub iridescence: Option<optics::iridescence::Iridescence>,
     #[knuffel(child, unwrap(argument))]
     pub reflection: Option<optics::reflection::Reflection>,
+    #[knuffel(child, unwrap(argument))]
+    pub edge_highlight: Option<optics::edge_highlight::EdgeHighlight>,
     #[knuffel(child)]
     pub aurora: Option<optics::aurora::Aurora>,
     #[knuffel(child)]
@@ -549,6 +551,7 @@ pub struct ResolvedGlass {
     pub roughness: f64,
     pub iridescence: optics::iridescence::ResolvedIridescence,
     pub reflection: optics::reflection::ResolvedReflection,
+    pub edge_highlight: optics::edge_highlight::ResolvedEdgeHighlight,
     pub aurora: optics::aurora::ResolvedAurora,
     /// Whether the material samples the blurred backdrop. Strength comes from
     /// the global `blur` block; `blur { off }` overrides this.
@@ -579,6 +582,7 @@ impl Default for ResolvedGlass {
             roughness: 0.,
             iridescence: optics::iridescence::ResolvedIridescence::default(),
             reflection: optics::reflection::ResolvedReflection::default(),
+            edge_highlight: optics::edge_highlight::ResolvedEdgeHighlight::default(),
             aurora: optics::aurora::ResolvedAurora::default(),
             backdrop_blur: false,
             jelly_flex: 0.004,
@@ -762,6 +766,7 @@ impl Material {
                 roughness: g.roughness.map_or(d.roughness, |x| x.0),
                 iridescence: optics::iridescence::resolve(g.iridescence),
                 reflection: optics::reflection::resolve(g.reflection),
+                edge_highlight: optics::edge_highlight::resolve(g.edge_highlight),
                 aurora: optics::aurora::resolve(g.aurora.as_ref()),
                 backdrop_blur: g.backdrop_blur.unwrap_or(d.backdrop_blur),
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
