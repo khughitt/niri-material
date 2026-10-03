@@ -6,9 +6,9 @@ priority: 1
 size: s
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-77be96
 created: 2026-09-23T19:47:41Z
-updated: 2026-10-03T00:33:17Z
+updated: 2026-10-03T00:35:51Z
 started: 2026-10-03T00:33:02Z
 depends: []
 parent: material-2834d7
@@ -26,3 +26,5 @@ Worktrees share one build.target-dir. After a build of another branch or commit 
 - 2026-10-03T00:33:02Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T00:33:16Z (materials-26.04): Scoped at start: process direct — the question is bounded (why cargo reuses another tree's workspace-member artifacts) and the fix is either a setup change or a documented convention change; reproduce on a minimal two-root workspace before touching setup.
+- 2026-10-03T00:35:51Z (material-77be96): resumed
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
