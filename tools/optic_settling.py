@@ -99,8 +99,31 @@ def csv_rows(path, required, allow_empty=False):
         raise ValueError(f'missing or invalid CSV: {path.name}') from error
 
 
+def zone_rows(path, required):
+    """Rows of a zone export. tracy-csvexport leaves names unquoted, so the
+    commas of a generic name (MultiRenderer<'_, '_, '_>) spill into extra
+    fields; those fields are the name's, the first column."""
+    try:
+        with path.open(newline='') as stream:
+            reader = csv.reader(stream)
+            header = next(reader, None)
+            if not header or header[0] != 'name' or not set(required) <= set(header):
+                raise ValueError(f'missing CSV headers in {path.name}')
+            rows = []
+            for fields in reader:
+                if not fields:
+                    continue
+                extra = len(fields) - len(header)
+                if extra < 0:
+                    raise ValueError(f'short row in {path.name}')
+                rows.append(dict(zip(header, [','.join(fields[:extra + 1]), *fields[extra + 1:]])))
+            return rows
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ValueError(f'missing or invalid CSV: {path.name}') from error
+
+
 def zones(path, time_column, duration_column):
-    rows = csv_rows(path, ('name', time_column, duration_column))
+    rows = zone_rows(path, ('name', time_column, duration_column))
     zones_by_name = {}
     for row in rows:
         start = integer(row[time_column], f'{path.name} time')

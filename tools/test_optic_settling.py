@@ -300,6 +300,22 @@ class RunTests(unittest.TestCase):
         self.assertEqual(case['segments'][1]['redraws'], 1)
         self.assertEqual({r['verdict'] for r in result['cases'][1:]}, {'unverified'})
 
+    def test_zone_names_with_unquoted_commas(self):
+        # tracy-csvexport writes generic zone names unquoted, so a name like
+        # MultiRenderer<'_, '_, '_> spans several fields; the DRM renderer's
+        # zones put text where the time column would be.
+        lines = ['name,src_file,src_line,ns_since_start,exec_time_ns,thread,value']
+        lines += [f'{name},src/niri.rs,1,{t},{d},1,' for name, t, d in self.cpu]
+        lines += [f"<smithay::backend::renderer::multigpu::MultiRenderer<'_, '_, '_> as "
+                  f"smithay::backend::renderer::Renderer>::cleanup_texture_cache,"
+                  f"/smithay/src/backend/renderer/multigpu/mod.rs,1032,{15 * S + 1},20,1,",
+                  f"smithay::backend::renderer::gles::GlesFrame<'_, '_>::finish_internal,"
+                  f"/smithay/src/backend/renderer/gles/mod.rs,2478,{16 * S},20,1,"]
+        (self.case / 'cpu.csv').write_text('\n'.join(lines) + '\n')
+        result = analyze_run(self.run)
+        self.assertEqual(result['verdict'], 'lane-passed')
+        self.assertEqual(result['cases'][0]['segments'][1]['redraws'], 1)
+
     def test_rejects_absent_edges_headers_export_and_controls(self):
         for name, mutate in (
             ('edges', lambda: (self.case / 'messages.csv').write_text('MessageName,total_ns\n')),
