@@ -23,6 +23,7 @@ import json
 import os
 import signal
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -76,6 +77,20 @@ def packed_rgb(data, width, height, stride):
     return b''.join(bytes(data[y * stride:y * stride + row]) for y in range(height))
 
 
+def write_atomically(path, data):
+    """Write bytes so a reader sees the whole file or none: a temp file in the
+    same directory, then os.replace."""
+    path = Path(path)
+    descriptor, temporary = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.')
+    try:
+        with os.fdopen(descriptor, 'wb') as handle:
+            handle.write(data)
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
 class Sampler:
     """Saves the first frame that arrives after an armed request."""
 
@@ -85,8 +100,8 @@ class Sampler:
     def request(self, path, now_ns):
         if self.pending is not None:
             raise RuntimeError('a sample is already pending')
-        self.pending = (Path(path), now_ns)
         Path(f'{path}.armed').write_text(f'{now_ns}\n')
+        self.pending = (Path(path), now_ns)
 
     def offer(self, data, width, height, arrival_ns):
         if self.pending is None:
@@ -94,9 +109,10 @@ class Sampler:
         path, requested = self.pending
         if arrival_ns <= requested:
             return False
-        path.write_bytes(data)
-        Path(f'{path}.json').write_text(json.dumps(dict(
-            request_mono_ns=requested, frame_mono_ns=arrival_ns, width=width, height=height)) + '\n')
+        # Raw first, JSON last: the driver waits for the JSON.
+        write_atomically(path, data)
+        write_atomically(f'{path}.json', (json.dumps(dict(
+            request_mono_ns=requested, frame_mono_ns=arrival_ns, width=width, height=height)) + '\n').encode())
         self.pending = None
         return True
 
@@ -123,116 +139,135 @@ def main():
 
     (session,) = call('/org/gnome/Mutter/ScreenCast', 'org.gnome.Mutter.ScreenCast',
                       'CreateSession', GLib.Variant('(a{sv})', ({},)), '(o)')
-    properties = {'cursor-mode': GLib.Variant('u', CURSOR_HIDDEN)}
-    (stream,) = call(session, 'org.gnome.Mutter.ScreenCast.Session', 'RecordMonitor',
-                     GLib.Variant('(sa{sv})', (connector, properties)), '(o)')
+    # The session exists from here on: every exit stops it, and a failing
+    # Stop never replaces the error or exit status already on its way.
+    try:
+        properties = {'cursor-mode': GLib.Variant('u', CURSOR_HIDDEN)}
+        (stream,) = call(session, 'org.gnome.Mutter.ScreenCast.Session', 'RecordMonitor',
+                         GLib.Variant('(sa{sv})', (connector, properties)), '(o)')
 
-    def subscribe(deliver):
-        handle = bus.signal_subscribe(
-            BUS_NAME, 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded', stream, None,
-            Gio.DBusSignalFlags.NONE, lambda *args: deliver(args[-1].unpack()[0]))
-        call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Start', None, '()')
-        return lambda: bus.signal_unsubscribe(handle)
+        def subscribe(deliver):
+            handle = bus.signal_subscribe(
+                BUS_NAME, 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded', stream, None,
+                Gio.DBusSignalFlags.NONE, lambda *args: deliver(args[-1].unpack()[0]))
+            call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Start', None, '()')
+            return lambda: bus.signal_unsubscribe(handle)
 
-    node = wait_for(subscribe, NODE_TIMEOUT_S)
-    if node is None:
-        sys.exit(f'screencast-consumer: no PipeWireStreamAdded within {NODE_TIMEOUT_S} s')
+        node = wait_for(subscribe, NODE_TIMEOUT_S)
+        if node is None:
+            sys.exit(f'screencast-consumer: no PipeWireStreamAdded within {NODE_TIMEOUT_S} s')
 
-    # niri offers DMA-BUFs only (pw_utils: dataType DmaBuf) with the modifier
-    # it fixates from the consumer's list. glupload imports any of them
-    # through EGL; gldownload brings the frame to system memory.
-    # SCREENCAST_CONSUMER_PIPELINE: offline tests substitute a test source.
-    description = os.environ.get('SCREENCAST_CONSUMER_PIPELINE', PIPELINE)
-    pipeline = Gst.parse_launch(description.format(node=node))
-    sink = pipeline.get_by_name('sink')
-    loop = GLib.MainLoop()
-    frames = open(frames_path, 'w', buffering=1)
-    times = []
-    sampler = Sampler()
-
-    failures = []
-
-    def fail(error):
-        sys.stderr.write(f'screencast-consumer: {error}\n')
-        failures.append(str(error))
-        loop.quit()
-
-    def on_sample(appsink):
+        # niri offers DMA-BUFs only (pw_utils: dataType DmaBuf) with the modifier
+        # it fixates from the consumer's list. glupload imports any of them
+        # through EGL; gldownload brings the frame to system memory.
+        # SCREENCAST_CONSUMER_PIPELINE: offline tests substitute a test source.
+        description = os.environ.get('SCREENCAST_CONSUMER_PIPELINE', PIPELINE)
         try:
-            return handle_sample(appsink)
-        except Exception as error:
-            fail(error)
-            return Gst.FlowReturn.ERROR
+            pipeline = Gst.parse_launch(description.format(node=node))
+        except GLib.Error as error:
+            sys.exit(f'screencast-consumer: cannot build the pipeline: {error.message}')
+        sink = pipeline.get_by_name('sink')
+        loop = GLib.MainLoop()
+        frames = open(frames_path, 'w', buffering=1)
+        times = []
+        sampler = Sampler()
 
-    def handle_sample(appsink):
-        sample = appsink.emit('pull-sample')
-        now = time.monotonic_ns()
-        times.append(now)
-        frames.write(f'{now}\n')
-        if sampler.pending is not None:
-            info = GstVideo.VideoInfo.new_from_caps(sample.get_caps())
-            buffer = sample.get_buffer()
-            ok, mapped = buffer.map(Gst.MapFlags.READ)
-            if not ok:
-                sys.stderr.write('screencast-consumer: cannot map a frame\n')
-                loop.quit()
-                return Gst.FlowReturn.ERROR
+        failures = []
+
+        def fail(error):
+            sys.stderr.write(f'screencast-consumer: {error}\n')
+            failures.append(str(error))
+            loop.quit()
+
+        def on_sample(appsink):
             try:
-                meta = GstVideo.buffer_get_video_meta(buffer)
-                stride = meta.stride[0] if meta is not None else info.stride[0]
-                data = packed_rgb(mapped.data, info.width, info.height, stride)
-            finally:
-                buffer.unmap(mapped)
-            sampler.offer(data, info.width, info.height, now)
-        return Gst.FlowReturn.OK
+                return handle_sample(appsink)
+            except Exception as error:
+                fail(error)
+                return Gst.FlowReturn.ERROR
 
-    def on_error(_bus, message):
-        error, debug = message.parse_error()
-        fail(f'{error.message} ({debug})')
+        def handle_sample(appsink):
+            sample = appsink.emit('pull-sample')
+            now = time.monotonic_ns()
+            times.append(now)
+            frames.write(f'{now}\n')
+            if sampler.pending is not None:
+                info = GstVideo.VideoInfo.new_from_caps(sample.get_caps())
+                buffer = sample.get_buffer()
+                ok, mapped = buffer.map(Gst.MapFlags.READ)
+                if not ok:
+                    raise RuntimeError('cannot map a frame')
+                try:
+                    meta = GstVideo.buffer_get_video_meta(buffer)
+                    stride = meta.stride[0] if meta is not None else info.stride[0]
+                    data = packed_rgb(mapped.data, info.width, info.height, stride)
+                finally:
+                    buffer.unmap(mapped)
+                sampler.offer(data, info.width, info.height, now)
+            return Gst.FlowReturn.OK
 
-    def on_request():
-        try:
-            sampler.request(Path(request_file).read_text().strip(), time.monotonic_ns())
-        except Exception as error:
-            fail(error)
+        def on_error(_bus, message):
+            if failures:
+                return    # the failure is already reported; on_sample's ERROR return posts a second
+            error, debug = message.parse_error()
+            fail(f'{error.message} ({debug})')
+
+        def on_request():
+            try:
+                sampler.request(Path(request_file).read_text().strip(), time.monotonic_ns())
+            except Exception as error:
+                fail(error)
+                return GLib.SOURCE_REMOVE
+            return GLib.SOURCE_CONTINUE
+
+        stopping = []
+
+        def stop():
+            stopping.append(True)
+            loop.quit()
             return GLib.SOURCE_REMOVE
-        return GLib.SOURCE_CONTINUE
 
-    stopping = []
+        sink.connect('new-sample', on_sample)
+        pipeline_bus = pipeline.get_bus()
+        pipeline_bus.add_signal_watch()
+        pipeline_bus.connect('message::error', on_error)
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, on_request)
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, stop)
+        GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGINT, stop)
+        if pipeline.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
+            message = pipeline_bus.timed_pop_filtered(Gst.SECOND, Gst.MessageType.ERROR)
+            reason = ''
+            if message is not None:
+                error, debug = message.parse_error()
+                reason = f': {error.message} ({debug})'
+            pipeline.set_state(Gst.State.NULL)
+            sys.exit(f'screencast-consumer: the pipeline did not start{reason}')
+        print(f'ready {node}', flush=True)
+        loop.run()
 
-    def stop():
-        stopping.append(True)
-        loop.quit()
-        return GLib.SOURCE_REMOVE
+        pipeline.set_state(Gst.State.NULL)
+        frames.close()
+        summary = dict(
+            consumer='gstreamer pipewiresrc ! glupload ! gldownload ! videoconvert ! appsink',
+            gstreamer=Gst.version_string(),
+            pipewiresrc=f'{factory.get_plugin_name()} {factory.get_plugin().get_version()}',
+            connector=connector, node=node, frames=len(times),
+            first_mono_ns=times[0] if times else None, last_mono_ns=times[-1] if times else None,
+            stopped_by_signal=bool(stopping),
+        )
+        Path(summary_path).write_text(json.dumps(summary, indent=2) + '\n')
+        if failures:
+            sys.exit(1)
+        if not stopping:
+            sys.exit('screencast-consumer: the pipeline stopped before a stop signal')
 
-    sink.connect('new-sample', on_sample)
-    pipeline_bus = pipeline.get_bus()
-    pipeline_bus.add_signal_watch()
-    pipeline_bus.connect('message::error', on_error)
-    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGUSR1, on_request)
-    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGTERM, stop)
-    GLib.unix_signal_add(GLib.PRIORITY_HIGH, signal.SIGINT, stop)
-    if pipeline.set_state(Gst.State.PLAYING) == Gst.StateChangeReturn.FAILURE:
-        sys.exit('screencast-consumer: the pipeline did not start')
-    print(f'ready {node}', flush=True)
-    loop.run()
-
-    pipeline.set_state(Gst.State.NULL)
-    call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Stop', None, '()')
-    frames.close()
-    summary = dict(
-        consumer='gstreamer pipewiresrc ! glupload ! gldownload ! videoconvert ! appsink',
-        gstreamer=Gst.version_string(),
-        pipewiresrc=f'{factory.get_plugin_name()} {factory.get_plugin().get_version()}',
-        connector=connector, node=node, frames=len(times),
-        first_mono_ns=times[0] if times else None, last_mono_ns=times[-1] if times else None,
-        stopped_by_signal=bool(stopping),
-    )
-    Path(summary_path).write_text(json.dumps(summary, indent=2) + '\n')
-    if failures:
-        sys.exit(1)
-    if not stopping:
-        sys.exit('screencast-consumer: the pipeline stopped before a stop signal')
+    finally:
+        try:
+            call(session, 'org.gnome.Mutter.ScreenCast.Session', 'Stop', None, '()')
+        except GLib.Error as error:
+            if sys.exc_info()[0] is None:
+                raise
+            sys.stderr.write(f'screencast-consumer: Session.Stop failed: {error.message}\n')
 
 
 if __name__ == '__main__':

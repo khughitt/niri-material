@@ -110,11 +110,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +892/-0 |
-| `tools/fake_screencast.py` | C | A | +37/-0 |
+| `tools/fake_screencast.py` | C | A | +38/-0 |
 | `tools/ops-check` | C | A | +264/-0 |
 | `tools/optic_settling.py` | C | A | +552/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
-| `tools/screencast_consumer.py` | C | A | +239/-0 |
+| `tools/screencast_consumer.py` | C | A | +274/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_meta.py` | C | A | +865/-0 |
@@ -123,7 +123,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
 | `tools/test_optic_settling.py` | C | A | +1001/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
-| `tools/test_screencast_consumer.py` | C | A | +190/-0 |
+| `tools/test_screencast_consumer.py` | C | A | +259/-0 |
 | `tools/test_upstream_report.py` | C | A | +946/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +113/-0 |
