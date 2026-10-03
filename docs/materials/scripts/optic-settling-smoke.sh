@@ -239,7 +239,7 @@ cases = [
     # ordinary client updates still draw.
     case('idle-inhibitor', 'session-activation', [0], [A4, HELD],
          [dict(label='inhibit', min_redraws=1, messages=['IdleInhibit inhibited=1']), damage,
-          dict(label='release', min_redraws=1, messages=['IdleInhibit inhibited=0'])], capture_s=36),
+          dict(label='release', min_redraws=1, messages=['IdleInhibit inhibited=0'])], capture_s=44),
     case('reload-held', 'reload-clock', [0, 1], [A4, HELD, dict(state='active', min_hz=1, max_hz=1)],
          [dict(label=label) for label in ('same-side', 'unrelated', 'drift', 'policy', 'amount', 'raise')],
          capture_s=54),
@@ -511,13 +511,13 @@ stop_inhibitor() {
     for _ in $(seq 50); do [ "$(windows_with "$NIRI" gos-inhibit)" -eq 0 ] && break; sleep 0.1; done
     [ "$(windows_with "$NIRI" gos-inhibit)" -eq 0 ] || fail "$CASE: the idle inhibitor window stayed mapped"
 }
-# Inhibit about 3.5 s into the held interval, draw a client line while
+# Inhibit after the held interval's 5 s hold, draw a client line while
 # inhibited, then release; held throughout, with no resume edge.
 drive_idle_inhibitor() {
     keepalive
-    at 21; stim inhibit 3 start_inhibitor
-    at 26; stim client 1.5 print_line 1
-    at 29; stim release 3 stop_inhibitor
+    at 25; stim inhibit 3 start_inhibitor
+    at 30; stim client 1.5 print_line 1
+    at 33; stim release 3 stop_inhibitor
 }
 # niri's config watcher notices a replaced file within about half a second;
 # each reload's journaled effect covers that and the frame it causes.
