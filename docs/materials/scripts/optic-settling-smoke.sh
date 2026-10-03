@@ -475,7 +475,10 @@ calibrate_drm_probe() {
     sleep 2
     shot "$NIRI" geometry-drm
     measure_rect "$OUT/geometry-drm.png" > "$OUT/probe-rect-drm.txt"
-    magick "$OUT/geometry-drm.png" -format '%w %h' info: > "$OUT/screen-drm.txt"
+    # info: prints no trailing newline, and `read` fails at EOF without one.
+    local size
+    size=$(magick "$OUT/geometry-drm.png" -format '%w %h' info:) || fail 'could not read the DRM screen size'
+    printf '%s\n' "$size" > "$OUT/screen-drm.txt"
     grep -qxE '[0-9]+ [0-9]+' "$OUT/screen-drm.txt" || fail "could not read the DRM screen size from geometry-drm.png"
     stop_host
     await_gpu_rest
@@ -679,7 +682,7 @@ await_exit() {   # pid, what: sets EXIT_RC
     wait "$1" || EXIT_RC=$?
 }
 unlock_now() {
-    kill -USR1 "$LOCK_PID"
+    kill -USR1 "$LOCK_PID" 2>/dev/null || fail "$CASE: the lock client exited before the unlock (see lock.log)"
     await_exit "$LOCK_PID" 'the lock client'
     LOCK_PID=
     [ "$EXIT_RC" -eq 0 ] || fail "$CASE: the lock client exited $EXIT_RC"
@@ -695,7 +698,7 @@ cast_start() {
     fail "$CASE: the screencast consumer never became ready (see cast.log)"
 }
 cast_stop() {
-    kill -TERM "$CAST_PID"
+    kill -TERM "$CAST_PID" 2>/dev/null || fail "$CASE: the screencast consumer exited (see cast.log)"
     await_exit "$CAST_PID" 'the screencast consumer'
     CAST_PID=
     [ "$EXIT_RC" -eq 0 ] || fail "$CASE: the screencast consumer exited $EXIT_RC (see cast.log)"
@@ -708,7 +711,7 @@ cast_sample() {   # label, damage command...
     shift
     alive "$CAST_PID" || fail "$CASE: the screencast consumer exited (see cast.log)"
     printf '%s\n' "$target" > "$CASE_DIR/sample-request"
-    kill -USR1 "$CAST_PID"
+    kill -USR1 "$CAST_PID" 2>/dev/null || fail "$CASE: the screencast consumer exited (see cast.log)"
     for _ in $(seq 20); do [ -e "$target.armed" ] && break; alive "$CAST_PID" || break; sleep 0.1; done
     if [ ! -e "$target.armed" ]; then
         alive "$CAST_PID" || fail "$CASE: the screencast consumer exited (see cast.log)"
