@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-3bdffc
 created: 2026-09-29T21:31:05Z
-updated: 2026-10-03T10:55:01Z
+updated: 2026-10-03T11:14:59Z
 started: 2026-10-03T09:33:22Z
 depends: [material-a54d89]
 parent: material-0a4093
@@ -61,3 +61,7 @@ Bound: attenuation tint only; fireflies, frost, progress IPC, client desaturatio
 - 2026-10-03T10:54:57Z (material-3bdffc): Plan round 1 dispositions: P2-1 Task 4 adds a tile-level end-to-end test (folded signal -> signal_for_frame -> solve -> glass_signal_inputs -> uploaded attenuation) over a linear fade for black<->orange at the spec fractions and a real interrupted restart; P2-2 animations-off test injects the accent into a settled window and checks the first frame at the same instant against the settled tint, with a 400 ms control that is still untinted; P2-3 focus test swaps one settled fixture away and back, checking each first frame; P2-4 reload test asserts the material element's id@commit on RenderTarget::Output changes once after a weight-only reload and then holds; P2-5 dumps use the accepted look's full glass and response (ring-gap 6, width 1.1, glow 1.2, beam settings). Native execution chosen by owner; whole-branch review placed before the local merge in Task 6.
 - 2026-10-03T10:55:01Z (material-3bdffc): parked (waiting on user, review): Owner reviews the round-1 revision of docs/plans/2026-10-03-accent-tint.md in .worktrees/material-3bdffc (plan round 2); on accept, agent notes reviewed decisions on material-6f45a0, closes this design task, and executes natively from material-01ddd7
   provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T11:14:18Z (material-3bdffc): resumed
+  provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T11:14:18Z (material-3bdffc): review: plan round 2 — verdict: revise; findings: P2 1; reviewer: codex/gpt-6
+- 2026-10-03T11:14:59Z (material-3bdffc): Plan round 2 disposition: P2 confirmed (fixture.rs niri_complete_animations ends with set_complete_instantly(false); animations { off } is that flag via Niri::new/reload). Task 5 Step 1 now saves and restores should_complete_instantly() in the helper; added completing_animations_keeps_the_configured_clock_setting for both initial settings; first-frame assertions unchanged. No existing test configures animations off, so the helper change is neutral for them.
