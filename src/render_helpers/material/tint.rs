@@ -54,6 +54,10 @@ pub fn accent_tint(
             s = s.min((gray - lo) / (gray - v));
         }
     }
+    // When every channel sits on the floor, rounding can leave `gray` an ulp
+    // below `lo`; a neutral target then divides by zero. No pull is needed
+    // there, and none is ever more than the whole way.
+    let s = s.clamp(0., 1.);
     let target = target.map(|v| gray + s * (v - gray));
 
     let w = weight.min(1.);
@@ -74,13 +78,16 @@ mod tests {
     }
 
     /// (name, attenuation-color, thickness, attenuation-distance): the
-    /// default glass, the owner's accepted look, and a mid-density glass
-    /// whose face exponent is below 1.
-    fn glasses() -> [(&'static str, Color, f64, f64); 3] {
+    /// default glass, the owner's accepted look, a mid-density glass whose
+    /// face exponent is below 1, and black glass on the coefficient floor.
+    fn glasses() -> [(&'static str, Color, f64, f64); 4] {
         [
             ("default", hex(0xdf, 0xe8, 0xff), 20., 60.),
             ("accepted", hex(0x0d, 0x1d, 0x1e), 31.2, 11.),
             ("mid", hex(0x7a, 0x88, 0x99), 20., 40.),
+            // Every channel at the coefficient floor: the face gray sits on
+            // `lo` itself, within rounding.
+            ("black", hex(0, 0, 0), 20., 500.),
         ]
     }
 
