@@ -8,12 +8,13 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-03T00:42:54Z
+updated: 2026-10-03T01:14:57Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-09-30-glass-edge-optics-design.md
+plan: docs/plans/2026-10-02-glass-edge-optics.md
 ---
 
 Outcome: glass edges read as clear, material-connected edges across tint depth and thickness, instead of a uniform shifted, tinted stripe.
@@ -84,3 +85,4 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-03T00:33:03Z (glass-edges): resumed
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T00:42:54Z (glass-edges): Spec review round 4 P3 corrections folded into the spec: tipping threshold now depends on the starting structural normal (ordinary at the rounded rim), lifted-normal bound stated as 1/sqrt(401) = 0.0499.
+- 2026-10-03T01:14:57Z (glass-edges): Plan written: docs/plans/2026-10-02-glass-edge-optics.md, 9 step children (material-10e12e, ce3229, f1b307, d37c1a, c210a0, d63184, 02b42a, 5e64ef, 124f1f). Filed prism-7024c4 (Prism keys, blocked on this task) and material-1aa3af (surface grain on the edge: the owner's noise priority, not covered by this plan). Deviation for review: intended-change, neutrality and motion evidence via frozen-clock renders in the headless test backend instead of Weston captures. Spec: lift-continuity sentence corrected (a normal at the structural minimum moves 6e-5 in z).
