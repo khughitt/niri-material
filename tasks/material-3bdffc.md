@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-3bdffc
 created: 2026-09-29T21:31:05Z
-updated: 2026-10-03T10:25:15Z
+updated: 2026-10-03T10:25:18Z
 started: 2026-10-03T09:33:22Z
 depends: [material-a54d89]
 parent: material-0a4093
@@ -45,3 +45,5 @@ Bound: attenuation tint only; fireflies, frost, progress IPC, client desaturatio
   provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T10:23:27Z (material-3bdffc): review: spec round 2 — verdict: revise; findings: P2 3; reviewer: unknown (pasted review)
 - 2026-10-03T10:25:15Z (material-3bdffc): spec revised for round 3: tint chromaticity k interpolates between crossfade endpoints (black<->colored continuous; FrameInputs/SignalFrame carry tint_chroma); ring table restated with accent-colored light (accent band brightens 1.1-1.7x, ring-color band dims to 0.47-0.87x at w=1); face-density promise qualified to neutral backdrops; dumps add colored backdrops and black<->orange fades
+- 2026-10-03T10:25:18Z (material-3bdffc): parked (waiting on user, review): Owner reviews docs/specs/2026-10-03-accent-tint-design.md in .worktrees/material-3bdffc (spec round 3); on accept, agent writes the implementation plan in docs/plans/ for its own review
+  provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
