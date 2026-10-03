@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tt version 3
+# tt version 4
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
@@ -20,8 +20,8 @@ import sys
 import time
 import tomllib
 
-VERSION = 3
-FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source"]
+VERSION = 4
+FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source", "selection"]
 
 PYTEST_WORD = r"(?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?|rerun)"
 
@@ -89,6 +89,36 @@ def parse_tests(lines):
             matched = True
             break
     return total if matched else None
+
+
+# What a runner's selector said it ran, narrowest first: a command that runs several
+# sessions records the widest. Design: ops docs/specs/2026-10-03-widened-selection-design.md.
+SELECTIONS = ("affected", "packages", "new-db")
+
+# pytest-testmon's report-header line is "testmon: ", any deactivation reasons, then its
+# state. Matched by containment, so a reason before the state does not hide it. A header
+# whose selection is deactivated states nothing: pytest's own arguments chose the tests.
+TESTMON_HEADER = "testmon: "
+TESTMON_STATES = (
+    ("new DB,", "new-db"),
+    ("All tests have to be re-executed", "packages"),
+    ("changed files: ", "affected"),
+)
+
+
+def parse_selection(lines):
+    """The widest selection any testmon header in the output states, else None."""
+    widest = None
+    for raw in lines:
+        line = ANSI.sub("", raw)
+        if not line.startswith(TESTMON_HEADER):
+            continue
+        for marker, value in TESTMON_STATES:
+            if marker in line:
+                if widest is None or SELECTIONS.index(value) > SELECTIONS.index(widest):
+                    widest = value
+                break
+    return widest
 
 
 def fail(message):
@@ -289,6 +319,7 @@ def main(argv, env, cwd):
         "agent": agent,
         "session": session,
         "source": "wrapper",
+        "selection": parse_selection(lines),
     })
     return status
 
