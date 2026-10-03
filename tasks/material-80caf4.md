@@ -1,19 +1,21 @@
 ---
 id: material-80caf4
 title: Verify optic settling under a real idle inhibitor
-status: doing
+status: done
 priority: 1
 size: s
 complexity: mid
 process: direct
 owner: material-80caf4
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-03T04:00:09Z
+updated: 2026-10-03T05:26:07Z
 started: 2026-10-02T19:52:10Z
+completed: 2026-10-03T05:26:07Z
 depends: []
 parent: material-f86183
 tags: [performance]
 source: "docs/materials/2026-09-30-optic-settling-evidence.md#unverified-idle-inhibitor"
+model: claude-opus-5-5
 agent: codex
 spec: docs/specs/2026-09-29-sustained-optic-settling-design.md
 ---
@@ -33,3 +35,10 @@ Remaining idle-inhibitor capture acceptance from material-2ee11e; the real-handl
   provenance: {"harness_session":"claude-code:e081ff94-3f7a-43b5-9bb1-a565c5568d01","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T04:00:08Z (material-80caf4): run: 2 min (est 3, headless); dev check 2; failed: analyzer 'idle-inhibitor: short observation' — the case's stimuli at 21/26/29 s left no stimulus-free 5 s span after the ~17.3 s pause (longest 1.95 s); IdleInhibit inhibited=1 and =0 both traced. Binary bin-8e9b1e2d, OUT dev-20261003-inhibit
 - 2026-10-03T04:00:08Z (material-80caf4): schedule fix: idle-inhibitor stimuli moved to 25/30/33 s (the lane's 5 s hold after the pause) and capture_s 36 -> 44
+- 2026-10-03T04:13:11Z (material-80caf4): run: 2 min (est 3, headless); dev check 2; passed: development-passed, idle-inhibitor one pause edge, IdleInhibit inhibited=1/=0 in their windows, quiet 5.9 s. Binary bin-e6d3b3f8, OUT dev-20261003-inhibit-2
+- 2026-10-03T04:44:22Z (material-80caf4): run: 27 min (est 27, headless); pilot 27; passed: lane-passed, 24 passed / 4 unverified / 0 failed, idle-inhibitor passed. OUT pilot-20261003-1, binary bin-e6d3b3f8
+- 2026-10-03T05:25:20Z (material-80caf4): run: 41 min (est 41, headless); matrix 41; passed: lane-passed, 28 passed / 4 unverified / 0 failed. OUT matrix-20261003-1, PILOT_DIR pilot-20261003-1
+- 2026-10-03T05:26:07Z (material-80caf4): done
+  provenance: {"harness_session":"claude-code:e081ff94-3f7a-43b5-9bb1-a565c5568d01","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T05:26:07Z (material-80caf4): idle-inhibitor case passed under a real zwp_idle_inhibit client: pilot-20261003-1 and matrix-20261003-1 lane-passed at e6d3b3f8 (24 and 28 passed, 0 failed); evidence doc updated, idle-inhibitor out of Unverified
+  provenance: {"harness_session":"claude-code:e081ff94-3f7a-43b5-9bb1-a565c5568d01","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
