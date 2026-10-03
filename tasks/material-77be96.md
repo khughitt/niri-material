@@ -1,18 +1,20 @@
 ---
 id: material-77be96
 title: Shared cargo target dir serves stale niri-config artifacts across worktrees
-status: doing
+status: done
 priority: 1
 size: s
 complexity: mid
 process: direct
 owner: material-77be96
 created: 2026-09-23T19:47:41Z
-updated: 2026-10-03T00:35:51Z
+updated: 2026-10-03T00:38:38Z
 started: 2026-10-03T00:33:02Z
+completed: 2026-10-03T00:38:36Z
 depends: []
 parent: material-2834d7
 tags: [tooling]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 ---
 
@@ -27,4 +29,10 @@ Worktrees share one build.target-dir. After a build of another branch or commit 
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T00:33:16Z (materials-26.04): Scoped at start: process direct — the question is bounded (why cargo reuses another tree's workspace-member artifacts) and the fix is either a setup change or a documented convention change; reproduce on a minimal two-root workspace before touching setup.
 - 2026-10-03T00:35:51Z (material-77be96): resumed
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T00:38:36Z (material-77be96): Cause reproduced 2026-10-02 on cargo 1.99 with a two-copy workspace and one CARGO_TARGET_DIR: workspace crates get the same fingerprint dir in both copies (metadata hashes the package path relative to the workspace root), and freshness compares source mtimes with the last build. After copy b built, copy a (older sources) reported Finished with no compile and ran b's binary; touching only a's app then failed with missing field against b's cfg. So the shared target dir itself is the cause, and the silent case (another tree's binary, no error) is worse than the reported compile errors. -Z checksum-freshness would fix it but is still unstable; build.build-dir does not separate workspace crates.
+- 2026-10-03T00:38:36Z (material-77be96): Fix: worktrees build into their own target/ (already local storage, no .cargo/config.toml); main keeps /mnt/ssd3/niri-material/target. tools/target-dir-check compares the target dir cargo metadata resolves in every live worktree: a linked worktree that shares fails with the fix named, main lists the sharers on stderr and passes. Runs from new just setup and first in check_cmd. Existing worktrees that share (fix-ci, material-5b3107, material-5b3107-baseline, material-3acc86, material-77db8a, material-80caf4) were left alone: each fails its own check once it carries this change, and moving is deleting its .cargo/config.toml plus one full build. Evidence captured in a sharing worktree could have run another tree's build only when none of its own sources were newer than that build.
+- 2026-10-03T00:38:36Z (material-77be96): done
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T00:38:36Z (material-77be96): tools/target-dir-check with tests, wired into just setup and check_cmd; AGENTS.md: one target dir per checkout, worktrees build into their own target/
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

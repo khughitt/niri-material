@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Refuse a worktree whose cargo target dir another checkout of this repository uses.
+
+    tools/target-dir-check
+
+Cargo keys a workspace crate's artifacts by its path relative to the workspace root,
+and decides whether they are fresh by comparing source mtimes with the last build. Two
+checkouts sharing a target dir therefore write the same `niri-config` and `niri`
+artifacts, and a checkout whose sources are older than the other's last build reuses
+that build without compiling: a compile error naming a field its own source has, or a
+binary built from the other tree's code with no error at all. Only content-based
+freshness (cargo's unstable -Z checksum-freshness) would tell the two apart, so each
+checkout builds into a target dir of its own. Registry crates are the same in every
+checkout and were never at risk; the cost of separate dirs is one full build per
+worktree.
+
+The main checkout keeps the target dir it has: a linked worktree pointing there fails
+here, while the main checkout only lists the worktrees that still share it, since each
+of them fails its own check. Every checkout's target dir is the one cargo itself
+resolves there (`cargo metadata`), so .cargo/config.toml in any parent directory,
+CARGO_HOME and CARGO_TARGET_DIR all count. A worktree git lists as prunable is skipped.
+
+Standard library only. Exits 1 when this checkout shares, 2 when it cannot run.
+"""
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+CARGO = os.environ.get("CARGO", "cargo")
+
+
+def run(cwd, *args):
+    result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        print(f"target-dir-check: {' '.join(args)} in {cwd}: {result.stderr.strip()}",
+              file=sys.stderr)
+        sys.exit(2)
+    return result.stdout
+
+
+def worktrees(cwd):
+    """Checkouts of this repository, the main one first, without prunable ones."""
+    entries = []
+    for block in run(cwd, "git", "worktree", "list", "--porcelain").split("\n\n"):
+        fields = dict(line.partition(" ")[::2] for line in block.splitlines())
+        if "worktree" in fields and "bare" not in fields and "prunable" not in fields:
+            entries.append(pathlib.Path(fields["worktree"]).resolve())
+    return entries
+
+
+def target_dir(checkout):
+    metadata = run(checkout, CARGO, "metadata", "--no-deps", "--format-version", "1",
+                   "--offline")
+    return pathlib.Path(json.loads(metadata)["target_directory"]).resolve()
+
+
+def main():
+    here = pathlib.Path(run(".", "git", "rev-parse", "--show-toplevel").strip()).resolve()
+    checkouts = worktrees(here)
+    targets = {checkout: target_dir(checkout) for checkout in checkouts}
+    mine = targets[here]
+    sharing = [checkout for checkout in checkouts
+               if checkout != here and targets[checkout] == mine]
+    if not sharing:
+        return 0
+    names = "\n".join(f"  {checkout}" for checkout in sharing)
+    if here == checkouts[0]:
+        print(f"target-dir-check: worktrees still sharing this checkout's target dir "
+              f"{mine}; each fails its own check until it moves:\n{names}",
+              file=sys.stderr)
+        return 0
+    env = [name for name in ("CARGO_TARGET_DIR", "CARGO_BUILD_TARGET_DIR")
+           if os.environ.get(name)]
+    cause = (f"{' and '.join(env)} is set in the environment and overrides every "
+             f"checkout's config: unset it" if env else
+             f"remove build.target-dir from this checkout's .cargo/config.toml (or "
+             f"delete the file) so cargo builds into {here / 'target'}")
+    print(f"target-dir-check: this worktree shares the cargo target dir {mine} with:\n"
+          f"{names}\n"
+          f"cargo keys workspace crates by root-relative path and checks them by mtime, "
+          f"so one checkout's build is served to the other as fresh. Fix: {cause}. The "
+          f"first build there is a full one.", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
