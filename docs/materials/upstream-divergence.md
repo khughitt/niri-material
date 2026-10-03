@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-221 paths differ: 48 class B (seam), 146 class A (fork-only), 27 class C (scaffolding).
+230 paths differ: 48 class B (seam), 151 class A (fork-only), 31 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -64,7 +64,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +6/-2 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +66/-0 |
+| `AGENTS.md` | C | A | +74/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
@@ -110,9 +110,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +892/-0 |
+| `tools/fake_screencast.py` | C | A | +41/-0 |
 | `tools/ops-check` | C | A | +264/-0 |
-| `tools/optic_settling.py` | C | A | +486/-0 |
+| `tools/optic_settling.py` | C | A | +603/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
+| `tools/screencast_consumer.py` | C | A | +284/-0 |
 | `tools/target-dir-check` | C | A | +144/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
@@ -120,11 +122,13 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +111/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +635/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
-| `tools/test_optic_settling.py` | C | A | +595/-0 |
+| `tools/test_optic_settling.py` | C | A | +1151/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
+| `tools/test_screencast_consumer.py` | C | A | +281/-0 |
 | `tools/test_target_dir_check.py` | C | A | +180/-0 |
 | `tools/test_upstream_report.py` | C | A | +946/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
+| `tools/test_vt_lib.py` | C | A | +158/-0 |
 | `tools/tt` | C | A | +297/-0 |
 | `tools/upstream-report` | C | A | +736/-0 |
 

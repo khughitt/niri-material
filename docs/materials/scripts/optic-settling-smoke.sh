@@ -14,8 +14,11 @@
 # tools/optic_settling.py derives its own observation windows from those
 # declarations; this driver only records configs, a stimulus journal on
 # CLOCK_MONOTONIC (the clock of the edges' real_ns) and decoded pixels.
-# Cases outside the lane (TTY resume, unlock, a second output, a screencast
-# consumer) are recorded unverified, never run. The idle-inhibitor case runs a
+# The dedicated lane (--lane dedicated; docs/specs/2026-10-02-real-tty-settling-lane-design.md)
+# runs niri on DRM from a TTY with the desktop stopped: drm-aurora, tty-resume,
+# unlock and screencast. It needs DRM_OUTPUT and DRM_MODE, switches VTs through
+# vt-lib.sh, and restores the starting VT on every exit. A second output stays
+# unverified, as does every case outside the lane being run. The idle-inhibitor case runs a
 # real zwp_idle_inhibit_manager_v1 client (idle-inhibit-client.c, built per
 # run with wayland-scanner and cc) and proves from niri's IdleInhibit trace
 # messages that the inhibition took hold and released. The
@@ -46,13 +49,50 @@ case $LANE in headless|dedicated) ;; *) echo "unknown lane: $LANE" >&2; exit 2 ;
 : "${NIRI_MATERIAL_WORK_ROOT:?evidence root}"
 HERE=$(dirname "$(readlink -f "$0")")
 . "$HERE/glass-optic-smoke-lib.sh"
-[ "$MODE" = prepare ] || [ "$LANE" = headless ] \
-    || fail 'dedicated capture requires a real TTY fixture; no TTY capture is implemented'
+. "$HERE/vt-lib.sh"
+if [ "$LANE" = dedicated ]; then
+    : "${DRM_OUTPUT:?physical output name, e.g. DP-1}" "${DRM_MODE:?fixed WIDTHxHEIGHT@REFRESH}"
+    [ -n "$DRM_OUTPUT" ] && [ -n "$DRM_MODE" ] || fail 'DRM_OUTPUT and DRM_MODE must be non-empty'
+fi
+# Host items are owner actions (docs/materials/capture-host-setup.md); refuse naming the missing one.
+dedicated_prerequisites() {
+    local root link exe pid status connector found=
+    [ -z "${WAYLAND_DISPLAY:-}" ] || fail 'the dedicated lane runs from a TTY login, not inside a Wayland session'
+    ! pgrep -x niri > /dev/null || fail 'a niri is already running: stop the desktop session first'
+    # A killed earlier run can leave its niri holding DRM; it runs the run's
+    # snapshot copy, named binary, which pgrep -x niri does not see.
+    root=$(readlink -f "$NIRI_MATERIAL_WORK_ROOT")
+    for link in /proc/[0-9]*/exe; do
+        exe=$(readlink "$link" 2>/dev/null) || continue
+        exe=${exe% (deleted)}
+        case $exe in
+            "$root"/*/binary)
+                pid=${link#/proc/}
+                fail "a niri from an earlier run is still running: pid ${pid%/exe} runs $exe" ;;
+        esac
+    done
+    # One output, DRM_OUTPUT: a second connected one, or none, would fail
+    # only at analysis.
+    for status in "$DRM_SYSFS"/card*-*/status; do
+        [ -e "$status" ] || continue
+        [ "$(cat "$status")" = connected ] || continue
+        connector=${status%/status}
+        connector=${connector##*/}
+        connector=${connector#card*-}
+        [ "$connector" = "$DRM_OUTPUT" ] \
+            || fail "output $connector is connected besides DRM_OUTPUT $DRM_OUTPUT: disconnect it for the dedicated lane"
+        found=1
+    done
+    [ -n "$found" ] || fail "DRM_OUTPUT $DRM_OUTPUT is not connected (no connected connector under $DRM_SYSFS)"
+    sudo -n -l /usr/bin/chvt > /dev/null 2>&1 \
+        || fail 'no NOPASSWD rule for /usr/bin/chvt (docs/materials/capture-host-setup.md)'
+    gst-inspect-1.0 pipewiresrc > /dev/null 2>&1 || fail 'no pipewiresrc element: install gst-plugin-pipewire'
+}
 
 # The library owns Weston and niri. This driver also owns the capture timeout,
 # its clients and the export; a signal must stop all of them before releasing
 # preflight.
-PROBE_PID=; OTHER_PID=; EXPORT_PID=; BG_PID=; SLEEP_PID=; INHIBIT_PID=
+PROBE_PID=; OTHER_PID=; EXPORT_PID=; BG_PID=; SLEEP_PID=; INHIBIT_PID=; BUS_PID=; CAST_PID=; LOCK_PID=
 alive() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
 # A client stuck before its event loop (kitty blocks TERM until then) must not
 # hold cleanup open: TERM, then KILL after 5 s.
@@ -64,11 +104,16 @@ reap() {
 }
 on_exit() {
     local rc=$?
-    trap - EXIT INT TERM
-    for pid in "$SLEEP_PID" "$CAP_PID" "$EXPORT_PID" "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$INHIBIT_PID" "$NIRI_PID" "$WESTON_PID"; do
+    # A second signal must not cut cleanup short: VT restoration and the lock
+    # release still run. A no-op handler, not SIG_IGN, so the children cleanup
+    # starts (timeout, chvt, capture-meta) keep default signal handling.
+    trap - EXIT
+    trap : INT TERM HUP
+    for pid in "$SLEEP_PID" "$CAP_PID" "$EXPORT_PID" "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$INHIBIT_PID" "$CAST_PID" "$LOCK_PID" "$NIRI_PID" "$BUS_PID" "$WESTON_PID"; do
         [ -z "$pid" ] || reap "$pid"
     done
     remove_runtime_dir || rc=1
+    vt_restore "$OUT/vt-restore.json" || rc=1
     write_sums || rc=1
     capture_meta release "$OUT" || rc=1
     exit "$rc"
@@ -115,7 +160,27 @@ PY
 if [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
     [ -n "${CAPTURE_META:-}" ] || fail 'OPTIC_SETTLING_STUB_TOOLS needs a stub CAPTURE_META'
 fi
+# Offline stub runs only: a time scale for the drive schedule and stand-ins
+# for the consumer and lock client. A recorded run never uses them.
+TIMESCALE=${OPTIC_SETTLING_STUB_TIMESCALE:-1}
+CAST_CONSUMER=${OPTIC_SETTLING_STUB_CONSUMER:-$ROOT/tools/screencast_consumer.py}
+DRM_SYSFS=${OPTIC_SETTLING_STUB_DRM_SYSFS:-/sys/class/drm}
+if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
+    [ "$TIMESCALE" = 1 ] \
+        && [ -z "${OPTIC_SETTLING_STUB_CONSUMER:-}${OPTIC_SETTLING_STUB_LOCK:-}${OPTIC_SETTLING_STUB_DRM_SYSFS:-}" ] \
+        || fail 'stub timescale, consumer, lock client and DRM sysfs need OPTIC_SETTLING_STUB_TOOLS'
+    # vt-lib.sh's test seams: a recorded run switches and reads the real VTs.
+    [ -z "${VT_CHVT:-}" ] || fail 'VT_CHVT needs OPTIC_SETTLING_STUB_TOOLS'
+    [ -z "${VT_LOGINCTL:-}" ] || fail 'VT_LOGINCTL needs OPTIC_SETTLING_STUB_TOOLS'
+    [ "$VT_ACTIVE_FILE" = /sys/class/tty/tty0/active ] || fail 'VT_ACTIVE_FILE needs OPTIC_SETTLING_STUB_TOOLS'
+fi
 [ "$MODE" = prepare ] || capture_preflight "$LANE"
+if [ "$MODE" != prepare ] && [ "$LANE" = dedicated ]; then
+    dedicated_prerequisites
+    vt_record_home
+    VT_SPARE=$(vt_spare) || fail "no spare VT without a logind session"
+    printf '{"home": %s, "spare": %s}\n' "$VT_HOME" "$VT_SPARE" > "$OUT/vt.json"
+fi
 cp "$NIRI_BIN" "$OUT/binary"
 cp "$NIRI_BIN.identity.json" "$OUT/binary.identity.json"
 NIRI=$OUT/binary
@@ -129,6 +194,9 @@ IDLE='printf "\033[?25l"; exec sleep infinity'
 # 0.5 at 4 Hz is the sustained optic unless a case says otherwise.
 AURORA='aurora 0.5 { drift-hz 4; }'
 SIGNAL5='signal { idle-after-ms 5000; }'
+DRM_TOP=
+[ "$LANE" != dedicated ] || DRM_TOP="output \"$DRM_OUTPUT\" { mode \"$DRM_MODE\"; scale 1; }
+debug { dbus-interfaces-in-non-session-instances; }"
 WALL2=$OUT/cool-mid.png
 magick -size 1280x720 xc:'rgb(90,115,140)' "$WALL2"
 case_config() {   # $1 case dir, $2 GLASS_EXTRA, $3 TOP_EXTRA, $4 file name (default case.kdl)
@@ -169,7 +237,9 @@ input { keyboard { repeat-rate 31; }; }' 6-raise.kdl ;;
         reload-disable)
             case_config "$2" "$AURORA" "$SIGNAL5"
             case_config "$2" "$AURORA" 'signal { idle-after-ms 0; }' 1-disable.kdl ;;
-        tty-resume|unlock|output-removal|screencast) : ;;   # outside every lane this driver runs
+        drm-aurora|tty-resume|unlock|screencast) case_config "$2" "$AURORA" "$SIGNAL5
+$DRM_TOP" ;;
+        output-removal) : ;;   # outside every lane this driver runs
         *) fail "no config for case $1" ;;
     esac
     local kdl
@@ -183,7 +253,7 @@ input { keyboard { repeat-rate 31; }; }' 6-raise.kdl ;;
 # Rates: Aurora 4 Hz full, 2 Hz reduced; breathe and pulse are measured by the
 # pilot (material-signals-smoke recorded 8 Hz breathe and 26.6 Hz pulse on
 # llvmpipe). Settled intervals hold for HOLD_S, 600 s once in the matrix.
-python3 - "$OUT" "$MODE" "$LANE" "${CASES:-}" <<'PY'
+python3 - "$OUT" "$MODE" "$LANE" "${CASES:-}" "${DRM_OUTPUT:-}" "${DRM_MODE:-}" <<'PY'
 import hashlib, json, pathlib, sys
 out, mode, lane, only = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4].split()
 S = 1_000_000_000
@@ -193,9 +263,9 @@ STATIC = dict(state='static')
 HELD = dict(state='settled')
 SETUP = dict(state='setup')
 damage = dict(label='client', min_redraws=1, min_draws=1)
-def case(name, family, edges, segments, stimuli=(), pixels=(), capture_s=30, lane='headless', why=None):
+def case(name, family, edges, segments, stimuli=(), pixels=(), capture_s=30, lane='headless', why=None, **extra):
     return dict(name=name, family=family, lane=lane, edges=edges, segments=segments,
-                stimuli=list(stimuli), pixels=list(pixels), capture_s=capture_s, why=why)
+                stimuli=list(stimuli), pixels=list(pixels), capture_s=capture_s, why=why, **extra)
 held_pair = [dict(before='held-1.rgb', after='held-2.rgb', expect='equal')]
 cases = [
     case('aurora-full', 'active-idle-resume', [0, 1], [A4, HELD, A4], pixels=held_pair),
@@ -229,12 +299,29 @@ cases = [
     # grim is wlr-screencopy: a capture without input, not a screencast.
     case('screencopy', 'session-activation', [0], [A4, HELD], [dict(label='screencopy', min_draws=1)],
          [dict(before='copy-1.rgb', after='copy-2.rgb', expect='equal')], capture_s=40),
-    case('screencast', 'session-activation', [], [], lane='screencast-consumer',
-         why='no screencast consumer in the headless lane'),
-    case('tty-resume', 'session-activation', [], [], lane='dedicated',
-         why='TTY session resume needs a real TTY session'),
-    case('unlock', 'session-activation', [], [], lane='dedicated',
-         why='unlocking needs an authenticating lock client on a real session'),
+    # Dedicated lane: niri on DRM from a TTY. drm-aurora is the lane's cadence control.
+    case('drm-aurora', 'active-idle-resume', [0, 1], [A4, HELD, A4], pixels=held_pair, lane='dedicated'),
+    # Paused on the spare VT, niri cannot redraw: only the return must, and
+    # the resume edge falls inside the return, not the switch out.
+    case('tty-resume', 'session-activation', [0, 1, 0], [A4, HELD, A4, HELD],
+         [dict(label='vt-out'), dict(label='vt-return', min_redraws=1)], capture_s=45, lane='dedicated',
+         edge_in=[[1, 'vt-return']]),
+    case('unlock', 'session-activation', [0, 1, 0], [A4, HELD, A4, HELD],
+         [dict(label='lock', min_redraws=1), dict(label='unlock', min_redraws=1)], capture_s=45,
+         lane='dedicated', edge_in=[[1, 'unlock']]),
+    # Each sample arms first, then causes bounded damage: niri sends no cast
+    # frame without damage. The thief's lines stay outside both crops.
+    case('screencast', 'session-activation', [0], [A4, HELD],
+         [dict(label='cast-start'), dict(label='sample-1', min_redraws=1),
+          dict(label='sample-2', min_redraws=1, min_draws=1), dict(label='sample-3', min_redraws=1),
+          dict(label='cast-stop')],
+         [dict(before='client-1.rgb', after='client-2.rgb', expect='different'),
+          dict(before='client-2.rgb', after='client-3.rgb', expect='equal'),
+          dict(before='aurora-1.rgb', after='aurora-2.rgb', expect='equal'),
+          dict(before='aurora-2.rgb', after='aurora-3.rgb', expect='equal')],
+         capture_s=45, lane='dedicated',
+         consumer=dict(frames_in=['sample-1', 'sample-2', 'sample-3'],
+                       samples=['sample-1', 'sample-2', 'sample-3'])),
     # A real inhibitor while held: no input activity, so no resume edge, and
     # ordinary client updates still draw.
     case('idle-inhibitor', 'session-activation', [0], [A4, HELD],
@@ -249,7 +336,7 @@ cases = [
 for item in cases:
     item['hold_ns'] = 5 * S
     item['repetitions'] = 1
-    if item['lane'] == 'headless' and item['edges']:
+    if item['lane'] in ('headless', 'dedicated') and item['edges']:
         # Tracy collects a frame's GPU zones only when a later frame renders,
         # so a case ends with one more client frame that flushes the draws of
         # the frames before it. Its own GPU zones stay uncollected, but its
@@ -258,15 +345,18 @@ for item in cases:
         # gate-off control, whose cadence never stops) has none.
         item['stimuli'].append(dict(label='collect', min_redraws=1))
 if mode == 'matrix':
-    # Three active/idle/resume cycles of each rate, the first held for 600 s.
+    # Three cycles of each repeated case in this lane; the headless lane also
+    # holds aurora-full for 600 s once.
     extra = []
-    for base in ('aurora-full', 'aurora-reduced'):
+    for base in ('aurora-full', 'aurora-reduced', 'tty-resume', 'unlock'):
         template = next(c for c in cases if c['name'] == base)
-        extra += [dict(template, name=f'{base}-r{k}') for k in (2, 3)]
+        if template['lane'] == lane:
+            extra += [dict(template, name=f'{base}-r{k}') for k in (2, 3)]
     cases += extra
-    first = next(c for c in cases if c['name'] == 'aurora-full')
-    first['hold_ns'] = 600 * S
-    first['capture_s'] = 30 + 600 - 5   # resume at 621 s: 603 s settled
+    if lane == 'headless':
+        first = next(c for c in cases if c['name'] == 'aurora-full')
+        first['hold_ns'] = 600 * S
+        first['capture_s'] = 30 + 600 - 5   # resume at 621 s: 603 s settled
 if only:
     unknown = set(only) - {c['name'] for c in cases}
     if unknown:
@@ -278,6 +368,8 @@ identity = json.loads((out / 'binary.identity.json').read_text())
 manifest = dict(schema=2, mode=mode, lane=lane, development=bool(only),
                 source_commit=identity['source_commit'],
                 binary_sha256=identity['binary_sha256'], cases=cases)
+if lane == 'dedicated':
+    manifest['drm'] = dict(output=sys.argv[5], mode=sys.argv[6])
 (out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 PY
 # Development runs (CASES) keep their unselected cases unverified.
@@ -324,29 +416,104 @@ fi
 : "${CAPTURE_TASK:?task authorizing this capture}"
 if [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then TOOLS=$OPTIC_SETTLING_STUB_TOOLS; else tools_ready; fi
 reserve_tracy_port
-# The idle-inhibitor case's client, built against the installed protocols and
-# identified with its source like the binary.
-INHIBIT_BIN=
-build_inhibit_client() {
-    local dir=$OUT/inhibit-client protocols=/usr/share/wayland-protocols xml name
-    mkdir -p "$dir"
-    for xml in "$protocols/stable/xdg-shell/xdg-shell.xml" \
-        "$protocols/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml"; do
-        name=$(basename "$xml" .xml)
-        wayland-scanner client-header "$xml" "$dir/$name-client-protocol.h"
-        wayland-scanner private-code "$xml" "$dir/$name-protocol.c"
-    done
-    cc -std=c11 -Wall -Wextra -Werror -O2 -I"$dir" -o "$dir/idle-inhibit-client" \
-        "$HERE/idle-inhibit-client.c" "$dir/xdg-shell-protocol.c" "$dir/idle-inhibit-unstable-v1-protocol.c" \
-        -lwayland-client > "$dir/build.log" 2>&1 || fail "the idle-inhibit client did not build; see $dir/build.log"
-    INHIBIT_BIN=$dir/idle-inhibit-client
-}
+# Per-run Wayland clients, built against the installed protocols and
+# identified with their sources like the binary.
 IDENTITY_EXTRA=()
-if [[ " ${RUN_CASES[*]} " == *" idle-inhibitor "* ]]; then
-    build_inhibit_client
-    IDENTITY_EXTRA=(--binary "$INHIBIT_BIN" --input "$HERE/idle-inhibit-client.c")
+PROTOCOLS=/usr/share/wayland-protocols
+build_client() {   # name, protocol XML...: docs/materials/scripts/<name>.c into $OUT/clients
+    local name=$1 dir=$OUT/clients xml base sources=()
+    shift
+    mkdir -p "$dir"
+    for xml in "$@"; do
+        base=$(basename "$xml" .xml)
+        wayland-scanner client-header "$xml" "$dir/$base-client-protocol.h"
+        wayland-scanner private-code "$xml" "$dir/$base-protocol.c"
+        sources+=("$dir/$base-protocol.c")
+    done
+    cc -std=c11 -Wall -Wextra -Werror -O2 -I"$dir" -o "$dir/$name" "$HERE/$name.c" "${sources[@]}" \
+        -lwayland-client > "$dir/$name.build.log" 2>&1 || fail "$name did not build; see $dir/$name.build.log"
+    IDENTITY_EXTRA+=(--binary "$dir/$name" --input "$HERE/$name.c")
+}
+selected() { printf '%s\n' "${RUN_CASES[@]}" | grep -qE "^$1(-r[0-9]+)?$"; }
+# Set only once built (or stubbed): a use without a build fails under set -u.
+if selected idle-inhibitor; then
+    build_client idle-inhibit-client "$PROTOCOLS/stable/xdg-shell/xdg-shell.xml" \
+        "$PROTOCOLS/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml"
+    INHIBIT_BIN=$OUT/clients/idle-inhibit-client
 fi
-capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" "${IDENTITY_EXTRA[@]}"
+if [ -n "${OPTIC_SETTLING_STUB_LOCK:-}" ]; then
+    LOCK_BIN=$OPTIC_SETTLING_STUB_LOCK
+elif selected unlock; then
+    build_client session-lock-client "$PROTOCOLS/staging/ext-session-lock/ext-session-lock-v1.xml"
+    LOCK_BIN=$OUT/clients/session-lock-client
+fi
+if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
+capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" --config lane="$LANE" \
+    ${DRM_OUTPUT:+--config drm-output="$DRM_OUTPUT"} ${DRM_MODE:+--config drm-mode="$DRM_MODE"} \
+    "${IDENTITY_EXTRA[@]}"
+
+# niri on DRM from this TTY (as idle-budget's start_drm), with a private
+# session bus so no compositor interface reaches the user's bus.
+start_drm() {   # $1 niri, $2 config, $3 sub-run name
+    settle_before_launch "$2" "${3-}"
+    "$1" validate -c "$2" || fail "config $2 does not validate with $1"
+    dbus-daemon --session --nofork --address="unix:path=$RT/bus" >> "$OUT/dbus.log" 2>&1 &
+    BUS_PID=$!
+    for _ in $(seq 50); do [ -S "$RT/bus" ] && break; sleep 0.1; done
+    [ -S "$RT/bus" ] || fail "no private session bus (see $OUT/dbus.log)"
+    env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u DISPLAY -u NIRI_SOCKET \
+        XDG_RUNTIME_DIR="$RT" DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" \
+        PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$1" -c "$2" >> "$OUT/niri.log" 2>&1 &
+    NIRI_PID=$!
+    for _ in $(seq 100); do
+        compgen -G "$RT/niri.*.sock" > /dev/null && break
+        kill -0 "$NIRI_PID" 2>/dev/null || fail 'DRM niri exited (see niri.log)'
+        sleep 0.1
+    done
+    NIRI_SOCKET=$(ls "$RT"/niri.*.sock) || fail 'no DRM niri socket'
+    export NIRI_SOCKET
+    # Stub runs (offline tests) launch a script, not the snapshot.
+    [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ] || cmp -s "$1" "/proc/$NIRI_PID/exe" \
+        || fail 'running executable differs from the snapshot'
+    sleep 1
+}
+stop_drm() {
+    # A niri that ignores TERM holds the device and the VT: KILL after reap's bound.
+    reap "$NIRI_PID"; NIRI_PID=
+    [ -z "$BUS_PID" ] || reap "$BUS_PID"
+    BUS_PID=
+    rm -f "$RT"/niri.*.sock "$RT/bus"; sleep 0.5
+}
+start_host() { if [ "$LANE" = dedicated ]; then start_drm "$@"; else start_nested "$@"; fi; }
+stop_host() { if [ "$LANE" = dedicated ]; then stop_drm; else stop_nested; fi; }
+topology() {
+    # Name, current mode and scale per output: the analyzer checks them against DRM_OUTPUT and DRM_MODE.
+    if [ "$LANE" = dedicated ]; then
+        msg "$NIRI" -j outputs | jq -c '[.[] | {name, scale: .logical.scale, mode: (if .current_mode == null
+            then null else .modes[.current_mode] | {width, height, refresh_hz: (.refresh_rate / 1000)} end)}]'
+    else
+        echo '["headless-1"]'
+    fi
+}
+# IPC gives no on-screen position for tiled windows, so the screencast crops
+# come from an opaque geometry probe in the same two-window layout.
+calibrate_drm_probe() {
+    write_geometry_config "$OUT/geometry-drm.kdl"
+    printf '%s\n' "$DRM_TOP" >> "$OUT/geometry-drm.kdl"
+    start_host "$NIRI" "$OUT/geometry-drm.kdl" geometry-drm
+    spawn_geometry_probe "$NIRI"
+    steal_focus "$NIRI"
+    sleep 2
+    shot "$NIRI" geometry-drm
+    measure_rect "$OUT/geometry-drm.png" > "$OUT/probe-rect-drm.txt"
+    # info: prints no trailing newline, and `read` fails at EOF without one.
+    local size
+    size=$(magick "$OUT/geometry-drm.png" -format '%w %h' info:) || fail 'could not read the DRM screen size'
+    printf '%s\n' "$size" > "$OUT/screen-drm.txt"
+    grep -qxE '[0-9]+ [0-9]+' "$OUT/screen-drm.txt" || fail "could not read the DRM screen size from geometry-drm.png"
+    stop_host
+    await_gpu_rest
+}
 
 # --- stimuli ------------------------------------------------------------------
 mono() { python3 -c 'import time; print(time.monotonic_ns())'; }
@@ -355,9 +522,9 @@ mono() { python3 -c 'import time; print(time.monotonic_ns())'; }
 # cannot push a stimulus past its window or the capture's end.
 # The wait runs in the background (see nap): the matrix waits up to 609 s here.
 at() {
-    python3 - "$T0" "$1" <<'PY2' & SLEEP_PID=$!
+    python3 - "$T0" "$1" "$TIMESCALE" <<'PY2' & SLEEP_PID=$!
 import sys, time
-t0, s = int(sys.argv[1]), float(sys.argv[2])
+t0, s = int(sys.argv[1]), float(sys.argv[2]) * float(sys.argv[3])
 delay = t0 + s * 1e9 - time.monotonic_ns()
 if delay < -0.5e9:
     sys.exit(f'schedule slipped: {s} s came {-delay / 1e9:.2f} s late')
@@ -497,6 +664,7 @@ drive_dpms_ipc() {
 drive_dpms_input() { keepalive; at 25; stim power-off 1 msg "$NIRI" action power-off-monitors; at 27; pointer; }
 drive_screencopy() { keepalive; at 25; stim screencopy 0.5 grab_screencopy; }
 start_inhibitor() {
+    : "${INHIBIT_BIN:?the idle inhibit client was not built for this run}"
     XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME "$INHIBIT_BIN" >> "$OUT/inhibit.log" 2>&1 &
     INHIBIT_PID=$!
     for _ in $(seq 50); do [ "$(windows_with "$NIRI" gos-inhibit)" -ge 1 ] && break; sleep 0.1; done
@@ -518,6 +686,113 @@ drive_idle_inhibitor() {
     at 25; stim inhibit 3 start_inhibitor
     at 30; stim client 1.5 print_line 1
     at 33; stim release 3 stop_inhibitor
+}
+drive_drm_aurora() { drive_cycle; }
+post_drm_aurora() { post_held; }
+# Out to the spare VT and back: niri's session pauses, then activation calls
+# notify_activity. The switch out with its hold and the return are separate
+# stimuli, so the resume edge must fall in the return. Both switches are
+# verified; each window stays under 6 s.
+vt_out() {
+    vt_switch "$VT_SPARE" || fail "$CASE: did not reach spare VT $VT_SPARE"
+    nap 3   # backgrounded, so TERM while away is handled at once
+}
+vt_return() { vt_switch "$VT_HOME" || fail "$CASE: the return to VT $VT_HOME did not land"; }
+drive_tty_resume() { keepalive; at 26; stim vt-out 0 vt_out; stim vt-return 1.5 vt_return; }
+lock_start() {
+    : "${LOCK_BIN:?the session lock client was not built for this run}"
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME "$LOCK_BIN" > "$CASE_DIR/lock.out" 2>> "$OUT/lock.log" &
+    LOCK_PID=$!
+    for _ in $(seq 50); do grep -qx locked "$CASE_DIR/lock.out" && return; alive "$LOCK_PID" || break; sleep 0.1; done
+    fail "$CASE: the session never locked (see lock.log)"
+}
+# A client that ignores its signal must not hold an unattended run (and the
+# lock): 10 s, then the case fails and on_exit kills it. Its status is read
+# only once it has exited.
+await_exit() {   # pid, what: sets EXIT_RC
+    local _
+    for _ in $(seq 100); do alive "$1" || break; sleep 0.1; done
+    ! alive "$1" || fail "$CASE: $2 did not exit within 10 s"
+    EXIT_RC=0
+    wait "$1" || EXIT_RC=$?
+}
+unlock_now() {
+    kill -USR1 "$LOCK_PID" 2>/dev/null || fail "$CASE: the lock client exited before the unlock (see lock.log)"
+    await_exit "$LOCK_PID" 'the lock client'
+    LOCK_PID=
+    [ "$EXIT_RC" -eq 0 ] || fail "$CASE: the lock client exited $EXIT_RC"
+}
+drive_unlock() { keepalive; at 26; stim lock 2 lock_start; at 30; stim unlock 1.5 unlock_now; }
+cast_start() {
+    : > "$CASE_DIR/cast.out"
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" python3 "$CAST_CONSUMER" \
+        "$DRM_OUTPUT" "$CASE_DIR/cast-frames.tsv" "$CASE_DIR/cast-summary.json" "$CASE_DIR/sample-request" \
+        > "$CASE_DIR/cast.out" 2>> "$OUT/cast.log" &
+    CAST_PID=$!
+    for _ in $(seq 100); do grep -q '^ready ' "$CASE_DIR/cast.out" && return; alive "$CAST_PID" || break; sleep 0.1; done
+    fail "$CASE: the screencast consumer never became ready (see cast.log)"
+}
+cast_stop() {
+    kill -TERM "$CAST_PID" 2>/dev/null || fail "$CASE: the screencast consumer exited (see cast.log)"
+    await_exit "$CAST_PID" 'the screencast consumer'
+    CAST_PID=
+    [ "$EXIT_RC" -eq 0 ] || fail "$CASE: the screencast consumer exited $EXIT_RC (see cast.log)"
+}
+thief_line() { echo "thief $1" > "$OTHER_FIFO"; }
+# Arm a sample, cause its damage, wait for the frame that damage produced.
+# A request no frame answers fails the case; it is never retried.
+cast_sample() {   # label, damage command...
+    local label=$1 target=$CASE_DIR/$1.raw
+    shift
+    alive "$CAST_PID" || fail "$CASE: the screencast consumer exited (see cast.log)"
+    printf '%s\n' "$target" > "$CASE_DIR/sample-request"
+    kill -USR1 "$CAST_PID" 2>/dev/null || fail "$CASE: the screencast consumer exited (see cast.log)"
+    for _ in $(seq 20); do [ -e "$target.armed" ] && break; alive "$CAST_PID" || break; sleep 0.1; done
+    if [ ! -e "$target.armed" ]; then
+        alive "$CAST_PID" || fail "$CASE: the screencast consumer exited (see cast.log)"
+        fail "$CASE: $label was never armed"
+    fi
+    "$@"
+    for _ in $(seq 30); do [ -e "$target.json" ] && return; sleep 0.1; done
+    fail "$CASE: no cast frame answered $label"
+}
+# sample-2 to sample-3 is the held interval observed while casting (> 5 s).
+drive_screencast() {
+    keepalive
+    at 20; stim cast-start 1 cast_start
+    at 24; stim sample-1 1 cast_sample sample-1 thief_line 1
+    at 28; stim sample-2 1 cast_sample sample-2 print_line 1
+    at 36; stim sample-3 1 cast_sample sample-3 thief_line 2
+    at 40; stim cast-stop 1 cast_stop
+}
+# The crops are only as good as the calibration, so the headless probe_rect's
+# checks apply before casting: the case's probe has the calibrated size and
+# is large enough for both crops.
+setup_screencast() {
+    local px py pw ph j iw ih
+    read -r px py pw ph < "$OUT/probe-rect-drm.txt"
+    j=$(msg "$NIRI" -j windows | jq -c '.[] | select(.app_id=="gos-probe") | .layout.window_size')
+    iw=$(jq -r '.[0] | floor' <<< "$j"); ih=$(jq -r '.[1] | floor' <<< "$j")
+    [ "$pw" -eq "$iw" ] && [ "$ph" -eq "$ih" ] \
+        || fail "$CASE: calibrated probe ${pw}x${ph}, the case's probe is ${iw}x${ih} over IPC"
+    [ "$pw" -gt 440 ] && [ "$ph" -gt 240 ] || fail "$CASE: probe ${pw}x${ph} is too small for the screencast crops"
+}
+# Crops in output pixels (scale 1): the probe's top text rows, and glass
+# below its few lines with Aurora alone. Every sample is a frame of the
+# calibrated screen, or the crops would land elsewhere.
+post_screencast() {
+    local k w h px py pw ph sw sh
+    read -r px py pw ph < "$OUT/probe-rect-drm.txt"
+    read -r sw sh < "$OUT/screen-drm.txt"
+    for k in 1 2 3; do
+        w=$(jq -r .width "$CASE_DIR/sample-$k.raw.json"); h=$(jq -r .height "$CASE_DIR/sample-$k.raw.json")
+        [ "$w" = "$sw" ] && [ "$h" = "$sh" ] \
+            || fail "$CASE: sample-$k is ${w}x${h}, the calibrated screen is ${sw}x${sh}"
+        magick -size "${w}x${h}" -depth 8 "rgb:$CASE_DIR/sample-$k.raw" \
+            -crop "$((pw - 20))x80+$((px + 10))+$((py + 10))" +repage -depth 8 rgb:- > "$CASE_DIR/client-$k.rgb"
+        magick -size "${w}x${h}" -depth 8 "rgb:$CASE_DIR/sample-$k.raw" \
+            -crop "400x200+$((px + 40))+$((py + ph - 240))" +repage -depth 8 rgb:- > "$CASE_DIR/aurora-$k.rgb"
+    done
 }
 # niri's config watcher notices a replaced file within about half a second;
 # each reload's journaled effect covers that and the frame it causes.
@@ -543,7 +818,7 @@ run_case() {
     : > "$CASE_DIR/journal.tsv"
     # niri reloads the file it was started with, so the live config is a copy.
     cp "$CASE_DIR/case.kdl" "$CASE_DIR/live.kdl"
-    start_nested "$NIRI" "$CASE_DIR/live.kdl" "$CASE"
+    start_host "$NIRI" "$CASE_DIR/live.kdl" "$CASE"
     # Clients connect to the nested Wayland socket, which the IPC socket's
     # name carries (niri.<display>.<pid>.sock); the IPC socket is not one.
     DISPLAY_NAME=$(basename "$NIRI_SOCKET" | sed -E 's/^niri\.(.+)\.[0-9]+\.sock$/\1/')
@@ -563,8 +838,15 @@ run_case() {
     for _ in $(seq 100); do [ "$(windows_with "$NIRI" gos-probe)" -ge 1 ] && break; sleep 0.1; done
     [ "$(windows_with "$NIRI" gos-probe)" -eq 1 ] || fail "$CASE: probe never opened"
     [ -n "$no_pointer" ] || pointer
+    local other_cmd=$IDLE
+    OTHER_FIFO=
+    if [ "$base" = screencast ]; then
+        OTHER_FIFO=$RT/other-$CASE.fifo
+        mkfifo "$OTHER_FIFO"
+        other_cmd="printf '\033[?25l'; exec 3<>'$OTHER_FIFO'; while read -r line <&3; do printf '%s\n' \"\$line\"; done"
+    fi
     XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME \
-        kitty --config NONE --class gos-other -o cursor_blink_interval=0 -o mouse_hide_wait=0 sh -c "$IDLE" >> "$OUT/other.log" 2>&1 &
+        kitty --config NONE --class gos-other -o cursor_blink_interval=0 -o mouse_hide_wait=0 sh -c "$other_cmd" >> "$OUT/other.log" 2>&1 &
     OTHER_PID=$!
     for _ in $(seq 100); do [ "$(windows_with "$NIRI" gos-other)" -ge 1 ] && break; sleep 0.1; done
     [ "$(windows_with "$NIRI" gos-other)" -eq 1 ] || fail "$CASE: focus thief never opened"
@@ -594,7 +876,7 @@ run_case() {
     csvexport --unwrap "$CASE_DIR/capture.tracy" "$CASE_DIR/cpu.csv"
     csvexport --gpu "$CASE_DIR/capture.tracy" "$CASE_DIR/gpu.csv"
     printf '{"messages":true,"cpu":true,"gpu":true}\n' > "$CASE_DIR/export.json"
-    python3 - "$CASE_DIR" "$T0" <<'PY'
+    python3 - "$CASE_DIR" "$T0" "$(topology)" <<'PY'
 import json, pathlib, sys
 directory = pathlib.Path(sys.argv[1])
 journal = []
@@ -603,16 +885,18 @@ for line in (directory / 'journal.tsv').read_text().splitlines():
     journal.append(dict(label=label, start_mono_ns=int(start), end_mono_ns=int(end)))
 # The capture connected at capture_start_mono_ns and was declared to run
 # capture_s from there: the analyzer requires the trace to reach that end.
-observation = dict(capture_start_mono_ns=int(sys.argv[2]), journal=journal, topology=['headless-1'])
+observation = dict(capture_start_mono_ns=int(sys.argv[2]), journal=journal, topology=json.loads(sys.argv[3]))
 (directory / 'observation.json').write_text(json.dumps(observation, indent=2) + '\n')
 PY
-    stop_nested
-    for pid in "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$INHIBIT_PID"; do [ -z "$pid" ] || reap "$pid"; done
-    BG_PID=; PROBE_PID=; OTHER_PID=; INHIBIT_PID=
+    stop_host
+    for pid in "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$INHIBIT_PID" "$CAST_PID" "$LOCK_PID"; do [ -z "$pid" ] || reap "$pid"; done
+    BG_PID=; PROBE_PID=; OTHER_PID=; INHIBIT_PID=; CAST_PID=; LOCK_PID=
     rm -f "$FIFO"
+    [ -z "$OTHER_FIFO" ] || rm -f "$OTHER_FIFO"
     await_gpu_rest
 }
 
+if [ "$LANE" = dedicated ] && selected screencast; then calibrate_drm_probe; fi
 for name in "${RUN_CASES[@]}"; do
     echo "case $name" >&2
     run_case "$name"
