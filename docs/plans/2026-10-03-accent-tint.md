@@ -4,6 +4,8 @@
 
 **Goal:** Add the opt-in `accent-tint` response, which tints a material window's glass toward its signal accent's hue while keeping the face's density.
 
+**Execution:** native (owner's choice, plan review round 1), with the whole-branch review in Task 6 before the local merge.
+
 **Architecture:** A new response weight in `niri-config`. A pure CPU function computes the tinted attenuation coefficient in face-transmittance space. The tile's signal crossfade carries a tint chromaticity that interpolates between endpoints. `glass_signal_inputs` uploads the result through the existing `mat_attenuation_color` uniform. The shader, the uniform list and the pass order do not change.
 
 **Tech Stack:** Rust (niri fork, smithay GLES renderer), knuffel config decoding, nextest via `just test-one` / `just test-fast`.
@@ -26,9 +28,9 @@
 
 ## Review Focus
 
-1. **Focus-split swap:** focused and unfocused materials with different `accent-tint`. On a focus change the tint steps to the other material's weight without a stale render (Task 5, `focus_split_materials_tint_per_material`).
-2. **Reload that changes only `accent-tint`** while the accent is settled. The next render shows the new tint (Task 5, `reload_of_only_the_weight_rerenders`).
-3. **`animations { off }`:** the crossfade is instant. The tint appears at once and nothing stays animating (Task 5, `animations_off_tints_at_once_and_settles`).
+1. **Focus-split swap:** focused and unfocused materials with different `accent-tint`. In one fixture with a settled accent, the first frame after focus moves away, and after it moves back, shows the new material's weight with no stale tint (Task 5, `focus_swap_retints_on_the_first_frame`).
+2. **Reload that changes only `accent-tint`** while the accent is settled. The material element's (id, commit) on the output target changes once and then holds, and the new tint renders (Task 5, `reload_of_only_the_weight_commits_damage_and_rerenders`).
+3. **`animations { off }`:** the crossfade is instant. The first frame after the accent arrives, with no time advanced and no animation completed, is already the settled tint; a 400 ms control fade is still untinted on that frame (Task 5, `animations_off_tints_the_first_frame`).
 4. **`accent "none"` with a tint:** the band has no accent, but the body is still tinted (Task 5, `accent_none_still_tints_the_body`).
 5. **Two windows, one material, different accents:** each tile tints by its own accent, and changing one leaves the other's pixels untouched (Task 5, `neighbor_accent_does_not_reach_a_window`).
 
@@ -511,6 +513,8 @@ Add to the tests module of `src/layout/tile.rs`, after `signal_crossfade_carries
     }
 ```
 
+This test drives `SignalCrossfade` directly. Task 4 adds the end-to-end check, from the window's signal to the uploaded attenuation color, including a real interrupted restart.
+
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `just test-one -p niri tint_chroma_crossfades_between_endpoints_through_black`
@@ -720,7 +724,7 @@ git commit -m "feat(material): crossfade the accent tint chromaticity between en
 
 **Files:**
 - Modify: `src/render_helpers/material/mod.rs` (`GlassSignalInputs` ~128, `quiet` ~137, `glass_signal_inputs` ~148, element uniforms ~873, `GlassSignalFingerprint` ~407; test callers of `glass_signal_inputs` ~1713, ~1745, ~1779, ~1917, ~1976, ~1991)
-- Modify: `src/layout/tile.rs:771` (caller)
+- Modify: `src/layout/tile.rs:771` (caller) and its tests module (the end-to-end crossfade test)
 - Modify: `docs/materials/material-config.md`, `docs/materials/render-pipeline.md`
 
 **Interfaces:**
@@ -821,9 +825,116 @@ Add to the tests module of `src/render_helpers/material/mod.rs`:
     }
 ```
 
+Add to the tests module of `src/layout/tile.rs`, after `tint_chroma_crossfades_between_endpoints_through_black`. It drives the real path: the window's folded signal → `signal_for_frame` (crossfade) → `solve` → `glass_signal_inputs` → the uploaded `attenuation_color`. A regression that derived the chromaticity from the blended accent anywhere on that path fails it.
+
+```rust
+    #[test]
+    fn real_signal_crossfade_uploads_the_endpoint_interpolated_tint() {
+        use niri_config::animations::{
+            Animation as AnimConfig, Curve, EasingParams, Kind, MaterialSignalAnim,
+        };
+
+        use crate::render_helpers::material::tint::accent_tint;
+        use crate::render_helpers::signal::{accent_chroma, color_linear};
+
+        let base = niri_config::Color::from_rgba8_unpremul(0x0d, 0x1d, 0x1e, 0xff);
+        let glass = niri_config::ResolvedGlass {
+            thickness: 31.2,
+            attenuation_color: base,
+            attenuation_distance: 11.,
+            ..flat_glass()
+        };
+        let response = niri_config::ResolvedResponse {
+            accent_tint: 1.,
+            ..Default::default()
+        };
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = beam_tile(glass, response, clock.clone());
+        // Linear, so a time fraction is a crossfade fraction.
+        let mut options = (*tile.options).clone();
+        options.animations.material_signal = MaterialSignalAnim(AnimConfig {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 400,
+                curve: Curve::Linear,
+            }),
+        });
+        tile.options = Rc::new(options);
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+
+        let black = niri_config::Color::from_rgba8_unpremul(0, 0, 0, 0xff);
+        let orange = niri_config::Color::from_rgba8_unpremul(0xff, 0x66, 0x00, 0xff);
+        let (k_black, k_orange) = ([1.; 3], accent_chroma(color_linear(orange)));
+        let lerp = |a: [f32; 3], b: [f32; 3], t: f32| [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t);
+        let expect = |k: [f32; 3]| accent_tint(base, 31.2, 11., Some(k), 1.);
+        let set = |tile: &Tile<TestWindow>, accent: niri_config::Color| {
+            tile.window().set_signal(Some(crate::window::signal::Folded {
+                level: niri_ipc::SignalLevel::Active,
+                motion: niri_ipc::SignalMotion::Static,
+                accent: Some(accent),
+                tag: None,
+                sources: vec![String::from("t")],
+                impulses: vec![],
+            }));
+        };
+        // The attenuation color a render at `at` uploads.
+        let mut upload = |tile: &mut Tile<TestWindow>, at: Duration| {
+            clock.set_unadjusted(at);
+            tile.update_render_elements(true, true, true, view);
+            render_dynamics(tile, 1280., 720.).glass_signal.attenuation_color
+        };
+        let close = |a: [f32; 4], b: [f32; 4], what: &str| {
+            assert!(
+                (0..4).all(|i| (a[i] - b[i]).abs() < 1e-5),
+                "{what}: {a:?} vs {b:?}"
+            );
+        };
+        let ms = Duration::from_millis;
+
+        // Settle on black: a black accent tints toward gray.
+        set(&tile, black);
+        upload(&mut tile, ms(0));
+        close(upload(&mut tile, ms(1000)), expect(k_black), "settled black");
+
+        // black → orange from 2000 ms, at the spec's fractions.
+        set(&tile, orange);
+        for (at, f) in [
+            (ms(2000), 0.),
+            (ms(2000) + Duration::from_micros(4), 1e-5),
+            (ms(2100), 0.25),
+            (ms(2200), 0.5),
+            (ms(2300), 0.75),
+            (ms(2400), 1.),
+        ] {
+            close(upload(&mut tile, at), expect(lerp(k_black, k_orange, f)), &format!("black→orange {f}"));
+        }
+
+        // orange → black from 3000 ms.
+        set(&tile, black);
+        for (at, f) in [
+            (ms(3000), 0.),
+            (ms(3100), 0.25),
+            (ms(3200), 0.5),
+            (ms(3300), 0.75),
+            (ms(3400), 1.),
+        ] {
+            close(upload(&mut tile, at), expect(lerp(k_orange, k_black, f)), &format!("orange→black {f}"));
+        }
+
+        // Interrupted: black → orange from 4000 ms, back to black at 4200 (f = ½).
+        set(&tile, orange);
+        upload(&mut tile, ms(4000));
+        set(&tile, black);
+        let mid = lerp(k_black, k_orange, 0.5);
+        close(upload(&mut tile, ms(4200)), expect(mid), "the restart begins where the fade was");
+        close(upload(&mut tile, ms(4300)), expect(lerp(mid, k_black, 0.25)), "and fades from there");
+        close(upload(&mut tile, ms(4600)), expect(k_black), "to the new target");
+    }
+```
+
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `just test-one -p niri -E 'test(untinted_attenuation) | test(attenuation_tint_weight) | test(weight_only_change)'`
+Run: `just test-one -p niri -E 'test(untinted_attenuation) | test(attenuation_tint_weight) | test(weight_only_change) | test(real_signal_crossfade)'`
 Expected: FAIL to compile: no field `attenuation_color`; `glass_signal_inputs` takes 2 arguments.
 
 - [ ] **Step 3: Implement**
@@ -888,7 +999,7 @@ Callers: `src/layout/tile.rs:771` becomes `glass_signal_inputs(&frame, glass, &r
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `just test-one -p niri -E 'test(untinted_attenuation) | test(attenuation_tint_weight) | test(weight_only_change) | test(glass_signal)'`
+Run: `just test-one -p niri -E 'test(untinted_attenuation) | test(attenuation_tint_weight) | test(weight_only_change) | test(glass_signal) | test(real_signal_crossfade)'`
 Expected: PASS, including the existing `default_glass_signal_fingerprint_matches_quiet_default_glass`.
 
 - [ ] **Step 5: Document**
@@ -943,7 +1054,7 @@ git commit -m "feat(material): upload the accent-tinted attenuation color"
 
 **Interfaces:**
 - Consumes: `super::ring_pair::{diff, render_at, set_time, window_rect}`; `Niri::{set_window_signal, clear_window_signal, arm_signal_timer}`; `State::reload_config`.
-- Produces: `src/tests/accent_tint.rs` helpers used by Task 6: `look(glass, response, background, extra) -> Config`, `ACCEPTED_GLASS`, `DEFAULT_GLASS`, `open(f, id, (w, h), argb) -> WlSurface`, `signal(f, window_index, Some(hex))`, `OUT_W`, `OUT_H`.
+- Produces: `src/tests/accent_tint.rs` helpers used by Task 6: `look(glass, response, background, extra) -> Config`, `ACCEPTED_GLASS`, `ACCEPTED_RESPONSE`, `DEFAULT_GLASS`, `open(f, id, (w, h), argb) -> WlSurface`, `signal(f, window_index, Some(hex))`, `OUT_W`, `OUT_H`, `FADE_MS`, `REST`, `REST_LATER`.
 
 - [ ] **Step 1: Write the test file**
 
@@ -975,7 +1086,8 @@ pub(super) const TRANSLUCENT: u32 = 0x990a_0c0e;
 /// The same fill, opaque: every pixel bypasses the glass.
 const OPAQUE: u32 = 0xff0a_0c0e;
 
-/// The terminal-glass block of the owner's accepted look (`ring_look.rs`, `ACCEPTED`).
+/// The terminal-glass `glass` block of the owner's accepted look, verbatim
+/// from `ring_look.rs` `ACCEPTED`.
 pub(super) const ACCEPTED_GLASS: &str = r##"
         ior 1.28
         light-ior 4.5
@@ -984,13 +1096,35 @@ pub(super) const ACCEPTED_GLASS: &str = r##"
         attenuation-distance 11
         chromatic-aberration 0.36
         distortion 0 scale=0.09
+        anisotropic-blur 0
         roughness 0.24
+        iridescence 0
+        aurora 0 {
+            drift-hz 4
+            color "#3dffb0"
+            color "#7a5cff"
+        }
         noise 0.03 type="white"
         saturation 0.95
         backdrop-blur true
+        jelly-flex 0.0066
+        jelly-ripple 0.23
         bevel 10
         offset-x -6
         offset-y -5
+"##;
+/// Its `response "default"` block without `accent`, which callers add with
+/// `accent-tint`: the band and filament the owner accepted.
+pub(super) const ACCEPTED_RESPONSE: &str = r##"
+        focus "ring-light"
+        ring-color "#ccccff"
+        ring-beam-speed 4350
+        ring-beam-noise 0.55
+        ring-beam-noise-hz 12
+        ring-beam-decay 4150
+        ring-gap 6
+        ring-width 1.1
+        ring-glow 1.2
 "##;
 /// Every glass parameter at its default.
 pub(super) const DEFAULT_GLASS: &str = "";
@@ -1098,15 +1232,30 @@ fn region(pixels: &[u8], rect: Rectangle<f64, Logical>, inset: f64) -> Vec<u8> {
         .collect()
 }
 
-/// An output pass as the real loop renders it: element commits, and
-/// whether a signal timer was armed.
-fn output_pass(f: &mut Fixture, time: Duration) -> (Vec<String>, bool) {
+/// The first tile's window rect on the output, in logical px (scale 1).
+fn first_rect(f: &mut Fixture) -> Rectangle<f64, Logical> {
+    let niri = f.niri();
+    let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
+    let (tile, pos, _) = workspace.tiles_with_render_positions().next().unwrap();
+    Rectangle::new(pos + tile.window_loc(), tile.animated_window_size())
+}
+
+/// An output pass as the real loop renders it (`RenderTarget::Output`): the
+/// first tile's material element as `id@commit`, and whether a signal timer
+/// was armed. The id is read each pass, since a reload may rebuild the state.
+fn output_pass(f: &mut Fixture, time: Duration) -> (String, bool) {
     set_time(f, time);
     f.niri().advance_animations();
     let output = f.niri_output(1);
+    let material = {
+        let niri = f.niri();
+        let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
+        let (tile, _, _) = workspace.tiles_with_render_positions().next().unwrap();
+        tile.material().expect("a material tile").id().clone()
+    };
     let crate::niri::State { backend, niri } = f.niri_state();
     niri.update_render_elements(Some(&output));
-    let commits = backend
+    let element = backend
         .with_primary_renderer(|renderer| {
             let ctx = RenderCtx {
                 renderer,
@@ -1116,12 +1265,13 @@ fn output_pass(f: &mut Fixture, time: Duration) -> (Vec<String>, bool) {
             };
             niri.render_to_vec(ctx, &output, false)
                 .iter()
+                .find(|e| *e.id() == material)
                 .map(|e| format!("{:?}@{:?}", e.id(), e.current_commit()))
-                .collect()
+                .expect("the material element is rendered")
         })
         .unwrap();
     niri.arm_signal_timer(&output);
-    (commits, niri.output_state[&output].signal_timer.is_some())
+    (element, niri.output_state[&output].signal_timer.is_some())
 }
 
 #[test]
@@ -1185,6 +1335,7 @@ fn settled_tint_neither_commits_nor_animates_nor_arms_a_timer() {
         TRANSLUCENT,
         Some("#ff00ff"),
     );
+    // The first Output pass primes that target's fingerprint.
     let (first, _) = output_pass(&mut f, REST_LATER + Duration::from_secs(1));
     let (second, armed) = output_pass(&mut f, REST_LATER + Duration::from_secs(2));
     assert_eq!(first, second, "a settled tint commits damage");
@@ -1193,27 +1344,54 @@ fn settled_tint_neither_commits_nor_animates_nor_arms_a_timer() {
 }
 
 #[test]
-fn animations_off_tints_at_once_and_settles() {
-    let config = |w: &str| {
-        look(ACCEPTED_GLASS, &format!("accent-tint {w}"), "#202020", "animations { off; }")
+fn animations_off_tints_the_first_frame() {
+    let config =
+        |w: &str, extra: &str| look(ACCEPTED_GLASS, &format!("accent-tint {w}"), "#202020", extra);
+    const OFF: &str = "animations { off; }";
+    // A settled window with no accent; the accent arrives, and the next frame
+    // renders at the same instant: no time advanced, no animation completed.
+    let first_frame = |config: Config| {
+        let (mut f, _) = one_window(config, TRANSLUCENT, None);
+        signal(&mut f, 0, Some("#ff6600"));
+        let pixels = render_at(&mut f, REST_LATER);
+        (pixels, f.niri().layout.are_animations_ongoing(None))
     };
-    let (mut f, at_once) = one_window(config("1"), TRANSLUCENT, Some("#ff6600"));
-    assert!(!f.niri().layout.are_animations_ongoing(None));
-    let (_, plain) = one_window(config("0"), TRANSLUCENT, Some("#ff6600"));
-    assert!(diff(&at_once, &plain).0 > 0);
+
+    let (off, off_ongoing) = first_frame(config("1", OFF));
+    let (_, settled) = one_window(config("1", OFF), TRANSLUCENT, Some("#ff6600"));
+    let (_, untinted) = one_window(config("0", OFF), TRANSLUCENT, Some("#ff6600"));
+    assert_eq!(diff(&off, &settled), (0, 0), "the first frame is the settled tint");
+    assert!(diff(&off, &untinted).0 > 0, "and it is tinted");
+    assert!(!off_ongoing, "nothing left animating");
+
+    // Control: with the 400 ms crossfade the same first frame is still at
+    // fraction 0, untinted, so this test can tell a running fade apart.
+    let (on, on_ongoing) = first_frame(config("1", ""));
+    let (_, quiet) = one_window(config("0", ""), TRANSLUCENT, None);
+    assert_eq!(diff(&on, &quiet), (0, 0), "a running fade starts untinted");
+    assert!(on_ongoing, "the control fade is running");
 }
 
 #[test]
-fn reload_of_only_the_weight_rerenders() {
+fn reload_of_only_the_weight_commits_damage_and_rerenders() {
     let (mut f, before) = one_window(
         look(ACCEPTED_GLASS, "accent-tint 0.4", "#202020", ""),
         TRANSLUCENT,
         Some("#ff6600"),
     );
+    let t = REST_LATER + Duration::from_secs(1);
+    let s = Duration::from_secs;
+    let (primed, _) = output_pass(&mut f, t);
+    assert_eq!(output_pass(&mut f, t + s(1)).0, primed, "settled before the reload");
+
     f.niri_state()
         .reload_config(Ok(look(ACCEPTED_GLASS, "accent-tint 0.6", "#202020", "")));
     f.niri_state().refresh_and_flush_clients();
-    let after = render_at(&mut f, REST_LATER + Duration::from_secs(1));
+    let (reloaded, _) = output_pass(&mut f, t + s(2));
+    assert_ne!(reloaded, primed, "the weight-only reload committed no damage on the output");
+    assert_eq!(output_pass(&mut f, t + s(3)).0, reloaded, "and then it settles");
+
+    let after = render_at(&mut f, t + s(4));
     assert!(diff(&before, &after).0 > 0, "the new weight never rendered");
 }
 
@@ -1232,18 +1410,14 @@ fn neighbor_accent_does_not_reach_a_window() {
         f.niri_complete_animations();
         let _ = render_at(&mut f, REST);
         let pixels = render_at(&mut f, REST_LATER);
-        let niri = f.niri();
-        let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
-        let (tile, pos, _) = workspace.tiles_with_render_positions().next().unwrap();
-        let rect = Rectangle::new(pos + tile.window_loc(), tile.animated_window_size());
-        region(&pixels, rect, 24.)
+        region(&pixels, first_rect(&mut f), 24.)
     };
     assert_eq!(scene("#0066ff"), scene("#ff00ff"));
 }
 
 #[test]
-fn focus_split_materials_tint_per_material() {
-    // Focused windows take "on" (tinted), unfocused "off"; versus both off.
+fn focus_swap_retints_on_the_first_frame() {
+    // Focused windows take "on", unfocused "off"; "on" is tinted or not.
     let split = |on_weight: &str| {
         Config::parse_mem(&format!(
             r##"
@@ -1257,39 +1431,45 @@ fn focus_split_materials_tint_per_material() {
         ))
         .unwrap()
     };
-    let first_window = |config: Config, focus_first: bool| {
+    let refocus = |f: &mut Fixture, left: bool| {
+        if left {
+            f.niri().layout.focus_left();
+        } else {
+            f.niri().layout.focus_right();
+        }
+        f.niri_state().update_keyboard_focus();
+        f.niri().refresh_window_rules();
+    };
+    // One fixture: window 0 focused with its accent settled, then focus away
+    // and back. Each frame renders at the same instant, so it is the first
+    // frame after the swap.
+    let sequence = |config: Config| {
         let mut f = Fixture::with_config(config);
         f.niri_state().backend.headless().add_renderer().unwrap();
         f.add_output(1, (OUT_W, OUT_H));
         let id = f.add_client();
         open(&mut f, id, (500, 400), TRANSLUCENT);
         open(&mut f, id, (500, 400), TRANSLUCENT);
-        if focus_first {
-            f.niri().layout.focus_left();
-        }
-        f.niri_state().update_keyboard_focus();
-        f.niri().refresh_window_rules();
+        refocus(&mut f, true);
         set_time(&mut f, Duration::ZERO);
         signal(&mut f, 0, Some("#ff6600"));
         f.niri_complete_animations();
         let _ = render_at(&mut f, REST);
-        let pixels = render_at(&mut f, REST_LATER);
-        let niri = f.niri();
-        let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
-        let (tile, pos, _) = workspace.tiles_with_render_positions().next().unwrap();
-        let rect = Rectangle::new(pos + tile.window_loc(), tile.animated_window_size());
-        region(&pixels, rect, 24.)
+        let mut frames = Vec::new();
+        for step in [None, Some(false), Some(true)] {
+            if let Some(left) = step {
+                refocus(&mut f, left);
+            }
+            let pixels = render_at(&mut f, REST_LATER);
+            frames.push(region(&pixels, first_rect(&mut f), 24.));
+        }
+        frames
     };
-    assert_eq!(
-        first_window(split("1"), false),
-        first_window(split("0"), false),
-        "the unfocused material's weight applies"
-    );
-    assert_ne!(
-        first_window(split("1"), true),
-        first_window(split("0"), true),
-        "the focused material's weight applies"
-    );
+    let tinted = sequence(split("1"));
+    let plain = sequence(split("0"));
+    assert_ne!(tinted[0], plain[0], "focused, settled: the on material tints");
+    assert_eq!(tinted[1], plain[1], "first frame after losing focus: no stale tint");
+    assert_ne!(tinted[2], plain[2], "first frame after regaining focus: tinted again");
 }
 ```
 
@@ -1302,7 +1482,7 @@ Expected: PASS (10 tests). These tests check behavior that Tasks 1–4 already i
 
 - [ ] **Step 3: Prove the tests can fail**
 
-Temporarily change `accent_tint`'s first line to `return base.to_array_unpremul();` and run the same command. Expected: `full_weight_tints_the_slab_and_translucent_content`, `accent_none_still_tints_the_body`, `animations_off_tints_at_once_and_settles`, `reload_of_only_the_weight_rerenders` and `focus_split_materials_tint_per_material` fail. Revert the change and re-run: PASS.
+Temporarily change `accent_tint`'s first line to `return base.to_array_unpremul();` and run the same command. Expected: `full_weight_tints_the_slab_and_translucent_content`, `accent_none_still_tints_the_body`, `animations_off_tints_the_first_frame`, `reload_of_only_the_weight_commits_damage_and_rerenders` and `focus_swap_retints_on_the_first_frame` fail. Also run `just test-one -p niri real_signal_crossfade` with the neutral `accent_tint`: it fails too. Revert the change and re-run: PASS.
 
 - [ ] **Step 4: Fast suite and commit**
 
@@ -1323,7 +1503,7 @@ git commit -m "test(material): headless accent tint neutrality, opacity, settlin
 - Modify: `docs/materials/material-config.md` (the recommended weight, after the owner picks it)
 
 **Interfaces:**
-- Consumes: Task 5's `look`, `open`, `signal`, `ACCEPTED_GLASS`, `DEFAULT_GLASS`, `TRANSLUCENT`, `OUT_W`, `OUT_H`, `render_at`, `set_time`.
+- Consumes: Task 5's `look`, `open`, `signal`, `ACCEPTED_GLASS`, `ACCEPTED_RESPONSE`, `DEFAULT_GLASS`, `TRANSLUCENT`, `OUT_W`, `OUT_H`, `FADE_MS`, `REST`, `REST_LATER`, `render_at`, `set_time`.
 
 - [ ] **Step 1: Write the dump test**
 
@@ -1345,7 +1525,12 @@ fn accent_tint_dumps() {
     );
     std::fs::create_dir_all(&dir).unwrap();
 
-    let glasses = [("accepted", ACCEPTED_GLASS), ("default", DEFAULT_GLASS)];
+    // (name, glass block, response settings): the accepted look keeps its own
+    // band and filament; the default glass keeps the default response.
+    let glasses = [
+        ("accepted", ACCEPTED_GLASS, ACCEPTED_RESPONSE),
+        ("default", DEFAULT_GLASS, ""),
+    ];
     let accents = [("orange", "#ff6600"), ("blue", "#0066ff"), ("magenta", "#ff00ff")];
     let weights = ["0", "0.25", "0.5", "1"];
     // Focused, so the ring band and its focus light are in view.
@@ -1362,16 +1547,16 @@ fn accent_tint_dumps() {
         render_at(&mut f, REST_LATER)
     };
 
-    for (gname, glass) in glasses {
+    for (gname, glass, base) in glasses {
         for (aname, accent) in accents {
             for w in weights {
                 for (mode, selector) in [("ring", "ring"), ("none", "none")] {
-                    let response = format!("accent \"{selector}\"\n accent-tint {w}");
+                    let response = format!("{base}\n accent \"{selector}\"\n accent-tint {w}");
                     let name = format!("still-{gname}-{aname}-w{w}-accent-{mode}");
                     dump(&dir, &name, &still(glass, &response, "#808080", accent));
                 }
                 for (bname, background) in [("red", "#ff0000"), ("blue", "#0000ff")] {
-                    let response = format!("accent-tint {w}");
+                    let response = format!("{base}\n accent-tint {w}");
                     let name = format!("backdrop-{gname}-{aname}-w{w}-{bname}");
                     dump(&dir, &name, &still(glass, &response, background, accent));
                 }
@@ -1386,7 +1571,8 @@ fn accent_tint_dumps() {
         ("orange-to-black", Some("#ff6600"), Some("#000000")),
         ("orange-to-none", Some("#ff6600"), None),
     ] {
-        let mut f = Fixture::with_config(look(ACCEPTED_GLASS, "accent-tint 1", "#808080", ""));
+        let response = format!("{ACCEPTED_RESPONSE}\n accent-tint 1");
+        let mut f = Fixture::with_config(look(ACCEPTED_GLASS, &response, "#808080", ""));
         f.niri_state().backend.headless().add_renderer().unwrap();
         f.add_output(1, (OUT_W, OUT_H));
         let id = f.add_client();
@@ -1454,5 +1640,6 @@ git commit -m "docs(material): recommended accent-tint weight"
 - [ ] **Step 6: Close out**
 
 - File the Prism follow-up as an idea in the Prism project: `tasks add "Expose the niri accent-tint response weight" --project prism --status idea -b "niri gained response accent-tint (0–1, default 0); see niri-material docs/specs/2026-10-03-accent-tint-design.md. Prism has no key for it yet."`
+- Whole-branch review, before any merge: dispatch one fresh reviewer on the most capable model over `git diff materials-26.04...HEAD` with the spec and this plan. Record `review: impl round <n> — …` on the task. Run corrective rounds (one fix, one scoped re-review) while Critical or Important findings reproduce, up to five.
 - Run `tt-report`. Then integrate the branch into `materials-26.04` by local merge (personal profile), after `just gate` passes on the merged tree.
 - `tasks done` each step child, then `material-6f45a0` with the outcome, in the commit that lands them.
