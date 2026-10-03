@@ -416,9 +416,10 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     // full-flex resize reaches an inner edge near 90.4, and 90.4 + 2 * 12
     // overflows the 112 px outer edge. Constraining the *inner* radius by
     // both keeps `outer = inner + chamfer` exactly true, which the bevel
-    // normal below depends on — it builds its slope from `chamfer` as the
-    // horizontal run, so a separately fitted outer ring would tilt the
-    // normal at exactly the corners it narrowed.
+    // normal below depends on — it takes its slope from the height field
+    // between the inner and outer boundaries, so a separately fitted outer
+    // ring would change that run, and tilt the normal, at exactly the corners
+    // it narrowed.
     vec2 radius_half = min(inner_half, half_ext - vec2(chamfer));
     vec4 inner_r = fitRadii(mat_corner_radius, radius_half);
     vec4 outer_r = inner_r + vec4(chamfer);

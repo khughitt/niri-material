@@ -520,7 +520,12 @@ fn one_core(samples: &[(u8, f64)], face_inset: f64, gap: f64) -> Result<(), Stri
     }
     // Outward to the first local minimum: stop where the next outward sample
     // is brighter than the lowest so far by more than one code value.
-    // Quantization wobble of one code value is not a minimum.
+    // A one-count rise is not a minimum. After the height-field bevel the
+    // shoulder reads 59, 58, 59 on the binding case: the expected cause is the
+    // intended spill brightening where the glass thins (spec 3.2 / 3.3), with
+    // quantization possibly contributing. The walk starts at low = core, so a
+    // core+1 sample just off the face is walked through; that is the core
+    // spreading onto the chamfer. A rise of 2 or more still ends the walk.
     let mut min = ci;
     let mut low = s[ci].0;
     while min > 0 && s[min - 1].0 <= low.saturating_add(1) {
@@ -657,7 +662,8 @@ fn one_core_anchors_inside_a_left_inset() {
 #[test]
 fn one_core_walks_through_a_one_count_wobble() {
     // binding (gap 2), right edge after the height-field bevel: 59, 58, 59
-    // on the shoulder is quantization wobble, not a second core.
+    // on the shoulder is the intended spill brightening where the glass thins
+    // (spec 3.2 / 3.3), possibly with quantization, not a second core.
     let s = [
         (83, 2.5),
         (82, 1.5),
@@ -668,6 +674,23 @@ fn one_core_walks_through_a_one_count_wobble() {
         (0, -3.5),
     ];
     assert_eq!(one_core(&s, 0., 2.), Ok(()));
+}
+
+#[test]
+fn one_core_stops_at_a_two_count_rise() {
+    // The boundary of the tolerance: 58 then 60 is a rise of 2 past the
+    // minimum, which ends the walk; 60 is at least half the core (83).
+    let s = [
+        (83, 2.5),
+        (82, 1.5),
+        (58, 0.5),
+        (60, -0.5),
+        (33, -1.5),
+        (18, -2.5),
+        (0, -3.5),
+    ];
+    let err = one_core(&s, 0., 2.).unwrap_err();
+    assert!(err.contains("second maximum 60"), "{err}");
 }
 
 #[test]

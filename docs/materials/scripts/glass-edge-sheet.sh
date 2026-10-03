@@ -14,9 +14,10 @@ set -eu
 : "${SHEET_WALL:?wallpaper image to put behind the glass}"
 HERE=$(dirname "$(readlink -f "$0")")
 . "$HERE/glass-optic-smoke-lib.sh"
+[ -r "$SHEET_WALL" ] || fail "SHEET_WALL is not a readable file: $SHEET_WALL"
 capture_preflight headless
 build_binaries
-capture_identity --config preset=glass-edge-sheet --config output=1280x720 --config scale=1 --config vrr=off
+capture_identity --input "$SHEET_WALL" --config preset=glass-edge-sheet --config output=1280x720 --config scale=1 --config vrr=off
 calibrate_probe_rect "$NIRI" 0
 WALL=$OUT/wall.png
 magick "$SHEET_WALL" -resize 1280x720^ -gravity center -extent 1280x720 "$WALL"
@@ -27,7 +28,7 @@ declare -A LOOK=(
     [inactive]=$'ior 1.2\nthickness 62.3\nattenuation-color "#2e3034"\nattenuation-distance 42\nchromatic-aberration 0.32\ndistortion 0.2 scale=0.08\nbevel 15\noffset-x -6\noffset-y -5'
     [weak-thin]=$'ior 1.5\nthickness 6\nattenuation-color "#dfe8ff"\nattenuation-distance 60\nbevel 12\noffset-x 6\noffset-y 6'
 )
-corner_roi() { echo "160x160+$((PX - 40))+$((PY - 40))"; }
+corner_roi() { echo "160x160+$((PX > 40 ? PX - 40 : 0))+$((PY > 40 ? PY - 40 : 0))"; }
 
 cell() {   # $1 name, $2 glass lines
     GLASS_EXTRA=$2
