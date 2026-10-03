@@ -3,11 +3,12 @@ id: material-7afc31
 title: Skip material rendering for windows that are not visible
 status: idea
 priority: 1
+needs: [quiet]
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-02T23:07:57Z
+updated: 2026-10-03T16:48:43Z
 depends: []
 parent: material-5d6b2c
-tags: [quick-add, performance, needs-quiet]
+tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
 ---
 

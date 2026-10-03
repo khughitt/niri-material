@@ -6,10 +6,11 @@ priority: 3
 size: xs
 complexity: low
 process: direct
+needs: [owner]
 created: 2026-09-27T17:36:46Z
-updated: 2026-10-02T23:47:23Z
+updated: 2026-10-03T16:48:43Z
 depends: []
-tags: [docs, needs-owner]
+tags: [docs]
 agent: claude-code/claude-opus-5-5
 ---
 

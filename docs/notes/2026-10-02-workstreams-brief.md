@@ -1,18 +1,21 @@
 # Workstreams: parallel lanes over the open material work
 
-Status: scoping handoff, 2026-10-02. Not a design; it groups existing goals and
-loose tasks into lanes that can run side by side. When one lane is waiting on a
-quiet host or a review by the owner, work continues in the others.
+Status: tracker migration, 2026-10-03 (material-5595fe). Not a design; it groups
+existing goals and loose tasks into lanes that can run side by side. Lanes and
+needs now live in the tracker. When one lane is waiting on a quiet host or a
+review by the owner, work continues in the others.
 
 ## Problem
 
-There are 72 open tasks: 8 goals from the 2026-09-29 scope pass and about 25 loose
-ideas. They were grouped by subsystem, which hides two things that decide what can
+At the 2026-10-02 scoping pass there were 72 open tasks: 8 goals from the
+2026-09-29 scope pass and about 25 loose ideas. They were grouped by subsystem,
+which hides two things that decide what can
 run at once:
 
 1. **Host class.** A check needs one of three hosts. `none` is code, frozen-clock
    fixtures, docs and design. `headless` is a nested niri on the headless weston unit.
-   `quiet` means a TTY with the desktop stopped, for power, timing and settle evidence.
+   `quiet` means an idle host, using a TTY with the desktop stopped when the run
+   requires it, for power, timing and settle evidence.
    On top of any of these, the owner may have to judge sheets.
    Only the `quiet` class serialises.
 2. **Shared mechanisms.** Two are established: frozen-time fixtures and the bevel
@@ -23,9 +26,11 @@ run at once:
 
 ## Current behaviour and evidence
 
-- The quiet queue holds the settle-lifecycle captures (`material-80caf4`,
-  `material-3acc86`, `material-1af3c6`, `material-f7eb0b`) and the view-tilt smoke
-  (`material-77db8a`). The cost study `material-31074f` is the wake hub for
+- The settle-lifecycle captures `material-80caf4`, `material-3acc86` and
+  `material-f7eb0b` are done; two-output removal (`material-1af3c6`) remains.
+  View-tilt (`material-77db8a`) passed its refreshed smoke and clips on 2026-10-03
+  and waits for owner review. The quiet queue now holds the glass-edge contact
+  sheet (`material-124f1f`). The cost study `material-31074f` is the wake hub for
   `material-2ebf2c`, `material-a0cbb0`, `material-a91346`, `material-0c7eed` and
   `material-f6e284`, and it needs a quiet host.
 - Deterministic in-process rendering already works. `src/tests/ring_pair.rs`
@@ -36,9 +41,10 @@ run at once:
   (`material-6bd4a3`). Fixtures pinned to llvmpipe still gate on the NVIDIA GPU
   (`material-925518`). Timers and the idle lock disturb runs that are already under
   way (`material-188aaa`).
-- Edge diagnosis (`material-be611b`, 2026-09-30): the chamfer is a planar ramp, so
-  one normal covers its whole width. Refraction uses a global thickness. The spec is
-  accepted, and its plan is being written in the glass-edges worktree.
+- Edge diagnosis (`material-be611b`, 2026-09-30): the chamfer was a planar ramp,
+  so one normal covered its whole width, with global refraction thickness. The
+  implementation is reviewed in the glass-edges worktree; its contact sheet and
+  owner appearance review remain before merge.
 
 ## Constraints
 
@@ -57,15 +63,30 @@ run at once:
 - **A. Lanes as parent goals, scheduled by step (taken).** `tasks tree` shows each
   lane, and existing goals and their briefs keep their scope. A lane mixes
   preparation, shared renderer changes and quiet verification, so a step is
-  scheduled by its own constraints, not by its lane. Tags mark known gates:
-  `needs-quiet`, `needs-nested` (a nested compositor) and `needs-owner` (the owner
-  supplies or judges an image). They are not exhaustive: a task without a tag is not
+  scheduled by its own constraints, not by its lane. The six goals carry `lane: true`;
+  steps record known gates in `needs`: `quiet`, `nested` (a nested compositor)
+  and `owner` (the owner supplies or judges an image). These replace the former
+  `lane` and `needs-*` tags. They are not exhaustive: a task without a need is not
   automatically runnable anytime, and its checks name their host class. Where a task
   bundles preparation with a quiet run, split the two when it is taken up
   (`material-31074f`).
 - B. Lane tags only. This leaves the tree flat, and the 9-29 briefs never get a
   common place to live.
 - C. Re-scope everything into new goals. This throws away the 9-29 handoffs for no gain.
+
+Use `tasks lanes` (or `tasks --pretty lanes`) for guidance, state and the next
+step in each lane; `tasks prime` includes that view. `tasks next --under <lane>`
+selects within a lane. On a busy desktop, `TASKS_WITHOUT=quiet tasks ready` or
+`TASKS_WITHOUT=quiet tasks next` excludes quiet-bound steps. Setting that variable
+for desktop sessions belongs to dotfiles and is outside this migration.
+
+The vocabulary is in `tasks/.config.toml`. `quiet` is exclusive across sessions;
+`nested` and `owner` are not. The current nested runners create unique Weston
+units and sockets (`material-signals-smoke.sh::start_nested` and
+`glass-optic-smoke-lib.sh`), so there is no single shared Weston unit to reserve.
+Measured captures still need `quiet`: the capture protocol's own serialization
+and preflight remain in force. An owner need describes the requirement; a review
+park still records the actual handoff to the owner.
 
 ## Unanswered questions
 
@@ -88,30 +109,26 @@ run at once:
   account for shared blur/prefilter caches and interactions; summing per-effect
   prices will miss them.
 
-## Proposed decomposition
+## Lane decomposition
 
 | Lane | Goal | Host | Established shared ground | First milestone |
 |---|---|---|---|---|
-| Evidence instruments | `material-2834d7` (new, P1) | none, then shrinks quiet | frozen-time fixtures (visual behaviour only) | `material-3a17b8` helpers, then `material-22d78f` migrated; `material-bb8480` calibration runs independently; `material-77be96` before more concurrent builds |
+| Evidence instruments | `material-2834d7` (P1) | none, then shrinks quiet | frozen-time fixtures (visual behaviour only) | `material-3a17b8` helpers, then `material-22d78f` migrated; `material-bb8480` calibration runs independently; `material-77be96` is done |
 | Quiescence and cost | `material-5d6b2c` (existing) | **quiet** for verification; preparation none | measurements and their conditions; the settle contract | remaining settle lifecycle evidence, then a bounded cost pilot; `material-233295` needs no host |
-| Glass optics | `material-6062fd` (new, P1) | headless, plus owner review | the bevel height field | `material-be611b` implemented and reviewed |
-| Material library and composition | `material-3aa1f2` (new) | none or headless | none yet; layer stack is a hypothesis | `material-3fcba2` with single-layer identity preserved |
+| Glass optics | `material-6062fd` (P1) | headless, plus owner review | the bevel height field | `material-be611b` implemented and reviewed |
+| Material library and composition | `material-3aa1f2` | none or headless; quiet for measured cost (`material-bb3fe5`) | none yet; layer stack is a hypothesis | `material-3fcba2` with single-layer identity preserved |
 | Motion and time | `material-53f873` (existing, retitled "Responsive glass that settles completely") | headless/owner; idle for clips | native animations and named responses | `material-77db8a` brought current and verified |
-| Signals | `material-6f606b` (new) | none; `material-07bac9` needs a nested compositor | source to store to response | `material-c1330b` replay finding and `material-07bac9` transport/attribution finding |
+| Signals | `material-6f606b` | none; `material-07bac9` needs a nested compositor | source to store to response | `material-c1330b` replay finding (done) and `material-07bac9` transport/attribution finding |
 
-**Next parallel push.** Instruments: `material-3a17b8`, then `material-22d78f`, and
-investigate `material-77be96` first. All three checkouts (main, glass-edges,
-material-77db8a) share one `target-dir`, checked 2026-10-02. That sharing is the cause
-(`material-77be96`, reproduced): cargo keys workspace crates by root-relative path and
-checks them by mtime, so one tree's build is served to another as fresh. Worktrees build
-into their own target dirs (every worktree except `material-3acc86` moved 2026-10-02),
-and `tools/target-dir-check` refuses one that shares once its branch carries the tool.
-Signals:
-`material-c1330b`, with `material-07bac9` as a separate nested-host demonstration.
-Optics: finish and review the `material-be611b` plan and prepare ring comparison
-cases. Bring `material-77db8a` current soon: its recorded conflicts touch the shader
-and configuration files the optics work will change, so it competes for code
-ownership although it needs no quiet host.
+**Next parallel push.** Instruments: `material-3a17b8`, then `material-22d78f`;
+`material-bb8480` can calibrate independently. The shared-target-dir issue
+(`material-77be96`) is resolved: worktrees build into their own target dirs and
+`tools/target-dir-check` refuses sharing. Signals: `material-07bac9` is the remaining
+nested-host demonstration after `material-c1330b`. Optics: run the quiet contact
+sheet, obtain owner review, then merge `material-be611b`; prepare ring comparison
+cases meanwhile. Motion: owner review of the refreshed `material-77db8a` grids,
+then bring the branch current again before its rollout. Optics and motion still
+compete for shader and configuration code ownership.
 
 The opaque-content opt-in contract stays visible across lanes: content depth
 (`material-7f5751`) and inactive desaturation (`material-987655`) settle that
@@ -119,7 +136,7 @@ boundary together.
 
 Loose bug and hygiene work fills gaps when the larger lanes are blocked:
 `material-698875`, `material-c8732f`, `material-e88df7`, and `material-fa4eec`
-(`needs-owner`: the owner supplies the screenshot). `material-77be96` moved to the
+(`needs: [owner]`: the owner supplies the screenshot). `material-77be96` moved to the
 instruments lane.
 
 How the lanes feed each other: instruments → the visual acceptance checks of every lane. Cost
@@ -127,8 +144,16 @@ measurements → budgets for composition, fireflies and lighting, and Fresnel's 
 Bevel → `material-7f5751`, `material-4e3e9c`, `material-933a8b`. Settle contract →
 the motion and signals lanes.
 
-**Pending regrouping.** Another worktree holds a newer copy of each of these tasks,
-so they were not edited here. When those branches merge, apply:
-`material-be611b --parent material-6062fd` (glass-edges worktree) and
-`material-f7eb0b --tag needs-quiet` (the `material-3acc86` worktree).
-`material-77db8a` (doing) belongs to the motion lane; reparent it when its claim ends.
+**Pending regrouping (checked 2026-10-03).** `material-be611b` still refuses an edit
+here with `stale_copy`: `.worktrees/glass-edges` has the newer record.
+`material-77db8a` has no live claim, but its record and plan exist only in
+`.worktrees/material-77db8a`. After those branches merge, the integrating agent applies:
+
+```sh
+tasks edit material-be611b --parent material-6062fd --need owner
+tasks edit material-124f1f --need quiet --need nested
+tasks edit material-77db8a --parent material-53f873 --need owner
+```
+
+`material-124f1f` is the glass-edges-only contact-sheet task and remains parked in
+the quiet queue until then. `material-f7eb0b` is done; no regrouping is needed.

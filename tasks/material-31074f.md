@@ -5,11 +5,12 @@ status: todo
 priority: 2
 size: m
 complexity: high
+needs: [quiet]
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-02T23:47:23Z
+updated: 2026-10-03T16:48:43Z
 depends: []
 parent: material-5d6b2c
-tags: [quick-add, performance, needs-quiet]
+tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
 ---
 

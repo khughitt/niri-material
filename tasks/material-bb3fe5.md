@@ -5,8 +5,9 @@ status: todo
 priority: 2
 size: m
 complexity: mid
+needs: [quiet]
 created: 2026-09-06T22:27:52Z
-updated: 2026-10-02T23:07:57Z
+updated: 2026-10-03T16:53:06Z
 depends: [material-397fcb]
 parent: material-3aa1f2
 tags: [material, rendering]

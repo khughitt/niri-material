@@ -3,9 +3,10 @@ id: material-2592a2
 title: "Ring beam: revisit ring-glow's default after burn-in"
 status: idea
 priority: 2
+needs: [owner]
 defer: 2026-10-05
 created: 2026-09-21T09:39:49Z
-updated: 2026-10-02T23:07:57Z
+updated: 2026-10-03T16:48:43Z
 depends: []
 parent: material-6062fd
 tags: [rendering]

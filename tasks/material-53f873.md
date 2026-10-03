@@ -5,12 +5,15 @@ status: todo
 priority: 1
 size: l
 complexity: high
+lane: true
 created: 2026-09-11T00:47:47Z
-updated: 2026-10-02T23:47:24Z
+updated: 2026-10-03T16:48:07Z
 depends: []
-tags: [quick-add, dynamics, rendering, lane]
+tags: [quick-add, dynamics, rendering]
 source: "mindful:thought:3f94e656b70f4e5585c1cb60c166e4da"
 ---
+
+Make glass respond to movement and focus, then settle completely under the accepted settle contract. First milestone: bring material-77db8a current with materials-26.04 and verify its focus view tilt, including owner review.
 
 Goal: for the 3d glass to look its best it cannot be 100% static. Inject more movement:
 
