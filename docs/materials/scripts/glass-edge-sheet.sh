@@ -17,9 +17,9 @@ HERE=$(dirname "$(readlink -f "$0")")
 capture_preflight headless
 build_binaries
 capture_identity --config preset=glass-edge-sheet --config output=1280x720 --config scale=1 --config vrr=off
+calibrate_probe_rect "$NIRI" 0
 WALL=$OUT/wall.png
 magick "$SHEET_WALL" -resize 1280x720^ -gravity center -extent 1280x720 "$WALL"
-calibrate_probe_rect "$NIRI" 0
 
 # The looks, pinned. live-*: Prism's terminal glass on 2026-10-02.
 declare -A LOOK=(
