@@ -84,9 +84,11 @@ impl Fixture {
 
     pub fn niri_complete_animations(&mut self) {
         let niri = self.niri();
+        // Restore, don't reset: `animations { off }` is this same flag.
+        let complete_instantly = niri.clock.should_complete_instantly();
         niri.clock.set_complete_instantly(true);
         niri.advance_animations();
-        niri.clock.set_complete_instantly(false);
+        niri.clock.set_complete_instantly(complete_instantly);
     }
 
     pub fn add_output(&mut self, n: u8, size: (u16, u16)) {

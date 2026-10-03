@@ -1,14 +1,16 @@
 ---
 id: material-6f45a0
 title: "Glass response: accent tint of attenuation color"
-status: idea
+status: done
 priority: 2
 size: s
 created: 2026-09-02T12:09:35Z
-updated: 2026-09-29T21:32:24Z
+updated: 2026-10-03T13:23:23Z
+completed: 2026-10-03T13:23:23Z
 depends: [material-a54d89]
 parent: material-0a4093
 tags: [signals, rendering]
+model: claude-opus-5-5
 ---
 
 Outcome: an identity response that mixes attenuation-color toward the signal accent by a configurable weight, so glass reads tinted with the project hue at rest. Acceptance: response name in the glass vocabulary, crossfades with the accent animation, bit-identical output at weight 0. Source: docs/materials/2026-09-02-material-signals-design.md section 11.
@@ -16,3 +18,10 @@ Outcome: an identity response that mixes attenuation-color toward the signal acc
 ## Notes
 
 - 2026-09-29T21:32:24Z (materials-26.04): scope: briefed; filed material-3bdffc to design opt-in attenuation tint using existing accent/presence crossfade with neutral-path checks; brief: docs/notes/2026-09-29-glass-signal-responses-brief.md
+- 2026-10-03T11:20:58Z (material-3bdffc): design finding (material-3bdffc): reviewed spec docs/specs/2026-10-03-accent-tint-design.md (accepted round 3) and plan docs/plans/2026-10-03-accent-tint.md (accepted round 3). Decisions: new response field accent-tint (0..1, default 0, inherited); hue-only tint at preserved face-transmittance luminance (T-space, p_f = thickness/attenuation-distance, gamut pull to gray within [0.001^p_f, 1]); weight = accent-tint x presence; tint chromaticity interpolates between crossfade endpoints (black<->colored continuous); computed in f64 on the CPU in glass_signal_inputs, no shader change; neutral path returns the configured color bitwise; fingerprint gains the quantized attenuation color. Density promise holds on neutral backdrops only; ring-colored band dims 0.47-0.87x at w=1. Native execution through children material-01ddd7..material-76a30f.
+- 2026-10-03T13:04:02Z (material-3bdffc): concerns: none — Prism exposure filed as prism-2b9a40 (idea)
+- 2026-10-03T13:04:09Z (material-3bdffc): correction: the preceding 'concerns:' line is not a concern record (no closed work fell short); it only records that Prism exposure was filed as prism-2b9a40
+- 2026-10-03T13:23:23Z (material-3bdffc): done
+  provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T13:23:23Z (material-3bdffc): accent-tint shipped: opt-in response weight (0-1, default 0, recommended 1 on dark glass) tinting the glass body toward the signal accent's hue at preserved face luminance; spec docs/specs/2026-10-03-accent-tint-design.md, plan docs/plans/2026-10-03-accent-tint.md; Prism exposure is prism-2b9a40
+  provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

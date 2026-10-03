@@ -25,6 +25,7 @@ use crate::render_helpers::RenderTarget;
 
 pub mod optics;
 pub mod ring;
+pub mod tint;
 
 /// Per-fragment background composition inputs, mirroring `XrayElement`'s
 /// two-layer stack for the one workspace the element belongs to.
@@ -129,6 +130,9 @@ pub struct GlassSignalInputs {
     pub activity_add: f32,
     pub chromatic_aberration: f64,
     pub distortion: f64,
+    /// `attenuation-color` after the accent tint (accent-tint design §5);
+    /// the configured color, bit for bit, when untinted.
+    pub attenuation_color: [f32; 4],
     pub samples: u8,
     pub impulses: [ImpulseFrame; 4],
 }
@@ -139,13 +143,20 @@ impl GlassSignalInputs {
             activity_add: 0.,
             chromatic_aberration: glass.chromatic_aberration,
             distortion: glass.distortion,
+            attenuation_color: glass.attenuation_color.to_array_unpremul(),
             samples: tap_count(glass.anisotropic_blur, glass.chromatic_aberration),
             impulses: Default::default(),
         }
     }
 }
 
-pub fn glass_signal_inputs(frame: &SignalFrame, glass: &ResolvedGlass) -> GlassSignalInputs {
+/// Glass-specific interpretation of a `SignalFrame` (design §6). The one
+/// place glass selectors and the accent tint are read.
+pub fn glass_signal_inputs(
+    frame: &SignalFrame,
+    glass: &ResolvedGlass,
+    response: &niri_config::ResolvedResponse,
+) -> GlassSignalInputs {
     use niri_config::ImpulseResponse as R;
 
     let mut activity_add = 0.;
@@ -170,6 +181,13 @@ pub fn glass_signal_inputs(frame: &SignalFrame, glass: &ResolvedGlass) -> GlassS
         activity_add: activity_add.min(0.999),
         chromatic_aberration,
         distortion,
+        attenuation_color: tint::accent_tint(
+            glass.attenuation_color,
+            glass.thickness,
+            glass.attenuation_distance,
+            frame.tint_chroma,
+            response.accent_tint * f64::from(frame.presence),
+        ),
         samples: tap_count(glass.anisotropic_blur, chromatic_aberration),
         impulses,
     }
@@ -408,6 +426,7 @@ pub struct GlassSignalFingerprint {
     activity_add_q: i32,
     chromatic_q: i32,
     distortion_q: i32,
+    attenuation_q: [i32; 3],
     samples: u8,
 }
 
@@ -423,6 +442,8 @@ impl GlassSignalFingerprint {
             activity_add_q: (glass_signal.activity_add * 1024.).round() as i32,
             chromatic_q: (glass_signal.chromatic_aberration * 1024.).round() as i32,
             distortion_q: (glass_signal.distortion * 1024.).round() as i32,
+            attenuation_q: [0, 1, 2]
+                .map(|i| (glass_signal.attenuation_color[i] * 1024.).round() as i32),
             samples: glass_signal.samples,
         }
     }
@@ -869,10 +890,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_ior", g.ior as f32),
             Uniform::new("mat_scatter", scatter(g.roughness, g.ior)),
             Uniform::new("mat_thickness", g.thickness as f32),
-            Uniform::new(
-                "mat_attenuation_color",
-                g.attenuation_color.to_array_unpremul(),
-            ),
+            Uniform::new("mat_attenuation_color", self.glass_signal.attenuation_color),
             Uniform::new("mat_attenuation_distance", g.attenuation_distance as f32),
             Uniform::new(
                 "mat_chromatic_aberration",
@@ -1682,6 +1700,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.,
+            tint_chroma: None,
             focus: 0.,
             beam: BeamFrame::REST,
         };
@@ -1710,7 +1729,7 @@ mod tests {
             accent: None,
         };
         let glass = ResolvedGlass::default();
-        let g = glass_signal_inputs(&frame, &glass);
+        let g = glass_signal_inputs(&frame, &glass, &niri_config::ResolvedResponse::default());
 
         assert!(
             (g.activity_add - 0.999).abs() < 1e-6,
@@ -1739,10 +1758,15 @@ mod tests {
             breath: 1.,
             impulses: Default::default(),
             presence: 1.,
+            tint_chroma: Some(crate::render_helpers::signal::accent_chroma([1., 0.5, 0.])),
             focus: 0.,
             beam: BeamFrame::REST,
         };
-        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let g = glass_signal_inputs(
+            &frame,
+            &ResolvedGlass::default(),
+            &niri_config::ResolvedResponse::default(),
+        );
         let mut r = ResolvedResponse::default();
         for (attention, moves) in [
             (AttentionResponse::RimOrbit, true),
@@ -1767,6 +1791,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.,
+            tint_chroma: None,
             focus: 0.,
             beam: BeamFrame::REST,
         };
@@ -1776,7 +1801,11 @@ mod tests {
             progress: 0.5,
             accent: None,
         };
-        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let g = glass_signal_inputs(
+            &frame,
+            &ResolvedGlass::default(),
+            &niri_config::ResolvedResponse::default(),
+        );
 
         assert_eq!(g.impulses[0].selector, R::Sweep as u8);
         assert_eq!(g.activity_add, 0.);
@@ -1907,6 +1936,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.25,
+            tint_chroma: Some(crate::render_helpers::signal::accent_chroma([1., 0.5, 0.])),
             focus: 1.,
             beam: BeamFrame {
                 head: 1234.5,
@@ -1914,7 +1944,11 @@ mod tests {
                 decay: 1.,
             },
         };
-        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let g = glass_signal_inputs(
+            &frame,
+            &ResolvedGlass::default(),
+            &niri_config::ResolvedResponse::default(),
+        );
         let u = SignalUniforms::from_frame(&frame, &g, &r);
         assert_eq!(
             u.accent,
@@ -1958,6 +1992,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.5,
+            tint_chroma: Some(crate::render_helpers::signal::accent_chroma([1., 0.5, 0.])),
             focus: 0.,
             beam: BeamFrame::REST,
         };
@@ -1973,7 +2008,11 @@ mod tests {
             progress: 0.2,
             accent: Some([0., 0., 1.]),
         };
-        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let g = glass_signal_inputs(
+            &frame,
+            &ResolvedGlass::default(),
+            &niri_config::ResolvedResponse::default(),
+        );
         let u = SignalUniforms::from_frame(&frame, &g, &r);
         assert_eq!(
             u.impulse_rgb[0],
@@ -1988,12 +2027,133 @@ mod tests {
 
         frame.accent = None;
         frame.presence = 0.;
-        let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
+        let g = glass_signal_inputs(
+            &frame,
+            &ResolvedGlass::default(),
+            &niri_config::ResolvedResponse::default(),
+        );
         let u = SignalUniforms::from_frame(&frame, &g, &r);
         assert_eq!(
             u.impulse_rgb[0],
             [1., 1., 1.],
             "no accent falls back to white"
         );
+    }
+
+    fn accent_frame(
+        accent: Option<[f32; 3]>,
+        presence: f32,
+    ) -> crate::render_helpers::signal::SignalFrame {
+        crate::render_helpers::signal::SignalFrame {
+            accent,
+            level: 1. / 3.,
+            breath: 0.,
+            impulses: Default::default(),
+            presence,
+            tint_chroma: accent.map(crate::render_helpers::signal::accent_chroma),
+            focus: 0.,
+            beam: BeamFrame::REST,
+        }
+    }
+
+    fn accepted_glass() -> ResolvedGlass {
+        ResolvedGlass {
+            thickness: 31.2,
+            attenuation_color: niri_config::Color::from_rgba8_unpremul(0x0d, 0x1d, 0x1e, 0xff),
+            attenuation_distance: 11.,
+            ..ResolvedGlass::default()
+        }
+    }
+
+    #[test]
+    fn untinted_attenuation_is_the_configured_color_bitwise() {
+        use niri_config::ResolvedResponse;
+
+        let orange = Some([1., 0.133, 0.]);
+        let tinted = ResolvedResponse {
+            accent_tint: 1.,
+            ..Default::default()
+        };
+        for glass in [ResolvedGlass::default(), accepted_glass()] {
+            let configured = glass.attenuation_color.to_array_unpremul();
+            let cases = [
+                (
+                    "weight 0",
+                    glass_signal_inputs(
+                        &accent_frame(orange, 1.),
+                        &glass,
+                        &ResolvedResponse::default(),
+                    ),
+                ),
+                (
+                    "presence 0",
+                    glass_signal_inputs(&accent_frame(orange, 0.), &glass, &tinted),
+                ),
+                (
+                    "no accent",
+                    glass_signal_inputs(&accent_frame(None, 0.), &glass, &tinted),
+                ),
+                ("quiet", GlassSignalInputs::quiet(&glass)),
+            ];
+            for (name, g) in cases {
+                assert_eq!(g.attenuation_color, configured, "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn attenuation_tint_weight_is_accent_tint_times_presence() {
+        use niri_config::ResolvedResponse;
+
+        use crate::render_helpers::material::tint::accent_tint;
+        use crate::render_helpers::signal::accent_chroma;
+
+        let glass = accepted_glass();
+        let half = ResolvedResponse {
+            accent_tint: 0.5,
+            ..Default::default()
+        };
+        let orange = [1., 0.133, 0.];
+        let blue = [0., 0.133, 1.];
+        // A frame mid-way through orange → blue, and black → orange.
+        for (from, to) in [(orange, blue), ([0.; 3], orange)] {
+            for t in [0., 0.5, 1.] {
+                let k = [0, 1, 2].map(|i| {
+                    accent_chroma(from)[i] + (accent_chroma(to)[i] - accent_chroma(from)[i]) * t
+                });
+                let mut frame = accent_frame(Some(to), 0.5);
+                frame.tint_chroma = Some(k);
+                let g = glass_signal_inputs(&frame, &glass, &half);
+                let expected = accent_tint(
+                    glass.attenuation_color,
+                    glass.thickness,
+                    glass.attenuation_distance,
+                    Some(k),
+                    0.25,
+                );
+                assert_eq!(g.attenuation_color, expected, "t={t}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_weight_only_change_changes_the_glass_fingerprint() {
+        use niri_config::ResolvedResponse;
+
+        let glass = accepted_glass();
+        let frame = accent_frame(Some([1., 0.133, 0.]), 1.);
+        let at = |w| {
+            let r = ResolvedResponse {
+                accent_tint: w,
+                ..Default::default()
+            };
+            GlassSignalFingerprint::quantize(&glass_signal_inputs(&frame, &glass, &r))
+        };
+        assert_ne!(
+            at(0.4),
+            at(0.6),
+            "a reload that changes only accent-tint commits damage"
+        );
+        assert_eq!(at(0.4), at(0.4));
     }
 }
