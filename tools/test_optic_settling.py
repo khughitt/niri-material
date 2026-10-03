@@ -569,7 +569,10 @@ class PrepareTests(unittest.TestCase):
             by_name = {case['name']: case for case in manifest['cases']}
             dedicated = sorted(name for name, case in by_name.items() if case['lane'] == 'dedicated')
             self.assertEqual(dedicated, ['drm-aurora', 'screencast', 'tty-resume', 'unlock'])
-            self.assertEqual(by_name['tty-resume']['edge_in'], [[1, 'vt-away']])
+            self.assertEqual(by_name['tty-resume']['edge_in'], [[1, 'vt-return']])
+            # Paused on the spare VT, niri cannot redraw: only the return must.
+            self.assertEqual(by_name['tty-resume']['stimuli'][:2],
+                             [{'label': 'vt-out'}, {'label': 'vt-return', 'min_redraws': 1}])
             self.assertEqual(by_name['unlock']['edge_in'], [[1, 'unlock']])
             self.assertEqual(by_name['screencast']['consumer'],
                              {'frames_in': ['sample-1', 'sample-2', 'sample-3'],
@@ -727,6 +730,16 @@ class DriverCleanupTests(unittest.TestCase):
                         OPTIC_SETTLING_STUB_TOOLS=str(self.stubs / 'tools'),
                         PATH=f'{self.stubs / "bin"}:{os.environ["PATH"]}')
         self.addCleanup(self.kill_leftovers)
+        self.drm = self.sysfs({'card1-DP-1': 'connected', 'card1-HDMI-A-1': 'disconnected'})
+
+    def sysfs(self, connectors):
+        root = self.base / 'drm'
+        shutil.rmtree(root, ignore_errors=True)
+        for connector, status in connectors.items():
+            (root / connector).mkdir(parents=True)
+            (root / connector / 'status').write_text(status + '\n')
+        (root / 'card1').mkdir(parents=True)                   # the card itself has no status
+        return root
 
     def pids(self):
         return [int(line.split()[1]) for line in (self.stubs / 'pids').read_text().splitlines()]
@@ -745,6 +758,8 @@ class DriverCleanupTests(unittest.TestCase):
         if lane:
             # The dedicated lane refuses a Wayland session; this suite may run inside one.
             run_env.pop('WAYLAND_DISPLAY', None)
+            # Nor may it read this host's outputs.
+            run_env.setdefault('OPTIC_SETTLING_STUB_DRM_SYSFS', str(self.drm))
         return subprocess.Popen(['bash', str(script), 'pilot', *lane], cwd=self.root, start_new_session=True,
                                 env=run_env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -866,13 +881,16 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertLess(meta.index('chvt 1'), max(i for i, line in enumerate(meta) if line.startswith('release ')))
 
     def test_stub_overrides_need_stub_tools(self):
-        env = dict(self.env, OPTIC_SETTLING_STUB_TIMESCALE='0.05')
-        env.pop('OPTIC_SETTLING_STUB_TOOLS')
         script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
-        run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
-                             capture_output=True, text=True, timeout=60)
-        self.assertNotEqual(run.returncode, 0)
-        self.assertIn('need OPTIC_SETTLING_STUB_TOOLS', run.stderr)
+        for name, value in (('OPTIC_SETTLING_STUB_TIMESCALE', '0.05'),
+                            ('OPTIC_SETTLING_STUB_DRM_SYSFS', str(self.base / 'drm'))):
+            with self.subTest(name=name):
+                env = dict(self.env, OUT=str(self.base / f'out-{name}'), **{name: value})
+                env.pop('OPTIC_SETTLING_STUB_TOOLS')
+                run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
+                                     capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn('need OPTIC_SETTLING_STUB_TOOLS', run.stderr)
 
     def test_vt_overrides_need_stub_tools(self):
         script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
@@ -1041,3 +1059,33 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertIn('no NOPASSWD rule for /usr/bin/chvt', stderr)
         self.assertEqual(self.pids(), [])                     # nothing was launched
         self.assertEqual(list(self.runtime.glob('gos.*')), [])
+
+    def refused(self, **env):
+        driver = self.start('drm-aurora', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(self.base / 'active'), LANE_ARGS='--lane dedicated', **env)
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 1, stderr)
+        self.assertEqual(self.pids(), [])                     # nothing was launched
+        return stderr
+
+    def test_a_second_connected_output_is_refused_before_launch(self):
+        drm = self.sysfs({'card1-DP-1': 'connected', 'card1-HDMI-A-1': 'connected'})
+        stderr = self.refused(OPTIC_SETTLING_STUB_DRM_SYSFS=str(drm))
+        self.assertIn('HDMI-A-1 is connected besides DRM_OUTPUT DP-1', stderr)
+
+    def test_a_leftover_niri_from_an_earlier_run_is_refused(self):
+        # pgrep -x niri misses it: the run's snapshot copy is named binary.
+        old = self.base / 'optic-settling/pilot-old'
+        old.mkdir(parents=True)
+        shutil.copy(shutil.which('sleep'), old / 'binary')
+        leftover = subprocess.Popen([str(old / 'binary'), '60'])
+        self.addCleanup(leftover.wait)
+        self.addCleanup(leftover.kill)
+        stderr = self.refused()
+        self.assertIn(f'pid {leftover.pid} runs {(old / "binary").resolve()}', stderr)
+
+    def test_a_tty_resume_run_journals_the_switch_out_and_the_return_apart(self):
+        self.run_dedicated('tty-resume')
+        labels = [line.split('\t')[0] for line in
+                  (self.out / 'tty-resume/journal.tsv').read_text().splitlines()]
+        self.assertEqual(labels[:2], ['vt-out', 'vt-return'])

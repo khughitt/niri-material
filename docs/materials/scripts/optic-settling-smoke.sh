@@ -56,8 +56,31 @@ if [ "$LANE" = dedicated ]; then
 fi
 # Host items are owner actions (docs/materials/capture-host-setup.md); refuse naming the missing one.
 dedicated_prerequisites() {
+    local root link exe pid status connector
     [ -z "${WAYLAND_DISPLAY:-}" ] || fail 'the dedicated lane runs from a TTY login, not inside a Wayland session'
     ! pgrep -x niri > /dev/null || fail 'a niri is already running: stop the desktop session first'
+    # A killed earlier run can leave its niri holding DRM; it runs the run's
+    # snapshot copy, named binary, which pgrep -x niri does not see.
+    root=$(readlink -f "$NIRI_MATERIAL_WORK_ROOT")
+    for link in /proc/[0-9]*/exe; do
+        exe=$(readlink "$link" 2>/dev/null) || continue
+        exe=${exe% (deleted)}
+        case $exe in
+            "$root"/*/binary)
+                pid=${link#/proc/}
+                fail "a niri from an earlier run is still running: pid ${pid%/exe} runs $exe" ;;
+        esac
+    done
+    # One output: a second connected one would fail only at analysis.
+    for status in "$DRM_SYSFS"/card*-*/status; do
+        [ -e "$status" ] || continue
+        [ "$(cat "$status")" = connected ] || continue
+        connector=${status%/status}
+        connector=${connector##*/}
+        connector=${connector#card*-}
+        [ "$connector" = "$DRM_OUTPUT" ] \
+            || fail "output $connector is connected besides DRM_OUTPUT $DRM_OUTPUT: disconnect it for the dedicated lane"
+    done
     sudo -n -l /usr/bin/chvt > /dev/null 2>&1 \
         || fail 'no NOPASSWD rule for /usr/bin/chvt (docs/materials/capture-host-setup.md)'
     gst-inspect-1.0 pipewiresrc > /dev/null 2>&1 || fail 'no pipewiresrc element: install gst-plugin-pipewire'
@@ -138,9 +161,11 @@ fi
 # for the consumer and lock client. A recorded run never uses them.
 TIMESCALE=${OPTIC_SETTLING_STUB_TIMESCALE:-1}
 CAST_CONSUMER=${OPTIC_SETTLING_STUB_CONSUMER:-$ROOT/tools/screencast_consumer.py}
+DRM_SYSFS=${OPTIC_SETTLING_STUB_DRM_SYSFS:-/sys/class/drm}
 if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
-    [ "$TIMESCALE" = 1 ] && [ -z "${OPTIC_SETTLING_STUB_CONSUMER:-}${OPTIC_SETTLING_STUB_LOCK:-}" ] \
-        || fail 'stub timescale, consumer and lock client need OPTIC_SETTLING_STUB_TOOLS'
+    [ "$TIMESCALE" = 1 ] \
+        && [ -z "${OPTIC_SETTLING_STUB_CONSUMER:-}${OPTIC_SETTLING_STUB_LOCK:-}${OPTIC_SETTLING_STUB_DRM_SYSFS:-}" ] \
+        || fail 'stub timescale, consumer, lock client and DRM sysfs need OPTIC_SETTLING_STUB_TOOLS'
     # vt-lib.sh's test seams: a recorded run switches and reads the real VTs.
     [ -z "${VT_CHVT:-}" ] || fail 'VT_CHVT needs OPTIC_SETTLING_STUB_TOOLS'
     [ -z "${VT_LOGINCTL:-}" ] || fail 'VT_LOGINCTL needs OPTIC_SETTLING_STUB_TOOLS'
@@ -273,9 +298,11 @@ cases = [
          [dict(before='copy-1.rgb', after='copy-2.rgb', expect='equal')], capture_s=40),
     # Dedicated lane: niri on DRM from a TTY. drm-aurora is the lane's cadence control.
     case('drm-aurora', 'active-idle-resume', [0, 1], [A4, HELD, A4], pixels=held_pair, lane='dedicated'),
+    # Paused on the spare VT, niri cannot redraw: only the return must, and
+    # the resume edge falls inside the return, not the switch out.
     case('tty-resume', 'session-activation', [0, 1, 0], [A4, HELD, A4, HELD],
-         [dict(label='vt-away', min_redraws=1)], capture_s=45, lane='dedicated',
-         edge_in=[[1, 'vt-away']]),
+         [dict(label='vt-out'), dict(label='vt-return', min_redraws=1)], capture_s=45, lane='dedicated',
+         edge_in=[[1, 'vt-return']]),
     case('unlock', 'session-activation', [0, 1, 0], [A4, HELD, A4, HELD],
          [dict(label='lock', min_redraws=1), dict(label='unlock', min_redraws=1)], capture_s=45,
          lane='dedicated', edge_in=[[1, 'unlock']]),
@@ -405,16 +432,17 @@ build_client() {   # name, protocol XML...: docs/materials/scripts/<name>.c into
     IDENTITY_EXTRA+=(--binary "$dir/$name" --input "$HERE/$name.c")
 }
 selected() { printf '%s\n' "${RUN_CASES[@]}" | grep -qE "^$1(-r[0-9]+)?$"; }
-INHIBIT_BIN=$OUT/clients/idle-inhibit-client
-LOCK_BIN=$OUT/clients/session-lock-client
+# Set only once built (or stubbed): a use without a build fails under set -u.
 if selected idle-inhibitor; then
     build_client idle-inhibit-client "$PROTOCOLS/stable/xdg-shell/xdg-shell.xml" \
         "$PROTOCOLS/unstable/idle-inhibit/idle-inhibit-unstable-v1.xml"
+    INHIBIT_BIN=$OUT/clients/idle-inhibit-client
 fi
 if [ -n "${OPTIC_SETTLING_STUB_LOCK:-}" ]; then
     LOCK_BIN=$OPTIC_SETTLING_STUB_LOCK
 elif selected unlock; then
     build_client session-lock-client "$PROTOCOLS/staging/ext-session-lock/ext-session-lock-v1.xml"
+    LOCK_BIN=$OUT/clients/session-lock-client
 fi
 if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
 capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" --config lane="$LANE" \
@@ -658,13 +686,15 @@ drive_idle_inhibitor() {
 drive_drm_aurora() { drive_cycle; }
 post_drm_aurora() { post_held; }
 # Out to the spare VT and back: niri's session pauses, then activation calls
-# notify_activity. Both switches are verified; the window stays under 6 s.
-vt_away() {
+# notify_activity. The switch out with its hold and the return are separate
+# stimuli, so the resume edge must fall in the return. Both switches are
+# verified; each window stays under 6 s.
+vt_out() {
     vt_switch "$VT_SPARE" || fail "$CASE: did not reach spare VT $VT_SPARE"
     nap 3   # backgrounded, so TERM while away is handled at once
-    vt_switch "$VT_HOME" || fail "$CASE: the return to VT $VT_HOME did not land"
 }
-drive_tty_resume() { keepalive; at 26; stim vt-away 1.5 vt_away; }
+vt_return() { vt_switch "$VT_HOME" || fail "$CASE: the return to VT $VT_HOME did not land"; }
+drive_tty_resume() { keepalive; at 26; stim vt-out 0 vt_out; stim vt-return 1.5 vt_return; }
 lock_start() {
     XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$DISPLAY_NAME "$LOCK_BIN" > "$CASE_DIR/lock.out" 2>> "$OUT/lock.log" &
     LOCK_PID=$!
