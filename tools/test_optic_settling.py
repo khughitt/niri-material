@@ -454,9 +454,8 @@ class PrepareTests(unittest.TestCase):
             # grim is a screencopy; a screencast needs a consumer this lane lacks.
             by_name = {case['name']: case for case in manifest['cases']}
             self.assertEqual(by_name['screencopy']['lane'], 'headless')
-            self.assertEqual((by_name['screencast']['lane'], by_name['screencast']['why']),
-                             ('screencast-consumer', 'no screencast consumer in the headless lane'))
-            self.assertFalse(by_name['screencast']['required'])
+            self.assertEqual((by_name['screencast']['lane'], by_name['screencast']['required']),
+                             ('dedicated', False))
             # The idle inhibitor runs in this lane: a real client, traced taking hold.
             inhibitor = by_name['idle-inhibitor']
             self.assertEqual((inhibitor['lane'], inhibitor['edges']), ('headless', [0]))
@@ -464,6 +463,49 @@ class PrepareTests(unittest.TestCase):
                 [(stimulus['label'], stimulus.get('messages')) for stimulus in inhibitor['stimuli']],
                 [('inhibit', ['IdleInhibit inhibited=1']), ('client', None),
                  ('release', ['IdleInhibit inhibited=0']), ('collect', None)])
+
+    def test_prepare_the_dedicated_lane(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            bin_dir = base / 'bin'; bin_dir.mkdir()
+            niri = bin_dir / 'niri'
+            niri.write_text('#!/bin/sh\n[ "$1" = validate ]\n')
+            magick = bin_dir / 'magick'
+            magick.write_text('#!/bin/sh\nfor arg do :; done\nprintf image > "$arg"\n')
+            niri.chmod(0o755); magick.chmod(0o755)
+            source = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+            identity = dict(source_commit=source, features=['profile-with-tracy'],
+                            binary_sha256=hashlib.sha256(niri.read_bytes()).hexdigest())
+            Path(str(niri) + '.identity.json').write_text(json.dumps(identity))
+            env = dict(os.environ, OUT=str(base / 'out'), NIRI_BIN=str(niri),
+                       NIRI_MATERIAL_WORK_ROOT=str(base), XDG_RUNTIME_DIR=str(base),
+                       CAPTURE_META='/bin/true', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                       PATH=f'{bin_dir}:{os.environ["PATH"]}')
+            script = root / 'docs/materials/scripts/optic-settling-smoke.sh'
+            run = subprocess.run(['bash', str(script), 'prepare', '--lane', 'dedicated'], env=env,
+                                 capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            manifest = json.loads((base / 'out/manifest.json').read_text())
+            by_name = {case['name']: case for case in manifest['cases']}
+            dedicated = sorted(name for name, case in by_name.items() if case['lane'] == 'dedicated')
+            self.assertEqual(dedicated, ['drm-aurora', 'screencast', 'tty-resume', 'unlock'])
+            self.assertEqual(by_name['tty-resume']['edge_in'], [[1, 'vt-away']])
+            self.assertEqual(by_name['unlock']['edge_in'], [[1, 'unlock']])
+            self.assertEqual(by_name['screencast']['consumer'],
+                             {'frames_in': ['sample-1', 'sample-2', 'sample-3'],
+                              'samples': ['sample-1', 'sample-2', 'sample-3']})
+            for name in dedicated:
+                self.assertIn({'label': 'collect', 'min_redraws': 1}, by_name[name]['stimuli'], name)
+                kdl = (base / 'out' / name / 'case.kdl').read_text()
+                self.assertIn('output "DP-1" { mode "3440x1440@59.999"; scale 1; }', kdl)
+                self.assertIn('dbus-interfaces-in-non-session-instances', kdl)
+            self.assertFalse((base / 'out/aurora-full').exists())      # headless configs not written
+            missing = subprocess.run(['bash', str(script), 'prepare', '--lane', 'dedicated'],
+                                     env=dict(env, OUT=str(base / 'out2'), DRM_MODE=''),
+                                     capture_output=True, text=True)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn('DRM_MODE', missing.stderr)
 
 
 # Stubs for every program the driver launches. Each long-lived one records
@@ -473,6 +515,8 @@ import os, signal, socket, sys, time
 os.chdir(os.environ['XDG_RUNTIME_DIR'])        # relative binds keep socket paths short
 if sys.argv[1] == 'weston':
     names = [arg.split('=', 1)[1] for arg in sys.argv[2:] if arg.startswith('--socket=')]
+elif sys.argv[1] == 'dbus-daemon':
+    names = [arg.split('path=', 1)[1] for arg in sys.argv[2:] if arg.startswith('--address=')]
 else:
     names = ['stub-1', f'niri.stub-1.{os.getpid()}.sock']
 sockets = []
@@ -490,17 +534,41 @@ signal.signal(signal.SIGTERM, stop)
 while True:
     time.sleep(60)
 """
+CONSUMER = """
+import json, os, pathlib, signal, sys, time
+stub = pathlib.Path(os.environ['STUB_DIR'])
+with open(stub / 'pids', 'a') as pids:
+    pids.write(f'consumer {os.getpid()}\\n')
+def stop(*_):
+    pathlib.Path(sys.argv[3]).write_text(json.dumps({'stopped_by_signal': True}))
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+print('ready 1', flush=True)
+(stub / 'cast-ready').touch()
+while True:
+    time.sleep(0.1)
+"""
 STUBS = {
     'bin/weston': 'echo "weston $$" >> "$STUB_DIR/pids"\nexec python3 "$STUB_DIR/serve.py" weston "$@"\n',
     'bin/niri': (
         'case $1 in\n'
         '    validate) exit 0 ;;\n'
         '    msg) [ "$2" != -j ] || echo \'[{"id": 1, "app_id": "gos-probe", "is_focused": false},'
-        ' {"id": 2, "app_id": "gos-other", "is_focused": true}]\'; exit 0 ;;\n'
+        ' {"id": 2, "app_id": "gos-other", "is_focused": true}]\';\n'
+        '        for a do case $prev in --path) printf png > "$a" ;; esac; prev=$a; done; exit 0 ;;\n'
         '    -c) echo "niri $$" >> "$STUB_DIR/pids"; exec python3 "$STUB_DIR/serve.py" niri ;;\n'
         'esac\nexit 2\n'),
     'bin/kitty': 'echo "kitty $$" >> "$STUB_DIR/pids"\nwhile [ "$1" != sh ]; do shift; done\nexec "$@"\n',
-    'bin/magick': 'for arg do :; done\nprintf image > "$arg"\n',
+    'bin/magick': 'case "$*" in *info:*) echo 100x100+10+10; exit 0 ;; esac\nfor arg do :; done\nprintf image > "$arg"\n',
+    'bin/dbus-daemon': 'echo "dbus-daemon $$" >> "$STUB_DIR/pids"\nexec python3 "$STUB_DIR/serve.py" dbus-daemon "$@"\n',
+    'bin/sudo': 'exit 0\n',
+    'bin/pgrep': 'exit 1\n',
+    'bin/gst-inspect-1.0': 'exit 0\n',
+    'vt/chvt': ('printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\necho "chvt $1" >> "$STUB_DIR/meta.log"\n'
+                '[ "$1" = 1 ] || : > "$STUB_DIR/away"\n'),
+    'vt/loginctl': 'exit 0\n',
+    'tools/lock': ('echo "lock $$" >> "$STUB_DIR/pids"\ntrap \'exit 0\' USR1\necho locked\n'
+                   ': > "$STUB_DIR/locked"\nwhile :; do sleep 0.1; done\n'),
     'bin/nvidia-smi': 'echo P8\n',
     'bin/ss': 'case "$*" in *established*) echo "ESTAB 0 0 127.0.0.1:1 127.0.0.1:2" ;; esac\n',
     'tools/tracy-capture': (
@@ -542,6 +610,7 @@ class DriverCleanupTests(unittest.TestCase):
             path.write_text('#!/bin/sh\n' + body)
             path.chmod(0o755)
         (self.stubs / 'serve.py').write_text(SERVE)
+        (self.stubs / 'tools/consumer.py').write_text(CONSUMER)
         (self.stubs / 'pids').touch()
         self.runtime = self.base / 'rt'
         self.runtime.mkdir()
@@ -570,8 +639,13 @@ class DriverCleanupTests(unittest.TestCase):
 
     def start(self, case, **env):
         script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
-        return subprocess.Popen(['bash', str(script), 'pilot'], cwd=self.root, start_new_session=True,
-                                env=dict(self.env, CASES=case, **env),
+        lane = env.pop('LANE_ARGS', '').split()
+        run_env = dict(self.env, CASES=case, **env)
+        if lane:
+            # The dedicated lane refuses a Wayland session; this suite may run inside one.
+            run_env.pop('WAYLAND_DISPLAY', None)
+        return subprocess.Popen(['bash', str(script), 'pilot', *lane], cwd=self.root, start_new_session=True,
+                                env=run_env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     def await_marker(self, driver, marker, timeout_s):
@@ -651,3 +725,77 @@ class DriverCleanupTests(unittest.TestCase):
                              capture_output=True, text=True, timeout=60)
         self.assertNotEqual(run.returncode, 0)
         self.assertIn('OPTIC_SETTLING_STUB_TOOLS needs a stub CAPTURE_META', run.stderr)
+
+    def dedicated(self, case, marker):
+        """TERM a stub dedicated run once `marker` appears; everything is reaped."""
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start(case, STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05',
+                            OPTIC_SETTLING_STUB_CONSUMER=str(self.stubs / 'tools/consumer.py'),
+                            OPTIC_SETTLING_STUB_LOCK=str(self.stubs / 'tools/lock'),
+                            LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, marker, 60)
+        elapsed, stderr = self.terminate(driver)
+        self.assertEqual(driver.returncode, 143, stderr)
+        self.assertLess(elapsed, self.BOUND_S, stderr)
+        self.assert_cleaned_up(case)
+        return active
+
+    def started(self, name):
+        return [line for line in (self.stubs / 'pids').read_text().splitlines() if line.startswith(name)]
+
+    def test_term_while_casting_reaps_the_consumer_and_the_bus(self):
+        self.dedicated('screencast', 'cast-ready')
+        self.assertTrue(self.started('consumer'))
+        self.assertTrue(self.started('dbus-daemon'))
+
+    def test_term_with_the_session_locked_reaps_the_lock_client(self):
+        self.dedicated('unlock', 'locked')
+        self.assertTrue(self.started('lock'))
+
+    def test_term_while_switched_away_restores_the_vt_before_release(self):
+        active = self.dedicated('tty-resume', 'away')
+        self.assertEqual(active.read_text(), 'tty1\n')
+        record = json.loads((self.out / 'vt-restore.json').read_text())
+        self.assertEqual((record['outcome'], record['home'], record['from']), ('restored', 1, 2))
+        meta = (self.stubs / 'meta.log').read_text().splitlines()
+        self.assertLess(meta.index('chvt 1'), max(i for i, line in enumerate(meta) if line.startswith('release ')))
+
+    def test_stub_overrides_need_stub_tools(self):
+        env = dict(self.env, OPTIC_SETTLING_STUB_TIMESCALE='0.05')
+        env.pop('OPTIC_SETTLING_STUB_TOOLS')
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
+                             capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn('need OPTIC_SETTLING_STUB_TOOLS', run.stderr)
+
+    def test_term_during_a_dedicated_capture_reaps_the_bus_and_records_the_vt(self):
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('drm-aurora', STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1',
+                            DRM_MODE='3440x1440@59.999', VT_ACTIVE_FILE=str(active),
+                            VT_CHVT=str(self.stubs / 'vt/chvt'), VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, 'capture-started', 60)
+        time.sleep(0.5)
+        elapsed, stderr = self.terminate(driver)
+        self.assertEqual(driver.returncode, 143, stderr)
+        self.assertLess(elapsed, self.BOUND_S, stderr)
+        self.assertIn('dbus-daemon', (self.stubs / 'pids').read_text())
+        self.assert_cleaned_up('drm-aurora')
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
+        self.assertEqual(json.loads((self.out / 'vt.json').read_text()), {'home': 1, 'spare': 2})
+
+    def test_dedicated_prerequisites_name_the_missing_item(self):
+        (self.stubs / 'bin/sudo').write_text('#!/bin/sh\nexit 1\n')
+        driver = self.start('drm-aurora', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(self.base / 'active'), LANE_ARGS='--lane dedicated')
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 1)
+        self.assertIn('no NOPASSWD rule for /usr/bin/chvt', stderr)
+        self.assertEqual(self.pids(), [])                     # nothing was launched
+        self.assertEqual(list(self.runtime.glob('gos.*')), [])
