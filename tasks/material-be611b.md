@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-03T01:14:57Z
+updated: 2026-10-03T01:39:50Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -86,3 +86,6 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T00:42:54Z (glass-edges): Spec review round 4 P3 corrections folded into the spec: tipping threshold now depends on the starting structural normal (ordinary at the rounded rim), lifted-normal bound stated as 1/sqrt(401) = 0.0499.
 - 2026-10-03T01:14:57Z (glass-edges): Plan written: docs/plans/2026-10-02-glass-edge-optics.md, 9 step children (material-10e12e, ce3229, f1b307, d37c1a, c210a0, d63184, 02b42a, 5e64ef, 124f1f). Filed prism-7024c4 (Prism keys, blocked on this task) and material-1aa3af (surface grain on the edge: the owner's noise priority, not covered by this plan). Deviation for review: intended-change, neutrality and motion evidence via frozen-clock renders in the headless test backend instead of Weston captures. Spec: lift-continuity sentence corrected (a normal at the structural minimum moves 6e-5 in z).
+- 2026-10-03T01:36:13Z (glass-edges): review: plan round 1 — verdict: revise; findings: P1 4, P2 6, P3 14; reviewer: claude-code/claude-opus-5-5
+- 2026-10-03T01:36:13Z (glass-edges): Plan round 1 P1s: aurora seed differs per fixture (render twice in one fixture); duplicate distortion node in the motion config; the 80 px scan bound skips sides of a window at the gap (window needs room, scan bounded by the outline); predict-within rounding exceeds 1.0 by up to 0.015 (compare against the rounded prediction). P2s: face region missed the ring band (face/slab rects into the json), literal types, cargo fmt, highlight vs k2 base, pilot knob in the committed sheet script, ring_look before/after dumps.
+- 2026-10-03T01:39:50Z (glass-edges): Plan revised for round 1: harness renders twice in one fixture (seed note), distortion owned by glass lines, centered window and outline-bounded scan with explicit leading/trailing edges, rounded-prediction tolerance, face/slab/window regions from the json (ring band included), live-opaque case, k2 base for the highlight, SHEET_PILOT knob, ring_look before/after dumps, cargo fmt rule, task ids filled, highlight lines pinned, sheet-script deviation declared.

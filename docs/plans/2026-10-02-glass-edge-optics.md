@@ -15,22 +15,25 @@
 ## Global Constraints
 
 - Branch `glass-edges`, worktree `.worktrees/glass-edges`. Run every command from the worktree; paths shown to the user are prefixed `.worktrees/glass-edges/`. The worktree builds into its own `target/` (its `.cargo/config.toml` is comment-only, material-77be96): the first build is a full one.
-- Conventional commits; no AI-attribution or session trailers. Each plan step task is a child of `material-be611b`: `tasks start <step-id>` before it, `tasks done <step-id> "<what landed>"` in the same commit as its code, `tasks check` before every commit.
+- Conventional commits; no AI-attribution or session trailers. Each plan task is a child of `material-be611b`, in order: Task 1 `material-10e12e`, 2 `material-ce3229`, 3 `material-f1b307`, 4 `material-d37c1a`, 5 `material-c210a0`, 6 `material-d63184`, 7 `material-02b42a`, 8 `material-5e64ef`, 9 `material-124f1f`. `tasks start <id>` before a task, `tasks done <id> "<what landed>"` in the same commit as its code, `tasks check` before every commit.
+- Run `cargo fmt --all` before every `git add` of Rust: the plan's code blocks are not rustfmt-formatted, and the hook runs `cargo fmt --all -- --check`.
 - Every commit passes the pre-commit hook (`just check`). Never bypass it. A file added anywhere counts as a fork path: after `git add`, run `python3 tools/upstream-report && git add docs/materials/upstream-divergence.md` before `git commit` (the hook also stages it, but a failed hook leaves the index stale).
 - Every test run goes through `just`: `just test-one -p <crate> <filter>` while working (nextest arguments), `just test-fast` before each commit. Never call cargo test or nextest directly.
 - `bevel-profile` is `FloatOrInt<1, 8>`, default 1. `reflection` and `edge-highlight` are `FloatOrInt<0, 1>`, default 0, neutral at 0 (the optic returns its input first thing). Uniform prefixes: `mat_bevel_profile` (core), `mat_reflection`, `mat_edge_highlight`, `mat_edge_highlight_alpha`.
 - `ORDER` in `niri-config/src/material/optics/mod.rs` and `OPTICS` in `src/render_helpers/material/optics/mod.rs` agree at every commit. Final order: `saturation`, `noise`, `aurora`, `reflection`, `edge-highlight`, `iridescence`. A config-side change and its renderer registration land in one commit.
 - The parameter table in `docs/materials/material-config.md` is generated: after any `params()` change run `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_parameter_table_matches_the_docs` and commit the regenerated block.
 - After any `.frag` change, validate the assembled shader offline with the command in Task 4 Step 6 (it writes `target/material.frag` and runs `glslangValidator -S frag`; expect exit 0), listing the optics in `OPTICS` order.
-- Constants shared by `bevel.rs` and `prelude.frag` carry the same names; `bevel::tests::the_shader_names_the_same_constants` pins them. Change both together.
+- Constants shared by `bevel.rs` and `prelude.frag` carry the same names; `bevel::tests::the_shader_names_the_same_constants_and_formulas` pins them (and the highlight's lines, `the_highlight_shader_names_the_same_formulas`). Change both together.
 - Evidence artifacts (dumps, sheets) go under `EV=/mnt/ssd3/niri-material/material-be611b/<run-stamp>`, never into the repository. Evidence documents that cite them are committed under `docs/materials/`.
 - No compatibility switch restores the old bevel (§4). Pixels outside the slab and opaque window pixels never change.
-- The contact sheet (Task 9) needs an idle host for the headless Weston lane. If `capture_preflight headless` refuses, park the step `--reason quiet --waiting-on user --minutes 25 --needs headless` and record a `run:` note for the attempt.
+- The contact sheet (Task 9) needs an idle host for the headless Weston lane. If `capture_preflight headless` refuses, record a `run:` note for the attempt and park: `tasks park material-124f1f "Rerun docs/materials/scripts/glass-edge-sheet.sh with SHEET_PILOT=1, then the full sheet (Task 9 Steps 2-3): build about 10 min, cells about 10 min; last attempt refused by the headless preflight" --reason quiet --waiting-on user --minutes 25 --needs headless`.
+- The test renderer may be llvmpipe (surfaceless EGL picks what the host offers). Task 5 records the renderer string; if it is not the NVIDIA driver, Task 9's sheet is the shader's first compile on the real driver, and a compile failure there stops the task.
 
 ## Deviations from the spec, decided here
 
 - **Intended-change, neutrality and motion evidence** (§6) come from frozen-clock renders in the headless test backend (`src/tests/glass_edge.rs`, modelled on `ring_pair.rs`), not from headless Weston captures or the niri-experiments jelly companion. The renders go through the same material shader and `RenderTarget::ScreenCapture` path as a screenshot, are bit-identical across runs on one host, can be repeated at two commits in minutes, and freeze motion at an exact instant, which the companion can only approximate. The face predictions and the decoded-identical checks are the spec's, unchanged. The contact sheet stays on the headless Weston host, because it needs a real wallpaper behind the glass.
 - `slabSurface` gains `h`, `u` and the across-bevel direction (`acrossDir`), not `w` (§3.1 says `h`, `u` and `w`): no consumer reads `w`, and the reflection needs the direction.
+- The contact sheet is a new script, `glass-edge-sheet.sh`, not `glass-parameter-sweep.sh` (§6 names the sweep): the sweep varies one key at a time, and the sheet crosses four keys over three looks; it reuses the smoke library the sweep's siblings use.
 - `edge-highlight`'s GGX `alpha = mix(0.04, 0.5, roughness)` is computed in Rust (`bevel::highlight_alpha`) and uploaded as `mat_edge_highlight_alpha`, so the mirror and the shader cannot disagree on it.
 
 ## Owner priorities (2026-10-01 note on material-be611b)
@@ -157,7 +160,7 @@ Expected: all pass; `git diff docs/materials/material-config.md` shows one new `
 
 ```bash
 just test-fast
-tasks done <task-1-id> "bevel-profile parses, defaults to 1, bounded 1-8; table row generated"
+tasks done material-10e12e "bevel-profile parses, defaults to 1, bounded 1-8; table row generated"
 tasks check
 git add niri-config/src/material/mod.rs niri-config/src/lib.rs docs/materials/material-config.md tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -252,7 +255,7 @@ mod tests {
                 assert!(-t.z > RAY_PATH_FLOOR);
             }
         }
-        let rim = DVec3::new((1. - 1. / 401.).sqrt(), 0., cap_z);
+        let rim = DVec3::new((1f64 - 1. / 401.).sqrt(), 0., cap_z);
         assert!(-ray(rim, 4.).z >= RAY_PATH_FLOOR);
         assert!(-ray(rim, 9.).z < RAY_PATH_FLOOR, "the floor caps aberration taps at index 9");
     }
@@ -461,9 +464,9 @@ mod tests {
 
     #[test]
     fn lifted_tap_normals_keep_every_ray_downward() {
-        let at_cap = DVec3::new((1. - 0.05f64 * 0.05).sqrt(), 0., 0.05);
+        let at_cap = DVec3::new((1f64 - 0.05 * 0.05).sqrt(), 0., 0.05);
         assert!((lift_tap_normal(at_cap) - at_cap).length() < 1e-12, "continuous at n.z = 0.05");
-        for z in [0.06, 0.3, 0.9, 1.] {
+        for z in [0.06f64, 0.3, 0.9, 1.] {
             let n = DVec3::new((1. - z * z).sqrt() * 0.6, (1. - z * z).sqrt() * 0.8, z);
             assert!((lift_tap_normal(n) - n).length() < 1e-12, "n.z {z} is above the cap");
         }
@@ -808,13 +811,13 @@ Note on `thickness 0` (Review Focus 2): `rise = 0`, so the slope is 0 and the no
 - [ ] **Step 4: Run the tests**
 
 Run: `just test-one -p niri bevel::tests`
-Expected: all 13 pass. If `the_softened_gradient_holds_in_f32` reports a guard off the ridge or an angle at or above 0.001 rad, stop and report it with the printed input: the design's f32 claim (spec §3.1, "Ridge guard") would be wrong, which is a spec question, not a threshold to loosen.
+Expected: all 12 pass. If `the_softened_gradient_holds_in_f32` reports a guard off the ridge or an angle at or above 0.001 rad, stop and report it with the printed input: the design's f32 claim (spec §3.1, "Ridge guard") would be wrong, which is a spec question, not a threshold to loosen.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 just test-fast
-tasks done <task-2-id> "bevel.rs: two-boundary u, height-field profile, softened outer gradient, capped normal, ray path and tap lift in f64, with the spec §6 tests"
+tasks done material-ce3229 "bevel.rs: two-boundary u, height-field profile, softened outer gradient, capped normal, ray path and tap lift in f64, with the spec §6 tests"
 tasks check
 git add src/render_helpers/material/bevel.rs src/render_helpers/material/mod.rs tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -834,7 +837,7 @@ Lands before any shader change, so the base renders exist at a commit.
 
 **Interfaces:**
 - Consumes: `super::ring_pair::{render_at, set_time}` (already `pub(super)`).
-- Produces: `GLASS_EDGE_DUMP=<dir>` writes, per case, `<case>.rgba`, `<case>.png`, `<case>.json` (`{"size": [w, h], "window": [x, y, w, h], "renderer": "..."}`); case names `stock-off`, `stock-on`, `stock-iridescence`, `live-off`, `live-on`, `live-iridescence`, `live-translucent`. Later tasks append cases to `cases()`; Task 4 adds the motion test. `glass-edge-compare.py` subcommands `identical` (one case across two dirs), `pair` (two cases in one dir), `predict-face`, `predict-within`, `bevel-report`, `face-delta` (below).
+- Produces: `GLASS_EDGE_DUMP=<dir>` writes, per case, `<case>.rgba`, `<case>.png`, `<case>.json` (`{"size", "window", "face", "slab", "renderer"}`); cases `stock-off`, `stock-on`, `stock-iridescence`, `live-off`, `live-on`, `live-iridescence`, `live-translucent`, `live-opaque`. Helpers later tasks reuse: `Look` (`STOCK`, `LIVE`), `case`, `cases()`, `config(glass, response, top)`, `fixture`, `open`, `window_rects`, `dump(name, pixels, Option<Look>, window, renderer)`. Later tasks append cases at the end of `cases()`; Task 4 adds the motion test. `glass-edge-compare.py` subcommands `identical` (one case across two dirs), `pair` (two cases in one dir), `predict-face`, `predict-within`, `report`; regions `all`, `window`, `face`, `outside`, `bevel`.
 
 - [ ] **Step 1: Write the harness test**, `src/tests/glass_edge.rs`:
 
@@ -846,9 +849,15 @@ Lands before any shader change, so the base renders exist at a commit.
 //! One window over a flat backdrop, rendered through the real material shader
 //! by the headless backend's GLES renderer, the way a screenshot renders it
 //! (see ring_pair.rs). Set `GLASS_EDGE_DUMP=<dir>` to write each case as
-//! `<case>.rgba` (raw RGBA), `<case>.png` and `<case>.json` (output size,
-//! window rectangle, renderer), which
+//! `<case>.rgba` (raw RGBA), `<case>.png` and `<case>.json` (output size, the
+//! window, face and slab rectangles, the renderer), which
 //! docs/materials/scripts/glass-edge-compare.py reads.
+//!
+//! Each fixture gets the next jelly seed from a process-wide counter, and the
+//! aurora reads the seed. Dumps compare across commits because nextest runs
+//! every test in its own process, so `every_case_renders_frozen` sees the
+//! same seed sequence each time as long as `cases()` only grows at its end.
+//! Run it through `just test-one`, never `cargo test`.
 
 use std::time::Duration;
 
@@ -857,7 +866,7 @@ use smithay::utils::{Logical, Rectangle};
 use wayland_client::protocol::wl_surface::WlSurface;
 
 use super::client::ClientId;
-use super::ring_pair::{render_at, set_time};
+use super::ring_pair::{diff, render_at, set_time};
 use super::*;
 
 const OUT_W: u16 = 1280;
@@ -871,18 +880,37 @@ const BACKDROP: &str = "#8c735a";
 const CLEAR: u32 = 0x0000_0000;
 /// Kitty-like content at 0.6 opacity (premultiplied).
 const TRANSLUCENT: u32 = 0x990a_0c0e;
+/// Opaque content: the shader must pass it through untouched.
+const OPAQUE: u32 = 0xff0a_0c0e;
+
+/// A pinned glass look and the geometry the evidence regions need.
+#[derive(Clone, Copy)]
+struct Look {
+    name: &'static str,
+    glass: &'static str,
+    bevel: f64,
+    offset: (f64, f64),
+}
 
 /// The stock glass the smokes pin.
-const STOCK: &str = r##"
+const STOCK: Look = Look {
+    name: "stock",
+    glass: r##"
                 ior 1.5
                 thickness 20
                 attenuation-color "#dfe8ff"
                 attenuation-distance 60
                 bevel 12
                 offset-x 6
-                offset-y 6"##;
-/// Prism's focused terminal glass on 2026-10-02, without grain or blur.
-const LIVE: &str = r##"
+                offset-y 6"##,
+    bevel: 12.,
+    offset: (6., 6.),
+};
+/// Pinned values modelled on Prism's focused terminal glass (2026-10-02),
+/// without grain or blur. Not the live config: that drifts.
+const LIVE: Look = Look {
+    name: "live",
+    glass: r##"
                 ior 1.28
                 thickness 31.2
                 attenuation-color "#2e3034"
@@ -891,7 +919,10 @@ const LIVE: &str = r##"
                 roughness 0.24
                 bevel 15
                 offset-x -6
-                offset-y -5"##;
+                offset-y -5"##,
+    bevel: 15.,
+    offset: (-6., -5.),
+};
 const RING_OFF: &str = r#"focus "none""#;
 const RING_ON: &str = r#"focus "ring-light"
                 ring-beam-speed 0"#;
@@ -899,40 +930,45 @@ const AURORA_ON: &str = "aurora 0.5 { drift-hz 0; }";
 
 struct Case {
     name: String,
-    glass: String,
+    look: Look,
+    /// Glass lines after the look's own.
+    extra: String,
     response: &'static str,
     content: u32,
 }
 
-fn case(name: &str, glass: String, response: &'static str) -> Case {
+fn case(look: Look, suffix: &str, extra: &str, response: &'static str) -> Case {
     Case {
-        name: name.to_owned(),
-        glass,
+        name: format!("{}-{suffix}", look.name),
+        look,
+        extra: extra.to_owned(),
         response,
         content: CLEAR,
     }
 }
 
 /// Every case the evidence steps dump. Each must parse on the commit that
-/// dumps it: later tasks append their cases here.
+/// dumps it; later tasks append their cases at the end, never in between.
 fn cases() -> Vec<Case> {
     let mut cases = Vec::new();
-    for (look, glass) in [("stock", STOCK), ("live", LIVE)] {
-        cases.push(case(&format!("{look}-off"), glass.to_owned(), RING_OFF));
-        cases.push(case(&format!("{look}-on"), format!("{glass}\n{AURORA_ON}"), RING_ON));
-        cases.push(case(
-            &format!("{look}-iridescence"),
-            format!("{glass}\niridescence 0.8"),
-            RING_OFF,
-        ));
+    for look in [STOCK, LIVE] {
+        cases.push(case(look, "off", "", RING_OFF));
+        cases.push(case(look, "on", AURORA_ON, RING_ON));
+        cases.push(case(look, "iridescence", "iridescence 0.8", RING_OFF));
     }
     cases.push(Case {
         content: TRANSLUCENT,
-        ..case("live-translucent", LIVE.to_owned(), RING_OFF)
+        ..case(LIVE, "translucent", "", RING_OFF)
+    });
+    cases.push(Case {
+        content: OPAQUE,
+        ..case(LIVE, "opaque", "", RING_OFF)
     });
     cases
 }
 
+/// The output's config. Distortion is left to the glass lines (the default is
+/// 0), so a case can set it without a duplicate node.
 fn config(glass: &str, response: &str, top: &str) -> Config {
     Config::parse_mem(&format!(
         r##"
@@ -940,6 +976,7 @@ fn config(glass: &str, response: &str, top: &str) -> Config {
         {top}
         layout {{
             gaps 40
+            center-focused-column "always"
             background-color "{BACKDROP}"
             focus-ring {{ off; }}
             border {{ off; }}
@@ -949,7 +986,6 @@ fn config(glass: &str, response: &str, top: &str) -> Config {
             glass {{
                 {glass}
                 backdrop-blur false
-                distortion 0 scale=0.5
                 jelly-ripple 0
             }}
             response "default" {{
@@ -996,6 +1032,19 @@ fn window_rects(f: &mut Fixture) -> Vec<Rectangle<f64, Logical>> {
         .collect()
 }
 
+/// The face and slab at rest, from the window, as `slabSurface`'s comment
+/// derives them: the face is the window narrowed on both axes by
+/// 2 * max(|offset-x|, |offset-y|) and moved by the offset; the slab is the
+/// face grown by the bevel.
+fn face_and_slab(look: Look, w: Rectangle<f64, Logical>) -> ([f64; 4], [f64; 4]) {
+    let (ox, oy) = look.offset;
+    let m = ox.abs().max(oy.abs());
+    let face = [w.loc.x + m + ox, w.loc.y + m + oy, w.size.w - 2. * m, w.size.h - 2. * m];
+    let b = look.bevel;
+    let slab = [face[0] - b, face[1] - b, face[2] + 2. * b, face[3] + 2. * b];
+    (face, slab)
+}
+
 fn renderer_name(f: &mut Fixture) -> String {
     f.niri_state()
         .backend
@@ -1011,9 +1060,17 @@ fn renderer_name(f: &mut Fixture) -> String {
         .unwrap()
 }
 
-/// `case` at rest: one focused window.
-fn render_case(case: &Case) -> (Vec<u8>, Rectangle<f64, Logical>, String) {
-    let mut f = fixture(config(&case.glass, case.response, ""));
+struct Render {
+    pixels: Vec<u8>,
+    again: Vec<u8>,
+    window: Rectangle<f64, Logical>,
+    renderer: String,
+}
+
+/// `case` at rest, one focused window, rendered twice in one fixture.
+fn render_case(case: &Case) -> Render {
+    let glass = format!("{}\n{}", case.look.glass, case.extra);
+    let mut f = fixture(config(&glass, case.response, ""));
     let id = f.add_client();
     open(&mut f, id, (W, H), case.content);
     f.niri_state().update_keyboard_focus();
@@ -1022,11 +1079,22 @@ fn render_case(case: &Case) -> (Vec<u8>, Rectangle<f64, Logical>, String) {
     set_time(&mut f, Duration::ZERO);
     f.niri_complete_animations();
     let pixels = render_at(&mut f, REST);
-    let rect = window_rects(&mut f)[0];
-    (pixels, rect, renderer_name(&mut f))
+    let again = render_at(&mut f, REST);
+    let window = window_rects(&mut f)[0];
+    let renderer = renderer_name(&mut f);
+    Render {
+        pixels,
+        again,
+        window,
+        renderer,
+    }
 }
 
-fn dump(name: &str, pixels: &[u8], rect: Rectangle<f64, Logical>, renderer: &str) {
+fn rect_json(r: [f64; 4]) -> String {
+    format!("[{}, {}, {}, {}]", r[0], r[1], r[2], r[3])
+}
+
+fn dump(name: &str, pixels: &[u8], look: Option<Look>, window: Rectangle<f64, Logical>, renderer: &str) {
     let Some(dir) = std::env::var_os("GLASS_EDGE_DUMP") else {
         return;
     };
@@ -1035,9 +1103,14 @@ fn dump(name: &str, pixels: &[u8], rect: Rectangle<f64, Logical>, renderer: &str
     std::fs::write(dir.join(format!("{name}.rgba")), pixels).unwrap();
     let file = std::fs::File::create(dir.join(format!("{name}.png"))).unwrap();
     crate::utils::write_png_rgba8(file, OUT_W.into(), OUT_H.into(), pixels).unwrap();
+    let win = [window.loc.x, window.loc.y, window.size.w, window.size.h];
+    let regions = look.map_or(String::new(), |look| {
+        let (face, slab) = face_and_slab(look, window);
+        format!(r#", "face": {}, "slab": {}"#, rect_json(face), rect_json(slab))
+    });
     let json = format!(
-        r#"{{"size": [{OUT_W}, {OUT_H}], "window": [{}, {}, {}, {}], "renderer": {renderer:?}}}"#,
-        rect.loc.x, rect.loc.y, rect.size.w, rect.size.h
+        r#"{{"size": [{OUT_W}, {OUT_H}], "window": {}{regions}, "renderer": {renderer:?}}}"#,
+        rect_json(win)
     );
     std::fs::write(dir.join(format!("{name}.json")), json).unwrap();
 }
@@ -1045,10 +1118,10 @@ fn dump(name: &str, pixels: &[u8], rect: Rectangle<f64, Logical>, renderer: &str
 #[test]
 fn every_case_renders_frozen() {
     for case in cases() {
-        let (first, rect, renderer) = render_case(&case);
-        let (again, _, _) = render_case(&case);
-        assert_eq!(first, again, "{}: two fixtures render differently", case.name);
-        dump(&case.name, &first, rect, &renderer);
+        let r = render_case(&case);
+        let (px, max) = diff(&r.pixels, &r.again);
+        assert!(px == 0, "{}: a repeat render differs in {px} px, max {max}", case.name);
+        dump(&case.name, &r.pixels, Some(case.look), r.window, &r.renderer);
     }
 }
 ```
@@ -1056,7 +1129,7 @@ fn every_case_renders_frozen() {
 - [ ] **Step 2: Run it**
 
 Run: `just test-one -p niri glass_edge`
-Expected: `every_case_renders_frozen` passes. If two fixtures differ, report which case: a frozen render that is not reproducible invalidates every comparison below.
+Expected: `every_case_renders_frozen` passes. If a repeat render differs, report the case: a render that does not repeat at a frozen instant invalidates every comparison below. Open one dumped PNG (Step 4) and confirm the face rectangle in its `.json` lands on the visible face edge, a bevel's width inside the slab's outline.
 
 - [ ] **Step 3: Write the comparison script**, `docs/materials/scripts/glass-edge-compare.py` (executable):
 
@@ -1064,23 +1137,24 @@ Expected: `every_case_renders_frozen` passes. If two fixtures differ, report whi
 #!/usr/bin/env python3
 """Compare glass edge harness dumps (src/tests/glass_edge.rs) across commits.
 
-    glass-edge-compare.py identical A B CASE... [--region all|face|outside|bevel]
+    glass-edge-compare.py identical A B CASE... [--region R]
+    glass-edge-compare.py pair DIR CASE_A CASE_B --region R --expect same|differ
     glass-edge-compare.py predict-face BEFORE AFTER CASE --ior N
     glass-edge-compare.py predict-within BEFORE AFTER OFF ON --ior N
-    glass-edge-compare.py bevel-report A B CASE
-    glass-edge-compare.py face-delta A B CASE
-    glass-edge-compare.py pair DIR CASE_A CASE_B --region R --expect same|differ
+    glass-edge-compare.py report A B CASE [--region R]
 
-Regions come from the window rectangle in <case>.json: `face` is the window
-inset by 40 px, `outside` every pixel farther than 40 px from the window, and
-`bevel` the band within 24 px of the window edge, corners excluded. Values are
-8-bit sRGB; predictions run in linear light and compare encoded values.
+`identical` compares one case across two dump dirs; `pair` compares two cases
+in one dir. Regions come from <case>.json: `all`; `window`, inside the window;
+`face`, the face rectangle inset by 2 px (the ring band included); `outside`,
+farther than 2 px outside the slab rectangle; `bevel`, inside the slab and
+outside the face. Values are 8-bit sRGB; predictions run in linear light.
 
 predict-face (spec §6, ring and aurora off): AFTER = (1 - f0) * (BEFORE - S) + S
 with S = 0.15 * f0, the face's constant glint. predict-within (ring and aurora
 on): AFTER_ON = (1 - f0) * (BEFORE_OFF - S) + S + (BEFORE_ON - BEFORE_OFF).
-Both pass within one code value per channel. Exit 1 on a failed check, 2 on bad
-input. Standard library only.
+"Within one code value" is |after - round(prediction)| <= 1: the 8-bit inputs
+alone put up to about 1.02 code values between the exact prediction and a
+correct render. Exit 1 on a failed check, 2 on bad input. Standard library only.
 """
 import json
 import math
@@ -1098,25 +1172,30 @@ def load(directory, case):
     return meta, pixels
 
 
+def inside(rect, px, py, pad=0.0):
+    x, y, w, h = rect
+    cx, cy = px + 0.5, py + 0.5
+    return x - pad <= cx < x + w + pad and y - pad <= cy < y + h + pad
+
+
 def region(meta, name):
     width, height = meta["size"]
-    x, y, w, h = meta["window"]
     for py in range(height):
         for px in range(width):
-            dx = max(x - px, 0, px - (x + w))
-            dy = max(y - py, 0, py - (y + h))
-            inside = dx == 0 and dy == 0
             if name == "all":
-                yield px, py
-            elif name == "face" and x + 40 <= px < x + w - 40 and y + 40 <= py < y + h - 40:
-                yield px, py
-            elif name == "outside" and max(dx, dy) > 40:
-                yield px, py
+                hit = True
+            elif name == "window":
+                hit = inside(meta["window"], px, py)
+            elif name == "face":
+                hit = inside(meta["face"], px, py, -2.0)
+            elif name == "outside":
+                hit = not inside(meta["slab"], px, py, 2.0)
             elif name == "bevel":
-                near_x = min(abs(px - x), abs(px - (x + w))) <= 24 and y + 40 <= py < y + h - 40
-                near_y = min(abs(py - y), abs(py - (y + h))) <= 24 and x + 40 <= px < x + w - 40
-                if near_x or near_y:
-                    yield px, py
+                hit = inside(meta["slab"], px, py) and not inside(meta["face"], px, py)
+            else:
+                sys.exit(f"unknown region {name}")
+            if hit:
+                yield px, py
 
 
 def rgb(meta, pixels, px, py):
@@ -1139,11 +1218,22 @@ def f0_of(ior):
     return ((ior - 1) / (ior + 1)) ** 2
 
 
+def option(args, flag, default=None):
+    if flag in args:
+        at = args.index(flag)
+        return args[at + 1], args[:at] + args[at + 2:]
+    return default, args
+
+
 def check(failures, label, got, want):
-    worst = max(abs(g - w) for g, w in zip(got, want))
-    if worst > 1.0:
+    worst = max(abs(g - round(w)) for g, w in zip(got, want))
+    if worst > 1:
         failures.append(f"{label}: got {tuple(got)}, predicted {tuple(round(v, 2) for v in want)}")
     return worst
+
+
+def differing(meta, pa, pb, name):
+    return sum(1 for px, py in region(meta, name) if rgb(meta, pa, px, py) != rgb(meta, pb, px, py))
 
 
 def main(argv):
@@ -1152,59 +1242,57 @@ def main(argv):
     cmd, args = argv[1], argv[2:]
     failures = []
     if cmd == "identical":
-        name = "all"
-        if "--region" in args:
-            at = args.index("--region")
-            name = args[at + 1]
-            args = args[:at] + args[at + 2:]
+        name, args = option(args, "--region", "all")
         a, b, cases = args[0], args[1], args[2:]
         for case in cases:
             meta, pa = load(a, case)
             _, pb = load(b, case)
-            diff = sum(1 for px, py in region(meta, name) if rgb(meta, pa, px, py) != rgb(meta, pb, px, py))
+            diff = differing(meta, pa, pb, name)
             print(f"{case} {name}: {diff} differing pixels")
             if diff:
                 failures.append(f"{case} {name}: {diff} pixels differ")
+    elif cmd == "pair":
+        name, args = option(args, "--region")
+        expect, args = option(args, "--expect")
+        directory, case_a, case_b = args
+        meta, pa = load(directory, case_a)
+        _, pb = load(directory, case_b)
+        diff = differing(meta, pa, pb, name)
+        print(f"{case_a} vs {case_b} {name}: {diff} differing pixels (expect {expect})")
+        if (diff == 0) != (expect == "same"):
+            failures.append(f"{case_a} vs {case_b} {name}: {diff} differing pixels, expected {expect}")
     elif cmd == "predict-face":
-        before, after, case, ior = args[0], args[1], args[2], float(args[args.index("--ior") + 1])
-        f0 = f0_of(ior)
+        ior, args = option(args, "--ior")
+        before, after, case = args
+        f0 = f0_of(float(ior))
         s = 0.15 * f0
         meta, pb = load(before, case)
         _, pa = load(after, case)
-        worst = 0.0
+        worst = 0
         for px, py in region(meta, "face"):
             want = [enc((1 - f0) * (lin(c) - s) + s) for c in rgb(meta, pb, px, py)]
             worst = max(worst, check(failures, f"{case} ({px},{py})", rgb(meta, pa, px, py), want))
-        print(f"{case} face, f0 {f0:.5f}: worst {worst:.3f} code values")
+        print(f"{case} face, f0 {f0:.5f}: worst {worst} code values from the rounded prediction")
     elif cmd == "predict-within":
-        before, after, off, on = args[:4]
-        f0 = f0_of(float(args[args.index("--ior") + 1]))
+        ior, args = option(args, "--ior")
+        before, after, off, on = args
+        f0 = f0_of(float(ior))
         s = 0.15 * f0
         meta, b_off = load(before, off)
         _, b_on = load(before, on)
         _, a_on = load(after, on)
-        worst = 0.0
+        worst = 0
         for px, py in region(meta, "face"):
             t_s = [lin(c) for c in rgb(meta, b_off, px, py)]
             w = [lin(c1) - c0 for c1, c0 in zip(rgb(meta, b_on, px, py), t_s)]
             want = [enc((1 - f0) * (c - s) + s + d) for c, d in zip(t_s, w)]
             worst = max(worst, check(failures, f"{on} ({px},{py})", rgb(meta, a_on, px, py), want))
-        print(f"{on} face with ring and aurora, f0 {f0:.5f}: worst {worst:.3f} code values")
-    elif cmd == "pair":
-        directory, case_a, case_b = args[0], args[1], args[2]
-        name = args[args.index("--region") + 1]
-        expect = args[args.index("--expect") + 1]
-        meta, pa = load(directory, case_a)
-        _, pb = load(directory, case_b)
-        diff = sum(1 for px, py in region(meta, name) if rgb(meta, pa, px, py) != rgb(meta, pb, px, py))
-        print(f"{case_a} vs {case_b} {name}: {diff} differing pixels (expect {expect})")
-        if (diff == 0) != (expect == "same"):
-            failures.append(f"{case_a} vs {case_b} {name}: {diff} differing pixels, expected {expect}")
-    elif cmd in ("bevel-report", "face-delta"):
-        a, b, case = args[0], args[1], args[2]
+        print(f"{on} face with ring and aurora, f0 {f0:.5f}: worst {worst} code values from the rounded prediction")
+    elif cmd == "report":
+        name, args = option(args, "--region", "bevel")
+        a, b, case = args
         meta, pa = load(a, case)
         _, pb = load(b, case)
-        name = "bevel" if cmd == "bevel-report" else "face"
         total, count, worst = 0.0, 0, 0
         for px, py in region(meta, name):
             for ca, cb in zip(rgb(meta, pa, px, py), rgb(meta, pb, px, py)):
@@ -1228,16 +1316,21 @@ if __name__ == "__main__":
 ```bash
 EV=/mnt/ssd3/niri-material/material-be611b/$(date +%Y%m%dT%H%M%S)
 echo "$EV" > target/glass-edge-ev   # later tasks read the run stamp from here
-GLASS_EDGE_DUMP=$EV/base just test-one -p niri glass_edge
-python3 docs/materials/scripts/glass-edge-compare.py identical $EV/base $EV/base stock-off live-on
+tasks note material-be611b "glass edge evidence root: $EV"   # survives a cargo clean
+GLASS_EDGE_DUMP=$EV/base just test-one -p niri every_case_renders_frozen
+RING_LOOK_DUMP=$EV/ring-look-base just test-one -p niri accepted_ring_look
+C=docs/materials/scripts/glass-edge-compare.py
+python3 $C identical $EV/base $EV/base stock-off live-on
+python3 $C pair $EV/base live-off live-opaque --region window --expect differ
+python3 $C pair $EV/base live-off live-opaque --region outside --expect same
 ```
-Expected: the test passes, `$EV/base` holds 7 × 3 files, and the script prints `0 differing pixels` for both cases and exits 0.
+Expected: the tests pass; `$EV/base` holds 8 × 3 files and `$EV/ring-look-base` the owner's accepted ring look (`ring_look.rs` asks for dumps before and after any change to edge rendering); every script call exits 0.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 just test-fast
-tasks done <task-3-id> "glass_edge.rs frozen-clock harness and glass-edge-compare.py; base renders dumped to <EV>/base"
+tasks done material-f1b307 "glass_edge.rs frozen-clock harness and glass-edge-compare.py; base renders dumped to <EV>/base"
 tasks check
 git add src/tests/glass_edge.rs src/tests/mod.rs docs/materials/scripts/glass-edge-compare.py tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -1318,7 +1411,7 @@ const MOTION: &str = r#"animations {
 
 /// The live look on a rounded bevel at full flex.
 fn motion_glass(distortion: &str) -> String {
-    format!("{LIVE}\nbevel-profile 2\njelly-flex 0.02\n{distortion}")
+    format!("{}\nbevel-profile 2\njelly-flex 0.02\n{distortion}", LIVE.glass)
 }
 
 fn px(pixels: &[u8], x: i32, y: i32) -> Option<[u8; 3]> {
@@ -1329,12 +1422,13 @@ fn px(pixels: &[u8], x: i32, y: i32) -> Option<[u8; 3]> {
     Some([pixels[i], pixels[i + 1], pixels[i + 2]])
 }
 
-/// On each side of `rect` that lies on the output, scanning outward along its
-/// middle row or column: the three pixels just inside the outline (the
+/// On each side of `rect` whose middle lies on the output, scanning outward
+/// from 20 px inside the window along its middle row or column to the first
+/// three backdrop pixels: the three pixels just inside that outline (the
 /// anti-aliased pixel excluded) must not be one flat colour. A bevel
-/// coordinate that saturates before the silhouette leaves such a run on the
-/// side the face moved away from. Returns how many sides it checked.
-fn assert_no_rim_plateau(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>) -> usize {
+/// coordinate that saturates before the silhouette, or a planar facet, leaves
+/// such a run. Returns the sides it checked.
+fn assert_no_rim_plateau(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>) -> Vec<&'static str> {
     let backdrop = px(pixels, 2, 2).unwrap();
     let cx = (rect.loc.x + rect.size.w / 2.) as i32;
     let cy = (rect.loc.y + rect.size.h / 2.) as i32;
@@ -1344,29 +1438,32 @@ fn assert_no_rim_plateau(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>
         ("top", (cx, rect.loc.y as i32 + 20), (0, -1)),
         ("bottom", (cx, (rect.loc.y + rect.size.h) as i32 - 20), (0, 1)),
     ];
-    let mut checked = 0;
+    let mut checked = Vec::new();
     for (side, (x0, y0), (dx, dy)) in sides {
         let at = |i: i32| px(pixels, x0 + dx * i, y0 + dy * i);
-        if at(0).is_none() || at(80).is_none() {
+        if at(0).is_none() {
             continue;
         }
-        let outline = (0..78)
+        let outline = (0..)
+            .take_while(|&i| at(i + 2).is_some())
             .find(|&i| (0..3).all(|j| at(i + j) == Some(backdrop)))
-            .unwrap_or_else(|| panic!("{tag} {side}: no outline within 80 px"));
+            .unwrap_or_else(|| panic!("{tag} {side}: no outline before the output's edge"));
         let run = [at(outline - 4), at(outline - 3), at(outline - 2)];
         assert!(
             !(run[0] == run[1] && run[1] == run[2]),
             "{tag} {side}: flat run {run:?} before the outline at {outline}"
         );
-        checked += 1;
+        checked.push(side);
     }
     checked
 }
 
 #[test]
 fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
+    let all = ["left", "right", "top", "bottom"];
     for (tag, distortion) in [("plain", ""), ("distorted", "distortion 1 scale=0.5")] {
-        // One window, its column 200 px wider, half way through the resize.
+        // One centered window, its column 200 px wider, half way through the
+        // resize.
         let mut f = fixture(config(&motion_glass(distortion), RING_OFF, MOTION));
         let id = f.add_client();
         let surface = open(&mut f, id, (W, H), CLEAR);
@@ -1376,8 +1473,8 @@ fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
         f.niri_complete_animations();
         let rest = render_at(&mut f, Duration::ZERO);
         let rect = window_rects(&mut f)[0];
-        dump(&format!("motion-{tag}-rest"), &rest, rect, "");
-        assert_eq!(assert_no_rim_plateau("rest", &rest, rect), 4);
+        dump(&format!("motion-{tag}-rest"), &rest, None, rect, "");
+        assert_eq!(assert_no_rim_plateau("rest", &rest, rect), all);
 
         f.niri().layout.set_column_width(niri_ipc::SizeChange::AdjustFixed(200));
         f.double_roundtrip(id);
@@ -1388,16 +1485,28 @@ fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
         f.roundtrip(id);
         let mid = render_at(&mut f, Duration::from_millis(500));
         let rect = window_rects(&mut f)[0];
-        dump(&format!("motion-{tag}-resize-mid"), &mid, rect, "");
-        assert_eq!(assert_no_rim_plateau("mid-resize", &mid, rect), 4);
+        dump(&format!("motion-{tag}-resize-mid"), &mid, None, rect, "");
+        assert_eq!(assert_no_rim_plateau("mid-resize", &mid, rect), all);
 
-        // Two wide columns; focusing the second scrolls the view, so both
-        // tiles are in motion at 500 ms.
+        // Two 800 px columns; focusing the second scrolls the view, so at
+        // 500 ms the first tile's right edge trails and the second's left
+        // edge leads, both on the output.
         let mut f = fixture(config(&motion_glass(distortion), RING_OFF, MOTION));
         let id = f.add_client();
-        open(&mut f, id, (800, H), CLEAR);
-        open(&mut f, id, (800, H), CLEAR);
-        f.niri().layout.focus_left();
+        let first = open(&mut f, id, (W, H), CLEAR);
+        let second = open(&mut f, id, (W, H), CLEAR);
+        // The newest window has focus: widen its column, then the first's,
+        // each client committing the new width as mid_resize_fixture does.
+        for surface in [&second, &first] {
+            f.niri().layout.set_column_width(niri_ipc::SizeChange::SetFixed(800));
+            f.double_roundtrip(id);
+            let window = f.client(id).window(surface);
+            window.attach_new_shm_buffer(CLEAR);
+            window.set_size(800, H);
+            window.ack_last_and_commit();
+            f.double_roundtrip(id);
+            f.niri().layout.focus_left();
+        }
         f.niri_state().update_keyboard_focus();
         f.double_roundtrip(id);
         set_time(&mut f, Duration::ZERO);
@@ -1405,12 +1514,15 @@ fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
         let _ = render_at(&mut f, Duration::ZERO);
         f.niri().layout.focus_right();
         let mid = render_at(&mut f, Duration::from_millis(500));
-        let mut checked = 0;
+        let mut checked = Vec::new();
         for (i, rect) in window_rects(&mut f).into_iter().enumerate() {
-            dump(&format!("motion-{tag}-scroll-mid-{i}"), &mid, rect, "");
-            checked += assert_no_rim_plateau(&format!("mid-scroll {i}"), &mid, rect);
+            dump(&format!("motion-{tag}-scroll-mid-{i}"), &mid, None, rect, "");
+            checked.extend(assert_no_rim_plateau(&format!("mid-scroll {i}"), &mid, rect));
         }
-        assert!(checked >= 2, "only {checked} sides of the scrolling tiles were on the output");
+        assert!(
+            checked.contains(&"left") && checked.contains(&"right"),
+            "mid-scroll checked only {checked:?}: no leading and trailing edge on the output"
+        );
     }
 }
 ```
@@ -1418,7 +1530,7 @@ fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `just test-one -p niri the_shader_names_the_same` then `just test-one -p niri material_source_is_prelude` then `just test-one -p niri the_rounded_rim`
-Expected: the first two fail on the missing lines; the motion test fails to parse `bevel-profile 2` only if Task 1 is missing, otherwise it runs against the old shader and may pass or fail. Record which: it is the baseline for the motion claim.
+Expected: all three fail. The first two fail on the missing lines. The motion test fails at `rest` on the old shader, which ignores `bevel-profile` and draws a planar facet: one flat colour up to the outline. If it fails anywhere else (no outline, fewer sides), fix the harness before touching the shader.
 
 - [ ] **Step 3: Implement the prelude.** In `prelude.frag`:
 
@@ -1658,7 +1770,7 @@ Expected: all pass. If a `ring_` test fails, stop and report: the spill or the r
 
 ```bash
 just test-fast
-tasks done <task-4-id> "height-field bevel in the shader: two-boundary u, profile, softened outer gradient, ray path for taps and attenuation, tap lift, (1 - F), spill on u; mirror test pins prelude lines; motion renders show no rim plateau"
+tasks done material-d37c1a "height-field bevel in the shader: two-boundary u, profile, softened outer gradient, ray path for taps and attenuation, tap lift, (1 - F), spill on u; mirror test pins prelude lines; motion renders show no rim plateau"
 tasks check
 git add src/render_helpers docs/materials/render-pipeline.md docs/materials/material-config.md src/tests/glass_edge.rs tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -1678,33 +1790,37 @@ git commit -m "feat(material): render the glass bevel as a height field (materia
 - [ ] **Step 1: Dump the Task 4 renders**
 
 ```bash
-EV=$(cat target/glass-edge-ev)
+EV=$(cat target/glass-edge-ev)   # or the root in material-be611b's "evidence root" note
 GLASS_EDGE_DUMP=$EV/step1 just test-one -p niri every_case_renders_frozen
+RING_LOOK_DUMP=$EV/ring-look-step1 just test-one -p niri accepted_ring_look
 ```
-Expected: pass; `$EV/step1` holds the seven cases.
+Expected: both pass; `$EV/step1` holds the eight cases and `$EV/ring-look-step1` the ring look after the change.
 
 - [ ] **Step 2: Run the checks** (each must exit 0; record every line of output):
 
 ```bash
 C=docs/materials/scripts/glass-edge-compare.py
-python3 $C identical $EV/base $EV/step1 stock-off stock-on live-off live-on stock-iridescence live-iridescence live-translucent --region outside
+ALL="stock-off stock-on stock-iridescence live-off live-on live-iridescence live-translucent live-opaque"
+python3 $C identical $EV/base $EV/step1 $ALL --region outside
+python3 $C identical $EV/base $EV/step1 live-opaque --region window
 python3 $C predict-face $EV/base $EV/step1 stock-off --ior 1.5
 python3 $C predict-face $EV/base $EV/step1 live-off --ior 1.28
 python3 $C predict-within $EV/base $EV/step1 stock-off stock-on --ior 1.5
 python3 $C predict-within $EV/base $EV/step1 live-off live-on --ior 1.28
-for c in stock-off live-off stock-on live-on; do python3 $C bevel-report $EV/base $EV/step1 $c; done
-python3 $C face-delta $EV/base $EV/step1 live-translucent
+for c in stock-off live-off stock-on live-on; do python3 $C report $EV/base $EV/step1 $c --region bevel; done
+python3 $C report $EV/base $EV/step1 live-translucent --region face
 ```
-Expected: `outside` 0 differing pixels for every case; both face predictions and both within predictions at most 1 code value; bevel and translucent-face deltas reported, not asserted. If a prediction fails, stop and report the printed pixels: §4 says face attenuation and the ring's face factor are exact, so a failure means the implementation and the spec disagree.
+Expected: nothing outside the slab and no opaque window pixel changes; both face predictions and both within predictions hold (worst at most 1 code value from the rounded prediction; the face region includes the ring band, so the within check shows the ring's face attenuation is unchanged); bevel and translucent-face deltas reported, not asserted. If a prediction fails, stop and report the printed pixels: §4 says face attenuation and the ring's face factor are exact, so a failure means the implementation and the spec disagree. Compare `$EV/ring-look-base` with `$EV/ring-look-step1` by eye and describe the edge change.
 
-- [ ] **Step 3: Write the evidence document** `docs/materials/<run-date>-glass-edge-optics-evidence.md`: the commit, renderer string (from any `.json`), the `$EV` path, each command and its output verbatim, and a short reading: what changed on the bevel (from the bevel reports and by eye from the PNGs), and the translucent-face delta set against Review Focus 4. Include a "Step 1" heading; Tasks 6 to 9 append theirs.
+- [ ] **Step 3: Write the evidence document** `docs/materials/<run-date>-glass-edge-optics-evidence.md`: the commit, renderer string (from any `.json`; if it is llvmpipe, say so: the shader then first compiles on the real driver in Task 9, whose sheet is that check), the `$EV` path, the ring-look comparison, each command and its output verbatim, and a short reading: what changed on the bevel (from the bevel reports and by eye from the PNGs), and the translucent-face delta set against Review Focus 4. Include a "Step 1" heading; Tasks 6 to 9 append theirs.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-tasks done <task-5-id> "step 1 evidence: outside identical, face and within predictions within one code value, bevel deltas reported"
+tasks done material-c210a0 "step 1 evidence: outside identical, face and within predictions within one code value, bevel deltas reported"
 tasks check
 git add docs/materials/*-glass-edge-optics-evidence.md tasks/
+python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "docs(material): record the glass edge step 1 evidence (material-be611b)"
 ```
 
@@ -1775,7 +1891,7 @@ In `main.frag`, before the specular hooks:
 
 - [ ] **Step 4: Validate and test.** Run the Task 4 Step 6 shader command (exit 0), then `just test-one -p niri material_source_is_prelude` and `just test-one -p niri iridescence`.
 
-- [ ] **Step 5: Neutrality evidence.** `GLASS_EDGE_DUMP=$EV/step2 just test-one -p niri every_case_renders_frozen`, then `python3 docs/materials/scripts/glass-edge-compare.py identical $EV/step2-before $EV/step2 stock-off stock-on live-off live-on stock-iridescence live-iridescence live-translucent`. Expected: 0 differing pixels in every case (spec §6: the step 2 build is decoded-identical to step 1 across iridescence). Append the output under a "Step 2" heading in the evidence document.
+- [ ] **Step 5: Neutrality evidence.** `GLASS_EDGE_DUMP=$EV/step2 just test-one -p niri every_case_renders_frozen`, then `python3 docs/materials/scripts/glass-edge-compare.py identical $EV/step2-before $EV/step2 stock-off stock-on stock-iridescence live-off live-on live-iridescence live-translucent live-opaque`. Expected: 0 differing pixels in every case (spec §6: the step 2 build is decoded-identical to step 1 across iridescence). Append the output under a "Step 2" heading in the evidence document.
 
 - [ ] **Step 6: Documentation.** In `adding-an-optic.md`'s hook table, the `specular` row becomes `` `vec3 <name>_specular(vec3 specular, Surface s)` `` with neutral `specular`, and a paragraph below the table lists `Surface`'s fields as in the struct comment. In `render-pipeline.md` row 6, add "Specular hooks take the fragment's `Surface` (position, both normals, cosine, Fresnel, `u` and its direction, silhouette distance)."
 
@@ -1783,7 +1899,7 @@ In `main.frag`, before the specular hooks:
 
 ```bash
 just test-fast
-tasks done <task-6-id> "Surface specular hook; iridescence migrated, renders decoded-identical"
+tasks done material-d63184 "Surface specular hook; iridescence migrated, renders decoded-identical"
 tasks check
 git add src/render_helpers docs/materials tasks/
 git commit -m "refactor(material): pass a Surface to the specular hooks (material-be611b)"
@@ -1846,17 +1962,18 @@ In `src/render_helpers/material/optics/reflection.rs` (test module, with the `fr
     #[test]
     fn reflection_guards_a_cancelled_direction() {
         // Review Focus 3: a perturbation can cancel the across-bevel direction.
-        assert!(GLSL.contains("vec2 dir = lb > 0.0001 ? bent / lb : s.acrossDir;"));
-        assert!(GLSL.contains("if (mat_reflection <= 0.0)\n        return specular;"));
+        let glsl = ReflectionOptic::GLSL;
+        assert!(glsl.contains("vec2 dir = lb > 0.0001 ? bent / lb : s.acrossDir;"));
+        assert!(glsl.contains("if (mat_reflection <= 0.0)\n        return specular;"));
     }
 ```
 
-(`GLSL` there is `ReflectionOptic::GLSL`.) In `shaders/mod.rs`, extend the marker list to `"// ---- optic: saturation"`, `"noise"`, `"aurora"`, `"reflection"`, `"iridescence"`, `"// ---- main"` and add `assert!(main.contains("specular = reflection_specular(specular, surf);"));`. In `glass_edge.rs` `cases()`, append:
+(the tests module sees `ReflectionOptic` through `use super::*`). In `shaders/mod.rs`, extend the marker list to `"// ---- optic: saturation"`, `"noise"`, `"aurora"`, `"reflection"`, `"iridescence"`, `"// ---- main"` and add `assert!(main.contains("specular = reflection_specular(specular, surf);"));`. In `glass_edge.rs` `cases()`, append:
 
 ```rust
-    for (look, glass) in [("stock", STOCK), ("live", LIVE)] {
-        cases.push(case(&format!("{look}-reflection-0"), format!("{glass}\nreflection 0"), RING_OFF));
-        cases.push(case(&format!("{look}-reflection"), format!("{glass}\nreflection 0.6"), RING_OFF));
+    for look in [STOCK, LIVE] {
+        cases.push(case(look, "reflection-0", "reflection 0", RING_OFF));
+        cases.push(case(look, "reflection", "reflection 0.6", RING_OFF));
     }
 ```
 
@@ -1957,7 +2074,7 @@ In `optics/mod.rs` (renderer): `pub mod reflection;` and `OpticEntry::of::<refle
 
 ```bash
 C=docs/materials/scripts/glass-edge-compare.py
-python3 $C identical $EV/step3-before $EV/step3 stock-off stock-on live-off live-on stock-iridescence live-iridescence live-translucent
+python3 $C identical $EV/step3-before $EV/step3 stock-off stock-on stock-iridescence live-off live-on live-iridescence live-translucent live-opaque
 for l in stock live; do
   python3 $C pair $EV/step3 $l-off $l-reflection-0 --region all --expect same
   python3 $C pair $EV/step3 $l-off $l-reflection --region face --expect same
@@ -1989,7 +2106,7 @@ omission is 0; nothing inherits.
 
 ```bash
 just test-fast
-tasks done <task-7-id> "reflection optic: config, renderer, GLSL, docs; neutral byte-identical, face untouched, bevel lit"
+tasks done material-02b42a "reflection optic: config, renderer, GLSL, docs; neutral byte-identical, face untouched, bevel lit"
 tasks check
 git add niri-config src/render_helpers src/tests/glass_edge.rs docs/materials tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -2021,6 +2138,20 @@ git commit -m "feat(material): add the glass reflection optic (material-be611b)"
     fn toward_light(tilt_deg: f64) -> DVec3 {
         let a = tilt_deg.to_radians();
         (LIGHT.normalize() * a.sin()).extend(a.cos())
+    }
+
+    #[test]
+    fn the_highlight_shader_names_the_same_formulas() {
+        let frag = include_str!("../shaders/material/edge_highlight.frag");
+        for line in [
+            "return a2 * a2 / (t * t);",
+            "vec3 l = normalize(vec3(normalize(mat_sig_light.xy), 1.0));",
+            "vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));",
+            "float tilt = smoothstep(0.0, 1.0, (1.0 - s.structural.z) / (1.0 - h.z));",
+            "float lobe = ggxPeakRatio(max(dot(s.perturbed, h), 0.0), mat_edge_highlight_alpha);",
+        ] {
+            assert!(frag.contains(line), "edge_highlight.frag lacks `{line}`");
+        }
     }
 
     #[test]
@@ -2092,17 +2223,21 @@ In `src/render_helpers/material/mod.rs` tests (Review Focus 5; `SignalUniforms::
     #[test]
     fn the_signal_light_is_never_vertical() {
         // The glint and edge-highlight normalize the light's xy.
-        for attention in [AttentionResponse::None, AttentionResponse::RimOrbit] {
-            let r = ResolvedResponse {
+        for attention in [niri_config::AttentionResponse::None, niri_config::AttentionResponse::RimOrbit] {
+            let r = niri_config::ResolvedResponse {
                 attention,
-                ..ResolvedResponse::default()
+                ..niri_config::ResolvedResponse::default()
             };
             for level in [0., 0.5, 1.] {
                 for breath in [0., 0.5, 1.] {
                     let frame = SignalFrame {
+                        accent: None,
                         level,
                         breath,
-                        ..SignalFrame::default()
+                        impulses: Default::default(),
+                        presence: 0.,
+                        focus: 0.,
+                        beam: BeamFrame::REST,
                     };
                     let g = glass_signal_inputs(&frame, &ResolvedGlass::default());
                     let [x, y, _] = SignalUniforms::from_frame(&frame, &g, &r).light;
@@ -2113,7 +2248,7 @@ In `src/render_helpers/material/mod.rs` tests (Review Focus 5; `SignalUniforms::
     }
 ```
 
-If `SignalFrame` has no `Default`, build it as the neighbouring `from_frame` tests do (all fields spelled out, `accent: None`, `beam: BeamFrame::REST`), and import `AttentionResponse` and `ResolvedResponse` from `niri_config` as those tests do.
+`SignalFrame` has no `Default`; the fields above are the ones the neighbouring `from_frame` tests spell out. Import `BeamFrame` the way those tests do if the module does not already.
 
 In `niri-config/src/lib.rs`, the two tests from Task 7 Step 2 with `edge-highlight` / `edge_highlight` / `ResolvedEdgeHighlight` and value 0.5. In `shaders/mod.rs`: markers gain `"// ---- optic: edge-highlight"` between reflection and iridescence; `assert!(main.contains("specular = edge_highlight_specular(specular, surf);"));`; and in `every_optic_declares_its_uniforms_in_its_glsl` the hook check becomes
 
@@ -2125,9 +2260,10 @@ In `niri-config/src/lib.rs`, the two tests from Task 7 Step 2 with `edge-highlig
 In `glass_edge.rs` `cases()`:
 
 ```rust
-    for (look, glass) in [("stock", STOCK), ("live", LIVE)] {
-        cases.push(case(&format!("{look}-highlight-0"), format!("{glass}\nedge-highlight 0"), RING_OFF));
-        cases.push(case(&format!("{look}-highlight"), format!("{glass}\nedge-highlight 0.5\nbevel-profile 2"), RING_OFF));
+    for look in [STOCK, LIVE] {
+        cases.push(case(look, "highlight-0", "edge-highlight 0", RING_OFF));
+        cases.push(case(look, "k2", "bevel-profile 2", RING_OFF));
+        cases.push(case(look, "highlight", "bevel-profile 2\nedge-highlight 0.5", RING_OFF));
     }
 ```
 
@@ -2237,15 +2373,16 @@ Register `OpticEntry::of::<edge_highlight::EdgeHighlightOptic>()` between reflec
 
 ```bash
 C=docs/materials/scripts/glass-edge-compare.py
-python3 $C identical $EV/step4-before $EV/step4 stock-off stock-on live-off live-on stock-iridescence live-iridescence live-translucent stock-reflection-0 stock-reflection live-reflection-0 live-reflection
+python3 $C identical $EV/step4-before $EV/step4 stock-off stock-on stock-iridescence live-off live-on live-iridescence live-translucent live-opaque stock-reflection-0 stock-reflection live-reflection-0 live-reflection
 for l in stock live; do
   python3 $C pair $EV/step4 $l-off $l-highlight-0 --region all --expect same
-  python3 $C pair $EV/step4 $l-off $l-highlight --region outside --expect same
-  python3 $C pair $EV/step4 $l-off $l-highlight --region bevel --expect differ
+  python3 $C pair $EV/step4 $l-k2 $l-highlight --region face --expect same
+  python3 $C pair $EV/step4 $l-k2 $l-highlight --region outside --expect same
+  python3 $C pair $EV/step4 $l-k2 $l-highlight --region bevel --expect differ
 done
 ```
 
-Expected: every command exits 0 (spec §6: step 4 at default values is decoded-identical to step 3; `edge-highlight 0` is the unconfigured render). The `-highlight` cases also carry `bevel-profile 2`, so their face is compared by eye only: the lobe must sit on the top-left bevel and nothing on the face. Append under "Step 4".
+Expected: every command exits 0 (spec §6: step 4 at default values is decoded-identical to step 3; `edge-highlight 0` is the unconfigured render; on a rounded bevel the highlight leaves the face, whose tilt is 0, and everything outside the slab untouched and lights the bevel). By eye from `live-highlight.png`: the lobe sits on the top-left bevel. Append under "Step 4".
 
 - [ ] **Step 8: Documentation.** `material-config.md`:
 
@@ -2262,13 +2399,13 @@ flashes when its slope matches the light's half-angle (`R / bevel = 0.414`).
 Its explicit neutral is 0, and omission is 0; nothing inherits.
 ```
 
-`render-pipeline.md` row 6 gains "then the `edge-highlight` optic adds a GGX key-light lobe on the bevel, before `iridescence` hues all of it"; §5 gains `| edge-highlight | glass.edgeHighlight (pending, prism-7024c4) | 6 |`; the `roughness` row's Stage column becomes "source selection before 3; 5 scattering; 6 highlight width".
+In `adding-an-optic.md` (and the `Optic::NAME` doc comment), state that a hyphenated optic name keeps its hyphen in `NAME`, `ORDER` and the KDL node, and becomes underscores in file, module, hook and uniform names (`edge-highlight`: `edge_highlight.frag`, `edge_highlight_specular`, `mat_edge_highlight`). `render-pipeline.md` row 6 gains "then the `edge-highlight` optic adds a GGX key-light lobe on the bevel, before `iridescence` hues all of it"; §5 gains `| edge-highlight | glass.edgeHighlight (pending, prism-7024c4) | 6 |`; the `roughness` row's Stage column becomes "source selection before 3; 5 scattering; 6 highlight width".
 
 - [ ] **Step 9: Commit**
 
 ```bash
 just test-fast
-tasks done <task-8-id> "edge-highlight optic with its f64 weight; neutral byte-identical; lobe on the light-facing bevel"
+tasks done material-5e64ef "edge-highlight optic with its f64 weight; neutral byte-identical; lobe on the light-facing bevel"
 tasks check
 git add niri-config src/render_helpers src/tests/glass_edge.rs docs/materials tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -2297,7 +2434,9 @@ git commit -m "feat(material): add the glass edge-highlight optic (material-be61
 # The owner judges the look and Prism's starting values from it.
 #
 # Env: OUT (fresh artifact dir), NIRI_MATERIAL_WORK_ROOT, CAPTURE_TASK (task id
-# authorizing this run), SHEET_WALL (wallpaper image; the owner's current one).
+# authorizing this run), SHEET_WALL (wallpaper image; the owner's current one),
+# SHEET_PILOT=1 for one lit cell (focused, k 2, reflection 0.6, edge-highlight
+# 0.5, roughness 0) to check the crop before the full run.
 set -eu
 : "${CAPTURE_TASK:?task id authorizing this run}"
 : "${SHEET_WALL:?wallpaper image to put behind the glass}"
@@ -2331,12 +2470,17 @@ cell() {   # $1 name, $2 glass lines
 }
 
 ROWS=()
-for look in focused inactive weak-thin; do
-    for k in 1 2 4; do
+if [ "${SHEET_PILOT:-0}" = 1 ]; then
+    LOOKS=(focused); KS=(2); REFLS=(0.6); HLS=(0.5); ROUGHS=(0)
+else
+    LOOKS=(focused inactive weak-thin); KS=(1 2 4); REFLS=(0 0.6); HLS=(0 0.5); ROUGHS=(0 1)
+fi
+for look in "${LOOKS[@]}"; do
+    for k in "${KS[@]}"; do
         row=()
-        for refl in 0 0.6; do
-            for hl in 0 0.5; do
-                for rough in 0 1; do
+        for refl in "${REFLS[@]}"; do
+            for hl in "${HLS[@]}"; do
+                for rough in "${ROUGHS[@]}"; do
                     name="$look-k$k-r$refl-h$hl-g$rough"
                     cell "$name" "${LOOK[$look]}"$'\n'"bevel-profile $k"$'\n'"reflection $refl"$'\n'"edge-highlight $hl"$'\n'"roughness $rough"
                     row+=("$OUT/cell-$name.png")
@@ -2348,14 +2492,15 @@ for look in focused inactive weak-thin; do
 done
 # The planar flash: R / bevel = tan 22.5 degrees.
 row=()
-for rough in 0 1; do
+[ "${SHEET_PILOT:-0}" = 1 ] && ROUGHS=() || ROUGHS=(0 1)
+for rough in "${ROUGHS[@]}"; do
     for hl in 0 0.5; do
         name="facet-h$hl-g$rough"
         cell "$name" $'ior 1.5\nthickness 4.97\nbevel 12\noffset-x 6\noffset-y 6\nbevel-profile 1'$'\n'"edge-highlight $hl"$'\n'"roughness $rough"
         row+=("$OUT/cell-$name.png")
     done
 done
-ROWS+=("facet:${row[*]}")
+[ ${#row[@]} -gt 0 ] && ROWS+=("facet:${row[*]}")
 
 args=()
 for entry in "${ROWS[@]}"; do
@@ -2368,14 +2513,14 @@ echo "sheet: $OUT/glass-edge-sheet.png"
 finish
 ```
 
-- [ ] **Step 2: Pilot one cell.** Run the script with the loops cut to one look, one profile and one combination (edit a scratch copy, not the committed file) on the headless lane: `OUT=$EV/sheet-pilot CAPTURE_TASK=material-be611b SHEET_WALL=<owner's wallpaper> NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material bash <scratch copy>`. Read the crop: the probe's top-left corner, bevel and wallpaper visible. If `capture_preflight headless` refuses, park (Global Constraints) and record the `run:` note.
+- [ ] **Step 2: Pilot one cell.** `OUT=$EV/sheet-pilot CAPTURE_TASK=material-124f1f SHEET_PILOT=1 SHEET_WALL=<owner's wallpaper> NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material docs/materials/scripts/glass-edge-sheet.sh`. Read `$EV/sheet-pilot/glass-edge-sheet.png`: the probe's top-left corner with the lit bevel (the highlight's lobe) and the wallpaper must be inside the crop; the smoke library notes the headless output may be transformed, so if the lit corner is elsewhere, fix `corner_roi` before the full run. If `capture_preflight headless` refuses, park as Global Constraints says.
 
-- [ ] **Step 3: The full sheet.** `OUT=$EV/sheet CAPTURE_TASK=material-be611b SHEET_WALL=<wallpaper> NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material docs/materials/scripts/glass-edge-sheet.sh` (about 76 cells, 8 to 10 minutes after the build). Record `run: <actual> min (est 25, headless); build <m>, cells <m>; <outcome>` on the task.
+- [ ] **Step 3: The full sheet.** `OUT=$EV/sheet CAPTURE_TASK=material-124f1f SHEET_WALL=<wallpaper> NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material docs/materials/scripts/glass-edge-sheet.sh` (about 76 cells, 8 to 10 minutes after the build). Record `run: <actual> min (est 25, headless); build <m>, cells <m>; <outcome>` on the task.
 
-- [ ] **Step 4: Hand the sheet to the owner.** `tasks attach material-be611b $EV/sheet/glass-edge-sheet.png --caption "glass edge contact sheet: bevel-profile x looks x reflection/edge-highlight/roughness, planar facet row"`. Append a "Step 5: contact sheet" section to the evidence document (command, `$EV/sheet`, identity from `capture.json`). Update the spec's status header to "implemented on `glass-edges` (steps 1 to 4); contact sheet awaiting the owner's review". Commit:
+- [ ] **Step 4: Hand the sheet to the owner.** `tasks attach material-be611b $EV/sheet/glass-edge-sheet.png --caption "glass edge contact sheet: bevel-profile x looks x reflection/edge-highlight/roughness, planar facet row"`. Append a "Step 5: contact sheet" section to the evidence document (command, `$EV/sheet`, identity from `capture.json`). Add the new scripts and the evidence document to `docs/materials/README.md`'s index, in its existing format. Update the spec's status header to "implemented on `glass-edges` (steps 1 to 4); contact sheet awaiting the owner's review". Commit:
 
 ```bash
-tasks done <task-9-id> "contact sheet script and sheet; attached to material-be611b for the owner's review"
+tasks done material-124f1f "contact sheet script and sheet; attached to material-be611b for the owner's review"
 tasks check
 git add docs/materials docs/specs/2026-09-30-glass-edge-optics-design.md tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -2389,5 +2534,5 @@ Then `tasks park material-be611b "Owner reviews the contact sheet attached to ma
 ## Self-review
 
 - **Spec coverage.** §3.1 coordinate, profile, normal, softened gradient, ridge guard, slope cap, ray model, tap lift, bound: Tasks 2 and 4. §3.2 `(1 - F)`, interior-light attenuation on the new path (unchanged code, new `att`), reflection: Tasks 4 and 7. §3.3: Task 8. §3.4 hook and order: Tasks 6 to 8. §4 default changes: Task 5's predictions. §5 cost: no measurement is planned; the spec states an operation count, not a budget, and the contact sheet's capture lane records no GPU time. If a reviewer wants a cost figure, Task 9's script can add the lib's `trace_run`/`gpu_median_ns` round for `{reflection 0.6, edge-highlight 0.5}` against the default. §6 verification: Tasks 1, 2, 4 to 9 (with the harness deviation stated above). §7 delivery 1 to 4: Tasks 1 to 9; 5: `prism-7024c4`, filed and blocked on this task.
-- **Placeholders.** None. Task 8's signal-light test names one fallback (spelling out `SignalFrame` if it has no `Default`) with the exact fields to use.
+- **Placeholders.** None: task ids are filled, and every code step carries its code. `<run-date>` and `$EV` are run-time values each step says how to set.
 - **Type consistency.** `EdgeSample` (Rust) and `Surface` (GLSL) are different on purpose: the Rust struct mirrors `slabSurface`'s outputs, the GLSL struct is the hook argument. `bevelAcross`, `acrossDir`, `surfaceHeight`, `fresnel` are introduced in Task 4 and consumed in Task 6.
