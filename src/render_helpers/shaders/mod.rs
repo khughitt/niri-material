@@ -535,6 +535,10 @@ mod tests {
         assert!(material_uniform_names()
             .iter()
             .any(|name| name.name == "mat_bevel_profile" && name.type_ == UniformType::_1f));
+        assert!(source.contains("struct Surface {"));
+        assert!(source.contains("vec3 iridescence_specular(vec3 specular, Surface s)"));
+        assert!(main.contains("Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist);"));
+        assert!(main.contains("specular = iridescence_specular(specular, surf);"));
         assert!(main.contains("spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - bevelAcross);"));
         assert!(!main.contains("innerDist / slabChamfer"));
         let within = main.find("vec3 within = vec3(0.0);").unwrap();
