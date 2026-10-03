@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-3bdffc
 created: 2026-09-29T21:31:05Z
-updated: 2026-10-03T11:14:59Z
+updated: 2026-10-03T11:15:02Z
 started: 2026-10-03T09:33:22Z
 depends: [material-a54d89]
 parent: material-0a4093
@@ -65,3 +65,5 @@ Bound: attenuation tint only; fireflies, frost, progress IPC, client desaturatio
   provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-03T11:14:18Z (material-3bdffc): review: plan round 2 — verdict: revise; findings: P2 1; reviewer: codex/gpt-6
 - 2026-10-03T11:14:59Z (material-3bdffc): Plan round 2 disposition: P2 confirmed (fixture.rs niri_complete_animations ends with set_complete_instantly(false); animations { off } is that flag via Niri::new/reload). Task 5 Step 1 now saves and restores should_complete_instantly() in the helper; added completing_animations_keeps_the_configured_clock_setting for both initial settings; first-frame assertions unchanged. No existing test configures animations off, so the helper change is neutral for them.
+- 2026-10-03T11:15:02Z (material-3bdffc): parked (waiting on user, review): Owner reviews the round-2 revision of docs/plans/2026-10-03-accent-tint.md in .worktrees/material-3bdffc (plan round 3); on accept, agent notes reviewed decisions on material-6f45a0, closes this design task, and executes natively from material-01ddd7
+  provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
