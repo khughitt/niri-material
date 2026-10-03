@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-77be96
 created: 2026-09-23T19:47:41Z
-updated: 2026-10-03T00:57:04Z
+updated: 2026-10-03T01:00:59Z
 started: 2026-10-03T00:33:02Z
 completed: 2026-10-03T00:38:36Z
 depends: []
@@ -40,3 +40,5 @@ Worktrees share one build.target-dir. After a build of another branch or commit 
 - 2026-10-03T00:51:21Z (material-77be96): Review round 1 fixes: the check now compares cargo's target_directory and build_directory (a shared build.build-dir collides the same way), skips with a note any other checkout that is missing (locked worktrees are never prunable), bare, or whose manifest cargo cannot read, exits 2 on its own failures, and its tests run with an empty CARGO_HOME. Corrections to the earlier notes: a build.build-dir with {workspace-path-hash} does separate intermediates (not the final binaries in a shared target dir); staleness is per crate, so a binary built while sharing can mix another tree's crates with its own, compiling silently when the APIs match; glass-edges also shared. Moved off the shared dir on 2026-10-02 (config replaced by a comment-only .cargo/config.toml, kept because older branches' AGENTS.md makes ops-check require the file): fix-ci, material-5b3107, material-5b3107-baseline, material-77db8a, material-80caf4, glass-edges. material-3acc86 still shares: a live session holds it, so it moves when that session merges this change and its check refuses.
 - 2026-10-03T00:56:33Z (material-77be96): review: impl round 2 — verdict: revise; findings: Important 1, Minor 5; reviewer: claude-code/claude-opus-5-5
 - 2026-10-03T00:57:04Z (material-77be96): Review round 2 fix: key() failures (ENOTDIR, EACCES, symlink loops) on another checkout's dirs now skip that checkout with a note, and on this checkout's own dirs exit 2; the fix hint is target-dir = "target" in this checkout's own config, which also overrides a parent directory's config.
+- 2026-10-03T01:00:49Z (material-77be96): review: impl round 3 — verdict: revise; findings: Important 1; reviewer: claude-code/claude-opus-5-5
+- 2026-10-03T01:00:59Z (material-77be96): Review round 3 fix: the hint, docstring and AGENTS.md now say to set both target-dir = "target" and build-dir = "target" in the checkout's own config (cargo merges config key by key, so a parent's build-dir survives a target-dir override); the test now builds a real shared parent config.

@@ -22,8 +22,8 @@ rendering design assumes.
   commit is possible there.
 - Every checkout builds into a target dir of its own: that `target-dir` is for the
   main checkout only. A worktree gets no `build.target-dir` or `build.build-dir` (or,
-  under a parent config that sets one, `target-dir = "target"` in its own
-  .cargo/config.toml) and builds into its own target/, which sits on local storage
+  under a parent config that sets one, both `target-dir = "target"` and
+  `build-dir = "target"` in its own .cargo/config.toml) and builds into its own target/, which sits on local storage
   when .worktrees is a work-link symlink. Two checkouts sharing either dir serve each other's workspace
   crates as fresh (cargo keys them by root-relative path and checks them by mtime): a
   "no field" error the source contradicts, or a binary mixing the other tree's crates
