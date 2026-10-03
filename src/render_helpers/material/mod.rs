@@ -25,6 +25,7 @@ use crate::render_helpers::RenderTarget;
 
 pub mod optics;
 pub mod ring;
+pub mod tint;
 
 /// Per-fragment background composition inputs, mirroring `XrayElement`'s
 /// two-layer stack for the one workspace the element belongs to.
