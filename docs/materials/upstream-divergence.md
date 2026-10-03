@@ -94,7 +94,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
 | `src/layout/tests.rs` | B | M | +304/-4 |
-| `src/layout/tile.rs` | B | M | +2444/-78 |
+| `src/layout/tile.rs` | B | M | +2572/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
 | `src/niri.rs` | B | M | +302/-0 |
