@@ -47,6 +47,7 @@
 | `src/tests/accent_tint.rs` | create | headless render tests and the owner-review dump |
 | `src/tests/mod.rs` | modify | register `accent_tint` |
 | `src/tests/ring_pair.rs` | modify | make `window_rect` `pub(super)` |
+| `src/tests/fixture.rs` | modify | `niri_complete_animations` restores the clock's `complete_instantly` instead of clearing it |
 | `docs/materials/material-config.md` | modify | response-table row and behavior paragraph |
 | `docs/materials/render-pipeline.md` | modify | stage 4 parameters, §5 table, related designs |
 
@@ -1051,12 +1052,30 @@ git commit -m "feat(material): upload the accent-tinted attenuation color"
 - Create: `src/tests/accent_tint.rs`
 - Modify: `src/tests/mod.rs` (add `mod accent_tint;` before `mod animations;`)
 - Modify: `src/tests/ring_pair.rs` (`fn window_rect` → `pub(super) fn window_rect`)
+- Modify: `src/tests/fixture.rs:85-90` (`niri_complete_animations` restores the clock's setting)
 
 **Interfaces:**
 - Consumes: `super::ring_pair::{diff, render_at, set_time, window_rect}`; `Niri::{set_window_signal, clear_window_signal, arm_signal_timer}`; `State::reload_config`.
 - Produces: `src/tests/accent_tint.rs` helpers used by Task 6: `look(glass, response, background, extra) -> Config`, `ACCEPTED_GLASS`, `ACCEPTED_RESPONSE`, `DEFAULT_GLASS`, `open(f, id, (w, h), argb) -> WlSurface`, `signal(f, window_index, Some(hex))`, `OUT_W`, `OUT_H`, `FADE_MS`, `REST`, `REST_LATER`.
 
-- [ ] **Step 1: Write the test file**
+- [ ] **Step 1: Keep `animations { off }` through the fixture helper**
+
+`Fixture::niri_complete_animations` ends with `clock.set_complete_instantly(false)`. Global `animations { off }` is that same flag (`Niri::new` and the reload path set it from `config.animations.off`). So the helper silently turns animations back on, and the first-frame test below would see a normal crossfade under `animations { off }`. No existing test configures `animations { off }`, so restoring the previous value changes nothing for them.
+
+In `src/tests/fixture.rs`, replace the helper with:
+
+```rust
+    pub fn niri_complete_animations(&mut self) {
+        let niri = self.niri();
+        // Restore, don't reset: `animations { off }` is this same flag.
+        let complete_instantly = niri.clock.should_complete_instantly();
+        niri.clock.set_complete_instantly(true);
+        niri.advance_animations();
+        niri.clock.set_complete_instantly(complete_instantly);
+    }
+```
+
+- [ ] **Step 2: Write the test file**
 
 Create `src/tests/accent_tint.rs`:
 
@@ -1275,6 +1294,20 @@ fn output_pass(f: &mut Fixture, time: Duration) -> (String, bool) {
 }
 
 #[test]
+fn completing_animations_keeps_the_configured_clock_setting() {
+    for (extra, off) in [("", false), ("animations { off; }", true)] {
+        let mut f = Fixture::with_config(look(DEFAULT_GLASS, "", "#202020", extra));
+        assert_eq!(f.niri().clock.should_complete_instantly(), off, "{extra:?}: config sets it");
+        f.niri_complete_animations();
+        assert_eq!(
+            f.niri().clock.should_complete_instantly(),
+            off,
+            "{extra:?}: the helper restores it"
+        );
+    }
+}
+
+#[test]
 fn zero_weight_and_default_render_identically() {
     for glass in [ACCEPTED_GLASS, DEFAULT_GLASS] {
         let absent = rest(glass, r#"accent "ring""#, TRANSLUCENT, Some("#ff6600"));
@@ -1475,22 +1508,22 @@ fn focus_swap_retints_on_the_first_frame() {
 
 `Layout::focus_left` is the call `src/tests/focus_swap.rs` uses; `windows().nth(0)` is the first-opened window. In `src/tests/mod.rs` add `mod accent_tint;` before `mod animations;`. In `src/tests/ring_pair.rs` make `window_rect` `pub(super)`.
 
-- [ ] **Step 2: Run the new tests**
+- [ ] **Step 3: Run the new tests**
 
 Run: `just test-one -p niri -E 'test(/tests::accent_tint::/)'`
-Expected: PASS (10 tests). These tests check behavior that Tasks 1–4 already implemented, so a failure here is a real defect. Debug it with superpowers:systematic-debugging before changing any assertion.
+Expected: PASS (11 tests). These tests check behavior that Tasks 1–4 already implemented, so a failure here is a real defect. Debug it with superpowers:systematic-debugging before changing any assertion.
 
-- [ ] **Step 3: Prove the tests can fail**
+- [ ] **Step 4: Prove the tests can fail**
 
 Temporarily change `accent_tint`'s first line to `return base.to_array_unpremul();` and run the same command. Expected: `full_weight_tints_the_slab_and_translucent_content`, `accent_none_still_tints_the_body`, `animations_off_tints_the_first_frame`, `reload_of_only_the_weight_commits_damage_and_rerenders` and `focus_swap_retints_on_the_first_frame` fail. Also run `just test-one -p niri real_signal_crossfade` with the neutral `accent_tint`: it fails too. Revert the change and re-run: PASS.
 
-- [ ] **Step 4: Fast suite and commit**
+- [ ] **Step 5: Fast suite and commit**
 
 Run: `just test-fast`
 Expected: PASS.
 
 ```bash
-git add src/tests/accent_tint.rs src/tests/mod.rs src/tests/ring_pair.rs
+git add src/tests/accent_tint.rs src/tests/mod.rs src/tests/ring_pair.rs src/tests/fixture.rs
 git commit -m "test(material): headless accent tint neutrality, opacity, settling and swaps"
 ```
 
