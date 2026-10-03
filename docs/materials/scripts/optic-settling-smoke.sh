@@ -137,6 +137,10 @@ CAST_CONSUMER=${OPTIC_SETTLING_STUB_CONSUMER:-$ROOT/tools/screencast_consumer.py
 if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
     [ "$TIMESCALE" = 1 ] && [ -z "${OPTIC_SETTLING_STUB_CONSUMER:-}${OPTIC_SETTLING_STUB_LOCK:-}" ] \
         || fail 'stub timescale, consumer and lock client need OPTIC_SETTLING_STUB_TOOLS'
+    # vt-lib.sh's test seams: a recorded run switches and reads the real VTs.
+    [ -z "${VT_CHVT:-}" ] || fail 'VT_CHVT needs OPTIC_SETTLING_STUB_TOOLS'
+    [ -z "${VT_LOGINCTL:-}" ] || fail 'VT_LOGINCTL needs OPTIC_SETTLING_STUB_TOOLS'
+    [ "$VT_ACTIVE_FILE" = /sys/class/tty/tty0/active ] || fail 'VT_ACTIVE_FILE needs OPTIC_SETTLING_STUB_TOOLS'
 fi
 [ "$MODE" = prepare ] || capture_preflight "$LANE"
 if [ "$MODE" != prepare ] && [ "$LANE" = dedicated ]; then
@@ -437,7 +441,8 @@ start_drm() {   # $1 niri, $2 config, $3 sub-run name
     sleep 1
 }
 stop_drm() {
-    kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; NIRI_PID=
+    # A niri that ignores TERM holds the device and the VT: KILL after reap's bound.
+    reap "$NIRI_PID"; NIRI_PID=
     [ -z "$BUS_PID" ] || reap "$BUS_PID"
     BUS_PID=
     rm -f "$RT"/niri.*.sock "$RT/bus"; sleep 0.5

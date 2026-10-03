@@ -531,6 +531,8 @@ def stop(*_):
             pass
     sys.exit(0)
 signal.signal(signal.SIGTERM, stop)
+if sys.argv[1] == 'niri' and os.environ.get('STUB_NIRI_IGNORES_TERM'):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 while True:
     time.sleep(60)
 """
@@ -559,7 +561,8 @@ STUBS = {
         '    -c) echo "niri $$" >> "$STUB_DIR/pids"; exec python3 "$STUB_DIR/serve.py" niri ;;\n'
         'esac\nexit 2\n'),
     'bin/kitty': 'echo "kitty $$" >> "$STUB_DIR/pids"\nwhile [ "$1" != sh ]; do shift; done\nexec "$@"\n',
-    'bin/magick': 'case "$*" in *info:*) echo 100x100+10+10; exit 0 ;; esac\nfor arg do :; done\nprintf image > "$arg"\n',
+    'bin/magick': ('case "$*" in *info:*) echo 100x100+10+10; exit 0 ;; esac\nfor arg do :; done\n'
+                   'case $arg in *:-) printf image ;; *) printf image > "$arg" ;; esac\n'),
     'bin/dbus-daemon': 'echo "dbus-daemon $$" >> "$STUB_DIR/pids"\nexec python3 "$STUB_DIR/serve.py" dbus-daemon "$@"\n',
     'bin/sudo': 'exit 0\n',
     'bin/pgrep': 'exit 1\n',
@@ -772,6 +775,62 @@ class DriverCleanupTests(unittest.TestCase):
                              capture_output=True, text=True, timeout=60)
         self.assertNotEqual(run.returncode, 0)
         self.assertIn('need OPTIC_SETTLING_STUB_TOOLS', run.stderr)
+
+    def test_vt_overrides_need_stub_tools(self):
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        for name, value in (('VT_CHVT', '/bin/true'), ('VT_LOGINCTL', '/bin/true'),
+                            ('VT_ACTIVE_FILE', str(self.base / 'active'))):
+            with self.subTest(name=name):
+                env = dict(self.env, OUT=str(self.base / f'out-{name}'), **{name: value})
+                env.pop('OPTIC_SETTLING_STUB_TOOLS')
+                run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
+                                     capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn(f'{name} needs OPTIC_SETTLING_STUB_TOOLS', run.stderr)
+
+    def test_a_refused_return_fails_the_run_after_release(self):
+        # The return to VT 1 never lands: restoration fails, the run exits 1,
+        # and the capture lock is still released.
+        (self.stubs / 'vt/chvt').write_text(
+            '#!/bin/sh\necho "chvt $1" >> "$STUB_DIR/meta.log"\n[ "$1" = 1 ] && exit 0\n'
+            'printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n: > "$STUB_DIR/away"\n')
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('tty-resume', STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05', LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, 'away', 60)
+        _, stderr = self.terminate(driver)
+        self.assertEqual(driver.returncode, 1, stderr)
+        self.assertIn('VT restoration failed', stderr)
+        record = json.loads((self.out / 'vt-restore.json').read_text())
+        self.assertEqual((record['outcome'], record['home'], record['observed']), ('failed', 1, 2))
+        self.assertEqual(active.read_text(), 'tty2\n')
+        meta = (self.stubs / 'meta.log').read_text().splitlines()
+        self.assertEqual(meta.count('chvt 1'), 3)                 # three verified attempts
+        self.assertTrue(meta[-1].startswith('release '), meta)
+        self.assertEqual([pid for pid in self.pids() if alive(pid)], [])
+
+    def test_a_drm_niri_that_ignores_term_is_killed_at_case_end(self):
+        # A DRM niri that ignores TERM holds the device and the VT; the case's
+        # stop must not wait on it forever, or restoration never runs.
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('drm-aurora', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'), STUB_NIRI_IGNORES_TERM='1',
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05', LANE_ARGS='--lane dedicated')
+        try:
+            _, stderr = driver.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            driver.kill()
+            self.fail('the driver hung on a niri that ignores TERM')
+        self.assertTrue((self.out / 'drm-aurora/observation.json').is_file(), stderr)   # the case ran to its stop
+        self.assertTrue(self.started('niri'))
+        self.assertEqual([pid for pid in self.pids() if alive(pid)], [])
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
+        self.assertTrue((self.stubs / 'meta.log').read_text().splitlines()[-1].startswith('release '))
 
     def test_term_during_a_dedicated_capture_reaps_the_bus_and_records_the_vt(self):
         active = self.base / 'active'
