@@ -121,7 +121,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +111/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +635/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
-| `tools/test_optic_settling.py` | C | A | +1126/-0 |
+| `tools/test_optic_settling.py` | C | A | +1135/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +259/-0 |
 | `tools/test_upstream_report.py` | C | A | +946/-0 |
