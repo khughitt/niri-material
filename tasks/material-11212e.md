@@ -7,8 +7,9 @@ size: s
 complexity: low
 process: direct
 created: 2026-09-21T09:39:49Z
-updated: 2026-09-21T09:39:49Z
+updated: 2026-10-02T23:07:56Z
 depends: []
+parent: material-2834d7
 tags: [tooling]
 agent: claude-code/claude-opus-5
 ---

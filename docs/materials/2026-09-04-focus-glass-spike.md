@@ -64,10 +64,12 @@ raises `roughness` to 0.5, lowers `chromatic-aberration` to 0.08 and
   unfocused one lightens and frosts. Focus is unmistakable with no opacity
   step. The swap flips correctly when focus moves left.
 - The swap is a hard cut by construction: `apply_resolved` in
-  `src/render_helpers/material.rs` builds a new `MaterialState` when the
-  resolved material name changes, so jelly residuals and any other per-state
-  dynamics restart. Stills cannot show whether that reads as a pop; that is
-  the open question for `material-5a5fff`.
+  `src/render_helpers/material/mod.rs` builds a new `MaterialState` when the
+  resolved material name changes. Stills cannot show whether that reads as a
+  pop; that is the open question for `material-5a5fff`. (Corrected by
+  `material-8e3b73`: the new state replaces the element identity, offscreen
+  and seed, but motion residuals live on the layout and survive the swap. See
+  the focus swap finding in `docs/notes/2026-09-29-material-dynamics-brief.md`.)
 
 ## Consequences
 

@@ -107,6 +107,7 @@ void main() {
         float gap = mat_sig_ring.x;
         float width = mat_sig_ring.y;
         float ringGlow = mat_sig_ring.z;
+        float ringRest = mat_sig_ring.w;
         // The ring needs a face to run under, not a chamfer: a flat slab
         // with bevel 0 carries the beam. Only the spill needs the chamfer.
         bool hasLine = g_face_half.x > gap && g_face_half.y > gap;
@@ -127,8 +128,10 @@ void main() {
                              gap, width, mat_scatter));
             float presence = mat_sig_accent.w;
             float pulse = mat_sig_response.y == 2 ? mat_sig_breath : 0.0;
+            // The accent's own light on the band; at ring-accent 0 the accent
+            // only tints the focus light through `color` below.
             float accentGlow = showAccent
-                ? (0.15 + 0.35 * mat_sig_level) * (1.0 + pulse * mat_sig_level)
+                ? (0.15 + 0.35 * mat_sig_level) * (1.0 + pulse * mat_sig_level) * mat_sig_ring_accent
                 : 0.0;
             float focusGlow = 0.0;
             float spill = 0.0;
@@ -154,7 +157,7 @@ void main() {
                              * (1.0 - exp(-behind / BEAM_HEAD_SIGMA)) * taper * taper;
                 }
                 float moving = decay * (headTerm + tailTerm);
-                focusGlow = mat_sig_focus.x * BEAM_BASE * ringGlow * (moving + BEAM_REST);
+                focusGlow = mat_sig_focus.x * BEAM_BASE * ringGlow * (moving + BEAM_REST * ringRest);
                 // Light inside the glass leaks at its edge: on the chamfer,
                 // the beam's brightness at the nearest point of the line,
                 // falling off toward the outer edge.

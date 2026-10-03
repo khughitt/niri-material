@@ -4,8 +4,9 @@ title: "Sunlight: cloudy, dim periods before the sun breaks through"
 status: idea
 priority: 2
 created: 2026-09-06T22:27:52Z
-updated: 2026-09-07T08:21:06Z
+updated: 2026-10-02T23:07:57Z
 depends: []
+parent: material-53f873
 tags: [rendering, lighting]
 source: "mindful:thought:5778c060e57d47dd808e20347223cfd5"
 ---

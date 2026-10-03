@@ -32,6 +32,8 @@ use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_display::WlDisplay;
 use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
+use wayland_client::protocol::wl_shm::{self, WlShm};
+use wayland_client::protocol::wl_shm_pool::WlShmPool;
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, Proxy as _, QueueHandle};
 
@@ -56,6 +58,7 @@ pub struct State {
     pub xdg_wm_base: Option<XdgWmBase>,
     pub layer_shell: Option<ZwlrLayerShellV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
+    pub shm: Option<WlShm>,
     pub viewporter: Option<WpViewporter>,
     pub virtual_pointer_manager: Option<ZwlrVirtualPointerManagerV1>,
 
@@ -66,6 +69,7 @@ pub struct State {
 pub struct Window {
     pub qh: QueueHandle<State>,
     pub spbm: WpSinglePixelBufferManagerV1,
+    pub shm: WlShm,
 
     pub surface: WlSurface,
     pub xdg_surface: XdgSurface,
@@ -183,6 +187,7 @@ impl Client {
             xdg_wm_base: None,
             layer_shell: None,
             spbm: None,
+            shm: None,
             viewporter: None,
             virtual_pointer_manager: None,
             windows: Vec::new(),
@@ -277,6 +282,7 @@ impl State {
         let window = Window {
             qh: self.qh.clone(),
             spbm: self.spbm.clone().unwrap(),
+            shm: self.shm.clone().unwrap(),
 
             surface,
             xdg_surface,
@@ -358,6 +364,25 @@ impl Window {
     pub fn attach_new_buffer(&self) {
         let buffer = self.spbm.create_u32_rgba_buffer(0, 0, 0, 0, &self.qh, ());
         self.surface.attach(Some(&buffer), 0, 0);
+    }
+
+    /// A 1×1 ARGB8888 shm buffer, which the renderer imports as a texture (a
+    /// single-pixel buffer never gets one, so a resize snapshot of it is empty).
+    /// Damaged in full: an undamaged commit leaves the window's offscreen on
+    /// the previous contents.
+    pub fn attach_new_shm_buffer(&self, argb: u32) {
+        use std::io::Write as _;
+        use std::os::fd::{AsFd as _, FromRawFd as _, OwnedFd};
+
+        let fd = unsafe { libc::memfd_create(c"niri-test-shm".as_ptr(), libc::MFD_CLOEXEC) };
+        assert!(fd >= 0, "memfd_create failed");
+        let mut file = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+        file.write_all(&argb.to_ne_bytes()).unwrap();
+        let pool = self.shm.create_pool(file.as_fd(), 4, &self.qh, ());
+        let buffer = pool.create_buffer(0, 1, 1, 4, wl_shm::Format::Argb8888, &self.qh, ());
+        pool.destroy();
+        self.surface.attach(Some(&buffer), 0, 0);
+        self.surface.damage_buffer(0, 0, 1, 1);
     }
 
     pub fn attach_null(&self) {
@@ -534,6 +559,9 @@ impl Dispatch<WlRegistry, ()> for State {
                 } else if interface == WpSinglePixelBufferManagerV1::interface().name {
                     let version = min(version, WpSinglePixelBufferManagerV1::interface().version);
                     state.spbm = Some(registry.bind(name, version, qh, ()));
+                } else if interface == WlShm::interface().name {
+                    let version = min(version, WlShm::interface().version);
+                    state.shm = Some(registry.bind(name, version, qh, ()));
                 } else if interface == WpViewporter::interface().name {
                     let version = min(version, WpViewporter::interface().version);
                     state.viewporter = Some(registry.bind(name, version, qh, ()));
@@ -756,6 +784,35 @@ impl Dispatch<WlBuffer, ()> for State {
             wl_buffer::Event::Release => (),
             _ => unreachable!(),
         }
+    }
+}
+
+impl Dispatch<WlShm, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlShm,
+        event: <WlShm as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            wl_shm::Event::Format { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<WlShmPool, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlShmPool,
+        _event: <WlShmPool as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
     }
 }
 

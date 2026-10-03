@@ -4,8 +4,9 @@ title: Check whether the capture preflight GPU thresholds are meetable with the 
 status: idea
 priority: 1
 created: 2026-09-13T14:03:11Z
-updated: 2026-09-16T12:00:25Z
+updated: 2026-10-02T23:07:56Z
 depends: []
+parent: material-2834d7
 tags: []
 ---
 

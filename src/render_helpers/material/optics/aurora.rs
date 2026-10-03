@@ -44,7 +44,12 @@ impl Optic for AuroraOptic {
             Uniform::new("mat_aurora", aurora.amount as f32),
             Uniform::new(
                 "mat_aurora_phase",
-                phase_on(AURORA_PERIOD, Self::rate(glass, ctx), ctx.now, ctx.seed),
+                phase_on(
+                    AURORA_PERIOD,
+                    Self::rate(glass, ctx),
+                    ctx.logical_now,
+                    ctx.seed,
+                ),
             ),
             Uniform::new("mat_aurora_color_a", color_linear(aurora.color_a)),
             Uniform::new("mat_aurora_color_b", color_linear(aurora.color_b)),
@@ -52,7 +57,7 @@ impl Optic for AuroraOptic {
     }
 
     fn next_change(glass: &ResolvedGlass, ctx: &OpticFrame<'_>) -> Option<Duration> {
-        next_boundary_on(AURORA_PERIOD, Self::rate(glass, ctx), ctx.now)
+        next_boundary_on(AURORA_PERIOD, Self::rate(glass, ctx), ctx.logical_now)
     }
 }
 
@@ -74,7 +79,7 @@ mod tests {
         animations_off: bool,
     ) -> OpticFrame<'_> {
         OpticFrame {
-            now,
+            logical_now: now,
             motion,
             animations_off,
             backdrop_blur: false,

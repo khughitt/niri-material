@@ -1,0 +1,66 @@
+warning: ignoring --test-threads because --no-capture is specified
+   Compiling niri v26.4.0 (<worktree>)
+warning: unused import: `MergeWith`
+ --> src/layout/tests.rs:3:32
+  |
+3 | use niri_config::utils::{Flag, MergeWith as _};
+  |                                ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `niri` (lib test) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.39s
+────────────
+ Nextest run ID 183effab-8e4b-4a65-8776-57dc08749098 with nextest profile: default
+    Starting 1 test across 2 binaries (391 tests skipped)
+       START [         ] (1/1) niri tests::ring_pair::ring_cap_keeps_one_core
+
+running 1 test
+stock: ring on, light-ior 1 vs 6: 10861 px, max 2; 6 vs 12: 6467 px, max 1
+binding: ring on, light-ior 1 vs 6: 21809 px, max 45; 6 vs 12: 21747 px, max 14
+ior102: ring on, light-ior 1 vs 6: 20695 px, max 6; 6 vs 12: 20748 px, max 14
+ior124: ring on, light-ior 1 vs 6: 16290 px, max 8; 6 vs 12: 18388 px, max 4
+ior150: ring on, light-ior 1 vs 6: 26186 px, max 71; 6 vs 12: 25870 px, max 26
+
+thread 'tests::ring_pair::ring_cap_keeps_one_core' (601751) panicked at src/tests/ring_pair.rs:704:5:
+binding light-ior 1 left: second maximum 62 at +11.5 beyond the minimum at +12.5; core 83 at +14.5
+binding light-ior 1 right: second maximum 65 at -0.5 beyond the minimum at +0.5; core 83 at +2.5
+binding light-ior 1 top: second maximum 62 at +11.5 beyond the minimum at +12.5; core 83 at +14.5
+binding light-ior 1 bottom: second maximum 65 at -0.5 beyond the minimum at +0.5; core 83 at +2.5
+binding light-ior 6 left: second maximum 78 at +11.5 beyond the minimum at +12.5; core 83 at +14.5
+binding light-ior 6 right: second maximum 82 at -0.5 beyond the minimum at +0.5; core 83 at +2.5
+binding light-ior 6 top: second maximum 78 at +11.5 beyond the minimum at +12.5; core 83 at +14.5
+binding light-ior 6 bottom: second maximum 82 at -0.5 beyond the minimum at +0.5; core 83 at +2.5
+binding light-ior 12 left: second maximum 68 at +11.5 beyond the minimum at +12.5; core 83 at +14.5
+binding light-ior 12 right: second maximum 72 at -0.5 beyond the minimum at +0.5; core 83 at +2.5
+binding light-ior 12 top: second maximum 68 at +11.5 beyond the minimum at +12.5; core 83 at +14.5
+binding light-ior 12 bottom: second maximum 72 at -0.5 beyond the minimum at +0.5; core 83 at +2.5
+ior150 light-ior 1 left: second maximum 66 at +11.5 beyond the minimum at +12.5; core 82 at +17.5
+ior150 light-ior 1 right: second maximum 73 at -0.5 beyond the minimum at +0.5; core 82 at +5.5
+ior150 light-ior 1 top: second maximum 66 at +11.5 beyond the minimum at +12.5; core 82 at +17.5
+ior150 light-ior 1 bottom: second maximum 73 at -0.5 beyond the minimum at +0.5; core 82 at +5.5
+ior150 light-ior 6 left: second maximum 52 at +9.5 beyond the minimum at +12.5; core 82 at +17.5
+ior150 light-ior 6 right: second maximum 58 at -2.5 beyond the minimum at +0.5; core 82 at +5.5
+ior150 light-ior 6 top: second maximum 52 at +9.5 beyond the minimum at +12.5; core 82 at +17.5
+ior150 light-ior 6 bottom: second maximum 58 at -2.5 beyond the minimum at +0.5; core 82 at +5.5
+ior150 light-ior 12 left: second maximum 52 at +8.5 beyond the minimum at +12.5; core 82 at +17.5
+ior150 light-ior 12 right: second maximum 58 at -3.5 beyond the minimum at +0.5; core 82 at +5.5
+ior150 light-ior 12 top: second maximum 52 at +8.5 beyond the minimum at +12.5; core 82 at +17.5
+ior150 light-ior 12 bottom: second maximum 58 at -3.5 beyond the minimum at +0.5; core 82 at +5.5
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::ring_pair::ring_cap_keeps_one_core ... FAILED
+
+failures:
+
+failures:
+    tests::ring_pair::ring_cap_keeps_one_core
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 391 filtered out; finished in 5.49s
+
+        FAIL [   5.543s] (1/1) niri tests::ring_pair::ring_cap_keeps_one_core
+  Cancelling due to test failure: 
+────────────
+     Summary [   5.544s] 1 test run: 0 passed, 1 failed, 391 skipped
+        FAIL [   5.543s] (1/1) niri tests::ring_pair::ring_cap_keeps_one_core
+error: test run failed
+error: recipe `test-one` failed on line 43 with exit code 100

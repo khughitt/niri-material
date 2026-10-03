@@ -61,4 +61,7 @@ fi
 # core.hooksPath bypasses the installed Git LFS hooks. Replay the original
 # refs to LFS before the gate; classification above consumed its own copy.
 printf %s "$refs" | git lfs pre-push "$@" || exit
+# The suite creates sandbox Git repositories; hook variables must not follow it.
+git_local_vars=$(git rev-parse --local-env-vars) || exit 1
+unset $git_local_vars
 printf %s "$refs" | exec just "$recipe"

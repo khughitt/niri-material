@@ -7,8 +7,9 @@ size: m
 complexity: high
 process: direct
 created: 2026-09-29T22:38:05Z
-updated: 2026-09-29T22:38:05Z
+updated: 2026-10-02T23:07:56Z
 depends: []
+parent: material-2834d7
 tags: [harness]
 source: docs/notes/2026-09-29-glass-measurement-brief.md
 agent: codex

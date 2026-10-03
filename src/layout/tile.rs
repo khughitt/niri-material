@@ -13,6 +13,7 @@ use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram};
 use smithay::backend::renderer::Texture as _;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 
+use super::drag_follower::{DragFollower, FollowSpring};
 use super::focus_ring::{FocusRing, FocusRingRenderElement};
 use super::opening_window::{OpenAnimation, OpeningWindowRenderElement};
 use super::shadow::Shadow;
@@ -106,6 +107,10 @@ pub struct Tile<W: LayoutElement> {
 
     /// The animation of a tile visually moving vertically.
     move_y_animation: Option<MoveAnimation>,
+
+    /// Follow-lag of an interactive move: decays on the tile through release
+    /// (docs/specs/2026-10-01-drag-follow-lag-design.md §3).
+    drag_follower: Option<DragFollower>,
 
     /// The animation of the tile's opacity.
     pub(super) alpha_animation: Option<AlphaAnimation>,
@@ -450,6 +455,7 @@ impl<W: LayoutElement> Tile<W> {
             resize_animation: None,
             move_x_animation: None,
             move_y_animation: None,
+            drag_follower: None,
             alpha_animation: None,
             interactive_move_offset: Point::from((0., 0.)),
             unmap_snapshot: None,
@@ -487,6 +493,19 @@ impl<W: LayoutElement> Tile<W> {
         self.view_size = view_size;
         self.scale = scale;
         self.options = options;
+        // Off, easing, or a spring that cannot settle ends drag lag. A changed
+        // spring takes over continuously; instant completion is handled on advance.
+        match FollowSpring::from_config(&self.options.animations.window_movement.0) {
+            None => self.drag_follower = None,
+            Some(spring) if spring.stiffness <= 0. => self.drag_follower = None,
+            Some(spring) => {
+                if let Some(f) = &mut self.drag_follower {
+                    if f.spring() != spring {
+                        f.set_spring(self.clock.now(), spring);
+                    }
+                }
+            }
+        }
         self.cut_beam_if_forbidden();
 
         let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
@@ -645,15 +664,34 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// What the optics may depend on this frame beyond their configuration.
-    fn optic_frame<'a>(&'a self, material: &MaterialState, now: Duration) -> OpticFrame<'a> {
+    fn optic_frame<'a>(
+        &'a self,
+        material: &MaterialState,
+        logical_now: Duration,
+    ) -> OpticFrame<'a> {
         OpticFrame {
-            now,
+            logical_now,
             motion: self.options.signal.motion,
             animations_off: self.options.animations.off,
             backdrop_blur: material.material().glass.backdrop_blur,
             blur: &self.options.blur,
             seed: material.jelly_seed()[0],
         }
+    }
+
+    /// The optic uniforms for a frame at real time `now`, sampled from the
+    /// shared optic timeline; records the render sample the idle hold keeps.
+    pub(super) fn render_optics(
+        &self,
+        material: &MaterialState,
+        now: Duration,
+    ) -> Vec<smithay::backend::renderer::gles::Uniform<'static>> {
+        let time = self.clock.optic_time(now);
+        self.clock.record_optic_render(time.logical_now);
+        optics::values(
+            &material.material().glass,
+            &self.optic_frame(material, time.logical_now),
+        )
     }
 
     /// The per-frame material state for the rendered `frame` and the
@@ -672,7 +710,7 @@ impl<W: LayoutElement> Tile<W> {
         let glass = &material.material().glass;
         let response = material.material().response(None);
         let now = self.clock.now_unadjusted();
-        let optics = optics::values(glass, &self.optic_frame(material, now));
+        let optics = self.render_optics(material, now);
         let max_flex = 0.25 * bevel_depth(f64::from(frame.chamfer), glass.thickness);
         let mut jelly = jelly_state(
             motion_residual,
@@ -934,6 +972,12 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
 
+        if self.drag_follower.as_ref().is_some_and(|f| {
+            self.clock.should_complete_instantly() || f.is_settled(self.clock.now())
+        }) {
+            self.drag_follower = None;
+        }
+
         if let Some(alpha) = &mut self.alpha_animation {
             if !alpha.hold_after_done && alpha.anim.is_done() {
                 self.alpha_animation = None;
@@ -970,8 +1014,11 @@ impl<W: LayoutElement> Tile<W> {
     /// but is not a layout transition, and `are_transitions_ongoing` also
     /// gates the pointer-focus refresh in `Niri::refresh_pointer_contents`,
     /// which a 16–24 s run must not hold up (design 2026-09-19 §2).
+    /// The drag follower lives here for the same reason: it is cosmetic and must
+    /// not hold up pointer focus after a drop.
     pub fn are_animations_ongoing(&self) -> bool {
         self.are_transitions_ongoing()
+            || self.has_drag_follower()
             || self.window.rules().baba_is_float == Some(true)
             || self.signal_render_visible
                 && self
@@ -1180,6 +1227,46 @@ impl<W: LayoutElement> Tile<W> {
             offset.y += move_.from * move_.anim.value();
         }
         offset
+    }
+
+    /// The target moved by `delta` (workspace logical units) during an interactive
+    /// move; the follower lags behind it.
+    pub fn drag_follow(&mut self, delta: Point<f64, Logical>) {
+        if self.clock.should_complete_instantly() {
+            return;
+        }
+        let Some(spring) = FollowSpring::from_config(&self.options.animations.window_movement.0)
+        else {
+            return;
+        };
+        if spring.stiffness <= 0. {
+            return;
+        }
+        let now = self.clock.now();
+        self.drag_follower
+            .get_or_insert_with(|| DragFollower::new(spring, now))
+            .shift(now, delta);
+    }
+
+    pub fn drag_lag(&self) -> Point<f64, Logical> {
+        match &self.drag_follower {
+            Some(f) if !self.clock.should_complete_instantly() => f.lag(self.clock.now()),
+            _ => Point::from((0., 0.)),
+        }
+    }
+
+    /// The jelly's motion stimulus: move animations plus the drag follow-lag.
+    pub fn motion_residual(&self) -> Point<f64, Logical> {
+        self.animation_residual() + self.drag_lag()
+    }
+
+    pub(super) fn has_drag_follower(&self) -> bool {
+        self.drag_follower.is_some()
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear_drag_follower(&mut self) {
+        self.drag_follower = None;
     }
 
     pub fn start_open_animation(&mut self) {
@@ -2286,6 +2373,19 @@ impl<W: LayoutElement> Tile<W> {
             })
     }
 
+    pub fn activity_gated(&self) -> bool {
+        if self.attention_gated() {
+            return true;
+        }
+        let Some(material) = &self.material else {
+            return false;
+        };
+        let now = self.clock.now_unadjusted();
+        let time = self.clock.optic_time(now);
+        let glass = &material.material().glass;
+        optics::next_logical_change(glass, &self.optic_frame(material, time.logical_now)).is_some()
+    }
+
     /// Next instant this tile needs a redraw for its material: the earliest
     /// of any optic's own change and the sustained-signal bucket boundary,
     /// while the slab band is in view. The focus beam runs on the animation
@@ -2307,7 +2407,9 @@ impl<W: LayoutElement> Tile<W> {
         if !slab_in_view(location, self.tile_size(), glass.bevel, view) {
             return None;
         }
-        let optic = optics::next_change(glass, &self.optic_frame(material, now));
+        let time = self.clock.optic_time(now);
+        let optic =
+            optics::next_change(glass, &self.optic_frame(material, time.logical_now), &time);
         let signal = self
             .signal_frame_cache
             .borrow()
@@ -2551,7 +2653,7 @@ mod tests {
         };
         let resolved = resolve_material(Some(&reference), options).unwrap();
         let frame = OpticFrame {
-            now: Duration::ZERO,
+            logical_now: Duration::ZERO,
             motion: options.signal.motion,
             animations_off: options.animations.off,
             backdrop_blur: resolved.material.glass.backdrop_blur,
@@ -2858,7 +2960,7 @@ mod tests {
         // The scheduling gate of the optics design §3: no focus filament, no
         // signal, so no signal frame cache, and still a deadline from the
         // optic while the slab band is in view.
-        let clock = Clock::with_time(Duration::ZERO);
+        let mut clock = Clock::with_time(Duration::ZERO);
         let lit = niri_config::ResolvedGlass {
             aurora: niri_config::ResolvedAurora {
                 amount: 0.5,
@@ -2867,17 +2969,52 @@ mod tests {
             },
             ..Default::default()
         };
-        let mut tile = material_tile(lit, niri_config::FocusResponse::None, clock.clone());
+        let mut tile = material_tile(lit.clone(), niri_config::FocusResponse::None, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         tile.update_render_elements(false, true, true, view);
         assert!(!tile.active);
         assert!(tile.signal_frame_cache.borrow().is_none());
+        assert!(
+            tile.activity_gated(),
+            "Aurora alone needs both activity edges"
+        );
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
             Some(Duration::from_millis(250))
         );
         let far = Point::from((10_000., 10_000.));
         assert_eq!(tile.tick_deadline(far, view, Duration::ZERO), None);
+
+        clock.set_unadjusted(Duration::from_millis(100));
+        let held = render_dynamics(&tile, 1280., 720.).optics;
+        clock.set_optic_active(false, Duration::from_millis(100));
+        clock.set_unadjusted(Duration::from_secs(1));
+        assert_eq!(render_dynamics(&tile, 1280., 720.).optics, held);
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::from_secs(1)),
+            None
+        );
+        assert_eq!(tile.tick_deadline(far, view, Duration::from_secs(1)), None);
+        clock.set_optic_active(true, Duration::from_secs(1));
+        assert_eq!(render_dynamics(&tile, 1280., 720.).optics, held);
+        assert_eq!(
+            tile.tick_deadline(Point::default(), view, Duration::from_secs(1)),
+            Some(Duration::from_millis(1_150))
+        );
+
+        let mut off = material_tile(lit, niri_config::FocusResponse::None, clock.clone());
+        let mut options = (*off.options).clone();
+        options.signal.motion = niri_config::signal::SignalMotionPolicy::Off;
+        off.options = Rc::new(options);
+        assert!(!off.activity_gated(), "motion off needs no edge redraw");
+        let mut options = (*off.options).clone();
+        options.signal.motion = niri_config::signal::SignalMotionPolicy::Reduced;
+        off.options = Rc::new(options);
+        assert!(off.activity_gated(), "reduced motion still changes Aurora");
+        let mut options = (*off.options).clone();
+        options.animations.off = true;
+        off.options = Rc::new(options);
+        assert!(!off.activity_gated(), "animations off pins Aurora");
 
         let pinned = niri_config::ResolvedGlass {
             aurora: niri_config::ResolvedAurora {
@@ -2889,6 +3026,10 @@ mod tests {
         };
         let mut tile = material_tile(pinned, niri_config::FocusResponse::None, clock);
         tile.update_render_elements(false, true, true, view);
+        assert!(
+            !tile.activity_gated(),
+            "a pinned optic needs no edge redraw"
+        );
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
             None
@@ -3435,10 +3576,18 @@ mod tests {
             None,
             "frozen attention reports no bucket deadline"
         );
+        clock.set_optic_active(false, Duration::ZERO);
         clock.set_unadjusted(secs(1.));
         tile.update_render_elements(true, false, true, view);
         let dynamics = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "the beam runs");
+        clock.set_unadjusted(secs(30.));
+        tile.advance_animations();
+        tile.update_render_elements(true, false, true, view);
+        assert_eq!(
+            beam_uniforms(&render_dynamics(&tile, 400., 300.)),
+            [0., 0., 0.]
+        );
     }
 
     /// `frost` with the given response, everything else stock.

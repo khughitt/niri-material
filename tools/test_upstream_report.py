@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import unittest.mock
 
 # Git exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE into hook processes, and they
 # OVERRIDE `git -C <dir>`. `check_cmd` runs this suite from the pre-commit hook, so
@@ -451,6 +452,74 @@ class Freshness(Fixture):
         self.assertIn("hand-written prose", target.read_text())
 
 
+class Stage(Fixture):
+    """`--stage`: the pre-commit hook regenerates and stages the report itself."""
+
+    stage_document = Freshness.stage_document
+
+    def staged_report(self):
+        return self.git("show", f":{report.REPORT_PATH}")
+
+    def test_stale_report_is_regenerated_and_staged(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        self.assertEqual(report.stage(self.root, record), ([], True))
+        self.assertEqual(report.check(self.root, record), [])
+        self.assertEqual(
+            (self.root / report.REPORT_PATH).read_text(), self.staged_report()
+        )
+
+    def test_fresh_report_is_left_alone(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        report.stage(self.root, record)
+        self.assertEqual(report.stage(self.root, record), ([], False))
+
+    def test_unstaged_report_edit_is_refused_and_nothing_changes(self):
+        """Staging would sweep the hand edit into the commit, and writing over it
+        would lose it: refuse, and touch neither the index nor the file."""
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        target = self.root / report.REPORT_PATH
+        edited = target.read_text() + "\nhand-written prose\n"
+        target.write_text(edited)
+        before = self.staged_report()
+        findings, changed = report.stage(self.root, record)
+        self.assertFalse(changed)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("unstaged", findings[0])
+        self.assertEqual(self.staged_report(), before)
+        self.assertEqual(target.read_text(), edited)
+
+    def test_pathspec_commit_index_is_refused_only_when_stale(self):
+        """`git commit <paths>` runs the hook on a temporary next-index; a report
+        staged there never reaches the real index, which then trails HEAD."""
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        temporary = str(self.root / ".git" / "next-index-1234.lock")
+        shutil.copy(self.root / ".git" / "index", temporary)
+        before = self.staged_report()
+        with unittest.mock.patch.dict(os.environ, {"GIT_INDEX_FILE": temporary}):
+            findings, changed = report.stage(self.root, record)
+        self.assertFalse(changed)
+        self.assertEqual(len(findings), 1)
+        self.assertIn("git commit <paths>", findings[0])
+        self.assertEqual(self.staged_report(), before)
+
+        report.stage(self.root, record)
+        shutil.copy(self.root / ".git" / "index", temporary)
+        with unittest.mock.patch.dict(os.environ, {"GIT_INDEX_FILE": temporary}):
+            self.assertEqual(report.stage(self.root, record), ([], False), "fresh: no refusal")
+
+    def test_unstaged_source_change_stays_out_of_the_staged_report(self):
+        self.stage_document()
+        record = report.resolve_baseline(self.root, report.load_baseline(self.root))
+        (self.root / "src" / "lib.rs").write_text("fn upstream() {\n    more();\n}\n")
+        report.stage(self.root, record)
+        self.assertIn("+1/-1", self.staged_report())
+        self.assertNotIn("+3/-1", self.staged_report())
+
+
 class Conflicts(Fixture):
     def diverged(self):
         """base, ours, theirs: one file conflicting, one merging cleanly."""
@@ -735,6 +804,19 @@ class Cli(Fixture):
         self.assertEqual(self.cli().returncode, 0)
         self.git("add", report.REPORT_PATH)
         self.assertEqual(self.cli("--check").returncode, 0)
+
+    def test_stage_makes_the_check_pass_and_refuses_unstaged_edits(self):
+        self.stage_working_document()
+        result = self.cli("--stage")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("regenerated and staged", result.stdout)
+        self.assertEqual(self.cli("--check").returncode, 0)
+        self.assertEqual(self.cli("--stage").stdout, "", "fresh: nothing to do")
+        with (self.root / report.REPORT_PATH).open("a") as f:
+            f.write("\nhand-written prose\n")
+        result = self.cli("--stage")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("unstaged edits", result.stderr)
 
     def test_malformed_toml_exits_two_without_a_traceback(self):
         self.stage_working_document()

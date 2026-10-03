@@ -1,19 +1,21 @@
 ---
 id: material-d09741
 title: Attribute hidden-window GPU work to clients or material rendering
-status: doing
+status: done
 priority: 1
 size: s
 complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-09-29T21:44:30Z
-updated: 2026-09-30T09:41:55Z
+updated: 2026-10-01T04:39:27Z
 started: 2026-09-30T09:13:31Z
+completed: 2026-10-01T04:39:26Z
 depends: []
 parent: material-5d6b2c
 tags: [performance]
 source: docs/notes/2026-09-29-resource-aware-rendering-brief.md
+model: claude-opus-5-5
 agent: codex
 ---
 
@@ -32,3 +34,10 @@ Ideas it wakes: On completion, run tasks note on material-7afc31 with the findin
 - 2026-09-30T09:40:29Z (materials-26.04): rehearsal (HWA_REHEARSAL=1, busy desktop, no capture record; not evidence), counts in final 20 s, probe weston-simple-egl under roughness-0.3 glass: visible 1199 redraws / 1199 material draws / 60 fps; inactive-workspace 20/0, offscreen 0, client 1.0 fps; hidden-tab 20/0/0, 1.0 fps; offscreen-column 20 redraws, 0 draws but 20 OffscreenBuffer::render (tile body re-rendered per fallback commit), 1.2 fps; covered-opaque (opaque floating kitty) 20/0 draws/20 offscreen, 1.2 fps; covered-alpha (0.5-opacity cover) 1199/1199, client 60 fps — full cost; overview 1196/1197, 60 fps; empty 0/0. Prefilter::downsample 0 everywhere (static wallpaper, cached pyramid). Matches the code trace.
 - 2026-09-30T09:41:55Z (materials-26.04): parked (waiting on user, quiet; headless, 20 min): From a TTY with the desktop stopped, in .worktrees/material-d09741: (1) pilot: CAPTURE_TASK=material-d09741 NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material OUT=/mnt/ssd3/niri-material/material-d09741/pilot-1 docs/materials/scripts/hidden-window-attribution.sh pilot — phases: preflight 1, tracy build 0-3 (cached from rehearsal), load wait 0-5, 3 cases x ~50 s; must PASS its gates. (2) only then the same with OUT=.../matrix-1 and 'matrix' (8 cases x ~50 s, ~8 min). Rehearsals on the busy desktop passed; the real preflight refused-risk is per-case settles, which have only passed from a TTY. Then agent: run: notes, evidence doc docs/materials/2026-09-30-hidden-window-attribution-evidence.md with the recorded table, update the brief (and correct the 09-18 evidence doc's zone claim), note material-7afc31, close.
   provenance: {"harness_session":"claude-code:753832fc-7ed3-4976-8c1c-9feafc79240f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T03:36:17Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:601fb2a6-cb37-47f5-a964-59f3bb9f54af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T03:36:17Z (materials-26.04): run: 8 min (est 10, headless); build 1.7, preflight 0.5, 3 cases 6; passed: pilot from a TTY with the desktop stopped, user timers held; visible 1199 redraws / 1199 material draws / 60.2 fps, inactive-workspace 20 / 0 / 1.0 fps, empty 0 / 0 (pilot-1)
+- 2026-10-01T03:45:32Z (materials-26.04): run: 9 min (est 8, headless); build 0, 8 cases 9; passed: matrix-1; hidden-tab 20 redraws / 0 draws / 1.0 fps; offscreen-column 20 / 0 draws / 20 OffscreenBuffer::render / 100 Tile::render / 1.0 fps; covered-opaque 20 / 0 / 20 offscreen / 1.2 fps; covered-alpha 1199 / 1199 / 60.2 fps; overview 1199 / 1200 / 60.2 fps; Prefilter::downsample 0 in every case
+- 2026-10-01T04:39:26Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:601fb2a6-cb37-47f5-a964-59f3bb9f54af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-01T04:39:27Z (materials-26.04): result: existing gates suffice for material draws, prefilter work and client pacing; residue (undrawn offscreen render for offscreen/opaquely covered tiles, a redraw per hidden commit) handed to material-7afc31 with the unmeasured covered-optic and second-output cases; evidence docs/materials/2026-09-30-hidden-window-attribution-evidence.md; brief updated; 2026-09-18 evidence corrected (it counted Niri::redraw)

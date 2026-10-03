@@ -1090,7 +1090,7 @@ impl<W: LayoutElement> FloatingSpace<W> {
                 tile_pos,
                 xray_pos,
                 focus_ring,
-                tile.animation_residual(),
+                tile.motion_residual(),
                 &mut |elem| push(elem.into()),
             );
         }

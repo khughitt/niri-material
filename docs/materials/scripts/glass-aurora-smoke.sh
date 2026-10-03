@@ -21,6 +21,7 @@ HERE=$(dirname "$(readlink -f "$0")")
 capture_preflight headless
 build_binaries
 capture_identity --config preset=aurora --config output=1280x720 --config scale=1 --config vrr=off
+TOP_EXTRA='signal { idle-after-ms 0; }'
 calibrate_probe_rect "$NIRI" 1
 
 session() {   # $1 name, $2 glass extra; leaves the session running, probe unfocused
@@ -81,17 +82,17 @@ assert_positive across_bucket_ae "$across_ae"
 
 # Redraw rate against drift-hz: idle windows, the probe unfocused.
 tools_ready; reserve_tracy_port
-rate_case() {   # $1 name, $2 glass extra, $3 top extra
-    GLASS_EXTRA=$2; TOP_EXTRA=$3
+rate_case() {   # $1 name, $2 glass extra, $3 signal body
+    GLASS_EXTRA=$2; TOP_EXTRA="signal { idle-after-ms 0; $3 }"
     trace_run "rate-$1" "$IDLE" 1
     count_last20 "rate-$1"
 }
 rate_plain=$(rate_case plain "" "")
 rate_pinned=$(rate_case pinned "aurora 0.5 { drift-hz 0; }" "")
 rate_4hz=$(rate_case 4hz "aurora 0.5 { drift-hz 4; }" "")
-rate_reduced=$(rate_case reduced "aurora 0.5 { drift-hz 4; }" 'signal { motion "reduced"; }')
-rate_off=$(rate_case off "aurora 0.5 { drift-hz 4; }" 'signal { motion "off"; }')
-TOP_EXTRA=
+rate_reduced=$(rate_case reduced "aurora 0.5 { drift-hz 4; }" 'motion "reduced";')
+rate_off=$(rate_case off "aurora 0.5 { drift-hz 4; }" 'motion "off";')
+TOP_EXTRA='signal { idle-after-ms 0; }'
 
 # Cost: three rounds, order rotated.
 gpu_case() {   # $1 case, $2 round
