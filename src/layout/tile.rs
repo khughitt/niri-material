@@ -810,7 +810,7 @@ impl<W: LayoutElement> Tile<W> {
                     }
                 }
                 let frame = solve(effective, now, material.jelly_seed()[0], inputs);
-                let glass_signal = glass_signal_inputs(&frame, glass);
+                let glass_signal = glass_signal_inputs(&frame, glass, &response);
                 let uniforms = SignalUniforms::from_frame(&frame, &glass_signal, &response);
                 (SignalFingerprint::quantize(&frame), glass_signal, uniforms)
             }
@@ -3026,6 +3026,136 @@ mod tests {
         let origin = crossfade_origin(Some(&up), Some((0., Some(orange))));
         assert_eq!(origin.tint_chroma, up.current().tint_chroma);
         assert_ne!(origin.tint_chroma, Some(k_orange), "not the settled target");
+    }
+
+    #[test]
+    fn real_signal_crossfade_uploads_the_endpoint_interpolated_tint() {
+        use niri_config::animations::{
+            Animation as AnimConfig, Curve, EasingParams, Kind, MaterialSignalAnim,
+        };
+
+        use crate::render_helpers::material::tint::accent_tint;
+        use crate::render_helpers::signal::{accent_chroma, color_linear};
+
+        let base = niri_config::Color::from_rgba8_unpremul(0x0d, 0x1d, 0x1e, 0xff);
+        let glass = niri_config::ResolvedGlass {
+            thickness: 31.2,
+            attenuation_color: base,
+            attenuation_distance: 11.,
+            ..flat_glass()
+        };
+        let response = niri_config::ResolvedResponse {
+            accent_tint: 1.,
+            ..Default::default()
+        };
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = beam_tile(glass, response, clock.clone());
+        // Linear, so a time fraction is a crossfade fraction.
+        let mut options = (*tile.options).clone();
+        options.animations.material_signal = MaterialSignalAnim(AnimConfig {
+            off: false,
+            kind: Kind::Easing(EasingParams {
+                duration_ms: 400,
+                curve: Curve::Linear,
+            }),
+        });
+        tile.options = Rc::new(options);
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+
+        let black = niri_config::Color::from_rgba8_unpremul(0, 0, 0, 0xff);
+        let orange = niri_config::Color::from_rgba8_unpremul(0xff, 0x66, 0x00, 0xff);
+        let (k_black, k_orange) = ([1.; 3], accent_chroma(color_linear(orange)));
+        let lerp = |a: [f32; 3], b: [f32; 3], t: f32| [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t);
+        let expect = |k: [f32; 3]| accent_tint(base, 31.2, 11., Some(k), 1.);
+        let set = |tile: &Tile<TestWindow>, accent: niri_config::Color| {
+            tile.window()
+                .set_signal(Some(crate::window::signal::Folded {
+                    level: niri_ipc::SignalLevel::Active,
+                    motion: niri_ipc::SignalMotion::Static,
+                    accent: Some(accent),
+                    tag: None,
+                    sources: vec![String::from("t")],
+                    impulses: vec![],
+                }));
+        };
+        // The attenuation color a render at `at` uploads.
+        let mut upload = |tile: &mut Tile<TestWindow>, at: Duration| {
+            clock.set_unadjusted(at);
+            tile.update_render_elements(true, true, true, view);
+            render_dynamics(tile, 1280., 720.)
+                .glass_signal
+                .attenuation_color
+        };
+        let close = |a: [f32; 4], b: [f32; 4], what: &str| {
+            assert!(
+                (0..4).all(|i| (a[i] - b[i]).abs() < 1e-5),
+                "{what}: {a:?} vs {b:?}"
+            );
+        };
+        let ms = Duration::from_millis;
+
+        // Settle on black: a black accent tints toward gray.
+        set(&tile, black);
+        upload(&mut tile, ms(0));
+        close(
+            upload(&mut tile, ms(1000)),
+            expect(k_black),
+            "settled black",
+        );
+
+        // black → orange from 2000 ms, at the spec's fractions.
+        set(&tile, orange);
+        for (at, f) in [
+            (ms(2000), 0.),
+            (ms(2000) + Duration::from_micros(4), 1e-5),
+            (ms(2100), 0.25),
+            (ms(2200), 0.5),
+            (ms(2300), 0.75),
+            (ms(2400), 1.),
+        ] {
+            close(
+                upload(&mut tile, at),
+                expect(lerp(k_black, k_orange, f)),
+                &format!("black→orange {f}"),
+            );
+        }
+
+        // orange → black from 3000 ms.
+        set(&tile, black);
+        for (at, f) in [
+            (ms(3000), 0.),
+            (ms(3100), 0.25),
+            (ms(3200), 0.5),
+            (ms(3300), 0.75),
+            (ms(3400), 1.),
+        ] {
+            close(
+                upload(&mut tile, at),
+                expect(lerp(k_orange, k_black, f)),
+                &format!("orange→black {f}"),
+            );
+        }
+
+        // Interrupted: black → orange from 4000 ms, back to black at 4200 (f = ½).
+        set(&tile, orange);
+        upload(&mut tile, ms(4000));
+        set(&tile, black);
+        let mid = lerp(k_black, k_orange, 0.5);
+        close(
+            upload(&mut tile, ms(4200)),
+            expect(mid),
+            "the restart begins where the fade was",
+        );
+        close(
+            upload(&mut tile, ms(4300)),
+            expect(lerp(mid, k_black, 0.25)),
+            "and fades from there",
+        );
+        close(
+            upload(&mut tile, ms(4600)),
+            expect(k_black),
+            "to the new target",
+        );
     }
 
     /// A tile carrying the material "frost" with the given glass, whose only
