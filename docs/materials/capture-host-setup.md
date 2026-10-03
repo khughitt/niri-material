@@ -83,7 +83,9 @@ itself is ops's `display-dim` (`ops-a1715a`).
 ## Running the dedicated lane
 
 From a TTY login with the desktop stopped, in the execution worktree, with
-an identified Tracy snapshot (`niri-tracy` plus its `.identity.json`):
+an identified Tracy snapshot (`niri-tracy` plus its `.identity.json`). The
+example is the development check: a `pilot` limited by `CASES` to three
+cases, which never passes as a pilot.
 
 ```sh
 OUT=$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-dev-$(date +%Y%m%d)-1 \
@@ -92,4 +94,7 @@ OUT=$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-dev-$(date +%Y%m%d)-1 \
   docs/materials/scripts/optic-settling-smoke.sh pilot --lane dedicated
 ```
 
-Drop `CASES` for the pilot; the matrix adds `PILOT_DIR` and uses `matrix`.
+The pilot is the same command without `CASES` and with a fresh `OUT`
+(for example `.../tty-pilot-$(date +%Y%m%d)-1`). The matrix runs `matrix`
+instead of `pilot`, again with a fresh `OUT`, and adds
+`PILOT_DIR=<the pilot's OUT>`.

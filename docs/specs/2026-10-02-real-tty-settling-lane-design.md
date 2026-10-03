@@ -116,24 +116,25 @@ calls `unlock_and_destroy` and exits 0. It never authenticates; niri's
 
 **Screencast consumer.** `tools/screencast_consumer.py` (committed in
 `material-3acc86`): a ScreenCast session on the private bus, `RecordMonitor`
-DP-1, `pipewiresrc ! video/x-raw(memory:DMABuf),format=DMA_DRM ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink`; one
-CLOCK_MONOTONIC line per received frame, `ready <node>` once the pipeline plays, and on
-SIGTERM a summary with consumer identity, node, frame count and capture
-interval. It also keeps frames, not only their times: on SIGUSR1 it writes
-the **next frame received after the signal** as raw RGB to the path named in
-a request file, with that frame's arrival time and the request time in a
-sidecar. A sample can therefore never be a frame the consumer already held.
-niri offers DMA-BUFs only, so the consumer imports whatever modifier niri
-fixates through GStreamer GL on headless EGL (`glupload ! glcolorconvert !
-gldownload`) and converts to RGB; a probe on 2026-10-02 imported niri's
-NVIDIA-tiled `XR24` buffers this way. The development check (§7) proves
-sampling works before the pilot.
+DP-1, `pipewiresrc ! video/x-raw(memory:DMABuf),format=DMA_DRM ! glupload !
+glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB !
+appsink`; one CLOCK_MONOTONIC line per received frame, `ready <node>` once
+the pipeline plays, and on SIGTERM a summary with consumer identity, node,
+frame count and capture interval. It also keeps frames, not only their
+times: on SIGUSR1 it writes the **next frame received after the signal** as
+raw RGB to the path named in a request file, with that frame's arrival time
+and the request time in a sidecar. A sample can therefore never be a frame
+the consumer already held. niri offers DMA-BUFs only, so the consumer
+imports whatever modifier niri fixates through GStreamer GL on headless EGL
+(`glupload ! glcolorconvert ! gldownload`) and converts to RGB; a probe on
+2026-10-02 imported niri's NVIDIA-tiled `XR24` buffers this way. The
+development check (§7) proves sampling works before the pilot.
 
 **Cleanup.** The driver owns niri, the bus, the consumer and the lock
 client; `on_exit` and the per-case reap cover all four, then VT restoration
-runs as described above. A run interrupted
-while the lock client holds the session leaves niri locked; killing niri
-ends that, and the next case starts a fresh niri.
+runs as described above. A run interrupted while the lock client holds the
+session leaves niri locked; killing niri ends that, and the next case starts
+a fresh niri.
 
 ## 5. Cases
 
@@ -162,14 +163,15 @@ client damage**, and its window covers both:
   stimulus (the held interval the analyzer observes as quiet), arm, then one
   more line in the focus thief.
 
-In this case the focus thief reads lines from a FIFO, like the probe, so
-its damage is bounded and falls outside both sampled regions: the thief is
-a separate column, never under the probe's crops. The consumer saves the
-first frame that arrives after the request, which is the frame that
-damage produced. From each sample the driver crops two regions in output
-pixels (DP-1's scale is pinned to 1), calibrated once per run from an opaque geometry probe in the same
-two-window layout (niri's IPC reports no on-screen position for tiled
-windows), as the headless lanes' `calibrate_probe_rect` does:
+In this case the focus thief reads lines from a FIFO, like the probe, so its
+damage is bounded and falls outside both sampled regions: the thief is a
+separate column, never under the probe's crops. The consumer saves the first
+frame that arrives after the request, which is the frame that damage
+produced. From each sample the driver crops two regions in output pixels
+(DP-1's scale is pinned to 1), calibrated once per run from an opaque
+geometry probe in the same two-window layout (niri's IPC reports no
+on-screen position for tiled windows), as the headless lanes'
+`calibrate_probe_rect` does:
 
 - **client:** the probe's text rows where the client line appears;
 - **aurora:** a glass region of the probe with no text, the region the
@@ -193,10 +195,10 @@ New analyzer inputs, all generic:
   must hold at least one frame inside each named stimulus window, and its
   summary must report a clean signal stop.
 - `samples`: a cast sample's frame must arrive after its request and inside
-  its stimulus window, and a sample stimulus must hold a frame at all; its
-  crops enter the existing pixel pairs (`expect: equal` or `different`).
-  The existing stimulus-free window check covers the quiet interval before
-  `sample-3`.
+  its stimulus window, and be the first frame the consumer journaled after
+  that request; a sample stimulus must hold a frame at all; its crops enter
+  the existing pixel pairs (`expect: equal` or `different`). The existing
+  stimulus-free window check covers the quiet interval before `sample-3`.
 - The idle-inhibitor's `messages` check (`material-80caf4`) is reused as is.
 
 The second pause in `tty-resume` and `unlock` shows the timeline returns to
