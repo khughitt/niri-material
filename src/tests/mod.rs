@@ -9,6 +9,7 @@ mod attention_idle;
 mod floating;
 mod focus_swap;
 mod fullscreen;
+mod glass_edge;
 mod layer_shell;
 mod material;
 mod remove_output;
