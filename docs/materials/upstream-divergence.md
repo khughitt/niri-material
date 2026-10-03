@@ -126,7 +126,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_screencast_consumer.py` | C | A | +259/-0 |
 | `tools/test_upstream_report.py` | C | A | +946/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
-| `tools/test_vt_lib.py` | C | A | +113/-0 |
+| `tools/test_vt_lib.py` | C | A | +158/-0 |
 | `tools/tt` | C | A | +297/-0 |
 | `tools/upstream-report` | C | A | +736/-0 |
 
