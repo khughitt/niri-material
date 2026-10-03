@@ -1,1 +1,13 @@
 prefix = "material"
+
+[needs.quiet]
+meaning = "An idle host for capture evidence; use a TTY with the desktop stopped when required by the run."
+exclusive = true
+
+[needs.nested]
+meaning = "A nested compositor under headless Weston, with a per-run unit and socket."
+exclusive = false
+
+[needs.owner]
+meaning = "The owner supplies or judges an image."
+exclusive = false

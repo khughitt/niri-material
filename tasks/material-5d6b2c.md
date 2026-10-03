@@ -4,12 +4,15 @@ title: "Resource-aware rendering: know the cost of every visual decision"
 status: todo
 priority: 1
 complexity: high
+lane: true
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-02T23:47:23Z
+updated: 2026-10-03T16:48:07Z
 depends: []
-tags: [quick-add, performance, lane]
+tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
 ---
+
+Make the GPU, CPU and memory cost of material rendering explicit so visual trade-offs can be chosen from measurements. First milestone: finish the remaining settle lifecycle evidence under material-f86183, then run a bounded cost pilot under material-31074f; material-233295 needs no quiet host.
 
 Goal: make the GPU/CPU/memory cost of every material rendering decision explicit, so trade-offs are chosen rather than stumbled into. The aim is not to sacrifice high-quality visuals; it is to know what each decision costs and to find the places where a slight visual change buys a large performance gain.
 
