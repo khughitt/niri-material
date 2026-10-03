@@ -304,6 +304,39 @@ def analyze_case(run, case, lane):
                        for row in message_rows):
                 raise ValueError(f"{name}: stimulus {stimulus['label']} never traced {message!r}")
 
+    windows = {stimulus['label']: interval for stimulus, interval in zip(declared, stimuli)}
+
+    def window(label):
+        if label not in windows:
+            raise ValueError(f'{name}: no declared stimulus {label}')
+        return windows[label]
+
+    # A resume a stimulus must cause (a VT switch, an unlock) falls inside it.
+    for index, label in case.get('edge_in', []):
+        start, end = window(label)
+        if not index < len(edges) or not start <= edges[index]['trace_ns'] < end:
+            raise ValueError(f'{name}: edge {index} is not inside stimulus {label}')
+
+    # A real screencast consumer: frames arrive where damage was caused, and
+    # each sample is the first frame after its armed request, inside its window.
+    consumer = case.get('consumer')
+    if consumer:
+        offset = monotonic_offset(edges)
+        frames = [int(line) - offset for line in (directory / 'cast-frames.tsv').read_text().split()]
+        if read_json(directory / 'cast-summary.json').get('stopped_by_signal') is not True:
+            raise ValueError(f'{name}: the screencast consumer did not stop on a signal')
+        for label in consumer.get('frames_in', []):
+            start, end = window(label)
+            if not any(start <= t < end for t in frames):
+                raise ValueError(f'{name}: no cast frame inside stimulus {label}')
+        for label in consumer.get('samples', []):
+            start, end = window(label)
+            sidecar = read_json(directory / f'{label}.raw.json')
+            request = integer(sidecar.get('request_mono_ns'), 'sample request') - offset
+            frame = integer(sidecar.get('frame_mono_ns'), 'sample frame') - offset
+            if not start <= request < frame < end:
+                raise ValueError(f'{name}: sample {label} is stale or outside its window')
+
     bounds = [0] + [edge['trace_ns'] for edge in edges] + [trace_end]
     report = []
     held = 0
