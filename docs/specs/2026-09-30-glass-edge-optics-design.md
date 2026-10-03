@@ -188,9 +188,10 @@ structural cap:
 
 The lifted normal satisfies `nTap.z >= 0.05 / sqrt(1 + 0.05^2) = 1 / sqrt(401)
 = 0.0499`, the same minimum as the structural slope-20 cap. The lift is
-continuous: a normal already at that minimum is returned unchanged. It leaves
-every normal at or above the cap untouched, so it changes today's output only
-where the normal tipped past 87 degrees. With `nTap.z` at least 0.0499, the
+continuous: a normal with `n.z = 0.05` is returned unchanged, and one at the
+structural minimum moves by 6e-5 in z (the rim displacement at thickness 31.2
+changes by 0.002 px). It leaves every normal with `n.z >= 0.05` untouched, so it
+changes today's output only where the normal tipped past 87 degrees. With `nTap.z` at least 0.0499, the
 refracted ray always points downward, so no tap
 receives an upward ray. The structural normal is already capped by the
 slope policy, and attenuation uses it.
