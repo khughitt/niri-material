@@ -512,3 +512,91 @@ fn focus_swap_retints_on_the_first_frame() {
         "first frame after regaining focus: tinted again"
     );
 }
+
+fn dump(dir: &std::path::Path, name: &str, pixels: &[u8]) {
+    let file = std::fs::File::create(dir.join(format!("{name}.png"))).unwrap();
+    crate::utils::write_png_rgba8(file, OUT_W.into(), OUT_H.into(), pixels).unwrap();
+}
+
+/// The owner-review series (spec §8). Ignored by default; run with
+/// `ACCENT_TINT_DUMP=<dir> just test-one -p niri accent_tint_dumps --run-ignored only`.
+#[test]
+#[ignore = "writes owner-review PNGs; set ACCENT_TINT_DUMP"]
+fn accent_tint_dumps() {
+    let dir = std::path::PathBuf::from(
+        std::env::var_os("ACCENT_TINT_DUMP").expect("set ACCENT_TINT_DUMP=<dir>"),
+    );
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // (name, glass block, response settings): the accepted look keeps its own
+    // band and filament; the default glass keeps the default response.
+    let glasses = [
+        ("accepted", ACCEPTED_GLASS, ACCEPTED_RESPONSE),
+        ("default", DEFAULT_GLASS, ""),
+    ];
+    let accents = [
+        ("orange", "#ff6600"),
+        ("blue", "#0066ff"),
+        ("magenta", "#ff00ff"),
+    ];
+    let weights = ["0", "0.25", "0.5", "1"];
+    // Focused, so the ring band and its focus light are in view.
+    let still = |glass: &str, response: &str, background: &str, accent: &str| {
+        let mut f = Fixture::with_config(look(glass, response, background, ""));
+        f.niri_state().backend.headless().add_renderer().unwrap();
+        f.add_output(1, (OUT_W, OUT_H));
+        let id = f.add_client();
+        open(&mut f, id, (800, 500), TRANSLUCENT);
+        set_time(&mut f, Duration::ZERO);
+        signal(&mut f, 0, Some(accent));
+        f.niri_complete_animations();
+        let _ = render_at(&mut f, REST);
+        render_at(&mut f, REST_LATER)
+    };
+
+    for (gname, glass, base) in glasses {
+        for (aname, accent) in accents {
+            for w in weights {
+                for (mode, selector) in [("ring", "ring"), ("none", "none")] {
+                    let response = format!("{base}\n accent \"{selector}\"\n accent-tint {w}");
+                    let name = format!("still-{gname}-{aname}-w{w}-accent-{mode}");
+                    dump(&dir, &name, &still(glass, &response, "#808080", accent));
+                }
+                for (bname, background) in [("red", "#ff0000"), ("blue", "#0000ff")] {
+                    let response = format!("{base}\n accent-tint {w}");
+                    let name = format!("backdrop-{gname}-{aname}-w{w}-{bname}");
+                    dump(&dir, &name, &still(glass, &response, background, accent));
+                }
+            }
+        }
+    }
+
+    // Fades at time fractions 0, ¼, ½, ¾, 1 of the linear crossfade.
+    for (fname, from, to) in [
+        ("orange-to-blue", Some("#ff6600"), Some("#0066ff")),
+        ("black-to-orange", Some("#000000"), Some("#ff6600")),
+        ("orange-to-black", Some("#ff6600"), Some("#000000")),
+        ("orange-to-none", Some("#ff6600"), None),
+    ] {
+        let response = format!("{ACCEPTED_RESPONSE}\n accent-tint 1");
+        let mut f = Fixture::with_config(look(ACCEPTED_GLASS, &response, "#808080", ""));
+        f.niri_state().backend.headless().add_renderer().unwrap();
+        f.add_output(1, (OUT_W, OUT_H));
+        let id = f.add_client();
+        open(&mut f, id, (800, 500), TRANSLUCENT);
+        set_time(&mut f, Duration::ZERO);
+        signal(&mut f, 0, from);
+        f.niri_complete_animations();
+        let _ = render_at(&mut f, REST);
+        signal(&mut f, 0, to);
+        let start = REST_LATER;
+        for quarter in 0..=4u64 {
+            let at = start + Duration::from_millis(FADE_MS * quarter / 4);
+            dump(
+                &dir,
+                &format!("fade-{fname}-q{quarter}"),
+                &render_at(&mut f, at),
+            );
+        }
+    }
+}
