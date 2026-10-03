@@ -37,12 +37,13 @@ paru -S wlrctl        # or any AUR helper / makepkg
 ## Passwordless VT switching (real-TTY lane)
 
 The lane switches to a spare VT and back to exercise session resume. Allow
-exactly `chvt`, nothing else:
+exactly `chvt`, nothing else. Check the rule before installing it: a
+malformed file in `/etc/sudoers.d` breaks `sudo` itself.
 
 ```sh
-echo "$USER ALL=(root) NOPASSWD: /usr/bin/chvt" | sudo tee /etc/sudoers.d/50-chvt
-sudo chmod 0440 /etc/sudoers.d/50-chvt
-sudo visudo -cf /etc/sudoers.d/50-chvt
+echo "$USER ALL=(root) NOPASSWD: /usr/bin/chvt" > /tmp/50-chvt
+sudo visudo -cf /tmp/50-chvt && sudo install -m 0440 -o root -g root /tmp/50-chvt /etc/sudoers.d/50-chvt
+rm /tmp/50-chvt
 ```
 
 Check without switching (a real `chvt` moves the display away):
