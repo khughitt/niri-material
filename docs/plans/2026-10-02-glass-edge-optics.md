@@ -1035,7 +1035,8 @@ fn window_rects(f: &mut Fixture) -> Vec<Rectangle<f64, Logical>> {
 /// The face and slab at rest, from the window, as `slabSurface`'s comment
 /// derives them: the face is the window narrowed on both axes by
 /// 2 * max(|offset-x|, |offset-y|) and moved by the offset; the slab is the
-/// face grown by the bevel.
+/// face grown by the bevel. Integer bevels and offsets only: the code
+/// applies ceil and round, which this does not repeat.
 fn face_and_slab(look: Look, w: Rectangle<f64, Logical>) -> ([f64; 4], [f64; 4]) {
     let (ox, oy) = look.offset;
     let m = ox.abs().max(oy.abs());
@@ -1318,6 +1319,7 @@ EV=/mnt/ssd3/niri-material/material-be611b/$(date +%Y%m%dT%H%M%S)
 echo "$EV" > target/glass-edge-ev   # later tasks read the run stamp from here
 tasks note material-be611b "glass edge evidence root: $EV"   # survives a cargo clean
 GLASS_EDGE_DUMP=$EV/base just test-one -p niri every_case_renders_frozen
+mkdir -p $EV/ring-look-base   # ring_look.rs does not create its dump dir
 RING_LOOK_DUMP=$EV/ring-look-base just test-one -p niri accepted_ring_look
 C=docs/materials/scripts/glass-edge-compare.py
 python3 $C identical $EV/base $EV/base stock-off live-on
@@ -1792,6 +1794,7 @@ git commit -m "feat(material): render the glass bevel as a height field (materia
 ```bash
 EV=$(cat target/glass-edge-ev)   # or the root in material-be611b's "evidence root" note
 GLASS_EDGE_DUMP=$EV/step1 just test-one -p niri every_case_renders_frozen
+mkdir -p $EV/ring-look-step1
 RING_LOOK_DUMP=$EV/ring-look-step1 just test-one -p niri accepted_ring_look
 ```
 Expected: both pass; `$EV/step1` holds the eight cases and `$EV/ring-look-step1` the ring look after the change.
@@ -1810,7 +1813,7 @@ python3 $C predict-within $EV/base $EV/step1 live-off live-on --ior 1.28
 for c in stock-off live-off stock-on live-on; do python3 $C report $EV/base $EV/step1 $c --region bevel; done
 python3 $C report $EV/base $EV/step1 live-translucent --region face
 ```
-Expected: nothing outside the slab and no opaque window pixel changes; both face predictions and both within predictions hold (worst at most 1 code value from the rounded prediction; the face region includes the ring band, so the within check shows the ring's face attenuation is unchanged); bevel and translucent-face deltas reported, not asserted. If a prediction fails, stop and report the printed pixels: §4 says face attenuation and the ring's face factor are exact, so a failure means the implementation and the spec disagree. Compare `$EV/ring-look-base` with `$EV/ring-look-step1` by eye and describe the edge change.
+Expected: nothing outside the slab and no opaque window pixel changes; both face predictions and both within predictions hold (worst at most 1 code value from the rounded prediction; the face region includes the ring band, so the within check shows the ring's face attenuation is unchanged); bevel and translucent-face deltas reported, not asserted. The live face is dark (about code 10, where `f0 = 1.5 %` is under one code value), so only the stock prediction can detect a missing `(1 - F)`; say so in the evidence reading. If a prediction fails, stop and report the printed pixels: §4 says face attenuation and the ring's face factor are exact, so a failure means the implementation and the spec disagree. Compare `$EV/ring-look-base` with `$EV/ring-look-step1` by eye and describe the edge change.
 
 - [ ] **Step 3: Write the evidence document** `docs/materials/<run-date>-glass-edge-optics-evidence.md`: the commit, renderer string (from any `.json`; if it is llvmpipe, say so: the shader then first compiles on the real driver in Task 9, whose sheet is that check), the `$EV` path, the ring-look comparison, each command and its output verbatim, and a short reading: what changed on the bevel (from the bevel reports and by eye from the PNGs), and the translucent-face delta set against Review Focus 4. Include a "Step 1" heading; Tasks 6 to 9 append theirs.
 

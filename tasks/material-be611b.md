@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-03T01:39:50Z
+updated: 2026-10-03T01:43:39Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -89,3 +89,5 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-03T01:36:13Z (glass-edges): review: plan round 1 — verdict: revise; findings: P1 4, P2 6, P3 14; reviewer: claude-code/claude-opus-5-5
 - 2026-10-03T01:36:13Z (glass-edges): Plan round 1 P1s: aurora seed differs per fixture (render twice in one fixture); duplicate distortion node in the motion config; the 80 px scan bound skips sides of a window at the gap (window needs room, scan bounded by the outline); predict-within rounding exceeds 1.0 by up to 0.015 (compare against the rounded prediction). P2s: face region missed the ring band (face/slab rects into the json), literal types, cargo fmt, highlight vs k2 base, pilot knob in the committed sheet script, ring_look before/after dumps.
 - 2026-10-03T01:39:50Z (glass-edges): Plan revised for round 1: harness renders twice in one fixture (seed note), distortion owned by glass lines, centered window and outline-bounded scan with explicit leading/trailing edges, rounded-prediction tolerance, face/slab/window regions from the json (ring band included), live-opaque case, k2 base for the highlight, SHEET_PILOT knob, ring_look before/after dumps, cargo fmt rule, task ids filled, highlight lines pinned, sheet-script deviation declared.
+- 2026-10-03T01:43:38Z (glass-edges): review: plan round 2 — verdict: accept; findings: P2 1, P3 2; reviewer: claude-code/claude-opus-5-5
+- 2026-10-03T01:43:38Z (glass-edges): Plan round 2 fixes folded in: mkdir before the RING_LOOK_DUMP dumps, integer-look note on face_and_slab, live-face sensitivity caveat for (1 - F).
