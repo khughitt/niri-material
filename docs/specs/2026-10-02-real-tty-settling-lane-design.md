@@ -111,10 +111,10 @@ surface, prints `locked` once the compositor sends `locked`, and on SIGUSR1
 calls `unlock_and_destroy` and exits 0. It never authenticates; niri's
 `SessionLockHandler::unlock` runs exactly as for any lock client.
 
-**Screencast consumer.** `screencast-consumer.py` (committed in
+**Screencast consumer.** `tools/screencast_consumer.py` (committed in
 `material-3acc86`): a ScreenCast session on the private bus, `RecordMonitor`
 DP-1, `pipewiresrc ! video/x-raw(memory:DMABuf),format=DMA_DRM ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink`; one
-CLOCK_MONOTONIC line per received frame, `ready <node>` on the first, and on
+CLOCK_MONOTONIC line per received frame, `ready <node>` once the pipeline plays, and on
 SIGTERM a summary with consumer identity, node, frame count and capture
 interval. It also keeps frames, not only their times: on SIGUSR1 it writes
 the **next frame received after the signal** as raw RGB to the path named in
@@ -139,7 +139,7 @@ All start from the headless lane's scene (probe kitty under Aurora 0.5 at
 
 | Case | Edges | Stimuli while held | Verdict adds |
 | --- | --- | --- | --- |
-| `aurora-full` (lane control) | 0, 1 | none; pointer resume | Proves DRM cadence and settling are measured like headless. |
+| `drm-aurora` (lane control) | 0, 1 | none; pointer resume | Proves DRM cadence and settling are measured like headless. |
 | `tty-resume` | 0, 1, 0 | `vt-away` (switch out about 4 s, then back) | The resume edge falls inside `vt-away`, carries the held logical time, and the timeline settles again before the end. |
 | `unlock` | 0, 1, 0 | `lock` (client locks), then `unlock` (SIGUSR1) | No edge during `lock`; the resume edge falls inside `unlock`; a second pause follows without input. |
 | `screencast` | 0 | `cast-start`, `sample-1`, `sample-2`, quiet ≥ 2 s, `sample-3`, `cast-stop` | No resume edge; every sample's frame was produced by its own journaled damage; cast samples show changed client content and unchanged Aurora (below). |
@@ -231,7 +231,7 @@ fraction stays in the instructions (0.15–0.35 is the owner's range).
 
 ## 7. Pilot and matrix
 
-Before the lane pilot, the smallest end-to-end check runs `aurora-full`,
+Before the lane pilot, the smallest end-to-end check runs `drm-aurora`,
 `tty-resume` and `screencast` (`CASES`, a development run), through export,
 cast sampling, pixel comparison, analysis and cleanup, and its result is
 read. The `screencast` case there is complete: it proves the consumer gets
