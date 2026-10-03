@@ -11,7 +11,7 @@ vt_active() { local name; name=$(cat "$VT_ACTIVE_FILE"); echo "${name#tty}"; }
 # the command itself is bounded: 2 s, then KILL 1 s later.
 vt_chvt() {
     if [ -n "${VT_CHVT:-}" ]; then timeout -k 1 2 "$VT_CHVT" "$1"
-    else timeout -k 1 2 sudo -n chvt "$1"; fi
+    else timeout -k 1 2 sudo -n /usr/bin/chvt "$1"; fi
 }
 vt_switch() {   # N: 0 when VT N is active within 2 s of a bounded chvt
     vt_chvt "$1" || return 1

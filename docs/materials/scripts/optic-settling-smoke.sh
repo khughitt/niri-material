@@ -78,7 +78,11 @@ reap() {
 }
 on_exit() {
     local rc=$?
-    trap - EXIT INT TERM
+    # A second signal must not cut cleanup short: VT restoration and the lock
+    # release still run. A no-op handler, not SIG_IGN, so the children cleanup
+    # starts (timeout, chvt, capture-meta) keep default signal handling.
+    trap - EXIT
+    trap : INT TERM HUP
     for pid in "$SLEEP_PID" "$CAP_PID" "$EXPORT_PID" "$BG_PID" "$PROBE_PID" "$OTHER_PID" "$INHIBIT_PID" "$CAST_PID" "$LOCK_PID" "$NIRI_PID" "$BUS_PID" "$WESTON_PID"; do
         [ -z "$pid" ] || reap "$pid"
     done
@@ -221,7 +225,7 @@ $DRM_TOP" ;;
 # Rates: Aurora 4 Hz full, 2 Hz reduced; breathe and pulse are measured by the
 # pilot (material-signals-smoke recorded 8 Hz breathe and 26.6 Hz pulse on
 # llvmpipe). Settled intervals hold for HOLD_S, 600 s once in the matrix.
-python3 - "$OUT" "$MODE" "$LANE" "${CASES:-}" <<'PY'
+python3 - "$OUT" "$MODE" "$LANE" "${CASES:-}" "${DRM_OUTPUT:-}" "${DRM_MODE:-}" <<'PY'
 import hashlib, json, pathlib, sys
 out, mode, lane, only = pathlib.Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4].split()
 S = 1_000_000_000
@@ -334,6 +338,8 @@ identity = json.loads((out / 'binary.identity.json').read_text())
 manifest = dict(schema=2, mode=mode, lane=lane, development=bool(only),
                 source_commit=identity['source_commit'],
                 binary_sha256=identity['binary_sha256'], cases=cases)
+if lane == 'dedicated':
+    manifest['drm'] = dict(output=sys.argv[5], mode=sys.argv[6])
 (out / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 PY
 # Development runs (CASES) keep their unselected cases unverified.
@@ -450,7 +456,13 @@ stop_drm() {
 start_host() { if [ "$LANE" = dedicated ]; then start_drm "$@"; else start_nested "$@"; fi; }
 stop_host() { if [ "$LANE" = dedicated ]; then stop_drm; else stop_nested; fi; }
 topology() {
-    if [ "$LANE" = dedicated ]; then msg "$NIRI" -j outputs | jq -c 'keys'; else echo '["headless-1"]'; fi
+    # Name, current mode and scale per output: the analyzer checks them against DRM_OUTPUT and DRM_MODE.
+    if [ "$LANE" = dedicated ]; then
+        msg "$NIRI" -j outputs | jq -c '[.[] | {name, scale: .logical.scale, mode: (if .current_mode == null
+            then null else .modes[.current_mode] | {width, height, refresh_hz: (.refresh_rate / 1000)} end)}]'
+    else
+        echo '["headless-1"]'
+    fi
 }
 # IPC gives no on-screen position for tiled windows, so the screencast crops
 # come from an opaque geometry probe in the same two-window layout.
@@ -463,6 +475,8 @@ calibrate_drm_probe() {
     sleep 2
     shot "$NIRI" geometry-drm
     measure_rect "$OUT/geometry-drm.png" > "$OUT/probe-rect-drm.txt"
+    magick "$OUT/geometry-drm.png" -format '%w %h' info: > "$OUT/screen-drm.txt"
+    grep -qxE '[0-9]+ [0-9]+' "$OUT/screen-drm.txt" || fail "could not read the DRM screen size from geometry-drm.png"
     stop_host
     await_gpu_rest
 }
@@ -654,12 +668,21 @@ lock_start() {
     for _ in $(seq 50); do grep -qx locked "$CASE_DIR/lock.out" && return; alive "$LOCK_PID" || break; sleep 0.1; done
     fail "$CASE: the session never locked (see lock.log)"
 }
+# A client that ignores its signal must not hold an unattended run (and the
+# lock): 10 s, then the case fails and on_exit kills it. Its status is read
+# only once it has exited.
+await_exit() {   # pid, what: sets EXIT_RC
+    local _
+    for _ in $(seq 100); do alive "$1" || break; sleep 0.1; done
+    ! alive "$1" || fail "$CASE: $2 did not exit within 10 s"
+    EXIT_RC=0
+    wait "$1" || EXIT_RC=$?
+}
 unlock_now() {
-    local rc=0
     kill -USR1 "$LOCK_PID"
-    wait "$LOCK_PID" || rc=$?
+    await_exit "$LOCK_PID" 'the lock client'
     LOCK_PID=
-    [ "$rc" -eq 0 ] || fail "$CASE: the lock client exited $rc"
+    [ "$EXIT_RC" -eq 0 ] || fail "$CASE: the lock client exited $EXIT_RC"
 }
 drive_unlock() { keepalive; at 26; stim lock 2 lock_start; at 30; stim unlock 1.5 unlock_now; }
 cast_start() {
@@ -672,11 +695,10 @@ cast_start() {
     fail "$CASE: the screencast consumer never became ready (see cast.log)"
 }
 cast_stop() {
-    local rc=0
     kill -TERM "$CAST_PID"
-    wait "$CAST_PID" || rc=$?
+    await_exit "$CAST_PID" 'the screencast consumer'
     CAST_PID=
-    [ "$rc" -eq 0 ] || fail "$CASE: the screencast consumer exited $rc (see cast.log)"
+    [ "$EXIT_RC" -eq 0 ] || fail "$CASE: the screencast consumer exited $EXIT_RC (see cast.log)"
 }
 thief_line() { echo "thief $1" > "$OTHER_FIFO"; }
 # Arm a sample, cause its damage, wait for the frame that damage produced.
@@ -684,10 +706,14 @@ thief_line() { echo "thief $1" > "$OTHER_FIFO"; }
 cast_sample() {   # label, damage command...
     local label=$1 target=$CASE_DIR/$1.raw
     shift
+    alive "$CAST_PID" || fail "$CASE: the screencast consumer exited (see cast.log)"
     printf '%s\n' "$target" > "$CASE_DIR/sample-request"
     kill -USR1 "$CAST_PID"
-    for _ in $(seq 20); do [ -e "$target.armed" ] && break; sleep 0.1; done
-    [ -e "$target.armed" ] || fail "$CASE: $label was never armed"
+    for _ in $(seq 20); do [ -e "$target.armed" ] && break; alive "$CAST_PID" || break; sleep 0.1; done
+    if [ ! -e "$target.armed" ]; then
+        alive "$CAST_PID" || fail "$CASE: the screencast consumer exited (see cast.log)"
+        fail "$CASE: $label was never armed"
+    fi
     "$@"
     for _ in $(seq 30); do [ -e "$target.json" ] && return; sleep 0.1; done
     fail "$CASE: no cast frame answered $label"
@@ -701,13 +727,29 @@ drive_screencast() {
     at 36; stim sample-3 1 cast_sample sample-3 thief_line 2
     at 40; stim cast-stop 1 cast_stop
 }
-# Crops in output pixels (scale 1): the probe's top text rows, and glass
-# below its few lines with Aurora alone.
-post_screencast() {
-    local k w h px py pw ph
+# The crops are only as good as the calibration, so the headless probe_rect's
+# checks apply before casting: the case's probe has the calibrated size and
+# is large enough for both crops.
+setup_screencast() {
+    local px py pw ph j iw ih
     read -r px py pw ph < "$OUT/probe-rect-drm.txt"
+    j=$(msg "$NIRI" -j windows | jq -c '.[] | select(.app_id=="gos-probe") | .layout.window_size')
+    iw=$(jq -r '.[0] | floor' <<< "$j"); ih=$(jq -r '.[1] | floor' <<< "$j")
+    [ "$pw" -eq "$iw" ] && [ "$ph" -eq "$ih" ] \
+        || fail "$CASE: calibrated probe ${pw}x${ph}, the case's probe is ${iw}x${ih} over IPC"
+    [ "$pw" -gt 440 ] && [ "$ph" -gt 240 ] || fail "$CASE: probe ${pw}x${ph} is too small for the screencast crops"
+}
+# Crops in output pixels (scale 1): the probe's top text rows, and glass
+# below its few lines with Aurora alone. Every sample is a frame of the
+# calibrated screen, or the crops would land elsewhere.
+post_screencast() {
+    local k w h px py pw ph sw sh
+    read -r px py pw ph < "$OUT/probe-rect-drm.txt"
+    read -r sw sh < "$OUT/screen-drm.txt"
     for k in 1 2 3; do
         w=$(jq -r .width "$CASE_DIR/sample-$k.raw.json"); h=$(jq -r .height "$CASE_DIR/sample-$k.raw.json")
+        [ "$w" = "$sw" ] && [ "$h" = "$sh" ] \
+            || fail "$CASE: sample-$k is ${w}x${h}, the calibrated screen is ${sw}x${sh}"
         magick -size "${w}x${h}" -depth 8 "rgb:$CASE_DIR/sample-$k.raw" \
             -crop "$((pw - 20))x80+$((px + 10))+$((py + 10))" +repage -depth 8 rgb:- > "$CASE_DIR/client-$k.rgb"
         magick -size "${w}x${h}" -depth 8 "rgb:$CASE_DIR/sample-$k.raw" \

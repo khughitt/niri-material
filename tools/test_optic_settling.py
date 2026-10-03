@@ -5,6 +5,7 @@ import hashlib
 import json
 import io
 import os
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -138,6 +139,42 @@ class RunTests(unittest.TestCase):
         self.manifest['cases'][0]['edge_in'] = [[2, 'resume']]   # no such edge
         self.save()
         self.rejects('edge 2 is not inside stimulus resume')
+
+    def test_dedicated_topology_pins_output_mode_and_scale(self):
+        self.manifest['lane'] = 'dedicated'
+        self.manifest['drm'] = {'output': 'DP-1', 'mode': '3440x1440@59.999'}
+        for index, case in enumerate(self.manifest['cases']):
+            case['lane'] = 'dedicated' if index == 0 else 'headless'
+        good = {'name': 'DP-1', 'mode': {'width': 3440, 'height': 1440, 'refresh_hz': 59.999}, 'scale': 1.0}
+        self.observation['topology'] = [good]
+        self.save()
+        analyze_run(self.run)
+        self.observation['topology'] = [dict(good, mode=dict(good['mode'], refresh_hz=59.995))]
+        self.save()
+        analyze_run(self.run)                                   # refresh within 0.01 Hz
+        for output, message in (
+            ('headless-1', 'must record name, mode and scale'),
+            (dict(good, name='HDMI-A-1'), "output 'HDMI-A-1' is not the pinned DP-1"),
+            (dict(good, scale=2.0), 'output scale 2.0, expected 1'),
+            (dict(good, mode=dict(good['mode'], width=2560)), 'output mode 2560x1440, expected 3440x1440'),
+            (dict(good, mode=dict(good['mode'], refresh_hz=59.97)), 'output refresh 59.97 Hz'),
+            (dict(good, mode=None), 'output DP-1 has no current mode'),
+        ):
+            with self.subTest(output=output):
+                self.observation['topology'] = [output]
+                self.save()
+                self.rejects(message)
+        self.observation['topology'] = [good]
+        for drm, message in ((None, 'names no drm output'),
+                             ({'output': 'DP-1', 'mode': 'bogus'}, 'is not WIDTHxHEIGHT[@REFRESH]')):
+            with self.subTest(drm=drm):
+                self.manifest['drm'] = drm
+                self.save()
+                self.rejects(message)
+        self.manifest['drm'] = {'output': 'DP-1', 'mode': '3440x1440'}   # no refresh pinned
+        self.observation['topology'] = [dict(good, mode=dict(good['mode'], refresh_hz=75.0))]
+        self.save()
+        analyze_run(self.run)
 
     def cast(self, frames, stopped=True, samples=()):
         (self.case / 'cast-frames.tsv').write_text(''.join(f'{t}\n' for t in frames))
@@ -544,9 +581,19 @@ with open(stub / 'pids', 'a') as pids:
 def stop(*_):
     pathlib.Path(sys.argv[3]).write_text(json.dumps({'stopped_by_signal': True}))
     sys.exit(0)
+def sample(*_):
+    # Answer an armed request at once with a frame of STUB_SAMPLE_SIZE.
+    target = pathlib.Path(pathlib.Path(sys.argv[4]).read_text().strip())
+    pathlib.Path(f'{target}.armed').touch()
+    width, height = map(int, os.environ.get('STUB_SAMPLE_SIZE', '3440x1440').split('x'))
+    target.write_bytes(bytes(3))
+    pathlib.Path(f'{target}.json').write_text(json.dumps({'width': width, 'height': height}))
 signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGUSR1, sample)
 print('ready 1', flush=True)
 (stub / 'cast-ready').touch()
+if os.environ.get('STUB_CONSUMER_EXITS'):
+    sys.exit(0)                                     # dies after ready, before any sample
 while True:
     time.sleep(0.1)
 """
@@ -555,13 +602,21 @@ STUBS = {
     'bin/niri': (
         'case $1 in\n'
         '    validate) exit 0 ;;\n'
-        '    msg) [ "$2" != -j ] || echo \'[{"id": 1, "app_id": "gos-probe", "is_focused": false},'
-        ' {"id": 2, "app_id": "gos-other", "is_focused": true}]\';\n'
+        '    msg) case "$2 $3" in\n'
+        '        "-j outputs") echo \'{"DP-1": {"name": "DP-1", "current_mode": 0, "logical": {"scale": 1.0},'
+        ' "modes": [{"width": 3440, "height": 1440, "refresh_rate": 59999, "is_preferred": true}]}}\' ;;\n'
+        '        -j*) echo "[{\\"id\\": 1, \\"app_id\\": \\"gos-probe\\", \\"is_focused\\": false,'
+        ' \\"layout\\": {\\"window_size\\": [${STUB_PROBE_SIZE:-1000, 1200}]}},'
+        ' {\\"id\\": 2, \\"app_id\\": \\"gos-other\\", \\"is_focused\\": true}]" ;;\n'
+        '        esac\n'
         '        for a do case $prev in --path) printf png > "$a" ;; esac; prev=$a; done; exit 0 ;;\n'
         '    -c) echo "niri $$" >> "$STUB_DIR/pids"; exec python3 "$STUB_DIR/serve.py" niri ;;\n'
         'esac\nexit 2\n'),
     'bin/kitty': 'echo "kitty $$" >> "$STUB_DIR/pids"\nwhile [ "$1" != sh ]; do shift; done\nexec "$@"\n',
-    'bin/magick': ('case "$*" in *info:*) echo 100x100+10+10; exit 0 ;; esac\nfor arg do :; done\n'
+    'bin/magick': ('case "$*" in\n'
+                   '    *%@*) echo "${STUB_RECT:-1000x1200+100+100}"; exit 0 ;;\n'
+                   '    *"%w %h"*) echo 3440 1440; exit 0 ;;\n'
+                   'esac\nfor arg do :; done\n'
                    'case $arg in *:-) printf image ;; *) printf image > "$arg" ;; esac\n'),
     'bin/dbus-daemon': 'echo "dbus-daemon $$" >> "$STUB_DIR/pids"\nexec python3 "$STUB_DIR/serve.py" dbus-daemon "$@"\n',
     'bin/sudo': 'exit 0\n',
@@ -826,11 +881,85 @@ class DriverCleanupTests(unittest.TestCase):
         except subprocess.TimeoutExpired:
             driver.kill()
             self.fail('the driver hung on a niri that ignores TERM')
-        self.assertTrue((self.out / 'drm-aurora/observation.json').is_file(), stderr)   # the case ran to its stop
+        observation = json.loads((self.out / 'drm-aurora/observation.json').read_text())   # the case ran to its stop
+        self.assertEqual(observation['topology'],
+                         [{'name': 'DP-1', 'scale': 1.0,
+                           'mode': {'width': 3440, 'height': 1440, 'refresh_hz': 59.999}}])
+        self.assertEqual(json.loads((self.out / 'manifest.json').read_text())['drm'],
+                         {'output': 'DP-1', 'mode': '3440x1440@59.999'})
         self.assertTrue(self.started('niri'))
         self.assertEqual([pid for pid in self.pids() if alive(pid)], [])
         self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
         self.assertTrue((self.stubs / 'meta.log').read_text().splitlines()[-1].startswith('release '))
+
+    def run_dedicated(self, case, timeout_s=90, **env):
+        """A stub dedicated run left to finish on its own; returns its stderr."""
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start(case, DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05',
+                            OPTIC_SETTLING_STUB_CONSUMER=str(self.stubs / 'tools/consumer.py'),
+                            OPTIC_SETTLING_STUB_LOCK=str(self.stubs / 'tools/lock'),
+                            LANE_ARGS='--lane dedicated', **env)
+        try:
+            _, stderr = driver.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            driver.kill()
+            self.fail(f'the {case} run hung')
+        self.returncode = driver.returncode
+        self.assertEqual([pid for pid in self.pids() if alive(pid)], [])
+        self.assertTrue((self.stubs / 'meta.log').read_text().splitlines()[-1].startswith('release '))
+        return stderr
+
+    def test_a_lock_client_that_ignores_unlock_fails_within_the_bound(self):
+        (self.stubs / 'tools/lock').write_text(
+            '#!/bin/sh\necho "lock $$" >> "$STUB_DIR/pids"\ntrap \'\' USR1\necho locked\n'
+            'while :; do sleep 0.1; done\n')
+        started = time.monotonic()
+        stderr = self.run_dedicated('unlock')
+        self.assertEqual(self.returncode, 1, stderr)
+        self.assertIn('unlock: the lock client did not exit within 10 s', stderr)
+        self.assertLess(time.monotonic() - started, 45, stderr)
+        self.assertTrue(self.started('lock'))
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
+
+    def test_screencast_refuses_unchecked_crops_and_a_dead_consumer(self):
+        for env, message in (
+            (dict(STUB_PROBE_SIZE='900, 1200'), "calibrated probe 1000x1200, the case's probe is 900x1200 over IPC"),
+            (dict(STUB_RECT='400x1200+100+100', STUB_PROBE_SIZE='400, 1200'),
+             'probe 400x1200 is too small for the screencast crops'),
+            (dict(STUB_SAMPLE_SIZE='1280x720'), 'sample-1 is 1280x720, the calibrated screen is 3440x1440'),
+            (dict(STUB_CONSUMER_EXITS='1'), 'the screencast consumer exited (see cast.log)'),
+        ):
+            with self.subTest(message=message):
+                shutil.rmtree(self.out, ignore_errors=True)
+                (self.stubs / 'meta.log').unlink(missing_ok=True)
+                stderr = self.run_dedicated('screencast', **env)
+                self.assertEqual(self.returncode, 1, stderr)
+                self.assertIn(f'screencast: {message}', stderr)
+
+    def test_a_second_term_during_cleanup_still_restores_and_releases(self):
+        (self.stubs / 'vt/chvt').write_text(
+            '#!/bin/sh\necho "chvt $1" >> "$STUB_DIR/meta.log"\n'
+            'if [ "$1" = 1 ]; then : > "$STUB_DIR/restoring"; sleep 1; fi\n'
+            'printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n[ "$1" = 1 ] || : > "$STUB_DIR/away"\n')
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('tty-resume', STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05', LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, 'away', 60)
+        driver.send_signal(signal.SIGTERM)
+        self.await_marker(driver, 'restoring', 30)
+        driver.send_signal(signal.SIGTERM)                    # lands while restoration runs
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 143, stderr)
+        self.assertEqual(active.read_text(), 'tty1\n')
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'restored')
+        self.assert_cleaned_up('tty-resume')
 
     def test_term_during_a_dedicated_capture_reaps_the_bus_and_records_the_vt(self):
         active = self.base / 'active'

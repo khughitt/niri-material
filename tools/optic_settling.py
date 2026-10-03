@@ -232,7 +232,39 @@ def journal_intervals(observation, edges, declared):
     return intervals
 
 
-def analyze_case(run, case, lane):
+def drm_pin(manifest):
+    """The dedicated lane's pinned output: name, width, height and refresh (Hz or None)."""
+    drm = manifest.get('drm')
+    if not isinstance(drm, dict) or not isinstance(drm.get('output'), str) or not drm['output']:
+        raise ValueError('dedicated manifest names no drm output')
+    mode = re.fullmatch(r'([0-9]+)x([0-9]+)(?:@([0-9]+(?:\.[0-9]+)?))?', str(drm.get('mode', '')))
+    if not mode:
+        raise ValueError(f"dedicated manifest mode {drm.get('mode')!r} is not WIDTHxHEIGHT[@REFRESH]")
+    refresh = float(mode[3]) if mode[3] else None
+    return drm['output'], int(mode[1]), int(mode[2]), refresh
+
+
+def check_dedicated_output(name, output, pin):
+    """The single DRM output carries the pinned name, mode and scale 1."""
+    if not isinstance(output, dict):
+        raise ValueError(f'{name}: dedicated topology must record name, mode and scale')
+    want_name, width, height, refresh = pin
+    if output.get('name') != want_name:
+        raise ValueError(f"{name}: output {output.get('name')!r} is not the pinned {want_name}")
+    if output.get('scale') != 1:
+        raise ValueError(f"{name}: output scale {output.get('scale')!r}, expected 1")
+    mode = output.get('mode')
+    if not isinstance(mode, dict):
+        raise ValueError(f'{name}: output {want_name} has no current mode')
+    if (mode.get('width'), mode.get('height')) != (width, height):
+        raise ValueError(f"{name}: output mode {mode.get('width')}x{mode.get('height')}, "
+                         f'expected {width}x{height}')
+    got = mode.get('refresh_hz')
+    if refresh is not None and (not isinstance(got, (int, float)) or abs(got - refresh) > 0.01):
+        raise ValueError(f'{name}: output refresh {got!r} Hz, expected {refresh} Hz within 0.01')
+
+
+def analyze_case(run, case, lane, pin=None):
     name = case['name']
     if integer(case.get('repetitions'), 'repetitions') != 1:
         raise ValueError(f'{name}: repeated captures are recorded as separate cases')
@@ -419,8 +451,8 @@ def analyze_case(run, case, lane):
     topology = observation.get('topology')
     if not isinstance(topology, list) or len(topology) != 1 or not topology[0]:
         raise ValueError(f'{name}: output topology unverified')
-    if lane == 'dedicated' and topology[0].startswith('headless'):
-        raise ValueError(f'{name}: dedicated lane uses headless output')
+    if lane == 'dedicated':
+        check_dedicated_output(name, topology[0], pin)
     return {'name': name, 'family': case['family'], 'verdict': 'passed',
             'edges': [{'active': e['active'], 'trace_ns': e['trace_ns'], 'logical_ns': e['logical_ns']}
                       for e in edges],
@@ -453,6 +485,7 @@ def analyze_run(run: Path) -> dict:
     lane = manifest.get('lane')
     if lane not in ('headless', 'dedicated'):
         raise ValueError('invalid capture lane')
+    pin = drm_pin(manifest) if lane == 'dedicated' else None
     if not re.fullmatch('[0-9a-f]{40}', manifest.get('source_commit', '')):
         raise ValueError('invalid source commit')
     if sha256(run / 'binary') != manifest.get('binary_sha256'):
@@ -478,7 +511,7 @@ def analyze_run(run: Path) -> dict:
                 raise ValueError(f"{case['name']}: a required case was not run")
             results.append({'name': case['name'], 'family': case['family'], 'verdict': 'not_run'})
             continue
-        results.append(analyze_case(run, case, lane))
+        results.append(analyze_case(run, case, lane, pin))
     if any(result['verdict'] == 'passed' for result in results):
         panic = panic_line(run / 'niri.log')
         if panic:
