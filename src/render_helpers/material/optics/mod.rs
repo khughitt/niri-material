@@ -17,6 +17,7 @@ use crate::activity::OpticTime;
 pub mod aurora;
 pub mod iridescence;
 pub mod noise;
+pub mod reflection;
 pub mod saturation;
 
 /// One pipeline stage. Implemented on a marker type per optic; the resolved
@@ -80,6 +81,7 @@ pub static OPTICS: &[OpticEntry] = &[
     OpticEntry::of::<saturation::SaturationOptic>(),
     OpticEntry::of::<noise::NoiseOptic>(),
     OpticEntry::of::<aurora::AuroraOptic>(),
+    OpticEntry::of::<reflection::ReflectionOptic>(),
     OpticEntry::of::<iridescence::IridescenceOptic>(),
 ];
 

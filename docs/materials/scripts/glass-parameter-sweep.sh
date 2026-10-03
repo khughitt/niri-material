@@ -51,7 +51,7 @@ case $BLOCK:$KEY in
     glass:ior|glass:thickness|glass:attenuation-distance) ;;
     glass:chromatic-aberration|glass:distortion|glass:anisotropic-blur) ;;
     glass:roughness|glass:bevel|glass:light-ior|glass:noise|glass:saturation) ;;
-    glass:iridescence|glass:aurora) ;;
+    glass:iridescence|glass:aurora|glass:reflection|glass:edge-highlight|glass:bevel-profile) ;;
     blur:noise|blur:saturation|blur:passes|blur:offset) ;;
     glass:jelly-flex|glass:jelly-ripple)
         fail "$KEY needs a motion stimulus; see docs/materials/2026-09-11-jelly-motion-sweep.md" ;;

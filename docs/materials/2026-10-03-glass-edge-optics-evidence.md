@@ -92,3 +92,58 @@ live-translucent all: 0 differing pixels
 live-opaque all: 0 differing pixels
 [exit 0]
 ```
+
+## Step 3
+
+The `reflection` optic (material-02b42a). Dumps are in `/mnt/ssd3/niri-material/material-be611b/20261003T061451/step3` (before: `step3-before`, taken at the Task 6 head).
+
+### Motion test and its negative control
+
+`the_reflection_follows_the_perturbed_direction_in_motion` renders one frozen mid-resize instant four times (reflection 0.6 and 0, perturbed and flat) over a patterned checker backdrop and counts channels whose reflection isolate differs by more than 0.02 in linear light between the two perturbation states.
+
+- Real shader: 364 channels changed, 0 clipped.
+- Mutated shader (`vec2 bent = s.acrossDir;`, the perturbation removed; substitution verified, restored afterwards): 0 channels changed, 0 clipped; the test fails with "the reflection ignores the perturbation: 0 channels changed (0 clipped)".
+- Calibration: the real count (364) is below the 2500 that keeps 500, so the second rule applies: 364 is at least 25 times max(0, 4) = 100, and the threshold is the geometric mean of the real count and max(mutated, 4), sqrt(364 * 4) = 38. The mutated count is 0, whose literal geometric mean would be 0 (a test that cannot fail), so the same floor of 4 that the rule's condition uses is applied to the mean. `REFLECTION_MOTION_MIN = 38`. With 38 the real test passes (364) and the mutated one fails (0).
+
+### Neutrality and intended change
+
+```
+$ python3 glass-edge-compare.py identical step3-before step3 stock-off stock-on stock-iridescence live-off live-on live-iridescence live-translucent live-opaque
+stock-off all: 0 differing pixels
+stock-on all: 0 differing pixels
+stock-iridescence all: 0 differing pixels
+live-off all: 0 differing pixels
+live-on all: 0 differing pixels
+live-iridescence all: 0 differing pixels
+live-translucent all: 0 differing pixels
+live-opaque all: 0 differing pixels
+[exit 0]
+$ pair step3 stock-off stock-reflection-0 --region all --expect same
+stock-off vs stock-reflection-0 all: 0 differing pixels (expect same)
+[exit 0]
+$ pair step3 stock-off stock-reflection --region face --expect same
+stock-off vs stock-reflection face: 0 differing pixels (expect same)
+[exit 0]
+$ pair step3 stock-off stock-reflection --region outside --expect same
+stock-off vs stock-reflection outside: 0 differing pixels (expect same)
+[exit 0]
+$ pair step3 stock-off stock-reflection --region bevel --expect differ
+stock-off vs stock-reflection bevel: 23864 differing pixels (expect differ)
+[exit 0]
+$ pair step3 live-off live-reflection-0 --region all --expect same
+live-off vs live-reflection-0 all: 0 differing pixels (expect same)
+[exit 0]
+$ pair step3 live-off live-reflection --region face --expect same
+live-off vs live-reflection face: 0 differing pixels (expect same)
+[exit 0]
+$ pair step3 live-off live-reflection --region outside --expect same
+live-off vs live-reflection outside: 0 differing pixels (expect same)
+[exit 0]
+$ pair step3 live-off live-reflection --region bevel --expect differ
+live-off vs live-reflection bevel: 24279 differing pixels (expect differ)
+[exit 0]
+```
+
+Every existing case is decoded-identical to step 2; `reflection 0` renders exactly as no node; `reflection 0.6` leaves the face and everything outside the slab untouched and changes the bevel (stock 23864 pixels, live 24279).
+
+By eye (`live-reflection.png`): the dark live bevel takes a faint backdrop-coloured lift that is largest at the silhouette. Row 200, left edge, live-off to live-reflection, (r,g,b): x=306 (47,43,39) to (49,44,40); x=312 (37,35,34) to (40,38,35); x=318 (33,32,32) to (36,34,33). The lift is small because Fresnel at ior 1.28 is small; it is warm, the backdrop's hue.

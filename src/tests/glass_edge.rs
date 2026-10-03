@@ -18,10 +18,12 @@
 use std::time::Duration;
 
 use niri_config::Config;
+use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer;
+use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Anchor;
 use smithay::utils::{Logical, Rectangle};
 use wayland_client::protocol::wl_surface::WlSurface;
 
-use super::client::ClientId;
+use super::client::{ClientId, LayerConfigureProps};
 use super::ring_pair::{diff, render_at, set_time};
 use super::*;
 
@@ -120,6 +122,10 @@ fn cases() -> Vec<Case> {
         content: OPAQUE,
         ..case(LIVE, "opaque", "", RING_OFF)
     });
+    for look in [STOCK, LIVE] {
+        cases.push(case(look, "reflection-0", "reflection 0", RING_OFF));
+        cases.push(case(look, "reflection", "reflection 0.6", RING_OFF));
+    }
     cases
 }
 
@@ -534,4 +540,136 @@ fn the_rounded_rim_is_rounded_at_rest_mid_resize_and_mid_scroll() {
             "mid-scroll checked only {sides:?}: no leading and trailing edge on the output"
         );
     }
+}
+
+/// A 16 px checker of a warm and a cool colour (opaque ARGB).
+fn checker(x: u16, y: u16) -> u32 {
+    if (x / 16 + y / 16) % 2 == 0 {
+        0xffc8_783c
+    } else {
+        0xff28_5ac8
+    }
+}
+
+/// A Background-layer surface covering the output with `checker`: the glass's
+/// background buffer, so what the reflection samples depends on where it looks.
+fn patterned_backdrop(f: &mut Fixture, id: ClientId) {
+    let layer = f
+        .client(id)
+        .create_layer(None, Layer::Background, "glass-edge-checker");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        anchor: Some(Anchor::Left | Anchor::Right | Anchor::Top | Anchor::Bottom),
+        size: Some((0, 0)),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_shm_pattern(OUT_W, OUT_H, checker);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+}
+
+/// Linear light from an 8-bit sRGB value.
+fn lin(c: u8) -> f64 {
+    let c = f64::from(c) / 255.;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Channels whose reflection term changes by more than 0.02 (linear) when the
+/// perturbation is switched on: the reflection follows the perturbed
+/// direction. Calibrated in Task 7 Step 6: 364 real, 0 mutated, so the geometric
+/// mean of 364 and max(0, 4) is 38.
+const REFLECTION_MOTION_MIN: usize = 38;
+
+#[test]
+fn the_reflection_follows_the_perturbed_direction_in_motion() {
+    // Reflection on, rounded bevel, at full flex (edge-highlight parses only
+    // from Task 8, and cancels out of the isolate anyway). Perturbed:
+    // distortion and jelly ripple; flat: neither.
+    let glass = |reflection: f64, perturbed: bool| {
+        let perturbation = if perturbed {
+            "distortion 0.4 scale=1\njelly-ripple 0.5"
+        } else {
+            "jelly-ripple 0"
+        };
+        format!(
+            "{}\nbevel-profile 2\njelly-flex 0.02\nreflection {reflection}\n{perturbation}",
+            LIVE.glass
+        )
+    };
+    let mut f = fixture(config(&glass(0.6, true), RING_OFF, MOTION));
+    let id = f.add_client();
+    patterned_backdrop(&mut f, id);
+    let surface = open(&mut f, id, (W, H), CLEAR);
+    f.niri_state().update_keyboard_focus();
+    f.double_roundtrip(id);
+    set_time(&mut f, Duration::ZERO);
+    f.niri_complete_animations();
+    let _ = render_at(&mut f, Duration::ZERO);
+    f.niri()
+        .layout
+        .set_column_width(niri_ipc::SizeChange::AdjustFixed(200));
+    f.double_roundtrip(id);
+    let window = f.client(id).window(&surface);
+    window.attach_new_shm_buffer(CLEAR);
+    window.set_size(W + 200, H);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Four renders of one frozen mid-resize instant. In linear light the
+    // reflection is additive, so (on - off) isolates it under each
+    // perturbation state; if its direction ignored the perturbation, the two
+    // isolates would agree to quantization.
+    // The window rectangle is read after each render: before the first one
+    // the clock still stands at the resize's start.
+    let mid = Duration::from_millis(500);
+    let mut rect = None;
+    let mut renders = Vec::new();
+    for (reflection, perturbed) in [(0.6, true), (0., true), (0.6, false), (0., false)] {
+        reload(
+            &mut f,
+            config(&glass(reflection, perturbed), RING_OFF, MOTION),
+        );
+        let pixels = render_at(&mut f, mid);
+        let now = window_rects(&mut f)[0];
+        assert_eq!(
+            *rect.get_or_insert(now),
+            now,
+            "the reload moved the frozen instant"
+        );
+        dump(
+            &format!("reflection-motion-{reflection}-{perturbed}"),
+            &pixels,
+            None,
+            now,
+            "",
+        );
+        renders.push(pixels);
+    }
+    let mut clipped = 0;
+    let mut changed = 0;
+    for i in (0..renders[0].len()).filter(|i| i % 4 != 3) {
+        // A channel at 255 in any render is clipped: its linear sum is not
+        // recoverable, so it says nothing either way.
+        if renders.iter().any(|r| r[i] == 255) {
+            clipped += 1;
+            continue;
+        }
+        let perturbed = lin(renders[0][i]) - lin(renders[1][i]);
+        let flat = lin(renders[2][i]) - lin(renders[3][i]);
+        if (perturbed - flat).abs() > 0.02 {
+            changed += 1;
+        }
+    }
+    eprintln!("reflection motion: {changed} channels changed, {clipped} clipped");
+    assert!(
+        changed >= REFLECTION_MOTION_MIN,
+        "the reflection ignores the perturbation: {changed} channels changed ({clipped} clipped)"
+    );
 }

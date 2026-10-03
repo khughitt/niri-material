@@ -502,6 +502,7 @@ mod tests {
             "// ---- optic: saturation",
             "// ---- optic: noise",
             "// ---- optic: aurora",
+            "// ---- optic: reflection",
             "// ---- optic: iridescence",
             "// ---- main",
         ] {
@@ -538,6 +539,7 @@ mod tests {
         assert!(source.contains("struct Surface {"));
         assert!(source.contains("vec3 iridescence_specular(vec3 specular, Surface s)"));
         assert!(main.contains("Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist);"));
+        assert!(main.contains("specular = reflection_specular(specular, surf);"));
         assert!(main.contains("specular = iridescence_specular(specular, surf);"));
         assert!(main.contains("spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - bevelAcross);"));
         assert!(!main.contains("innerDist / slabChamfer"));
