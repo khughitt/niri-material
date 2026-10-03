@@ -1,9 +1,8 @@
 # Glass edge optics
 
-**Status:** revised after spec review rounds 1 to 3 (ray-consistent path
-and its bound, lifted tap normals, two-boundary coordinate with a stable,
-odd softened outer gradient, highlight transition, interior-light
-attenuation), 2026-09-30; pending review. Task: `material-be611b`.
+**Status:** accepted for planning in spec review round 4 (2026-10-01), with
+two wording corrections folded in (tap-normal tipping threshold, lifted-normal
+bound); implementation plan `docs/plans/2026-10-02-glass-edge-optics.md`. Task: `material-be611b`.
 Follow-on idea that builds on this geometry: `material-7f5751` (content in the
 glass).
 
@@ -176,18 +175,23 @@ today's values. Under distortion, face displacement grows by `1 / -t.z`. For
 normals within 20 degrees that is 0.3 % at ior 1.28 and 2.8 % at ior 3.
 
 **Tap normals.** Distortion and jelly ripple can tip the perturbed normal
-past horizontal. With unit noise components that takes distortion above
-about 0.93. A downward-facing normal sends the refracted ray sideways or
+past horizontal. How much distortion that takes depends on the structural
+normal it starts from: on the face it takes a large distortion, but at the
+rounded slope cap (`n.z` about 0.05) distortion 0.1 with a noise z of -0.6
+already tips it, so this is an ordinary rounded-rim case, not only an extreme
+one. A downward-facing normal sends the refracted ray sideways or
 upward: reproducing today's noise formula gives `-t.z = 0.12` at ior 3, with
 no aberration. Before refraction, each tap's normal is lifted into the
 structural cap:
 
     nTap = normalize(vec3(n.xy, max(n.z, 0.05)))
 
-This is continuous: a normalized `n` with `n.z = 0.05` is returned
-unchanged. It leaves every normal at or above the cap untouched, so it
-changes today's output only where the normal tipped past 87 degrees. With
-`nTap.z >= 0.05`, the refracted ray always points downward, so no tap
+The lifted normal satisfies `nTap.z >= 0.05 / sqrt(1 + 0.05^2) = 1 / sqrt(401)
+= 0.0499`, the same minimum as the structural slope-20 cap. The lift is
+continuous: a normal already at that minimum is returned unchanged. It leaves
+every normal at or above the cap untouched, so it changes today's output only
+where the normal tipped past 87 degrees. With `nTap.z` at least 0.0499, the
+refracted ray always points downward, so no tap
 receives an upward ray. The structural normal is already capped by the
 slope policy, and attenuation uses it.
 

@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-01T02:23:28Z
+updated: 2026-10-03T00:42:54Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -80,3 +80,7 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-01T02:23:24Z (glass-edges): P3 — Spec lines 185–190: normalize(vec3(n.xy,max(n.z,.05))) guarantees z>=.05/sqrt(1+.05^2)=1/sqrt(401)=.0499376, not exactly .05. The formula is sound, matches the structural slope-20 minimum, and retains the upward-ray guarantee. State the exact bound or write approximately .05; no algorithm change or additional spec-review round is required.
 - 2026-10-01T02:23:25Z (glass-edges): parked (waiting on agent): Review assignment complete: spec 222c6ed6 is accepted for planning. Hand back to the design author to fold in the two P3 wording corrections, write the implementation plan under .worktrees/glass-edges/docs/plans, and file the Prism settings task; submit the plan for review before implementation.
   provenance: {"harness_session":"codex:01a0f4b2-bd63-71f2-9779-d6e88ec61afe","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-02T00:09:06Z (glass-edges): Owner priority (2026-10-01): edges read flat and static: no transparency, no light effects, no glass noise on the chamfer. The plan should cover all three or name the follow-up that does; noise on the edge is not among the ranked fixes yet
+- 2026-10-03T00:33:03Z (glass-edges): resumed
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T00:42:54Z (glass-edges): Spec review round 4 P3 corrections folded into the spec: tipping threshold now depends on the starting structural normal (ordinary at the rounded rim), lifted-normal bound stated as 1/sqrt(401) = 0.0499.
