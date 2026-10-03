@@ -413,6 +413,9 @@ Near-white glass has little room for hue at its own luminance, so the tint
 barely shows on the default glass. Without an accent the glass is unchanged,
 and the tint follows the accent's crossfade in and out. Design:
 [accent tint](../specs/2026-10-03-accent-tint-design.md).
+A weight of `1` reads as identity on dark glass; lower weights barely
+register under a translucent window, since the body keeps its luminance and
+moves only in hue. The default stays 0.
 
 Two limits follow from the placement. An opaque window shows no ring: the
 band lies wholly under the face and there is no fallback band on the
