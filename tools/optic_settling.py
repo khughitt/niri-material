@@ -344,7 +344,17 @@ def analyze_case(run, case, lane, pin=None):
         return windows[label]
 
     # A resume a stimulus must cause (a VT switch, an unlock) falls inside it.
-    for index, label in case.get('edge_in', []):
+    edge_in = case.get('edge_in', [])
+    if not isinstance(edge_in, list):
+        raise ValueError(f'{name}: edge_in must be a list')
+    for entry in edge_in:
+        if not isinstance(entry, list) or len(entry) != 2 or not isinstance(entry[1], str):
+            raise ValueError(f'{name}: invalid edge_in entry {entry!r}')
+        try:
+            index = integer(entry[0], 'edge index')
+        except ValueError as error:
+            raise ValueError(f'{name}: invalid edge_in entry {entry!r}') from error
+        label = entry[1]
         start, end = window(label)
         if not index < len(edges) or not start <= edges[index]['trace_ns'] < end:
             raise ValueError(f'{name}: edge {index} is not inside stimulus {label}')
@@ -352,9 +362,18 @@ def analyze_case(run, case, lane, pin=None):
     # A real screencast consumer: frames arrive where damage was caused, and
     # each sample is the first frame after its armed request, inside its window.
     consumer = case.get('consumer')
-    if consumer:
+    if consumer is not None:
+        if not isinstance(consumer, dict):
+            raise ValueError(f'{name}: consumer must be a mapping')
+        for key in ('frames_in', 'samples'):
+            if not isinstance(consumer.get(key, []), list):
+                raise ValueError(f'{name}: consumer {key} must be a list')
         offset = monotonic_offset(edges)
-        frames = [int(line) - offset for line in (directory / 'cast-frames.tsv').read_text().split()]
+        try:
+            lines = (directory / 'cast-frames.tsv').read_text().split()
+        except (OSError, UnicodeError) as error:
+            raise ValueError(f'{name}: missing or invalid cast-frames.tsv') from error
+        frames = [integer(line, 'cast frame') - offset for line in lines]
         if read_json(directory / 'cast-summary.json').get('stopped_by_signal') is not True:
             raise ValueError(f'{name}: the screencast consumer did not stop on a signal')
         for label in consumer.get('frames_in', []):
@@ -368,6 +387,10 @@ def analyze_case(run, case, lane, pin=None):
             frame = integer(sidecar.get('frame_mono_ns'), 'sample frame') - offset
             if not start <= request < frame < end:
                 raise ValueError(f'{name}: sample {label} is stale or outside its window')
+            if frame not in frames:
+                raise ValueError(f'{name}: sample {label} is not a recorded cast frame')
+            if any(request < t < frame for t in frames):
+                raise ValueError(f'{name}: sample {label} is not the first cast frame after its request')
 
     bounds = [0] + [edge['trace_ns'] for edge in edges] + [trace_end]
     report = []

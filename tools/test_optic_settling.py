@@ -209,6 +209,48 @@ class RunTests(unittest.TestCase):
         (self.case / 'damage.raw.json').unlink()
         self.rejects('damage.raw.json')
 
+    def test_an_empty_consumer_is_still_checked(self):
+        # A declared consumer, even one naming no stimulus, needs its signal stop.
+        self.manifest['cases'][0]['consumer'] = {}
+        self.save()
+        self.rejects('cast-frames.tsv')
+        self.cast([], stopped=False)
+        self.rejects('did not stop on a signal')
+        self.cast([])
+        analyze_run(self.run)
+        for consumer, message in (
+            ([], 'consumer must be a mapping'),
+            ({'frames_in': 'damage'}, 'consumer frames_in must be a list'),
+            ({'samples': None}, 'consumer samples must be a list'),
+        ):
+            with self.subTest(consumer=consumer):
+                self.manifest['cases'][0]['consumer'] = consumer
+                self.save()
+                self.rejects(message)
+
+    def test_rejects_malformed_edge_in_entries(self):
+        for entry in ([-1, 'damage'], [1], [1, 'damage', 2], 'damage',
+                      [True, 'damage'], [1, 2], [1.5, 'damage']):
+            with self.subTest(entry=entry):
+                self.manifest['cases'][0]['edge_in'] = [entry]
+                self.save()
+                self.rejects('active-idle-resume: invalid edge_in entry')
+        self.manifest['cases'][0]['edge_in'] = 'damage'
+        self.save()
+        self.rejects('active-idle-resume: edge_in must be a list')
+
+    def test_a_sample_must_be_the_first_cast_frame_after_its_request(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': [], 'samples': ['damage']}
+        self.save()
+        request, frame = 1014 * S + S // 4, 1014 * S + S // 2
+        self.cast([1014 * S + S // 3], samples=[('damage', request, frame)])
+        self.rejects('active-idle-resume: sample damage is not a recorded cast frame')
+        between = 1014 * S + S // 3
+        self.cast([between, frame], samples=[('damage', request, frame)])
+        self.rejects('active-idle-resume: sample damage is not the first cast frame after its request')
+        self.cast([request - 1, frame, frame + 1], samples=[('damage', request, frame)])
+        analyze_run(self.run)
+
     def test_a_redraw_between_samples_breaks_the_quiet_interval(self):
         # The settled-segment check is what keeps the gap before sample-3 quiet.
         self.cpu += [['Niri::redraw', 17 * S, 1000]]
