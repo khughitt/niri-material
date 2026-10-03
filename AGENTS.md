@@ -20,6 +20,14 @@ rendering design assumes.
   (`setfattr -n user.com.dropbox.ignored -v 1 .cargo`). A `target-dir` naming a path
   that exists on one machine only fails `cargo fmt` before any gate can run, so no
   commit is possible there.
+- Every checkout builds into a target dir of its own: that `target-dir` is for the
+  main checkout only. A worktree gets no .cargo/config.toml and builds into its own
+  target/, which already sits on local storage. Two checkouts sharing one target dir
+  serve each other's niri-config and niri builds as fresh (cargo keys workspace crates
+  by root-relative path and checks them by mtime): a "no field" error the source
+  contradicts, or a binary built from the other tree with no error at all.
+  `just setup` after `git worktree add` and `just check` run `tools/target-dir-check`,
+  which refuses a worktree that shares one; the first build in a worktree is a full one.
 - Live captures that need an idle host (settle-gated traces, DRM power runs) are parked
   for `tasks quiet`. When the user starts a session from a TTY with the desktop stopped
   and hands the host over, run that queue yourself: one run at a time, the lane's pilot

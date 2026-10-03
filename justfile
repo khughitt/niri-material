@@ -18,12 +18,13 @@ tt := "python3 tools/tt"
 # Commands shared by the recipes and hooks. Avoid single quotes inside them.
 # fast_cmd: nextest on the packages changed against HEAD and their dependents
 # (tools/test-affected). test_cmd: what CI's test job runs. check_cmd: what CI's
-# rustfmt and clippy jobs run, the selector's own tests, and the task tracker.
+# rustfmt and clippy jobs run, the selector's own tests, and the task tracker;
+# tools/target-dir-check first, so a worktree sharing a target dir fails before cargo.
 nextest_cmd := "cargo nextest run --status-level fail --final-status-level fail"
 fast_cmd := "python3 tools/test-affected --status-level fail --final-status-level fail"
 one_cmd := nextest_cmd
 test_cmd := "cargo test --all --exclude niri-visual-tests"
-check_cmd := "python3 tools/ops-check && cargo fmt --all -- --check && cargo clippy --all --all-targets && python3 -m unittest discover -s tools 2>&1 && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
+check_cmd := "python3 tools/ops-check && python3 tools/target-dir-check && cargo fmt --all -- --check && cargo clippy --all --all-targets && python3 -m unittest discover -s tools 2>&1 && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
 
 # Prose-only trees: material docs and wiki contain Rust test inputs.
 # Keep the repository-specific consistency checks in both commit paths.
@@ -40,6 +41,12 @@ ci_remote := "origin"
 # Compositor tests run in the affected inner loop and full CI suite. A HEAD-based
 # selector would miss committed pushes; rerunning all compositor tests costs 30s.
 push_fast_cmd := nextest_cmd + " --package niri-config --package niri-ipc"
+
+# A fresh worktree, right after `git worktree add`: the hooks, and a target dir of
+# its own (no .cargo/config.toml; see tools/target-dir-check).
+setup:
+    git config core.hooksPath .githooks
+    python3 tools/target-dir-check
 
 # Focused nextest arguments, preserved verbatim; override one_cmd for tooling tests.
 test-one +args:
