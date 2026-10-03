@@ -1,4 +1,4 @@
-// Optic: iridescence (render-pipeline.md stage 5). Neutral at amount 0.
+// Optic: iridescence (render-pipeline.md stage 6). Neutral at amount 0.
 uniform float mat_iridescence;
 
 // A thin-film hue from the view angle: the glint runs through the cosine

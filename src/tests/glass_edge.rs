@@ -357,8 +357,9 @@ fn px(pixels: &[u8], x: i32, y: i32) -> Option<[u8; 3]> {
 /// backdrop pixels: the rim ratio, the rise of the last pixel before the
 /// anti-aliased one over the mean rise of the four pixels before it, in summed
 /// RGB. A planar facet rises about linearly (at most 1.85 at rest on the live
-/// look, 2.67 under ±6 px of jelly); a rounded profile climbs into the rim (at
-/// least 4.3 at rest). A flat run before the outline gives 0.
+/// look, 2.67 under ±6 px of jelly); a rounded profile climbs into the rim (the
+/// model gives about 4.3 at rest; the render measures 4.15 to 5.25, still above
+/// the gate of 3). A flat run before the outline gives 0.
 fn rim_ratios(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>) -> Vec<(&'static str, f64)> {
     let backdrop = px(pixels, 2, 2).unwrap();
     let cx = (rect.loc.x + rect.size.w / 2.) as i32;
