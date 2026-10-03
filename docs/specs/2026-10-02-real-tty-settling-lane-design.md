@@ -113,16 +113,18 @@ calls `unlock_and_destroy` and exits 0. It never authenticates; niri's
 
 **Screencast consumer.** `screencast-consumer.py` (committed in
 `material-3acc86`): a ScreenCast session on the private bus, `RecordMonitor`
-DP-1, `pipewiresrc ! videoconvert ! video/x-raw,format=RGB ! appsink`; one
+DP-1, `pipewiresrc ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink`; one
 CLOCK_MONOTONIC line per received frame, `ready <node>` on the first, and on
 SIGTERM a summary with consumer identity, node, frame count and capture
 interval. It also keeps frames, not only their times: on SIGUSR1 it writes
 the **next frame received after the signal** as raw RGB to the path named in
 a request file, with that frame's arrival time and the request time in a
 sidecar. A sample can therefore never be a frame the consumer already held.
-If niri's stream offers no CPU-mappable buffers (dmabuf with a non-linear
-modifier only), the consumer requests the linear modifier; the development
-check (§7) proves sampling works before the pilot.
+niri offers DMA-BUFs only, so the consumer imports whatever modifier niri
+fixates through GStreamer GL on headless EGL (`glupload ! glcolorconvert !
+gldownload`) and converts to RGB; a probe on 2026-10-02 imported niri's
+NVIDIA-tiled `XR24` buffers this way. The development check (§7) proves
+sampling works before the pilot.
 
 **Cleanup.** The driver owns niri, the bus, the consumer and the lock
 client; `on_exit` and the per-case reap cover all four, then VT restoration
@@ -162,8 +164,9 @@ its damage is bounded and falls outside both sampled regions: the thief is
 a separate column, never under the probe's crops. The consumer saves the
 first frame that arrives after the request, which is the frame that
 damage produced. From each sample the driver crops two regions in output
-pixels (DP-1's scale is pinned to 1), computed from the window geometry
-niri reports:
+pixels (DP-1's scale is pinned to 1), calibrated once per run from an opaque geometry probe in the same
+two-window layout (niri's IPC reports no on-screen position for tiled
+windows), as the headless lanes' `calibrate_probe_rect` does:
 
 - **client:** the probe's text rows where the client line appears;
 - **aurora:** a glass region of the probe with no text, the region the

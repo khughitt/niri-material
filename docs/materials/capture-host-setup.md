@@ -78,3 +78,17 @@ itself is ops's `display-dim` (`ops-a1715a`).
   documents the command list.
 - Runs that need an idle host start from a TTY login with the desktop
   stopped (`tasks quiet`, `--needs headless`).
+
+## Running the dedicated lane
+
+From a TTY login with the desktop stopped, in the execution worktree, with
+an identified Tracy snapshot (`niri-tracy` plus its `.identity.json`):
+
+```sh
+OUT=$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-dev-$(date +%Y%m%d)-1 \
+  CASES='drm-aurora tty-resume screencast' CAPTURE_TASK=material-f7eb0b \
+  NIRI_BIN=<snapshot>/niri-tracy DRM_OUTPUT=DP-1 DRM_MODE=3440x1440@59.999 \
+  docs/materials/scripts/optic-settling-smoke.sh pilot --lane dedicated
+```
+
+Drop `CASES` for the pilot; the matrix adds `PILOT_DIR` and uses `matrix`.
