@@ -614,8 +614,9 @@ STUBS = {
         'esac\nexit 2\n'),
     'bin/kitty': 'echo "kitty $$" >> "$STUB_DIR/pids"\nwhile [ "$1" != sh ]; do shift; done\nexec "$@"\n',
     'bin/magick': ('case "$*" in\n'
-                   '    *%@*) echo "${STUB_RECT:-1000x1200+100+100}"; exit 0 ;;\n'
-                   '    *"%w %h"*) echo 3440 1440; exit 0 ;;\n'
+                   # info: output ends without a newline, as real magick's does.
+                   '    *%@*) printf %s "${STUB_RECT:-1000x1200+100+100}"; exit 0 ;;\n'
+                   '    *"%w %h"*) printf "3440 1440"; exit 0 ;;\n'
                    'esac\nfor arg do :; done\n'
                    'case $arg in *:-) printf image ;; *) printf image > "$arg" ;; esac\n'),
     'bin/dbus-daemon': 'echo "dbus-daemon $$" >> "$STUB_DIR/pids"\nexec python3 "$STUB_DIR/serve.py" dbus-daemon "$@"\n',
@@ -939,6 +940,17 @@ class DriverCleanupTests(unittest.TestCase):
                 stderr = self.run_dedicated('screencast', **env)
                 self.assertEqual(self.returncode, 1, stderr)
                 self.assertIn(f'screencast: {message}', stderr)
+
+    def test_a_screencast_run_reaches_its_crops(self):
+        # The whole drive with matching sizes: the run gets through every
+        # sample and crop (the stub traces then fail analysis, never the driver).
+        stderr = self.run_dedicated('screencast')
+        for k in (1, 2, 3):
+            for crop in ('client', 'aurora'):
+                self.assertTrue((self.out / f'screencast/{crop}-{k}.rgb').is_file(), stderr)
+        self.assertEqual((self.out / 'screen-drm.txt').read_text(), '3440 1440\n')
+        self.assertTrue((self.out / 'screencast/observation.json').is_file(), stderr)
+        self.assertTrue((self.out / 'screencast/cast-summary.json').is_file(), stderr)
 
     def test_a_second_term_during_cleanup_still_restores_and_releases(self):
         (self.stubs / 'vt/chvt').write_text(
