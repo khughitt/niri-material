@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-77be96
 created: 2026-09-23T19:47:41Z
-updated: 2026-10-03T01:00:59Z
+updated: 2026-10-03T01:11:42Z
 started: 2026-10-03T00:33:02Z
 completed: 2026-10-03T00:38:36Z
 depends: []
@@ -42,3 +42,4 @@ Worktrees share one build.target-dir. After a build of another branch or commit 
 - 2026-10-03T00:57:04Z (material-77be96): Review round 2 fix: key() failures (ENOTDIR, EACCES, symlink loops) on another checkout's dirs now skip that checkout with a note, and on this checkout's own dirs exit 2; the fix hint is target-dir = "target" in this checkout's own config, which also overrides a parent directory's config.
 - 2026-10-03T01:00:49Z (material-77be96): review: impl round 3 — verdict: revise; findings: Important 1; reviewer: claude-code/claude-opus-5-5
 - 2026-10-03T01:00:59Z (material-77be96): Review round 3 fix: the hint, docstring and AGENTS.md now say to set both target-dir = "target" and build-dir = "target" in the checkout's own config (cargo merges config key by key, so a parent's build-dir survives a target-dir override); the test now builds a real shared parent config.
+- 2026-10-03T01:11:42Z (material-77be96): review: impl round 4 — verdict: accept; findings: Minor 2; reviewer: claude-code/claude-opus-5-5
