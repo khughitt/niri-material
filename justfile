@@ -42,11 +42,13 @@ ci_remote := "origin"
 # selector would miss committed pushes; rerunning all compositor tests costs 30s.
 push_fast_cmd := nextest_cmd + " --package niri-config --package niri-ipc"
 
-# A fresh worktree, right after `git worktree add`: the hooks, and a target dir of
-# its own (no .cargo/config.toml; see tools/target-dir-check).
+# A fresh checkout, right after `git worktree add`: the hooks, .worktrees off the
+# synced tree (work-link, when this machine has dotfiles; its own exit status when
+# present), and a cargo target dir of its own (tools/target-dir-check).
+setup_cmd := "git config core.hooksPath .githooks && if command -v work-link >/dev/null; then work-link --ensure .worktrees; fi && python3 tools/target-dir-check"
+
 setup:
-    git config core.hooksPath .githooks
-    python3 tools/target-dir-check
+    {{tt}} setup -- sh -c '{{setup_cmd}}'
 
 # Focused nextest arguments, preserved verbatim; override one_cmd for tooling tests.
 test-one +args:
