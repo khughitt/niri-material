@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-02T23:52:44Z
+updated: 2026-10-03T01:51:15Z
 started: 2026-10-02T23:52:44Z
 depends: []
 parent: material-f86183
@@ -35,4 +35,7 @@ Remaining acceptance cases tty-resume and unlock from material-2ee11e. Task 3 re
 - 2026-10-02T23:28:37Z (material-3acc86): review: plan round 3 — verdict: revise; findings: Important 1, Minor 1; reviewer: human
 - 2026-10-02T23:29:08Z (material-3acc86): plan round 3 addressed: Task 3 stages tools/fake_screencast.py; the end-to-end test also skips without PyGObject and Gio/GLib/Gst/GstVideo introspection. Extracted Task 3 tests green; every task's file list checked against its git add.
 - 2026-10-02T23:52:44Z (material-3acc86): started
+  provenance: {"harness_session":"claude-code:bf767efc-bb55-40aa-933b-17ef6962442f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T01:51:09Z (material-3acc86): Lane implemented in .worktrees/material-3acc86 (Tasks 1-6); acceptance runs in material-6bf694 (tasks quiet).
+- 2026-10-03T01:51:15Z (material-3acc86): parked (waiting on agent, dependency): Run material-6bf694 on the TTY; close with material-3acc86 in its evidence commit
   provenance: {"harness_session":"claude-code:bf767efc-bb55-40aa-933b-17ef6962442f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
