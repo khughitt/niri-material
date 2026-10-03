@@ -251,6 +251,41 @@ class RunTests(unittest.TestCase):
         self.cast([request - 1, frame, frame + 1], samples=[('damage', request, frame)])
         analyze_run(self.run)
 
+    def test_a_malformed_cast_frame_names_its_case(self):
+        self.manifest['cases'][0]['consumer'] = {}
+        self.save()
+        for line in ('x', '-5', '1.5'):
+            with self.subTest(line=line):
+                self.cast([line])
+                self.rejects(f"active-idle-resume: invalid cast frame {line!r} in cast-frames.tsv")
+
+    def test_tty_resume_needs_the_resume_edge_inside_vt_return(self):
+        # The driver's tty-resume declaration on this fixture's resume edge
+        # (trace 20 s): paused on the spare VT niri cannot redraw, so only
+        # vt-return needs a redraw. No client damage in this case.
+        self.cpu = [row for row in self.cpu if row[1] != 14 * S + S // 2]
+        self.gpu = [row for row in self.gpu if row[1] != 14 * S + S // 2]
+        self.write_tables()
+        case = self.manifest['cases'][0]
+        case['stimuli'] = [{'label': 'vt-out'}, {'label': 'vt-return', 'min_redraws': 1}]
+        case['edge_in'] = [[1, 'vt-return']]
+
+        def windows(out, back):   # trace seconds: vt-out [out, back - gap), vt-return [back, back + 1.5)
+            (out_start, out_end), back_start = out, back
+            self.observation['journal'] = [
+                {'label': 'vt-out', 'start_mono_ns': int((1000 + out_start) * S),
+                 'end_mono_ns': int((1000 + out_end) * S)},
+                {'label': 'vt-return', 'start_mono_ns': int((1000 + back_start) * S),
+                 'end_mono_ns': int((1000 + back_start + 1.5) * S)}]
+            self.save()
+
+        windows((17, 19.5), 19.5)              # the resume falls in the return
+        analyze_run(self.run)
+        windows((17.5, 20.5), 20.5)            # the resume falls in the switch out
+        self.rejects('active-idle-resume: edge 1 is not inside stimulus vt-return')
+        windows((17, 19.5), 20.5)              # the resume falls between the two
+        self.rejects('active-idle-resume: edge 1 is not inside stimulus vt-return')
+
     def test_a_redraw_between_samples_breaks_the_quiet_interval(self):
         # The settled-segment check is what keeps the gap before sample-3 quiet.
         self.cpu += [['Niri::redraw', 17 * S, 1000]]
