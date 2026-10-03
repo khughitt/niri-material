@@ -113,7 +113,7 @@ calls `unlock_and_destroy` and exits 0. It never authenticates; niri's
 
 **Screencast consumer.** `screencast-consumer.py` (committed in
 `material-3acc86`): a ScreenCast session on the private bus, `RecordMonitor`
-DP-1, `pipewiresrc ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink`; one
+DP-1, `pipewiresrc ! video/x-raw(memory:DMABuf),format=DMA_DRM ! glupload ! glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB ! appsink`; one
 CLOCK_MONOTONIC line per received frame, `ready <node>` on the first, and on
 SIGTERM a summary with consumer identity, node, frame count and capture
 interval. It also keeps frames, not only their times: on SIGUSR1 it writes
