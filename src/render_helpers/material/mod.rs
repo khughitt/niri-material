@@ -1683,6 +1683,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.,
+            tint_chroma: None,
             focus: 0.,
             beam: BeamFrame::REST,
         };
@@ -1740,6 +1741,7 @@ mod tests {
             breath: 1.,
             impulses: Default::default(),
             presence: 1.,
+            tint_chroma: Some(crate::render_helpers::signal::accent_chroma([1., 0.5, 0.])),
             focus: 0.,
             beam: BeamFrame::REST,
         };
@@ -1768,6 +1770,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.,
+            tint_chroma: None,
             focus: 0.,
             beam: BeamFrame::REST,
         };
@@ -1908,6 +1911,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.25,
+            tint_chroma: Some(crate::render_helpers::signal::accent_chroma([1., 0.5, 0.])),
             focus: 1.,
             beam: BeamFrame {
                 head: 1234.5,
@@ -1959,6 +1963,7 @@ mod tests {
             breath: 0.,
             impulses: Default::default(),
             presence: 0.5,
+            tint_chroma: Some(crate::render_helpers::signal::accent_chroma([1., 0.5, 0.])),
             focus: 0.,
             beam: BeamFrame::REST,
         };

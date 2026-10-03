@@ -106,6 +106,10 @@ pub struct SignalFrame {
     pub impulses: [ImpulseFrame; 4],
     /// Crossfaded accent presence, 0 to 1.
     pub presence: f32,
+    /// Tint chromaticity for `accent-tint` (design §5–§6); interpolated
+    /// between the crossfade's endpoints, never derived from `accent`.
+    /// `None` exactly when `accent` is.
+    pub tint_chroma: Option<[f32; 3]>,
     /// Crossfaded focus, 0 to 1.
     pub focus: f32,
     /// Beam head, cutoff and decay for this frame; `BeamFrame::REST` at rest.
@@ -118,6 +122,7 @@ pub struct FrameInputs {
     pub level: f32,
     pub accent: Option<[f32; 3]>,
     pub presence: f32,
+    pub tint_chroma: Option<[f32; 3]>,
     pub focus: f32,
     /// Beam head, cutoff and decay for this frame; `BeamFrame::REST` at rest.
     pub beam: BeamFrame,
@@ -129,6 +134,7 @@ impl FrameInputs {
             level: 0.,
             accent: None,
             presence: 0.,
+            tint_chroma: None,
             focus: 0.,
             beam: BeamFrame::REST,
         }
@@ -353,6 +359,7 @@ pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs)
         breath: breath(e.motion, now, seed),
         impulses,
         presence: inputs.presence,
+        tint_chroma: inputs.tint_chroma,
         focus: inputs.focus,
         beam: inputs.beam,
     }
@@ -746,6 +753,7 @@ mod tests {
                 level: 0.75,
                 accent: Some([0.1, 0.2, 0.3]),
                 presence: 1.,
+                tint_chroma: Some(accent_chroma([0.1, 0.2, 0.3])),
                 ..FrameInputs::quiet()
             },
         );
@@ -773,6 +781,7 @@ mod tests {
                 ImpulseFrame::default(),
             ],
             presence: 1. / 512.,
+            tint_chroma: Some(accent_chroma([1. / 512., 1. / 256., 0.])),
             focus: 1. / 256.,
             beam: BeamFrame {
                 head: 0.25,
@@ -890,6 +899,7 @@ mod tests {
             FrameInputs {
                 accent: Some([1., 0.5, 0.]),
                 presence: 0.5,
+                tint_chroma: Some(accent_chroma([1., 0.5, 0.])),
                 ..FrameInputs::quiet()
             },
         );

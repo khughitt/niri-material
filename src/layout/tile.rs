@@ -328,6 +328,10 @@ struct SignalCrossfade {
     accent_to: Option<[f32; 3]>,
     presence_from: f32,
     presence_to: f32,
+    /// Tint chromaticity at each end (`accent_chroma`), held like the
+    /// accent when one side has none (accent-tint design §6).
+    tint_from: Option<[f32; 3]>,
+    tint_to: Option<[f32; 3]>,
 }
 
 struct MaterialDynamics {
@@ -340,33 +344,68 @@ struct MaterialDynamics {
     optics: Vec<smithay::backend::renderer::gles::Uniform<'static>>,
 }
 
+/// One point of the signal crossfade.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CrossfadePoint {
+    level: f32,
+    /// Straight linear accent; `presence` says how much of it shows.
+    accent: Option<[f32; 3]>,
+    presence: f32,
+    /// Interpolated between the endpoints, never derived from `accent`;
+    /// `None` exactly when `accent` is.
+    tint_chroma: Option<[f32; 3]>,
+}
+
+impl CrossfadePoint {
+    /// A settled target: presence 1 with an accent, else 0.
+    fn settled(level: f32, accent: Option<[f32; 3]>) -> Self {
+        Self {
+            level,
+            accent,
+            presence: if accent.is_some() { 1. } else { 0. },
+            tint_chroma: accent.map(crate::render_helpers::signal::accent_chroma),
+        }
+    }
+}
+
+/// Linear interpolation that holds the present side when the other is absent.
+fn lerp_held(from: Option<[f32; 3]>, to: Option<[f32; 3]>, t: f32) -> Option<[f32; 3]> {
+    match (from, to) {
+        (Some(a), Some(b)) => Some([0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)),
+        (None, Some(b)) => Some(b),
+        (Some(a), None) => Some(a),
+        (None, None) => None,
+    }
+}
+
 impl SignalCrossfade {
-    /// (level, straight accent color, presence) at the current clock.
-    fn current(&self) -> (f32, Option<[f32; 3]>, f32) {
-        let t = self.anim.clamped_value() as f32;
-        let level = self.level_from + (self.level_to - self.level_from) * t;
-        let accent = match (self.accent_from, self.accent_to) {
-            (Some(a), Some(b)) => Some([0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t)),
-            (None, Some(b)) => Some(b),
-            (Some(a), None) => Some(a),
-            (None, None) => None,
-        };
-        let presence = self.presence_from + (self.presence_to - self.presence_from) * t;
-        (level, accent, presence)
+    /// The crossfade at the current clock.
+    fn current(&self) -> CrossfadePoint {
+        self.at(self.anim.clamped_value() as f32)
+    }
+
+    /// The crossfade at fraction `t`.
+    fn at(&self, t: f32) -> CrossfadePoint {
+        CrossfadePoint {
+            level: self.level_from + (self.level_to - self.level_from) * t,
+            accent: lerp_held(self.accent_from, self.accent_to, t),
+            presence: self.presence_from + (self.presence_to - self.presence_from) * t,
+            tint_chroma: lerp_held(self.tint_from, self.tint_to, t),
+        }
     }
 }
 
 /// Where a new signal crossfade starts: the current point of a running
 /// one (so an interrupted fade continues from where it is), else the last
-/// settled target with presence 1 when it had an accent, else quiet.
+/// settled target, else quiet.
 fn crossfade_origin(
     running: Option<&SignalCrossfade>,
     settled: Option<(f32, Option<[f32; 3]>)>,
-) -> (f32, Option<[f32; 3]>, f32) {
+) -> CrossfadePoint {
     running
         .map(SignalCrossfade::current)
-        .or(settled.map(|(level, accent)| (level, accent, if accent.is_some() { 1. } else { 0. })))
-        .unwrap_or((0., None, 0.))
+        .or(settled.map(|(level, accent)| CrossfadePoint::settled(level, accent)))
+        .unwrap_or(CrossfadePoint::settled(0., None))
 }
 
 #[derive(Debug)]
@@ -611,8 +650,8 @@ impl<W: LayoutElement> Tile<W> {
         let target = (level_value(eff.level), eff.accent.map(color_linear));
 
         if self.signal_target != Some(target) {
-            let (from_level, from_accent, from_presence) =
-                crossfade_origin(self.signal_crossfade.as_ref(), self.signal_target);
+            let from = crossfade_origin(self.signal_crossfade.as_ref(), self.signal_target);
+            let to = CrossfadePoint::settled(target.0, target.1);
             self.signal_crossfade = Some(SignalCrossfade {
                 anim: Animation::new(
                     self.clock.clone(),
@@ -621,12 +660,14 @@ impl<W: LayoutElement> Tile<W> {
                     0.,
                     self.options.animations.material_signal.0,
                 ),
-                level_from: from_level,
-                level_to: target.0,
-                accent_from: from_accent,
-                accent_to: target.1,
-                presence_from: from_presence,
-                presence_to: if target.1.is_some() { 1. } else { 0. },
+                level_from: from.level,
+                level_to: to.level,
+                accent_from: from.accent,
+                accent_to: to.accent,
+                presence_from: from.presence,
+                presence_to: to.presence,
+                tint_from: from.tint_chroma,
+                tint_to: to.tint_chroma,
             });
             self.signal_target = Some(target);
         }
@@ -644,19 +685,20 @@ impl<W: LayoutElement> Tile<W> {
             return None;
         }
 
-        let (level, accent, presence) = self
+        let point = self
             .signal_crossfade
             .as_ref()
             .map(SignalCrossfade::current)
-            .unwrap_or((target.0, target.1, if target.1.is_some() { 1. } else { 0. }));
+            .unwrap_or(CrossfadePoint::settled(target.0, target.1));
         // The beam's frame values need the geometry; `material_dynamics`
         // fills them on its local copy of these inputs.
         Some((
             eff,
             FrameInputs {
-                level,
-                accent,
-                presence,
+                level: point.level,
+                accent: point.accent,
+                presence: point.presence,
+                tint_chroma: point.tint_chroma,
                 focus,
                 beam: BeamFrame::REST,
             },
@@ -2859,8 +2901,12 @@ mod tests {
             accent_to: Some([1., 0.5, 0.]),
             presence_from: 0.,
             presence_to: 1.,
+            tint_from: None,
+            tint_to: Some(crate::render_helpers::signal::accent_chroma([1., 0.5, 0.])),
         };
-        let (_, accent, presence) = arriving.current();
+        let CrossfadePoint {
+            accent, presence, ..
+        } = arriving.current();
         assert_eq!(accent, Some([1., 0.5, 0.]));
         assert!((presence - t).abs() < 1e-6);
 
@@ -2870,9 +2916,13 @@ mod tests {
             accent_to: None,
             presence_from: 1.,
             presence_to: 0.,
+            tint_from: arriving.tint_to,
+            tint_to: None,
             ..arriving
         };
-        let (_, accent, presence) = expiring.current();
+        let CrossfadePoint {
+            accent, presence, ..
+        } = expiring.current();
         assert_eq!(accent, Some([1., 0.5, 0.]));
         assert!((presence - (1. - t)).abs() < 1e-6);
 
@@ -2882,9 +2932,13 @@ mod tests {
             accent_to: Some([0., 0., 1.]),
             presence_from: 1.,
             presence_to: 1.,
+            tint_from: Some(crate::render_helpers::signal::accent_chroma([1., 0., 0.])),
+            tint_to: Some(crate::render_helpers::signal::accent_chroma([0., 0., 1.])),
             ..expiring
         };
-        let (_, accent, presence) = changing.current();
+        let CrossfadePoint {
+            accent, presence, ..
+        } = changing.current();
         assert_eq!(accent, Some([1. - t, 0., t]));
         assert_eq!(presence, 1.);
 
@@ -2894,10 +2948,84 @@ mod tests {
         assert_eq!(origin, changing.current());
         assert_eq!(
             crossfade_origin(None, Some((0.5, Some([1., 0., 0.])))),
-            (0.5, Some([1., 0., 0.]), 1.),
+            CrossfadePoint::settled(0.5, Some([1., 0., 0.])),
             "settled accent has presence 1"
         );
-        assert_eq!(crossfade_origin(None, None), (0., None, 0.));
+        assert_eq!(
+            crossfade_origin(None, Some((0.5, Some([1., 0., 0.])))).presence,
+            1.
+        );
+        assert_eq!(
+            crossfade_origin(None, None),
+            CrossfadePoint::settled(0., None)
+        );
+    }
+
+    #[test]
+    fn tint_chroma_crossfades_between_endpoints_through_black() {
+        use crate::animation::{Animation, Clock};
+        use crate::render_helpers::material::tint::accent_tint;
+        use crate::render_helpers::signal::{accent_chroma, color_linear};
+
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let config = niri_config::animations::MaterialSignalAnim::default().0;
+        let black = [0.; 3];
+        let orange = color_linear(niri_config::Color::from_rgba8_unpremul(
+            0xff, 0x66, 0x00, 0xff,
+        ));
+        let k_orange = accent_chroma(orange);
+        let fade = |from: [f32; 3], to: [f32; 3]| SignalCrossfade {
+            anim: Animation::new(clock.clone(), 0., 1., 0., config),
+            level_from: 0.,
+            level_to: 0.,
+            accent_from: Some(from),
+            accent_to: Some(to),
+            presence_from: 1.,
+            presence_to: 1.,
+            tint_from: Some(accent_chroma(from)),
+            tint_to: Some(accent_chroma(to)),
+        };
+        let lerp = |a: [f32; 3], b: [f32; 3], t: f32| [0, 1, 2].map(|i| a[i] + (b[i] - a[i]) * t);
+        let up = fade(black, orange);
+        let down = fade(orange, black);
+
+        for t in [0., 1e-5, 0.25, 0.5, 0.75, 1.] {
+            assert_eq!(
+                up.at(t).tint_chroma,
+                Some(lerp([1.; 3], k_orange, t)),
+                "up {t}"
+            );
+            assert_eq!(
+                down.at(t).tint_chroma,
+                Some(lerp(k_orange, [1.; 3], t)),
+                "down {t}"
+            );
+        }
+
+        // Why the chroma is interpolated, not derived: the interpolated
+        // accent from black is `t × orange`, whose chroma is already orange's.
+        let derived = accent_chroma(up.at(1e-5).accent.unwrap());
+        assert!((0..3).all(|i| (derived[i] - k_orange[i]).abs() < 1e-3));
+
+        // The uploaded coefficient has no step at either end (spec §8).
+        let base = niri_config::Color::from_rgba8_unpremul(0x0d, 0x1d, 0x1e, 0xff);
+        let upload = |k: Option<[f32; 3]>| accent_tint(base, 31.2, 11., k, 1.);
+        for fade in [&up, &down] {
+            for (a, b) in [(0., 1e-5), (1. - 1e-5, 1.)] {
+                let (x, y) = (
+                    upload(fade.at(a).tint_chroma),
+                    upload(fade.at(b).tint_chroma),
+                );
+                let step = (0..3).map(|i| (x[i] - y[i]).abs()).fold(0., f32::max);
+                assert!(step < 1e-2, "step {step} between {a} and {b}");
+            }
+        }
+
+        // Interrupted mid-fade: the next fade starts from the running chroma.
+        clock.set_unadjusted(Duration::from_millis(200));
+        let origin = crossfade_origin(Some(&up), Some((0., Some(orange))));
+        assert_eq!(origin.tint_chroma, up.current().tint_chroma);
+        assert_ne!(origin.tint_chroma, Some(k_orange), "not the settled target");
     }
 
     /// A tile carrying the material "frost" with the given glass, whose only
