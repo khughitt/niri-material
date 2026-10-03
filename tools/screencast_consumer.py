@@ -68,6 +68,9 @@ def wait_for(subscribe, timeout_s):
 def packed_rgb(data, width, height, stride):
     """RGB rows without GStreamer's row padding."""
     row = width * 3
+    needed = (height - 1) * stride + row
+    if len(data) < needed:
+        raise ValueError(f'frame buffer holds {len(data)} bytes, {width}x{height} at stride {stride} needs {needed}')
     if stride == row:
         return bytes(data[:row * height])
     return b''.join(bytes(data[y * stride:y * stride + row]) for y in range(height))
@@ -147,7 +150,21 @@ def main():
     times = []
     sampler = Sampler()
 
+    failures = []
+
+    def fail(error):
+        sys.stderr.write(f'screencast-consumer: {error}\n')
+        failures.append(str(error))
+        loop.quit()
+
     def on_sample(appsink):
+        try:
+            return handle_sample(appsink)
+        except Exception as error:
+            fail(error)
+            return Gst.FlowReturn.ERROR
+
+    def handle_sample(appsink):
         sample = appsink.emit('pull-sample')
         now = time.monotonic_ns()
         times.append(now)
@@ -161,7 +178,9 @@ def main():
                 loop.quit()
                 return Gst.FlowReturn.ERROR
             try:
-                data = packed_rgb(mapped.data, info.width, info.height, info.stride[0])
+                meta = GstVideo.buffer_get_video_meta(buffer)
+                stride = meta.stride[0] if meta is not None else info.stride[0]
+                data = packed_rgb(mapped.data, info.width, info.height, stride)
             finally:
                 buffer.unmap(mapped)
             sampler.offer(data, info.width, info.height, now)
@@ -169,11 +188,14 @@ def main():
 
     def on_error(_bus, message):
         error, debug = message.parse_error()
-        sys.stderr.write(f'screencast-consumer: {error.message} ({debug})\n')
-        loop.quit()
+        fail(f'{error.message} ({debug})')
 
     def on_request():
-        sampler.request(Path(request_file).read_text().strip(), time.monotonic_ns())
+        try:
+            sampler.request(Path(request_file).read_text().strip(), time.monotonic_ns())
+        except Exception as error:
+            fail(error)
+            return GLib.SOURCE_REMOVE
         return GLib.SOURCE_CONTINUE
 
     stopping = []
@@ -207,6 +229,8 @@ def main():
         stopped_by_signal=bool(stopping),
     )
     Path(summary_path).write_text(json.dumps(summary, indent=2) + '\n')
+    if failures:
+        sys.exit(1)
     if not stopping:
         sys.exit('screencast-consumer: the pipeline stopped before a stop signal')
 

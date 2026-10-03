@@ -138,11 +138,48 @@ class ConsumerEndToEndTests(unittest.TestCase):
         self.assertLess(sample['request_mono_ns'], sample['frame_mono_ns'])
 
 
+@unittest.skipUnless(shutil.which('dbus-daemon') and shutil.which('gst-launch-1.0') and consumer_bindings(),
+                     'needs dbus-daemon, GStreamer and PyGObject with Gio, Gst and GstVideo')
+class ConsumerFailureTests(unittest.TestCase):
+    def test_unreadable_request_file_exits_nonzero(self):
+        tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, tmp)
+        bus = subprocess.Popen(['dbus-daemon', '--session', '--nofork', f'--address=unix:path={tmp}/bus'])
+        self.addCleanup(lambda: (bus.kill(), bus.wait()))
+        for _ in range(50):
+            if (tmp / 'bus').exists(): break
+            time.sleep(0.1)
+        env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS=f'unix:path={tmp}/bus',
+                   SCREENCAST_CONSUMER_PIPELINE='videotestsrc is-live=true ! video/x-raw,width=6,height=4 '
+                   '! videoconvert ! video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false')
+        service = subprocess.Popen([sys.executable, str(ROOT / 'tools/fake_screencast.py'), '7'], env=env,
+                                   stdout=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: (service.kill(), service.wait()))
+        time.sleep(0.5)
+        consumer = subprocess.Popen([sys.executable, str(ROOT / 'tools/screencast_consumer.py'), 'DP-1',
+                                     str(tmp / 'frames'), str(tmp / 'summary.json'), str(tmp / 'missing')],
+                                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: consumer.poll() is None and consumer.kill())
+        self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
+        consumer.send_signal(signal.SIGUSR1)
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertNotEqual(consumer.returncode, 0)
+        self.assertIn('screencast-consumer:', stderr)
+        self.assertIn('missing', stderr)
+
+
 class PackedRgbTests(unittest.TestCase):
     def test_strips_row_padding(self):
         # 2x2 RGB, stride 8: two pad bytes per row.
         data = bytes([1, 2, 3, 4, 5, 6, 0, 0, 7, 8, 9, 10, 11, 12, 0, 0])
         self.assertEqual(packed_rgb(data, 2, 2, 8), bytes(range(1, 13)))
+
+    def test_short_buffer_raises(self):
+        # Last row needs only its 6 pixel bytes, so 14 is short and 14+... below is too.
+        with self.assertRaises(ValueError):
+            packed_rgb(bytes(13), 2, 2, 8)
+        with self.assertRaises(ValueError):
+            packed_rgb(bytes(11), 2, 2, 6)
+        self.assertEqual(len(packed_rgb(bytes(14), 2, 2, 8)), 12)
 
     def test_packed_input_is_unchanged(self):
         data = bytes(range(12))
