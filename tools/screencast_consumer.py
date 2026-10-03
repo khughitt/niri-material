@@ -139,6 +139,16 @@ def main():
 
     (session,) = call('/org/gnome/Mutter/ScreenCast', 'org.gnome.Mutter.ScreenCast',
                       'CreateSession', GLib.Variant('(a{sv})', ({},)), '(o)')
+
+    # A stop before the GLib signal sources below exist would take the
+    # default action and skip the finally: exit through it instead, nonzero,
+    # since no summary is written. The GLib sources replace these handlers.
+    def early_stop(number, _frame):
+        raise SystemExit(f'screencast-consumer: stopped by {signal.Signals(number).name} '
+                         'before the cast started; no summary written')
+
+    signal.signal(signal.SIGTERM, early_stop)
+    signal.signal(signal.SIGINT, early_stop)
     # The session exists from here on: every exit stops it, and a failing
     # Stop never replaces the error or exit status already on its way.
     try:
