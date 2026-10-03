@@ -6,9 +6,9 @@ priority: 2
 size: s
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-c1330b
 created: 2026-09-29T22:31:42Z
-updated: 2026-10-03T00:33:02Z
+updated: 2026-10-03T00:35:50Z
 started: 2026-10-03T00:33:02Z
 depends: []
 parent: material-b5cbd6
@@ -26,4 +26,6 @@ Ideas it wakes: On completion, run tasks note material-6cca0a with the finding, 
 ## Notes
 
 - 2026-10-03T00:33:02Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T00:35:50Z (material-c1330b): resumed
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
