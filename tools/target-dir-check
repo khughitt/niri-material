@@ -15,7 +15,8 @@ a target dir and a build dir of its own. Registry crates are the same in every c
 and were never at risk; the cost of separate dirs is one full build per worktree.
 (cargo's unstable -Z checksum-freshness would tell the trees apart by content; a
 `build.build-dir` containing `{workspace-path-hash}` separates intermediates but not
-the shared final binaries.)
+the shared final binaries.) A checkout whose own .cargo/config.toml says
+`target-dir = "target"` is separate whatever a parent directory's config says.
 
 The main checkout keeps the dirs it has: a linked worktree sharing either dir with any
 other checkout fails here, while the main checkout only lists the worktrees that share
@@ -25,8 +26,8 @@ nothing refuses them. Each checkout's dirs are the ones cargo itself resolves th
 any parent directory, CARGO_HOME and the CARGO_* environment all count.
 
 Another checkout is skipped, with a note on stderr, when git lists it as prunable or
-bare, when its directory is missing, or when cargo cannot read its manifest: a tree
-that cannot build writes nothing. This checkout's own failures are fatal.
+bare, when its directory is missing, or when cargo cannot read its manifest or stat its
+dirs: a tree that cannot build writes nothing. This checkout's own failures are fatal.
 
 Standard library only. Exits 1 when this checkout shares, 2 when it cannot run.
 """
@@ -82,16 +83,19 @@ def key(path):
         stat = path.stat()
     except FileNotFoundError:
         return str(path.resolve())
+    except (OSError, RuntimeError) as error:
+        raise Unreadable(f"{path}: {error}") from error
     return (stat.st_dev, stat.st_ino)
 
 
 def build_dirs(checkout):
+    """{identity: path} of the target and build dirs cargo resolves in `checkout`."""
     metadata = json.loads(run(checkout, CARGO, "metadata", "--no-deps", "--format-version",
                               "1", "--offline"))
     dirs = {pathlib.Path(metadata["target_directory"])}
     if metadata.get("build_directory"):
         dirs.add(pathlib.Path(metadata["build_directory"]))
-    return dirs
+    return {key(path): path for path in dirs}
 
 
 def main():
@@ -102,7 +106,6 @@ def main():
     except Unreadable as error:
         note(str(error))
         return 2
-    mine_keys = {key(path): path for path in mine}
     sharing = []
     for checkout in checkouts:
         if checkout == here:
@@ -112,7 +115,7 @@ def main():
         except Unreadable as error:
             note(f"skipping {checkout}: {error}")
             continue
-        shared = sorted(str(mine_keys[k]) for k in {key(path) for path in theirs} & mine_keys.keys())
+        shared = sorted(str(mine[k]) for k in theirs.keys() & mine.keys())
         if shared:
             sharing.append((checkout, shared))
     if not sharing:
@@ -123,10 +126,9 @@ def main():
              f"own check once it carries tools/target-dir-check:\n{names}")
         return 0
     env = [name for name in ENV if os.environ.get(name)]
-    fix = ("remove build.target-dir and build.build-dir from the cargo config that sets "
-           "them (this checkout's .cargo/config.toml, a parent directory's, or "
-           "$CARGO_HOME/config.toml) so cargo builds into "
-           f"{here / 'target'}")
+    fix = ("write `[build]` `target-dir = \"target\"` into this checkout's own "
+           ".cargo/config.toml, with no build-dir, so cargo builds into "
+           f"{here / 'target'} whatever a parent directory's or $CARGO_HOME's config says")
     if env:
         fix = (f"unset {' and '.join(env)}, which overrides every checkout's cargo config, "
                f"then rerun")
