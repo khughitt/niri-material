@@ -156,6 +156,23 @@ pub fn color_linear(c: Color) -> [f32; 3] {
     [lin(c.r), lin(c.g), lin(c.b)]
 }
 
+/// Linear-light luminance, Rec. 709 weights.
+pub fn luminance(c: [f32; 3]) -> f32 {
+    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
+/// The tint chromaticity of a settled accent (accent-tint design §5): the
+/// straight linear accent scaled to unit luminance, or neutral for black.
+/// It carries hue and saturation only, never brightness.
+pub fn accent_chroma(accent: [f32; 3]) -> [f32; 3] {
+    let y = luminance(accent);
+    if y < 1e-6 {
+        [1.; 3]
+    } else {
+        accent.map(|v| v / y)
+    }
+}
+
 pub fn envelope(age: Duration) -> f32 {
     if age >= IMPULSE_LIFETIME {
         return 0.;
@@ -413,6 +430,33 @@ mod tests {
 
     fn ms(v: u64) -> Duration {
         Duration::from_millis(v)
+    }
+
+    fn hex_linear(r: u8, g: u8, b: u8) -> [f32; 3] {
+        color_linear(niri_config::Color::from_rgba8_unpremul(r, g, b, 0xff))
+    }
+
+    #[test]
+    fn accent_chroma_has_unit_luminance_and_ignores_brightness() {
+        let orange = accent_chroma(hex_linear(0xff, 0x66, 0x00));
+        assert!((luminance(orange) - 1.).abs() < 1e-6, "{orange:?}");
+
+        // A near-black colored accent tints as strongly as a bright one.
+        let red = accent_chroma(hex_linear(0xff, 0x00, 0x00));
+        let dark_red = accent_chroma(hex_linear(0x03, 0x00, 0x00));
+        for i in 0..3 {
+            assert!(
+                (red[i] - dark_red[i]).abs() < 1e-4,
+                "{red:?} vs {dark_red:?}"
+            );
+        }
+
+        // Black and any neutral accent give the neutral chroma.
+        assert_eq!(accent_chroma([0.; 3]), [1.; 3]);
+        let gray = accent_chroma(hex_linear(0x80, 0x80, 0x80));
+        for v in gray {
+            assert!((v - 1.).abs() < 1e-5, "{gray:?}");
+        }
     }
 
     fn folded(motion: M, impulses: Vec<Impulse>) -> Folded {
