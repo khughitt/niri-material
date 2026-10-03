@@ -5,9 +5,9 @@ status: todo
 priority: 1
 complexity: high
 created: 2026-09-11T23:34:15Z
-updated: 2026-09-16T12:00:25Z
+updated: 2026-10-02T23:47:23Z
 depends: []
-tags: [quick-add, performance]
+tags: [quick-add, performance, lane]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
 ---
 
@@ -22,3 +22,5 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 ## Notes
 
 - 2026-09-12T19:24:30Z (materials-26.04): Complexity high: The goal still includes an unresolved per-element cost model and exploratory visibility, settling, and visual-cost trade-offs; the landed capture tooling supplies measurement infrastructure only.
+- 2026-10-02T23:08:32Z (materials-26.04): workstreams: now a lane (tag lane); scope unchanged; brief: docs/notes/2026-10-02-workstreams-brief.md
+- 2026-10-02T23:47:23Z (materials-26.04): workstreams: first milestone: remaining settle lifecycle evidence (material-f86183 children), then a bounded cost pilot under material-31074f. material-233295 needs no quiet host.

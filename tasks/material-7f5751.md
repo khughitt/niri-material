@@ -4,8 +4,9 @@ title: "Glue terminal content into the glass: shared film, content depth, halati
 status: idea
 priority: 2
 created: 2026-09-30T23:27:46Z
-updated: 2026-09-30T23:27:51Z
+updated: 2026-10-02T23:07:57Z
 depends: [material-be611b]
+parent: material-6062fd
 tags: [rendering, material]
 agent: claude-code/claude-opus-5-5
 ---

@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-196 paths differ: 47 class B (seam), 127 class A (fork-only), 22 class C (scaffolding).
+218 paths differ: 48 class B (seam), 145 class A (fork-only), 25 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -56,7 +56,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.githooks/post-commit` | C | A | +3/-0 |
 | `.githooks/post-merge` | C | A | +3/-0 |
 | `.githooks/pre-commit` | C | A | +24/-0 |
-| `.githooks/pre-push` | C | A | +64/-0 |
+| `.githooks/pre-push` | C | A | +67/-0 |
 | `.github/FUNDING.yml` | B | D | +0/-1 |
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
@@ -68,9 +68,9 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
-| `justfile` | C | A | +91/-0 |
+| `justfile` | C | A | +95/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1354/-0 |
+| `niri-config/src/lib.rs` | B | M | +1422/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -80,6 +80,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `niri-visual-tests/src/test_window.rs` | B | M | +5/-0 |
 | `packaging/arch/.gitignore` | C | A | +6/-0 |
 | `packaging/arch/PKGBUILD` | C | A | +96/-0 |
+| `src/animation/clock.rs` | B | M | +95/-0 |
 | `src/backend/tty.rs` | B | M | +1/-0 |
 | `src/backend/winit.rs` | B | M | +1/-0 |
 | `src/cli.rs` | B | M | +41/-0 |
@@ -89,27 +90,28 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
 | `src/layout/floating.rs` | B | M | +16/-5 |
-| `src/layout/mod.rs` | B | M | +85/-9 |
+| `src/layout/mod.rs` | B | M | +104/-9 |
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
-| `src/layout/tests.rs` | B | M | +117/-4 |
-| `src/layout/tile.rs` | B | M | +2295/-78 |
+| `src/layout/tests.rs` | B | M | +304/-4 |
+| `src/layout/tile.rs` | B | M | +2444/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
-| `src/niri.rs` | B | M | +288/-0 |
+| `src/niri.rs` | B | M | +293/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
 | `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
 | `src/render_helpers/mod.rs` | B | M | +27/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +175/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +177/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/client.rs` | B | M | +48/-0 |
-| `src/tests/mod.rs` | B | M | +3/-0 |
+| `src/tests/client.rs` | B | M | +105/-0 |
+| `src/tests/mod.rs` | B | M | +6/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +892/-0 |
-| `tools/ops-check` | C | A | +260/-0 |
+| `tools/ops-check` | C | A | +264/-0 |
+| `tools/optic_settling.py` | C | A | +478/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
@@ -117,10 +119,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +111/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +635/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
+| `tools/test_optic_settling.py` | C | A | +577/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
-| `tools/test_upstream_report.py` | C | A | +864/-0 |
-| `tools/tt` | C | A | +276/-0 |
-| `tools/upstream-report` | C | A | +689/-0 |
+| `tools/test_upstream_report.py` | C | A | +946/-0 |
+| `tools/test_vdrag.py` | C | A | +54/-0 |
+| `tools/tt` | C | A | +297/-0 |
+| `tools/upstream-report` | C | A | +736/-0 |
 
 Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can. Task records under `tasks/` are not counted.
 <!-- END GENERATED: local -->

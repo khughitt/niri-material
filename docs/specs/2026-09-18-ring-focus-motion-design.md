@@ -62,6 +62,9 @@ Settled with the owner during design:
   Default 30 000; `0` disables. Reusing `cursor hide-after-inactive-ms` or the
   client idle-notify threshold was rejected as the wrong policy or
   nondeterministic.
+  Sustained optic settling now shares this threshold: Aurora holds its logical
+  phase while idle and resumes from it, while attention retains the absolute
+  clock behavior specified here.
 - **`ring-drift-hz` is retired; `ring-sweep-ms` replaces it; the sweep runs on
   the animation loop.** The crossfade already redraws every frame on focus
   gain (400 ms by default, the `material-signal` easing); the lap rides the
