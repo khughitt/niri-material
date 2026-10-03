@@ -1,6 +1,6 @@
 # Accent tint of the glass attenuation color
 
-**Status:** draft for spec review round 3 (round 1: revise, density moved to
+**Status:** accepted in spec review round 3 (round 1: revise, density moved to
 the face transmittance; round 2: revise, tint chromaticity crossfades between
 endpoints, interior-light and colored-backdrop effects restated).
 **Task:** `material-3bdffc`; wakes `material-6f45a0` after design and plan review.
