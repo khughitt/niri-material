@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from tools.screencast_consumer import PIPELINE, Sampler, packed_rgb, wait_for
@@ -42,6 +43,28 @@ class SamplerTests(unittest.TestCase):
         sampler.request(self.target, 1)
         with self.assertRaises(RuntimeError):
             sampler.request(self.target.with_name('sample-2.raw'), 2)
+
+    def test_a_failed_armed_write_leaves_nothing_pending(self):
+        sampler = Sampler()
+        with self.assertRaises(OSError):
+            sampler.request(self.target.parent / 'missing' / 'sample.raw', 1)
+        self.assertIsNone(sampler.pending)
+
+    def test_samples_are_written_atomically_raw_first_json_last(self):
+        replaced = []
+        real_replace = os.replace
+        def record(source, destination):
+            self.assertNotEqual(Path(source), Path(destination))   # via a temp file
+            self.assertEqual(Path(source).parent, Path(destination).parent)
+            replaced.append(Path(destination).name)
+            real_replace(source, destination)
+        sampler = Sampler()
+        sampler.request(self.target, 1)
+        with mock.patch('os.replace', record):
+            sampler.offer(b'new', 1, 1, 2)
+        self.assertEqual(replaced, ['sample-1.raw', 'sample-1.raw.json'])
+        self.assertEqual(sorted(p.name for p in self.target.parent.iterdir()),
+                         ['sample-1.raw', 'sample-1.raw.armed', 'sample-1.raw.json'])
 
     def test_nothing_is_saved_without_a_request(self):
         self.assertFalse(Sampler().offer(b'frame', 1, 1, 5))
@@ -98,28 +121,63 @@ def consumer_bindings():
     return True
 
 
-@unittest.skipUnless(shutil.which('dbus-daemon') and shutil.which('gst-launch-1.0') and consumer_bindings(),
-                     'needs dbus-daemon, GStreamer and PyGObject with Gio, Gst and GstVideo')
-class ConsumerEndToEndTests(unittest.TestCase):
-    def test_startup_sampling_and_summary(self):
-        tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, tmp)
-        bus = subprocess.Popen(['dbus-daemon', '--session', '--nofork', f'--address=unix:path={tmp}/bus'])
+TEST_PIPELINE = ('videotestsrc is-live=true ! video/x-raw,width=6,height=4 '
+                 '! videoconvert ! video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false')
+CAN_RUN = (shutil.which('dbus-daemon') and shutil.which('gst-launch-1.0') and consumer_bindings())
+
+
+@unittest.skipUnless(CAN_RUN, 'needs dbus-daemon, GStreamer and PyGObject with Gio, Gst and GstVideo')
+class ConsumerHarness(unittest.TestCase):
+    """A private bus, the fake ScreenCast service (ready once it owns its bus
+    name) and a way to run the consumer against them. Every pipe is closed."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        bus = subprocess.Popen(['dbus-daemon', '--session', '--nofork', f'--address=unix:path={self.tmp}/bus'])
         self.addCleanup(lambda: (bus.kill(), bus.wait()))
         for _ in range(50):
-            if (tmp / 'bus').exists(): break
+            if (self.tmp / 'bus').exists(): break
             time.sleep(0.1)
-        env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS=f'unix:path={tmp}/bus',
-                   SCREENCAST_CONSUMER_PIPELINE='videotestsrc is-live=true ! video/x-raw,width=6,height=4 '
-                   '! videoconvert ! video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false')
-        service = subprocess.Popen([sys.executable, str(ROOT / 'tools/fake_screencast.py'), '7'], env=env,
-                                   stdout=subprocess.PIPE, text=True)
-        self.addCleanup(lambda: (service.kill(), service.wait()))
-        time.sleep(0.5)
-        request = tmp / 'request'; target = tmp / 'sample-1.raw'
+        self.env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS=f'unix:path={self.tmp}/bus',
+                        SCREENCAST_CONSUMER_PIPELINE=TEST_PIPELINE)
+        self.service = subprocess.Popen([sys.executable, str(ROOT / 'tools/fake_screencast.py'), '7'],
+                                        env=self.env, stdout=subprocess.PIPE, text=True)
+        self.addCleanup(self.stop_service)
+        self.assertEqual(self.service.stdout.readline().strip(), 'owned')
+
+    def stop_service(self):
+        self.service.kill()
+        self.service.wait()
+        self.service.stdout.close()
+
+    def service_calls(self):
+        """The methods the fake service saw, once it is stopped."""
+        self.service.kill()
+        calls, _ = self.service.communicate()
+        return calls.split()
+
+    def start_consumer(self, request=None, pipeline=None):
+        env = dict(self.env, **({'SCREENCAST_CONSUMER_PIPELINE': pipeline} if pipeline else {}))
         consumer = subprocess.Popen([sys.executable, str(ROOT / 'tools/screencast_consumer.py'), 'DP-1',
-                                     str(tmp / 'frames'), str(tmp / 'summary.json'), str(request)],
+                                     str(self.tmp / 'frames'), str(self.tmp / 'summary.json'),
+                                     str(request or self.tmp / 'request')],
                                     env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.addCleanup(lambda: consumer.poll() is None and consumer.kill())
+        def close():
+            if consumer.poll() is None:
+                consumer.kill()
+            consumer.wait()
+            consumer.stdout.close()
+            consumer.stderr.close()
+        self.addCleanup(close)
+        return consumer
+
+
+class ConsumerEndToEndTests(ConsumerHarness):
+    def test_startup_sampling_and_summary(self):
+        tmp = self.tmp
+        request = tmp / 'request'; target = tmp / 'sample-1.raw'
+        consumer = self.start_consumer()
         self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
         request.write_text(f'{target}\n')
         consumer.send_signal(signal.SIGUSR1)
@@ -136,35 +194,46 @@ class ConsumerEndToEndTests(unittest.TestCase):
         self.assertEqual((sample['width'], sample['height']), (6, 4))
         self.assertEqual(len(target.read_bytes()), 6 * 4 * 3)
         self.assertLess(sample['request_mono_ns'], sample['frame_mono_ns'])
+        self.assertEqual(self.service_calls()[-1], 'Stop')
 
 
-@unittest.skipUnless(shutil.which('dbus-daemon') and shutil.which('gst-launch-1.0') and consumer_bindings(),
-                     'needs dbus-daemon, GStreamer and PyGObject with Gio, Gst and GstVideo')
-class ConsumerFailureTests(unittest.TestCase):
+class ConsumerFailureTests(ConsumerHarness):
     def test_unreadable_request_file_exits_nonzero(self):
-        tmp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, tmp)
-        bus = subprocess.Popen(['dbus-daemon', '--session', '--nofork', f'--address=unix:path={tmp}/bus'])
-        self.addCleanup(lambda: (bus.kill(), bus.wait()))
-        for _ in range(50):
-            if (tmp / 'bus').exists(): break
-            time.sleep(0.1)
-        env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS=f'unix:path={tmp}/bus',
-                   SCREENCAST_CONSUMER_PIPELINE='videotestsrc is-live=true ! video/x-raw,width=6,height=4 '
-                   '! videoconvert ! video/x-raw,format=RGB ! appsink name=sink emit-signals=true sync=false')
-        service = subprocess.Popen([sys.executable, str(ROOT / 'tools/fake_screencast.py'), '7'], env=env,
-                                   stdout=subprocess.PIPE, text=True)
-        self.addCleanup(lambda: (service.kill(), service.wait()))
-        time.sleep(0.5)
-        consumer = subprocess.Popen([sys.executable, str(ROOT / 'tools/screencast_consumer.py'), 'DP-1',
-                                     str(tmp / 'frames'), str(tmp / 'summary.json'), str(tmp / 'missing')],
-                                    env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.addCleanup(lambda: consumer.poll() is None and consumer.kill())
+        consumer = self.start_consumer(request=self.tmp / 'missing')
         self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
         consumer.send_signal(signal.SIGUSR1)
         _, stderr = consumer.communicate(timeout=10)
         self.assertNotEqual(consumer.returncode, 0)
         self.assertIn('screencast-consumer:', stderr)
         self.assertIn('missing', stderr)
+        self.assertEqual(self.service_calls()[-1], 'Stop')
+
+    def test_a_pipeline_that_fails_after_playing_exits_nonzero_with_gstreamers_error(self):
+        # identity errors out of the running pipeline after three buffers.
+        consumer = self.start_consumer(pipeline=(
+            'videotestsrc is-live=true ! identity error-after=3 ! appsink name=sink emit-signals=true sync=false'))
+        self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertNotEqual(consumer.returncode, 0)
+        self.assertEqual(stderr.count('screencast-consumer:'), 1, stderr)
+        self.assertIn('identity', stderr.lower())
+        self.assertEqual(self.service_calls()[-1], 'Stop')
+
+    def test_a_pipeline_that_cannot_start_exits_nonzero_with_gstreamers_error(self):
+        consumer = self.start_consumer(pipeline='filesrc location=/nonexistent/frames ! appsink name=sink')
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertNotEqual(consumer.returncode, 0)
+        self.assertIn('screencast-consumer:', stderr)
+        self.assertIn('/nonexistent/frames', stderr)
+        self.assertEqual(self.service_calls()[-1], 'Stop')
+
+    def test_a_pipeline_that_cannot_be_built_stops_the_session_and_exits_nonzero(self):
+        consumer = self.start_consumer(pipeline='noSuchElement ! appsink name=sink')
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertNotEqual(consumer.returncode, 0)
+        self.assertIn('screencast-consumer:', stderr)
+        self.assertNotIn('Traceback', stderr)
+        self.assertEqual(self.service_calls()[-1], 'Stop')
 
 
 class PackedRgbTests(unittest.TestCase):
@@ -174,7 +243,7 @@ class PackedRgbTests(unittest.TestCase):
         self.assertEqual(packed_rgb(data, 2, 2, 8), bytes(range(1, 13)))
 
     def test_short_buffer_raises(self):
-        # Last row needs only its 6 pixel bytes, so 14 is short and 14+... below is too.
+        # The last row needs only its 6 pixel bytes: 8 + 6 = 14 bytes suffice, 13 do not.
         with self.assertRaises(ValueError):
             packed_rgb(bytes(13), 2, 2, 8)
         with self.assertRaises(ValueError):

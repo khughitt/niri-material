@@ -13,10 +13,8 @@ XML = '''<node>
 </node>'''
 info = Gio.DBusNodeInfo.new_for_xml(XML)
 loop = GLib.MainLoop()
-calls = []
 
 def handle(connection, sender, path, interface, method, params, invocation):
-    calls.append(method)
     print(method, flush=True)
     if method == 'CreateSession':
         invocation.return_value(GLib.Variant('(o)', ('/s',)))
@@ -31,7 +29,10 @@ def handle(connection, sender, path, interface, method, params, invocation):
 
 def on_bus(connection, name):
     for path, iface in (('/org/gnome/Mutter/ScreenCast', 0), ('/s', 1)):
-        connection.register_object(path, info.interfaces[iface], handle, None, None)
+        connection.register_object_with_closures2(path, info.interfaces[iface], handle, None, None)
 
-Gio.bus_own_name(Gio.BusType.SESSION, 'org.gnome.Mutter.ScreenCast', 0, on_bus, None, lambda *a: loop.quit())
+def on_owned(connection, name):
+    print('owned', flush=True)    # tests wait for this line instead of sleeping
+
+Gio.bus_own_name(Gio.BusType.SESSION, 'org.gnome.Mutter.ScreenCast', 0, on_bus, on_owned, lambda *a: loop.quit())
 loop.run()
