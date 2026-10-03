@@ -84,23 +84,26 @@ at the user's PipeWire daemon.
 **Input.** The headless lane's `wlrctl pointer move` goes through niri's
 virtual-pointer protocol and stays the pointer stimulus here.
 
-**VT switch.** `vt_away` runs `sudo -n chvt <spare VT>`, waits, then
-`sudo -n chvt <home VT>`. The home VT is the one active when the driver
-starts (`/sys/class/tty/tty0/active`), which is the TTY the session runs on
-and the one niri takes. The spare VT is the lowest one with no logind
+**VT switch.** `vt_out` runs `sudo -n chvt <spare VT>` and waits;
+`vt_return` then runs `sudo -n chvt <home VT>`. Each is its own journaled
+stimulus, so the analyzer can tell the return, not the switch out, caused
+the resume. The home VT is the one active when the driver starts
+(`/sys/class/tty/tty0/active`), which is the TTY the session runs on and
+the one niri takes. The spare VT is the lowest one with no logind
 session, chosen before the run and recorded. Each switch is verified by
 reading `tty0/active` back within 2 s; a return switch that does not land
 fails the case.
 
 **VT restoration on every exit.** libseat's logind backend releases seat
 control on exit without switching back, so a TERM or a failed return during
-`vt_away` would leave the host showing the spare VT. The driver therefore
-records the home VT before the first switch, and `on_exit`, after reaping
-its processes, restores it when `tty0/active` differs: up to three
-`sudo -n chvt <home>` attempts, each verified within 2 s. The outcome
-(`not-needed`, `restored`, or `failed` with the observed VT) is written to
-the run's `vt-restore.json` and printed. A failed restoration makes the run
-exit nonzero, even when every case passed, and is named in its `run:` note.
+`vt_out` or `vt_return` would leave the host showing the spare VT. The
+driver therefore records the home VT before the first switch, and
+`on_exit`, after reaping its processes, restores it when `tty0/active`
+differs: up to three `sudo -n chvt <home>` attempts, each verified within
+2 s. The outcome (`not-needed`, `restored`, or `failed` with the observed
+VT) is written to the run's `vt-restore.json` and printed. A failed
+restoration makes the run exit nonzero, even when every case passed, and is
+named in its `run:` note.
 Restoration runs before the capture lock is released, so the next queued
 run never starts on the wrong VT.
 
@@ -140,7 +143,7 @@ All start from the headless lane's scene (probe kitty under Aurora 0.5 at
 | Case | Edges | Stimuli while held | Verdict adds |
 | --- | --- | --- | --- |
 | `drm-aurora` (lane control) | 0, 1 | none; pointer resume | Proves DRM cadence and settling are measured like headless. |
-| `tty-resume` | 0, 1, 0 | `vt-away` (switch out about 4 s, then back) | The resume edge falls inside `vt-away`, carries the held logical time, and the timeline settles again before the end. |
+| `tty-resume` | 0, 1, 0 | `vt-out` (switch out, held about 3 s), then `vt-return` (switch back) | No edge during `vt-out`, where the paused session cannot redraw; the resume edge falls inside `vt-return`, carries the held logical time, and the timeline settles again before the end. |
 | `unlock` | 0, 1, 0 | `lock` (client locks), then `unlock` (SIGUSR1) | No edge during `lock`; the resume edge falls inside `unlock`; a second pause follows without input. |
 | `screencast` | 0 | `cast-start`, `sample-1`, `sample-2`, quiet ≥ 2 s, `sample-3`, `cast-stop` | No resume edge; every sample's frame was produced by its own journaled damage; cast samples show changed client content and unchanged Aurora (below). |
 
@@ -254,7 +257,7 @@ cases out of Unverified only on a passed lane.
 - Driver: the existing stub-tools cleanup tests extended so the dedicated
   lane's bus, consumer and lock client are reaped on TERM.
 - VT restoration: with a stub `chvt` and a stub `tty0/active` file, TERM
-  during `vt_away` ends on the home VT with `restored`; a stub that refuses
+  while switched away ends on the home VT with `restored`; a stub that refuses
   to switch back yields `failed`, a nonzero exit and the observed VT; a run
   that never switched records `not-needed`.
 - Consumer sampling: a unit test drives the sample request against a
