@@ -141,7 +141,10 @@ class ConsumerHarness(unittest.TestCase):
             time.sleep(0.1)
         self.env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS=f'unix:path={self.tmp}/bus',
                         SCREENCAST_CONSUMER_PIPELINE=TEST_PIPELINE)
-        self.service = subprocess.Popen([sys.executable, str(ROOT / 'tools/fake_screencast.py'), '7'],
+        self.start_service()
+
+    def start_service(self, *args):
+        self.service = subprocess.Popen([sys.executable, str(ROOT / 'tools/fake_screencast.py'), '7', *args],
                                         env=self.env, stdout=subprocess.PIPE, text=True)
         self.addCleanup(self.stop_service)
         self.assertEqual(self.service.stdout.readline().strip(), 'owned')
@@ -149,7 +152,8 @@ class ConsumerHarness(unittest.TestCase):
     def stop_service(self):
         self.service.kill()
         self.service.wait()
-        self.service.stdout.close()
+        if not self.service.stdout.closed:
+            self.service.stdout.close()
 
     def service_calls(self):
         """The methods the fake service saw, once it is stopped."""
@@ -233,6 +237,24 @@ class ConsumerFailureTests(ConsumerHarness):
         self.assertNotEqual(consumer.returncode, 0)
         self.assertIn('screencast-consumer:', stderr)
         self.assertNotIn('Traceback', stderr)
+        self.assertEqual(self.service_calls()[-1], 'Stop')
+
+
+    def test_term_while_waiting_for_the_node_still_stops_the_session(self):
+        # The service never announces a stream: TERM lands in the node wait,
+        # before the GLib signal sources exist.
+        self.stop_service()
+        self.start_service('silent')
+        consumer = self.start_consumer()
+        for line in self.service.stdout:
+            if line.strip() == 'Start':
+                break
+        consumer.send_signal(signal.SIGTERM)
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertNotEqual(consumer.returncode, 0)
+        self.assertNotEqual(consumer.returncode, -signal.SIGTERM, stderr)   # not the default action
+        self.assertIn('screencast-consumer: stopped by SIGTERM before', stderr)
+        self.assertFalse((self.tmp / 'summary.json').exists())
         self.assertEqual(self.service_calls()[-1], 'Stop')
 
 

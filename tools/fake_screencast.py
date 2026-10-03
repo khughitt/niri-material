@@ -6,6 +6,7 @@ gi.require_version('Gio', '2.0')
 from gi.repository import Gio, GLib
 
 NODE = int(sys.argv[1])
+SILENT = sys.argv[2:] == ['silent']     # never announce the stream
 XML = '''<node>
 <interface name="org.gnome.Mutter.ScreenCast"><method name="CreateSession"><arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method></interface>
 <interface name="org.gnome.Mutter.ScreenCast.Session"><method name="RecordMonitor"><arg type="s" direction="in"/><arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method><method name="Start"/><method name="Stop"/></interface>
@@ -22,6 +23,8 @@ def handle(connection, sender, path, interface, method, params, invocation):
         invocation.return_value(GLib.Variant('(o)', ('/st',)))
     elif method == 'Start':
         invocation.return_value(None)
+        if SILENT:
+            return
         connection.emit_signal(None, '/st', 'org.gnome.Mutter.ScreenCast.Stream', 'PipeWireStreamAdded',
                                GLib.Variant('(u)', (NODE,)))
     else:
