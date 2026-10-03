@@ -207,7 +207,7 @@ pub(super) fn render_at(f: &mut Fixture, time: Duration) -> Vec<u8> {
 }
 
 /// The window's animated rectangle on the output, in logical px (scale 1).
-fn window_rect(f: &mut Fixture) -> Rectangle<f64, Logical> {
+pub(super) fn window_rect(f: &mut Fixture) -> Rectangle<f64, Logical> {
     let niri = f.niri();
     let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
     let (tile, pos, _) = workspace.tiles_with_render_positions().next().unwrap();

@@ -1082,6 +1082,46 @@ mod tests {
     }
 
     #[test]
+    fn accent_tint_defaults_off_bounds_and_inherits() {
+        let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
+        let d = parsed.materials[0].resolve().response(None);
+        assert_eq!(
+            d.accent_tint, 0.,
+            "off unless asked: every existing config is unchanged"
+        );
+
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { accent "none"; accent-tint 0.4; }; response "still" {}; response "bare" { accent-tint 0; }; }"#,
+        )])
+        .unwrap();
+        let m = parsed.materials[0].resolve();
+        assert_eq!(m.response(None).accent_tint, 0.4);
+        assert_eq!(
+            m.response(Some("still")).accent_tint,
+            0.4,
+            "inherits from default"
+        );
+        assert_eq!(m.response(Some("bare")).accent_tint, 0.);
+        assert_eq!(
+            m.response(None).accent,
+            crate::AccentResponse::None,
+            "independent of the accent selector"
+        );
+
+        for line in ["accent-tint 1.5;", "accent-tint -0.1;"] {
+            let err = parse_files_err(&[(
+                "config.kdl",
+                &format!(r#"material "tg" {{ glass {{}}; response "default" {{ {line} }}; }}"#),
+            )]);
+            assert!(
+                err.contains("value must be between 0 and 1"),
+                "{line}: {err}"
+            );
+        }
+    }
+
+    #[test]
     fn ring_accent_defaults_to_today_bounds_and_inherits() {
         let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
         let d = parsed.materials[0].resolve().response(None);
