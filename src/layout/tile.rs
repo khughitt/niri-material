@@ -3119,6 +3119,13 @@ mod tests {
                 &format!("black→orange {f}"),
             );
         }
+        // The expectations above go through `accent_tint` too; this one does
+        // not, so a tint that never reaches the upload fails here.
+        assert_ne!(
+            upload(&mut tile, ms(2500)),
+            base.to_array_unpremul(),
+            "settled orange uploads a tinted color"
+        );
 
         // orange → black from 3000 ms.
         set(&tile, black);
