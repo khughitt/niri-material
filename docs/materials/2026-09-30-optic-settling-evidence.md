@@ -2,10 +2,12 @@
 
 **Status:** headless lane passed (pilot and matrix, 2026-10-02); owner accepted
 the idle/resume clip and authorized local integration on 2026-10-02; rerun with
-a real idle inhibitor on 2026-10-03, which passed; four lifecycle cases remain
-unverified.
+a real idle inhibitor on 2026-10-03, which passed; the dedicated real-TTY lane
+(TTY resume, unlock, a real screencast consumer) passed on 2026-10-03; only
+output removal remains unverified.
 **Task:** `material-2ee11e` under `material-f86183`; the idle-inhibitor rerun
-is `material-80caf4`.
+is `material-80caf4`, the dedicated lane `material-f7eb0b` and
+`material-3acc86`.
 **Design:** [accepted spec, round 4](../specs/2026-09-29-sustained-optic-settling-design.md);
 [plan, Task 5](../plans/2026-09-30-sustained-optic-settling.md).
 **Review page:** <https://claude.ai/artifact/4b8iRwZA54qojFr3T3EEYU>.
@@ -52,26 +54,16 @@ the same readings for every other case.
 
 ### Unverified
 
-`tty-resume` (needs a real TTY session; the dedicated lane exists but has
-not been run), `unlock` (wiring covered by Task 3's real-handler test),
-`output-removal` (needs a second output) and `screencast`
-(needs a real screencast consumer; the `screencopy` case is not a substitute).
-These stay open.
-
-The dedicated real-TTY lane is implemented
-([design](../specs/2026-10-02-real-tty-settling-lane-design.md)): `drm-aurora`,
-`tty-resume`, `unlock` and `screencast` run on DP-1 from a TTY through
-`optic-settling-smoke.sh --lane dedicated`. They stay unverified until its
-development check, pilot and matrix pass.
+`output-removal` (needs a second output; the nested and dedicated lanes
+each drive one) stays open. `tty-resume`, `unlock` and `screencast` passed in
+the [dedicated lane](#dedicated-lane) on 2026-10-03.
 
 | Remaining acceptance | Task |
 | --- | --- |
-| Real TTY resume and unlock | `material-f7eb0b` |
-| Real screencast consumer | `material-3acc86` |
 | Removal of one of two outputs | `material-1af3c6` |
 
-All three follow-ups remain children of `material-f86183`, alongside the
-deferred review minors in `material-285f81`; the goal is not complete.
+It remains a child of `material-f86183`, alongside the deferred review
+minors in `material-285f81`; the goal is not complete.
 
 On resume, the offline reducer reproduced both recorded verdicts of the
 2026-10-02 runs, and all 277 pilot and 333 matrix artifact hashes matched
@@ -88,13 +80,57 @@ inhibited=1` or `inhibited=0` trace message inside its own window. That
 proves the inhibition took hold, and the absent resume edge proves it did not
 count as input activity.
 
-In the pilot, on the trace clock, the pause came at 26.09 s. `inhibited=1` was traced 5 ms into
-the inhibit window (33.79 s) and `inhibited=0` 4 ms into the release window
-(41.79 s). There was no resume edge, and 6.0 s of the held interval was
+In the pilot, on the trace clock, the pause came at 26.09 s. `inhibited=1`
+was traced 5 ms into the inhibit window (33.79 s) and `inhibited=0` 4 ms into
+the release window (41.79 s). There was no resume edge, and 6.0 s of the held interval was
 stimulus-free. The matrix repeated the verdict. The first development run
 (`dev-20261003-inhibit`) traced both messages but was invalid: its stimuli
 began 3.7 s after the pause and left no 5 s stimulus-free span, so the
 schedule moved to the lane's 25 s start (`e6d3b3f8`).
+
+## Dedicated lane
+
+niri on DRM from a TTY with the desktop stopped
+([design](../specs/2026-10-02-real-tty-settling-lane-design.md),
+[plan](../plans/2026-10-02-real-tty-settling-lane.md)), through
+`optic-settling-smoke.sh --lane dedicated`. The display was not dimmed
+(`display-dim` is not installed).
+
+| Item | Value |
+| --- | --- |
+| Source | `3125163e` |
+| Binary | `--release --features profile-with-tracy`, sha256 `91b9a0c02b50b3961f925689b0cdf300b3f38d85ea396bdb89f1b5461ba09287` |
+| Output | `DRM_OUTPUT=DP-1`, `DRM_MODE=3440x1440@59.999`, scale 1 |
+| Lock client | `session-lock-client` sha256 `cd54292e…`, source `session-lock-client.c` `6dcde22e…` |
+| Consumer | `screencast_consumer.py` sha256 `2c292520…`: GStreamer 1.28.7 `pipewiresrc ! glupload ! gldownload ! videoconvert ! appsink`, PipeWire 1.6.9 |
+| Development | `$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-dev-20261003-2`, `CASES='drm-aurora tty-resume screencast'` |
+| Pilot | `$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-pilot-20261003-1`, `analysis.json` sha256 `f1c4d177…`, `manifest.json` `8659ae13…` |
+| Matrix | `$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-matrix-20261003-1`, gated on the pilot; `analysis.json` `db8053fc…`, `manifest.json` `c92cdd9b…` |
+
+| Run | Duration | Passed | Unverified | Failed | Verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Development | 4 min | 3 | 25 | 0 | `development-passed` |
+| Pilot | 6 min | 4 | 25 | 0 | `lane-passed` |
+| Matrix | 10 min | 8 | 25 | 0 | `lane-passed` |
+
+The unverified cases are the headless lane's; the development subset does not run `unlock`. No run
+logged a panic, and every `vt-restore.json` reads `not-needed`: niri
+returned the VT itself.
+
+| Case | Reading |
+| --- | --- |
+| drm-aurora | 18 redraws per 4.5 s active, one edge flush, 7.0 s quiet held, 10 redraws after resume. |
+| tty-resume ×3 | Edges `[0, 1, 0]`, the resume inside `vt-return`. `vt-out` lasted 3.1 s, under the 6 s cap. The held interval drew once (the flush), and the field paused again 5 s after resume. |
+| unlock ×3 | Edges `[0, 1, 0]`, the resume inside `unlock`. Of the held interval's three redraws, one is the edge flush and two fall inside the `lock` stimulus. |
+| screencast | A real PipeWire consumer took three samples while held. The client region changed between samples 1 and 2 and held between 2 and 3, the Aurora crops stayed equal across all three, and no resume edge was raised. The 8 held redraws are the edge flush, three at cast start, one per sample and the collect frame. |
+
+The first development run (`tty-dev-20261003-1`, at `54e30870`) was invalid.
+`tracy-csvexport` leaves zone names unquoted, and the DRM renderer's
+`MultiRenderer<'_, '_, '_>` zones put text into the time column. The
+analyzer now folds those spilled fields back into the name (`3125163e`). The
+headless runs had shifted only single-comma rows, filed under names the
+analyzer never reads, so their verdicts stand. A copy of the first run's
+artifacts re-analyzed as `development-passed` before the second run.
 
 ## Idle and resume clip
 
