@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-03T09:52:36Z
+updated: 2026-10-03T09:53:47Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -99,3 +99,7 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-03T02:10:03Z (glass-edges): Plan review validation: assembled the proposed final GLSL changes against the current shader in a temporary directory; glslangValidator -S frag exited 0. Numerically evaluated the planar-rim counterexample above. No implementation or plan text changed; no live compositor or Rust suite was run.
 - 2026-10-03T02:18:09Z (glass-edges): Plan round 3 disposition: both P2s verified and accepted. (1) The k=1 counterexample reproduces exactly ((31,26,22),(34,28,24),(37,31,25)); the plateau check is replaced by a rim-ratio profile test (last-pixel rise over the mean of the four before, summed RGB) with a forced bevel-profile 1 reload at the same frozen instant as negative control: model k2 >= 4.3 vs k1 <= 1.85 at rest, k2 >= 1.56 x k1 under +-6 px jelly; absolute check at rest, paired 1.3x at mid-resize and mid-scroll. (2) New Task 7 test over a 16 px checkered Background layer at a frozen mid-resize instant, reflection 0.6 and edge-highlight 0.2 on: the reflection's linear isolate (on - off) must change with distortion+ripple on vs off; a mutation step dropping the perturbation from the direction must fail it. Shared harness config no longer pins jelly-ripple.
 - 2026-10-03T09:52:36Z (glass-edges): review: plan round 4 — verdict: revise; findings: P1 2, P3 2; reviewer: claude-code/claude-opus-5-5
+- 2026-10-03T09:53:44Z (glass-edges): review: plan round 5 — verdict: accept; findings: P3 1; reviewer: claude-code/claude-opus-5-5
+- 2026-10-03T09:53:44Z (glass-edges): Plan rounds 4-5 disposition: round 4 P1s fixed in 21a07022 (edge-highlight dropped from the Task 7 test, since it parses only from Task 8; window rect read after each frozen render), P3s fixed (mktemp plus grep guard on the mutation; AA-pixel nonlinearity noted in the calibration rule). Round 5 accepted; its P3 (exit 1 closes an interactive shell) declined: the block runs as one script, and a non-stopping guard would let the test run unmutated.
+- 2026-10-03T09:53:47Z (glass-edges): parked (waiting on user, approval): Owner reads docs/plans/2026-10-02-glass-edge-optics.md in .worktrees/glass-edges (plan review accepted in round 5) and says go; then the agent executes it subagent-driven from Task 1 (material-10e12e): Tasks 1-3 are independent, 4-9 run in order
+  provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
