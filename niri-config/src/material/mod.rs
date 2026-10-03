@@ -497,6 +497,11 @@ pub struct Glass {
     pub jelly_ripple: Option<Milli<0, 500>>,
     #[knuffel(child, unwrap(argument))]
     pub bevel: Option<FloatOrInt<0, 128>>,
+    /// Bevel profile exponent: 1 is a planar chamfer, 2 a quarter-round, and
+    /// higher values a squircle that stays flat longer and rolls off harder
+    /// (docs/specs/2026-09-30-glass-edge-optics-design.md §3.1).
+    #[knuffel(child, unwrap(argument))]
+    pub bevel_profile: Option<FloatOrInt<1, 8>>,
     #[knuffel(child, unwrap(argument))]
     pub offset_x: Option<FloatOrInt<-64, 64>>,
     #[knuffel(child, unwrap(argument))]
@@ -548,6 +553,7 @@ pub struct ResolvedGlass {
     pub jelly_flex: f64,
     pub jelly_ripple: f64,
     pub bevel: f64,
+    pub bevel_profile: f64,
     pub offset_x: f64,
     pub offset_y: f64,
     pub noise: optics::noise::ResolvedNoise,
@@ -574,6 +580,7 @@ impl Default for ResolvedGlass {
             jelly_flex: 0.004,
             jelly_ripple: 0.06,
             bevel: 12.,
+            bevel_profile: 1.,
             offset_x: 6.,
             offset_y: 6.,
             noise: optics::noise::ResolvedNoise::default(),
@@ -673,6 +680,12 @@ pub fn core_params() -> Vec<params::ParamSpec> {
             read: Some(|g| Some(g.bevel)),
         },
         ParamSpec {
+            node: "bevel-profile",
+            kind: ParamKind::float::<FloatOrInt<1, 8>>(d.bevel_profile, "—"),
+            write: |v| format!("bevel-profile {v}"),
+            read: Some(|g| Some(g.bevel_profile)),
+        },
+        ParamSpec {
             node: "light-ior",
             kind: ParamKind::float::<FloatOrInt<1, 12>>(d.light_ior, "—"),
             write: |v| format!("light-ior {v}"),
@@ -749,6 +762,7 @@ impl Material {
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
                 jelly_ripple: g.jelly_ripple.map_or(d.jelly_ripple, |x| x.0),
                 bevel: g.bevel.map_or(d.bevel, |x| x.0),
+                bevel_profile: g.bevel_profile.map_or(d.bevel_profile, |x| x.0),
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
                 noise: optics::noise::resolve(g.noise),
