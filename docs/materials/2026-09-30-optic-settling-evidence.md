@@ -52,6 +52,12 @@ implemented), `unlock` (wiring covered by Task 3's real-handler test),
 (needs a real screencast consumer; the `screencopy` case is not a substitute).
 These stay open.
 
+The dedicated real-TTY lane is implemented
+([design](../specs/2026-10-02-real-tty-settling-lane-design.md)): `drm-aurora`,
+`tty-resume`, `unlock` and `screencast` run on DP-1 from a TTY through
+`optic-settling-smoke.sh --lane dedicated`. They stay unverified until its
+development check, pilot and matrix pass.
+
 `idle-inhibitor` now has a headless case (`material-80caf4`). A real
 `zwp_idle_inhibit_manager_v1` client (`scripts/idle-inhibit-client.c`, built
 per run and identified with its source) maps a window and inhibits while the
