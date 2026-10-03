@@ -7,8 +7,9 @@ size: s
 complexity: mid
 process: direct
 created: 2026-09-20T10:34:21Z
-updated: 2026-10-01T10:00:24Z
+updated: 2026-10-02T23:07:56Z
 depends: [material-22d78f]
+parent: material-2834d7
 tags: [rendering]
 agent: claude-code/claude-opus-5
 ---

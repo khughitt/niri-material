@@ -4,10 +4,10 @@ title: Skip material rendering for windows that are not visible
 status: idea
 priority: 1
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-01T04:39:26Z
+updated: 2026-10-02T23:07:57Z
 depends: []
 parent: material-5d6b2c
-tags: [quick-add, performance]
+tags: [quick-add, performance, needs-quiet]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
 ---
 
