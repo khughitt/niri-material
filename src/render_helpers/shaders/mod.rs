@@ -74,6 +74,7 @@ pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>> {
         UniformName::new("mat_sig_ring_color", UniformType::_3f),
         UniformName::new("mat_sig_ring_accent", UniformType::_1f),
         UniformName::new("mat_light_ior", UniformType::_1f),
+        UniformName::new("mat_bevel_profile", UniformType::_1f),
     ];
     names.extend(optics::uniform_names());
     names
@@ -526,7 +527,16 @@ mod tests {
         let averaged = main.find("sampled = acc / count;").unwrap();
         let saturation = main.find("sampled = saturation_behind(").unwrap();
         let noise = main.find("sampled = noise_behind(").unwrap();
-        let attenuation = main.find("vec3 transmitted = sampled * att;").unwrap();
+        let fresnel = main.find("float fresnel = f0 + ").unwrap();
+        let attenuation = main
+            .find("vec3 transmitted = sampled * att * (1.0 - fresnel);")
+            .unwrap();
+        assert!(fresnel < attenuation);
+        assert!(material_uniform_names()
+            .iter()
+            .any(|name| name.name == "mat_bevel_profile" && name.type_ == UniformType::_1f));
+        assert!(main.contains("spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - bevelAcross);"));
+        assert!(!main.contains("innerDist / slabChamfer"));
         let within = main.find("vec3 within = vec3(0.0);").unwrap();
         let specular = main.find("vec3 specular =").unwrap();
         assert!(averaged < saturation && saturation < noise && noise < attenuation);

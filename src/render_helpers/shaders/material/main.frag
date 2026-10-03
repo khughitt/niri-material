@@ -20,7 +20,11 @@ void main() {
     float slabDist;
     float innerDist;
     float slabChamfer;
-    slabSurface(p, coverage, surfaceNormal, slabDist, innerDist, slabChamfer);
+    float surfaceHeight;
+    float bevelAcross;
+    vec2 acrossDir;
+    slabSurface(p, coverage, surfaceNormal, slabDist, innerDist, slabChamfer,
+                surfaceHeight, bevelAcross, acrossDir);
 
     vec4 glassed = vec4(0.0);
     if (coverage > 0.0) {
@@ -51,9 +55,8 @@ void main() {
         // exact zero agrees with the gates.
         vec3 sampled;
         if (mat_anisotropic_blur == 0.0 && mat_chromatic_aberration == 0.0) {
-            sampled = tap(v, n, mat_ior, mat_thickness);
+            sampled = tap(v, n, mat_ior, surfaceHeight);
         } else {
-            float smear = mat_thickness * mat_anisotropic_blur;
             float count = clamp(mat_samples, 1.0, 8.0);
             vec3 acc = vec3(0.0);
             for (int i = 0; i < 8; ++i) {
@@ -62,7 +65,8 @@ void main() {
                     break;
                 float r1 = hash12(gl_FragCoord.xy + fi * 17.0);
                 float r2 = hash12(gl_FragCoord.xy + fi * 71.0 + 3.7);
-                float t = mat_thickness + smear * (fi + r1) / count;
+                // Today's smear rule applied to the local height.
+                float t = surfaceHeight * (1.0 + mat_anisotropic_blur * (fi + r1) / count);
                 if (mat_chromatic_aberration > 0.0) {
                     // drei's per-sample per-channel ior spread
                     float spread = mat_chromatic_aberration * (fi + r2) / count;
@@ -80,16 +84,20 @@ void main() {
         sampled = saturation_behind(sampled, gl_FragCoord.xy);
         sampled = noise_behind(sampled, gl_FragCoord.xy);
 
-        // Beer-Lambert over the view-lengthened slab path: the
-        // orthographic incident ray is (0, 0, -1); the structural normal's
-        // z is its cosine, so the chamfer tints more strongly than the
-        // face. The 0.25 floor bounds near-edge-on facets at four times
-        // the configured thickness.
+        // Beer-Lambert along the structural ray to the backdrop plane
+        // (spec §3.1): the face path is the thickness exactly; on the bevel
+        // the glass thins. Distortion moves taps but does not lengthen it.
         float surfaceCosine = clamp(surfaceNormal.z, 0.0, 1.0);
-        float opticalDistance = mat_thickness / max(surfaceCosine, 0.25);
+        vec3 structuralRay = refract(vec3(0.0, 0.0, -1.0), surfaceNormal, 1.0 / mat_ior);
+        float opticalDistance = rayPath(structuralRay, surfaceHeight);
         vec3 att = pow(clamp(mat_attenuation_color.rgb, vec3(0.001), vec3(1.0)),
                        vec3(opticalDistance / mat_attenuation_distance));
-        vec3 transmitted = sampled * att;
+        // Schlick from the configured IOR on the structural normal. What the
+        // surface reflects is not transmitted (spec §3.2).
+        float f0 = (mat_ior - 1.0) / (mat_ior + 1.0);
+        f0 = f0 * f0;
+        float fresnel = f0 + (1.0 - f0) * pow(1.0 - surfaceCosine, 5.0);
+        vec3 transmitted = sampled * att * (1.0 - fresnel);
 
         // Ring beam constants: ring.rs holds the same values under the same
         // names, and a test there checks these lines.
@@ -160,10 +168,9 @@ void main() {
                 focusGlow = mat_sig_focus.x * BEAM_BASE * ringGlow * (moving + BEAM_REST * ringRest);
                 // Light inside the glass leaks at its edge: on the chamfer,
                 // the beam's brightness at the nearest point of the line,
-                // falling off toward the outer edge.
+                // falling off toward the silhouette along u.
                 if (slabChamfer > 0.0 && innerDist > 0.0) {
-                    float across = clamp(innerDist / slabChamfer, 0.0, 1.0);
-                    spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - across);
+                    spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - bevelAcross);
                 }
             }
             float glow = (accentGlow * presence + focusGlow) * (1.0 + 2.0 * mat_jelly_activity);
@@ -177,14 +184,11 @@ void main() {
         // Within hooks, in OPTICS order (render-pipeline.md within stage).
         within += aurora_within(p, n, att, innerDist);
 
-        // Fresnel edge glint: Schlick from the configured IOR on the
-        // structural normal. Replaces the legacy
+        // Fresnel edge glint, on the Schlick term computed with the
+        // attenuation. Replaces the legacy
         // environment-probe specular on the chamfer; additive per the §2
         // slab terms. The strength constants are art-directed against the
         // legacy look and validated visually, not physically derived.
-        float f0 = (mat_ior - 1.0) / (mat_ior + 1.0);
-        f0 = f0 * f0;
-        float fresnel = f0 + (1.0 - f0) * pow(1.0 - surfaceCosine, 5.0);
         float facing = 0.0;
         if (length(surfaceNormal.xy) > 0.001)
             facing = max(dot(normalize(surfaceNormal.xy),

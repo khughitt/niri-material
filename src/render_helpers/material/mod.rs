@@ -911,6 +911,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_sig_ring_color", self.signal.ring_color),
             Uniform::new("mat_sig_ring_accent", self.signal.ring_accent),
             Uniform::new("mat_light_ior", g.light_ior as f32),
+            Uniform::new("mat_bevel_profile", g.bevel_profile as f32),
         ];
         uniforms.extend(self.optics.iter().cloned());
         let uniforms: Rc<[Uniform<'static>]> = uniforms.into();

@@ -78,6 +78,16 @@ interactive-drag behavior or a new perceptual range.
 paths only; the background taps are unaffected. The light-path index is
 `1 + (ior - 1) * light-ior`.
 
+`bevel-profile` shapes the bevel between the face and the silhouette:
+`1` is a planar chamfer, `2` a quarter-round, and larger values a squircle
+that stays flat longer and rolls off harder. The bevel is a height field: the
+glass thins from `thickness` at the face edge to `thickness - min(bevel,
+thickness)` at the silhouette, refraction and attenuation follow the refracted
+ray to the backdrop plane under that local height, and the reflected share
+`F` of the light is no longer transmitted (`docs/specs/2026-09-30-glass-edge-optics-design.md`).
+At `bevel-profile 1` on a straight side the normal, and so the ring cap table
+above, is unchanged; for larger values the tilt varies across the bevel.
+
 The ring's shared refracted shift is capped at half `ring-gap`, 4 px at the
 default gap of 8. The cap keeps a second copy of the band core off the
 chamfer. Without it, dense glass shows one there, with a seam at the face
