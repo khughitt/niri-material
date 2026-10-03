@@ -1,19 +1,21 @@
 ---
 id: material-f7eb0b
 title: Verify optic settling across real TTY resume and unlock
-status: doing
+status: done
 priority: 1
 size: m
 complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-03T01:51:15Z
+updated: 2026-10-03T06:17:36Z
 started: 2026-10-02T23:52:44Z
+completed: 2026-10-03T06:17:36Z
 depends: []
 parent: material-f86183
 tags: [performance]
 source: "docs/materials/2026-09-30-optic-settling-evidence.md#unverified-session"
+model: claude-opus-5-5
 agent: codex
 spec: docs/specs/2026-10-02-real-tty-settling-lane-design.md
 plan: docs/plans/2026-10-02-real-tty-settling-lane.md
@@ -39,3 +41,7 @@ Remaining acceptance cases tty-resume and unlock from material-2ee11e. Task 3 re
 - 2026-10-03T01:51:09Z (material-3acc86): Lane implemented in .worktrees/material-3acc86 (Tasks 1-6); acceptance runs in material-6bf694 (tasks quiet).
 - 2026-10-03T01:51:15Z (material-3acc86): parked (waiting on agent, dependency): Run material-6bf694 on the TTY; close with material-3acc86 in its evidence commit
   provenance: {"harness_session":"claude-code:bf767efc-bb55-40aa-933b-17ef6962442f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T06:17:36Z (material-3acc86): done
+  provenance: {"harness_session":"claude-code:e081ff94-3f7a-43b5-9bb1-a565c5568d01","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T06:17:36Z (material-3acc86): TTY resume and unlock verified in the dedicated lane: tty-pilot-20261003-1 and tty-matrix-20261003-1 lane-passed (r1-r3 each); evidence doc Dedicated lane section
+  provenance: {"harness_session":"claude-code:e081ff94-3f7a-43b5-9bb1-a565c5568d01","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

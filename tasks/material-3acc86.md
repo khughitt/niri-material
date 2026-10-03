@@ -1,19 +1,21 @@
 ---
 id: material-3acc86
 title: Verify held Aurora with a real screencast consumer
-status: doing
+status: done
 priority: 1
 size: m
 complexity: mid
 process: planned
 owner: material-3acc86
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-03T03:26:59Z
+updated: 2026-10-03T06:17:36Z
 started: 2026-10-02T20:06:27Z
+completed: 2026-10-03T06:17:36Z
 depends: [material-6bf694]
 parent: material-f86183
 tags: [performance]
 source: "docs/materials/2026-09-30-optic-settling-evidence.md#unverified-screencast"
+model: claude-opus-5-5
 agent: codex
 spec: docs/specs/2026-10-02-real-tty-settling-lane-design.md
 plan: docs/plans/2026-10-02-real-tty-settling-lane.md
@@ -85,3 +87,7 @@ Remaining screencast acceptance from material-2ee11e. Run with an actual screenc
 - 2026-10-03T03:26:58Z (material-3acc86): deferred-minor cleanup landed (f2564c99..cf1d241d): vt-lib/lock-client hardening, consumer shutdown/atomic writes/test hygiene, analyzer edge_in/consumer validation + first-frame cross-check, tty-resume split vt-out/vt-return, prerequisites refuse leftover niri, second output and unconnected DRM_OUTPUT; review: ready for TTY runs
 - 2026-10-03T03:26:58Z (material-3acc86): parked (waiting on agent, dependency): Run material-6bf694 (tasks quiet: dev check, pilot, matrix on the TTY), then publish evidence and close with material-f7eb0b
   provenance: {"harness_session":"claude-code:bf767efc-bb55-40aa-933b-17ef6962442f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T06:17:36Z (material-3acc86): done
+  provenance: {"harness_session":"claude-code:e081ff94-3f7a-43b5-9bb1-a565c5568d01","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T06:17:36Z (material-3acc86): real screencast consumer verified: screencast passed in the dedicated lane pilot and matrix (GStreamer pipewiresrc, PipeWire 1.6.9); evidence published
+  provenance: {"harness_session":"claude-code:e081ff94-3f7a-43b5-9bb1-a565c5568d01","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
