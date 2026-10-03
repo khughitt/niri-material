@@ -46,8 +46,8 @@ and 0.85 s (matrix `startup-no-input`), within the 1.5 s bound.
 
 ### Unverified
 
-`tty-resume` (needs a real TTY session; the dedicated lane is not
-implemented), `unlock` (wiring covered by Task 3's real-handler test),
+`tty-resume` (needs a real TTY session; the dedicated lane exists but has
+not been run), `unlock` (wiring covered by Task 3's real-handler test),
 `idle-inhibitor`, `output-removal` (needs a second output) and `screencast`
 (needs a real screencast consumer; the `screencopy` case is not a substitute).
 These stay open.
