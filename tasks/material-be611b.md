@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-03T01:43:47Z
+updated: 2026-10-03T02:18:09Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -93,3 +93,8 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-03T01:43:38Z (glass-edges): Plan round 2 fixes folded in: mkdir before the RING_LOOK_DUMP dumps, integer-look note on face_and_slab, live-face sensitivity caveat for (1 - F).
 - 2026-10-03T01:43:47Z (glass-edges): parked (waiting on user, approval): Owner reads docs/plans/2026-10-02-glass-edge-optics.md in .worktrees/glass-edges (plan review accepted in round 2) and says go; then execute it subagent-driven from Task 1 (material-10e12e), Tasks 1-3 independent, 4-9 in order
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T02:10:03Z (glass-edges): review: plan round 3 — verdict: revise; findings: P2 2; reviewer: codex
+- 2026-10-03T02:10:03Z (glass-edges): P2 — Plan lines 1427-1456: the three-pixel no-plateau assertion does not distinguish a rounded bevel from the new planar height-field model. Evaluating the proposed formulas for the LIVE right rim with k=1 gives RGB (31,26,22), (34,28,24), (37,31,25) at 3.5, 2.5, 1.5 px inside the silhouette, so the assertion accepts an ignored bevel-profile. Add a render-level negative control that forces k=1 and a check that distinguishes the rounded profile, such as sampling the full bevel against mirror-derived predictions.
+- 2026-10-03T02:10:03Z (glass-edges): P2 — Plan lines 1414-1417 and 1974-1980: the distortion/motion case never enables reflection or edge-highlight; the shared fixture also pins jelly-ripple to 0. Reflection-on evidence uses a spatially constant background, making the sampling direction and reach unobservable. Add an enabled-optics frozen-motion case over a patterned backdrop and a negative control that removes the direction perturbation. The current source-string guard assertion and flat-color bevel-diff checks do not establish the claimed moving reflection behavior.
+- 2026-10-03T02:10:03Z (glass-edges): Plan review validation: assembled the proposed final GLSL changes against the current shader in a temporary directory; glslangValidator -S frag exited 0. Numerically evaluated the planar-rim counterexample above. No implementation or plan text changed; no live compositor or Rust suite was run.
+- 2026-10-03T02:18:09Z (glass-edges): Plan round 3 disposition: both P2s verified and accepted. (1) The k=1 counterexample reproduces exactly ((31,26,22),(34,28,24),(37,31,25)); the plateau check is replaced by a rim-ratio profile test (last-pixel rise over the mean of the four before, summed RGB) with a forced bevel-profile 1 reload at the same frozen instant as negative control: model k2 >= 4.3 vs k1 <= 1.85 at rest, k2 >= 1.56 x k1 under +-6 px jelly; absolute check at rest, paired 1.3x at mid-resize and mid-scroll. (2) New Task 7 test over a 16 px checkered Background layer at a frozen mid-resize instant, reflection 0.6 and edge-highlight 0.2 on: the reflection's linear isolate (on - off) must change with distortion+ripple on vs off; a mutation step dropping the perturbation from the direction must fail it. Shared harness config no longer pins jelly-ripple.

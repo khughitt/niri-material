@@ -42,7 +42,7 @@
 
 - **Transparency:** Task 4. The bevel thins toward the silhouette, so Beer-Lambert there runs over the local height instead of `thickness / cos`: at the live focused glass (thickness 31.2, bevel 15, attenuation 11) the rim transmits about 8 % against 0.8 % on the face, where today the bevel transmits less than the face. Task 7's reflection then carries the wallpaper's colours on the dark edge, untinted.
 - **Light effects:** Task 7 (`reflection`) and Task 8 (`edge-highlight`), plus the glint, which now varies across a rounded bevel instead of sitting at `f0`.
-- **Motion:** distortion and jelly ripple move the reflection (its direction carries the perturbation) and the highlight (it uses the perturbed normal); `attention "rim-orbit"` sways the highlight with the glint.
+- **Motion:** distortion and jelly ripple move the reflection (its direction carries the perturbation; Task 7's motion test over a checkered backdrop pins it, with a mutation that drops the perturbation as its negative control) and the highlight (it uses the perturbed normal); `attention "rim-orbit"` sways the highlight with the glint.
 - **Glass noise on the chamfer:** not covered here. Grain acts on transmitted light only, so the thinner rim carries more of it after Task 4, but nothing grains the surface light. Follow-up idea `material-1aa3af` (surface grain on the glass edge), to scope after the contact sheet shows how much grain the rim already carries.
 
 ## Review Focus
@@ -51,7 +51,7 @@ Inputs the spec implies but its tests do not name, most likely first; each line'
 
 1. **A chamfer narrower than one physical pixel** (bevel 1 at scale 2, or a jelly squeeze): every bevel fragment takes the rim branch (`u = 1`); the normal must stay finite and capped, and `u` must not exceed 1. Test: Task 2 `a_band_narrower_than_a_pixel_is_all_rim`.
 2. **`bevel 0` and `thickness 0`:** no bevel, or a slab with no height. The face normal and `L = h` must hold, with no division by zero in `u`, the slope or the path. Test: Task 2 `no_chamfer_or_no_thickness_is_a_flat_face`.
-3. **A distortion that cancels the across-bevel direction** in the reflection's bent direction (`acrossDir + perturbed.xy - structural.xy` near zero): the sample must fall back to `acrossDir`, never `normalize(0)`. Test: Task 7 `reflection_guards_a_cancelled_direction` (a source assertion on the guard line, since the GLSL cannot run in a unit test) plus the motion render with `distortion 1`.
+3. **A distortion that cancels the across-bevel direction** in the reflection's bent direction (`acrossDir + perturbed.xy - structural.xy` near zero): the sample must fall back to `acrossDir`, never `normalize(0)`. Test: Task 7 `reflection_guards_a_cancelled_direction` (a source assertion on the guard line) and `the_reflection_follows_the_perturbed_direction_in_motion`, whose distortion and ripple bend the direction at a frozen mid-resize instant.
 4. **A translucent client over the face** (kitty at opacity 0.6): `(1 - F)` scales transmitted glass under the window too, so the composite darkens by `(1 - win.a) * f0 * T`, within a code value at ior 1.28. Expected, not a regression. Test: Task 5's live cases render a 0.6-opacity client variant and report the face delta.
 5. **Signal light straight down the z axis** (`mat_sig_light.xy` zero): the existing glint already normalizes it, and the highlight would too. Expected: the signal layer never sends a zero light. Test: Task 8 `the_signal_light_is_never_vertical` pins that `SignalUniforms::from_frame` gives a unit-length xy under every attention response, level and breath.
 
@@ -967,8 +967,9 @@ fn cases() -> Vec<Case> {
     cases
 }
 
-/// The output's config. Distortion is left to the glass lines (the default is
-/// 0), so a case can set it without a duplicate node.
+/// The output's config. Distortion and jelly ripple are left to the glass
+/// lines (defaults 0 and 0.06; ripple acts only in motion), so a case can set
+/// them without a duplicate node.
 fn config(glass: &str, response: &str, top: &str) -> Config {
     Config::parse_mem(&format!(
         r##"
@@ -986,7 +987,6 @@ fn config(glass: &str, response: &str, top: &str) -> Config {
             glass {{
                 {glass}
                 backdrop-blur false
-                jelly-ripple 0
             }}
             response "default" {{
                 accent "none"
@@ -1403,7 +1403,7 @@ In `src/render_helpers/shaders/mod.rs`, in `material_source_is_prelude_then_opti
         assert!(!main.contains("innerDist / slabChamfer"));
 ```
 
-In `src/tests/glass_edge.rs`, add the motion test (Review Focus 3's distortion case rides along):
+In `src/tests/glass_edge.rs`, add the profile test. A plateau check alone cannot tell a rounded bevel from a planar one: under the new attenuation model a planar facet already ramps toward the rim (the live right rim at `k = 1` runs about (31,26,22), (34,28,24), (37,31,25) at 3.5, 2.5 and 1.5 px inside). What separates them is the rim's shape: on a rounded profile the Fresnel term climbs steeply into the rim, so the last pixel rises much faster than the pixels before it. The test measures that ratio and uses a forced `bevel-profile 1` render of the same fixture, at the same frozen instant, as its negative control.
 
 ```rust
 const MOTION: &str = r#"animations {
@@ -1411,9 +1411,17 @@ const MOTION: &str = r#"animations {
             horizontal-view-movement { duration-ms 1000; curve "linear"; }
         }"#;
 
-/// The live look on a rounded bevel at full flex.
-fn motion_glass(distortion: &str) -> String {
-    format!("{}\nbevel-profile 2\njelly-flex 0.02\n{distortion}", LIVE.glass)
+/// The live look at full flex with profile `k`.
+fn motion_glass(k: f64, distortion: &str) -> String {
+    format!("{}\nbevel-profile {k}\njelly-flex 0.02\n{distortion}", LIVE.glass)
+}
+
+/// A glass-parameter reload: it keeps the material state, its seed and any
+/// running animation (see ring_pair.rs), so the next render is the same
+/// instant under the new glass.
+fn reload(f: &mut Fixture, config: Config) {
+    f.niri_state().reload_config(Ok(config));
+    f.niri_state().refresh_and_flush_clients();
 }
 
 fn px(pixels: &[u8], x: i32, y: i32) -> Option<[u8; 3]> {
@@ -1424,13 +1432,14 @@ fn px(pixels: &[u8], x: i32, y: i32) -> Option<[u8; 3]> {
     Some([pixels[i], pixels[i + 1], pixels[i + 2]])
 }
 
-/// On each side of `rect` whose middle lies on the output, scanning outward
-/// from 20 px inside the window along its middle row or column to the first
-/// three backdrop pixels: the three pixels just inside that outline (the
-/// anti-aliased pixel excluded) must not be one flat colour. A bevel
-/// coordinate that saturates before the silhouette, or a planar facet, leaves
-/// such a run. Returns the sides it checked.
-fn assert_no_rim_plateau(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>) -> Vec<&'static str> {
+/// Per side of `rect` whose middle lies on the output, scanning outward from
+/// 20 px inside the window along its middle row or column to the first three
+/// backdrop pixels: the rim ratio, the rise of the last pixel before the
+/// anti-aliased one over the mean rise of the four pixels before it, in summed
+/// RGB. A planar facet rises about linearly (at most 1.85 at rest on the live
+/// look, 2.67 under ±6 px of jelly); a rounded profile climbs into the rim (at
+/// least 4.3 at rest). A flat run before the outline gives 0.
+fn rim_ratios(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>) -> Vec<(&'static str, f64)> {
     let backdrop = px(pixels, 2, 2).unwrap();
     let cx = (rect.loc.x + rect.size.w / 2.) as i32;
     let cy = (rect.loc.y + rect.size.h / 2.) as i32;
@@ -1440,7 +1449,7 @@ fn assert_no_rim_plateau(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>
         ("top", (cx, rect.loc.y as i32 + 20), (0, -1)),
         ("bottom", (cx, (rect.loc.y + rect.size.h) as i32 - 20), (0, 1)),
     ];
-    let mut checked = Vec::new();
+    let mut ratios = Vec::new();
     for (side, (x0, y0), (dx, dy)) in sides {
         let at = |i: i32| px(pixels, x0 + dx * i, y0 + dy * i);
         if at(0).is_none() {
@@ -1450,34 +1459,57 @@ fn assert_no_rim_plateau(tag: &str, pixels: &[u8], rect: Rectangle<f64, Logical>
             .take_while(|&i| at(i + 2).is_some())
             .find(|&i| (0..3).all(|j| at(i + j) == Some(backdrop)))
             .unwrap_or_else(|| panic!("{tag} {side}: no outline before the output's edge"));
-        let run = [at(outline - 4), at(outline - 3), at(outline - 2)];
-        assert!(
-            !(run[0] == run[1] && run[1] == run[2]),
-            "{tag} {side}: flat run {run:?} before the outline at {outline}"
-        );
-        checked.push(side);
+        let sum = |i: i32| at(i).unwrap().iter().map(|&c| f64::from(c)).sum::<f64>();
+        let p: Vec<f64> = (0..6).map(|i| sum(outline - 2 - i)).collect();
+        ratios.push((side, (p[0] - p[1]) / ((p[1] - p[5]).abs() / 4.).max(0.5)));
     }
-    checked
+    ratios
+}
+
+/// Renders `at` under profile 2, then under a forced profile 1 at the same
+/// instant, and returns both renders and the window rectangles.
+fn both_profiles(
+    f: &mut Fixture,
+    distortion: &str,
+    at: Duration,
+) -> (Vec<u8>, Vec<u8>, Vec<Rectangle<f64, Logical>>) {
+    let rounded = render_at(f, at);
+    let rects = window_rects(f);
+    reload(f, config(&motion_glass(1., distortion), RING_OFF, MOTION));
+    let planar = render_at(f, at);
+    assert_eq!(window_rects(f), rects, "the reload moved the frozen instant");
+    reload(f, config(&motion_glass(2., distortion), RING_OFF, MOTION));
+    (rounded, planar, rects)
 }
 
 #[test]
-fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
-    let all = ["left", "right", "top", "bottom"];
+fn the_rounded_rim_is_rounded_at_rest_mid_resize_and_mid_scroll() {
     for (tag, distortion) in [("plain", ""), ("distorted", "distortion 1 scale=0.5")] {
-        // One centered window, its column 200 px wider, half way through the
-        // resize.
-        let mut f = fixture(config(&motion_glass(distortion), RING_OFF, MOTION));
+        // At rest: an absolute check on all four sides, with the forced
+        // planar render as its negative control.
+        let mut f = fixture(config(&motion_glass(2., distortion), RING_OFF, MOTION));
         let id = f.add_client();
         let surface = open(&mut f, id, (W, H), CLEAR);
         f.niri_state().update_keyboard_focus();
         f.double_roundtrip(id);
         set_time(&mut f, Duration::ZERO);
         f.niri_complete_animations();
-        let rest = render_at(&mut f, Duration::ZERO);
-        let rect = window_rects(&mut f)[0];
-        dump(&format!("motion-{tag}-rest"), &rest, None, rect, "");
-        assert_eq!(assert_no_rim_plateau("rest", &rest, rect), all);
+        let (rounded, planar, rects) = both_profiles(&mut f, distortion, Duration::ZERO);
+        dump(&format!("profile-{tag}-rest-k2"), &rounded, None, rects[0], "");
+        dump(&format!("profile-{tag}-rest-k1"), &planar, None, rects[0], "");
+        let k2 = rim_ratios("rest k2", &rounded, rects[0]);
+        let k1 = rim_ratios("rest k1", &planar, rects[0]);
+        assert_eq!(k2.len(), 4, "rest: sides {k2:?}");
+        for (side, r) in &k2 {
+            assert!(*r >= 3., "{tag} rest {side}: rim ratio {r} is not rounded ({k2:?})");
+        }
+        for (side, r) in &k1 {
+            assert!(*r < 3., "{tag} rest {side}: the forced planar bevel reads rounded, ratio {r}");
+        }
 
+        // Mid-resize: the column 200 px wider, half way through. Paired at
+        // one instant: the rounded rim must out-climb the planar one on every
+        // side (at least 1.56 times under ±6 px of jelly in the model).
         f.niri().layout.set_column_width(niri_ipc::SizeChange::AdjustFixed(200));
         f.double_roundtrip(id);
         let window = f.client(id).window(&surface);
@@ -1485,15 +1517,21 @@ fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
         window.set_size(W + 200, H);
         window.ack_last_and_commit();
         f.roundtrip(id);
-        let mid = render_at(&mut f, Duration::from_millis(500));
-        let rect = window_rects(&mut f)[0];
-        dump(&format!("motion-{tag}-resize-mid"), &mid, None, rect, "");
-        assert_eq!(assert_no_rim_plateau("mid-resize", &mid, rect), all);
+        let mid = Duration::from_millis(500);
+        let (rounded, planar, rects) = both_profiles(&mut f, distortion, mid);
+        dump(&format!("profile-{tag}-resize-k2"), &rounded, None, rects[0], "");
+        dump(&format!("profile-{tag}-resize-k1"), &planar, None, rects[0], "");
+        let k2 = rim_ratios("resize k2", &rounded, rects[0]);
+        let k1 = rim_ratios("resize k1", &planar, rects[0]);
+        assert_eq!(k2.len(), 4, "mid-resize: sides {k2:?}");
+        for ((side, r2), (_, r1)) in k2.iter().zip(&k1) {
+            assert!(*r2 >= 1.3 * r1.max(1.), "{tag} mid-resize {side}: k2 {r2} vs k1 {r1}");
+        }
 
-        // Two 800 px columns; focusing the second scrolls the view, so at
-        // 500 ms the first tile's right edge trails and the second's left
-        // edge leads, both on the output.
-        let mut f = fixture(config(&motion_glass(distortion), RING_OFF, MOTION));
+        // Mid-scroll: two 800 px columns; focusing the second scrolls the
+        // view, so at 500 ms the first tile's right edge trails and the
+        // second's left edge leads, both on the output.
+        let mut f = fixture(config(&motion_glass(2., distortion), RING_OFF, MOTION));
         let id = f.add_client();
         let first = open(&mut f, id, (W, H), CLEAR);
         let second = open(&mut f, id, (W, H), CLEAR);
@@ -1515,24 +1553,31 @@ fn the_rounded_rim_has_no_plateau_at_rest_mid_resize_or_mid_scroll() {
         f.niri_complete_animations();
         let _ = render_at(&mut f, Duration::ZERO);
         f.niri().layout.focus_right();
-        let mid = render_at(&mut f, Duration::from_millis(500));
-        let mut checked = Vec::new();
-        for (i, rect) in window_rects(&mut f).into_iter().enumerate() {
-            dump(&format!("motion-{tag}-scroll-mid-{i}"), &mid, None, rect, "");
-            checked.extend(assert_no_rim_plateau(&format!("mid-scroll {i}"), &mid, rect));
+        let (rounded, planar, rects) = both_profiles(&mut f, distortion, mid);
+        let mut sides = Vec::new();
+        for (i, rect) in rects.iter().enumerate() {
+            dump(&format!("profile-{tag}-scroll-{i}-k2"), &rounded, None, *rect, "");
+            let k2 = rim_ratios("scroll k2", &rounded, *rect);
+            let k1 = rim_ratios("scroll k1", &planar, *rect);
+            for ((side, r2), (_, r1)) in k2.iter().zip(&k1) {
+                assert!(*r2 >= 1.3 * r1.max(1.), "{tag} mid-scroll tile {i} {side}: k2 {r2} vs k1 {r1}");
+                sides.push(*side);
+            }
         }
         assert!(
-            checked.contains(&"left") && checked.contains(&"right"),
-            "mid-scroll checked only {checked:?}: no leading and trailing edge on the output"
+            sides.contains(&"left") && sides.contains(&"right"),
+            "mid-scroll checked only {sides:?}: no leading and trailing edge on the output"
         );
     }
 }
 ```
 
+The thresholds come from evaluating the final shader's formulas (the Task 2 mirror plus attenuation, `(1 - F)` and the glint) over the live look on the flat backdrop, for every pixel alignment and face shifts up to ±6 px with resizes up to ±8 px. If a real render misses one, stop and report the printed ratios: either the implementation departs from the spec or the harness geometry is off. Do not retune the threshold to pass.
+
 - [ ] **Step 2: Run them to see them fail**
 
 Run: `just test-one -p niri the_shader_names_the_same` then `just test-one -p niri material_source_is_prelude` then `just test-one -p niri the_rounded_rim`
-Expected: all three fail. The first two fail on the missing lines. The motion test fails at `rest` on the old shader, which ignores `bevel-profile` and draws a planar facet: one flat colour up to the outline. If it fails anywhere else (no outline, fewer sides), fix the harness before touching the shader.
+Expected: all three fail. The first two fail on the missing lines. The profile test fails at rest on the old shader, which ignores `bevel-profile`: its planar bevel has one normal and one path, so the rim ratio is near 0 on every side. If it fails anywhere else (no outline, fewer sides, the reload moving the instant), fix the harness before touching the shader.
 
 - [ ] **Step 3: Implement the prelude.** In `prelude.frag`:
 
@@ -1772,7 +1817,7 @@ Expected: all pass. If a `ring_` test fails, stop and report: the spill or the r
 
 ```bash
 just test-fast
-tasks done material-d37c1a "height-field bevel in the shader: two-boundary u, profile, softened outer gradient, ray path for taps and attenuation, tap lift, (1 - F), spill on u; mirror test pins prelude lines; motion renders show no rim plateau"
+tasks done material-d37c1a "height-field bevel in the shader: two-boundary u, profile, softened outer gradient, ray path for taps and attenuation, tap lift, (1 - F), spill on u; mirror test pins prelude lines; the rim profile reads rounded against a forced planar render at rest, mid-resize and mid-scroll"
 tasks check
 git add src/render_helpers docs/materials/render-pipeline.md docs/materials/material-config.md src/tests/glass_edge.rs tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -1917,7 +1962,7 @@ git commit -m "refactor(material): pass a Surface to the specular hooks (materia
 - Modify: `niri-config/src/material/optics/mod.rs`, `niri-config/src/material/mod.rs`, `niri-config/src/lib.rs`
 - Create: `src/render_helpers/material/optics/reflection.rs`, `src/render_helpers/shaders/material/reflection.frag`
 - Modify: `src/render_helpers/material/optics/mod.rs`, `src/render_helpers/shaders/material/main.frag`, `src/render_helpers/shaders/mod.rs`
-- Modify: `src/tests/glass_edge.rs` (cases)
+- Modify: `src/tests/glass_edge.rs` (cases, the reflection motion test), `src/tests/client.rs` (a patterned shm buffer on layer surfaces)
 - Modify: `docs/materials/material-config.md`, `docs/materials/render-pipeline.md`, `docs/materials/scripts/glass-parameter-sweep.sh`
 
 **Interfaces:**
@@ -1978,6 +2023,147 @@ In `src/render_helpers/material/optics/reflection.rs` (test module, with the `fr
         cases.push(case(look, "reflection-0", "reflection 0", RING_OFF));
         cases.push(case(look, "reflection", "reflection 0.6", RING_OFF));
     }
+```
+
+The reflection's direction carries the perturbation (spec §3.2), and a flat backdrop cannot show it: every direction samples the same colour. Add a patterned Background layer and a frozen motion case with both optics on. First the test client needs a patterned buffer on layer surfaces. In `src/tests/client.rs`, give `LayerSurface` the shm global (`pub shm: WlShm,` after `spbm`, and `shm: self.shm.clone().unwrap(),` in `create_layer`, as `create_window` does), and add to `impl LayerSurface`:
+
+```rust
+    /// A `w`×`h` ARGB8888 shm buffer filled by `argb(x, y)`, damaged in full.
+    pub fn attach_new_shm_pattern(&self, w: u16, h: u16, argb: impl Fn(u16, u16) -> u32) {
+        use std::io::Write as _;
+        use std::os::fd::{AsFd as _, FromRawFd as _, OwnedFd};
+
+        let fd = unsafe { libc::memfd_create(c"niri-test-shm".as_ptr(), libc::MFD_CLOEXEC) };
+        assert!(fd >= 0, "memfd_create failed");
+        let mut file = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+        let mut bytes = Vec::with_capacity(usize::from(w) * usize::from(h) * 4);
+        for y in 0..h {
+            for x in 0..w {
+                bytes.extend_from_slice(&argb(x, y).to_ne_bytes());
+            }
+        }
+        file.write_all(&bytes).unwrap();
+        let (w, h) = (i32::from(w), i32::from(h));
+        let pool = self.shm.create_pool(file.as_fd(), w * h * 4, &self.qh, ());
+        let buffer = pool.create_buffer(0, w, h, w * 4, wl_shm::Format::Argb8888, &self.qh, ());
+        pool.destroy();
+        self.surface.attach(Some(&buffer), 0, 0);
+        self.surface.damage_buffer(0, 0, w, h);
+    }
+```
+
+Then in `src/tests/glass_edge.rs` (imports as `src/tests/layer_shell.rs` has them: `Layer`, `Anchor`, and `super::client::LayerConfigureProps`):
+
+```rust
+/// A 16 px checker of a warm and a cool colour (opaque ARGB).
+fn checker(x: u16, y: u16) -> u32 {
+    if (x / 16 + y / 16) % 2 == 0 {
+        0xffc8_783c
+    } else {
+        0xff28_5ac8
+    }
+}
+
+/// A Background-layer surface covering the output with `checker`: the glass's
+/// background buffer, so what the reflection samples depends on where it looks.
+fn patterned_backdrop(f: &mut Fixture, id: ClientId) {
+    let layer = f.client(id).create_layer(None, Layer::Background, "glass-edge-checker");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        anchor: Some(Anchor::Left | Anchor::Right | Anchor::Top | Anchor::Bottom),
+        size: Some((0, 0)),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(id);
+    let layer = f.client(id).layer(&surface);
+    layer.attach_new_shm_pattern(OUT_W, OUT_H, checker);
+    layer.ack_last_and_commit();
+    f.double_roundtrip(id);
+}
+
+/// Linear light from an 8-bit sRGB value.
+fn lin(c: u8) -> f64 {
+    let c = f64::from(c) / 255.;
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+/// Channels whose reflection term changes by more than 0.02 (linear) when the
+/// perturbation is switched on: the reflection follows the perturbed
+/// direction. Set from the calibration in Task 7 Step 6.
+const REFLECTION_MOTION_MIN: usize = 500;
+
+#[test]
+fn the_reflection_follows_the_perturbed_direction_in_motion() {
+    // Both optics on, rounded bevel, at full flex. Perturbed: distortion and
+    // jelly ripple; flat: neither.
+    let glass = |reflection: f64, perturbed: bool| {
+        let perturbation = if perturbed {
+            "distortion 0.4 scale=1\njelly-ripple 0.5"
+        } else {
+            "jelly-ripple 0"
+        };
+        format!(
+            "{}\nbevel-profile 2\njelly-flex 0.02\nedge-highlight 0.2\nreflection {reflection}\n{perturbation}",
+            LIVE.glass
+        )
+    };
+    let mut f = fixture(config(&glass(0.6, true), RING_OFF, MOTION));
+    let id = f.add_client();
+    patterned_backdrop(&mut f, id);
+    let surface = open(&mut f, id, (W, H), CLEAR);
+    f.niri_state().update_keyboard_focus();
+    f.double_roundtrip(id);
+    set_time(&mut f, Duration::ZERO);
+    f.niri_complete_animations();
+    let _ = render_at(&mut f, Duration::ZERO);
+    f.niri().layout.set_column_width(niri_ipc::SizeChange::AdjustFixed(200));
+    f.double_roundtrip(id);
+    let window = f.client(id).window(&surface);
+    window.attach_new_shm_buffer(CLEAR);
+    window.set_size(W + 200, H);
+    window.ack_last_and_commit();
+    f.roundtrip(id);
+
+    // Four renders of one frozen mid-resize instant. In linear light the
+    // reflection is additive, so (on - off) isolates it under each
+    // perturbation state; if its direction ignored the perturbation, the two
+    // isolates would agree to quantization.
+    let mid = Duration::from_millis(500);
+    let rect = window_rects(&mut f)[0];
+    let mut renders = Vec::new();
+    for (reflection, perturbed) in [(0.6, true), (0., true), (0.6, false), (0., false)] {
+        reload(&mut f, config(&glass(reflection, perturbed), RING_OFF, MOTION));
+        let pixels = render_at(&mut f, mid);
+        assert_eq!(window_rects(&mut f)[0], rect, "the reload moved the frozen instant");
+        dump(&format!("reflection-motion-{reflection}-{perturbed}"), &pixels, None, rect, "");
+        renders.push(pixels);
+    }
+    let mut clipped = 0;
+    let mut changed = 0;
+    for i in (0..renders[0].len()).filter(|i| i % 4 != 3) {
+        // A channel at 255 in any render is clipped: its linear sum is not
+        // recoverable, so it says nothing either way.
+        if renders.iter().any(|r| r[i] == 255) {
+            clipped += 1;
+            continue;
+        }
+        let perturbed = lin(renders[0][i]) - lin(renders[1][i]);
+        let flat = lin(renders[2][i]) - lin(renders[3][i]);
+        if (perturbed - flat).abs() > 0.02 {
+            changed += 1;
+        }
+    }
+    eprintln!("reflection motion: {changed} channels changed, {clipped} clipped");
+    assert!(
+        changed >= REFLECTION_MOTION_MIN,
+        "the reflection ignores the perturbation: {changed} channels changed ({clipped} clipped)"
+    );
+}
 ```
 
 Run: `just test-one -p niri-config reflection` — Expected: compile failure, no `ResolvedReflection`.
@@ -2073,7 +2259,20 @@ In `optics/mod.rs` (renderer): `pub mod reflection;` and `OpticEntry::of::<refle
 
 - [ ] **Step 5: Validate, regenerate, test.** Shader check with the optic list `saturation noise aurora reflection iridescence` (exit 0). `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_parameter_table_matches_the_docs`. Then `just test-one -p niri-config reflection`, `just test-one -p niri reflection`, `just test-one -p niri material_source_is_prelude`, `just test-one -p niri optic_` (the settling tests iterate `OPTICS`: a static optic must hold its values).
 
-- [ ] **Step 6: Evidence.** Dump to `$EV/step3` (`GLASS_EDGE_DUMP=$EV/step3 just test-one -p niri every_case_renders_frozen`), then:
+- [ ] **Step 6: The reflection motion test and its negative control.** Run `just test-one -p niri the_reflection_follows` and note the printed count (expected: pass). Then remove the direction perturbation and confirm the test fails:
+
+```bash
+F=src/render_helpers/shaders/material/reflection.frag
+cp $F "$TMPDIR/reflection.frag"
+sed -i 's|vec2 bent = s.acrossDir + s.perturbed.xy - s.structural.xy;|vec2 bent = s.acrossDir;|' $F
+just test-one -p niri the_reflection_follows   # expected: FAIL, "the reflection ignores the perturbation"
+cp "$TMPDIR/reflection.frag" $F
+git diff --stat $F   # nothing beyond this task's own changes
+```
+
+Keep `REFLECTION_MOTION_MIN = 500` if the real count is at least 2500 and the mutated count at most 100. Otherwise, if the real count is at least 25 times `max(mutated, 4)`, set the constant to the geometric mean of the two and say so in the evidence; if not, stop and report both counts, since the case cannot separate the two. Record both counts on `material-02b42a` and under "Step 3" in the evidence document.
+
+- [ ] **Step 7: Evidence.** Dump to `$EV/step3` (`GLASS_EDGE_DUMP=$EV/step3 just test-one -p niri every_case_renders_frozen`), then:
 
 ```bash
 C=docs/materials/scripts/glass-edge-compare.py
@@ -2088,7 +2287,7 @@ done
 
 Expected: every command exits 0. That is: every existing case is decoded-identical to step 2 (spec §6, step 3 at default values); `reflection 0` renders exactly as no node; `reflection 0.6` leaves the face and everything outside the slab untouched and changes the bevel. Append the output under "Step 3", with the `live-reflection` PNG's bevel read by eye (the backdrop colour on the dark edge, brightest toward the silhouette).
 
-- [ ] **Step 7: Documentation.** `material-config.md` `## Optics`, after `### iridescence`:
+- [ ] **Step 8: Documentation.** `material-config.md` `## Optics`, after `### iridescence`:
 
 ```markdown
 ### reflection
@@ -2105,13 +2304,13 @@ omission is 0; nothing inherits.
 
 `render-pipeline.md`: row 6 gains "then the `reflection` optic adds the Fresnel-weighted, untinted scene just beyond the silhouette on the bevel"; its Samples column gains `niri_tex_bg[_high]`, `niri_tex_backdrop[_high]` (reflection); §5 gains `| reflection | glass.reflection (pending, prism-7024c4) | 6 |`. In `glass-parameter-sweep.sh`'s allowlist, change `glass:iridescence|glass:aurora) ;;` to `glass:iridescence|glass:aurora|glass:reflection|glass:edge-highlight|glass:bevel-profile) ;;` (Task 8 adds the optic the second key names; the sweep refuses an unknown key before launching, so listing it early is harmless).
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 just test-fast
-tasks done material-02b42a "reflection optic: config, renderer, GLSL, docs; neutral byte-identical, face untouched, bevel lit"
+tasks done material-02b42a "reflection optic: config, renderer, GLSL, docs; neutral byte-identical, face untouched, bevel lit; follows the perturbed direction in motion over a patterned backdrop (mutation control fails)"
 tasks check
-git add niri-config src/render_helpers src/tests/glass_edge.rs docs/materials tasks/
+git add niri-config src/render_helpers src/tests/glass_edge.rs src/tests/client.rs docs/materials tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
 git commit -m "feat(material): add the glass reflection optic (material-be611b)"
 ```
