@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-3bdffc
 created: 2026-09-29T21:31:05Z
-updated: 2026-10-03T10:43:05Z
+updated: 2026-10-03T10:54:57Z
 started: 2026-10-03T09:33:22Z
 depends: [material-a54d89]
 parent: material-0a4093
@@ -55,3 +55,7 @@ Bound: attenuation tint only; fireflies, frost, progress IPC, client desaturatio
 - 2026-10-03T10:43:00Z (material-3bdffc): Implementation plan drafted: docs/plans/2026-10-03-accent-tint.md (6 tasks). Self-review: every spec section mapped to a task; five review-focus cases (focus-split swap, weight-only reload, animations off, accent none, neighbor accent) carry tests in Task 5. Execution children under material-6f45a0: material-01ddd7, material-558ce5, material-49e73d, material-77cb15, material-e2a68a, material-76a30f, chained from this design task. Native sequential execution recommended.
 - 2026-10-03T10:43:05Z (material-3bdffc): parked (waiting on user, review): Owner reviews docs/plans/2026-10-03-accent-tint.md in .worktrees/material-3bdffc (plan round 1) and picks an execution method; agent records the review, revises or, on accept, notes reviewed decisions on material-6f45a0 and closes this design task in the result commit
   provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T10:51:13Z (material-3bdffc): resumed
+  provenance: {"harness_session":"claude-code:e945f374-1ee7-46ac-8b9e-b3e3f024538c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-03T10:51:13Z (material-3bdffc): review: plan round 1 — verdict: revise; findings: P2 5; reviewer: codex/gpt-6
+- 2026-10-03T10:54:57Z (material-3bdffc): Plan round 1 dispositions: P2-1 Task 4 adds a tile-level end-to-end test (folded signal -> signal_for_frame -> solve -> glass_signal_inputs -> uploaded attenuation) over a linear fade for black<->orange at the spec fractions and a real interrupted restart; P2-2 animations-off test injects the accent into a settled window and checks the first frame at the same instant against the settled tint, with a 400 ms control that is still untinted; P2-3 focus test swaps one settled fixture away and back, checking each first frame; P2-4 reload test asserts the material element's id@commit on RenderTarget::Output changes once after a weight-only reload and then holds; P2-5 dumps use the accepted look's full glass and response (ring-gap 6, width 1.1, glow 1.2, beam settings). Native execution chosen by owner; whole-branch review placed before the local merge in Task 6.
