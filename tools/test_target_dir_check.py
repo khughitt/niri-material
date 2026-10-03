@@ -72,7 +72,7 @@ class TargetDirCheckTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn(str(self.main / "target"), result.stderr)
         self.assertIn(str(self.main), result.stderr)
-        self.assertIn("build.target-dir", result.stderr)
+        self.assertIn("target-dir = \"target\"", result.stderr)
         # The other worktree keeps its own target and is unaffected.
         self.assertEqual(self.check(self.b).returncode, 0)
 
@@ -126,6 +126,21 @@ class TargetDirCheckTest(unittest.TestCase):
         result = self.check(self.a)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(str(self.b), result.stderr)
+
+    def test_another_checkout_whose_target_cannot_be_read_is_skipped(self):
+        blocker = pathlib.Path(self.tmp.name).resolve() / "a-file"
+        blocker.write_text("")
+        self.point(self.b, blocker / "target")
+        result = self.check(self.a)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(str(self.b), result.stderr)
+        self.assertEqual(self.check(self.b).returncode, 2)
+
+    def test_own_target_dir_overrides_a_shared_parent_config(self):
+        self.point(self.a, self.main / "target")
+        self.assertEqual(self.check(self.a).returncode, 1)
+        self.point(self.a, "target")
+        self.assertEqual(self.check(self.a).returncode, 0)
 
     def test_this_checkout_with_a_broken_manifest_cannot_run(self):
         (self.a / "Cargo.toml").write_text("<<<<<<< conflict\n")
