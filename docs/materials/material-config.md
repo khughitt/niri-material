@@ -62,6 +62,7 @@ lengths are logical pixels.
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
 | `aurora` `color` | color | `#7a5cff` | any color | — |
+| `reflection` | float | 0 | 0–1 | — |
 | `iridescence` | float | 0 | 0–1 | — |
 
 <!-- params:end -->
@@ -204,6 +205,17 @@ mix, so an accent still tints the result. Its explicit neutral is 0, and
 omission is 0; nothing inherits. The `rainbow` preset pairs it with
 `chromatic-aberration`, which is the dispersion the refracted image carries;
 iridescence colours the edge light.
+
+### reflection
+
+Stage 6. `reflection <amount>` adds what the bevel reflects: the scene just
+beyond the silhouette, sampled outward across the bevel and one thickness
+further, weighted by the Fresnel term and faded in over the first tenth of
+the bevel. It is not tinted by `attenuation-color` (reflection happens at the
+surface), so a dark edge still shows the wallpaper's colours, and it goes
+through the same prefilter as the refracted image, so `roughness` softens it.
+Distortion and jelly ripple bend its direction. Its explicit neutral is 0, and
+omission is 0; nothing inherits.
 
 ### aurora
 

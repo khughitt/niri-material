@@ -58,6 +58,7 @@ pub use crate::layout::*;
 pub use crate::material::optics::aurora::{Aurora, ResolvedAurora};
 pub use crate::material::optics::iridescence::{Iridescence, ResolvedIridescence};
 pub use crate::material::optics::noise::{Noise, NoiseType, ResolvedNoise};
+pub use crate::material::optics::reflection::{Reflection, ResolvedReflection};
 pub use crate::material::optics::saturation::ResolvedSaturation;
 pub use crate::material::{
     AccentResponse, AttentionResponse, FocusResponse, Glass, ImpulseResponse, Material,
@@ -1461,6 +1462,7 @@ mod tests {
                 anisotropic_blur: 0.75,
                 roughness: 0.08,
                 iridescence: ResolvedIridescence::default(),
+                reflection: ResolvedReflection::default(),
                 aurora: ResolvedAurora::default(),
                 backdrop_blur: false,
                 jelly_flex: 0.01,
@@ -1630,6 +1632,27 @@ mod tests {
         for value in ["-0.01", "1.01"] {
             let err = do_parse_err(&format!(
                 "material \"gem\" {{ glass {{ iridescence {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 0 and 1"), "{err}");
+        }
+    }
+
+    #[test]
+    fn reflection_resolves_through_its_optic() {
+        let written = do_parse(r##"material "edge" { glass { reflection 0.6; }; }"##);
+        assert_eq!(
+            written.materials[0].resolve().glass.reflection,
+            ResolvedReflection { amount: 0.6 }
+        );
+        let omitted = do_parse(r##"material "edge" { glass {}; }"##);
+        assert_eq!(omitted.materials[0].resolve().glass.reflection.amount, 0.);
+    }
+
+    #[test]
+    fn glass_reflection_rejects_values_outside_zero_and_one() {
+        for value in ["-0.01", "1.01"] {
+            let err = do_parse_err(&format!(
+                "material \"edge\" {{ glass {{ reflection {value}; }}; }}\n"
             ));
             assert!(err.contains("value must be between 0 and 1"), "{err}");
         }

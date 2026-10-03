@@ -196,6 +196,7 @@ void main() {
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
         Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist);
         // Specular hooks, in OPTICS order (render-pipeline.md stage 6).
+        specular = reflection_specular(specular, surf);
         specular = iridescence_specular(specular, surf);
         if (mat_sig_accent.w > 0.0 && mat_sig_light.z > 0.0)
             specular = mix(specular, specular * mat_sig_accent.rgb * 2.0,
