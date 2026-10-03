@@ -136,11 +136,22 @@ class TargetDirCheckTest(unittest.TestCase):
         self.assertIn(str(self.b), result.stderr)
         self.assertEqual(self.check(self.b).returncode, 2)
 
-    def test_own_target_dir_overrides_a_shared_parent_config(self):
-        self.point(self.a, self.main / "target")
+    def test_the_hint_overrides_a_shared_parent_config(self):
+        # Every fixture checkout sits under one directory whose config shares both
+        # dirs; cargo merges config key by key, so the hint must set both keys.
+        base = pathlib.Path(self.tmp.name).resolve()
+        (base / ".cargo").mkdir()
+        (base / ".cargo/config.toml").write_text(
+            f'[build]\ntarget-dir = "{base / "shared-target"}"\n'
+            f'build-dir = "{base / "shared-build"}"\n')
         self.assertEqual(self.check(self.a).returncode, 1)
-        self.point(self.a, "target")
-        self.assertEqual(self.check(self.a).returncode, 0)
+        (self.a / ".cargo").mkdir()
+        (self.a / ".cargo/config.toml").write_text('[build]\ntarget-dir = "target"\n')
+        self.assertEqual(self.check(self.a).returncode, 1, "a parent build-dir still shares")
+        (self.a / ".cargo/config.toml").write_text(
+            '[build]\ntarget-dir = "target"\nbuild-dir = "target"\n')
+        result = self.check(self.a)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_this_checkout_with_a_broken_manifest_cannot_run(self):
         (self.a / "Cargo.toml").write_text("<<<<<<< conflict\n")

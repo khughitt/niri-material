@@ -15,8 +15,9 @@ a target dir and a build dir of its own. Registry crates are the same in every c
 and were never at risk; the cost of separate dirs is one full build per worktree.
 (cargo's unstable -Z checksum-freshness would tell the trees apart by content; a
 `build.build-dir` containing `{workspace-path-hash}` separates intermediates but not
-the shared final binaries.) A checkout whose own .cargo/config.toml says
-`target-dir = "target"` is separate whatever a parent directory's config says.
+the shared final binaries.) Cargo merges config files key by key, so a checkout whose
+own .cargo/config.toml sets both `target-dir = "target"` and `build-dir = "target"` is
+separate whatever a parent directory's or $CARGO_HOME's config says.
 
 The main checkout keeps the dirs it has: a linked worktree sharing either dir with any
 other checkout fails here, while the main checkout only lists the worktrees that share
@@ -126,8 +127,8 @@ def main():
              f"own check once it carries tools/target-dir-check:\n{names}")
         return 0
     env = [name for name in ENV if os.environ.get(name)]
-    fix = ("write `[build]` `target-dir = \"target\"` into this checkout's own "
-           ".cargo/config.toml, with no build-dir, so cargo builds into "
+    fix = ("set both `target-dir = \"target\"` and `build-dir = \"target\"` under "
+           "`[build]` in this checkout's own .cargo/config.toml, so cargo builds into "
            f"{here / 'target'} whatever a parent directory's or $CARGO_HOME's config says")
     if env:
         fix = (f"unset {' and '.join(env)}, which overrides every checkout's cargo config, "
