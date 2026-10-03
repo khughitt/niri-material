@@ -2099,8 +2099,9 @@ const REFLECTION_MOTION_MIN: usize = 500;
 
 #[test]
 fn the_reflection_follows_the_perturbed_direction_in_motion() {
-    // Both optics on, rounded bevel, at full flex. Perturbed: distortion and
-    // jelly ripple; flat: neither.
+    // Reflection on, rounded bevel, at full flex (edge-highlight parses only
+    // from Task 8, and cancels out of the isolate anyway). Perturbed:
+    // distortion and jelly ripple; flat: neither.
     let glass = |reflection: f64, perturbed: bool| {
         let perturbation = if perturbed {
             "distortion 0.4 scale=1\njelly-ripple 0.5"
@@ -2108,7 +2109,7 @@ fn the_reflection_follows_the_perturbed_direction_in_motion() {
             "jelly-ripple 0"
         };
         format!(
-            "{}\nbevel-profile 2\njelly-flex 0.02\nedge-highlight 0.2\nreflection {reflection}\n{perturbation}",
+            "{}\nbevel-profile 2\njelly-flex 0.02\nreflection {reflection}\n{perturbation}",
             LIVE.glass
         )
     };
@@ -2133,14 +2134,17 @@ fn the_reflection_follows_the_perturbed_direction_in_motion() {
     // reflection is additive, so (on - off) isolates it under each
     // perturbation state; if its direction ignored the perturbation, the two
     // isolates would agree to quantization.
+    // The window rectangle is read after each render: before the first one
+    // the clock still stands at the resize's start.
     let mid = Duration::from_millis(500);
-    let rect = window_rects(&mut f)[0];
+    let mut rect = None;
     let mut renders = Vec::new();
     for (reflection, perturbed) in [(0.6, true), (0., true), (0.6, false), (0., false)] {
         reload(&mut f, config(&glass(reflection, perturbed), RING_OFF, MOTION));
         let pixels = render_at(&mut f, mid);
-        assert_eq!(window_rects(&mut f)[0], rect, "the reload moved the frozen instant");
-        dump(&format!("reflection-motion-{reflection}-{perturbed}"), &pixels, None, rect, "");
+        let now = window_rects(&mut f)[0];
+        assert_eq!(*rect.get_or_insert(now), now, "the reload moved the frozen instant");
+        dump(&format!("reflection-motion-{reflection}-{perturbed}"), &pixels, None, now, "");
         renders.push(pixels);
     }
     let mut clipped = 0;
@@ -2263,14 +2267,16 @@ In `optics/mod.rs` (renderer): `pub mod reflection;` and `OpticEntry::of::<refle
 
 ```bash
 F=src/render_helpers/shaders/material/reflection.frag
-cp $F "$TMPDIR/reflection.frag"
+T=$(mktemp)
+cp $F "$T"
 sed -i 's|vec2 bent = s.acrossDir + s.perturbed.xy - s.structural.xy;|vec2 bent = s.acrossDir;|' $F
+grep -qF 'vec2 bent = s.acrossDir;' $F || { echo "mutation did not apply"; cp "$T" $F; exit 1; }
 just test-one -p niri the_reflection_follows   # expected: FAIL, "the reflection ignores the perturbation"
-cp "$TMPDIR/reflection.frag" $F
+cp "$T" $F && rm "$T"
 git diff --stat $F   # nothing beyond this task's own changes
 ```
 
-Keep `REFLECTION_MOTION_MIN = 500` if the real count is at least 2500 and the mutated count at most 100. Otherwise, if the real count is at least 25 times `max(mutated, 4)`, set the constant to the geometric mean of the two and say so in the evidence; if not, stop and report both counts, since the case cannot separate the two. Record both counts on `material-02b42a` and under "Step 3" in the evidence document.
+The mutated count is not zero by construction: at the silhouette's anti-aliased pixels the shader blends in sRGB, so (on − off) is only approximately linear there, and rounding alone reaches about 0.018 against the 0.02 bar. Keep `REFLECTION_MOTION_MIN = 500` if the real count is at least 2500 and the mutated count at most 100. Otherwise, if the real count is at least 25 times `max(mutated, 4)`, set the constant to the geometric mean of the two and say so in the evidence; if not, stop and report both counts, since the case cannot separate the two. Record both counts on `material-02b42a` and under "Step 3" in the evidence document.
 
 - [ ] **Step 7: Evidence.** Dump to `$EV/step3` (`GLASS_EDGE_DUMP=$EV/step3 just test-one -p niri every_case_renders_frozen`), then:
 
