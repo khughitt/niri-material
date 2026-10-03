@@ -99,8 +99,31 @@ def csv_rows(path, required, allow_empty=False):
         raise ValueError(f'missing or invalid CSV: {path.name}') from error
 
 
+def zone_rows(path, required):
+    """Rows of a zone export. tracy-csvexport leaves names unquoted, so the
+    commas of a generic name (MultiRenderer<'_, '_, '_>) spill into extra
+    fields; those fields are the name's, the first column."""
+    try:
+        with path.open(newline='') as stream:
+            reader = csv.reader(stream)
+            header = next(reader, None)
+            if not header or header[0] != 'name' or not set(required) <= set(header):
+                raise ValueError(f'missing CSV headers in {path.name}')
+            rows = []
+            for fields in reader:
+                if not fields:
+                    continue
+                extra = len(fields) - len(header)
+                if extra < 0:
+                    raise ValueError(f'short row in {path.name}')
+                rows.append(dict(zip(header, [','.join(fields[:extra + 1]), *fields[extra + 1:]])))
+            return rows
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ValueError(f'missing or invalid CSV: {path.name}') from error
+
+
 def zones(path, time_column, duration_column):
-    rows = csv_rows(path, ('name', time_column, duration_column))
+    rows = zone_rows(path, ('name', time_column, duration_column))
     zones_by_name = {}
     for row in rows:
         start = integer(row[time_column], f'{path.name} time')
@@ -232,7 +255,39 @@ def journal_intervals(observation, edges, declared):
     return intervals
 
 
-def analyze_case(run, case, lane):
+def drm_pin(manifest):
+    """The dedicated lane's pinned output: name, width, height and refresh (Hz or None)."""
+    drm = manifest.get('drm')
+    if not isinstance(drm, dict) or not isinstance(drm.get('output'), str) or not drm['output']:
+        raise ValueError('dedicated manifest names no drm output')
+    mode = re.fullmatch(r'([0-9]+)x([0-9]+)(?:@([0-9]+(?:\.[0-9]+)?))?', str(drm.get('mode', '')))
+    if not mode:
+        raise ValueError(f"dedicated manifest mode {drm.get('mode')!r} is not WIDTHxHEIGHT[@REFRESH]")
+    refresh = float(mode[3]) if mode[3] else None
+    return drm['output'], int(mode[1]), int(mode[2]), refresh
+
+
+def check_dedicated_output(name, output, pin):
+    """The single DRM output carries the pinned name, mode and scale 1."""
+    if not isinstance(output, dict):
+        raise ValueError(f'{name}: dedicated topology must record name, mode and scale')
+    want_name, width, height, refresh = pin
+    if output.get('name') != want_name:
+        raise ValueError(f"{name}: output {output.get('name')!r} is not the pinned {want_name}")
+    if output.get('scale') != 1:
+        raise ValueError(f"{name}: output scale {output.get('scale')!r}, expected 1")
+    mode = output.get('mode')
+    if not isinstance(mode, dict):
+        raise ValueError(f'{name}: output {want_name} has no current mode')
+    if (mode.get('width'), mode.get('height')) != (width, height):
+        raise ValueError(f"{name}: output mode {mode.get('width')}x{mode.get('height')}, "
+                         f'expected {width}x{height}')
+    got = mode.get('refresh_hz')
+    if refresh is not None and (not isinstance(got, (int, float)) or abs(got - refresh) > 0.01):
+        raise ValueError(f'{name}: output refresh {got!r} Hz, expected {refresh} Hz within 0.01')
+
+
+def analyze_case(run, case, lane, pin=None):
     name = case['name']
     if integer(case.get('repetitions'), 'repetitions') != 1:
         raise ValueError(f'{name}: repeated captures are recorded as separate cases')
@@ -303,6 +358,67 @@ def analyze_case(run, case, lane):
                        and start <= integer(row.get('total_ns'), 'message trace time') < end
                        for row in message_rows):
                 raise ValueError(f"{name}: stimulus {stimulus['label']} never traced {message!r}")
+
+    windows = {stimulus['label']: interval for stimulus, interval in zip(declared, stimuli)}
+
+    def window(label):
+        if label not in windows:
+            raise ValueError(f'{name}: no declared stimulus {label}')
+        return windows[label]
+
+    # A resume a stimulus must cause (a VT switch, an unlock) falls inside it.
+    edge_in = case.get('edge_in', [])
+    if not isinstance(edge_in, list):
+        raise ValueError(f'{name}: edge_in must be a list')
+    for entry in edge_in:
+        if not isinstance(entry, list) or len(entry) != 2 or not isinstance(entry[1], str):
+            raise ValueError(f'{name}: invalid edge_in entry {entry!r}')
+        try:
+            index = integer(entry[0], 'edge index')
+        except ValueError as error:
+            raise ValueError(f'{name}: invalid edge_in entry {entry!r}') from error
+        label = entry[1]
+        start, end = window(label)
+        if not index < len(edges) or not start <= edges[index]['trace_ns'] < end:
+            raise ValueError(f'{name}: edge {index} is not inside stimulus {label}')
+
+    # A real screencast consumer: frames arrive where damage was caused, and
+    # each sample is the first frame after its armed request, inside its window.
+    consumer = case.get('consumer')
+    if consumer is not None:
+        if not isinstance(consumer, dict):
+            raise ValueError(f'{name}: consumer must be a mapping')
+        for key in ('frames_in', 'samples'):
+            if not isinstance(consumer.get(key, []), list):
+                raise ValueError(f'{name}: consumer {key} must be a list')
+        offset = monotonic_offset(edges)
+        try:
+            lines = (directory / 'cast-frames.tsv').read_text().split()
+        except (OSError, UnicodeError) as error:
+            raise ValueError(f'{name}: missing or invalid cast-frames.tsv') from error
+        frames = []
+        for line in lines:
+            try:
+                frames.append(integer(line, 'cast frame') - offset)
+            except ValueError as error:
+                raise ValueError(f'{name}: invalid cast frame {line!r} in cast-frames.tsv') from error
+        if read_json(directory / 'cast-summary.json').get('stopped_by_signal') is not True:
+            raise ValueError(f'{name}: the screencast consumer did not stop on a signal')
+        for label in consumer.get('frames_in', []):
+            start, end = window(label)
+            if not any(start <= t < end for t in frames):
+                raise ValueError(f'{name}: no cast frame inside stimulus {label}')
+        for label in consumer.get('samples', []):
+            start, end = window(label)
+            sidecar = read_json(directory / f'{label}.raw.json')
+            request = integer(sidecar.get('request_mono_ns'), 'sample request') - offset
+            frame = integer(sidecar.get('frame_mono_ns'), 'sample frame') - offset
+            if not start <= request < frame < end:
+                raise ValueError(f'{name}: sample {label} is stale or outside its window')
+            if frame not in frames:
+                raise ValueError(f'{name}: sample {label} is not a recorded cast frame')
+            if any(request < t < frame for t in frames):
+                raise ValueError(f'{name}: sample {label} is not the first cast frame after its request')
 
     bounds = [0] + [edge['trace_ns'] for edge in edges] + [trace_end]
     report = []
@@ -386,8 +502,8 @@ def analyze_case(run, case, lane):
     topology = observation.get('topology')
     if not isinstance(topology, list) or len(topology) != 1 or not topology[0]:
         raise ValueError(f'{name}: output topology unverified')
-    if lane == 'dedicated' and topology[0].startswith('headless'):
-        raise ValueError(f'{name}: dedicated lane uses headless output')
+    if lane == 'dedicated':
+        check_dedicated_output(name, topology[0], pin)
     return {'name': name, 'family': case['family'], 'verdict': 'passed',
             'edges': [{'active': e['active'], 'trace_ns': e['trace_ns'], 'logical_ns': e['logical_ns']}
                       for e in edges],
@@ -420,6 +536,7 @@ def analyze_run(run: Path) -> dict:
     lane = manifest.get('lane')
     if lane not in ('headless', 'dedicated'):
         raise ValueError('invalid capture lane')
+    pin = drm_pin(manifest) if lane == 'dedicated' else None
     if not re.fullmatch('[0-9a-f]{40}', manifest.get('source_commit', '')):
         raise ValueError('invalid source commit')
     if sha256(run / 'binary') != manifest.get('binary_sha256'):
@@ -445,7 +562,7 @@ def analyze_run(run: Path) -> dict:
                 raise ValueError(f"{case['name']}: a required case was not run")
             results.append({'name': case['name'], 'family': case['family'], 'verdict': 'not_run'})
             continue
-        results.append(analyze_case(run, case, lane))
+        results.append(analyze_case(run, case, lane, pin))
     if any(result['verdict'] == 'passed' for result in results):
         panic = panic_line(run / 'niri.log')
         if panic:

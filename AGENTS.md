@@ -35,6 +35,14 @@ rendering design assumes.
   and hands the host over, run that queue yourself: one run at a time, the lane's pilot
   before any full run, and a `run:` note for every attempt. The fixture's reproduction
   notes in the `niri-experiments` results doc give the commands and known pitfalls.
+  A TTY has no display sleep: when ops's `display-dim` is installed
+  (`ops-a1715a`), run `display-dim status` first (a stale record means an
+  earlier session did not restore; restore it), `display-dim set 0.25`
+  before the first run and `display-dim restore` after the last, before the
+  final report. Dimming never gates a run; a monitor that rejects DDC stays
+  undimmed and the report says so.
+  The packages and host configuration every capture lane needs (sudoers, udev,
+  AUR tools) are recorded in `docs/materials/capture-host-setup.md`.
 - Before removing a worktree, run `tt-report` so its fallback test-timing log is
   harvested.
 - `tools/tt` is a vendored copy of ops `bin/tt`: change it there and re-copy.
