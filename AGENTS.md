@@ -57,18 +57,28 @@ rendering design assumes.
   `just test-one -E 'test(foo) | test(bar)'` (nextest arguments). Then
   `just test-fast`, which selects changed workspace packages and their dependents
   against HEAD, excluding the visual viewer. Neither runs doctests.
-- For Python tooling: `just --set one_cmd 'python3 -m unittest' test-one tools.test_gates`;
-  `just --set fast_cmd 'python3 -m unittest discover -s tools 2>&1' test-fast` runs all
-  tooling tests. The Rust affected selector does not select Python tooling.
-- `just check` runs shared hygiene, rustfmt, clippy, tooling tests, task checks,
-  upstream-report freshness, and package-pin checks. Pre-commit uses those checks;
-  commits limited to root guides, tasks, specs, plans, or notes use
-  just hygiene, task, report, and pin checks. Material docs and wiki retain the full
-  check because Rust tests read their parameter tables and KDL examples.
+- For Python tooling: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_gates`;
+  `just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`
+  runs all tooling in parallel. The Rust affected selector does not select Python.
+  Sequential reference discovery uses the same override with
+  `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1`.
+  Raw discovery inherits exported `NIRI_TOOLING_FAST=1` and skips DriverCleanupTests
+  and VtLibTests; only unset, `0` and `1` are valid. Repository commands set their mode.
+  Full tooling defaults to ten children total, capped by `NEXTEST_TEST_THREADS` when
+  set; the cap must be a positive ASCII decimal integer.
+- `just check` runs hygiene, target isolation, rustfmt, clippy, fast tooling and
+  task/report/pin checks; `just check-full` substitutes parallel full tooling.
+  Pre-commit uses full tooling for the narrow lifecycle subjects and gate wiring in
+  `tooling_full_paths`, fast tooling for other code, and static source plus consistency
+  checks for root guides/tasks/specs/plans/notes. Both code routes record the same
+  `hook-pre-commit` target; every route checks lifecycle source coverage statically.
+  Material docs and wiki retain code checks because Rust tests read their inputs.
 - CI runs the full suite (including doctests) for every branch/tag pushed to `origin`.
   Pre-push there runs `check` plus config and IPC tests through nextest;
-  other remotes or unclassified pushes run `just gate` (check plus the full suite).
-  `just test` runs the full suite when explicitly needed; `ci-test-release` adds the
-  release profile, with CI enabling randomized/slow tests through environment variables.
+  other remotes or unclassified pushes run `just gate` (full check plus Rust tests).
+  `just test`, `ci-test` and `ci-test-release` remain Rust-only, including doctests;
+  the release job enables randomized/slow tests through environment variables.
+  The separate Ubuntu `ci-tooling-test` job runs full parallel tooling, rejecting
+  dependency skips and allowing only the five named optional skips in the design.
 - Recipes record runs through `tools/tt`. Host recipes use `host-budget run` to set
   `CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS`; CI recipes do not need ops tooling.
