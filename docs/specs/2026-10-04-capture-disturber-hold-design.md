@@ -1,7 +1,7 @@
 # Hold host disturbers for the length of a quiet capture
 
 **Status:** draft for owner review, 2026-10-04 (revised after agent review
-rounds 1–3 and 5 and owner-relayed review round 4).
+rounds 1–3, 5 and 6 and owner-relayed review rounds 4 and 7).
 **Task:** `material-188aaa`, under `material-2834d7`.
 **Extends:** [capture protocol design](2026-09-11-material-capture-protocol-design.md)
 (`tools/capture-meta`: preflight, settle, release).
@@ -170,12 +170,16 @@ The `hold` section is written once the hold is complete:
 }
 ```
 
-If the hold fails partway (a `systemctl stop` errors) or preflight fails
-after it for any reason (Refused or CannotRun), preflight restores the
-hold, writes `hold_end` with verdict `restored-at-preflight`, stops the
-guard, removes the hold file and releases the lock. A guard that fails to
-start fails preflight (CannotRun) before anything is held. Release then finds
-`hold_end` and skips restore and scan.
+A guard that fails to start fails preflight (CannotRun) before anything is
+held. If the hold fails partway (a `systemctl stop` errors) or preflight
+fails after it for any reason (Refused or CannotRun), preflight rolls the
+hold back by the restore procedure of §4.3, as `by: preflight`, with the
+scan `not-run` (no measurement started). A complete rollback stops the
+guard, removes the hold file and releases the lock, and preflight exits
+with its own failure. A rollback that leaves items unrestored keeps them in
+the hold file and keeps the guard and the lock, exactly as a failed release
+does, and preflight exits 2 naming each item with its `restore` command;
+the fixture's trap then runs release, which retries.
 
 ### 4.3 Release
 
@@ -184,35 +188,59 @@ Release restores from the host hold file whenever the file names this run
 process killed after holding but before writing `hold` or `preflight`,
 while the fixture shell still lives to run its trap. In that case the
 window starts at the hold file's `started_us`, and the lock is released for
-the hold file's `owner_pid`, since `preflight.lock` was never written. Then, unless `hold_end` already
-exists (a second release, or one after a preflight failure, changes nothing
-and exits with the code of the recorded verdict, except after
-`restore-failed`, when it retries the restore of the items still in the
-hold file and rewrites `hold_end`):
+the hold file's `owner_pid`, since `preflight.lock` was never written.
 
-1. Restore every item in reverse order, best-effort per item. A unit that
+`hold_end` has two parts with different rules. `scan` is written once, at
+the first restore, and never again. `restore` records the latest state of
+restoration and its history; every restore attempt, by whoever makes it,
+updates it through one function (not `write_section`, which is
+write-once). The first release:
+
+1. Marks the hold file `restoring` and records `scan.until_us`, the start of
+   restoration. Every later scan bound is this one, so restoration activity
+   (timers firing on start, the power-on) is never scanned, on this attempt
+   or any retry.
+2. Restores every item in reverse order, best-effort per item. A unit that
    no longer exists counts as restored, with a note.
-2. Scan (§5) the window from `started_us` to the start of step 1, and read
-   the guard's wake log.
-3. Write `hold_end`; if every item was restored, stop the guard, remove
-   the hold file and the wake log, and release the lock.
+3. Scans (§5) the window from `started_us` to `scan.until_us` and reads the
+   guard's wake log, then writes `scan`.
+4. Writes `restore`. If every item was restored, it stops the guard,
+   removes the hold file and the wake log, and releases the lock. If not,
+   all three stay: the hold file keeps only the unrestored items.
+
+A later release finds `hold_end`. With `restore.state` `complete` it
+changes nothing. With `failed` it retries step 2 on the items still in the
+hold file, then step 4; it never rescans. Either way it exits by the rule
+below.
 
 ```json
 "hold_end": {
-  "restored": "2026-10-04T23:02:41-04:00",
-  "failures": [],
-  "disturbances": [
-    {"at": "2026-10-04T22:23:41-04:00", "manager": "system", "unit": "plocate-updatedb.service", "kind": "timer-fired"}
-  ],
-  "verdict": "disturbed"
+  "scan": {
+    "until_us": 1791183761000000,
+    "verdict": "disturbed",
+    "disturbances": [
+      {"at": "2026-10-04T22:23:41-04:00", "manager": "system", "unit": "plocate-updatedb.service", "kind": "timer-fired"}
+    ]
+  },
+  "restore": {
+    "state": "complete",
+    "attempts": [
+      {"at": "2026-10-04T23:02:41-04:00", "by": "release", "failures": [{"unit": "wali-rotate.timer", "error": "…"}]},
+      {"at": "2026-10-04T23:02:44-04:00", "by": "guard", "failures": []}
+    ]
+  }
 }
 ```
 
-Verdicts and exit codes: any restore failure keeps the hold file holding the
-unrestored items, prints each with its `restore` command, and exits 2
-(verdict `restore-failed`). Otherwise `disturbed` exits 1 after everything
-is restored and the lock released, `unscanned` (§5) exits 2, and `clean`
-exits 0. `capture-meta show` prints the hold and its verdict above the
+`scan.verdict` is `clean`, `disturbed`, `unscanned` (§5) or `not-run` (a
+preflight rollback). `restore.by` is `release`, `preflight`, `guard`,
+`hand` (`capture-meta restore` run by a person) or `next-preflight`.
+
+Exit codes, from the record as it stands after the attempt: `restore.state`
+`failed` exits 2, printing each unrestored item with its `restore` command;
+otherwise `scan.verdict` decides: `clean` exits 0, `disturbed` exits 1,
+`unscanned` exits 2, and `not-run` repeats the preflight failure's code
+(1 refused, 2 could not run). `capture-meta show` prints the hold and its verdict above the
 sub-runs.
 
 ### 4.4 Guard and recovery
@@ -240,15 +268,19 @@ service start, not a timer, so §5 does not flag it.
 
 **`capture-meta restore`** (what the guard runs) restores the host hold file, refusing while the
 lock's owner is alive. With no hold file it does nothing and exits 0. It
-writes `hold_end` (verdict `restored-by-guard` or `restored-by-hand`) into
-the file's `run_dir` when that record exists and has none, so the run is
-never left looking held. It is also what a person runs if the guard itself
+updates `hold_end.restore` in the file's `run_dir` when that record exists
+(`by: guard` or `by: hand`), whether the record has no `hold_end` yet (the
+owner died mid-run: `scan` is then written first, bounded at the start of
+this restore, as in §4.3) or a `failed` one (a retry after a failed
+release), so a run is never left recorded as held or as failed once its
+items are back. It is also what a person runs if the guard itself
 failed.
 
 **Next preflight.** After taking the lock, preflight restores any hold file
 it finds (its owner is necessarily dead: a live owner would still hold the
-lock) and records `recovered: {run_id, items, failures}` in the new run's
-`hold`. A failed recovery refuses preflight with each unrestored item named.
+lock), updates the old run's `hold_end.restore` the same way
+(`by: next-preflight`) when its record still exists, and records
+`recovered: {run_id, items, failures}` in the new run's `hold`. A failed recovery refuses preflight with each unrestored item named.
 
 ## 5. Disturbance scan
 
@@ -266,11 +298,16 @@ unit in `USER_UNIT`, system entries in `UNIT`. It flags:
 | `held-started` | A unit the hold stopped starting again: `39f53479…` for a timer, an activation for a service. |
 | `monitor-woke` | An entry in the guard's wake log (§4.4): a held monitor powered on mid-run, by input or anything else. |
 
-A *service activation* is an `INVOCATION_ID` first seen in the window on a
+A *service activation* is an invocation id first seen in the window on a
 job start ("Starting …", `7d4958e8…`), unit-started or finished entry
 (`39f53479…`) or failed start (`be02cf6855d2428ba40df7e9d022f03d`) of that
 unit, excluding the invocation each timer-activated service had at hold
-time (`InvocationID`, recorded in `hold.timer_map`). systemd skips
+time (`InvocationID`, recorded in `hold.timer_map`). The id is
+`INVOCATION_ID` on system-manager entries and `USER_INVOCATION_ID` on
+user-manager entries, which carry no `INVOCATION_ID` (checked on this
+host's `wali-rotate.service` and `man-db.service` entries). An entry with
+neither counts as an activation of its own, so a missing id errs toward
+flagging. systemd skips
 "Starting" for a job that completes at once: this host's `Type=simple`
 `dropbox.service` and `systemd-run`'s transient services log only
 "Started". Keying on the invocation counts a "Starting"→"Finished" pair
@@ -300,7 +337,10 @@ with the real `MESSAGE_ID`s per unit type (a "Started"-only service, a
 paired "Starting"/"Finished" counted once, a failed start, a service
 running at hold time that finishes in the window, not flagged), wake
 logging, the `restoring` mark, the power-off check against a fake sysfs
-tree, a failed restore keeping the guard and retried by a second release, the realtime window, a
+tree, a failed restore keeping the guard and retried by a second release that
+does not rescan, a failed preflight rollback keeping hold file, guard and
+lock, a guard or manual restore completing a `failed` record, both
+invocation-id fields, the realtime window, a
 restore failure keeping the hold file, a vanished unit, recovery by the next
 preflight and by `restore` (and both racing under the guard directory), a
 hold file whose `run_id` matches but `run_dir` does not, the socket rules (empty `NIRI_SOCKET`, two live
