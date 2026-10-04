@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency
 created: 2026-10-04T15:00:02Z
-updated: 2026-10-04T18:46:58Z
+updated: 2026-10-04T18:50:50Z
 started: 2026-10-04T16:48:06Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -47,3 +47,4 @@ Process: planned
 - 2026-10-04T18:46:57Z (fix/pre-commit-latency): revision self-review: all 4 Important and 4 Minor findings addressed in the spec: whole-hook warm evidence and <=35 s target; staged subject/test full coverage; explicit recipe composition with Rust-only test_cmd; clean Ubuntu package/skip evidence; strict flag contract; per-class timing; qualifying latency conditions; named comment/guidance updates. Negative controls reject missing mandatory dependency skips, an actual/deliberate lifecycle failure, and an unexpected dynamic skip. Full CI readiness is explicitly blocked by the reproduced TERM/trap issue; no implementation or incident remedy is claimed.
 - 2026-10-04T18:46:57Z (fix/pre-commit-latency): parked (waiting on user, review): Owner: re-review .worktrees/pre-commit-latency/docs/specs/2026-10-04-pre-commit-tooling-latency-design.md. After acceptance, agent diagnoses the Ubuntu TERM/trap failure, then writes and submits the implementation plan from that evidence; implementation follows the separate plan review. No host pointers were repointed.
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-04T18:50:50Z (fix/pre-commit-latency): attached: material-pre-commit-revision-evidence.md (13304 bytes): Sanitized warm-hook records, Ubuntu dependency and verdict receipts, guard controls, and disposable reproduction scripts; full Ubuntu suite remains blocked by the TERM/trap case.
