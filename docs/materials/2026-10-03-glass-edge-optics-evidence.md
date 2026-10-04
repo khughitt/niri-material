@@ -200,3 +200,31 @@ live-k2 vs live-highlight bevel: 24997 differing pixels (expect differ)
 Every existing case is decoded-identical to step 3 at the default edge-highlight 0; `edge-highlight 0` renders exactly as no node; with `bevel-profile 2`, `edge-highlight 0.5` leaves the face and everything outside the slab untouched and lights the bevel (stock 990 pixels, live 24997; the stock bevel is thin).
 
 By eye (`live-highlight.png` against `live-k2.png`, (r,g,b)): the lobe sits on the top-left bevel. Row 200, left edge: x=312 (31,30,30) to (45,44,44). Top edge, x=640: y=34 (31,30,30) to (50,50,49). The bottom-right bevel barely moves (x=950, y=200: (14,12,11) to (15,13,12)). Summed channel difference by quadrant of the changed region: top-left 172904, top-right 116894, bottom-left 78787, bottom-right 29853.
+
+## Step 5: contact sheet
+
+The owner's visual judgement (spec §6), from `docs/materials/scripts/glass-edge-sheet.sh` on the headless Weston lane. It was run from a TTY with the desktop stopped, on 2026-10-03 between 22:22 and 22:43 EDT:
+
+```
+OUT=$EV/sheet-4 CAPTURE_TASK=material-124f1f \
+  SHEET_WALL=<wali current: backgrounds/3440/PXL_20220530_182540069.jpg> \
+  NIRI_MATERIAL_WORK_ROOT=/mnt/ssd3/niri-material docs/materials/scripts/glass-edge-sheet.sh
+...
+sheet: $EV/sheet-4/glass-edge-sheet.png
+PASS: artifacts in $EV/sheet-4
+```
+
+- Artifacts: `$EV/sheet-4` (`glass-edge-sheet.png`, the 76 cells and their full captures, per-cell KDL, `capture.json`, `cooldown.txt`).
+- Identity (`capture.json`): source `ab46ca55` on `glass-edges`. The dirty diff touches only docs and this script's cool-down, so the binaries are that commit's. `niri` sha256 `0c519635…`, `niri-tracy` `51a9cf77…`, wallpaper `PXL_20220530_182540069.jpg` sha256 `4353cddf…` (wali's current wallpaper at run time), output 1280x720 at scale 1, VRR off. The renderer was the NVIDIA RTX 3070 on driver 615.71.09. This is the shaders' first compile on the real driver, and it compiled.
+- Quietness: the preflight was quiet (cpu 1.4 %, load1 0.83, GPU 0 %, P8), and all 77 settles were settled.
+- Attempts before it, each with a `run:` note on material-124f1f:
+  - Pilot `sheet-pilot-2`: passed. The crop holds the corner, the bevel and the wallpaper.
+  - `sheet`: preflight refused on load1, the tail of the pilot's build.
+  - `sheet-2` and `sheet-3`: a settle was refused on a P5 sample after 7 and 16 cells. The previous cell's GPU tail landed in the next 10 s window; an idle 60 s probe held P8 throughout.
+  - The script now waits for 3 s of P8 before each cell (bounded at 60 s). The waits were 3 to 5 s, and the settle gate is unchanged. `dropbox.service`, which crash-loops in a TTY, and `wali-rotate.timer` were stopped for the window and restored afterwards.
+
+What the sheet shows, for the owner to judge:
+- `edge-highlight 0.5` at roughness 1 lights an even grey band around the whole bevel on every look. At roughness 0 the lobe is a point at the corner, barely visible at this crop.
+- `reflection 0.6` against 0 is hard to tell apart at this size on the dark focused and inactive looks.
+- The thin, weak look at roughness 0 is nearly invisible over this wallpaper.
+- `bevel-profile` mainly changes the highlight band's shape: flat at k 1, rounded at k 2 and 4.
