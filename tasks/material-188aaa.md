@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T09:10:13Z
+updated: 2026-10-04T09:13:05Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -32,3 +32,4 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
   provenance: {"harness_session":"claude-code:580ebea0-d2ea-4477-a438-6499e193b927","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T09:07:05Z (disturber-hold): Spec drafted: docs/specs/2026-10-04-capture-disturber-hold-design.md (branch disturber-hold). Holds all active user timers, a per-host service list (dropbox.service), desktop caffeine + monitors; journal scan at release; host hold file for kill recovery.
 - 2026-10-04T09:10:13Z (disturber-hold): review: spec round 1 — verdict: revise; findings: Critical 1, Important 5, Minor 6; reviewer: claude-code/claude-opus-5-5
+- 2026-10-04T09:13:05Z (disturber-hold): review: spec round 2 — verdict: revise; findings: Critical 1, Important 1, Minor 4; reviewer: claude-code/claude-opus-5-5
