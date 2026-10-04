@@ -481,6 +481,24 @@ def validate_record(record, path=RECORD):
             if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
                    or not isinstance(item.get("sha256"), str) for item in items):
                 raise CannotRun(f"{path}: provenance.{name} entries need string name and sha256")
+    hold = section("hold")
+    if hold is not None and not isinstance(hold.get("items"), list):
+        raise CannotRun(f"{path}: hold.items must be a list")
+    end = section("hold_end")
+    if end is not None:
+        restore = end.get("restore")
+        if restore is not None and (not isinstance(restore, dict) or restore.get("state") not in ("complete", "failed")
+                                    or not isinstance(restore.get("attempts"), list)):
+            raise CannotRun(f"{path}: hold_end.restore needs state complete|failed and an attempts list")
+        cleanup = end.get("cleanup")
+        if cleanup is not None and (not isinstance(cleanup, dict) or not isinstance(cleanup.get("guard"), str)
+                                    or isinstance(cleanup.get("owner_pid"), bool)
+                                    or not isinstance(cleanup.get("owner_pid"), int)):
+            raise CannotRun(f"{path}: hold_end.cleanup needs a guard name and an owner_pid")
+        scan = end.get("scan")
+        if scan is not None and (not isinstance(scan, dict) or scan.get("verdict") not in SCAN_VERDICTS
+                                 or not isinstance(scan.get("disturbances"), list)):
+            raise CannotRun(f"{path}: hold_end.scan needs a verdict and a disturbances list")
     if "sub_runs" in record:
         sub_runs = record["sub_runs"]
         if not isinstance(sub_runs, list):
@@ -493,29 +511,107 @@ def validate_record(record, path=RECORD):
 def save_record(run_dir, record):
     path = pathlib.Path(run_dir) / RECORD
     record["schema"] = SCHEMA
+    tmp = path.with_name(f"{RECORD}.tmp.{os.getpid()}")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(record, indent=2, sort_keys=False) + "\n")
+        tmp.write_text(json.dumps(record, indent=2, sort_keys=False) + "\n")
+        tmp.replace(path)
     except (OSError, TypeError, ValueError) as error:
         raise CannotRun(f"{path}: cannot write record: {error}") from error
 
 
+@contextlib.contextmanager
+def record_lock(run_dir):
+    """Serializes every read-modify-write of capture.json: preflight's sections, settle's
+    sub-runs, and the hold's end, which a restore writes while it holds guarded(). The order
+    is always guarded() then record_lock, never the reverse. The flock is on the run
+    directory itself, so no lock file joins the run's SHA256SUMS."""
+    run_dir = pathlib.Path(run_dir)
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        fd = os.open(run_dir, os.O_RDONLY)
+    except OSError as error:
+        raise CannotRun(f"record lock {run_dir}: {error}") from error
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def write_section(run_dir, name, value):
-    record = load_record(run_dir)
-    if name in record:
-        raise CannotRun(f"{RECORD} already has a {name!r} section; use a fresh run directory")
-    record[name] = value
-    save_record(run_dir, record)
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        if name in record:
+            raise CannotRun(f"{RECORD} already has a {name!r} section; use a fresh run directory")
+        record[name] = value
+        save_record(run_dir, record)
 
 
 def append_sub_run(run_dir, entry):
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        sub_runs = record.get("sub_runs", [])
+        if not isinstance(sub_runs, list):
+            raise CannotRun(f"{RECORD}: sub_runs must be a list")
+        sub_runs.append(entry)
+        record["sub_runs"] = sub_runs
+        save_record(run_dir, record)
+
+
+SCAN_VERDICTS = ("clean", "disturbed", "unscanned", "not-run")
+
+
+def update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
+    with record_lock(run_dir):
+        return _update_hold_end(run_dir, scan, attempt, cleanup)
+
+
+def _update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
+    """hold_end.scan is written once; hold_end.restore takes every attempt (spec §4.3);
+    hold_end.cleanup ({guard, owner_pid}) is written once, before the hold file can go, so
+    a cleanup interrupted after this save can be finished from the record alone.
+    The caller holds record_lock(run_dir)."""
     record = load_record(run_dir)
-    sub_runs = record.get("sub_runs", [])
-    if not isinstance(sub_runs, list):
-        raise CannotRun(f"{RECORD}: sub_runs must be a list")
-    sub_runs.append(entry)
-    record["sub_runs"] = sub_runs
+    end = record.get("hold_end", {})
+    if cleanup is not None and "cleanup" not in end:
+        end["cleanup"] = cleanup
+    if scan is not None:
+        if "scan" in end:
+            raise CannotRun(f"{RECORD}: hold_end.scan is written once")
+        end["scan"] = scan
+    if attempt is not None:
+        restore = end.setdefault("restore", {"state": "failed", "attempts": []})
+        restore["attempts"].append(attempt)
+        restore["state"] = "failed" if attempt["failures"] else "complete"
+    record["hold_end"] = end
     save_record(run_dir, record)
+    return end
+
+
+def describe_disturbance(d):
+    return f"{d['kind']} {d['unit']} ({d['manager']}) at {d['at']}"
+
+
+def failure_list(attempt):
+    return "; ".join(f"{f.get('unit') or f['kind']}: {f['restore']}" for f in attempt["failures"])
+
+
+def exit_for(end):
+    restore, scan = end.get("restore", {}), end.get("scan", {})
+    if restore.get("state") == "failed":
+        raise CannotRun(f"hold not fully restored; restore by hand: {failure_list(restore['attempts'][-1])}")
+    verdict = scan.get("verdict")
+    if verdict == "clean":
+        return
+    if verdict == "disturbed":
+        raise Refused("disturbed: " + "; ".join(describe_disturbance(d) for d in scan["disturbances"]))
+    if verdict == "unscanned":
+        raise CannotRun(f"journal scan failed ({scan.get('error')}); the run is not evidence until rescanned")
+    if verdict == "not-run":
+        message = "preflight failed; its hold was rolled back"
+        raise Refused(message) if scan.get("preflight_exit") == 1 else CannotRun(message)
+    raise CannotRun(f"{RECORD}: hold_end has no scan verdict")
 
 
 def sha256_file(path):
@@ -805,6 +901,17 @@ def render(record):
             lines.append(f"  input {item['name']} {item['sha256']}")
         for key, value in provenance.get("config", {}).items():
             lines.append(f"  {key}={value}")
+    hold = record.get("hold")
+    if hold:
+        names = [item.get("unit") or item["kind"] for item in hold.get("items", [])]
+        lines += ["", f"hold  desktop {hold.get('desktop')}  {len(names)} items: {', '.join(names)}"]
+        lines += [f"  not held: {n.get('unit') or n['kind']} ({n['reason']})" for n in hold.get("not_held", [])]
+    end = record.get("hold_end")
+    if end:
+        restore, scan = end.get("restore", {}), end.get("scan", {})
+        last = (restore.get("attempts") or [{}])[-1].get("by")
+        lines.append(f"hold end  restore {restore.get('state')} ({last})  scan {scan.get('verdict')}")
+        lines += [f"  {describe_disturbance(d)}" for d in scan.get("disturbances", [])]
     sub_runs = record.get("sub_runs")
     if sub_runs:
         lines += ["", "sub-runs"]

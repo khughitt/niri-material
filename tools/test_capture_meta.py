@@ -22,6 +22,18 @@ spec = importlib.util.spec_from_loader(
 cm = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(cm)
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from fake_capture_host import FakeHost  # noqa: E402
+
+
+class _NoRealHost:
+    def __init__(self, *args, **kwargs):
+        raise AssertionError("a test reached the real host: pass a FakeHost")
+
+
+cm.Host = _NoRealHost
+
+
 
 class LockTests(unittest.TestCase):
     def test_acquire_release_and_ownership_check(self):
@@ -859,6 +871,91 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("host-load not found on PATH", result.stderr)
             self.assertFalse(bare.exists())
+
+
+class HoldRecordTests(unittest.TestCase):
+    def run_dir(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        run = pathlib.Path(temp.name) / "r"; run.mkdir()
+        cm.write_section(run, "run", {"id": "r"})
+        return run
+
+    def test_scan_is_written_once_and_attempts_accumulate(self):
+        run = self.run_dir()
+        failed = {"at": "t1", "by": "release", "failures": [{"unit": "a.timer", "error": "x", "restore": "systemctl --user start a.timer"}]}
+        end = cm.update_hold_end(run, {"until_us": 5, "verdict": "clean", "disturbances": []}, failed,
+                                 {"guard": "capture-meta-guard-x.service", "owner_pid": 7})
+        self.assertEqual(end["restore"]["state"], "failed")
+        end = cm.update_hold_end(run, attempt={"at": "t1b", "by": "release", "failures": failed["failures"]},
+                                 cleanup={"guard": "other", "owner_pid": 8})
+        self.assertEqual(end["cleanup"], {"guard": "capture-meta-guard-x.service", "owner_pid": 7})
+        with self.assertRaisesRegex(cm.CannotRun, "written once"):
+            cm.update_hold_end(run, {"until_us": 9, "verdict": "clean", "disturbances": []})
+        end = cm.update_hold_end(run, attempt={"at": "t2", "by": "guard", "failures": []})
+        self.assertEqual(end["restore"]["state"], "complete")
+        self.assertEqual([a["by"] for a in end["restore"]["attempts"]], ["release", "release", "guard"])
+        self.assertEqual(cm.load_record(run)["hold_end"]["scan"]["until_us"], 5)
+
+    def test_exit_codes_follow_the_record(self):
+        complete = {"state": "complete", "attempts": []}
+        failed = {"state": "failed", "attempts": [{"by": "release", "failures": [
+            {"unit": "a.timer", "error": "x", "restore": "systemctl --user start a.timer"}]}]}
+        cm.exit_for({"restore": complete, "scan": {"verdict": "clean", "disturbances": []}})
+        with self.assertRaisesRegex(cm.Refused, "disturbed: timer-fired man-db.service"):
+            cm.exit_for({"restore": complete, "scan": {"verdict": "disturbed", "disturbances": [
+                {"kind": "timer-fired", "unit": "man-db.service", "manager": "system", "at": "t"}]}})
+        with self.assertRaisesRegex(cm.CannotRun, "systemctl --user start a.timer"):
+            cm.exit_for({"restore": failed, "scan": {"verdict": "clean", "disturbances": []}})
+        with self.assertRaisesRegex(cm.CannotRun, "not evidence until rescanned"):
+            cm.exit_for({"restore": complete, "scan": {"verdict": "unscanned", "error": "e", "disturbances": []}})
+        with self.assertRaises(cm.Refused):
+            cm.exit_for({"restore": complete, "scan": {"verdict": "not-run", "preflight_exit": 1, "disturbances": []}})
+        with self.assertRaises(cm.CannotRun):
+            cm.exit_for({"restore": complete, "scan": {"verdict": "not-run", "preflight_exit": 2, "disturbances": []}})
+
+    def test_record_writes_wait_for_a_restore_writing_hold_end(self):
+        run = self.run_dir()
+        entered, go, done = threading.Event(), threading.Event(), threading.Event()
+        def restoring():
+            with cm.record_lock(run):
+                entered.set(); go.wait(5)
+                cm._update_hold_end(run, {"until_us": 1, "verdict": "clean", "disturbances": []},
+                                    {"at": "t", "by": "guard", "undone": 1, "failures": []})
+        worker = threading.Thread(target=restoring); worker.start()
+        entered.wait(5)
+        threading.Thread(target=lambda: (cm.write_section(run, "baseline", {"seconds": 3}), done.set())).start()
+        self.assertFalse(done.wait(0.3))          # an orphaned preflight's write waits
+        go.set(); worker.join(5)
+        self.assertTrue(done.wait(5))
+        record = cm.load_record(run)
+        self.assertEqual(record["hold_end"]["restore"]["state"], "complete")
+        self.assertEqual(record["baseline"], {"seconds": 3})
+
+    def test_save_record_leaves_no_temporary_file(self):
+        run = self.run_dir()
+        cm.update_hold_end(run, attempt={"at": "t", "by": "release", "failures": []})
+        self.assertEqual(sorted(p.name for p in run.iterdir()), [cm.RECORD])
+
+    def test_validation_rejects_malformed_hold_sections(self):
+        for bad in ({"hold": {"items": {}}},
+                    {"hold_end": {"restore": {"state": "maybe", "attempts": []}}},
+                    {"hold_end": {"scan": {"verdict": "fine", "disturbances": []}}},
+                    {"hold_end": {"cleanup": {"guard": "g", "owner_pid": True}}}):
+            with self.subTest(bad=bad), self.assertRaises(cm.CannotRun):
+                cm.validate_record({"schema": cm.SCHEMA, **bad})
+
+    def test_show_prints_hold_and_verdict(self):
+        record = {"run": {"id": "r"}, "hold": {"desktop": "absent", "items": [
+                      {"kind": "timer", "unit": "a.timer"}, {"kind": "service", "unit": "dropbox.service"}],
+                      "not_held": [{"kind": "idle", "reason": "noctalia not on PATH"}]},
+                  "hold_end": {"restore": {"state": "complete", "attempts": [{"by": "release", "failures": []}]},
+                               "scan": {"verdict": "disturbed", "disturbances": [
+                                   {"kind": "restart", "unit": "x.service", "manager": "user", "at": "t"}]}}}
+        text = cm.render(record)
+        self.assertIn("hold  desktop absent  2 items: a.timer, dropbox.service", text)
+        self.assertIn("  not held: idle (noctalia not on PATH)", text)
+        self.assertIn("hold end  restore complete (release)  scan disturbed", text)
+        self.assertIn("  restart x.service (user) at t", text)
 
 
 if __name__ == "__main__":
