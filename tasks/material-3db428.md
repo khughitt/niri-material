@@ -1,14 +1,16 @@
 ---
 id: material-3db428
 title: Re-derive the ring sample row and reach bound in focus-ring-light.sh and glass-render-order-smoke.sh for ring-gap (measured from the face edge)
-status: todo
+status: doing
 priority: 3
 size: s
 complexity: mid
 process: direct
 needs: [quiet]
+owner: materials-26.04
 created: 2026-09-20T10:34:21Z
-updated: 2026-10-03T16:48:43Z
+updated: 2026-10-04T01:56:01Z
+started: 2026-10-04T01:56:01Z
 depends: [material-22d78f]
 parent: material-2834d7
 tags: [rendering]
@@ -21,3 +23,5 @@ The ring beam (98013739) moved the filament band from the slab's outer edge to t
 
 - 2026-10-01T09:55:04Z (material-0e80c1): From material-0e80c1: focus-ring-light.sh pins no light-ior, jelly or noise, so it inherits Prism (light-ior 6, jelly-flex 0.0066), and case_tiny's comment cites the retired slabChamfer gate (the shader now gates on hasLine, main.frag). Band core measured at ring-gap inside the face edge; the face sits 2*offset in from the window's left/top and flush right/bottom at offset 6 (brief: docs/notes/2026-09-29-glass-measurement-brief.md#matched-state-ring-findings).
 - 2026-10-01T10:00:23Z (materials-26.04): Depends on material-22d78f, which retires case_resize_flex; skip re-deriving that case's row.
+- 2026-10-04T01:56:01Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
