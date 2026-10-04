@@ -426,7 +426,8 @@ within_rough_ring() {
 
 within_face_ring() {
     within_ring within-face $'noise 0\nsaturation 1\niridescence 0\naurora 0 { drift-hz 0; }\nior 1.5\nthickness 20\nbevel 12' 20 2.6 20 12 0
-    assert_changed within-face-strip within-face-on within-face-off "8x400+$PX+$((PY + 120))"
+    # The 8 px strip straddles the gap-20 band core on column PX + 20.
+    assert_changed within-face-strip within-face-on within-face-off "8x400+$((PX + 16))+$((PY + 120))"
 }
 
 within_aurora() {
@@ -492,8 +493,9 @@ within_opaque() {
     capture within-opaque-off "$neutral" "$NIRI" none opaque 1.0
     capture within-opaque-on "$active" "$NIRI" ring-light opaque 1.0
     RESPONSE_EXTRA=
-    roi within-opaque-off "8x400+$PX+$((PY + 120))" ring
-    roi within-opaque-on "8x400+$PX+$((PY + 120))" ring
+    # Over the gap-20 band core (column PX + 20), which the opaque client hides.
+    roi within-opaque-off "8x400+$((PX + 16))+$((PY + 120))" ring
+    roi within-opaque-on "8x400+$((PX + 16))+$((PY + 120))" ring
     ae "$OUT/within-opaque-off-ring.png" "$OUT/within-opaque-on-ring.png"
     assert_zero "within opaque glyph identity" "$METRIC"
     roi within-opaque-off "$(face_roi)" glyph

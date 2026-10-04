@@ -82,11 +82,27 @@ capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the insta
         --input "$ROOT/docs/materials/scripts/glass-optic-smoke-lib.sh" --input "$0" "$@" \
         || fail "identity refused"
 }
+# The previous launch's GPU work can hold P5 for a moment after its niri exits;
+# settling straight away lands that tail in the window and refuses the run (the
+# idle GPU holds P8: material-3db428, material-124f1f). Wait for 3 s of
+# consecutive P8 samples, at most 120 polls (60 s), before the settle. The
+# settle gate itself is unchanged. Waits are logged to $OUT/cooldown.txt.
+gpu_cooldown() {   # $1 sub-run name
+    local polls=0 run=0
+    while [ "$run" -lt 6 ]; do
+        [ "$polls" -lt 120 ] || fail "GPU not back at P8 within 120 polls before $1"
+        if [ "$(nvidia-smi --query-gpu=pstate --format=csv,noheader)" = P8 ]; then run=$((run + 1)); else run=0; fi
+        polls=$((polls + 1))
+        sleep 0.5
+    done
+    echo "$1 $polls" >> "$OUT/cooldown.txt"
+}
 # Before every nested launch: the sub-run is named after its config unless the
 # caller's observation is not its config (idle-budget reuses six configs).
 settle_before_launch() {
     local cfg=$1 name=${2:-}
     [ -n "$name" ] || name=$(basename "$cfg" .kdl)
+    gpu_cooldown "$name"
     capture_meta settle "$OUT" --sub-run "$name" --input "$cfg" || fail "settle refused before $name; see $OUT/capture.json"
 }
 
