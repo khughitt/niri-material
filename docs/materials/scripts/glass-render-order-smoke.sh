@@ -331,20 +331,20 @@ behind_matrix() {
     cost_matrix
 }
 
-reach_case() { # name, on, off, inset, width, thickness, bevel, scatter
+reach_case() { # name, on, off, gap, width, thickness, bevel, scatter
     local rc=0
     python3 "$HERE/glass-render-order-metrics.py" reach "$OUT/$2.png" "$OUT/$3.png" \
         --window "$PX" "$PY" "$PW" "$PH" --bevel "$7" --thickness "$6" \
-        --inset "$4" --width "$5" --scatter "$8" > "$OUT/$1-reach.json" || rc=$?
+        --gap "$4" --width "$5" --scatter "$8" > "$OUT/$1-reach.json" || rc=$?
     cat "$OUT/$1-reach.json"
     [ "$rc" -eq 0 ] || fail "$1 exceeded its derived rest reach bound"
 }
 
-profile_reach() { # name, on, off, inset, width, thickness, bevel, scatter, x, y, w, h
+profile_reach() { # name, on, off, gap, width, thickness, bevel, scatter, x, y, w, h
     local rc=0
     python3 "$HERE/glass-render-order-metrics.py" reach "$OUT/$2.png" "$OUT/$3.png" \
         --window "$PX" "$PY" "$PW" "$PH" --bevel "$7" --thickness "$6" \
-        --inset "$4" --width "$5" --scatter "$8" --profile "$9" "${10}" "${11}" "${12}" \
+        --gap "$4" --width "$5" --scatter "$8" --profile "$9" "${10}" "${11}" "${12}" \
         > "$OUT/$1-reach.json" || rc=$?
     cat "$OUT/$1-reach.json"
     [ "$rc" -eq 0 ] || fail "$1 profile/reach measurement failed"
@@ -355,12 +355,12 @@ attenuation_ratio() { # hex channel, thickness, optical distance at the flat nor
         'BEGIN { print exp(log(channel / 255) * thickness * 0.2 / distance) }'
 }
 
-attenuation_reach() { # name, dense on/off, white on/off, inset, width, thickness, bevel, x, y, w, h
+attenuation_reach() { # name, dense on/off, white on/off, gap, width, thickness, bevel, x, y, w, h
     local r g b rc=0
     r=$(attenuation_ratio 34 "$8" 30); g=$(attenuation_ratio 36 "$8" 30); b=$(attenuation_ratio 54 "$8" 30)
     python3 "$HERE/glass-render-order-metrics.py" reach "$OUT/$2.png" "$OUT/$3.png" \
         --window "$PX" "$PY" "$PW" "$PH" --bevel "$9" --thickness "$8" \
-        --inset "$6" --width "$7" --attenuation-only --attenuation-images "$OUT/$2.png" "$OUT/$3.png" \
+        --gap "$6" --width "$7" --attenuation-only --attenuation-images "$OUT/$2.png" "$OUT/$3.png" \
         "$OUT/$4.png" "$OUT/$5.png" --attenuation-rect "${10}" "${11}" "${12}" "${13}" \
         --attenuation-ratio "$r" "$g" "$b" > "$OUT/$1-attenuation.json" || rc=$?
     cat "$OUT/$1-attenuation.json"
@@ -377,12 +377,9 @@ assert_changed() { # name, on, off, crop; requires at least one delta > 1 code
     printf '%s_changed_pixels=%s\n' "$1" "$changed" >> "$OUT/metrics.txt"
 }
 
-# `ring-gap` is measured from the face edge (the slab minus its chamfer), where
-# the retired inset key it replaced was measured from the slab's outer edge; the
-# reach model in glass-render-order-metrics.py still takes the slab-edge figure
-# as `--inset`, so the bounds here (and `profile_reach`'s row) are the bevel px
-# short of the band: material-3db428 re-derives them before the within cases
-# are next graded.
+# `ring-gap` is measured from the face edge (the slab minus its chamfer), and so
+# is the reach model's `--gap`. With offset 0 the face's top edge is the
+# window's, so a band at gap g has its core on row PY + g.
 within_ring() { # name, glass, gap, width, thickness, bevel, scatter
     RESPONSE_EXTRA="ring-color \"#ffffff\"
 ring-gap $3
@@ -476,7 +473,7 @@ within_attenuation() {
     within_ring within-white "$white" 20 2.6 80 12 0
     within_ring within-dense-attenuation "$dense" 20 2.6 80 12 0
     attenuation_reach within-ring within-dense-attenuation-on within-dense-attenuation-off \
-        within-white-on within-white-off 20 2.6 80 12 "$((PX + 60))" "$((PY + 7))" 200 3
+        within-white-on within-white-off 20 2.6 80 12 "$((PX + 60))" "$((PY + 19))" 200 3
     aurora_white=$'noise 0\nsaturation 1\niridescence 0\naurora 0.5 { drift-hz 0; }\nior 1.5\nthickness 80\nbevel 12\ndistortion 0\nattenuation-color "#ffffff"\nattenuation-distance 30'
     aurora_dense=$'noise 0\nsaturation 1\niridescence 0\naurora 0.5 { drift-hz 0; }\nior 1.5\nthickness 80\nbevel 12\ndistortion 0\nattenuation-color "#222436"\nattenuation-distance 30'
     capture within-aurora-white-off "${aurora_white/aurora 0.5/aurora 0}" "$NIRI" none

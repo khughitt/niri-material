@@ -57,11 +57,8 @@ if [ -z "$WALL" ]; then WALL=$WORK/checker.png; magick -size 160x90 pattern:chec
 # pinned here and the written config is checked for them.
 PIN_IOR=1.02; PIN_THICKNESS=41.7; PIN_BEVEL=11
 PIN_OFFSET=1                              # the prism block's offset-x/offset-y
-# `ring-gap` is measured from the face edge (the slab minus its chamfer); the
-# retired inset key this replaced was measured from the slab's outer edge.
-# The sampling row (FIL_Y) and the reach bound (`reach`) below still carry the
-# slab-edge derivation, PIN_BEVEL px short of the band: material-3db428
-# re-derives them before the measured cases are next graded.
+# `ring-gap` is measured from the face edge (the slab minus its chamfer), and so
+# are the sampling row (FIL_Y) and the reach model's `--gap`.
 RING_GAP=5
 RING_WIDTH=2.6
 # The layout below (1280x720 host, gaps 54, two columns at proportion 0.5)
@@ -74,7 +71,7 @@ FACE_CROP=$((WIN_W - 2 * FACE_INSET))x$((WIN_H - 2 * FACE_INSET))+$((WIN_X + FAC
 # and slid by the offset, so its top edge sits this far above the window.
 SLAB_TOP=$((WIN_Y - (PIN_BEVEL - PIN_OFFSET) + PIN_OFFSET))
 FIL_X=$((WIN_X + WIN_W / 2))              # top edge of the right window, mid-span
-FIL_Y=$((SLAB_TOP + RING_GAP))            # the band's Gaussian core
+FIL_Y=$((SLAB_TOP + PIN_BEVEL + RING_GAP))   # the band's Gaussian core, inward of the face
 # The strip spanning the left column's right edge and the gap to the right
 # column: where a difference in layout position between two hosts shows up.
 GAP_CROP=(440 300 200 120)                # x y w h
@@ -302,7 +299,7 @@ reach() { # $1 label, $2 on, $3 off
     local rc=0
     python3 "$HERE/glass-render-order-metrics.py" reach "$2" "$3" \
         --window "$WIN_X" "$WIN_Y" "$WIN_W" "$WIN_H" --bevel "$PIN_BEVEL" \
-        --thickness "$PIN_THICKNESS" --inset "$RING_GAP" --width "$RING_WIDTH" \
+        --thickness "$PIN_THICKNESS" --gap "$RING_GAP" --width "$RING_WIDTH" \
         --scatter 0 --offset-x "$PIN_OFFSET" --offset-y "$PIN_OFFSET" --corner-radius 12 \
         > "$WORK/$1-reach.json" || rc=$?
     cat "$WORK/$1-reach.json" >> "$WORK/checks.txt"
