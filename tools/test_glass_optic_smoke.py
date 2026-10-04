@@ -83,6 +83,14 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
                               env={**os.environ, 'PATH': f'{bin_dir}:{os.environ["PATH"]}',
                                    'STATES': str(Path(out) / 'states')})
 
+    def test_settle_before_launch_skips_the_cooldown_under_a_capture_meta_stub(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { :; }\ngpu_cooldown() { echo cooled; }\n' + self.function('settle_before_launch') +
+                      '\nOUT=$1; CAPTURE_META=: settle_before_launch "$OUT/A.kdl"; CAPTURE_META= settle_before_launch "$OUT/A.kdl"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), ['cooled'])
+
     def test_gpu_cooldown_waits_for_six_consecutive_p8_polls(self):
         with tempfile.TemporaryDirectory() as out:
             result = self.gpu_cooldown(out, ['P5', 'P8', 'P8', 'P5', 'P8', 'P8', 'P8', 'P8', 'P8', 'P8'])

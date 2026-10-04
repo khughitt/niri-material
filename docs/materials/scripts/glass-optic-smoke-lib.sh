@@ -87,6 +87,8 @@ capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the insta
 # idle GPU holds P8: material-3db428, material-124f1f). Wait for 3 s of
 # consecutive P8 samples, at most 120 polls (60 s), before the settle. The
 # settle gate itself is unchanged. Waits are logged to $OUT/cooldown.txt.
+# Skipped when CAPTURE_META substitutes the tool (tests, rehearsals on a busy
+# or non-NVIDIA host), which then settles nothing either.
 gpu_cooldown() {   # $1 sub-run name
     local polls=0 run=0
     while [ "$run" -lt 6 ]; do
@@ -102,7 +104,7 @@ gpu_cooldown() {   # $1 sub-run name
 settle_before_launch() {
     local cfg=$1 name=${2:-}
     [ -n "$name" ] || name=$(basename "$cfg" .kdl)
-    gpu_cooldown "$name"
+    [ -n "${CAPTURE_META:-}" ] || gpu_cooldown "$name"
     capture_meta settle "$OUT" --sub-run "$name" --input "$cfg" || fail "settle refused before $name; see $OUT/capture.json"
 }
 
