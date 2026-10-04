@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T12:29:25Z
+updated: 2026-10-04T12:29:36Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -80,3 +80,4 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T12:29:24Z (disturber-hold): resumed
   provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T12:29:24Z (disturber-hold): review: plan round 3 — verdict: revise; findings: P1 1; reviewer: human
+- 2026-10-04T12:29:36Z (disturber-hold): Plan round 3 applied: hold_end.cleanup {guard, owner_pid} written with the first restore record; finish_leftovers uses it; cleanup-interruption test also starts from a record with only run.
