@@ -165,7 +165,7 @@ The `hold` section is written once the hold is complete:
   "desktop": "present",
   "timer_map": {"user": {"wali-rotate.timer": "wali-rotate.service"}, "system": {"plocate-updatedb.timer": "plocate-updatedb.service"}},
   "system_timers": ["plocate-updatedb.timer"],
-  "guard": "capture-meta-guard-<run id>.service",
+  "guard": "capture-meta-guard-<run key>.service",
   "recovered": null
 }
 ```
@@ -206,7 +206,8 @@ write-once). The first release:
    guard's wake log, then writes `scan`.
 4. Writes `restore`. If every item was restored, it stops the guard,
    removes the hold file and the wake log, and releases the lock. If not,
-   all three stay: the hold file keeps only the unrestored items.
+   all three stay: the hold file keeps unrestored items in `held`; `items`
+   retains every original item until the scan is durable.
 
 A later release finds `hold_end`. With `restore.state` `complete` it
 changes nothing. With `failed` it retries step 2 on the items still in the
@@ -245,8 +246,10 @@ sub-runs.
 
 ### 4.4 Guard and recovery
 
-**Guard.** Before the first hold action, preflight starts a transient user
-unit, `systemd-run --user --unit=capture-meta-guard-<run id> --collect
+**Guard.** The run key is the first twelve hex digits of SHA-256 over the
+resolved run directory, so identical run basenames in different directories
+do not share a guard or wake log. Before the first hold action, preflight
+starts a transient user unit, `systemd-run --user --unit=capture-meta-guard-<run key> --collect
 --property=Type=exec`, running `capture-meta guard` by the absolute path of
 the `capture-meta` that ran preflight, and confirms with `systemctl --user
 is-active` that it runs. The guard loops once a second: it checks that the
@@ -254,7 +257,7 @@ lock owner is alive and reads the `dpms` file of each connector the
 hold file lists (none until the monitors are held). A connector reading
 `On`
 appends `{at, connector}` to the wake log,
-`$XDG_RUNTIME_DIR/capture-meta.wakes.<run id>.jsonl`, once per transition.
+`$XDG_RUNTIME_DIR/capture-meta.wakes.<run key>.jsonl`, once per transition.
 When the owner dies, the guard runs the restore below and exits. Its cost is
 a `kill(pid, 0)` and a few sysfs reads per second. The guard stops
 watching for wakes once the hold file is marked `restoring` (below). The guard runs in the user manager's environment, not the
@@ -302,7 +305,8 @@ A *service activation* is an invocation id first seen in the window on a
 job start ("Starting …", `7d4958e8…`), unit-started or finished entry
 (`39f53479…`) or failed start (`be02cf6855d2428ba40df7e9d022f03d`) of that
 unit, excluding the invocation each timer-activated service had at hold
-time (`InvocationID`, recorded in `hold.timer_map`). The id is
+time (`InvocationID`, recorded in the host hold file's `invocations`).
+The id is
 `INVOCATION_ID` on system-manager entries and `USER_INVOCATION_ID` on
 user-manager entries, which carry no `INVOCATION_ID` (checked on this
 host's `wali-rotate.service` and `man-db.service` entries). An entry with
