@@ -15,6 +15,10 @@ raise the limit, rename away slow samples, or claim every commit will take 35 se
 
 ## Evidence before selecting the design
 
+[Probe receipts and reproduction inputs](../../tasks/files/material-cd7782/material-pre-commit-revision-evidence.md)
+retain the sanitized timing records, installed versions, test verdicts, and
+disposable scripts behind these measurements.
+
 The incident's seven-day median is 45.305 seconds over 140 qualifying hooks. The
 successful-hook history supplied in review shows a sustained regression:
 
