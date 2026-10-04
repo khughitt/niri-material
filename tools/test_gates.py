@@ -183,30 +183,48 @@ class Gates(unittest.TestCase):
                 self.assert_commit_route('hook-pre-commit-full')
 
     def recipe_fixture(self):
-        marker = self.root / 'marker.py'
-        marker.write_text('''import json, os, sys
-kind=sys.argv[1]
-with open(os.environ['GATE_TMP']+'/events', 'a') as out:
-    out.write(json.dumps(dict(kind=kind, mode=os.environ.get('NIRI_TOOLING_FAST'), args=sys.argv[2:]))+'\\n')
-if kind in ('fast', 'full'): print('Ran '+str(2 if kind=='fast' else 3)+' tests in 0.001s', file=sys.stderr)
-if kind in ('rust', 'push'): print('test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s')
-if os.environ.get('FAIL_EVENT')==kind: sys.exit(7)
-''')
+        marker = self.bin / 'marker'
+        # Native shell markers avoid starting Python for each stage. NUL fields
+        # with an argument count preserve argv without quoting or JSON escaping.
+        self.stub('marker', '''kind=$1
+shift
+{
+    printf '%s\\0%s\\0%s\\0' "$kind" "${NIRI_TOOLING_FAST-unset}" "$#"
+    for arg do printf '%s\\0' "$arg"; done
+} >> "$GATE_TMP/events"
+case "$kind" in
+    fast) printf 'Ran 2 tests in 0.001s\\n' >&2 ;;
+    full) printf 'Ran 3 tests in 0.001s\\n' >&2 ;;
+    rust|push) printf 'test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n' ;;
+esac
+if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
         real_python = shutil.which('python3')
         self.stub('python3', 'if [ "$1" = -m ]; then\n'
-                  f'  if [ "$2" = unittest ]; then shift 2; exec "{real_python}" "{marker}" fast "$@"; fi\n'
+                  f'  if [ "$2" = unittest ]; then shift 2; exec "{marker}" fast "$@"; fi\n'
                   '  if [ "$2" = tools.tooling_tests ]; then shift 2;\n'
-                  f'    if [ "$1" = --full ]; then exec "{real_python}" "{marker}" full "$@"; fi\n'
-                  f'    if [ "$1" = --check-paths ]; then exec "{real_python}" "{marker}" paths "$@"; fi\n'
+                  f'    if [ "$1" = --full ]; then exec "{marker}" full "$@"; fi\n'
+                  f'    if [ "$1" = --check-paths ]; then exec "{marker}" paths "$@"; fi\n'
                   '  fi\nfi\n'
                   f'exec "{real_python}" "$@"')
         overrides = []
         for name, kind in (('check_before_cmd', 'before'), ('check_after_cmd', 'after'),
                            ('hygiene_cmd', 'hygiene'), ('stage_report_cmd', 'stage'),
                            ('test_cmd', 'rust'), ('push_fast_cmd', 'push')):
-            overrides += ['--set', name, f'python3 {marker} {kind}']
+            overrides += ['--set', name, f'{marker} {kind}']
         self.env['NIRI_TOOLING_FAST'] = '1'
         return overrides
+
+    def recipe_events(self):
+        fields = (self.root / 'events').read_bytes().decode().split('\0')
+        self.assertEqual(fields.pop(), '')
+        events = []
+        while fields:
+            kind, mode, count = fields[:3]
+            count = int(count)
+            events.append(dict(kind=kind, mode=None if mode=='unset' else mode,
+                               args=fields[3:3 + count]))
+            del fields[:3 + count]
+        return events
 
     def test_recipe_composition_modes_counts_and_shared_hook_target(self):
         overrides = self.recipe_fixture()
@@ -229,7 +247,7 @@ if os.environ.get('FAIL_EVENT')==kind: sys.exit(7)
                 run = subprocess.run([self.just, *overrides, recipe], cwd=ROOT, env=self.env,
                                      capture_output=True, text=True)
                 self.assertEqual(run.returncode, 0, run.stderr)
-                events = [json.loads(line) for line in (self.root / 'events').read_text().splitlines()]
+                events = self.recipe_events()
                 self.assertEqual([event['kind'] for event in events], expected)
                 for event in events:
                     if event['kind'] in ('fast', 'full', 'paths'):
@@ -251,7 +269,7 @@ if os.environ.get('FAIL_EVENT')==kind: sys.exit(7)
         run = subprocess.run([self.just, *overrides, 'hook-pre-commit-full'], cwd=ROOT,
                              env=self.env, capture_output=True, text=True)
         self.assertNotEqual(run.returncode, 0)
-        events = [json.loads(line)['kind'] for line in (self.root / 'events').read_text().splitlines()]
+        events = [event['kind'] for event in self.recipe_events()]
         self.assertEqual(events, ['stage', 'before', 'full'])
         record = json.loads((self.root / 'timings.jsonl').read_text().splitlines()[-1])
         self.assertEqual((record['target'], record['exit'], record['tests']), ('hook-pre-commit', 7, 3))

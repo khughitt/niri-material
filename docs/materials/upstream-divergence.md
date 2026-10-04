@@ -120,7 +120,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_meta.py` | C | A | +865/-0 |
-| `tools/test_gates.py` | C | A | +257/-0 |
+| `tools/test_gates.py` | C | A | +275/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +696/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
 | `tools/test_optic_settling.py` | C | A | +1210/-0 |
