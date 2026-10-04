@@ -24,6 +24,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import capture_hold as ch  # noqa: E402
 from capture_hold import CannotRun, Refused, guarded  # noqa: E402
 
+TOOL = str(pathlib.Path(__file__).resolve())
+Host = ch.Host
+
 SCHEMA = 1
 RECORD = "capture.json"
 LOCK_NAME = "capture-meta.lock"
@@ -749,10 +752,109 @@ def session_reasons(lane):
     return reasons
 
 
+def hold_section(hold, plan, recovered):
+    return {"started": ch.rfc3339(hold["started_us"]), "started_us": hold["started_us"], "items": hold["items"],
+            "not_held": plan["not_held"], "socket": plan["socket"], "config": plan["config"],
+            "desktop": plan["desktop"], "timer_map": plan["timer_map"], "active_at_hold": plan["active_at_hold"],
+            "system_timers": plan["system_timers"], "connectors": hold["connectors"], "guard": hold["guard"],
+            "owner_pid": hold["owner_pid"], "recovered": recovered}
+
+
+def start_guard(host, hold):
+    env = {key: host.env[key] for key in ("XDG_RUNTIME_DIR", "PATH", "WAYLAND_DISPLAY", "XDG_CONFIG_HOME",
+                                          "CAPTURE_META_SYSFS") if host.env.get(key)}
+    if hold["socket"]:
+        env["NIRI_SOCKET"] = hold["socket"]
+    ch.checked(host, "systemd-run", "--user", f"--unit={hold['guard']}", "--collect", "--quiet",
+               "--property=Type=exec", *(f"--setenv={k}={v}" for k, v in env.items()),
+               sys.executable, TOOL, "guard", hold["run_dir"])
+    state = host.run("systemctl", "--user", "is-active", hold["guard"]).stdout.strip()
+    if state != "active":
+        raise CannotRun(f"guard {hold['guard']} is {state or 'unknown'}, not active; nothing was held")
+
+
+def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
+    """Restore this run's hold, scan it once, record both (spec §4.3).
+
+    The record is written inside the restore transaction, before the hold
+    file goes, under record_lock. A kill at any point leaves the hold file
+    (the next attempt finishes the record, scanning the same items) or a
+    complete record (release finishes the leftovers without touching it).
+    Returns {"attempt", "hold_end"}, or None when no hold file names the run.
+    """
+    run_dir = pathlib.Path(run_dir)
+    written = {}
+
+    def record(hold, wakes, attempt):
+        if not (run_dir / RECORD).exists():
+            return
+        with record_lock(run_dir):
+            end = load_record(run_dir).get("hold_end", {})
+            if attempt["undone"] == 0 and "scan" in end and end.get("restore", {}).get("state") == "complete":
+                written["hold_end"] = end      # a leftover after a saved record: nothing new to say
+                return
+            scan = None
+            if "scan" not in end:
+                base = {"until_us": hold["until_us"], "disturbances": []}
+                if preflight_exit is not None:
+                    scan = {**base, "verdict": "not-run", "preflight_exit": preflight_exit}
+                else:
+                    try:
+                        verdict, disturbances = ch.scan(host, hold, wakes)
+                        scan = {**base, "verdict": verdict, "disturbances": disturbances}
+                    except CannotRun as error:
+                        scan = {**base, "verdict": "unscanned", "error": str(error)}
+            written["hold_end"] = _update_hold_end(run_dir, scan, attempt,
+                                                   {"guard": hold["guard"], "owner_pid": hold["owner_pid"]})
+
+    result = ch.restore_transaction(host, lock_file, run_id, run_dir, by, record)
+    if result is None:
+        return None
+    hold, attempt = result
+    if not attempt["failures"]:
+        finish_cleanup(host, lock_file, hold, run_id, stop_guard=by != "guard")
+    return {"attempt": attempt, "hold_end": written.get("hold_end")}
+
+
+def finish_cleanup(host, lock_file, hold, run_id, stop_guard=True):
+    """After every item is back: stop the guard and release the lock. Both are idempotent."""
+    if stop_guard:
+        host.run("systemctl", "--user", "stop", hold["guard"])
+    release_lock(lock_file, hold["owner_pid"], run_id)   # hold: the hold file or hold_end.cleanup
+
+
+def finish_leftovers(lock_file, run_dir, run, record):
+    """A kill after a complete hold_end was saved can leave the hold file, the guard or the
+    lock behind. Finish them without touching the record, from hold_end.cleanup, which the
+    same save wrote (the record may have no hold or preflight section at all)."""
+    ch.finalize(lock_file, run["id"], run_dir)
+    cleanup = record["hold_end"].get("cleanup")
+    if cleanup is None:
+        raise CannotRun(f"{RECORD}: hold_end is complete but has no cleanup identity; "
+                        "stop capture-meta-guard-*.service and remove the lock by hand if they remain")
+    finish_cleanup(Host(), lock_file, cleanup, run["id"])
+
+
+def recover_stale(host, lock_file):
+    with guarded(lock_file):
+        stale = ch.read_hold(ch.hold_file(lock_file))
+    if stale is None:
+        return None
+    result = restore_run(host, lock_file, stale["run_dir"], stale["run_id"], "next-preflight")
+    if result is None:
+        return None
+    if result["attempt"]["failures"]:
+        raise Refused(f"a stale hold from run {stale['run_id']} could not be restored: "
+                      f"{failure_list(result['attempt'])}")
+    return {"run_id": stale["run_id"], "items": [i.get("unit") or i["kind"] for i in stale["items"]], "failures": []}
+
+
 def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tools, proc, gpu, host_load,
-              sleep=time.sleep, lock=lock_path):
+              host, sleep=time.sleep, lock=lock_path, hold_settle=10, launch_guard=None):
     if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
         raise CannotRun("seconds must be a positive integer")
+    if isinstance(hold_settle, bool) or not isinstance(hold_settle, int) or hold_settle < 0:
+        raise CannotRun("hold_settle must be a nonnegative integer")
     _validate_owner(owner_pid, "preflight")
     run_dir = pathlib.Path(run_dir)
     run = run_section(run_dir, lane, task, fixture)
@@ -763,7 +865,17 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
     except Refused as error:
         write_section(run_dir, "preflight", {"verdict": "refused", "reasons": [str(error)], "thresholds": thresholds})
         raise
+    held = False
     try:
+        # guarded() is per open file: every hold step takes it after acquire_lock has returned, never inside it.
+        recovered = recover_stale(host, lock_file)
+        plan = ch.plan_hold(host)
+        hold = ch.create_hold(lock_file, run["id"], run_dir, owner_pid, plan, host.now_us())
+        held = True
+        (launch_guard or start_guard)(host, hold)
+        hold = ch.apply_hold(host, lock_file, run["id"], run_dir, plan)
+        write_section(run_dir, "hold", hold_section(hold, plan, recovered))
+        sleep(hold_settle)
         write_section(run_dir, "environment", environment(gpu, tools, proc))
         reasons = session_reasons(lane)
         samples = sample_stream(proc, gpu, seconds, sleep)
@@ -782,15 +894,24 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         write_section(run_dir, "preflight", section)
         if reasons:
             raise Refused(message)
-    except BaseException:
-        release_lock(lock_file, owner_pid, run["id"])
+    except BaseException as error:
+        if not held:
+            release_lock(lock_file, owner_pid, run["id"])
+            raise
+        code = 1 if isinstance(error, Refused) else 2
+        result = restore_run(host, lock_file, run_dir, run["id"], "preflight", preflight_exit=code)
+        if result is None:
+            release_lock(lock_file, owner_pid, run["id"])
+        elif result["attempt"]["failures"]:
+            raise CannotRun(f"{error}; the hold could not be rolled back: {failure_list(result['attempt'])}") from error
         raise
 
 
 def cmd_preflight(args):
     preflight(args.run_dir, args.lane, args.task, args.fixture, args.seconds,
               args.owner_pid if args.owner_pid is not None else os.getppid(),
-              parse_thresholds(args.threshold), args.tool, ProcReader(), GpuReader(), HostLoadReader())
+              parse_thresholds(args.threshold), args.tool, ProcReader(), GpuReader(), HostLoadReader(),
+              Host(), hold_settle=args.hold_settle)
 
 
 def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=lock_path):
@@ -849,17 +970,56 @@ def cmd_settle(args):
 
 
 def cmd_release(args):
-    record = load_record(args.run_dir)
+    run_dir = pathlib.Path(args.run_dir)
+    record = load_record(run_dir)
     run = record.get("run")
     if not run:
         return
+    lock_file = lock_path()
+    end = record.get("hold_end")
+    state = (end or {}).get("restore", {}).get("state")
+    if state != "complete" and ch.hold_names_run(lock_file, run["id"], run_dir):
+        result = restore_run(Host(), lock_file, run_dir, run["id"], "release")
+        if result is not None:
+            end = result["hold_end"]
+    elif state == "complete":
+        finish_leftovers(lock_file, run_dir, run, record)
+    if end is not None:
+        exit_for(end)
+        return
     owner = record.get("preflight", {}).get("lock", {}).get("owner_pid")
     if owner is None:
-        if read_lock(lock_path()) is not None:
+        if read_lock(lock_file) is not None:
             raise Refused(f"lock is not this run's ({run.get('id')}); left in place")
         return
-    if not release_lock(lock_path(), owner, run["id"]):
+    if not release_lock(lock_file, owner, run["id"]):
         raise Refused(f"lock is not this run's ({run['id']}); left in place")
+
+
+def guard(host, lock_file, run_dir, iterations=None):
+    run_dir = pathlib.Path(run_dir).resolve()
+    def owner_dead():
+        result = restore_run(host, lock_file, run_dir, run_dir.name, "guard")
+        return result is None or not result["attempt"]["failures"]
+    return ch.guard_loop(host, lock_file, run_dir.name, run_dir, owner_dead, iterations)
+
+
+def cmd_guard(args):
+    guard(Host(), lock_path(), args.run_dir)
+
+
+def cmd_restore(args):
+    lock_file = lock_path()
+    with guarded(lock_file):
+        hold = ch.read_hold(ch.hold_file(lock_file))
+    if hold is None:
+        return
+    host = Host()
+    if host.pid_alive(hold["owner_pid"]):
+        raise Refused(f"run {hold['run_id']}'s owner pid {hold['owner_pid']} is alive; release that run instead")
+    result = restore_run(host, lock_file, hold["run_dir"], hold["run_id"], "hand")
+    if result is not None and result["attempt"]["failures"]:
+        raise CannotRun(f"still held: {failure_list(result['attempt'])}")
 
 
 def render(record):
@@ -943,6 +1103,7 @@ def build_parser():
     pre.add_argument("--owner-pid", type=int, default=None)
     pre.add_argument("--threshold", action="append", default=[])
     pre.add_argument("--tool", action="append", default=[])
+    pre.add_argument("--hold-settle", type=int, default=10)
     pre.set_defaults(func=cmd_preflight)
     ident = subs.add_parser("identity")
     ident.add_argument("run_dir")
@@ -960,6 +1121,11 @@ def build_parser():
     rel = subs.add_parser("release")
     rel.add_argument("run_dir")
     rel.set_defaults(func=cmd_release)
+    grd = subs.add_parser("guard")
+    grd.add_argument("run_dir")
+    grd.set_defaults(func=cmd_guard)
+    rst = subs.add_parser("restore")
+    rst.set_defaults(func=cmd_restore)
     return parser
 
 
