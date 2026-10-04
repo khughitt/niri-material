@@ -10,6 +10,8 @@
 
 **Spec:** [docs/specs/2026-10-04-capture-disturber-hold-design.md](../specs/2026-10-04-capture-disturber-hold-design.md) (approved, review round 8).
 
+**Status:** approved by the owner at `dae52058` (plan review round 4); execution: native, then a whole-branch review.
+
 ## Global Constraints
 
 - Hold file: `$XDG_RUNTIME_DIR/capture-meta.hold.json`, beside the lock; items written to it *before* their action (write-ahead).
