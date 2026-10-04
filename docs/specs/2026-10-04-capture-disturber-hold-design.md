@@ -1,6 +1,6 @@
 # Hold host disturbers for the length of a quiet capture
 
-**Status:** draft for owner review, 2026-10-04 (revised after agent review
+**Status:** approved by the owner for planning (review round 8, 2026-10-04) (revised after agent review
 rounds 1–3, 5 and 6 and owner-relayed review rounds 4 and 7).
 **Task:** `material-188aaa`, under `material-2834d7`.
 **Extends:** [capture protocol design](2026-09-11-material-capture-protocol-design.md)
@@ -173,7 +173,7 @@ The `hold` section is written once the hold is complete:
 A guard that fails to start fails preflight (CannotRun) before anything is
 held. If the hold fails partway (a `systemctl stop` errors) or preflight
 fails after it for any reason (Refused or CannotRun), preflight rolls the
-hold back by the restore procedure of §4.3, as `by: preflight`, with the
+hold back by the restore procedure of §4.3, as an attempt with `by: preflight`, with the
 scan `not-run` (no measurement started). A complete rollback stops the
 guard, removes the hold file and releases the lock, and preflight exits
 with its own failure. A rollback that leaves items unrestored keeps them in
@@ -233,7 +233,7 @@ below.
 ```
 
 `scan.verdict` is `clean`, `disturbed`, `unscanned` (§5) or `not-run` (a
-preflight rollback). `restore.by` is `release`, `preflight`, `guard`,
+preflight rollback). Each `restore.attempts[].by` is `release`, `preflight`, `guard`,
 `hand` (`capture-meta restore` run by a person) or `next-preflight`.
 
 Exit codes, from the record as it stands after the attempt: `restore.state`
@@ -269,7 +269,7 @@ service start, not a timer, so §5 does not flag it.
 **`capture-meta restore`** (what the guard runs) restores the host hold file, refusing while the
 lock's owner is alive. With no hold file it does nothing and exits 0. It
 updates `hold_end.restore` in the file's `run_dir` when that record exists
-(`by: guard` or `by: hand`), whether the record has no `hold_end` yet (the
+(an attempt with `by: guard` or `by: hand`), whether the record has no `hold_end` yet (the
 owner died mid-run: `scan` is then written first, bounded at the start of
 this restore, as in §4.3) or a `failed` one (a retry after a failed
 release), so a run is never left recorded as held or as failed once its
@@ -279,7 +279,7 @@ failed.
 **Next preflight.** After taking the lock, preflight restores any hold file
 it finds (its owner is necessarily dead: a live owner would still hold the
 lock), updates the old run's `hold_end.restore` the same way
-(`by: next-preflight`) when its record still exists, and records
+(an attempt with `by: next-preflight`) when its record still exists, and records
 `recovered: {run_id, items, failures}` in the new run's `hold`. A failed recovery refuses preflight with each unrestored item named.
 
 ## 5. Disturbance scan
@@ -359,7 +359,7 @@ Live, from a TTY with the desktop stopped (the first quiet run):
    logs only "Started") and exits 1.
 3. **Kill recovery** (about 1 min): preflight from a subshell, then kill
    that subshell; the guard restores within seconds and writes
-   `restore.by: guard` with `state: complete`.
+   a last `restore.attempts[]` entry with `by: guard`, and `restore.state: complete`.
 4. **Evidence run:** the dedicated-lane development check
    (`optic-settling-smoke.sh pilot`, three cases; "Running the dedicated
    lane" in capture host setup) with the hold in place.
