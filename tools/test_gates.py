@@ -17,10 +17,13 @@ class Gates(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        self.env = dict(os.environ, PATH=f"{self.bin}:{os.environ['PATH']}",
+        # Fixtures provide host-budget themselves; CI has no shared ops tooling.
+        self.env = dict(os.environ, PATH=f"{self.bin}:/usr/local/bin:/usr/bin:/bin",
                         TT_LOG=str(self.root / "timings.jsonl"), GATE_TMP=str(self.root))
         self.git = shutil.which("git")
         self.just = shutil.which("just")
+        self.stub('host-budget', '[ "$1" = run ] || exit 2\nshift\n'
+                  '[ "$1" = -- ] || exit 2\nshift\nexec "$@"')
         self.run_git("init", "-q")
         self.stub("just", 'if [ "$1" = --evaluate ] && [ "$2" = "${EVAL_FAIL:-}" ]; then printf %s origin; exit 1; fi\n'
                   f'if [ "$1" = --evaluate ]; then exec "{self.just}" --justfile "{ROOT / "justfile"}" "$@"; fi\n'
@@ -109,3 +112,13 @@ class Gates(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root / "timings.jsonl").exists())
+
+    def test_focused_recipe_records_failure_through_host_budget(self):
+        script = self.root / 'fail.py'
+        script.write_text("import sys\nprint('Ran 1 test in 0.001s', file=sys.stderr)\nsys.exit(7)\n")
+        result = subprocess.run([self.just, '--set', 'one_cmd', f'python3 {script}',
+                                 'test-one', 'ignored'], cwd=ROOT, env=self.env,
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        record = json.loads((self.root / 'timings.jsonl').read_text().splitlines()[-1])
+        self.assertEqual((record['exit'], record['tests']), (7, 1))
