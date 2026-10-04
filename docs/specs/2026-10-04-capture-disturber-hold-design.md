@@ -48,7 +48,7 @@ instead) and lanes on other hosts beyond what §3.2's config file allows.
 | Which timers | Every active, non-transient *user* timer, discovered at hold time. | A curated list: it misses the next timer someone installs (this host has 13; `familiar-reap` fires every minute) and puts host unit names in the repository. |
 | Which services | Units named in a per-host file (§3.2). Reference host: `dropbox.service`. | Holding every user service: most are the session itself. An environment variable: easily missing in a fresh TTY login. |
 | Desktop idle | `noctalia msg caffeine-enable` for the run, `caffeine-disable` after. Idle then neither locks nor blanks mid-run. | Locking first: the lock surface itself renders and changes state when it times out. A Wayland idle-inhibit client: it needs a visible surface on the desktop. Refusing while already locked: a held lock does not change state, and refusing would block the common "lock and walk away" start. |
-| Monitors | `niri msg action power-off-monitors` after caffeine, `power-on-monitors` on restore. Input still wakes them (`src/input/mod.rs`), so the guard watches each held connector's kernel `enabled` state and a wake marks the run disturbed (§4.4, §5). | Leaving them on: the desktop's redraws failed the GPU P8/IQR gate on 2026-09-24 until the monitors were off. Suppressing the wake in niri: a compositor change and an installed-desktop rollout for a capture-side problem. |
+| Monitors | `niri msg action power-off-monitors` after caffeine, `power-on-monitors` on restore. Input still wakes them (`src/input/mod.rs`), so the guard watches each held connector's kernel `dpms` state and a wake marks the run disturbed (§4.4, §5). | Leaving them on: the desktop's redraws failed the GPU P8/IQR gate on 2026-09-24 until the monitors were off. Suppressing the wake in niri: a compositor change and an installed-desktop rollout for a capture-side problem. |
 | Where | Inside `capture-meta preflight` and `release`, always on. Every fixture already calls both. | A wrapper fixtures opt into: one forgotten fixture is an unheld run. |
 | Disturbed run | `release` restores, records, then exits 1. The four fixtures whose cleanup runs `capture_meta release "$OUT" \|\| true` change to `\|\| rc=1`, as `optic-settling-smoke.sh` already does. | Exit 0 with a warning: four of five fixtures would pass a disturbed run. |
 | Checksums | Release completes `capture.json`, so it runs before any manifest that covers it: `glass-optic-smoke-lib.sh`'s `finish` releases, then writes `SHA256SUMS`; `optic-settling-smoke.sh`'s exit path releases before `write_sums`, which then covers `capture.json` too. `finish` treats a nonzero release as `fail`, so a disturbed run never prints PASS. A second release of a finished run changes nothing and exits with the recorded verdict's code (§4.3). | Excluding `capture.json` from every manifest: the record of the hold would be the one unprotected file. |
@@ -95,13 +95,12 @@ and `niri msg action power-off-monitors`, and records the socket path so
 `release`, `restore` and the guard reach the same compositor whatever their
 own environment says. Before powering off, the hold records every connector whose
 `/sys/class/drm/card*-*/status` is `connected` and whose `enabled` is
-`enabled`. Niri's power-off (`set_monitors_active(false)`,
-`src/backend/tty.rs`) is an atomic commit that deactivates the CRTC and
-detaches the connector, which `enabled` follows; the legacy `dpms` file does
-not (this host's disconnected, detached connectors all read `dpms` = `On`).
-The hold then waits up to 5 s for each recorded connector to read
-`disabled`. If any does not, a wake could not be seen, and preflight fails
-(CannotRun) after restoring. Restore runs
+`enabled` (a disconnected connector has no CRTC, and its `dpms` reads `On`
+regardless). The hold then waits up to 5 s for each recorded connector's
+`dpms` file to read `Off`. On this host (nvidia-open, DP-1) it does: the
+owner ran `niri msg action power-off-monitors` and read `Off` two seconds
+later (2026-10-04). If any recorded connector does not, a wake could not be
+seen, and preflight fails (CannotRun) after restoring. Restore runs
 `niri msg action power-on-monitors` and `noctalia msg caffeine-disable`. Noctalia has no query for caffeine, so its
 prior state is recorded as `unknown` and restore always disables it;
 caffeine is not left on by habit on this host.
@@ -223,9 +222,9 @@ unit, `systemd-run --user --unit=capture-meta-guard-<run id> --collect
 --property=Type=exec`, running `capture-meta guard` by the absolute path of
 the `capture-meta` that ran preflight, and confirms with `systemctl --user
 is-active` that it runs. The guard loops once a second: it checks that the
-lock owner is alive and reads the `enabled` file of each connector the
+lock owner is alive and reads the `dpms` file of each connector the
 hold file lists (none until the monitors are held). A connector reading
-`enabled`
+`On`
 appends `{at, connector}` to the wake log,
 `$XDG_RUNTIME_DIR/capture-meta.wakes.<run id>.jsonl`, once per transition.
 When the owner dies, the guard runs the restore below and exits. Its cost is
@@ -325,8 +324,7 @@ Live, from a TTY with the desktop stopped (the first quiet run):
    (`optic-settling-smoke.sh pilot`, three cases; "Running the dedicated
    lane" in capture host setup) with the hold in place.
 
-The desktop part (§3.3), including whether `enabled` reads `disabled`
-after power-off on this NVIDIA driver, a wake caught by moving the mouse, and the guard restoring caffeine
+The desktop part (§3.3), beyond the owner's power-off check above, a wake caught by moving the mouse, and the guard restoring caffeine
 and monitors after a killed desktop run, is exercised the next time a
 headless-lane run is taken from the desktop; until then it is tested only
 through the adapter.

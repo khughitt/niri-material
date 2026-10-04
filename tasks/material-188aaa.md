@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T09:54:49Z
+updated: 2026-10-04T10:25:56Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -44,3 +44,7 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T09:54:10Z (disturber-hold): review: spec round 5 — verdict: revise; findings: Important 3, Minor 1; reviewer: claude-code/claude-opus-5-5
 - 2026-10-04T09:54:48Z (disturber-hold): review: spec round 6 — verdict: accept; findings: Minor 2; reviewer: claude-code/claude-opus-5-5
 - 2026-10-04T09:54:48Z (disturber-hold): Plan items from spec round 6: hold_end rewrite on restore-failed retry needs its own update path (write_section is write-once); finish writes SHA256SUMS before failing on a nonzero release.
+- 2026-10-04T09:54:51Z (disturber-hold): parked (waiting on user, review): Owner reviews docs/specs/2026-10-04-capture-disturber-hold-design.md (branch disturber-hold, .worktrees/disturber-hold; agent review accepted round 6). Optional 5 s check: power-off-monitors then read /sys/class/drm/card1-DP-1/enabled. On approval: plan, implement, stage tonight's TTY run.
+  provenance: {"harness_session":"claude-code:580ebea0-d2ea-4477-a438-6499e193b927","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T10:25:56Z (disturber-hold): resumed
+  provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
