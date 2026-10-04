@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T11:03:05Z
+updated: 2026-10-04T11:31:24Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -63,3 +63,9 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T10:51:14Z (disturber-hold): review: spec round 8 — verdict: accept; findings: minor 1; reviewer: human
 - 2026-10-04T11:03:04Z (disturber-hold): resumed
   provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T11:03:16Z (disturber-hold): parked (waiting on user, review): Owner reviews docs/plans/2026-10-04-capture-disturber-hold.md (branch disturber-hold) and picks subagent-driven or native execution; then implement steps material-810dec..f52898 and stage tonight's TTY run
+  provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T11:28:49Z (disturber-hold): resumed
+  provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T11:28:49Z (disturber-hold): review: plan round 1 — verdict: revise; findings: P1 3, P2 4; reviewer: human
+- 2026-10-04T11:31:24Z (disturber-hold): Plan round 1 applied: restore_transaction (record before hold file removal, atomic save_record), apply refuses restoring/dead-owner holds under lock, lit_connectors fails closed, guard polls under lock + scan filters wakes to window, smoke-lib SHA256SUMS written in cleanup after last release, explicit sys.path in test_capture_hold, command timeouts and attempt-limit wording.
