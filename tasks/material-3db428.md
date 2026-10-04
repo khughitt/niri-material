@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-09-20T10:34:21Z
-updated: 2026-10-04T03:28:24Z
+updated: 2026-10-04T03:38:13Z
 started: 2026-10-04T01:56:01Z
 depends: [material-22d78f]
 parent: material-2834d7
@@ -31,3 +31,4 @@ The ring beam (98013739) moved the filament band from the slab's outer edge to t
 - 2026-10-04T03:22:53Z (materials-26.04): run: glass-render-order-smoke within/pixels run 3 ($NIRI_MATERIAL_WORK_ROOT/material-3db428/within-3, 23:07-23:22 EDT): PASS, 41/41 settles, cool-down 6-9 polls. Reach bounds from the face: pinned 37 (reach 16.5), dense 61, wide 61 (reach 30.5), rough 56, face 59 (reach 31.5); within-face-strip 3200 changed; opaque identity 0; pinned/rough FWHM 4/9. neutral_identity compared this commit's binary with itself (BASE = candidate), so it checks only capture determinism here. resize-flex not run: material-22d78f.
 - 2026-10-04T03:28:24Z (ring-gap-reach): parked (waiting on agent, dependency): Agent: after material-22d78f lands, run focus-ring-light.sh CASES=resize-flex against branch ring-gap-reach (FIL_Y already re-derived) and close; the other cases passed 2026-10-03 (notes)
   provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T03:38:13Z (ring-gap-reach): review: impl round 1 — verdict: revise; findings: Important 1, Minor 2; reviewer: claude-code/claude-opus-5-5. Important: gpu_cooldown ran under a CAPTURE_META stub (HWA_REHEARSAL on a busy or non-NVIDIA host would fail after 60 s) -> skipped under a stub. Minor, not changed: callers with their own await_gpu_rest wait twice on real runs (harmless); a historical plan still shows --inset.
