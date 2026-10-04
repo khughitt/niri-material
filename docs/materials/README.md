@@ -40,6 +40,10 @@ rather than retyping it (protocol:
 - `../specs/2026-09-10-material-optics-design.md`: implemented material optics API and generated parameter table; iridescence, aurora, and their presets are merged into `materials-26.04`, while cracks, ice, and Prism mappings remain open.
 - `adding-an-optic.md`: the recipe for a new pipeline stage.
 - `2026-09-10-material-optics-evidence.md`: decoded-pixel-identical captures before and after the saturation and noise optic migration.
+- `../specs/2026-09-30-glass-edge-optics-design.md`: the bevel as a height field (`bevel-profile`), Fresnel-weighted transmission, and the `reflection` and `edge-highlight` optics; implemented on `glass-edges`, contact sheet awaiting the owner's review.
+- `2026-10-03-glass-edge-optics-evidence.md`: frozen-clock render evidence for each step (outside and face identical, bevel changes reported) and the contact sheet.
+- `scripts/glass-edge-compare.py`: before/after region checks over the frozen-clock harness dumps.
+- `scripts/glass-edge-sheet.sh`: headless contact sheet of the probe's corner over a real wallpaper, crossing bevel-profile, looks, reflection, edge-highlight and roughness.
 - `2026-09-06-glass-parameter-sweep-evidence.md`: sweep tables for `ior`, thickness, roughness, noise and saturation, and the global `blur` block, with a per-slider summary for Prism.
 - `scripts/glass-parameter-sweep.sh`: headless harness that renders one KDL parameter at N values and tabulates the neighbouring deltas.
 - `2026-09-04-focus-glass-spike.md`: passing focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.

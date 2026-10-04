@@ -1,8 +1,10 @@
 # Glass edge optics
 
-**Status:** accepted for planning in spec review round 4 (2026-10-01), with
-two wording corrections folded in (tap-normal tipping threshold, lifted-normal
-bound); implementation plan `docs/plans/2026-10-02-glass-edge-optics.md`. Task: `material-be611b`.
+**Status:** implemented on `glass-edges` (steps 1 to 4); contact sheet
+awaiting the owner's review. Accepted for planning in spec review round 4
+(2026-10-01), with two wording corrections folded in (tap-normal tipping
+threshold, lifted-normal bound); implementation plan
+`docs/plans/2026-10-02-glass-edge-optics.md`. Task: `material-be611b`.
 Follow-on idea that builds on this geometry: `material-7f5751` (content in the
 glass).
 
