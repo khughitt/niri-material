@@ -614,3 +614,393 @@ Code-commit classification receipts (short hashes; docs-only commits omitted):
 | `5c4961d7` | 2026-09-27 | fast | fast | fast |
 
 No additional hook, container, or parallel timing experiment was run for this revision. The existing 46.755-second method comprises four independent `subTest` scenarios (`tools/test_optic_settling.py:1041–1054`); these must become separately schedulable native test methods without shortening waits. Full-route speed and read-observation mechanics remain implementation verification requirements.
+
+
+## Round 3 plan inputs and focused TERM diagnosis
+
+Human review timings (reported by the owner; independently timed warm, isolated cases): 32 slow methods total approximately 204 s; the four-scenario screencast method 45.9 s; next longest DRM/TERM method 19.2 s; four more driver cases 12–17 s each; VT class approximately 23.1 s. At 8 children the owner projects a 36–40 s whole hook; use 10 children by default to seek 35 s headroom, with NEXTEST_TEST_THREADS as a strict positive integer cap. These are scheduling inputs, not measured parallel outcomes.
+
+The runtime-read proposal was replaced by source/AST checks. No tracing dependency, privilege, or runtime observation enters the plan.
+
+The installed TERM/EXIT actions are literal (`exit 143`, `on_exit`); no runtime assembled trap string was found. The lock marker is emitted before `lock_start()` returns, immediately before `stim()` computes `end=$(( $(mono) + $(awk …) ))`. This creates a plausible signal window inside the older Bash parser. The full-case attribution is an inference from that call order; the minimal probe proves the mechanism.
+
+A [GNU Bash maintainer response](https://lists.gnu.org/archive/html/bug-bash/2024-02/msg00029.html) confirms a related older-Bash trap/command-substitution parser defect for SIGCHLD. This is supporting context, not proof that the driver follows exactly that report. Local Ubuntu/host experiments below demonstrate the TERM mechanism directly.
+
+The first diagnostic pilot signaled from the first `mono()` call (the separate start assignment), which exited 143 cleanly and did not exercise the end expression; its expected-failure assertion failed. The corrected pilot injects only at the second `mono()` call, using a private marker shared across command substitutions. It exercises the actual extracted function body unchanged, then a disposable string-only split variant. No repository implementation was changed.
+
+Commands through the test front door: `just --set one_cmd "python3 /tmp/material-stim-diagnose.py" test-one 1`, then `test-one 10`. Both corrected calls exited 0 because all expected original/split verdicts matched. Original Ubuntu: exit 2 and trap EOF in all ten repetitions; original host: exit 143. Split: exit 143, empty stderr and cleanup marker on both versions in all ten. No media dependency install or full suite was run here; Docker used the existing ubuntu:24.04 base with Bash 5.2.21, while the host uses 5.3.20.
+
+Reproduction script (temporary diagnostic; extract from this fenced block to a scratch file, then invoke via `just test-one` as above):
+
+```python
+from pathlib import Path
+import json, subprocess, sys
+root = Path.cwd()
+source = (root / 'docs/materials/scripts/optic-settling-smoke.sh').read_text()
+body = source.split('stim() {', 1)[1].split('\n}\n', 1)[0]
+old = '    end=$(( $(mono) + $(awk -v s="$effect" \'BEGIN { printf "%d", s * 1e9 }\') ))'
+assert old in body
+fixed = body.replace(old, '    end=$(mono)\n    local effect_ns\n    effect_ns=$(awk -v s="$effect" \'BEGIN { printf "%d", s * 1e9 }\')\n    end=$((end + effect_ns))')
+prefix = '''set -eu
+on_exit() { local rc=$?; trap - EXIT; trap : INT TERM HUP; rm -rf "$CASE_DIR"; printf 'cleanup\\n'; exit "$rc"; }
+trap 'exit 143' TERM
+trap on_exit EXIT
+CASE_DIR=$(mktemp -d)
+mono() { if [ -e "$CASE_DIR/first" ]; then kill -TERM $$; else : > "$CASE_DIR/first"; fi; printf 100; }
+'''
+repeats = int(sys.argv[1]) if len(sys.argv)>1 else 1
+receipts=[]
+for iteration in range(repeats):
+    for variant, contents in [('original', body), ('split', fixed)]:
+        script = prefix + 'stim() {' + contents + '\n}\nstim lock 2 true\nprintf survived\n'
+        for environment in ('host','ubuntu'):
+            argv=['bash','-c',script] if environment=='host' else ['docker','run','--rm','ubuntu:24.04','bash','-c',script]
+            result=subprocess.run(argv,capture_output=True,text=True,timeout=15)
+            receipt=dict(iteration=iteration, variant=variant, environment=environment,
+                         exit=result.returncode,stdout=result.stdout,stderr=result.stderr)
+            receipts.append(receipt)
+            expected=2 if environment=='ubuntu' and variant=='original' else 143
+            assert result.returncode==expected,receipt
+            if variant=='split': assert not result.stderr,receipt
+            if environment=='ubuntu' and variant=='original':
+                assert 'unexpected EOF' in result.stderr,receipt
+    print(f'Iteration {iteration+1}: original Ubuntu failed as expected; split exited 143 cleanly on both versions.', flush=True)
+Path('/tmp/material-stim-diagnose-results.json').write_text(json.dumps(dict(repeats=repeats,
+      source='docs/materials/scripts/optic-settling-smoke.sh:545-550',
+      original_body=body,split_body=fixed,receipts=receipts),indent=2))
+```
+
+Complete ten-iteration receipts:
+
+```json
+{
+  "repeats": 10,
+  "source": "docs/materials/scripts/optic-settling-smoke.sh:545-550",
+  "original_body": "\n    local label=$1 effect=$2 start end; shift 2\n    start=$(mono)\n    \"$@\"\n    end=$(( $(mono) + $(awk -v s=\"$effect\" 'BEGIN { printf \"%d\", s * 1e9 }') ))\n    printf '%s\\t%s\\t%s\\n' \"$label\" \"$start\" \"$end\" >> \"$CASE_DIR/journal.tsv\"",
+  "split_body": "\n    local label=$1 effect=$2 start end; shift 2\n    start=$(mono)\n    \"$@\"\n    end=$(mono)\n    local effect_ns\n    effect_ns=$(awk -v s=\"$effect\" 'BEGIN { printf \"%d\", s * 1e9 }')\n    end=$((end + effect_ns))\n    printf '%s\\t%s\\t%s\\n' \"$label\" \"$start\" \"$end\" >> \"$CASE_DIR/journal.tsv\"",
+  "receipts": [
+    {
+      "iteration": 0,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 0,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 0,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 0,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 1,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 1,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 1,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 1,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 2,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 2,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 2,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 2,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 3,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 3,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 3,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 3,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 4,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 4,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 4,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 4,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 5,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 5,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 5,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 5,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 6,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 6,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 6,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 6,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 7,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 7,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 7,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 7,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 8,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 8,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 8,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 8,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 9,
+      "variant": "original",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 9,
+      "variant": "original",
+      "environment": "ubuntu",
+      "exit": 2,
+      "stdout": "cleanup\n",
+      "stderr": "environment: trap: line 2: unexpected EOF while looking for matching `)'\n"
+    },
+    {
+      "iteration": 9,
+      "variant": "split",
+      "environment": "host",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    },
+    {
+      "iteration": 9,
+      "variant": "split",
+      "environment": "ubuntu",
+      "exit": 143,
+      "stdout": "cleanup\n",
+      "stderr": ""
+    }
+  ]
+}
+```
+
+These do not establish that the production lifecycle failure is fixed. The plan must test actual driver cleanup, preserve 143 and BOUND_S=5, and run isolated/concurrent acceptance on the incident host and clean Ubuntu. Docker invocations were foreground, --rm, with timeout 15 s per probe; no containers or task subprocesses remain.

@@ -1,6 +1,6 @@
 # Pre-commit tooling latency
 
-Task: material-cd7782. Status: second revision; owner re-review required before planning.
+Task: material-cd7782. Status: accepted after round 3’s static-check substitution; implementation plan review required.
 
 ## Outcome
 
@@ -131,7 +131,8 @@ first applicable route:
    `docs/materials/scripts/glass-optic-smoke-lib.sh`,
    `docs/materials/scripts/*-client.c`, `.githooks/*`, `justfile`,
    or `.github/workflows/*`. Include the new shared coordinator/mode helper
-   `tools/tooling_tests.py` too; it has no commits in the historical recount.
+   `tools/tooling_tests.py` and its new `tools/test_tooling_tests.py` contract tests
+   too; neither has commits in the historical recount.
    Unrelated tools and capture scripts use the fast route.
 2. **Docs only:** every staged path matches the existing `docs_paths` allowlist.
 3. **Fast tooling:** remaining successfully classified code/documentation changes,
@@ -150,17 +151,26 @@ and failure propagation. Do not invent an exemption or selection-widening marker
 Narrowing reduces how often lifecycle validation runs; parallel scheduling below
 must reduce its cost. Neither change permits excluding slow successful samples.
 
-Add a gate regression against this same path list: an observed repository source
-read by either omitted class outside the list must fail and name the path. Include
-Python imports and script/helper reads in descendant processes; a Python-only
-`open` patch cannot detect the driver's sourced shell helper. Ignore temporary
-fixtures, Git administrative files, and system libraries. Exercise this check
-during full lifecycle validation, reusing those executions rather than adding a
-second slow suite to the fast route. A focused synthetic gate test must prove an
-unlisted repository read fails. The implementation plan must specify how reads are
-observed without maintaining a separate import graph. Put the read-coverage
-regression in the already covered `tools/test_optic_settling.py`; the coordinator
-and shared mode parser live in the covered `tools/tooling_tests.py`.
+Add a cheap static gate regression against this same path list, running on the
+fast route as well as full validation. The docs-only recipe invokes this check
+directly too, so every commit checks the list. Read source, without executing
+lifecycle cases or tracing file access:
+
+- Inspect the driver's `. "$HERE/…"` source statements and literal
+  `$ROOT/tools/…` references; recursively inspect any further source statements
+  in those shell helpers.
+- Inspect repository path literals used by `DriverCleanupTests` and `VtLibTests`,
+  including their module-level path definitions (`LIB` in `test_vt_lib.py`).
+- Parse covered Python modules with `ast` and follow their `tools.*` imports.
+
+Every discovered repository path must match the full-route list. Report the
+source location and missing path, fail on unsupported repository-path construction
+or an unresolved `tools.*` import, and test a new helper, a transitive source,
+a changed class path and a Python import outside the list. Do not execute shell
+source or arbitrary Python expressions to resolve paths, and do not add a separately
+maintained import graph. Put the regression in `tools/test_optic_settling.py` outside
+the skipped class; the coordinator and shared mode parser live in the covered
+`tools/tooling_tests.py`.
 
 ## Parallel full validation
 
@@ -168,9 +178,10 @@ Use native unittest discovery and a small standard-library process coordinator;
 add no test framework. Partition the discovered suite exactly once: run the
 remainder in one process concurrently with individually scheduled cases from
 `DriverCleanupTests` and `VtLibTests` in a bounded process pool. Start with a total
-limit of eight children, including the remainder, respecting a lower host-budget
-limit when supplied. Two whole-class processes are insufficient: the driver class
-alone costs 185 seconds. Do not append the 26.7-second remainder after slow workers.
+limit of ten children, including the remainder. Cap that limit with
+`NEXTEST_TEST_THREADS` when set; accept only positive decimal integers and fail
+before spawning children on empty, zero, negative or malformed values.
+Two whole-class processes are insufficient: the driver class alone costs 185 seconds. Do not append the 26.7-second remainder after slow workers.
 
 Split the four independent scenarios in
 `test_screencast_refuses_unchecked_crops_and_a_dead_consumer` into separately named
@@ -210,7 +221,7 @@ same position. Share the surrounding command fragments to avoid divergent checks
 | `gate` | Full check followed by `test` | Full once |
 | `hook-pre-commit` | Stage report, then `check_cmd` | Fast once |
 | `hook-pre-commit-full` | Stage report, then `full_check_cmd` | Full once |
-| `hook-pre-commit-docs` | Stage report, then unchanged `docs_check_cmd` | None |
+| `hook-pre-commit-docs` | Stage report, static path check, then existing docs checks | None |
 | `hook-pre-push-fast` (CI-covered origin refs) | `check_cmd`, then config/IPC nextest | Fast once |
 | `hook-pre-push` (other or unclassified pushes) | `full_check_cmd`, then Rust-only `test_cmd -- --quiet` | Full once |
 | `ci-test` | Rust-only `test_cmd -- --quiet` | None |
@@ -299,8 +310,11 @@ Bash reports `trap: unexpected EOF while looking for matching ')'`, and the driv
 exits 2 instead of the required 143. Diagnose this before enabling the CI job or
 fast omission. A real defect in the production driver's traps or cleanup is in
 scope; the fix must retain the exit-status, failure-bound and cleanup guarantees.
-A truncated runtime trap string is a hypothesis to investigate, not an established
-cause. Preserve waits and assertions; do not skip the case, widen its bound, or
+A minimal reproduction using the actual `stim()` body now isolates TERM during
+its arithmetic expression with two command substitutions: Ubuntu Bash 5.2.21
+reproduces the EOF error, while splitting the substitutions exits 143 cleanly on
+both Bash versions. Ten repetitions confirmed this mechanism; the real lifecycle
+case and concurrent suite still require validation. The evidence retains receipts. Preserve waits and assertions; do not skip the case, widen its bound, or
 retry until green and call it resolved. A passing rerun alone does not discharge
 the blocker. Record reproduction and disposition in the plan and evidence.
 
@@ -334,8 +348,8 @@ routes and raw-discovery environment caveat.
    Prove full routes override exported `1`, run tooling once, propagate failure,
    and record both code-hook routes as `hook-pre-commit`. Check unrelated tools and
    capture scripts take fast; the sourced shared helper takes full. Verify the
-   read-coverage gate rejects an unlisted source, including a descendant script
-   read, without adding a second lifecycle run.
+   static coverage gate rejects unlisted direct/transitive shell sources, class
+   paths and `tools.*` imports during fast validation, without running slow cases.
 2. Run full Python validation through the existing `just test-fast` override with
    explicit `NIRI_TOOLING_FAST=0`. Preserve the assertions of all 287 existing
    cases; only the two retained-binary skips are expected on the incident host.
@@ -346,14 +360,17 @@ routes and raw-discovery environment caveat.
 3. Reproduce the CI recipe in clean Ubuntu without host-budget. Run a representative
    pilot before full discovery, inspect skip IDs, and show both a missing mandatory
    dependency and a deliberately failing lifecycle case produce nonzero verdicts.
-   Guard tests must also reject unexpected dynamic skips. No GitHub write is needed.
+   Guard tests must also reject unexpected dynamic skips. After the TERM blocker
+   is fixed, require consecutive green parallel full runs on both the incident host
+   and clean Ubuntu; the plan defines the count and isolated/concurrent stress loops.
+   No GitHub write is needed.
 4. Warm the task worktree's **own** Rust artifacts through the normal check front
    door, retain cold/refresh timings, and record the remedy timestamp only after the
    implementation is in place. Run actual hook recipes without diagnostic overrides.
-   Implementation commits touching `justfile` or `.githooks/` take the full route;
-   while the old serial runner remains, they cost approximately 240 seconds.
-   Those implementation records precede the remedy timestamp and do not count
-   as post-remedy failures.
+   Implementation commits touching `justfile` or `.githooks/` take the full route.
+   Before the coordinator is available they cost approximately 240 seconds; after
+   it is available, retain them as early full-route performance data. Both precede
+   the remedy timestamp and do not qualify for post-remedy verification.
    Validate both staged routes, including complete stage timings; fast must have a
    median ≤ 35 seconds, full ≤ 45 seconds (aim ≤ 35). Parallel speed must be measured
    here before accepting the remedy, rather than inferred from the serial profile.
@@ -370,6 +387,7 @@ routes and raw-discovery environment caveat.
    `tasks done`. If the target or incident check fails, keep the task open and revise
    from the measured stage costs.
 
-After spec acceptance, the agent diagnoses the remaining Ubuntu TERM failure and
-writes the implementation plan from that evidence. Implementation begins after
-the plan's separate owner review, as required by the repository process.
+The static-check substitution satisfies the owner's conditional spec acceptance.
+The implementation plan uses the minimal TERM reproduction, and retains real-case
+isolated/concurrent stress as a shipping gate. Implementation begins after the
+plan's separate owner review, as required by the repository process.
