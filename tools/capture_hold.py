@@ -370,7 +370,7 @@ def read_wakes(lock_file, hold):
         lines = wake_file(lock_file, hold).read_text().splitlines()
     except FileNotFoundError:
         return []
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         raise CannotRun(f"wake log: {error}") from error
     wakes = []
     for line in lines:
@@ -408,7 +408,11 @@ def restore_transaction(host, lock_file, run_id, run_dir, by, record=None):
         pending = still_held(hold)
         hold["held"] = pending
         write_hold(path, hold)
-        wakes = read_wakes(lock_file, hold)
+        try:
+            wakes = read_wakes(lock_file, hold)
+        except CannotRun as error:
+            hold["wake_error"] = str(error)
+            wakes = []
         failures, notes, remaining = [], [], []
         for item in reversed(pending):
             try:
@@ -523,7 +527,7 @@ def _log_wake(lock_file, hold, record):
     try:
         with open(wake_file(lock_file, hold), "a") as stream:
             stream.write(json.dumps(record) + "\n")
-    except OSError as error:
+    except (OSError, UnicodeError) as error:
         raise CannotRun(f"wake log: {error}") from error
 
 

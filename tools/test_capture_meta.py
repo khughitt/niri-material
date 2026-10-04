@@ -40,27 +40,27 @@ class LockTests(unittest.TestCase):
     def test_acquire_release_and_ownership_check(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "capture-meta.lock"
-            info = cm.acquire_lock(path, owner_pid=111, run_id="run-a", alive=lambda pid: True)
-            self.assertEqual(info, {"path": str(path), "owner_pid": 111, "run_id": "run-a", "reclaimed": False})
+            info = cm.acquire_lock(path, owner_pid=111, run_id="run-a", alive=lambda pid: True, run_dir=path.parent)
+            self.assertEqual(info, {"path": str(path), "owner_pid": 111, "run_id": "run-a", "run_dir": str(path.parent), "reclaimed": False})
             self.assertEqual(sorted(p.name for p in path.parent.iterdir()), ["capture-meta.lock", "capture-meta.lock.d"])
             self.assertEqual(cm.read_lock(path)["run_id"], "run-a")
-            self.assertFalse(cm.release_lock(path, owner_pid=222, run_id="run-b"))
+            self.assertFalse(cm.release_lock(path, owner_pid=222, run_id="run-b", run_dir=path.parent))
             self.assertTrue(path.exists())
-            self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a"))
+            self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a", run_dir=path.parent))
             self.assertFalse(path.exists())
-            self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a"))
+            self.assertTrue(cm.release_lock(path, owner_pid=111, run_id="run-a", run_dir=path.parent))
 
     def test_half_written_or_corrupt_lock_is_never_reclaimed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "capture-meta.lock"
             path.write_text("")
             with self.assertRaises(cm.CannotRun):
-                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False, run_dir=path.parent)
             self.assertEqual(path.read_text(), "")
             path.write_text("{not json")
             with self.assertRaises(cm.CannotRun):
-                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
-            self.assertFalse(cm.release_lock(path, 222, "run-b"))
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False, run_dir=path.parent)
+            self.assertFalse(cm.release_lock(path, 222, "run-b", run_dir=path.parent))
 
     def test_binary_corrupt_lock_is_never_reclaimed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -70,8 +70,8 @@ class LockTests(unittest.TestCase):
             with self.assertRaises(cm.CannotRun):
                 cm.read_lock(path)
             with self.assertRaises(cm.CannotRun):
-                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False)
-            self.assertFalse(cm.release_lock(path, 222, "run-b"))
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: False, run_dir=path.parent)
+            self.assertFalse(cm.release_lock(path, 222, "run-b", run_dir=path.parent))
             self.assertEqual(path.read_bytes(), corrupt)
 
     def test_guard_serializes_acquire_against_a_concurrent_holder(self):
@@ -82,7 +82,7 @@ class LockTests(unittest.TestCase):
             fd = os.open(guard, os.O_RDONLY); fcntl.flock(fd, fcntl.LOCK_EX)
             done = threading.Event(); result = {}
             def worker():
-                result["info"] = cm.acquire_lock(path, 333, "run-c", alive=lambda pid: True); done.set()
+                result["info"] = cm.acquire_lock(path, 333, "run-c", alive=lambda pid: True, run_dir=path.parent); done.set()
             threading.Thread(target=worker, daemon=True).start()
             self.assertFalse(done.wait(0.3))
             fcntl.flock(fd, fcntl.LOCK_UN); os.close(fd)
@@ -92,11 +92,11 @@ class LockTests(unittest.TestCase):
     def test_held_by_live_pid_refuses_stale_is_reclaimed(self):
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "capture-meta.lock"
-            cm.acquire_lock(path, 111, "run-a", alive=lambda pid: True)
+            cm.acquire_lock(path, 111, "run-a", alive=lambda pid: True, run_dir=path.parent)
             with self.assertRaises(cm.Refused) as ctx:
-                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: True)
+                cm.acquire_lock(path, 222, "run-b", alive=lambda pid: True, run_dir=path.parent)
             self.assertIn("run-a", str(ctx.exception))
-            info = cm.acquire_lock(path, 222, "run-b", alive=lambda pid: pid != 111)
+            info = cm.acquire_lock(path, 222, "run-b", alive=lambda pid: pid != 111, run_dir=path.parent)
             self.assertEqual(info["reclaimed"], True)
             self.assertEqual(info["previous_owner_pid"], 111)
             self.assertEqual(cm.read_lock(path)["owner_pid"], 222)
@@ -109,7 +109,7 @@ class LockTests(unittest.TestCase):
             code = ("import sys, importlib.util, importlib.machinery, pathlib\n"
                     "spec = importlib.util.spec_from_loader('cm', importlib.machinery.SourceFileLoader('cm', sys.argv[1]))\n"
                     "cm = importlib.util.module_from_spec(spec); spec.loader.exec_module(cm)\n"
-                    "try:\n    cm.acquire_lock(pathlib.Path(sys.argv[2]), int(sys.argv[3]), sys.argv[3], alive=lambda p: True)\n"
+                    "try:\n    cm.acquire_lock(pathlib.Path(sys.argv[2]), int(sys.argv[3]), sys.argv[3], alive=lambda p: True, run_dir=pathlib.Path(sys.argv[2]).parent)\n"
                     "except cm.Refused:\n    sys.exit(1)\n")
             tool = str(pathlib.Path(__file__).with_name("capture-meta"))
             procs = [subprocess.Popen([sys.executable, "-c", code, tool, str(path), str(1000 + i)]) for i in range(8)]
@@ -120,7 +120,7 @@ class LockTests(unittest.TestCase):
         import fcntl
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "capture-meta.lock"
-            path.write_text('{"owner_pid": 111, "run_id": "run-a"}')
+            path.write_text(json.dumps({"owner_pid": 111, "run_id": "run-a", "run_dir": str(path.parent)}))
             guard = path.with_name(path.name + ".d"); guard.mkdir()
             fd = os.open(guard, os.O_RDONLY); fcntl.flock(fd, fcntl.LOCK_EX)
             done = threading.Event()
@@ -134,7 +134,7 @@ class LockTests(unittest.TestCase):
             path = pathlib.Path(directory) / "capture-meta.lock"
             for pid, run_id in ((0, "run"), (-1, "run"), (True, "run"), (1, ""), (1, None)):
                 with self.subTest(pid=pid, run_id=run_id), self.assertRaises(cm.CannotRun):
-                    cm.acquire_lock(path, pid, run_id)
+                    cm.acquire_lock(path, pid, run_id, run_dir=path.parent)
             for holder in ({"owner_pid": 0, "run_id": "run"}, {"owner_pid": True, "run_id": "run"},
                            {"owner_pid": 1, "run_id": ""}, {"owner_pid": 1, "run_id": 2}):
                 path.write_text(json.dumps(holder))
@@ -660,7 +660,7 @@ class PreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run = pathlib.Path(directory) / "r"; run.mkdir()
             lock = run / "lock"
-            cm.acquire_lock(lock, os.getpid(), "other-run")
+            cm.acquire_lock(lock, os.getpid(), "other-run", run_dir=run)
             with self.assertRaises(cm.Refused):
                 self.run_preflight(run, lock=lambda: lock)
             record = cm.load_record(run)
@@ -738,14 +738,14 @@ class SettleTests(unittest.TestCase):
             args = (3, FakeProc([(i * 2, i * 100) for i in range(9)]), FakeGpu([QUIET] * 3))
             with self.assertRaises(cm.Refused):
                 cm.settle(run, "x", [run / "missing.kdl"], *args, sleep=lambda s: None, lock=lambda: lock)
-            lock.write_text(json.dumps({"owner_pid": 1, "run_id": "someone-else"}))
+            lock.write_text(json.dumps({"owner_pid": 1, "run_id": "someone-else", "run_dir": str(run.resolve())}))
             with self.assertRaises(cm.Refused):
                 cm.settle(run, "y", [run / "A.kdl"], *args, sleep=lambda s: None, lock=lambda: lock)
 
     def test_same_run_id_with_wrong_owner_refuses(self):
         with tempfile.TemporaryDirectory() as directory:
             run, lock = self.prepared(directory)
-            lock.write_text(json.dumps({"owner_pid": os.getpid() + 1, "run_id": run.name}))
+            lock.write_text(json.dumps({"owner_pid": os.getpid() + 1, "run_id": run.name, "run_dir": str(run.resolve())}))
             with self.assertRaises(cm.Refused):
                 cm.settle(run, "x", [run / "A.kdl"], 1, FakeProc([(0, 0), (1, 100)]),
                           FakeGpu([QUIET]), sleep=lambda s: None, lock=lambda: lock)
@@ -770,7 +770,7 @@ class SettleTests(unittest.TestCase):
                 with mock.patch.object(cm, "Host", return_value=host):
                     self.assertEqual(cm.main(["release", str(run)]), 0)
                 self.assertFalse((run / cm.LOCK_NAME).exists())
-                cm.acquire_lock(run / cm.LOCK_NAME, 1, "someone-else")
+                cm.acquire_lock(run / cm.LOCK_NAME, 1, "someone-else", run_dir=run)
                 with mock.patch.object(cm, "Host", return_value=host):
                     self.assertEqual(cm.main(["release", str(run)]), 0)  # repeats the finished verdict
                 self.assertTrue((run / cm.LOCK_NAME).exists())
@@ -786,7 +786,7 @@ class SettleTests(unittest.TestCase):
             saved = os.environ.get("XDG_RUNTIME_DIR"); os.environ["XDG_RUNTIME_DIR"] = directory
             try:
                 foreign = pathlib.Path(directory) / cm.LOCK_NAME
-                cm.acquire_lock(foreign, 1, "someone-else")
+                cm.acquire_lock(foreign, 1, "someone-else", run_dir=run)
                 self.assertEqual(cm.main(["release", str(run)]), 1)
                 self.assertEqual(cm.read_lock(foreign)["run_id"], "someone-else")
             finally:
@@ -1151,7 +1151,8 @@ class LifecycleTests(unittest.TestCase):
             return real_run(host, *command, **kw)
         def kill_release(*a, **k):
             raise FakeHost.Killed()
-        steps = (("remove hold", cm.ch, "remove_hold", kill_remove),
+        steps = (("refresh manifest", cm, "refresh_record_sum", kill_release),
+                 ("remove hold", cm.ch, "remove_hold", kill_remove),
                  ("stop guard", FakeHost, "run", kill_stop),
                  ("release lock", cm, "release_lock", kill_release))
         starts = (("preflighted", lambda: self.preflight()),
@@ -1179,7 +1180,7 @@ class LifecycleTests(unittest.TestCase):
         """The state preflight leaves when killed right after holding: a record with only
         `run`, a hold file, a guard and the lock."""
         cm.write_section(self.run, "run", {"id": self.run.name})
-        cm.acquire_lock(self.lock, 4242, self.run.name)
+        cm.acquire_lock(self.lock, 4242, self.run.name, run_dir=self.run)
         plan = cm.ch.plan_hold(self.host)
         hold = cm.ch.create_hold(self.lock, self.run.name, self.run, 4242, plan, self.host.now_us())
         cm.start_guard(self.host, hold)
@@ -1212,6 +1213,76 @@ class LifecycleTests(unittest.TestCase):
         cm.write_section(twin, "run", {"id": "pilot-1"})
         cm.main(["release", str(twin)])
         self.assertTrue((self.host.runtime / ch_hold_name()).exists())
+
+
+    def test_completed_release_keeps_a_colliding_live_runs_lock(self):
+        self.preflight()
+        old = self.run
+        self.assertEqual(cm.main(["release", str(old)]), 0)
+        self.run = self.root / "other" / old.name
+        self.run.mkdir(parents=True)
+        self.preflight()  # same owner PID and basename, different directory
+        lock = self.lock.read_bytes()
+        hold = cm.ch.hold_file(self.lock).read_bytes()
+        self.assertEqual(cm.main(["release", str(old)]), 0)
+        self.assertTrue(self.lock.exists())
+        self.assertEqual(self.lock.read_bytes(), lock)
+        self.assertEqual(cm.ch.hold_file(self.lock).read_bytes(), hold)
+
+    def test_completed_release_does_not_rehash_an_altered_record(self):
+        import hashlib
+        self.preflight()
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        record = self.run / cm.RECORD
+        manifest = self.run / "SHA256SUMS"
+        manifest.write_text(hashlib.sha256(record.read_bytes()).hexdigest() + "  ./capture.json\n")
+        original = manifest.read_bytes()
+        data = json.loads(record.read_text())
+        data["run"]["task"] = "altered"
+        record.write_text(json.dumps(data))
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual(manifest.read_bytes(), original)
+
+    def test_unreadable_wake_log_restores_the_host_and_records_unscanned(self):
+        for cause in (PermissionError("wake evidence denied"), UnicodeError("invalid wake encoding")):
+            with self.subTest(cause=cause):
+                self.setUp()
+                self.preflight()
+                self.host.alive[4242] = False
+                wake = cm.ch.wake_file(self.lock, cm.ch.read_hold(cm.ch.hold_file(self.lock)))
+                read_text = pathlib.Path.read_text
+                def unreadable(path, *args, **kwargs):
+                    if path == wake:
+                        raise cause
+                    return read_text(path, *args, **kwargs)
+                with mock.patch.object(pathlib.Path, "read_text", unreadable):
+                    self.assertEqual(cm.guard(self.host, self.lock, self.run), "restored")
+                self.assertEqual(self.host.snapshot(), self.before)
+                end = cm.load_record(self.run)["hold_end"]
+                self.assertEqual(end["restore"]["state"], "complete")
+                self.assertEqual(end["scan"]["verdict"], "unscanned")
+                self.assertIn(str(cause), end["scan"]["error"])
+
+    def test_guard_recovery_refreshes_the_finished_capture_checksum(self):
+        self.preflight()
+        self.host.fail[("systemctl", "--user", "start", "wali-rotate.timer")] = "busy"
+        self.assertEqual(cm.main(["release", str(self.run)]), 2)
+        # The failure persists through the fixture's final cleanup release.
+        self.assertEqual(cm.main(["release", str(self.run)]), 2)
+        (self.run / "artifact").write_text("evidence")
+        (self.run / "SHA256SUMS").write_text(
+            f"{cm.sha256_file(self.run / cm.RECORD)}  ./capture.json\n"
+            f"{cm.sha256_file(self.run / 'artifact')}  ./artifact\n")
+        del self.host.fail[("systemctl", "--user", "start", "wali-rotate.timer")]
+        self.host.alive[4242] = False
+        self.assertEqual(cm.guard(self.host, self.lock, self.run), "restored")
+        check = subprocess.run(["sha256sum", "-c", "--quiet", "SHA256SUMS"], cwd=self.run,
+                               capture_output=True, text=True)
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertEqual(cm.load_record(self.run)["hold_end"]["restore"]["state"], "complete")
+        saved = (self.run / "SHA256SUMS").read_bytes()
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual((self.run / "SHA256SUMS").read_bytes(), saved)
 
 
 def ch_hold_name():
