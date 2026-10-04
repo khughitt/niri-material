@@ -1,6 +1,6 @@
 # Pre-commit tooling latency
 
-Task: material-cd7782. Status: accepted; implementation plan accepted with the two Task 3 static-check clarifications incorporated.
+Task: material-cd7782. Status: implemented; consecutive concurrency stability and post-remedy latency acceptance remain to verify.
 
 ## Outcome
 
@@ -159,6 +159,9 @@ lifecycle cases or tracing file access:
 - Inspect the driver's `. "$HERE/…"` source statements and literal
   `$ROOT/tools/…` references; recursively inspect any further source statements
   in those shell helpers.
+- Reject command substitution inside arithmetic expansion in the driver and
+  sourced helpers, naming the file and line. Helper tool fallbacks replaced by
+  lifecycle stubs (including `CAPTURE_META`) stay outside the contract.
 - Inspect repository path literals used by `DriverCleanupTests` and `VtLibTests`,
   including their module-level path definitions (`LIB` in `test_vt_lib.py`).
 - Parse covered Python modules with `ast` and follow their `tools.*` imports.

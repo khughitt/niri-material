@@ -14,6 +14,25 @@ env:
   DEPS_PKG: git curl rust llvm pkgconf pixman libudev-devd libdisplay-info seatd libinput libxkbcommon pipewire mesa-libs cairo devel/glib20 gettext-runtime harfbuzz pango
 
 jobs:
+  tooling-test:
+    name: full tooling tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          show-progress: false
+      - uses: dtolnay/rust-toolchain@1.99.0
+      - uses: extractions/setup-just@v4
+        with:
+          just-version: '1.58.0'
+      - name: Install tooling dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends python3 git jq procps dbus python3-gi gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-pipewire
+          gst-inspect-1.0 pipewiresrc
+      - name: Test tooling with guarded optional skips
+        run: just ci-tooling-test
+
   test:
     strategy:
       fail-fast: false
