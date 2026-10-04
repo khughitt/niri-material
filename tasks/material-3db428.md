@@ -1,16 +1,17 @@
 ---
 id: material-3db428
 title: Re-derive the ring sample row and reach bound in focus-ring-light.sh and glass-render-order-smoke.sh for ring-gap (measured from the face edge)
-status: doing
+status: done
 priority: 3
 size: s
 complexity: mid
 process: direct
 needs: [quiet]
-owner: materials-26.04
+owner: ring-gap-reach
 created: 2026-09-20T10:34:21Z
-updated: 2026-10-04T03:45:41Z
+updated: 2026-10-04T15:35:02Z
 started: 2026-10-04T01:56:01Z
+completed: 2026-10-04T15:35:01Z
 depends: [material-22d78f]
 parent: material-2834d7
 tags: [rendering]
@@ -33,3 +34,11 @@ The ring beam (98013739) moved the filament band from the slab's outer edge to t
   provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T03:38:13Z (ring-gap-reach): review: impl round 1 — verdict: revise; findings: Important 1, Minor 2; reviewer: claude-code/claude-opus-5-5. Important: gpu_cooldown ran under a CAPTURE_META stub (HWA_REHEARSAL on a busy or non-NVIDIA host would fail after 60 s) -> skipped under a stub. Minor, not changed: callers with their own await_gpu_rest wait twice on real runs (harmless); a historical plan still shows --inset.
 - 2026-10-04T03:45:41Z (ring-gap-reach): review: impl round 2 — verdict: accept; findings: none; reviewer: claude-code/claude-opus-5-5
+- 2026-10-04T15:29:40Z (ring-gap-reach): resumed
+  provenance: {"harness_session":"codex:01a10787-f1ec-75f3-844f-a030f1d09f08","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-04T15:31:12Z (ring-gap-reach): closeout: material-22d78f landed in 97874e9b; reused ring-gap-reach and fast-forwarded to aa6204f7. The remaining resize-flex entry delegates to a frozen-clock test before capture setup and needs no quiet host. Existing ring-gap implementation accepted in impl round 2; dependency accepted in its impl round 1. Rechecking the real entry point plus reach/wrapper tooling tests before closing.
+- 2026-10-04T15:35:01Z (ring-gap-reach): verification: real CASES=resize-flex entry passed via just test-one (ring_tracks_face_during_resize: 1 passed) with NIRI and XDG_STATE_HOME set to nonexistent paths, confirming no capture/runtime dependency. Focused reach/wrapper tooling tests: 43 tests, 2 skipped, exit 0. Python tooling test-fast: 287 tests, 2 skipped, exit 0. Prior rest-confinement/accent-midfade/selectors and within/pixels capture evidence plus accepted implementation reviews complete the task's coverage.
+- 2026-10-04T15:35:01Z (ring-gap-reach): done
+  provenance: {"harness_session":"codex:01a10787-f1ec-75f3-844f-a030f1d09f08","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-04T15:35:01Z (ring-gap-reach): Closed the ring-gap measurement correction: sample rows and reach bounds use the face edge, capture strips follow the relocated core, and the formerly blocked resize-flex entry now passes the deterministic frozen-clock motion check. Existing captures and accepted reviews retained; no additional code change needed.
+  provenance: {"harness_session":"codex:01a10787-f1ec-75f3-844f-a030f1d09f08","harness_session_source":"CODEX_SESSION_ID"}
