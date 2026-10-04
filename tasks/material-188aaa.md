@@ -9,13 +9,14 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T10:51:15Z
+updated: 2026-10-04T11:03:05Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
 tags: [performance]
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-10-04-capture-disturber-hold-design.md
+plan: docs/plans/2026-10-04-capture-disturber-hold.md
 ---
 
 Quiet-host captures are brittle to scheduled host activity that the readiness preflight cannot see, because it samples load only before the run. Evidence 2026-09-24 (material-cd0e1d): wali-rotate.timer (every 15 min) rotated the wallpaper at 16:06:58, which ran Prism's apply, reloaded the desktop niri, and turned glass back on through the active profile; in the same second the view-tilt smoke's nested probe kitty never mapped and the smoke failed after 13 minutes. Earlier the same day the desktop's own redraws failed the GPU P8/IQR gate until the monitors were powered off, and a monitor wake at ~05:08 would have perturbed a capture had one been running.
@@ -60,3 +61,5 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T10:51:14Z (disturber-hold): resumed
   provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T10:51:14Z (disturber-hold): review: spec round 8 — verdict: accept; findings: minor 1; reviewer: human
+- 2026-10-04T11:03:04Z (disturber-hold): resumed
+  provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
