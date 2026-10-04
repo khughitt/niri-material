@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-09-20T10:34:21Z
-updated: 2026-10-04T03:38:13Z
+updated: 2026-10-04T03:45:41Z
 started: 2026-10-04T01:56:01Z
 depends: [material-22d78f]
 parent: material-2834d7
@@ -32,3 +32,4 @@ The ring beam (98013739) moved the filament band from the slab's outer edge to t
 - 2026-10-04T03:28:24Z (ring-gap-reach): parked (waiting on agent, dependency): Agent: after material-22d78f lands, run focus-ring-light.sh CASES=resize-flex against branch ring-gap-reach (FIL_Y already re-derived) and close; the other cases passed 2026-10-03 (notes)
   provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T03:38:13Z (ring-gap-reach): review: impl round 1 — verdict: revise; findings: Important 1, Minor 2; reviewer: claude-code/claude-opus-5-5. Important: gpu_cooldown ran under a CAPTURE_META stub (HWA_REHEARSAL on a busy or non-NVIDIA host would fail after 60 s) -> skipped under a stub. Minor, not changed: callers with their own await_gpu_rest wait twice on real runs (harmless); a historical plan still shows --inset.
+- 2026-10-04T03:45:41Z (ring-gap-reach): review: impl round 2 — verdict: accept; findings: none; reviewer: claude-code/claude-opus-5-5
