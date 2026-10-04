@@ -32,7 +32,7 @@ def handle(connection, sender, path, interface, method, params, invocation):
 
 def on_bus(connection, name):
     for path, iface in (('/org/gnome/Mutter/ScreenCast', 0), ('/s', 1)):
-        connection.register_object_with_closures2(path, info.interfaces[iface], handle, None, None)
+        connection.register_object(path, info.interfaces[iface], handle, None, None)
 
 def on_owned(connection, name):
     print('owned', flush=True)    # tests wait for this line instead of sleeping

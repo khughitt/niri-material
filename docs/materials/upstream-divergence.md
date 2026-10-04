@@ -120,7 +120,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_meta.py` | C | A | +865/-0 |
-| `tools/test_gates.py` | C | A | +111/-0 |
+| `tools/test_gates.py` | C | A | +124/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +696/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
 | `tools/test_optic_settling.py` | C | A | +1210/-0 |
@@ -128,12 +128,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_screencast_consumer.py` | C | A | +281/-0 |
 | `tools/test_target_dir_check.py` | C | A | +180/-0 |
 | `tools/test_tooling_tests.py` | C | A | +223/-0 |
-| `tools/test_upstream_report.py` | C | A | +946/-0 |
+| `tools/test_upstream_report.py` | C | A | +954/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
 | `tools/tooling_tests.py` | C | A | +468/-0 |
 | `tools/tt` | C | A | +328/-0 |
-| `tools/upstream-report` | C | A | +736/-0 |
+| `tools/upstream-report` | C | A | +738/-0 |
 
 Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can. Task records under `tasks/` are not counted.
 <!-- END GENERATED: local -->
