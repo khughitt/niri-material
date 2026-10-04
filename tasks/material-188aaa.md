@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T10:37:22Z
+updated: 2026-10-04T10:38:13Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -54,3 +54,4 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T10:37:21Z (disturber-hold): resumed
   provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T10:37:21Z (disturber-hold): review: spec round 7 — verdict: revise; findings: P1 2, P2 2; reviewer: human
+- 2026-10-04T10:38:13Z (disturber-hold): Round 7 applied (b4873bd6+): USER_INVOCATION_ID for user-manager entries; preflight rollback failure keeps hold file/guard/lock; hold_end split into write-once scan (until_us fixed at first restore) and updatable restore with attempts; guard/hand/next-preflight complete a failed record.
