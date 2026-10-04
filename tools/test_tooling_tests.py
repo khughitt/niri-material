@@ -213,3 +213,11 @@ class StaticCoverageTests(unittest.TestCase):
         path.write_text('# ordinary arithmetic is fine\nvalue=$((1 + $(clock)))\n')
         with self.assertRaisesRegex(ValueError, 'nested-lib.sh:2.*command substitution.*arithmetic'):
             self.check()
+
+    def test_sourced_helper_inherits_driver_here_and_repository_cwd(self):
+        entry = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        entry.write_text('. "$ROOT/tools/helper.sh"\n')
+        (self.root / 'tools/helper.sh').write_text(
+            '. "$HERE/nested-lib.sh"\n. tools/root-helper.sh\n')
+        (self.root / 'tools/root-helper.sh').write_text('')
+        self.check(self.patterns + ['tools/helper.sh', 'tools/root-helper.sh'])

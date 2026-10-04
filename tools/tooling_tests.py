@@ -306,7 +306,8 @@ def assert_static_coverage(root: Path, patterns: Sequence[str]) -> None:
                 if len(operands) != 2:
                     raise ValueError(f'{relative}:{number}: unsupported source statement')
                 operand = operands[1]
-                for prefix, base in (('$HERE/', path.parent), ('${HERE}/', path.parent),
+                # Sourcing retains the driver's HERE and the fixture's repository cwd.
+                for prefix, base in (('$HERE/', entry.parent), ('${HERE}/', entry.parent),
                                      ('$ROOT/', root), ('${ROOT}/', root)):
                     if operand.startswith(prefix):
                         operand = str(base / operand[len(prefix):])
@@ -314,7 +315,7 @@ def assert_static_coverage(root: Path, patterns: Sequence[str]) -> None:
                 if any(character in operand for character in '$`*?[]'):
                     raise ValueError(f'{relative}:{number}: unsupported source operand {operand}')
                 target = Path(operand)
-                shell(target if target.is_absolute() else path.parent / target, relative, number)
+                shell(target if target.is_absolute() else root / target, relative, number)
             if path == entry:
                 # Helpers' tool fallbacks are stubbed by lifecycle fixtures (CAPTURE_META).
                 for match in re.finditer(r'\$(?:ROOT|\{ROOT\})/(tools/[\w./-]+)', text):
