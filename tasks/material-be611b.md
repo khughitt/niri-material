@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-04T02:44:21Z
+updated: 2026-10-04T02:45:32Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -109,3 +109,5 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-03T11:32:46Z (glass-edges): parked (waiting on user, review): When the parked contact sheet (material-124f1f, quiet queue) has run on an idle host, the owner judges the sheet attached here and picks Prism starting values; then the agent merges glass-edges into materials-26.04 (implementation reviewed, final review clean)
   provenance: {"harness_session":"claude-code:f80dd8d7-6772-40fc-bb37-21b14ef04885","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T02:44:21Z (glass-edges): attached: glass-edge-sheet.png (1333985 bytes): glass edge contact sheet: bevel-profile x looks x reflection/edge-highlight/roughness, planar facet row
+- 2026-10-04T02:45:32Z (glass-edges): parked (waiting on user, review): Owner reviews the contact sheet attached to material-be611b and picks Prism starting values for bevel-profile, reflection and edge-highlight; then the branch gets its final review and prism-7024c4 is unblocked
+  provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
