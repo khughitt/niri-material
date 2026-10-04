@@ -188,6 +188,8 @@ with self.assertRaisesRegex(ValueError, 'tools/other.py'):
 ```
 
 - [ ] Implement a bounded source scanner, not a shell interpreter: inspect lines starting with `.` or `source`, use `shlex` for the operand, resolve literal `$HERE/…`, `${HERE}/…`, `$ROOT/…`, `${ROOT}/…` or relative helper paths. Reject unsupported repository source operands instead of guessing. Recurse through source statements with a visited set and fail if an input is missing. Inspect literal `$ROOT/tools/…` references in the entry driver, resolving analyzer and consumer paths; generated `$OUT` fixtures and external tools are outside this source contract. Read helper contents for further source statements; do not build a general shell call graph or execute heredocs.
+  Check `$ROOT/tools/…` references only in the entry driver because references that lifecycle tests replace with stubs are outside the contract, including the helper's `CAPTURE_META` fallback to `capture-meta`.
+- [ ] While scanning the driver and recursively sourced helpers, reject command substitution inside arithmetic expansion (`$(( … $(…) … ))`), naming the file and line; add a synthetic fixture so the whole TERM parser defect class is guarded deterministically on the fast route.
 - [ ] Parse Python with `ast`. Resolve `tools.*` imports in the covered modules and their transitive tools imports to module `.py` or package `__init__.py`, allowing the existing namespace package root. Resolve imports rather than imported attributes: `from tools.optic_settling import FAMILIES` adds that module once. Handle relative imports within covered `tools` modules, and reject missing/ambiguous modules. Test `from tools import other` separately.
 - [ ] For the two selected classes, inspect repository-root `Path` division expressions and referenced module-level path definitions (including `LIB`). Recognize the existing `Path(__file__).resolve().parents[1]` and `self.root` anchors; accept only literal path segments beneath the repository root, and fail on dynamic root-path construction. Do not treat temporary-directory paths or docstrings as dependencies. Check each found repository path with `fnmatch.fnmatchcase` against `tooling_full_paths`, reporting the referring file/line. No maintained module-edge list.
 - [ ] Add `LifecycleCoverageTests.test_subject_paths_are_full_routed` outside `DriverCleanupTests`; it reads the patterns and invokes the source checker. Verify it still executes with fast mode `1`. `--check-paths` performs the same check without unittest discovery, for docs-only commits.
@@ -313,7 +315,7 @@ a static source check; that substitution is complete. Minimal TERM probes isolat
 a fix candidate, but production/concurrency acceptance is still owed. No repository
 implementation changed while preparing this plan.
 
-The agent recommends inline execution in this worktree. The owner reviews this
-plan before implementation; after acceptance, the agent executes its tracked
+The owner accepted this plan with two Task 3 edits incorporated above; no further
+review round is required. The agent executes inline in this worktree, taking its tracked
 children in order, retains failed attempts, and closes the halt only with successful
 latency verification. This review gate does not authorize a GitHub write or desktop use.
