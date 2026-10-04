@@ -180,13 +180,45 @@ retired zero-light-on-face premise does not apply.
 | 1.5 | 20 | 12 | 8 | 1 / 6 | 1.16 / 2.28 | 4 | no |
 | 1.5 | 80 | 12 | 5 | 6 | 9.14 | 2.5 | yes |
 
-**Proposed motion check, no tolerance set.** Take the per-edge band centroid
-from a matched on/off pair at a frozen mid-resize instant, minus the same
-centroid at rest, per edge. Report it next to the flex-0 baseline (measured
-here at 0.01 px) and the jelly face displacement it should track. A
-tolerance needs owner judgment of what drift is visible. Not exercised here:
-corners, a moving beam, chromatic aberration, a textured backdrop, partial
-client alpha, and fractional scale.
+**Deterministic motion check.** `material-22d78f`, 2026-10-04:
+`ring_tracks_face_during_resize` now grades all four edges at the same
+500 ms instant, for stock and binding glass and flex 0.0066 and 0.02.
+The independently derived inward face displacement is
+
+```text
+cap = 0.25 * min(bevel, thickness)
+resize = cap * tanh(-flex * 100 / cap)
+slab_width = 740 + 2 * (bevel - 6)
+inward = -(slab_width / 2 - bevel) * resize / slab_width
+```
+
+The 100 px residual is half the fixture's 640 → 840 linear resize.
+Predicted x displacements are 0.31441 / 0.84628 px for stock and
+0.31392 / 0.80785 px for binding; y displacement is zero.
+
+A raw half-maximum centroid is not a continuous displacement estimator:
+at stock flex 0.0066 a fifth pixel enters the run, giving a 0.44 px
+centroid change for a 0.31441 px face shift. The previous 0.01 px
+mid-versus-rest residual does not bound that sampling error. Instead,
+a second matched pair, with flex zero and `ring-gap` increased by the
+predicted displacement, supplies the sampled expected centroid. Horizontal
+edges must match this control within 0.01 px; vertical edges must match the
+flex-zero baseline within the same bound. This control uses neither the
+production `jelly_state` nor the CPU face helper to derive its displacement.
+
+The motion test pins ring-gap 8 on both glass geometries so the measured
+core clears the refracted chamfer. The original binding gap 2 remains
+covered by `ring_cap_keeps_one_core`; this test does not establish a
+continuous centroid estimator for that profile. Corners, a moving beam,
+chromatic aberration, a textured backdrop, partial client alpha, vertical
+or shrinking resizes, and fractional scale remain outside this check.
+
+Run `just test-one -p niri ring_tracks_face_during_resize --no-capture`,
+or `CASES=resize-flex docs/materials/scripts/focus-ring-light.sh`. The script
+runs the test before capture initialization, propagates failure, and starts
+no nested compositor for this case. Other capture cases retain their
+existing host requirements. The old two-host resize comparison and its
+skew-only metrics are retired; its historical captures remain history.
 
 ## Proposed decomposition
 

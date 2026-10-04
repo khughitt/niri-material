@@ -460,12 +460,38 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                 '2026-09-18T12:00:00-04:00 gpu-zero-2 cooldown complete',
             ])
 
+    def test_resize_flex_uses_frozen_clock_check_without_capture_setup(self):
+        root = Path(__file__).resolve().parents[1]
+        for status in (0, 19):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as out:
+                out = Path(out)
+                runner = out / 'just'
+                runner.write_text(
+                    '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@" > "$FLEX_TEST_LOG"\n'
+                    'exit "$FLEX_TEST_EXIT"\n')
+                runner.chmod(0o755)
+                env = dict(os.environ, PATH=str(out) + ':' + os.defpath,
+                           CASES='resize-flex', NIRI=str(out / 'missing-niri'),
+                           XDG_RUNTIME_DIR=str(out / 'runtime'),
+                           XDG_STATE_HOME=str(out / 'state'),
+                           NIRI_MATERIAL_WORK_ROOT=str(out / 'captures'),
+                           FLEX_TEST_LOG=str(out / 'invocation'),
+                           FLEX_TEST_EXIT=str(status))
+                result = subprocess.run(
+                    ['bash', str(root / 'docs/materials/scripts/focus-ring-light.sh')],
+                    env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual((out / 'invocation').read_text().splitlines(), [
+                    str(root), 'test-one', '-p', 'niri', 'ring_tracks_face_during_resize',
+                ])
+                self.assertFalse((out / 'runtime').exists())
+                self.assertFalse((out / 'captures').exists())
+
     def test_old_ring_records_per_frame_motion_reach_timing_and_geometry(self):
         ring = (Path(__file__).resolve().parents[1] /
                 'docs/materials/scripts/focus-ring-light.sh').read_text()
         for value in ('motion_pair_burst()', 'motion_record()', 'ring-motion-$label-move',
                       'ring-motion-$label-resize', 'ring-beam-speed 3000', 'toggles_start',
-                      'resize-flex-motion',
                       'window_layout_json', 'animated slab geometry',
                       'set-column-width +200', 'move-column-right'):
             self.assertIn(value, ring)

@@ -18,7 +18,7 @@
 #                     and the band is present and untinted; writes the shared `off`
 #                     reference frame the later cases compare against
 #   accent-midfade    the presence crossfade carries straight color
-#   resize-flex       under jelly the filament breathes; motion evidence is recorded
+#   resize-flex       frozen-clock ring/face motion check (no nested host)
 #   selectors         accent and focus select independently
 #   tiny              recorded as not verified by render (no client is small
 #                     enough to drive the shader's zero-chamfer gate)
@@ -29,7 +29,9 @@
 # NIRI_MATERIAL_WORK_ROOT (captures land under it when set, else ./work),
 # SPIKE_WALLPAPER (backdrop image; default a generated checkerboard),
 # BURST (frames per burst, 12).
-# Requires: weston, kitty, swaybg, jq, ImageMagick, bc, and a Prism prism.kdl
+# resize-flex runs through just test-one before any capture setup; it needs
+# a Rust test build and surfaceless GLES, without a Prism config or quiet host.
+# Other cases require: weston, kitty, swaybg, jq, ImageMagick, bc, and a Prism prism.kdl
 # in $XDG_STATE_HOME/prism/generated for the "terminal-glass" block.
 set -eu
 # Measurement helpers run inside `$(...)`, where a plain `exit` would only end
@@ -40,6 +42,19 @@ trap 'exit 1' TERM
 die() { echo "FAIL: $*" >&2; kill -s TERM "$TOP_PID" 2>/dev/null || true; exit 1; }
 HERE=$(dirname "$(readlink -f "$0")")
 REPO=$(cd "$HERE/../../.." && pwd)
+# Run the deterministic case before resolving a capture binary or touching
+# host state. Preserve resize-flex as an entry point for existing callers.
+read -r -a cases <<< "${CASES:-baseline rest-confinement accent-midfade resize-flex ring-motion selectors tiny}"
+capture_cases=()
+for case_name in "${cases[@]}"; do
+    if [ "$case_name" = resize-flex ]; then
+        (cd "$REPO" && just test-one -p niri ring_tracks_face_during_resize)
+    else
+        capture_cases+=("$case_name")
+    fi
+done
+[ "${#capture_cases[@]}" -gt 0 ] || exit 0
+
 NIRI=${NIRI:-$(cd "$REPO" && cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/release/niri}
 CONTENT=$HERE/focus-glass-content.sh
 SHA=$(sha256sum "$NIRI" | cut -c1-8)
@@ -65,16 +80,11 @@ RING_WIDTH=2.6
 # puts the focused right window at this rect; `wait_geometry` refuses to
 # measure if it ever moves.
 WIN_X=667; WIN_Y=54; WIN_W=559; WIN_H=612
-FACE_INSET=40                             # the face region clears the bevel and the corner radius
-FACE_CROP=$((WIN_W - 2 * FACE_INSET))x$((WIN_H - 2 * FACE_INSET))+$((WIN_X + FACE_INSET))+$((WIN_Y + FACE_INSET))
 # `material_frame`: the slab is the window inflated by `bevel - max(|offset|)`
 # and slid by the offset, so its top edge sits this far above the window.
 SLAB_TOP=$((WIN_Y - (PIN_BEVEL - PIN_OFFSET) + PIN_OFFSET))
 FIL_X=$((WIN_X + WIN_W / 2))              # top edge of the right window, mid-span
 FIL_Y=$((SLAB_TOP + PIN_BEVEL + RING_GAP))   # the band's Gaussian core, inward of the face
-# The strip spanning the left column's right edge and the gap to the right
-# column: where a difference in layout position between two hosts shows up.
-GAP_CROP=(440 300 200 120)                # x y w h
 
 declare -a I_UNIT=() I_PID=() I_SOCK=()
 stop_nested() {   # $1 = slot
@@ -291,10 +301,6 @@ emissive() {
 }
 red_fraction() { awk -v e="$1" 'BEGIN { split(e, c, " "); s = c[1] + c[2] + c[3]; if (s <= 0) { print 0; exit }; printf "%.3f", c[1] / s }'; }
 emissive_lum() { awk -v e="$1" 'BEGIN { split(e, c, " "); printf "%.4f", 0.2126 * c[1] + 0.7152 * c[2] + 0.0722 * c[3] }'; }
-face_ae() {   # $1 a, $2 b: count of differing pixels over the face region
-    # `compare` reports the metric on stderr as "count (normalised)".
-    magick compare -metric AE \( "$1" -crop "$FACE_CROP" +repage \) \( "$2" -crop "$FACE_CROP" +repage \) null: 2>&1 | awk '{ print $1 }'
-}
 reach() { # $1 label, $2 on, $3 off
     local rc=0
     python3 "$HERE/glass-render-order-metrics.py" reach "$2" "$3" \
@@ -331,22 +337,6 @@ motion_pair_burst() { # label, on slot/id, off slot/id
     t1=$(date +%s.%N)
     echo "$label: $BURST paired frames in $(echo "$t1 - $t0" | bc) s" >> "$WORK/timing.txt"
 }
-face_max() {   # $1 a, $2 b: max per-channel difference over the face region, 0..255
-    magick \( "$1" -crop "$FACE_CROP" +repage \) \( "$2" -crop "$FACE_CROP" +repage \) -compose difference -composite -format '%[fx:int(255*maxima)]' info:
-}
-# How far apart two hosts are in a running animation: the horizontal shift, in
-# whole pixels, that best aligns the second frame's strip onto the first's.
-# Hosts in lockstep align at 0 with a zero residual.
-align_skew() {   # $1 a, $2 b, $3 x, $4 y, $5 w, $6 h
-    local k d best= best_k=0
-    for k in $(seq -8 8); do
-        d=$(magick \( "$1" -crop "${5}x${6}+${3}+${4}" +repage \) \
-                   \( "$2" -crop "${5}x${6}+$(($3 + k))+${4}" +repage \) \
-                   -compose difference -composite -format '%[fx:mean]' info:)
-        if [ -z "$best" ] || awk -v a="$d" -v b="$best" 'BEGIN { exit !(a < b) }'; then best=$d; best_k=$k; fi
-    done
-    echo "$best_k"
-}
 record() { printf '%s\n' "$1" | tee -a "$WORK/checks.txt"; }
 info() { record "info: $1 = $2 ($3)"; }   # recorded, never gated
 check() {   # $1 label, $2 value, $3 awk condition on v, $4 human bound
@@ -356,11 +346,6 @@ check() {   # $1 label, $2 value, $3 awk condition on v, $4 human bound
 require_off() {
     [ -s "$(px off)" ] || { echo "FAIL: $(px off) is missing; run the rest-confinement case first" >&2; exit 1; }
 }
-rest_lum() {
-    [ -s "$WORK/rest-lum.txt" ] || { echo "FAIL: $WORK/rest-lum.txt is missing; run the rest-confinement case first" >&2; exit 1; }
-    cat "$WORK/rest-lum.txt"
-}
-
 # --- cases -----------------------------------------------------------------
 still() {   # $1 label, $2 side (left|right): full frame plus 3x top corner crop of that side
     local f=$WORK/$1.png; shot "$f"
@@ -412,7 +397,6 @@ case_rest_confinement() {
     reach rest-confinement "$(px on)" "$(px off)"
     check "rest-confinement red share"        "$f" 'v >= 0.24 && v <= 0.31'                           "0.24 to 0.31"
     check "rest-confinement emissive luminance" "$l" 'v > 0.01'                                       "> 0.01"
-    printf '%s\n' "$l" > "$WORK/rest-lum.txt"
     record "rest-confinement emissive at ($FIL_X,$FIL_Y) = $e"
 }
 # The presence crossfade carries straight color: at half fade the band's red
@@ -434,42 +418,6 @@ case_accent_midfade() {
     # gives at most 0.435.
     check "accent-midfade red share at half fade" "$mid"     'v >= 0.46 && v <= 0.54' "0.46 to 0.54"
     check "accent-midfade red share settled"      "$settled" 'v >= 0.90'              ">= 0.90"
-}
-# Under a slowed resize the jelly breath should brighten the filament while the
-# face comparison is recorded, not gated. Only the rest comparison is gated. The two
-# hosts run on independent clocks -- one `niri msg` process spawn separates the
-# two resizes, and another the two screenshots -- so mid-resize they sit at
-# different points in the animation: the layout is about a pixel apart and each
-# client has re-rendered its text at a slightly different width. That swamps
-# anything the filament could add to the face, so the mid-resize numbers are
-# recorded with the measured skew beside them rather than gated. See
-# docs/materials/2026-09-05-ring-light-focus-smoke.md, "resize-flex".
-case_resize_flex() {
-    local lum_rest; lum_rest=$(rest_lum)
-    write_capture_config "$WORK/flex-on.kdl"  "$RESP_ON"  'slowdown 50;'
-    write_capture_config "$WORK/flex-off.kdl" "$RESP_OFF" 'slowdown 50;'
-    local right_on right_off
-    start_nested 1 "$WORK/flex-on.kdl";  right_on=$(open_scene); settle
-    start_nested 2 "$WORK/flex-off.kdl"; right_off=$(open_scene); settle
-    use_slot 1; shot "$(px flex-rest-on)"
-    use_slot 2; shot "$(px flex-rest-off)"
-    reach resize-flex-rest "$(px flex-rest-on)" "$(px flex-rest-off)"
-    use_slot 1; msg action set-column-width +200
-    use_slot 2; msg action set-column-width +200
-    sleep 3                              # jelly at high flex; the 20 s resize is far from settled
-    use_slot 1; shot_request "$(px flex-on)"
-    use_slot 2; shot_request "$(px flex-off)"
-    shot_wait "$(px flex-on)"; shot_wait "$(px flex-off)"
-    motion_pair_burst resize-flex-motion 1 "$right_on" 2 "$right_off"
-    stop_nested 1; stop_nested 2
-    local lum ratio
-    lum=$(emissive_lum "$(emissive "$(px flex-on)" "$(px flex-off)" "$FIL_X" "$FIL_Y")")
-    ratio=$(awk -v a="$lum" -v b="$lum_rest" 'BEGIN { printf "%.3f", a / b }')
-    info "resize-flex host layout skew at rest" "$(align_skew "$(px flex-rest-on)" "$(px flex-rest-off)" "${GAP_CROP[@]}") px" "the hosts agree exactly before the resize"
-    info "resize-flex host layout skew in flex" "$(align_skew "$(px flex-on)" "$(px flex-off)" "${GAP_CROP[@]}") px" "0 would be lockstep; the resize travels 200 px in about 20 s"
-    info "resize-flex face pixels differing"     "$(face_ae "$(px flex-on)" "$(px flex-off)")" "not gated: the two clients re-render their text at different points in the resize"
-    info "resize-flex face max channel delta"    "$(face_max "$(px flex-on)" "$(px flex-off)")" "not gated: same cause"
-    info "resize-flex emissive luminance vs rest ($lum_rest)" "${ratio}x" "not gated: sampled across the skew"
 }
 # Focus toggles for the moving bursts: the beam runs (P + L) / speed, about a
 # second on this pane at 3000 px/s, so motion throughout a burst comes from
@@ -575,13 +523,12 @@ sha256sum "$NIRI" > "$WORK/SHA256SUMS"
 "$NIRI" --version >> "$WORK/SHA256SUMS"
 git -C "$REPO" rev-parse HEAD >> "$WORK/SHA256SUMS"
 : > "$LOG"
-for c in ${CASES:-baseline rest-confinement accent-midfade resize-flex ring-motion selectors tiny}; do
+for c in "${capture_cases[@]}"; do
     record "== $c"
     case $c in
         baseline)         case_baseline ;;
         rest-confinement) case_rest_confinement ;;
         accent-midfade)   case_accent_midfade ;;
-        resize-flex)      case_resize_flex ;;
         ring-motion)      case_ring_motion ;;
         selectors)        case_selectors ;;
         tiny)             case_tiny ;;
