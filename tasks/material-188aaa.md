@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T12:37:20Z
+updated: 2026-10-04T12:39:27Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -88,3 +88,5 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T12:37:17Z (disturber-hold): review: plan round 4 — verdict: accept; findings: none; reviewer: human
 - 2026-10-04T12:37:20Z (disturber-hold): parked (waiting on user): Plan approved (dae52058). On the owner's go: native execution in .worktrees/disturber-hold of steps material-810dec, 4c12cd, 1c38d5, e04d51, 616b5d, 46bebd, f52898 in order, then a fresh whole-branch review, then stage tonight's TTY quiet run from Task 7's runbook
   provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T12:39:27Z (disturber-hold): resumed
+  provenance: {"harness_session":"codex:01a106eb-14e5-7b61-9f6b-e9b21b9511ca","harness_session_source":"CODEX_SESSION_ID"}
