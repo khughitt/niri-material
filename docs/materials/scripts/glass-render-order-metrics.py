@@ -108,19 +108,23 @@ def attenuation_report(frames, expected):
                 clipped_channels=clipped, failures=failures)
 
 
-def ring_bound(thickness, inset, width, scatter=0.0):
+def ring_bound(thickness, gap, width, scatter=0.0):
+    """The deepest a visible band delta may land, in px inward from the face
+    edge: `ring-gap` and the shader's band are both measured from the face
+    (the slab minus its chamfer), and the shader caps the shared light shift
+    at half the gap."""
     epsilon = 0.5 / (255 * 12.92)
     gain = 1.7
     core_width = width + 6 * scatter
     halo_width = 9 + 18 * scatter
-    core = inset + core_width * math.sqrt(0.5 * math.log(2 * gain / epsilon))
-    halo = inset + 2 + halo_width * math.sqrt(0.5 * math.log(0.6 * gain / epsilon))
-    shift = 0.5 * inset + 2 * (0.2 * thickness)
+    core = gap + core_width * math.sqrt(0.5 * math.log(2 * gain / epsilon))
+    halo = gap + 2 + halo_width * math.sqrt(0.5 * math.log(0.6 * gain / epsilon))
+    shift = 0.5 * gap + 2 * (0.2 * thickness)
     return math.ceil(max(core, halo) + shift)
 
 
-def rounded_slab_distance(x, y, window, bevel, offset_x=0.0, offset_y=0.0,
-                          corner_radius=0.0):
+def slab_geometry(window, bevel, offset_x=0.0, offset_y=0.0, corner_radius=0.0):
+    """The slab rect (x, y, w, h), its chamfer and its outer corner radius."""
     wx, wy, ww, wh = window
     if ww <= 0 or wh <= 0 or bevel < 0 or corner_radius < 0:
         raise ValueError('invalid slab geometry')
@@ -136,6 +140,13 @@ def rounded_slab_distance(x, y, window, bevel, offset_x=0.0, offset_y=0.0,
     inner_radius = min(radius, max(sw - 2 * chamfer, 0) / 2,
                        max(sh - 2 * chamfer, 0) / 2)
     outer_radius = inner_radius + chamfer
+    return (sx, sy, sw, sh), chamfer, outer_radius
+
+
+def rounded_slab_distance(x, y, window, bevel, offset_x=0.0, offset_y=0.0,
+                          corner_radius=0.0):
+    (sx, sy, sw, sh), _, outer_radius = slab_geometry(window, bevel, offset_x, offset_y,
+                                                       corner_radius)
     px = x + 0.5 - (sx + sw / 2)
     py = y + 0.5 - (sy + sh / 2)
     qx = abs(px) - sw / 2 + outer_radius
@@ -143,19 +154,23 @@ def rounded_slab_distance(x, y, window, bevel, offset_x=0.0, offset_y=0.0,
     return min(max(qx, qy), 0) + math.hypot(max(qx, 0), max(qy, 0)) - outer_radius
 
 
-def reach_report(on, off, window, bevel, thickness, inset, width, scatter=0.0,
+def reach_report(on, off, window, bevel, thickness, gap, width, scatter=0.0,
                  offset_x=0.0, offset_y=0.0, corner_radius=0.0, profile=None):
     if not on or len(on) != len(off) or any(len(row) != len(off_row)
                                             for row, off_row in zip(on, off)):
         raise ValueError('reach needs nonempty, equally sized images')
-    geometry = (*window, bevel, thickness, inset, width, scatter, offset_x, offset_y,
+    geometry = (*window, bevel, thickness, gap, width, scatter, offset_x, offset_y,
                 corner_radius)
     if (len(window) != 4 or any(not math.isfinite(value) for value in geometry) or
-            bevel < 0 or thickness <= 0 or inset < 0 or width <= 0 or scatter < 0 or
+            bevel < 0 or thickness <= 0 or gap < 0 or width <= 0 or scatter < 0 or
             corner_radius < 0):
         raise ValueError('invalid reach geometry')
-    bound = ring_bound(thickness, inset, width, scatter)
-    reference = inset + 2 + 18 + 0.5 * inset
+    # Reach is measured inward from the face edge, where the band sits: the
+    # face is the slab shrunk by its chamfer, so the two distances differ by
+    # the chamfer everywhere, corners included. Chamfer pixels reach < 0.
+    _, chamfer, _ = slab_geometry(window, bevel, offset_x, offset_y, corner_radius)
+    bound = ring_bound(thickness, gap, width, scatter)
+    reference = gap + 2 + 18 + 0.5 * gap
     max_delta = max_interior_delta = outside_bound = outside_reference = outside_slab = 0
     outside_bound_max_delta = outside_reference_max_delta = 0
     visible_reach = 0.0
@@ -174,7 +189,7 @@ def reach_report(on, off, window, bevel, thickness, inset, width, scatter=0.0,
             if distance > 0:
                 outside_slab += 1
                 continue
-            reach = -distance
+            reach = -distance - chamfer
             visible_reach = max(visible_reach, reach)
             if reach > bound:
                 outside_bound += 1
@@ -233,7 +248,8 @@ def main():
     reach.add_argument('--window', nargs=4, type=int, required=True, metavar=('X', 'Y', 'W', 'H'))
     reach.add_argument('--bevel', type=float, required=True)
     reach.add_argument('--thickness', type=float, required=True)
-    reach.add_argument('--inset', type=float, required=True)
+    reach.add_argument('--gap', type=float, required=True,
+                       help='ring-gap: the band core, in px inward from the face edge')
     reach.add_argument('--width', type=float, required=True)
     reach.add_argument('--scatter', type=float, default=0)
     reach.add_argument('--offset-x', type=float, default=0)
@@ -277,7 +293,7 @@ def main():
                 profile = (profile_on, profile_off)
             report = ({} if args.attenuation_only else
                       reach_report(on, off, args.window, args.bevel, args.thickness,
-                                   args.inset, args.width, args.scatter, args.offset_x,
+                                   args.gap, args.width, args.scatter, args.offset_x,
                                    args.offset_y, args.corner_radius, profile))
             if args.attenuation_images:
                 attenuation_decoded = [read_rgb(path, tuple(args.attenuation_rect))

@@ -60,13 +60,48 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
     def test_settle_before_launch_passes_config_and_name(self):
         with tempfile.TemporaryDirectory() as out:
             (Path(out) / 'A.kdl').write_text('glass')
-            script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\n' + self.function('settle_before_launch') +
+            script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\ngpu_cooldown() { :; }\n' +
+                      self.function('settle_before_launch') +
                       '\nOUT=$1; settle_before_launch "$OUT/A.kdl"; cat "$OUT/call"; settle_before_launch "$OUT/A.kdl" A-move-1; cat "$OUT/call"')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
             lines = result.stdout.splitlines()
             self.assertEqual(lines[0], f'settle {out} --sub-run A --input {out}/A.kdl')
             self.assertEqual(lines[1], f'settle {out} --sub-run A-move-1 --input {out}/A.kdl')
+
+    def gpu_cooldown(self, out, pstates):
+        bin_dir = Path(out) / 'bin'
+        bin_dir.mkdir()
+        fake = bin_dir / 'nvidia-smi'
+        fake.write_text('#!/bin/sh\nn=$(cat "$STATES.n" 2>/dev/null || echo 1)\n'
+                        'echo $((n + 1)) > "$STATES.n"\nsed -n "${n}p" "$STATES" | grep . || tail -n1 "$STATES"\n')
+        fake.chmod(0o755)
+        (Path(out) / 'states').write_text('\n'.join(pstates) + '\n')
+        script = ('fail() { echo "FAIL: $*" >&2; exit 1; }\nsleep() { :; }\n' + self.function('gpu_cooldown') +
+                  '\nOUT=$1; gpu_cooldown A; cat "$OUT/cooldown.txt"')
+        return subprocess.run(['bash', '-eu', '-c', script, 'test', out], text=True, capture_output=True,
+                              env={**os.environ, 'PATH': f'{bin_dir}:{os.environ["PATH"]}',
+                                   'STATES': str(Path(out) / 'states')})
+
+    def test_settle_before_launch_skips_the_cooldown_under_a_capture_meta_stub(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { :; }\ngpu_cooldown() { echo cooled; }\n' + self.function('settle_before_launch') +
+                      '\nOUT=$1; CAPTURE_META=: settle_before_launch "$OUT/A.kdl"; CAPTURE_META= settle_before_launch "$OUT/A.kdl"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), ['cooled'])
+
+    def test_gpu_cooldown_waits_for_six_consecutive_p8_polls(self):
+        with tempfile.TemporaryDirectory() as out:
+            result = self.gpu_cooldown(out, ['P5', 'P8', 'P8', 'P5', 'P8', 'P8', 'P8', 'P8', 'P8', 'P8'])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), 'A 10')
+
+    def test_gpu_cooldown_fails_when_the_gpu_never_idles(self):
+        with tempfile.TemporaryDirectory() as out:
+            result = self.gpu_cooldown(out, ['P5'])
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('GPU not back at P8 within 120 polls before A', result.stderr)
 
     def test_start_nested_settles_first_and_lib_never_preflights(self):
         body = self.function('start_nested')
