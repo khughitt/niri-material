@@ -1,7 +1,7 @@
 # Hold host disturbers for the length of a quiet capture
 
 **Status:** draft for owner review, 2026-10-04 (revised after agent review
-round 1).
+rounds 1 and 2).
 **Task:** `material-188aaa`, under `material-2834d7`.
 **Extends:** [capture protocol design](2026-09-11-material-capture-protocol-design.md)
 (`tools/capture-meta`: preflight, settle, release).
@@ -112,14 +112,18 @@ fire.
 ### 4.1 The host hold file
 
 `$XDG_RUNTIME_DIR/capture-meta.hold.json`, beside the lock:
-`{run_id, owner_pid, run_dir, socket, items}`. It is the source of truth for
+`{run_id, run_dir, owner_pid, started_us, socket, items}`. It is the source of truth for
 what is held; `capture.json` is the record of it. Each item is appended to
 the file *before* its action runs (write-ahead), so a kill at any point
 leaves a file naming everything that may have changed. Restoring an item
 whose action never ran is harmless: starting a running unit, disabling
 caffeine that is off, powering on monitors that are on. Every reader that
-would restore or remove it checks that its `run_id` is the run in hand,
-except recovery (§4.4), which runs only after the owner is dead.
+would restore or remove it checks that both its `run_id` and its resolved
+`run_dir` are the run in hand (`run_id` alone is a directory basename, which
+two runs can share), except recovery (§4.4), which runs only after the
+owner is dead. Restore and removal of the file happen under the lock's
+`guarded()` directory, so a guard and a recovering preflight never act on it
+at once; a hold file already gone counts as restored.
 
 ### 4.2 Preflight
 
@@ -161,15 +165,17 @@ guard, removes the hold file and releases the lock. Release then finds
 
 ### 4.3 Release
 
-Release restores from the host hold file whenever the file's `run_id` is
-this run's, whatever sections `capture.json` has. That covers a preflight
-process killed after holding but before writing `preflight`, while the
-fixture shell still lives to run its trap. Then, unless `hold_end` already
+Release restores from the host hold file whenever the file names this run
+(§4.1), whatever sections `capture.json` has. That covers a preflight
+process killed after holding but before writing `hold` or `preflight`,
+while the fixture shell still lives to run its trap. In that case the
+window starts at the hold file's `started_us`, and the lock is released for
+the hold file's `owner_pid`, since `preflight.lock` was never written. Then, unless `hold_end` already
 exists:
 
 1. Restore every item in reverse order, best-effort per item. A unit that
    no longer exists counts as restored, with a note.
-2. Scan (§5) the window from `hold.started_us` to the start of step 1.
+2. Scan (§5) the window from `started_us` to the start of step 1.
 3. Write `hold_end`, stop the guard, remove the hold file, release the lock.
 
 ```json
@@ -195,7 +201,10 @@ sub-runs.
 **Guard.** After the hold, preflight starts a transient user unit,
 `systemd-run --user --unit=capture-meta-guard-<run id> --collect`, that
 waits on the lock owner (`tail --pid=<owner> -f /dev/null`) and then runs
-`capture-meta restore`. Normal release stops the guard before removing the
+`capture-meta restore` by the absolute path of the `capture-meta` that ran
+preflight. The guard runs in the user manager's environment, not the
+fixture's, so preflight passes `XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY`,
+`NIRI_SOCKET` (the recorded desktop socket) and `PATH` with `--setenv`. Normal release stops the guard before removing the
 hold file. When the fixture is killed outright, its trap never runs; the
 guard then restores within a second of the owner's death. The guard is a
 service start, not a timer, so §5 does not flag it.
@@ -222,10 +231,10 @@ unit in `USER_UNIT`, system entries in `UNIT`. It flags:
 
 | Kind | Journal evidence |
 | --- | --- |
-| `timer-fired` | A job start (`MESSAGE_ID=7d4958e842da4a758f6c1cdc7b36dcc5`) of a unit some timer activates, by the union of the timer→service maps taken at hold time and again at release, both managers. |
-| `timer-added` | A job start of any `.timer` unit: a timer created or started during the run (`systemd-run --on-active=…`, a package install). |
+| `timer-fired` | A service job start ("Starting …", `MESSAGE_ID=7d4958e842da4a758f6c1cdc7b36dcc5`) of a unit some timer activates. The map is the union of the timer→service maps taken at hold time and at release, both managers, plus each timer added in the window mapped to the service of the same name (how `systemd-run` names the pair; a transient timer is unloaded once it elapses, so neither map has it). |
+| `timer-added` | A timer started ("Started …", `MESSAGE_ID=39f53479d3a045ac8e11786248231fbf`; timers never log a job start): a timer created or started during the run (`systemd-run --on-active=…`, a package install). |
 | `restart` | A scheduled restart (`MESSAGE_ID=5eb03494b6584870a536b337290809b3`) of any unit: a crash-looping service, declared or not. |
-| `held-started` | A job start of a unit the hold stopped. |
+| `held-started` | A unit the hold stopped starting again: `39f53479…` for a timer, `7d4958e8…` for a service. |
 
 The fixtures' own transient units (`systemd-run --user --unit=… --collect
 weston`, per-run clients) start services, are not timer-activated and do
@@ -243,9 +252,11 @@ injected host adapter (systemctl, journal, niri, noctalia and the guard
 launch) and cover: timer and service discovery (transient timers not held),
 write-ahead ordering, a hold action failing midway, preflight failure after
 the hold, release from the hold file with no `preflight` section, release
-skipping restore after `hold_end`, each scan kind and the realtime window, a
+skipping restore after `hold_end`, each scan kind against journal entries
+with the real `MESSAGE_ID`s per unit type, the realtime window, a
 restore failure keeping the hold file, a vanished unit, recovery by the next
-preflight and by `restore`, the socket rules (empty `NIRI_SOCKET`, two live
+preflight and by `restore` (and both racing under the guard directory), a
+hold file whose `run_id` matches but `run_dir` does not, the socket rules (empty `NIRI_SOCKET`, two live
 sockets) and `hold`/`hold_end` validation. Fixture tests that check the
 cleanup trap cover `|| rc=1`.
 
@@ -264,5 +275,7 @@ Live, from a TTY with the desktop stopped (the first quiet run):
    (`optic-settling-smoke.sh pilot`, three cases; "Running the dedicated
    lane" in capture host setup) with the hold in place.
 
-The desktop part (§3.3) is exercised the next time a headless-lane run is
-taken from the desktop; until then it is tested only through the adapter.
+The desktop part (§3.3), including the guard restoring caffeine and
+monitors after a killed desktop run, is exercised the next time a
+headless-lane run is taken from the desktop; until then it is tested only
+through the adapter.
