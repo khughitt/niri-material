@@ -1,6 +1,6 @@
 # Pre-commit tooling latency
 
-Task: material-cd7782. Status: accepted after round 3’s static-check substitution; implementation plan review required.
+Task: material-cd7782. Status: accepted; implementation plan accepted with the two Task 3 static-check clarifications incorporated.
 
 ## Outcome
 

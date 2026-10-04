@@ -546,7 +546,10 @@ stim() {
     local label=$1 effect=$2 start end; shift 2
     start=$(mono)
     "$@"
-    end=$(( $(mono) + $(awk -v s="$effect" 'BEGIN { printf "%d", s * 1e9 }') ))
+    end=$(mono)
+    local effect_ns
+    effect_ns=$(awk -v s="$effect" 'BEGIN { printf "%d", s * 1e9 }')
+    end=$((end + effect_ns))
     printf '%s\t%s\t%s\n' "$label" "$start" "$end" >> "$CASE_DIR/journal.tsv"
 }
 print_line() { echo "line $1" > "$FIFO"; }

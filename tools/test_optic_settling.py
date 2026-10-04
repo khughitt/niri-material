@@ -747,6 +747,31 @@ def alive(pid):
         return False
 
 
+class JournalSignalTests(unittest.TestCase):
+    def test_term_during_journal_end_preserves_exit_and_cleanup(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  'docs/materials/scripts/optic-settling-smoke.sh').read_text()
+        body = source.split('stim() {', 1)[1].split('\n}\n', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = r"""
+set -eu
+on_exit() { local rc=$?; trap - EXIT; trap : INT TERM HUP; printf 'cleanup\n'; exit "$rc"; }
+trap 'exit 143' TERM
+trap on_exit EXIT
+mono() {
+    if [ -e "$CASE_DIR/first" ]; then kill -TERM $$; else : > "$CASE_DIR/first"; fi
+    printf 100
+}
+"""
+            run = subprocess.run(['bash', '-c', prefix + 'stim() {' + body +
+                                  '\n}\nstim lock 2 true\n'],
+                                 env=dict(os.environ, CASE_DIR=directory),
+                                 capture_output=True, text=True, timeout=15)
+        self.assertEqual(run.returncode, 143, run.stderr)
+        self.assertEqual(run.stderr, '')
+        self.assertIn('cleanup', run.stdout)
+
+
 class DriverCleanupTests(unittest.TestCase):
     """The driver on stubs: a signal or a refusal must stop every child promptly,
     keep the partial evidence and release the capture lock."""
@@ -811,9 +836,25 @@ class DriverCleanupTests(unittest.TestCase):
             run_env.pop('WAYLAND_DISPLAY', None)
             # Nor may it read this host's outputs.
             run_env.setdefault('OPTIC_SETTLING_STUB_DRM_SYSFS', str(self.drm))
-        return subprocess.Popen(['bash', str(script), 'pilot', *lane], cwd=self.root, start_new_session=True,
+        driver = subprocess.Popen(['bash', str(script), 'pilot', *lane], cwd=self.root, start_new_session=True,
                                 env=run_env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.reap_driver, driver)
+        return driver
+
+    def reap_driver(self, driver):
+        if driver.poll() is None:
+            try:
+                os.killpg(driver.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                driver.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(driver.pid, signal.SIGKILL)
+        driver.wait()
+        driver.stdout.close()
+        driver.stderr.close()
 
     def await_marker(self, driver, marker, timeout_s):
         deadline = time.monotonic() + timeout_s
