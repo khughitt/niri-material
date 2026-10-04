@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T12:22:30Z
+updated: 2026-10-04T12:29:25Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -75,3 +75,8 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
   provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T12:20:36Z (disturber-hold): review: plan round 2 — verdict: revise; findings: P1 3; reviewer: human
 - 2026-10-04T12:22:30Z (disturber-hold): Plan round 2 applied: hold file items never shrink (held tracks remainder) so a retried scan sees the same input; release of a complete record finishes leftovers (finalize, guard stop, lock) without touching the record; record_lock (flock on run dir) serializes every capture.json read-modify-write, order guarded() then record_lock.
+- 2026-10-04T12:22:33Z (disturber-hold): parked (waiting on user, review): Owner re-reviews docs/plans/2026-10-04-capture-disturber-hold.md after round-2 fixes (branch disturber-hold); then native execution of material-810dec..f52898 and a whole-branch review
+  provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T12:29:24Z (disturber-hold): resumed
+  provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T12:29:24Z (disturber-hold): review: plan round 3 — verdict: revise; findings: P1 1; reviewer: human
