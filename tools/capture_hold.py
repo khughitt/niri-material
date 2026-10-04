@@ -451,3 +451,122 @@ def finalize(lock_file, run_id, run_dir):
             return None
         remove_hold(lock_file, hold)
         return hold
+
+
+def journal(host, manager, since_us):
+    flag = "--user" if manager == "user" else "--system"
+    command = ("journalctl", flag, "-o", "json", "--no-pager", f"--since=@{since_us // 1_000_000 - 1}")
+    result = host.run(*command, timeout=JOURNAL_TIMEOUT_S)
+    if result.returncode != 0:
+        raise CannotRun(f"{' '.join(command)}: {(result.stderr or result.stdout).strip() or f'exit {result.returncode}'}")
+    out = result.stdout
+    entries = []
+    for line in out.splitlines():
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError as error:
+            raise CannotRun(f"journalctl {flag}: malformed entry: {error}") from error
+    return entries
+
+
+def _disturbance(at_us, manager, unit, kind):
+    return {"at": rfc3339(at_us), "at_us": at_us, "manager": manager, "unit": unit, "kind": kind}
+
+
+def scan(host, hold, wakes):
+    """Disturbances in [started_us, until_us): see the spec, §5."""
+    start, end = hold["started_us"], hold["until_us"]
+    timer_map = {m: {**hold["timer_map"].get(m, {}), **list_timers(host, m, all_=True)} for m in ("user", "system")}
+    held = {i["unit"] for i in hold["items"] if i["kind"] in ("timer", "service")}
+    events = []
+    for manager in ("user", "system"):
+        unit_key, inv_key = ("USER_UNIT", "USER_INVOCATION_ID") if manager == "user" else ("UNIT", "INVOCATION_ID")
+        for e in journal(host, manager, start):
+            try:
+                at = int(e["__REALTIME_TIMESTAMP"])
+            except (KeyError, ValueError) as error:
+                raise CannotRun(f"journal entry without a usable __REALTIME_TIMESTAMP: {error}") from error
+            if start <= at < end and e.get(unit_key):
+                events.append((at, manager, e.get("MESSAGE_ID"), e[unit_key], e.get(inv_key)))
+    events.sort(key=lambda event: event[0])
+    found = []
+    for at, manager, mid, unit, _ in events:
+        if unit.endswith(".timer") and mid == UNIT_STARTED:
+            held_timer = manager == "user" and unit in held
+            found.append(_disturbance(at, manager, unit, "held-started" if held_timer else "timer-added"))
+            timer_map[manager][unit] = unit[: -len(".timer")] + ".service"
+        elif mid == RESTART:
+            found.append(_disturbance(at, manager, unit, "restart"))
+    fired = {m: set(timer_map[m].values()) for m in ("user", "system")}
+    seen = set()
+    for n, (at, manager, mid, unit, inv) in enumerate(events):
+        if mid not in ACTIVATIONS or unit.endswith(".timer"):
+            continue
+        if inv:
+            if (manager, unit, inv) in seen or hold["invocations"].get(manager, {}).get(unit) == inv:
+                continue
+            seen.add((manager, unit, inv))
+        if unit in fired[manager]:
+            found.append(_disturbance(at, manager, unit, "timer-fired"))
+        if manager == "user" and unit in held:
+            found.append(_disturbance(at, manager, unit, "held-started"))
+    for wake in wakes:
+        if not start <= wake["at_us"] < end:
+            continue
+        kind = "monitor-unwatched" if "error" in wake else "monitor-woke"
+        found.append(_disturbance(wake["at_us"], "sysfs", wake["connector"], kind))
+    found.sort(key=lambda d: d["at_us"])
+    return ("disturbed" if found else "clean"), found
+
+
+def _log_wake(lock_file, hold, record):
+    try:
+        with open(wake_file(lock_file, hold), "a") as stream:
+            stream.write(json.dumps(record) + "\n")
+    except OSError as error:
+        raise CannotRun(f"wake log: {error}") from error
+
+
+def guard_loop(host, lock_file, run_id, run_dir, on_owner_dead, iterations=None):
+    """Watch the owner and the held monitors once a second (spec §4.4).
+
+    Each round reads the hold and polls the monitors under guarded(), the
+    lock restore_transaction marks `restoring` under, so a wake is either
+    logged before the restore's cutoff or not at all. Returns "released"
+    when no hold names the run any more, "restored" once on_owner_dead()
+    reports a complete restore, or None after `iterations` rounds (tests
+    only). After GUARD_RETRIES failed restores, GUARD_RETRY_S apart, it gives
+    up with CannotRun and leaves the hold file for `capture-meta restore`.
+    """
+    last, rounds, failed = {}, 0, 0
+    while iterations is None or rounds < iterations:
+        rounds += 1
+        with guarded(lock_file):
+            hold = read_hold(hold_file(lock_file))
+            if not names_run(hold, run_id, run_dir):
+                return "released"
+            owner_dead = not host.pid_alive(hold["owner_pid"])
+            if not owner_dead and not hold.get("restoring"):
+                for connector in hold.get("connectors", []):
+                    try:
+                        state = dpms(host, connector)
+                    except CannotRun as error:
+                        state = "unreadable"
+                        if last.get(connector) != state:
+                            _log_wake(lock_file, hold, {"at_us": host.now_us(), "connector": connector,
+                                                        "error": str(error)})
+                    else:
+                        if state == "On" and last.get(connector) != "On":
+                            _log_wake(lock_file, hold, {"at_us": host.now_us(), "connector": connector})
+                    last[connector] = state
+        if owner_dead:
+            if on_owner_dead():
+                return "restored"
+            failed += 1
+            if failed >= GUARD_RETRIES:
+                raise CannotRun(f"hold for run {run_id} still not restored after {GUARD_RETRIES} attempts; "
+                                "run `capture-meta restore` by hand")
+            host.sleep(GUARD_RETRY_S)
+            continue
+        host.sleep(1)
+    return None

@@ -272,5 +272,174 @@ class HoldFileTests(TempHost):
             ch.read_hold(ch.hold_file(self.lock))
 
 
+def entry(manager, at, mid, unit, inv=None):
+    e = {"__REALTIME_TIMESTAMP": str(at), "MESSAGE_ID": mid, ("USER_UNIT" if manager == "user" else "UNIT"): unit}
+    if inv:
+        e["USER_INVOCATION_ID" if manager == "user" else "INVOCATION_ID"] = inv
+    return e
+
+
+T0 = 1_791_180_000_000_000
+
+
+class ScanTests(TempHost):
+    def hold(self, **extra):
+        hold = {"run_id": "r", "run_dir": "/r", "owner_pid": 1, "key": "k", "guard": "g.service",
+                "started_us": T0, "until_us": T0 + 600_000_000, "socket": None,
+                "timer_map": {"user": {"wali-rotate.timer": "wali-rotate.service",
+                                       "familiar-reap.timer": "familiar-reap.service"},
+                              "system": {"plocate-updatedb.timer": "plocate-updatedb.service"}},
+                "invocations": {"user": {"familiar-reap.service": "old"}},
+                "items": [ch.unit_item("timer", "wali-rotate.timer"), ch.unit_item("service", "dropbox.service")],
+                "connectors": []}
+        hold.update(extra)
+        return hold
+
+    def scan(self, user=(), system=(), wakes=(), **extra):
+        host = self.host(journal={"user": list(user), "system": list(system)})
+        return ch.scan(host, self.hold(**extra), list(wakes))
+
+    def kinds(self, result):
+        return [(d["kind"], d["unit"]) for d in result[1]]
+
+    def test_quiet_window_is_clean(self):
+        self.assertEqual(self.scan(), ("clean", []))
+
+    def test_system_timer_service_with_job_start_fires(self):
+        result = self.scan(system=[entry("system", T0 + 5, ch.JOB_START, "plocate-updatedb.service", "i1"),
+                                   entry("system", T0 + 9, ch.UNIT_STARTED, "plocate-updatedb.service", "i1")])
+        self.assertEqual(result[0], "disturbed")
+        self.assertEqual(self.kinds(result), [("timer-fired", "plocate-updatedb.service")])
+
+    def test_user_entries_are_keyed_on_user_invocation_id(self):
+        result = self.scan(user=[entry("user", T0 + 5, ch.JOB_START, "wali-rotate.service", "u1"),
+                                 entry("user", T0 + 7, ch.UNIT_STARTED, "wali-rotate.service", "u1")])
+        self.assertEqual(self.kinds(result), [("timer-fired", "wali-rotate.service")])
+
+    def test_started_only_service_counts(self):
+        result = self.scan(user=[entry("user", T0 + 5, ch.UNIT_STARTED, "dropbox.service", "d1")])
+        self.assertEqual(self.kinds(result), [("held-started", "dropbox.service")])
+
+    def test_failed_start_counts_once(self):
+        result = self.scan(user=[entry("user", T0 + 1, ch.JOB_START, "wali-rotate.service", "f1"),
+                                 entry("user", T0 + 2, ch.START_FAILED, "wali-rotate.service", "f1")])
+        self.assertEqual(self.kinds(result), [("timer-fired", "wali-rotate.service")])
+
+    def test_service_running_at_hold_that_finishes_inside_is_not_flagged(self):
+        result = self.scan(user=[entry("user", T0 + 3, ch.UNIT_STARTED, "familiar-reap.service", "old")])
+        self.assertEqual(result, ("clean", []))
+
+    def test_entry_without_invocation_id_is_its_own_activation(self):
+        result = self.scan(user=[entry("user", T0 + 3, ch.UNIT_STARTED, "wali-rotate.service"),
+                                 entry("user", T0 + 4, ch.UNIT_STARTED, "wali-rotate.service")])
+        self.assertEqual(len(result[1]), 2)
+
+    def test_added_transient_timer_and_its_same_named_service(self):
+        result = self.scan(user=[entry("user", T0 + 1, ch.UNIT_STARTED, "run-r9.timer", "t9"),
+                                 entry("user", T0 + 30, ch.UNIT_STARTED, "run-r9.service", "s9")])
+        self.assertEqual(self.kinds(result), [("timer-added", "run-r9.timer"), ("timer-fired", "run-r9.service")])
+
+    def test_held_timer_started_again_is_held_started(self):
+        result = self.scan(user=[entry("user", T0 + 1, ch.UNIT_STARTED, "wali-rotate.timer", "t1")])
+        self.assertEqual(self.kinds(result), [("held-started", "wali-rotate.timer")])
+
+    def test_restart_of_any_unit(self):
+        result = self.scan(user=[entry("user", T0 + 1, ch.RESTART, "mystery.service", "m1")])
+        self.assertEqual(self.kinds(result), [("restart", "mystery.service")])
+
+    def test_window_bounds_are_in_microseconds(self):
+        result = self.scan(system=[entry("system", T0 - 1, ch.JOB_START, "plocate-updatedb.service", "a"),
+                                   entry("system", T0 + 600_000_000, ch.JOB_START, "plocate-updatedb.service", "b")])
+        self.assertEqual(result, ("clean", []))
+
+    def test_fixture_transient_services_are_not_flagged(self):
+        result = self.scan(user=[entry("user", T0 + 1, ch.UNIT_STARTED, "gos-weston-1234.service", "w1")])
+        self.assertEqual(result, ("clean", []))
+
+    def test_wakes_outside_the_window_are_ignored(self):
+        result = self.scan(wakes=[{"at_us": T0 - 1, "connector": "card1-DP-1"},
+                                  {"at_us": T0 + 600_000_000, "connector": "card1-DP-1"}])
+        self.assertEqual(result, ("clean", []))
+
+    def test_wakes_and_unwatched_connectors(self):
+        result = self.scan(wakes=[{"at_us": T0 + 9, "connector": "card1-DP-1"},
+                                  {"at_us": T0 + 10, "connector": "card1-DP-1", "error": "gone"}])
+        self.assertEqual(self.kinds(result), [("monitor-woke", "card1-DP-1"), ("monitor-unwatched", "card1-DP-1")])
+
+    def test_unreadable_journal_cannot_run(self):
+        host = self.host()
+        host.fail[("journalctl", "--user", "-o", "json", "--no-pager", f"--since=@{T0 // 1_000_000 - 1}")] = "denied"  # noqa: E501
+        with self.assertRaisesRegex(ch.CannotRun, "denied"):
+            ch.scan(host, self.hold(), [])
+
+
+class GuardLoopTests(TempHost):
+    def setUp(self):
+        self.h = self.host(connectors=LIT)
+        self.lock = self.h.runtime / "capture-meta.lock"
+        self.run_dir = self.h.runtime.parent / "pilot-1"; self.run_dir.mkdir()
+        plan = {"socket": None, "timer_map": {"user": {}, "system": {}}, "invocations": {}}
+        ch.create_hold(self.lock, "pilot-1", self.run_dir, 77, plan, 0)
+        path = ch.hold_file(self.lock); hold = ch.read_hold(path)
+        hold["connectors"] = ["card1-DP-1"]; ch.write_hold(path, hold)
+        self.h.connectors["card1-DP-1"]["dpms"] = "Off"; self.h.sync_sysfs()
+
+    def wakes(self):
+        hold = ch.read_hold(ch.hold_file(self.lock))
+        path = ch.wake_file(self.lock, hold)
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def test_logs_each_wake_transition_once(self):
+        loop = lambda n: ch.guard_loop(self.h, self.lock, "pilot-1", self.run_dir, lambda: True, iterations=n)
+        loop(2)
+        self.h.wake("card1-DP-1"); loop(3)
+        self.assertEqual([w["connector"] for w in self.wakes()], ["card1-DP-1"])
+
+    def test_no_wakes_logged_once_restoring(self):
+        path = ch.hold_file(self.lock); hold = ch.read_hold(path)
+        hold["restoring"] = True; ch.write_hold(path, hold)
+        self.h.wake("card1-DP-1")
+        ch.guard_loop(self.h, self.lock, "pilot-1", self.run_dir, lambda: True, iterations=3)
+        self.assertEqual(self.wakes(), [])
+
+    def test_a_round_waits_for_a_restore_in_progress_and_then_logs_nothing(self):
+        import threading
+        entered, release = threading.Event(), threading.Event()
+        def restoring():
+            with ch.guarded(self.lock):
+                path = ch.hold_file(self.lock); hold = ch.read_hold(path)
+                hold["restoring"] = True; ch.write_hold(path, hold)
+                entered.set(); release.wait(5)
+                self.h.wake("card1-DP-1")        # the restore's own power-on
+        worker = threading.Thread(target=restoring); worker.start()
+        entered.wait(5)
+        done = threading.Event()
+        threading.Thread(target=lambda: (ch.guard_loop(self.h, self.lock, "pilot-1", self.run_dir,
+                                                       lambda: True, iterations=1), done.set())).start()
+        self.assertFalse(done.wait(0.3))           # blocked behind the restore's lock
+        release.set(); worker.join(5)
+        self.assertTrue(done.wait(5))
+        self.assertEqual(self.wakes(), [])
+
+    def test_unreadable_connector_is_logged_not_fatal(self):
+        (self.h.sysfs / "card1-DP-1" / "dpms").unlink()
+        self.assertIsNone(ch.guard_loop(self.h, self.lock, "pilot-1", self.run_dir, lambda: True, iterations=2))
+        self.assertEqual([("error" in w) for w in self.wakes()], [True])
+
+    def test_owner_death_restores_and_retries_until_complete(self):
+        outcomes = iter([False, False, True])
+        self.h.alive[77] = False
+        self.assertEqual(ch.guard_loop(self.h, self.lock, "pilot-1", self.run_dir, lambda: next(outcomes)), "restored")
+
+    def test_gives_up_after_bounded_retries(self):
+        self.h.alive[77] = False
+        with self.assertRaisesRegex(ch.CannotRun, "still not restored after 20 attempts"):
+            ch.guard_loop(self.h, self.lock, "pilot-1", self.run_dir, lambda: False)
+
+    def test_released_hold_ends_the_guard(self):
+        ch.hold_file(self.lock).unlink()
+        self.assertEqual(ch.guard_loop(self.h, self.lock, "pilot-1", self.run_dir, lambda: True), "released")
+
+
 if __name__ == "__main__":
     unittest.main()
