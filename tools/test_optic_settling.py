@@ -14,6 +14,8 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
+from tools.tooling_tests import fast_mode
+
 from tools.optic_settling import FAMILIES, analyze_run, check_window, config_identity, main, parse_edges
 
 
@@ -772,6 +774,7 @@ mono() {
         self.assertIn('cleanup', run.stdout)
 
 
+@unittest.skipIf(fast_mode(), 'NIRI_TOOLING_FAST=1; use full validation or NIRI_TOOLING_FAST=0')
 class DriverCleanupTests(unittest.TestCase):
     """The driver on stubs: a signal or a refusal must stop every child promptly,
     keep the partial evidence and release the capture lock."""
@@ -1078,20 +1081,27 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertTrue(self.started('lock'))
         self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
 
-    def test_screencast_refuses_unchecked_crops_and_a_dead_consumer(self):
-        for env, message in (
-            (dict(STUB_PROBE_SIZE='900, 1200'), "calibrated probe 1000x1200, the case's probe is 900x1200 over IPC"),
-            (dict(STUB_RECT='400x1200+100+100', STUB_PROBE_SIZE='400, 1200'),
-             'probe 400x1200 is too small for the screencast crops'),
-            (dict(STUB_SAMPLE_SIZE='1280x720'), 'sample-1 is 1280x720, the calibrated screen is 3440x1440'),
-            (dict(STUB_CONSUMER_EXITS='1'), 'the screencast consumer exited (see cast.log)'),
-        ):
-            with self.subTest(message=message):
-                shutil.rmtree(self.out, ignore_errors=True)
-                (self.stubs / 'meta.log').unlink(missing_ok=True)
-                stderr = self.run_dedicated('screencast', **env)
-                self.assertEqual(self.returncode, 1, stderr)
-                self.assertIn(f'screencast: {message}', stderr)
+    def assert_screencast_refused(self, message, **env):
+        stderr = self.run_dedicated('screencast', **env)
+        self.assertEqual(self.returncode, 1, stderr)
+        self.assertIn(f'screencast: {message}', stderr)
+
+    def test_screencast_refuses_wrong_probe_size(self):
+        self.assert_screencast_refused(
+            "calibrated probe 1000x1200, the case's probe is 900x1200 over IPC",
+            STUB_PROBE_SIZE='900, 1200')
+
+    def test_screencast_refuses_small_probe(self):
+        self.assert_screencast_refused('probe 400x1200 is too small for the screencast crops',
+                                      STUB_RECT='400x1200+100+100', STUB_PROBE_SIZE='400, 1200')
+
+    def test_screencast_refuses_wrong_sample_size(self):
+        self.assert_screencast_refused('sample-1 is 1280x720, the calibrated screen is 3440x1440',
+                                      STUB_SAMPLE_SIZE='1280x720')
+
+    def test_screencast_refuses_dead_consumer(self):
+        self.assert_screencast_refused('the screencast consumer exited (see cast.log)',
+                                      STUB_CONSUMER_EXITS='1')
 
     def test_a_screencast_run_reaches_its_crops(self):
         # The whole drive with matching sizes: the run gets through every

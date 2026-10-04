@@ -11,6 +11,8 @@ import time
 import unittest
 from pathlib import Path
 
+from tools.tooling_tests import fast_mode
+
 LIB = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/vt-lib.sh'
 CHVT = ('#!/bin/sh\necho "$1" >> "$STUB_DIR/chvt.log"\n[ -z "${STUB_HANG:-}" ] || exec sleep 60\n'
         '[ -z "${STUB_STUCK:-}" ] || exit 0\nprintf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n')
@@ -19,6 +21,7 @@ LOGINCTL = ('#!/bin/sh\ncase $1 in\n'
             '    show-session) [ -z "${STUB_SHOW_FAIL:-}" ] || exit 1; while read -r id vt; do if [ "$id" = "$2" ]; then echo "$vt"; fi; done < "$STUB_DIR/sessions" ;;\nesac\n')
 
 
+@unittest.skipIf(fast_mode(), 'NIRI_TOOLING_FAST=1; use full validation or NIRI_TOOLING_FAST=0')
 class VtLibTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()

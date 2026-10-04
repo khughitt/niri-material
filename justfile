@@ -24,7 +24,7 @@ nextest_cmd := "cargo nextest run --status-level fail --final-status-level fail"
 fast_cmd := "python3 tools/test-affected --status-level fail --final-status-level fail"
 one_cmd := nextest_cmd
 test_cmd := "cargo test --all --exclude niri-visual-tests"
-check_cmd := "python3 tools/ops-check && python3 tools/target-dir-check && cargo fmt --all -- --check && cargo clippy --all --all-targets && python3 -m unittest discover -s tools 2>&1 && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
+check_cmd := "python3 tools/ops-check && python3 tools/target-dir-check && cargo fmt --all -- --check && cargo clippy --all --all-targets && env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full 2>&1 && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
 
 # Prose-only trees: material docs and wiki contain Rust test inputs.
 # Keep the repository-specific consistency checks in both commit paths.
