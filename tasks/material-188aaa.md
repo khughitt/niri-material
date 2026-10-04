@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T12:39:27Z
+updated: 2026-10-04T13:16:05Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -90,3 +90,4 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
   provenance: {"harness_session":"claude-code:7afe7f97-b3a8-4bf7-9228-6886337cb0ba","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T12:39:27Z (disturber-hold): resumed
   provenance: {"harness_session":"codex:01a106eb-14e5-7b61-9f6b-e9b21b9511ca","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-04T13:16:05Z (disturber-hold): Quiet-run snapshot: $NIRI_MATERIAL_WORK_ROOT/optic-settling/bin-3125163e/niri-tracy; identity source 3125163e2ca0ee68e845e154f5d96ea41807a61e, SHA256 verified 91b9a0c02b50b3961f925689b0cdf300b3f38d85ea396bdb89f1b5461ba09287. The plan mtime cutoff excludes valid retained snapshots because the spec checkout is newer.
