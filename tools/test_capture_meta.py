@@ -2,6 +2,7 @@
 import importlib.machinery
 import importlib.util
 import json
+import itertools
 import os
 import pathlib
 import subprocess
@@ -541,17 +542,18 @@ class JudgementTests(unittest.TestCase):
 
 
 class PreflightTests(unittest.TestCase):
-    def run_preflight(self, run, lane="headless", gpu=None, proc=None, env=None, lock=None, host_load=None, **kw):
+    def run_preflight(self, run, lane="headless", gpu=None, proc=None, env=None, lock=None, host_load=None, host=None, **kw):
         proc = proc or FakeProc([(i * 2, i * 100) for i in range(30)])
         gpu = gpu or FakeGpu([QUIET] * 30)
         host_load = host_load or FakeHostLoad()
+        host = host or FakeHost(run.parent / "host")
         saved = dict(os.environ)
         os.environ.update(env or {})
         try:
             return cm.preflight(run, lane=lane, task="material-x", fixture="f.sh", seconds=3, owner_pid=os.getpid(),
                                 thresholds=cm.DEFAULT_THRESHOLDS, tools=kw.get("tools", ["tracy=0.13.1"]),
-                                proc=proc, gpu=gpu, host_load=host_load, sleep=lambda s: None,
-                                lock=lock or (lambda: run / "lock"))
+                                proc=proc, gpu=gpu, host_load=host_load, host=host, sleep=lambda s: None,
+                                lock=lock or (lambda: run / "lock"), hold_settle=0)
         finally:
             os.environ.clear(); os.environ.update(saved)
 
@@ -673,7 +675,8 @@ class PreflightTests(unittest.TestCase):
                 run = pathlib.Path(directory) / f"r-{seconds}-{owner_pid}"; run.mkdir()
                 with self.subTest(seconds=seconds, owner_pid=owner_pid), self.assertRaises(cm.CannotRun):
                     cm.preflight(run, "headless", "t", "f", seconds, owner_pid, cm.DEFAULT_THRESHOLDS,
-                                 [], FakeProc([(0, 0), (1, 100)]), FakeGpu([QUIET]), FakeHostLoad(), sleep=lambda _: None,
+                                 [], FakeProc([(0, 0), (1, 100)]), FakeGpu([QUIET]), FakeHostLoad(), host=FakeHost(pathlib.Path(directory) / "host"),
+                                 sleep=lambda _: None,
                                  lock=lambda: run / "lock")
                 self.assertEqual(cm.load_record(run), {})
 
@@ -687,8 +690,9 @@ class PreflightTests(unittest.TestCase):
     def test_cli_validation_returns_two_without_mutating_run(self):
         with tempfile.TemporaryDirectory() as directory:
             run = pathlib.Path(directory) / "run"
-            code = cm.main(["preflight", str(run), "--lane", "headless", "--task", "t", "--fixture", "f",
-                            "--seconds", "0", "--owner-pid", "1"])
+            with mock.patch.object(cm, "Host", return_value=FakeHost(pathlib.Path(directory) / "host")):
+                code = cm.main(["preflight", str(run), "--lane", "headless", "--task", "t", "--fixture", "f",
+                                "--seconds", "0", "--owner-pid", "1"])
             self.assertEqual(code, 2)
             self.assertFalse(run.exists())
 
@@ -761,11 +765,14 @@ class SettleTests(unittest.TestCase):
             run, lock = self.prepared(directory)
             saved = os.environ.get("XDG_RUNTIME_DIR"); os.environ["XDG_RUNTIME_DIR"] = str(run)
             try:
+                host = FakeHost(pathlib.Path(directory) / "host")
                 lock.rename(run / cm.LOCK_NAME)
-                self.assertEqual(cm.main(["release", str(run)]), 0)
+                with mock.patch.object(cm, "Host", return_value=host):
+                    self.assertEqual(cm.main(["release", str(run)]), 0)
                 self.assertFalse((run / cm.LOCK_NAME).exists())
                 cm.acquire_lock(run / cm.LOCK_NAME, 1, "someone-else")
-                self.assertEqual(cm.main(["release", str(run)]), 1)
+                with mock.patch.object(cm, "Host", return_value=host):
+                    self.assertEqual(cm.main(["release", str(run)]), 0)  # repeats the finished verdict
                 self.assertTrue((run / cm.LOCK_NAME).exists())
             finally:
                 if saved is None: os.environ.pop("XDG_RUNTIME_DIR", None)
@@ -804,6 +811,21 @@ class EndToEndTest(unittest.TestCase):
             host_load = bins / "host-load"
             host_load.write_text('#!/bin/sh\necho \'{"host":"h","at":"t","load":{"load1":0.4,"top":[]}}\'\n')
             host_load.chmod(0o755)
+            for name, body in {
+                "systemctl": textwrap.dedent("""\
+                    #!/bin/sh
+                    case "$*" in
+                      *list-timers*) echo '[]' ;;
+                      *is-active*) echo active ;;
+                      *show*) for p in "$@"; do case "$p" in --property=*) echo "${p#--property=}=" ;; esac; done ;;
+                      *) : ;;
+                    esac
+                    """),
+                "journalctl": "#!/bin/sh\n:\n",
+                "systemd-run": "#!/bin/sh\n:\n",
+                "niri": "#!/bin/sh\nexit 1\n",
+            }.items():
+                (bins / name).write_text(body); (bins / name).chmod(0o755)
             run = root / "material-x" / "headless-20260911T000000"; run.mkdir(parents=True)
             runtime = root / "rt"; runtime.mkdir()
             proc = root / "proc"; proc.mkdir()
@@ -816,6 +838,7 @@ class EndToEndTest(unittest.TestCase):
             subprocess.run(["git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t",
                             "commit", "-q", "--allow-empty", "-m", "i"], check=True)
             env = {**os.environ, "PATH": f"{bins}:{os.environ['PATH']}", "XDG_RUNTIME_DIR": str(runtime),
+                   "XDG_CONFIG_HOME": str(root / "cfg"), "CAPTURE_META_SYSFS": str(root / "drm"), "NIRI_SOCKET": "",
                    "CAPTURE_META_PROC": str(proc), "XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-1"}
             tool = str(pathlib.Path(__file__).with_name("capture-meta"))
             stat = proc / "stat"
@@ -842,7 +865,7 @@ class EndToEndTest(unittest.TestCase):
                     server.join(); os.close(reader)
                 return process.returncode, stdout, stderr
             code, _, stderr = cm_run("preflight", str(run), "--lane", "headless", "--task", "material-x",
-                                     "--fixture", "t.sh", "--seconds", "1", "--tool", "tracy=0.13.1",
+                                     "--fixture", "t.sh", "--seconds", "1", "--hold-settle", "0", "--tool", "tracy=0.13.1",
                                      sampling=True)
             self.assertEqual(code, 0, stderr)
             code, _, stderr = cm_run("identity", str(run), "--source", str(src), "--input", str(root / "A.kdl"))
@@ -852,6 +875,10 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual(code, 0, stderr)
             code, _, stderr = cm_run("release", str(run))
             self.assertEqual(code, 0, stderr)
+            record = json.loads((run / "capture.json").read_text())
+            self.assertEqual(record["hold"]["desktop"], "absent")
+            self.assertEqual(record["hold_end"]["scan"]["verdict"], "clean")
+            self.assertFalse((runtime / "capture-meta.hold.json").exists())
             code, stdout, stderr = cm_run("show", str(run))
             self.assertEqual(code, 0, stderr)
             self.assertIn("A-1: settled", stdout)
@@ -956,6 +983,239 @@ class HoldRecordTests(unittest.TestCase):
         self.assertIn("  not held: idle (noctalia not on PATH)", text)
         self.assertIn("hold end  restore complete (release)  scan disturbed", text)
         self.assertIn("  restart x.service (user) at t", text)
+
+
+class LifecycleTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.root = pathlib.Path(temp.name)
+        self.host = FakeHost(self.root / "host", timers=["wali-rotate.timer"],
+                             units={"dropbox.service": {"ActiveState": "active"}},
+                             sockets=["niri.w.1.sock"], live=["niri.w.1.sock"],
+                             connectors={"card1-DP-1": {"status": "connected", "enabled": "enabled", "dpms": "On"}})
+        self.host.config.parent.mkdir(parents=True); self.host.config.write_text("dropbox.service\n")
+        self.lock = self.host.runtime / cm.LOCK_NAME
+        self.run = self.root / "runs" / "pilot-1"; self.run.mkdir(parents=True)
+        self.before = self.host.snapshot()
+        saved = os.environ.get("XDG_RUNTIME_DIR"); os.environ["XDG_RUNTIME_DIR"] = str(self.host.runtime)
+        self.addCleanup(lambda: os.environ.__setitem__("XDG_RUNTIME_DIR", saved) if saved else os.environ.pop("XDG_RUNTIME_DIR", None))
+        cm.Host = lambda *a, **k: self.host
+        self.addCleanup(setattr, cm, "Host", _NoRealHost)
+
+    def preflight(self, gpu=None, owner=4242, launch_guard=None):
+        return cm.preflight(self.run, lane="headless", task="material-188aaa", fixture="t.sh", seconds=3,
+                            owner_pid=owner, thresholds=cm.DEFAULT_THRESHOLDS, tools=["tracy=0.13.1"],
+                            proc=FakeProc([(i * 2, i * 100) for i in range(30)]), gpu=gpu or FakeGpu([QUIET] * 30),
+                            host_load=FakeHostLoad(), host=self.host, sleep=lambda s: None,
+                            lock=lambda: self.lock, hold_settle=10, launch_guard=launch_guard)
+
+    def test_quiet_preflight_holds_then_release_restores_and_is_clean(self):
+        self.preflight()
+        record = cm.load_record(self.run)
+        self.assertEqual([i.get("unit", i["kind"]) for i in record["hold"]["items"]],
+                         ["wali-rotate.timer", "dropbox.service", "idle", "monitors"])
+        self.assertTrue(self.host.guards)
+        guard_call = next(c for c in self.host.calls if c[0] == "systemd-run")
+        self.assertLess(self.host.calls.index(guard_call),
+                        self.host.calls.index(("systemctl", "--user", "stop", "wali-rotate.timer")))
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual(self.host.snapshot(), self.before)
+        end = cm.load_record(self.run)["hold_end"]
+        self.assertEqual((end["restore"]["state"], end["scan"]["verdict"]), ("complete", "clean"))
+        self.assertFalse(self.host.guards)
+        self.assertFalse((self.host.runtime / ch_hold_name()).exists())
+        self.assertIsNone(cm.read_lock(self.lock))
+
+    def test_second_release_changes_nothing_and_repeats_the_code(self):
+        self.preflight()
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        text = (self.run / cm.RECORD).read_text()
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual((self.run / cm.RECORD).read_text(), text)
+
+    def test_disturbed_run_exits_one_after_restoring(self):
+        self.host.add_timer("man-db.timer", "system")
+        self.before = self.host.snapshot()
+        self.preflight()
+        self.host.journal["system"].append({"__REALTIME_TIMESTAMP": str(self.host.now_us() + 5), "UNIT": "man-db.service",
+                                            "MESSAGE_ID": "7d4958e842da4a758f6c1cdc7b36dcc5", "INVOCATION_ID": "m"})
+        self.host.clock += 60_000_000
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        self.assertEqual(self.host.snapshot()[:2], self.before[:2])
+        self.assertEqual(cm.load_record(self.run)["hold_end"]["scan"]["disturbances"][0]["kind"], "timer-fired")
+
+    def test_refused_preflight_rolls_back_and_release_repeats_its_code(self):
+        busy = dict(QUIET, util_pct=90.0)
+        with self.assertRaises(cm.Refused):
+            self.preflight(gpu=FakeGpu([busy] * 30))
+        self.assertEqual(self.host.snapshot(), self.before)
+        end = cm.load_record(self.run)["hold_end"]
+        self.assertEqual((end["scan"]["verdict"], end["restore"]["attempts"][-1]["by"]), ("not-run", "preflight"))
+        self.assertIsNone(cm.read_lock(self.lock))
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+
+    def test_guard_that_does_not_start_holds_nothing(self):
+        def broken(host, hold):
+            raise cm.CannotRun("guard is failed, not active")
+        with self.assertRaisesRegex(cm.CannotRun, "not active"):
+            self.preflight(launch_guard=broken)
+        self.assertEqual(self.host.snapshot(), self.before)
+        self.assertIsNone(cm.read_lock(self.lock))
+
+    def test_failed_rollback_keeps_hold_guard_and_lock_and_release_retries(self):
+        self.host.fail[("systemctl", "--user", "start", "dropbox.service")] = "Job failed"
+        busy = dict(QUIET, util_pct=90.0)
+        with self.assertRaisesRegex(cm.CannotRun, "could not be rolled back: dropbox.service"):
+            self.preflight(gpu=FakeGpu([busy] * 30))
+        self.assertTrue((self.host.runtime / ch_hold_name()).exists())
+        self.assertTrue(self.host.guards)
+        self.assertIsNotNone(cm.read_lock(self.lock))
+        self.assertEqual(cm.main(["release", str(self.run)]), 2)
+        del self.host.fail[("systemctl", "--user", "start", "dropbox.service")]
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        end = cm.load_record(self.run)["hold_end"]
+        self.assertEqual(end["restore"]["state"], "complete")
+        self.assertEqual(end["scan"]["verdict"], "not-run")
+        self.assertIsNone(cm.read_lock(self.lock))
+
+    def test_retry_never_rescans(self):
+        self.preflight()
+        self.host.fail[("systemctl", "--user", "start", "wali-rotate.timer")] = "busy"
+        self.assertEqual(cm.main(["release", str(self.run)]), 2)
+        until = cm.load_record(self.run)["hold_end"]["scan"]["until_us"]
+        self.host.journal["user"].append({"__REALTIME_TIMESTAMP": str(self.host.now_us() + 10), "USER_UNIT": "wali-rotate.timer",
+                                          "MESSAGE_ID": "39f53479d3a045ac8e11786248231fbf", "USER_INVOCATION_ID": "late"})
+        del self.host.fail[("systemctl", "--user", "start", "wali-rotate.timer")]
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        end = cm.load_record(self.run)["hold_end"]
+        self.assertEqual((end["scan"]["until_us"], end["scan"]["verdict"]), (until, "clean"))
+
+    def test_guard_restores_when_the_owner_dies_and_completes_a_failed_record(self):
+        self.preflight()
+        self.host.fail[("systemctl", "--user", "start", "wali-rotate.timer")] = "busy"
+        self.assertEqual(cm.main(["release", str(self.run)]), 2)
+        del self.host.fail[("systemctl", "--user", "start", "wali-rotate.timer")]
+        self.host.alive[4242] = False
+        self.assertEqual(cm.guard(self.host, self.lock, self.run), "restored")
+        end = cm.load_record(self.run)["hold_end"]
+        self.assertEqual((end["restore"]["state"], end["restore"]["attempts"][-1]["by"]), ("complete", "guard"))
+        self.assertEqual(self.host.snapshot()[:2], self.before[:2])
+
+    def test_guard_after_a_kill_mid_run_writes_scan_and_restore(self):
+        self.preflight()
+        self.host.alive[4242] = False
+        self.assertEqual(cm.guard(self.host, self.lock, self.run), "restored")
+        end = cm.load_record(self.run)["hold_end"]
+        self.assertEqual((end["scan"]["verdict"], end["restore"]["attempts"][-1]["by"]), ("clean", "guard"))
+        self.assertEqual(self.host.snapshot(), self.before)
+
+    def test_guard_survives_an_unreadable_connector(self):
+        self.preflight()
+        self.host.clock += 1_000_000                  # into the run window
+        (self.host.sysfs / "card1-DP-1" / "dpms").unlink()
+        self.assertIsNone(cm.guard(self.host, self.lock, self.run, iterations=2))
+        self.host.sync_sysfs()
+        self.host.clock += 1_000_000
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        kinds = [d["kind"] for d in cm.load_record(self.run)["hold_end"]["scan"]["disturbances"]]
+        self.assertEqual(kinds, ["monitor-unwatched"])
+
+    def test_kill_between_restore_and_record_keeps_the_disturbance(self):
+        self.preflight()
+        self.host.journal["user"].append({"__REALTIME_TIMESTAMP": str(self.host.now_us() + 5), "USER_UNIT": "dropbox.service",
+                                          "MESSAGE_ID": "39f53479d3a045ac8e11786248231fbf", "USER_INVOCATION_ID": "d1"})
+        self.host.clock += 60_000_000
+        real = cm._update_hold_end
+        def killed(*a, **k):
+            raise FakeHost.Killed()
+        cm._update_hold_end = killed
+        try:
+            with self.assertRaises(FakeHost.Killed):
+                cm.main(["release", str(self.run)])
+        finally:
+            cm._update_hold_end = real
+        self.assertTrue((self.host.runtime / ch_hold_name()).exists())
+        self.assertNotIn("hold_end", cm.load_record(self.run))
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        end = cm.load_record(self.run)["hold_end"]
+        self.assertEqual((end["restore"]["state"], end["scan"]["verdict"]), ("complete", "disturbed"))
+        self.assertEqual([d["kind"] for d in end["scan"]["disturbances"]], ["held-started"])
+
+    def test_a_kill_after_the_record_before_each_cleanup_step_is_finished_by_release(self):
+        def kill_remove(lock_file, hold):
+            raise FakeHost.Killed()
+        real_run = FakeHost.run
+        def kill_stop(host, *command, **kw):
+            if command[:3] == ("systemctl", "--user", "stop") and command[3].startswith("capture-meta-guard-"):
+                raise FakeHost.Killed()
+            return real_run(host, *command, **kw)
+        def kill_release(*a, **k):
+            raise FakeHost.Killed()
+        steps = (("remove hold", cm.ch, "remove_hold", kill_remove),
+                 ("stop guard", FakeHost, "run", kill_stop),
+                 ("release lock", cm, "release_lock", kill_release))
+        starts = (("preflighted", lambda: self.preflight()),
+                  ("only run", self.hold_without_preflight))
+        for (name, target, attribute, replacement), (start, begin) in itertools.product(steps, starts):
+            with self.subTest(step=name, start=start):
+                self.setUp()
+                begin()
+                original = getattr(target, attribute)
+                setattr(target, attribute, replacement)
+                try:
+                    with self.assertRaises(FakeHost.Killed):
+                        cm.main(["release", str(self.run)])
+                finally:
+                    setattr(target, attribute, original)
+                saved = (self.run / cm.RECORD).read_text()
+                self.assertEqual(cm.load_record(self.run)["hold_end"]["restore"]["state"], "complete")
+                self.assertEqual(cm.main(["release", str(self.run)]), 0)
+                self.assertEqual((self.run / cm.RECORD).read_text(), saved)
+                self.assertFalse((self.host.runtime / ch_hold_name()).exists())
+                self.assertFalse(self.host.guards)
+                self.assertIsNone(cm.read_lock(self.lock))
+
+    def hold_without_preflight(self):
+        """The state preflight leaves when killed right after holding: a record with only
+        `run`, a hold file, a guard and the lock."""
+        cm.write_section(self.run, "run", {"id": self.run.name})
+        cm.acquire_lock(self.lock, 4242, self.run.name)
+        plan = cm.ch.plan_hold(self.host)
+        hold = cm.ch.create_hold(self.lock, self.run.name, self.run, 4242, plan, self.host.now_us())
+        cm.start_guard(self.host, hold)
+        cm.ch.apply_hold(self.host, self.lock, self.run.name, self.run, plan)
+        self.assertEqual(set(cm.load_record(self.run)), {"schema", "run"})
+
+    def test_restore_by_hand_refuses_a_live_owner_and_records_hand(self):
+        self.preflight()
+        self.assertEqual(cm.main(["restore"]), 1)
+        self.host.alive[4242] = False
+        self.assertEqual(cm.main(["restore"]), 0)
+        self.assertEqual(cm.load_record(self.run)["hold_end"]["restore"]["attempts"][-1]["by"], "hand")
+        self.assertEqual(cm.main(["restore"]), 0)
+
+    def test_next_preflight_recovers_a_stale_hold_and_updates_its_run(self):
+        # acquire_lock checks the old holder with the real pid_alive: use a pid known to be dead.
+        dead = subprocess.Popen(["true"]); dead.wait()
+        self.preflight(owner=dead.pid)
+        self.host.alive[dead.pid] = False
+        first = self.run
+        self.run = self.root / "runs" / "pilot-2"; self.run.mkdir()
+        self.preflight(owner=4343)
+        recovered = cm.load_record(self.run)["hold"]["recovered"]
+        self.assertEqual(recovered["run_id"], "pilot-1")
+        self.assertEqual(cm.load_record(first)["hold_end"]["restore"]["attempts"][-1]["by"], "next-preflight")
+
+    def test_hold_file_naming_another_run_dir_is_not_released(self):
+        self.preflight()
+        twin = self.root / "elsewhere" / "pilot-1"; twin.mkdir(parents=True)
+        cm.write_section(twin, "run", {"id": "pilot-1"})
+        cm.main(["release", str(twin)])
+        self.assertTrue((self.host.runtime / ch_hold_name()).exists())
+
+
+def ch_hold_name():
+    return cm.ch.HOLD_NAME
 
 
 if __name__ == "__main__":
