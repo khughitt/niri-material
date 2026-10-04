@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T09:13:37Z
+updated: 2026-10-04T09:50:11Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -35,3 +35,8 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T09:13:05Z (disturber-hold): review: spec round 2 — verdict: revise; findings: Critical 1, Important 1, Minor 4; reviewer: claude-code/claude-opus-5-5
 - 2026-10-04T09:13:36Z (disturber-hold): review: spec round 3 — verdict: accept; findings: Minor 1; reviewer: claude-code/claude-opus-5-5
 - 2026-10-04T09:13:36Z (disturber-hold): Implementation note from spec review: recovery takes guarded() only after acquire_lock returns (flock is per open file; nesting in-process deadlocks).
+- 2026-10-04T09:13:39Z (disturber-hold): parked (waiting on user, review): Owner reviews docs/specs/2026-10-04-capture-disturber-hold-design.md (branch disturber-hold, .worktrees/disturber-hold); on approval write the plan, implement, and stage tonight's TTY quiet run (round trip, positive control, kill recovery, optic-settling dedicated pilot)
+  provenance: {"harness_session":"claude-code:580ebea0-d2ea-4477-a438-6499e193b927","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T09:50:10Z (disturber-hold): resumed
+  provenance: {"harness_session":"claude-code:580ebea0-d2ea-4477-a438-6499e193b927","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T09:50:10Z (disturber-hold): review: spec round 4 — verdict: revise; findings: P1 3, P2 1; reviewer: human
