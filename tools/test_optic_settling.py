@@ -14,7 +14,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from tools.tooling_tests import fast_mode
+from tools.tooling_tests import assert_static_coverage, fast_mode
 
 from tools.optic_settling import FAMILIES, analyze_run, check_window, config_identity, main, parse_edges
 
@@ -747,6 +747,14 @@ def alive(pid):
         return Path(f'/proc/{pid}/stat').read_text().split(') ')[-1][0] != 'Z'
     except OSError:
         return False
+
+
+class LifecycleCoverageTests(unittest.TestCase):
+    def test_subject_paths_are_full_routed(self):
+        root = Path(__file__).resolve().parents[1]
+        patterns = subprocess.check_output(['just', '--evaluate', 'tooling_full_paths'],
+                                          cwd=root, text=True).split()
+        assert_static_coverage(root, patterns)
 
 
 class JournalSignalTests(unittest.TestCase):

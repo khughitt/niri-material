@@ -152,3 +152,64 @@ class DriverCleanupTests(Remainder):
         process.wait()
         process.stdout.close()
         process.stderr.close()
+
+
+class StaticCoverageTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.files = {
+            'docs/materials/scripts/optic-settling-smoke.sh': '. "$HERE/shared.sh"\npython3 "$ROOT/tools/optic_settling.py"\n',
+            'docs/materials/scripts/shared.sh': '. "$HERE/nested-lib.sh"\ncapture() { ${CAPTURE_META:-python3 "$ROOT/tools/stubbed-fallback"}; }\n',
+            'docs/materials/scripts/nested-lib.sh': 'value=$((1 + (2 * 3)))\n',
+            'docs/materials/scripts/vt-lib.sh': '',
+            'docs/materials/scripts/class-subject.sh': '',
+            'tools/test_optic_settling.py': "ROOT=Path(__file__).resolve().parents[1]\nclass DriverCleanupTests:\n    script=ROOT / 'docs/materials/scripts/class-subject.sh'\n",
+            'tools/test_vt_lib.py': "LIB=Path(__file__).resolve().parents[1] / 'docs/materials/scripts/vt-lib.sh'\nclass VtLibTests:\n    lib=LIB\n",
+            'tools/optic_settling.py': 'import tools.other\nfrom tools import extra\n',
+            'tools/other.py': 'from . import leaf\n',
+            'tools/extra.py': '', 'tools/leaf.py': '',
+            'tools/screencast_consumer.py': '', 'tools/fake_screencast.py': '',
+        }
+        for filename, source in self.files.items():
+            path = self.root / filename
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source)
+        self.patterns = list(self.files)
+
+    def check(self, patterns=None):
+        from tools.tooling_tests import assert_static_coverage
+        assert_static_coverage(self.root, self.patterns if patterns is None else patterns)
+
+    def test_sources_class_paths_and_transitive_imports_must_be_routed(self):
+        self.check()
+        for path in ('docs/materials/scripts/nested-lib.sh',
+                     'docs/materials/scripts/class-subject.sh',
+                     'tools/other.py', 'tools/extra.py', 'tools/leaf.py'):
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, path):
+                self.check([pattern for pattern in self.patterns if pattern != path])
+
+    def test_missing_source_cycle_dynamic_operand_and_missing_module_fail(self):
+        cases = [
+            ('docs/materials/scripts/shared.sh', '. "$HERE/missing.sh"\n', 'missing.sh'),
+            ('docs/materials/scripts/nested-lib.sh', '. "$HERE/shared.sh"\n', 'cycle'),
+            ('docs/materials/scripts/shared.sh', '. "$HERE/$DYNAMIC"\n', 'unsupported'),
+            ('tools/other.py', 'import tools.missing\n', 'tools.missing'),
+            ('tools/test_optic_settling.py', "ROOT=Path(__file__).resolve().parents[1]\nclass DriverCleanupTests:\n    script=ROOT / VARIABLE\n", 'dynamic'),
+            ('tools/test_optic_settling.py', "class DriverCleanupTests:\n    script=Path(__file__).parent.parent / 'tools/extra.py'\n", 'unsupported'),
+            ('tools/test_optic_settling.py', "ROOT=Path(__file__).resolve().parents[1]\nclass DriverCleanupTests:\n    script=ROOT.joinpath('tools/extra.py')\n", 'unsupported'),
+        ]
+        for filename, source, diagnostic in cases:
+            with self.subTest(diagnostic=diagnostic):
+                path = self.root / filename
+                path.write_text(source)
+                with self.assertRaisesRegex(ValueError, diagnostic):
+                    self.check()
+                path.write_text(self.files[filename])
+
+    def test_nested_command_substitution_in_arithmetic_is_rejected_in_helpers(self):
+        path = self.root / 'docs/materials/scripts/nested-lib.sh'
+        path.write_text('# ordinary arithmetic is fine\nvalue=$((1 + $(clock)))\n')
+        with self.assertRaisesRegex(ValueError, 'nested-lib.sh:2.*command substitution.*arithmetic'):
+            self.check()

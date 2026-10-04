@@ -68,7 +68,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
-| `justfile` | C | A | +104/-0 |
+| `justfile` | C | A | +105/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1462/-0 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
@@ -123,15 +123,15 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +111/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +696/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
-| `tools/test_optic_settling.py` | C | A | +1202/-0 |
+| `tools/test_optic_settling.py` | C | A | +1210/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +281/-0 |
 | `tools/test_target_dir_check.py` | C | A | +180/-0 |
-| `tools/test_tooling_tests.py` | C | A | +154/-0 |
+| `tools/test_tooling_tests.py` | C | A | +215/-0 |
 | `tools/test_upstream_report.py` | C | A | +946/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
-| `tools/tooling_tests.py` | C | A | +248/-0 |
+| `tools/tooling_tests.py` | C | A | +467/-0 |
 | `tools/tt` | C | A | +328/-0 |
 | `tools/upstream-report` | C | A | +736/-0 |
 

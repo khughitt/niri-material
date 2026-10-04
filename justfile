@@ -28,6 +28,7 @@ check_cmd := "python3 tools/ops-check && python3 tools/target-dir-check && cargo
 
 # Prose-only trees: material docs and wiki contain Rust test inputs.
 # Keep the repository-specific consistency checks in both commit paths.
+tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py docs/materials/scripts/vt-lib.sh docs/materials/scripts/optic-settling-smoke.sh docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/*-client.c .githooks/* justfile .github/workflows/*"
 docs_paths := "README.md AGENTS.md CONTRIBUTING.md docs/specs/*.md docs/plans/*.md docs/notes/*.md tasks/*.md"
 docs_check_cmd := "python3 tools/ops-check && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
 # The hooks regenerate and stage the divergence report before checking it: its
