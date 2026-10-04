@@ -10,7 +10,7 @@
 
 **Spec:** [docs/specs/2026-10-04-capture-disturber-hold-design.md](../specs/2026-10-04-capture-disturber-hold-design.md) (approved, review round 8).
 
-**Status:** approved by the owner at `dae52058` (plan review round 4); execution: native, then a whole-branch review.
+**Status:** approved by the owner at `dae52058` (plan review round 4); implemented inline/native. Tooling verification and whole-branch review precede the queued live TTY checks.
 
 ## Global Constraints
 
@@ -1350,7 +1350,7 @@ def guard_loop(host, lock_file, run_id, run_dir, on_owner_dead, iterations=None)
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `just --set one_cmd 'python3 -m unittest' test-one tools.test_capture_hold`
-Expected: PASS (48 tests).
+Expected: PASS (49 tests).
 
 - [ ] **Step 5: Commit**
 
