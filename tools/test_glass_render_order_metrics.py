@@ -51,6 +51,21 @@ class RenderOrderMetricsTest(unittest.TestCase):
         self.assertEqual(report['max_channel_delta'], 2)
         self.assertEqual(report['max_interior_channel_delta'], 0)
 
+    def test_reach_is_measured_from_the_face_edge(self):
+        # ring-gap sits inward of the face, the slab shrunk by its chamfer: a
+        # 12 px chamfer moves the bound (37) 12 px deeper than the slab edge.
+        metrics = self.metrics()
+        off = [[(0, 0, 0)] * 180 for _ in range(180)]
+        on = [[(0, 0, 0)] * 180 for _ in range(180)]
+        on[90][76] = (2, 0, 0)  # 48.5 px inside the slab, 36.5 inside the face
+        report = metrics.reach_report(on, off, (40, 40, 100, 100), 12, 20, 5, 2.6)
+        self.assertEqual(report['bound'], 37)
+        self.assertEqual(report['outside_bound_pixels'], 0)
+        self.assertEqual(report['visible_interior_reach'], 36.5)
+        on[90][78] = (2, 0, 0)  # 38.5 inside the face
+        report = metrics.reach_report(on, off, (40, 40, 100, 100), 12, 20, 5, 2.6)
+        self.assertEqual(report['outside_bound_pixels'], 1)
+
     def test_reach_rejects_invalid_or_uncovered_slab_even_without_a_delta(self):
         metrics = self.metrics()
         frame = [[(0, 0, 0)] * 4 for _ in range(4)]
@@ -156,7 +171,7 @@ class RenderOrderMetricsTest(unittest.TestCase):
                        (self.metrics().decode(190 / 255) - self.metrics().decode(128 / 255))
             reach = subprocess.run([sys.executable, str(script), 'reach', paths[190], paths[128],
                                     '--window', '0', '0', '20', '20', '--bevel', '0',
-                                    '--thickness', '20', '--inset', '5', '--width', '2.6',
+                                    '--thickness', '20', '--gap', '5', '--width', '2.6',
                                     '--profile', '0', '0', '20', '1', '--attenuation-images',
                                     paths[160], paths[128], paths[190], paths[128],
                                     '--attenuation-rect', '0', '0', '20', '20',
@@ -170,7 +185,7 @@ class RenderOrderMetricsTest(unittest.TestCase):
             wrong_size.write_bytes(b'P6\n10 10\n255\n' + bytes([160]) * 300)
             mismatched = subprocess.run([sys.executable, str(script), 'reach', paths[190], paths[128],
                                          '--window', '0', '0', '20', '20', '--bevel', '0',
-                                         '--thickness', '20', '--inset', '5', '--width', '2.6',
+                                         '--thickness', '20', '--gap', '5', '--width', '2.6',
                                          '--attenuation-images', str(wrong_size), paths[128],
                                          paths[190], paths[128], '--attenuation-rect', '0', '0', '10', '10',
                                          '--attenuation-ratio', *[str(expected)] * 3],
