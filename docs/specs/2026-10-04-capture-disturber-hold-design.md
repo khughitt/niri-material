@@ -135,6 +135,11 @@ owner is dead. Restore and removal of the file happen under the lock's
 `guarded()` directory, so a guard and a recovering preflight never act on it
 at once; a hold file already gone counts as restored.
 
+The lock also stores the resolved `run_dir`; releasing it and settling a
+sub-run compare that directory as well as the owner PID and run basename.
+A completed run cannot remove another run’s lock even if both share those
+other two fields.
+
 ### 4.2 Preflight
 
 The order becomes: write `run` → acquire the lock → recover a stale hold
@@ -276,8 +281,11 @@ updates `hold_end.restore` in the file's `run_dir` when that record exists
 owner died mid-run: `scan` is then written first, bounded at the start of
 this restore, as in §4.3) or a `failed` one (a retry after a failed
 release), so a run is never left recorded as held or as failed once its
-items are back. It is also what a person runs if the guard itself
-failed.
+items are back. An unreadable wake log marks the scan `unscanned` without
+preventing restoration. If a fixture already wrote `SHA256SUMS`, recovery
+atomically refreshes its `capture.json` entry before removing the hold file,
+leaving all other artifact entries unchanged. It is also what a person runs
+if the guard itself failed.
 
 **Next preflight.** After taking the lock, preflight restores any hold file
 it finds (its owner is necessarily dead: a live owner would still hold the
