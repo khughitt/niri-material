@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency
 created: 2026-10-04T15:00:02Z
-updated: 2026-10-04T18:50:50Z
+updated: 2026-10-04T19:29:40Z
 started: 2026-10-04T16:48:06Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -48,3 +48,11 @@ Process: planned
 - 2026-10-04T18:46:57Z (fix/pre-commit-latency): parked (waiting on user, review): Owner: re-review .worktrees/pre-commit-latency/docs/specs/2026-10-04-pre-commit-tooling-latency-design.md. After acceptance, agent diagnoses the Ubuntu TERM/trap failure, then writes and submits the implementation plan from that evidence; implementation follows the separate plan review. No host pointers were repointed.
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-04T18:50:50Z (fix/pre-commit-latency): attached: material-pre-commit-revision-evidence.md (13304 bytes): Sanitized warm-hook records, Ubuntu dependency and verdict receipts, guard controls, and disposable reproduction scripts; full Ubuntu suite remains blocked by the TERM/trap case.
+- 2026-10-04T19:21:46Z (fix/pre-commit-latency): review: spec round 2 — verdict: revise; findings: Important 1, Minor 3; reviewer: human
+- 2026-10-04T19:21:46Z (fix/pre-commit-latency): resumed
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-04T19:29:37Z (fix/pre-commit-latency): detached: material-pre-commit-revision-evidence.md: Replace with an expanded receipt preserving all original content and adding the moved CI probe narrative and narrowed-route recount.
+- 2026-10-04T19:29:37Z (fix/pre-commit-latency): attached: material-pre-commit-revision-evidence.md (30425 bytes): Preserved timing and Ubuntu receipts, CI probe history moved out of the spec, and reproducible narrowed-route recount (36 full / 89 fast including the sourced helper).
+- 2026-10-04T19:29:37Z (fix/pre-commit-latency): Spec round 2 revised: narrow lifecycle paths plus directly sourced glass-optic-smoke-lib.sh and new coordinator; recount reproduces 56/69 broad, 34/91 review paths, 36/89 with helper. Parallel individual slow cases run alongside the remainder; split four existing independent scenarios without reducing waits; require measured full median <=45 s and fast <=35 s. Production trap fixes explicitly in scope; CI probe log moved into preserved evidence; implementation records precede remedy timestamp. No new timing runs, no implementation code changes, no host pointers repointed.
+- 2026-10-04T19:29:38Z (fix/pre-commit-latency): parked (waiting on user, review): Owner: re-review .worktrees/pre-commit-latency/docs/specs/2026-10-04-pre-commit-tooling-latency-design.md (second revision). After acceptance, agent diagnoses the Ubuntu TERM/trap failure and specifies the read-observation mechanism and parallel scheduler in the implementation plan, then submits that plan for its separate review before implementation. No host pointers were repointed; no checks or child agents remain running.
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
