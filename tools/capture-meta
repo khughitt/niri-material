@@ -20,17 +20,14 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import capture_hold as ch  # noqa: E402
+from capture_hold import CannotRun, Refused, guarded  # noqa: E402
+
 SCHEMA = 1
 RECORD = "capture.json"
 LOCK_NAME = "capture-meta.lock"
 
-
-class Refused(Exception):
-    """Exit 1: the run must not proceed."""
-
-
-class CannotRun(Exception):
-    """Exit 2: the helper could not do its job."""
 
 
 def lock_path():
@@ -58,21 +55,6 @@ def pid_alive(pid):
         raise CannotRun(f"cannot check pid {pid}: {error}") from error
     return True
 
-
-@contextlib.contextmanager
-def guarded(path):
-    path = pathlib.Path(path)
-    guard = path.with_name(path.name + ".d")
-    try:
-        guard.mkdir(exist_ok=True)
-        fd = os.open(guard, os.O_RDONLY)
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            yield
-        finally:
-            os.close(fd)
-    except OSError as error:
-        raise CannotRun(f"lock guard {guard}: {error}") from error
 
 
 def _read_lock(path):
