@@ -9,8 +9,9 @@
 //! buffer never becomes a texture, its resize snapshot is empty, and the tile
 //! then falls back to a plain render without the material.
 //!
-//! The test records the light map (on minus off) per edge; it does not grade
-//! the ring. Set `RING_PAIR_DUMP=<dir>` to write each render as a PNG.
+//! The matched-pair report records the light map (on minus off) per edge.
+//! Separate checks grade face tracking during resize and the capped band core.
+//! Set `RING_PAIR_DUMP=<dir>` to write the reported pairs as PNGs.
 
 use std::fmt::Write as _;
 use std::time::Duration;
@@ -92,12 +93,14 @@ struct Variant {
     ring: bool,
     light_ior: f64,
     jelly_flex: f64,
+    gap_shift: f64,
 }
 
 const BASE: Variant = Variant {
     ring: true,
     light_ior: 6.,
     jelly_flex: 0.,
+    gap_shift: 0.,
 };
 
 fn config(glass: &Glass, v: Variant) -> Config {
@@ -112,7 +115,9 @@ fn config(glass: &Glass, v: Variant) -> Config {
         ring,
         light_ior,
         jelly_flex,
+        gap_shift,
     } = v;
+    let ring_gap = gap + gap_shift;
     let focus = if ring { "ring-light" } else { "none" };
     Config::parse_mem(&format!(
         r##"
@@ -145,7 +150,7 @@ fn config(glass: &Glass, v: Variant) -> Config {
                 focus "{focus}"
                 accent "none"
                 ring-beam-speed 0
-                ring-gap {gap}
+                ring-gap {ring_gap}
             }}
         }}
         window-rule {{
@@ -274,6 +279,31 @@ fn edge_samples(map: &[u8], rect: Rectangle<f64, Logical>) -> Vec<(&'static str,
         .collect()
 }
 
+/// The connected half-maximum run around the brightest edge sample.
+fn core_run(samples: &[(u8, f64)]) -> (u8, f64, &[(u8, f64)]) {
+    let (peak_idx, &(peak, peak_in)) = samples
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1 .0.cmp(&b.1 .0).then(b.0.cmp(&a.0)))
+        .unwrap();
+    assert!(peak > 0, "the edge is unlit");
+    let half = peak.div_ceil(2);
+    let mut lo = peak_idx;
+    while lo > 0 && samples[lo - 1].0 >= half {
+        lo -= 1;
+    }
+    let mut hi = peak_idx;
+    while hi + 1 < samples.len() && samples[hi + 1].0 >= half {
+        hi += 1;
+    }
+    (peak, peak_in, &samples[lo..=hi])
+}
+
+fn centroid(run: &[(u8, f64)]) -> f64 {
+    let weight: f64 = run.iter().map(|&(v, _)| f64::from(v)).sum();
+    run.iter().map(|&(v, d)| f64::from(v) * d).sum::<f64>() / weight
+}
+
 /// The light map's profile across each window edge, on the line through the
 /// window centre: the peak's distance inward from the edge (pixel centres,
 /// negative outside the window), its value, the half-maximum run around it
@@ -281,24 +311,9 @@ fn edge_samples(map: &[u8], rect: Rectangle<f64, Logical>) -> Vec<(&'static str,
 fn profile(map: &[u8], rect: Rectangle<f64, Logical>) -> String {
     let mut out = String::new();
     for (name, samples) in edge_samples(map, rect) {
-        let (peak_idx, &(peak, peak_in)) = samples
-            .iter()
-            .enumerate()
-            .max_by(|a, b| a.1 .0.cmp(&b.1 .0).then(b.0.cmp(&a.0)))
-            .unwrap();
-        let half = peak.div_ceil(2);
-        let mut lo = peak_idx;
-        while lo > 0 && samples[lo - 1].0 >= half {
-            lo -= 1;
-        }
-        let mut hi = peak_idx;
-        while hi + 1 < samples.len() && samples[hi + 1].0 >= half {
-            hi += 1;
-        }
-        let (a, b) = (samples[lo].1, samples[hi].1);
-        let run = &samples[lo..=hi];
-        let weight: f64 = run.iter().map(|&(v, _)| f64::from(v)).sum();
-        let centroid = run.iter().map(|&(v, d)| f64::from(v) * d).sum::<f64>() / weight;
+        let (peak, peak_in, run) = core_run(&samples);
+        let (a, b) = (run[0].1, run.last().unwrap().1);
+        let centroid = centroid(run);
         let _ = write!(
             out,
             "{name} peak {peak_in:+.1} ({peak}) half {:+.1}..{:+.1} c {centroid:+.2}; ",
@@ -554,6 +569,67 @@ fn ring_pair_is_reproducible_at_a_frozen_instant() {
             "{report}"
         );
         assert!(!report.contains("): 0 px lit"), "{report}");
+    }
+}
+
+/// The ring follows the resized face on x and holds its position on y.
+/// A ring-gap control expresses the predicted inward motion without jelly;
+/// measuring that render accounts for pixel sampling of the Gaussian core.
+#[test]
+fn ring_tracks_face_during_resize() {
+    for glass in [&STOCK, &BINDING] {
+        let (mut f, _, _) = mid_resize_fixture(glass);
+        // Keep the measured core wholly on the flat face, clear of the
+        // refracted chamfer. The binding cap is covered by ring_cap_keeps_one_core.
+        let base = Variant {
+            gap_shift: 8. - glass.gap,
+            ..BASE
+        };
+        let mut measure = |v| {
+            reload(&mut f, glass, v);
+            let on = render_at(&mut f, MID);
+            reload(&mut f, glass, Variant { ring: false, ..v });
+            let off = render_at(&mut f, MID);
+            edge_samples(&light_map(&on, &off), window_rect(&mut f))
+                .into_iter()
+                .map(|(side, samples)| (side, centroid(core_run(&samples).2)))
+                .collect::<Vec<_>>()
+        };
+        let zero = measure(base);
+        for flex in [0.0066, 0.02] {
+            // At 500 ms the 640 -> 840 linear resize is 100 px short.
+            // jelly_state's cap is a quarter of the bevel depth; slabSurface
+            // scales the inner half-width by 1 + resize / slab_width.
+            // Derive this independently, without calling either implementation.
+            let cap = 0.25 * glass.bevel.min(glass.thickness);
+            let resize = cap * (-flex * 100. / cap).tanh();
+            let slab_width = 740. + 2. * (glass.bevel - OFFSET);
+            let inward = -(slab_width / 2. - glass.bevel) * resize / slab_width;
+            let expected = measure(Variant {
+                gap_shift: base.gap_shift + inward,
+                ..base
+            });
+            let actual = measure(Variant {
+                jelly_flex: flex,
+                ..base
+            });
+            for (((side, at), (_, want)), (_, rest)) in actual.iter().zip(&expected).zip(&zero) {
+                let want = if matches!(*side, "left" | "right") {
+                    *want
+                } else {
+                    *rest
+                };
+                eprintln!(
+                    "{} flex {flex} {side}: centroid {at:.5}, expected {want:.5}, face shift {inward:.5}",
+                    glass.name,
+                );
+                assert!(
+                    (at - want).abs() <= 0.01,
+                    "{} flex {flex} {side}: centroid {at}, expected {want}",
+                    glass.name
+                );
+            }
+        }
     }
 }
 

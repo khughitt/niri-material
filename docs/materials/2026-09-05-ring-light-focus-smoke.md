@@ -12,6 +12,15 @@ placement. Their cadence and fixture observations remain retained history, but
 their placement and inset-validation conclusions are superseded by the
 [render-order evidence](2026-09-12-material-render-order-evidence.md).
 
+**Resize verification update (2026-10-04, material-22d78f):** the historical
+running-resize comparison below is superseded by
+`src/tests/ring_pair.rs::ring_tracks_face_during_resize`. It asserts that
+the band tracks the independently predicted face displacement in matched
+frozen-clock renders, using a ring-gap control to account for pixel
+sampling. See the [current motion check and its limits](../notes/2026-09-29-glass-measurement-brief.md#matched-state-ring-findings).
+`CASES=resize-flex docs/materials/scripts/focus-ring-light.sh` now runs that
+check through `just test-one`, before any nested-host or capture setup.
+
 Measured against `166cd3e6` ("feat(material): cap the focus filament's
 refracted shift"), the head of the ring-light implementation; no Rust source
 has changed since, so the binaries below differ only in their embedded version
