@@ -1,17 +1,17 @@
 # Pre-commit tooling latency
 
-Task: material-cd7782. Status: revised proposal; owner review required before planning.
+Task: material-cd7782. Status: second revision; owner re-review required before planning.
 
 ## Outcome
 
 Target a successful, warm fast pre-commit median **≤ 35 seconds**, leaving at least
 10 seconds below the existing 45-second incident limit. Preserve lifecycle coverage
 at commit time for changes to its subjects and tests, and in full validation and
-CI for every change. Keep production waits, failure bounds, and cleanup intact.
-
-Commits changing capture/tooling subsystems deliberately retain the expensive
-suite. Their timing remains visible under `hook-pre-commit`; the design does not
-raise the limit, rename away slow samples, or claim every commit will take 35 seconds.
+CI for every change. Require a successful, warm **full-route median ≤ 45 seconds**
+as well, aiming for the same 35-second headroom target. Both routes remain recorded
+under `hook-pre-commit`, so their mix must not restore the latency incident.
+Preserve production waits and the intended exit-status, failure-bound, and cleanup
+guarantees; correcting a production trap defect is explicitly in scope.
 
 ## Evidence before selecting the design
 
@@ -84,6 +84,26 @@ A separate broad sleep-compression experiment reduced a screencast test from
 46.755 to 13.623 seconds but changed a dead-consumer failure from “exited” to
 “never became ready.” It failed and its approach is rejected.
 
+A recount of non-merge commits reachable from `materials-26.04`, from September 28
+00:00 UTC through `ca634f24` on October 4, reproduces the review's 125 code commits.
+The existing docs-only allowlist excludes another 128 commits from this table;
+daily counts use local committer dates. Commit counts approximate hook runs, since
+amends and failed attempts are absent.
+
+| Full-route patterns | Full | Fast | Full share | October 2 full / fast |
+| --- | ---: | ---: | ---: | ---: |
+| Previous broad prefixes | 56 | 69 | 44.8% | 25 / 14 |
+| Review's lifecycle subjects | 34 | 91 | 27.2% | 20 / 19 |
+| Subjects plus sourced `glass-optic-smoke-lib.sh` | 36 | 89 | 28.8% | 20 / 19 |
+
+The driver sources that shared helper before running any case; excluding it would
+leave real lifecycle behavior uncovered. Its inclusion adds two full-route commits
+(`146d56b3`, `264c4155`). The 51.3% full share on October 2 means narrowing alone
+cannot protect the rolling median while full hooks take about four minutes.
+Parallel full validation is therefore required. Its speed is an implementation
+acceptance check, not an already measured result; this revision adds only the
+route recount to the existing timing evidence.
+
 ## Selection and fast-mode contract
 
 Use unittest's class-level skip on `DriverCleanupTests` and `VtLibTests`, conditional
@@ -102,10 +122,17 @@ coverage is intended.
 Extend `.githooks/pre-commit`'s existing staged-path classification. Choose the
 first applicable route:
 
-1. **Full tooling:** any staged path matches `tools/*`, `docs/materials/scripts/*`,
-   `.githooks/*`, `justfile`, or `.github/workflows/*`. These deliberately broad
-   prefixes cover the driver, VT library, analyzer, consumer, tests, imported
-   helpers, and gate/CI wiring without a maintained dependency graph.
+1. **Full tooling:** any staged path matches the following narrow list:
+   `tools/optic_settling.py`, `tools/screencast_consumer.py`,
+   `tools/fake_screencast.py`, `tools/test_optic_settling.py`,
+   `tools/test_screencast_consumer.py`, `tools/test_vt_lib.py`,
+   `docs/materials/scripts/vt-lib.sh`,
+   `docs/materials/scripts/optic-settling-smoke.sh`,
+   `docs/materials/scripts/glass-optic-smoke-lib.sh`,
+   `docs/materials/scripts/*-client.c`, `.githooks/*`, `justfile`,
+   or `.github/workflows/*`. Include the new shared coordinator/mode helper
+   `tools/tooling_tests.py` too; it has no commits in the historical recount.
+   Unrelated tools and capture scripts use the fast route.
 2. **Docs only:** every staged path matches the existing `docs_paths` allowlist.
 3. **Fast tooling:** remaining successfully classified code/documentation changes,
    including Rust-only commits.
@@ -120,16 +147,58 @@ precedence over docs-only patterns.
 Add `hook-pre-commit-full` as a recipe if needed for dispatch, but have both code
 recipes record the existing timing target **`hook-pre-commit`**. Preserve test counts
 and failure propagation. Do not invent an exemption or selection-widening marker.
-Full subsystem hooks will still cost minutes; sustained subsystem churn can breach
-the rolling median again. If that happens, address that evidence in a later remedy
-rather than suppressing the measurements. Parallel execution remains a viable
-alternative if the reviewed target cannot hold.
+Narrowing reduces how often lifecycle validation runs; parallel scheduling below
+must reduce its cost. Neither change permits excluding slow successful samples.
+
+Add a gate regression against this same path list: an observed repository source
+read by either omitted class outside the list must fail and name the path. Include
+Python imports and script/helper reads in descendant processes; a Python-only
+`open` patch cannot detect the driver's sourced shell helper. Ignore temporary
+fixtures, Git administrative files, and system libraries. Exercise this check
+during full lifecycle validation, reusing those executions rather than adding a
+second slow suite to the fast route. A focused synthetic gate test must prove an
+unlisted repository read fails. The implementation plan must specify how reads are
+observed without maintaining a separate import graph. Put the read-coverage
+regression in the already covered `tools/test_optic_settling.py`; the coordinator
+and shared mode parser live in the covered `tools/tooling_tests.py`.
+
+## Parallel full validation
+
+Use native unittest discovery and a small standard-library process coordinator;
+add no test framework. Partition the discovered suite exactly once: run the
+remainder in one process concurrently with individually scheduled cases from
+`DriverCleanupTests` and `VtLibTests` in a bounded process pool. Start with a total
+limit of eight children, including the remainder, respecting a lower host-budget
+limit when supplied. Two whole-class processes are insufficient: the driver class
+alone costs 185 seconds. Do not append the 26.7-second remainder after slow workers.
+
+Split the four independent scenarios in
+`test_screencast_refuses_unchecked_crops_and_a_dead_consumer` into separately named
+unittest methods with fresh fixtures. Its 46.755-second serial body exceeds the
+hook budget even with other cases running concurrently. Preserve each scenario's
+assertions, waits, failure messages, and cleanup; splitting increases the discovered
+case count by three. Keep class/module fixtures within their worker lifecycle, and
+isolate environment changes, temporary directories, D-Bus and sockets per process.
+
+Force full mode in every child. Collect results and output per worker, then print
+one aggregate summary with real test/skip counts and named failures. The CI skip
+guard applies before scheduling and to every returned skip; a worker crash or
+missing result fails the parent. Verify the partition against discovered test IDs:
+no omissions or duplicates. The timing wrapper records one whole full-tooling run.
+The coordinator owns cancellation and reaping on EXIT/TERM/INT; test fixtures retain
+responsibility for their subprocess cleanup, including failure paths. Validate this
+before using the coordinator in hooks and CI.
+
+Keep sequential native discovery available through the explicit full Python
+`test-fast` override as a reference. Compare its case IDs and verdicts with parallel
+validation. Tune scheduling from implementation timings if the full hook misses
+45 seconds; do not shorten sleeps or relax bounds to reach the target.
 
 ## Exact command and recipe composition
 
 Keep `test_cmd` **Rust only** (`cargo test --all --exclude niri-visual-tests`).
 Define `tooling_fast_cmd` as standard discovery with explicit fast mode `1`, and
-`tooling_full_cmd` as standard discovery with explicit full mode `0`. `check_cmd`
+`tooling_full_cmd` as parallel native discovery with explicit full mode `0`. `check_cmd`
 runs the existing hygiene/target/format/clippy checks, fast tooling, then the
 existing task/report/pin checks. `full_check_cmd` substitutes full tooling at that
 same position. Share the surrounding command fragments to avoid divergent checks.
@@ -146,7 +215,7 @@ same position. Share the surrounding command fragments to avoid divergent checks
 | `hook-pre-push` (other or unclassified pushes) | `full_check_cmd`, then Rust-only `test_cmd -- --quiet` | Full once |
 | `ci-test` | Rust-only `test_cmd -- --quiet` | None |
 | `ci-test-release` | Rust-only `test_cmd --release -- --quiet` | None |
-| New `ci-tooling-test` | Explicit full mode, guarded native discovery | Full once |
+| New `ci-tooling-test` | `tooling_full_cmd` with CI skip guard | Full once |
 | Python `test-one` override | Explicit full mode and requested unittest names | Focused |
 | Python `test-fast` override | Explicit full mode and standard discovery | Full once |
 
@@ -165,12 +234,12 @@ must not require a host-specific ops installation on CI.
 
 Add a separate tooling job on the existing workflow triggers, using the workflow's
 Ubuntu 24.04 runner. Rust test jobs retain their existing commands and dependencies.
-The tooling job installs the dependency list established by the clean-container
-experiment below, plus the validated just and Rust toolchain versions. It does not
+The tooling job installs the dependency list established by the linked clean-container
+evidence, plus the validated just and Rust toolchain versions. It does not
 need a real compositor, GPU, live desktop, retained niri binary, or ops installation.
 
-A small CI adapter composes native unittest discovery and `TextTestRunner` with a
-skip guard. Before running, reject any class/method dependency skip outside the
+The full coordinator composes native unittest discovery and `TextTestRunner` with
+a CI skip guard. Before running, reject any class/method dependency skip outside the
 explicit optional allowlist; after running, reject unexpected dynamic skips too.
 Print test IDs and reasons, and preserve failures/errors as nonzero exits. This
 keeps missing D-Bus, GStreamer, or PyGObject from silently passing. An import error
@@ -190,30 +259,14 @@ one optional skip and still pass. Optional cases may execute if their dependenci
 are present. A clean runner without either optional dependency should report five
 skips. Newly introduced optional skips require an explicit allowlist decision.
 
-The clean Ubuntu 24.04 pilot exposed two version requirements before the full
-run: the distribution's just 1.21 cannot parse `set quiet`, and Cargo 1.75 misses
-the parent `build-dir` isolation assertion. Use the existing setup-just action
-with the validated 1.58.0 version and the stable Rust toolchain action to supply
-Cargo 1.99.0. The clean probe uses official standalone Cargo and no rustc: metadata
-needs no compilation, and the pilot proves the isolation assertions still execute.
+Use just **1.58.0** through the existing setup-just action and Cargo **1.99.0**
+through the existing Rust toolchain action as the supported version floors for
+this job. These are the validated versions, not a claim to have found the earliest
+working releases. Ubuntu's packaged just 1.21 and Cargo 1.75 do not satisfy the
+justfile and Cargo-isolation checks. Gate fixtures stub and forward
+`host-budget run --`, so CI requires no ops installation.
 
-The consumer fixture also calls `register_object_with_closures2`, introduced in
-GLib 2.84; Ubuntu's GLib 2.80 does not provide it. Change the single fixture call
-to the established binding `register_object` API, with no runtime fallback or
-version branch. [GIO documents its binding and deprecation](https://docs.gtk.org/gio/method.DBusConnection.register_object_with_closures.html):
-it remains available on the newer incident host but is deprecated since 2.84.
-This is confined to the fake service, and requires the consumer startup/failure
-suite to pass on both environments before shipping. Do not skip those cases to
-accommodate the older runner.
-
-The consumer checks for the `pipewiresrc` factory before applying its test pipeline
-override. Therefore the tooling job also needs `gstreamer1.0-pipewire`, even though
-it does not run a PipeWire server or consume real compositor frames. Assert
-`gst-inspect-1.0 pipewiresrc` succeeds before discovery, alongside the skip guard.
-
-The clean experiment uses Ubuntu 24.04 image digest
-`sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55`.
-APT's confirmed runtime list is:
+The confirmed Ubuntu 24.04 runtime packages are:
 
 ```text
 python3 git jq procps dbus python3-gi
@@ -221,74 +274,49 @@ gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0
 gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-pipewire
 ```
 
-The standalone archive/bootstrap experiment also installs `ca-certificates` and
-`xz-utils`. CI reuses its existing setup actions to supply just and Cargo; those
-setup actions' transport requirements must be satisfied independently of Python
-suite dependencies. The validated runtime versions are Python 3.12.3, PyGObject
-3.48.2, GStreamer 1.24.2, PipeWire plugin 1.0.5, Git 2.43.0, jq 1.7.1, and procps
-4.0.4. just is 1.58.0 and Cargo is 1.99.0; the Cargo release archive's SHA-256 was
-checked against the official stable manifest.
+`ca-certificates` and `xz-utils` support standalone archive bootstrapping; setup
+actions must satisfy their own transport requirements. The validated base versions
+are Python 3.12.3, PyGObject 3.48.2, GStreamer 1.24.2 and Git 2.43.0.
+The consumer checks for the `pipewiresrc` factory even with its test pipeline
+override: assert `gst-inspect-1.0 pipewiresrc` succeeds before discovery.
 
-Prototypes modify only disposable copies: the fake-service registration call,
-gate's host-budget stub, and report validation described below. The CI guard is a scratch adapter, invoked through
-an existing CI recipe's command override, not a shipped recipe. A six-case pilot
-passed in **24.006 seconds with no skips**, covering driver crops, bounded VT
-failure, consumer startup/summary, gate arguments/timing, and both Cargo-isolation
-positive checks. All six consumer startup/failure cases also passed on the incident
-host in **2.539 seconds** with the portable registration call.
+Ubuntu's GLib 2.80 lacks `register_object_with_closures2` (introduced in 2.84).
+Change the fake service's single registration call to the established binding
+`register_object` API, without a runtime fallback or version branch.
+[GIO documents the binding's availability and deprecation](https://docs.gtk.org/gio/method.DBusConnection.register_object_with_closures.html).
+Verify consumer startup/failure cases on Ubuntu and the newer incident host.
 
-Before media installation, the guard rejected eight required consumer/PyGObject
-skips with exit 2. This negative control checked the reported skip identities;
-failures before unittest startup do not supply dependency-guard evidence. Two
-additional single-case controls confirmed nonzero verdicts for a deliberately
-failing lifecycle test and an unexpected dynamic skip (the latter otherwise
-reports unittest success).
+In `tools/upstream-report`, `merge-tree` exit 0 or 1 must also contain a nonempty
+result-tree field. Otherwise raise `ReportError`, retaining stderr. Git 2.43 can
+return exit 1 with empty stdout for an invalid ref; accepting it as a conflict is
+incorrect. Preserve status-1 directory conflicts with a valid tree and no
+conflicted-file entries. Add a deterministic empty-output regression independent
+of Git version, and retain the existing conflict tests.
 
-The first complete clean run discovered **287 cases in 193.244 seconds**, with
-exactly the five optional skips, zero errors, and one failure: the upstream-report
-invalid-ref test. All lifecycle and consumer cases passed. Git 2.43 permits an
-invalid-ref `merge-tree` invocation to exit 1 with no result tree; the current
-report treats all exit-1 outputs as conflicts. Newer Git on the incident host
-returns exit 128 for that input (Git 2.56), so the existing test had not exposed
-this there. The Ubuntu diagnostic observed exit 1, empty stdout, and
-`merge-tree: no-such-ref - not something we can merge` on stderr.
+**Shipping blocker:** the clean full suite still fails intermittently in
+`test_optic_settling.DriverCleanupTests.test_term_with_the_session_locked_reaps_the_lock_client`:
+Bash reports `trap: unexpected EOF while looking for matching ')'`, and the driver
+exits 2 instead of the required 143. Diagnose this before enabling the CI job or
+fast omission. A real defect in the production driver's traps or cleanup is in
+scope; the fix must retain the exit-status, failure-bound and cleanup guarantees.
+A truncated runtime trap string is a hypothesis to investigate, not an established
+cause. Preserve waits and assertions; do not skip the case, widen its bound, or
+retry until green and call it resolved. A passing rerun alone does not discharge
+the blocker. Record reproduction and disposition in the plan and evidence.
 
-CI enablement must add an explicit protocol check in `tools/upstream-report`:
-a return status of 0 or 1 still requires a nonempty result-tree field. Reject
-missing trees with `ReportError` and retain stderr in the diagnostic. Preserve
-status-1 directory conflicts with a valid tree and no conflicted-file entries.
-This corrects error classification without a Git version branch or upgrade-only
-workaround. Add deterministic empty-output regression coverage independent of
-Git version, and retain the existing directory/conflict tests.
-
-The report correction passed all **66 report tests in 6.010 seconds**, including
-real directory conflicts and the older Git's invalid-ref result. A subsequent
-full run again discovered 287 cases and exactly five optional skips, but failed
-one locked-session TERM cleanup case in 193.597 seconds: the shell reported
-`trap: unexpected EOF while looking for matching ')'` and exited 2 instead of 143.
-That same case passed in the previous run. This is an unresolved intermittent
-cleanup failure, not a missing dependency; do not skip it, widen its bound, or
-retry until green and call it resolved. The guarded front door correctly failed
-on this real lifecycle failure.
-
-Implementation must diagnose this intermittent TERM/trap failure on Ubuntu before
-enabling the new CI job and fast omission. Preserve the lifecycle assertion, exit-status and
-cleanup guarantees, and production waits. A passing rerun alone does not discharge
-this prerequisite; record the reproduction and disposition in the implementation
-plan and evidence. Three focused repetitions passed in 12.078 seconds, followed
-by another complete run of 287 cases in 193.802 seconds: exactly five optional
-skips, zero errors, and the same one TERM/trap failure. The suite has **not** passed
-in this environment. Its runtime dependencies and full coverage are established;
-the remaining failure is an explicit shipping blocker, owned by the agent after
-spec review, rather than evidence that CI is ready.
+The linked evidence retains pilot/full-run outcomes, negative controls, image and
+archive digests, package versions and API/Git version investigation. Those probes
+establish the runtime contract; they do not establish a passing CI suite or the
+parallel route's performance.
 
 ## Alternatives and documentation
 
 Path-triggered full coverage is selected over unconditional fast hooks because
-capture and tooling changes need their lifecycle tests before committing. Parallel
-processes could reduce waiting time while retaining every case; that is a scheduling
-alternative, not test selection. It is deferred because the measured fast hook
-already meets the target and staged paths preserve coverage for affected work.
+lifecycle subjects need their tests before committing. Narrow subjects with a
+read-coverage gate replace broad prefixes; measured churn makes broad routing too
+frequent. Parallel case processes are selected over serial full validation and
+whole-class workers because the full route threatens the aggregate rolling median.
+Fast-route timing alone cannot justify deferring full-route scheduling.
 
 Do not compress production/stub waits or raise the latency budget. Update these
 specific files during implementation: the `check_cmd` comment in `justfile`, the
@@ -304,11 +332,17 @@ routes and raw-discovery environment caveat.
    empty indexes, invalid UTF-8, and partial/failed pattern or Git reads. Prove fast
    selects exactly the two classes; unset/`0` selects neither; invalid flags fail.
    Prove full routes override exported `1`, run tooling once, propagate failure,
-   and record both code-hook routes as `hook-pre-commit`.
+   and record both code-hook routes as `hook-pre-commit`. Check unrelated tools and
+   capture scripts take fast; the sourced shared helper takes full. Verify the
+   read-coverage gate rejects an unlisted source, including a descendant script
+   read, without adding a second lifecycle run.
 2. Run full Python validation through the existing `just test-fast` override with
-   explicit `NIRI_TOOLING_FAST=0`. Preserve all 287 existing cases; only the two
-   retained-binary skips are expected on the incident host. Added contract tests
-   increase the count. Run the required affected Rust `just test-fast` gate.
+   explicit `NIRI_TOOLING_FAST=0`. Preserve the assertions of all 287 existing
+   cases; only the two retained-binary skips are expected on the incident host.
+   Added contract tests
+   and the three additional scenario methods increase the count. Compare sequential
+   and parallel discovery IDs/results, including CI skip handling, worker failures
+   and cancellation cleanup. Run the required affected Rust `just test-fast` gate.
 3. Reproduce the CI recipe in clean Ubuntu without host-budget. Run a representative
    pilot before full discovery, inspect skip IDs, and show both a missing mandatory
    dependency and a deliberately failing lifecycle case produce nonzero verdicts.
@@ -316,10 +350,18 @@ routes and raw-discovery environment caveat.
 4. Warm the task worktree's **own** Rust artifacts through the normal check front
    door, retain cold/refresh timings, and record the remedy timestamp only after the
    implementation is in place. Run actual hook recipes without diagnostic overrides.
-   Validate both staged routes; expected full-route cost is documented, not hidden.
+   Implementation commits touching `justfile` or `.githooks/` take the full route;
+   while the old serial runner remains, they cost approximately 240 seconds.
+   Those implementation records precede the remedy timestamp and do not count
+   as post-remedy failures.
+   Validate both staged routes, including complete stage timings; fast must have a
+   median ≤ 35 seconds, full ≤ 45 seconds (aim ≤ 35). Parallel speed must be measured
+   here before accepting the remedy, rather than inferred from the serial profile.
 5. `tt-latency verify material-cd7782 --after <remedy timestamp>` needs at least
    **three successful, uncontended, unwidened runs starting strictly after that
    timestamp**, with a median **≤ 45 seconds**, on every host in the breach notes.
+   Obtain at least three qualifying runs of each code route so a fast-only sample
+   cannot conceal slow full validation; retain the aggregate verifier output too.
    Confirm the fast route additionally meets the ≤ 35-second design target. Schedule
    sequential runs when competing load will not invalidate them; busy or widened
    samples do not count. Read the verifier's actual count and exclusions before
