@@ -35,7 +35,8 @@ with every user timer, the declared services and (on the desktop) idle and
 monitor power held; `capture.json` lists each held item; every item is back
 in its prior state after the run, including after a refused preflight and
 after the fixture is killed (§4.4); a timer that fires during the run is
-named in `capture.json` and fails the fixture.
+named in `capture.json` and fails the fixture, and so does a held monitor
+that wakes; `SHA256SUMS` covers the finished `capture.json`.
 
 Out of scope: system timers (stopping them needs root; §5 detects them
 instead) and lanes on other hosts beyond what §3.2's config file allows.
