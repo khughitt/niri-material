@@ -127,11 +127,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +281/-0 |
 | `tools/test_target_dir_check.py` | C | A | +180/-0 |
-| `tools/test_tooling_tests.py` | C | A | +215/-0 |
+| `tools/test_tooling_tests.py` | C | A | +223/-0 |
 | `tools/test_upstream_report.py` | C | A | +946/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
-| `tools/tooling_tests.py` | C | A | +467/-0 |
+| `tools/tooling_tests.py` | C | A | +468/-0 |
 | `tools/tt` | C | A | +328/-0 |
 | `tools/upstream-report` | C | A | +736/-0 |
 
