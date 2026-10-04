@@ -317,7 +317,7 @@ finishes inside the window (`familiar-reap` runs every minute).
 The fixtures' own transient units (`systemd-run --user --unit=… --collect
 weston`, per-run clients) start services, are not timer-activated and do
 not restart, so they are not flagged. An unreadable journal is a scan
-failure: `hold_end.verdict` is `unscanned`, release exits 2 after
+failure: `hold_end.scan.verdict` is `unscanned`, release exits 2 after
 restoring, and the run is not evidence until rescanned by hand.
 
 Idle locks have no entry the scan reads; caffeine (§3.3) is the
@@ -359,7 +359,7 @@ Live, from a TTY with the desktop stopped (the first quiet run):
    logs only "Started") and exits 1.
 3. **Kill recovery** (about 1 min): preflight from a subshell, then kill
    that subshell; the guard restores within seconds and writes
-   `restored-by-guard`.
+   `restore.by: guard` with `state: complete`.
 4. **Evidence run:** the dedicated-lane development check
    (`optic-settling-smoke.sh pilot`, three cases; "Running the dedicated
    lane" in capture host setup) with the hold in place.
