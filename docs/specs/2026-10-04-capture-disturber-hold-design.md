@@ -1,7 +1,7 @@
 # Hold host disturbers for the length of a quiet capture
 
 **Status:** draft for owner review, 2026-10-04 (revised after agent review
-rounds 1–3 and owner-relayed review round 4).
+rounds 1–3 and 5 and owner-relayed review round 4).
 **Task:** `material-188aaa`, under `material-2834d7`.
 **Extends:** [capture protocol design](2026-09-11-material-capture-protocol-design.md)
 (`tools/capture-meta`: preflight, settle, release).
@@ -48,10 +48,10 @@ instead) and lanes on other hosts beyond what §3.2's config file allows.
 | Which timers | Every active, non-transient *user* timer, discovered at hold time. | A curated list: it misses the next timer someone installs (this host has 13; `familiar-reap` fires every minute) and puts host unit names in the repository. |
 | Which services | Units named in a per-host file (§3.2). Reference host: `dropbox.service`. | Holding every user service: most are the session itself. An environment variable: easily missing in a fresh TTY login. |
 | Desktop idle | `noctalia msg caffeine-enable` for the run, `caffeine-disable` after. Idle then neither locks nor blanks mid-run. | Locking first: the lock surface itself renders and changes state when it times out. A Wayland idle-inhibit client: it needs a visible surface on the desktop. Refusing while already locked: a held lock does not change state, and refusing would block the common "lock and walk away" start. |
-| Monitors | `niri msg action power-off-monitors` after caffeine, `power-on-monitors` on restore. Input still wakes them (`src/input/mod.rs`), so the guard watches each connected connector's kernel DPMS state and a wake marks the run disturbed (§4.4, §5). | Leaving them on: the desktop's redraws failed the GPU P8/IQR gate on 2026-09-24 until the monitors were off. Suppressing the wake in niri: a compositor change and an installed-desktop rollout for a capture-side problem. |
+| Monitors | `niri msg action power-off-monitors` after caffeine, `power-on-monitors` on restore. Input still wakes them (`src/input/mod.rs`), so the guard watches each held connector's kernel `enabled` state and a wake marks the run disturbed (§4.4, §5). | Leaving them on: the desktop's redraws failed the GPU P8/IQR gate on 2026-09-24 until the monitors were off. Suppressing the wake in niri: a compositor change and an installed-desktop rollout for a capture-side problem. |
 | Where | Inside `capture-meta preflight` and `release`, always on. Every fixture already calls both. | A wrapper fixtures opt into: one forgotten fixture is an unheld run. |
 | Disturbed run | `release` restores, records, then exits 1. The four fixtures whose cleanup runs `capture_meta release "$OUT" \|\| true` change to `\|\| rc=1`, as `optic-settling-smoke.sh` already does. | Exit 0 with a warning: four of five fixtures would pass a disturbed run. |
-| Checksums | Release completes `capture.json`, so it runs before any manifest that covers it: `glass-optic-smoke-lib.sh`'s `finish` releases, then writes `SHA256SUMS`; `optic-settling-smoke.sh`'s exit path releases before `write_sums`, which then covers `capture.json` too. A second release of a finished run changes nothing and exits with the recorded verdict's code (§4.3). | Excluding `capture.json` from every manifest: the record of the hold would be the one unprotected file. |
+| Checksums | Release completes `capture.json`, so it runs before any manifest that covers it: `glass-optic-smoke-lib.sh`'s `finish` releases, then writes `SHA256SUMS`; `optic-settling-smoke.sh`'s exit path releases before `write_sums`, which then covers `capture.json` too. `finish` treats a nonzero release as `fail`, so a disturbed run never prints PASS. A second release of a finished run changes nothing and exits with the recorded verdict's code (§4.3). | Excluding `capture.json` from every manifest: the record of the hold would be the one unprotected file. |
 | A killed fixture | A guard unit, started and confirmed *before* the first change to the host, restores the hold when the owner dies (§4.4). | Waiting for the next preflight or a manual `restore`: timers, caffeine and dark monitors could stay held for days. |
 
 ## 3. What is held
@@ -93,11 +93,15 @@ guessing. When a socket answers, a desktop is up. The hold then records
 `noctalia msg status`'s `locked` state, runs `noctalia msg caffeine-enable`
 and `niri msg action power-off-monitors`, and records the socket path so
 `release`, `restore` and the guard reach the same compositor whatever their
-own environment says. After powering off, the hold waits up to 5 s for every connector whose
-`/sys/class/drm/card*-*/status` is `connected` to read `Off` in its `dpms`
-file, and records those connectors. If any still reads `On`, the kernel is
-not reporting niri's atomic CRTC disable on this driver, a wake could not be
-seen, and preflight fails (CannotRun) after restoring. Restore runs
+own environment says. Before powering off, the hold records every connector whose
+`/sys/class/drm/card*-*/status` is `connected` and whose `enabled` is
+`enabled`. Niri's power-off (`set_monitors_active(false)`,
+`src/backend/tty.rs`) is an atomic commit that deactivates the CRTC and
+detaches the connector, which `enabled` follows; the legacy `dpms` file does
+not (this host's disconnected, detached connectors all read `dpms` = `On`).
+The hold then waits up to 5 s for each recorded connector to read
+`disabled`. If any does not, a wake could not be seen, and preflight fails
+(CannotRun) after restoring. Restore runs
 `niri msg action power-on-monitors` and `noctalia msg caffeine-disable`. Noctalia has no query for caffeine, so its
 prior state is recorded as `unknown` and restore always disables it;
 caffeine is not left on by habit on this host.
@@ -183,13 +187,16 @@ while the fixture shell still lives to run its trap. In that case the
 window starts at the hold file's `started_us`, and the lock is released for
 the hold file's `owner_pid`, since `preflight.lock` was never written. Then, unless `hold_end` already
 exists (a second release, or one after a preflight failure, changes nothing
-and exits with the code of the recorded verdict):
+and exits with the code of the recorded verdict, except after
+`restore-failed`, when it retries the restore of the items still in the
+hold file and rewrites `hold_end`):
 
 1. Restore every item in reverse order, best-effort per item. A unit that
    no longer exists counts as restored, with a note.
 2. Scan (§5) the window from `started_us` to the start of step 1, and read
    the guard's wake log.
-3. Write `hold_end`, stop the guard, remove the hold file, release the lock.
+3. Write `hold_end`; if every item was restored, stop the guard, remove
+   the hold file and the wake log, and release the lock.
 
 ```json
 "hold_end": {
@@ -216,16 +223,19 @@ unit, `systemd-run --user --unit=capture-meta-guard-<run id> --collect
 --property=Type=exec`, running `capture-meta guard` by the absolute path of
 the `capture-meta` that ran preflight, and confirms with `systemctl --user
 is-active` that it runs. The guard loops once a second: it checks that the
-lock owner is alive and reads the `dpms` file of each connector the hold
-file lists (none until the monitors are held). A connector reading `On`
+lock owner is alive and reads the `enabled` file of each connector the
+hold file lists (none until the monitors are held). A connector reading
+`enabled`
 appends `{at, connector}` to the wake log,
 `$XDG_RUNTIME_DIR/capture-meta.wakes.<run id>.jsonl`, once per transition.
 When the owner dies, the guard runs the restore below and exits. Its cost is
-a `kill(pid, 0)` and a few sysfs reads per second. The guard runs in the user manager's environment, not the
+a `kill(pid, 0)` and a few sysfs reads per second. The guard stops
+watching for wakes once the hold file is marked `restoring` (below). The guard runs in the user manager's environment, not the
 fixture's, so preflight passes `XDG_RUNTIME_DIR`, `WAYLAND_DISPLAY`,
-`NIRI_SOCKET` (the recorded desktop socket) and `PATH` with `--setenv`. Normal release stops the guard before restoring, so
-the guard never sees the power-on as a wake, and removes the wake log after
-recording it. When the fixture is killed outright, its trap never runs; the
+`NIRI_SOCKET` (the recorded desktop socket) and `PATH` with `--setenv`. Release marks the hold file `restoring` before
+restoring, so the guard never takes the power-on for a wake, and stops the
+guard only after every item is restored. After a failed restore the guard
+stays: it retries when the owner dies, as does a second release (below). When the fixture is killed outright, its trap never runs; the
 guard then restores within a second of the owner's death. The guard is a
 service start, not a timer, so §5 does not flag it.
 
@@ -257,13 +267,16 @@ unit in `USER_UNIT`, system entries in `UNIT`. It flags:
 | `held-started` | A unit the hold stopped starting again: `39f53479…` for a timer, an activation for a service. |
 | `monitor-woke` | An entry in the guard's wake log (§4.4): a held monitor powered on mid-run, by input or anything else. |
 
-A *service activation* is a job start ("Starting …", `7d4958e8…`), or a
-unit-started or finished entry (`39f53479…`) or failed start
-(`be02cf6855d2428ba40df7e9d022f03d`) not preceded, for the same unit, by a
-`7d4958e8…` that no completion has yet closed. systemd skips "Starting" for
-a job that completes at once: this host's `Type=simple` `dropbox.service`
-and `systemd-run`'s transient services log only "Started". Pairing keeps a
-"Starting"→"Started" sequence one activation.
+A *service activation* is an `INVOCATION_ID` first seen in the window on a
+job start ("Starting …", `7d4958e8…`), unit-started or finished entry
+(`39f53479…`) or failed start (`be02cf6855d2428ba40df7e9d022f03d`) of that
+unit, excluding the invocation each timer-activated service had at hold
+time (`InvocationID`, recorded in `hold.timer_map`). systemd skips
+"Starting" for a job that completes at once: this host's `Type=simple`
+`dropbox.service` and `systemd-run`'s transient services log only
+"Started". Keying on the invocation counts a "Starting"→"Finished" pair
+once and never counts a service that was already running at hold time and
+finishes inside the window (`familiar-reap` runs every minute).
 
 The fixtures' own transient units (`systemd-run --user --unit=… --collect
 weston`, per-run clients) start services, are not timer-activated and do
@@ -285,8 +298,10 @@ restore leaves the host as found), a hold action failing midway, preflight failu
 the hold, release from the hold file with no `preflight` section, release
 skipping restore after `hold_end`, each scan kind against journal entries
 with the real `MESSAGE_ID`s per unit type (a "Started"-only service, a
-paired "Starting"/"Started" counted once, a oneshot's "Finished"), wake
-logging and the DPMS-off check against a fake sysfs tree, the realtime window, a
+paired "Starting"/"Finished" counted once, a failed start, a service
+running at hold time that finishes in the window, not flagged), wake
+logging, the `restoring` mark, the power-off check against a fake sysfs
+tree, a failed restore keeping the guard and retried by a second release, the realtime window, a
 restore failure keeping the hold file, a vanished unit, recovery by the next
 preflight and by `restore` (and both racing under the guard directory), a
 hold file whose `run_id` matches but `run_dir` does not, the socket rules (empty `NIRI_SOCKET`, two live
@@ -310,8 +325,8 @@ Live, from a TTY with the desktop stopped (the first quiet run):
    (`optic-settling-smoke.sh pilot`, three cases; "Running the dedicated
    lane" in capture host setup) with the hold in place.
 
-The desktop part (§3.3), including the DPMS-off check on this NVIDIA
-driver, a wake caught by moving the mouse, and the guard restoring caffeine
+The desktop part (§3.3), including whether `enabled` reads `disabled`
+after power-off on this NVIDIA driver, a wake caught by moving the mouse, and the guard restoring caffeine
 and monitors after a killed desktop run, is exercised the next time a
 headless-lane run is taken from the desktop; until then it is tested only
 through the adapter.
