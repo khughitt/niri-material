@@ -9,7 +9,7 @@ process: planned
 needs: [quiet]
 owner: disturber-hold
 created: 2026-09-24T20:09:46Z
-updated: 2026-10-04T09:50:11Z
+updated: 2026-10-04T09:54:10Z
 started: 2026-10-04T09:02:22Z
 depends: []
 parent: material-2834d7
@@ -40,3 +40,5 @@ Scope: a capture-meta (or fixture-lib) hold that, for the run's duration, pauses
 - 2026-10-04T09:50:10Z (disturber-hold): resumed
   provenance: {"harness_session":"claude-code:580ebea0-d2ea-4477-a438-6499e193b927","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-04T09:50:10Z (disturber-hold): review: spec round 4 — verdict: revise; findings: P1 3, P2 1; reviewer: human
+- 2026-10-04T09:52:06Z (disturber-hold): Round 4 applied (b2d65182): guard started+confirmed before first host change; guard watches connected connectors' sysfs dpms, wake = monitor-woke; DPMS-off verified at hold or preflight fails; service activation = Starting or unpaired Started/Finished/failed; release runs before SHA256SUMS in glass-optic-smoke-lib finish and optic-settling exit, second release idempotent.
+- 2026-10-04T09:54:10Z (disturber-hold): review: spec round 5 — verdict: revise; findings: Important 3, Minor 1; reviewer: claude-code/claude-opus-5-5
