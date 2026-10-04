@@ -95,6 +95,18 @@ class RecordedResult(unittest.TestResult):
         self.began = {}
 
     def startTest(self, case):
+        cleanup = case.doCleanups
+
+        def finish_cleanups():
+            # unittest pops a callback before calling it: interruption there loses
+            # the callback. Defer cancellation until the complete cleanup finishes.
+            previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTERM, signal.SIGINT})
+            try:
+                return cleanup()
+            finally:
+                signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+        case.doCleanups = finish_cleanups
         self.started.append(case)
         self.began[case.id()] = time.monotonic()
         super().startTest(case)
@@ -124,11 +136,14 @@ def worker(result_path, ids):
     receipt = dict(ids=[case.id() for case in result.started], ran=result.testsRun,
                    skipped=[(case.id(), reason) for case, reason in result.skipped],
                    failures=[(case.id(), detail) for case, detail in result.failures],
-                   errors=[(case.id(), detail) for case, detail in result.errors], elapsed=result.elapsed)
+                   errors=[(case.id(), detail) for case, detail in result.errors],
+                   expected_failures=[(case.id(), detail) for case, detail in result.expectedFailures],
+                   unexpected_successes=[case.id() for case in result.unexpectedSuccesses],
+                   elapsed=result.elapsed)
     if interrupted:
         receipt['errors'].append(('interrupted worker', interrupted))
     Path(result_path).write_text(json.dumps(receipt))
-    return 0 if not receipt['failures'] and not receipt['errors'] else 1
+    return 0 if result.wasSuccessful() and not interrupted else 1
 
 
 def run_job(ids: list[str]) -> dict[str, object]:
@@ -153,18 +168,24 @@ def run_job(ids: list[str]) -> dict[str, object]:
             receipt = json.loads(path.read_text())
         except (OSError, ValueError) as error:
             raise RuntimeError(f'tooling worker exited {process.returncode} without a valid receipt: {ids}\n{stdout}{stderr}') from error
-        if not isinstance(receipt, dict) or set(receipt) != {'ids', 'ran', 'skipped', 'failures', 'errors', 'elapsed'}:
+        if not isinstance(receipt, dict) or set(receipt) != {
+                'ids', 'ran', 'skipped', 'failures', 'errors', 'expected_failures',
+                'unexpected_successes', 'elapsed'}:
             raise RuntimeError(f'malformed tooling receipt: {ids}')
         if receipt['ids'] != ids or type(receipt['ran']) is not int or receipt['ran'] != len(ids):
             raise RuntimeError(f'incomplete tooling worker inventory: {ids}\n{receipt}')
         if not isinstance(receipt['elapsed'], dict) or set(receipt['elapsed']) != set(ids):
             raise RuntimeError(f'malformed tooling timings: {ids}')
-        for field in ('skipped', 'failures', 'errors'):
+        for field in ('skipped', 'failures', 'errors', 'expected_failures'):
             if not isinstance(receipt[field], list) or any(
                     not isinstance(pair, list) or len(pair) != 2 or
                     not all(isinstance(value, str) for value in pair) for pair in receipt[field]):
                 raise RuntimeError(f'malformed tooling {field}: {ids}')
-        if process.returncode and not receipt['failures'] and not receipt['errors']:
+        if not isinstance(receipt['unexpected_successes'], list) or any(
+                not isinstance(case_id, str) or case_id not in ids
+                for case_id in receipt['unexpected_successes']):
+            raise RuntimeError(f'malformed tooling unexpected successes: {ids}')
+        if process.returncode and not any(receipt[field] for field in ('failures', 'errors', 'unexpected_successes')):
             raise RuntimeError(f'tooling worker exited {process.returncode}: {ids}\n{stdout}{stderr}')
         return receipt
     finally:
@@ -210,22 +231,33 @@ def run_full(ci: bool = False) -> int:
                 cancel_pending_and_reap_workers()
     errors = sum(len(result['errors']) for result in results)
     failures = sum(len(result['failures']) for result in results)
+    expected_failures = sum(len(result['expected_failures']) for result in results)
+    unexpected_successes = sum(len(result['unexpected_successes']) for result in results)
     skipped = [pair for result in results for pair in result['skipped']]
     for result in results:
         for case_id, elapsed in result['elapsed'].items():
             print(f'case {case_id}: {elapsed:.3f}s')
         for case_id, detail in result['failures'] + result['errors']:
             print(f'FAIL {case_id}\n{detail}')
+        for case_id, _ in result['expected_failures']:
+            print(f'EXPECTED FAILURE {case_id}')
+        for case_id in result['unexpected_successes']:
+            print(f'UNEXPECTED SUCCESS {case_id}')
     for case_id, reason in skipped:
         print(f'SKIP {case_id}: {reason}')
         if ci and case_id not in OPTIONAL_SKIPS:
             errors += 1
             print(f'unexpected CI skip: {case_id}: {reason}')
     print(f'\nRan {sum(result["ran"] for result in results)} tests in {time.monotonic() - before:.3f}s')
-    if errors or failures:
-        print(f'FAILED (failures={failures}, errors={errors}, skipped={len(skipped)})')
+    outcomes = [f'skipped={len(skipped)}'] if skipped else []
+    if expected_failures:
+        outcomes.append(f'expected failures={expected_failures}')
+    if unexpected_successes:
+        outcomes.append(f'unexpected successes={unexpected_successes}')
+    if errors or failures or unexpected_successes:
+        print(f'FAILED ({", ".join([f"failures={failures}", f"errors={errors}"] + outcomes)})')
         return 1
-    print(f'OK (skipped={len(skipped)})' if skipped else 'OK')
+    print(f'OK ({", ".join(outcomes)})' if outcomes else 'OK')
     return 0
 
 
@@ -327,11 +359,11 @@ def assert_static_coverage(root: Path, patterns: Sequence[str]) -> None:
     visited_python = set()
 
     def module_path(module, source, line):
-        if module == 'tools' and not (root / 'tools/__init__.py').exists():
-            return None  # existing namespace root
         base = root.joinpath(*module.split('.'))
         candidates = [candidate for candidate in (base.with_suffix('.py'), base / '__init__.py')
                       if candidate.is_file()]
+        if not candidates and base.is_dir():
+            return None  # namespace package
         if len(candidates) != 1:
             raise ValueError(f'{source}:{line}: unresolved or ambiguous tools import {module}')
         return candidates[0]
@@ -368,6 +400,13 @@ def assert_static_coverage(root: Path, patterns: Sequence[str]) -> None:
                         if base.with_suffix('.py').is_file() or (base / '__init__.py').is_file():
                             imports.append(child)
             for module in imports:
+                parts = module.split('.')
+                # Python executes regular parent packages before the imported
+                # leaf, including their transitive imports. Namespaces add none.
+                for length in range(1, len(parts)):
+                    initializer = root.joinpath(*parts[:length], '__init__.py')
+                    if initializer.is_file():
+                        python(initializer, relative, node.lineno)
                 target = module_path(module, relative, node.lineno)
                 if target is not None:
                     python(target, relative, node.lineno)

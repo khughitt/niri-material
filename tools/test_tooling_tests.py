@@ -122,6 +122,26 @@ class DriverCleanupTests(Remainder):
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertIn('skipped=1', run.stdout)
 
+    def test_expected_failure_preserves_native_reporting(self):
+        self.fixture('''class C(unittest.TestCase):
+    @unittest.expectedFailure
+    def test_expected(self): self.fail('known defect')
+''')
+        run = self.run_suite()
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn('EXPECTED FAILURE test_probe.C.test_expected', run.stdout)
+        self.assertIn('expected failures=1', run.stdout)
+
+    def test_unexpected_success_preserves_native_failure(self):
+        self.fixture('''class C(unittest.TestCase):
+    @unittest.expectedFailure
+    def test_unexpected(self): pass
+''')
+        run = self.run_suite()
+        self.assertNotEqual(run.returncode, 0, run.stdout)
+        self.assertIn('UNEXPECTED SUCCESS test_probe.C.test_unexpected', run.stdout)
+        self.assertIn('unexpected successes=1', run.stdout)
+
     def test_interrupt_reaps_a_child_from_an_unwound_case(self):
         self.fixture('''class DriverCleanupTests(unittest.TestCase):
     def test_wait(self):
@@ -140,6 +160,41 @@ class DriverCleanupTests(Remainder):
             self.assertLess(time.monotonic(), deadline)
             time.sleep(0.02)
         pid = int((self.root / 'child.pid').read_text())
+        parent.send_signal(signal.SIGTERM)
+        stdout, stderr = parent.communicate(timeout=20)
+        self.assertNotEqual(parent.returncode, 0, stdout + stderr)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+
+    def test_interrupt_during_normal_cleanup_finishes_reaping(self):
+        self.fixture('''class DriverCleanupTests(unittest.TestCase):
+    def test_cleanup(self):
+        child = subprocess.Popen(['sleep', '60'], start_new_session=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        def cleanup():
+            with open('cleanup.started', 'w') as out: out.write(str(child.pid))
+            time.sleep(0.5)
+            child.kill()
+            child.wait()
+        self.addCleanup(cleanup)
+''')
+        parent = subprocess.Popen(self.command, cwd=self.root, env=self.env,
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.reap, parent)
+        marker = self.root / 'cleanup.started'
+        deadline = time.monotonic() + 15
+        while not marker.exists():
+            self.assertIsNone(parent.poll())
+            self.assertLess(time.monotonic(), deadline)
+            time.sleep(0.01)
+        pid = int(marker.read_text())
+        # Keep the deliberately failing red run from leaking its fixture child.
+        def cleanup_probe():
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        self.addCleanup(cleanup_probe)
         parent.send_signal(signal.SIGTERM)
         stdout, stderr = parent.communicate(timeout=20)
         self.assertNotEqual(parent.returncode, 0, stdout + stderr)
@@ -189,6 +244,25 @@ class StaticCoverageTests(unittest.TestCase):
                      'tools/other.py', 'tools/extra.py', 'tools/leaf.py'):
             with self.subTest(path=path), self.assertRaisesRegex(ValueError, path):
                 self.check([pattern for pattern in self.patterns if pattern != path])
+
+    def test_package_initializers_and_their_imports_must_be_routed(self):
+        package = self.root / 'tools/pkg'
+        package.mkdir()
+        (package / 'leaf.py').write_text('')
+        initializer = package / '__init__.py'
+        initializer.write_text('import tools.hidden\n')
+        (self.root / 'tools/hidden.py').write_text('')
+        (self.root / 'tools/other.py').write_text('import tools.pkg.leaf\n')
+        patterns = self.patterns + ['tools/pkg/leaf.py']
+        with self.assertRaisesRegex(ValueError, 'tools/pkg/__init__.py'):
+            self.check(patterns)
+        patterns.append('tools/pkg/__init__.py')
+        with self.assertRaisesRegex(ValueError, 'tools/hidden.py'):
+            self.check(patterns)
+        self.check(patterns + ['tools/hidden.py'])
+        # Without the initializer, pkg is a namespace and imports no hidden code.
+        initializer.unlink()
+        self.check(self.patterns + ['tools/pkg/leaf.py'])
 
     def test_missing_source_cycle_dynamic_operand_and_missing_module_fail(self):
         cases = [
