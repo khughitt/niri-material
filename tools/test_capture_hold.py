@@ -106,5 +106,171 @@ class PlanTests(TempHost):
         self.assertEqual(host.snapshot(), before)
 
 
+class HoldFileTests(TempHost):
+    def setUp(self):
+        self.host_ = self.host(timers=["wali-rotate.timer", "familiar-reap.timer"],
+                               units={"dropbox.service": {"ActiveState": "active"}},
+                               sockets=["niri.w.1.sock"], live=["niri.w.1.sock"], connectors=LIT)
+        self.host_.config.parent.mkdir(parents=True); self.host_.config.write_text("dropbox.service\n")
+        self.lock = self.host_.runtime / "capture-meta.lock"
+        self.run_dir = self.host_.runtime.parent / "runs" / "pilot-1"; self.run_dir.mkdir(parents=True)
+
+    def hold(self):
+        plan = ch.plan_hold(self.host_)
+        ch.create_hold(self.lock, "pilot-1", self.run_dir, 4242, plan, self.host_.now_us())
+        return plan
+
+    def test_create_writes_an_empty_hold_naming_the_run(self):
+        self.hold()
+        hold = ch.read_hold(ch.hold_file(self.lock))
+        self.assertEqual(hold["items"], [])
+        self.assertEqual(hold["run_dir"], str(self.run_dir.resolve()))
+        self.assertTrue(hold["guard"].startswith("capture-meta-guard-") and hold["guard"].endswith(".service"))
+        self.assertTrue(ch.names_run(hold, "pilot-1", self.run_dir))
+        self.assertFalse(ch.names_run(hold, "pilot-1", self.run_dir.parent / "other" / "pilot-1"))
+
+    def test_create_refuses_over_an_existing_hold(self):
+        self.hold()
+        with self.assertRaisesRegex(ch.CannotRun, "already recorded"):
+            self.hold()
+
+    def test_apply_holds_everything_and_records_connectors_after_power_off(self):
+        plan = self.hold()
+        hold = ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        self.assertEqual([i.get("unit", i["kind"]) for i in hold["items"]],
+                         ["familiar-reap.timer", "wali-rotate.timer", "dropbox.service", "idle", "monitors"])
+        self.assertEqual(hold["connectors"], ["card1-DP-1"])
+        self.assertTrue(self.host_.caffeine)
+        self.assertEqual(self.host_.connectors["card1-DP-1"]["dpms"], "Off")
+        self.assertEqual(self.host_.units[("user", "wali-rotate.timer")]["ActiveState"], "inactive")
+        self.assertGreater(hold["started_us"], 0)
+
+    def test_power_off_the_kernel_does_not_report_cannot_run(self):
+        self.host_.dpms_follows = False
+        plan = self.hold()
+        with self.assertRaisesRegex(ch.CannotRun, "card1-DP-1 still reports dpms On 5 s after power-off"):
+            ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+
+    def test_a_kill_after_any_change_leaves_a_hold_file_that_restores_the_host(self):
+        for n in range(1, 6):
+            with self.subTest(kill_after=n):
+                self.setUp()
+                before = self.host_.snapshot()
+                plan = self.hold()
+                self.host_.kill_after = n
+                with self.assertRaises(self.host_.Killed):
+                    ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+                self.host_.kill_after = None
+                _, attempt = ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "guard")
+                self.assertEqual(attempt["failures"], [])
+                self.assertEqual(self.host_.snapshot()[:2], before[:2])
+                self.assertIsNone(ch.read_hold(ch.hold_file(self.lock)))
+
+    def test_apply_stops_when_the_hold_file_vanishes(self):
+        plan = self.hold()
+        ch.hold_file(self.lock).unlink()
+        with self.assertRaisesRegex(ch.CannotRun, "hold file .* is gone"):
+            ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        self.assertFalse(ch.hold_file(self.lock).exists())
+
+    def test_restore_reverses_order_keeps_failures_and_notes_vanished_units(self):
+        plan = self.hold()
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        del self.host_.units[("user", "familiar-reap.timer")]
+        self.host_.fail[("systemctl", "--user", "start", "dropbox.service")] = "Job failed"
+        _, attempt = ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "release")
+        starts = [c[3] for c in self.host_.calls if c[:3] == ("systemctl", "--user", "start")]
+        self.assertEqual(starts, ["dropbox.service", "wali-rotate.timer", "familiar-reap.timer"])
+        self.assertEqual(attempt["by"], "release")
+        self.assertEqual(attempt["notes"], ["familiar-reap.timer no longer exists"])
+        self.assertEqual([f["unit"] for f in attempt["failures"]], ["dropbox.service"])
+        self.assertEqual(attempt["failures"][0]["restore"], "systemctl --user start dropbox.service")
+        left = ch.read_hold(ch.hold_file(self.lock))
+        self.assertEqual([i.get("unit") for i in left["held"]], ["dropbox.service"])
+        self.assertEqual(len(left["items"]), 5)          # the scan's input never shrinks
+        self.assertTrue(left["restoring"])
+
+    def test_until_is_fixed_by_the_first_attempt(self):
+        plan = self.hold()
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        self.host_.fail[("systemctl", "--user", "start", "dropbox.service")] = "Job failed"
+        first, _ = ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "release")
+        self.host_.clock += 5_000_000
+        second, _ = ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "release")
+        self.assertEqual(second["until_us"], first["until_us"])
+
+    def test_record_runs_before_the_hold_file_goes(self):
+        plan = self.hold()
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        seen = []
+        def record(hold, wakes, attempt):
+            seen.append((ch.hold_file(self.lock).exists(), len(hold["items"]), attempt["failures"]))
+        ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "release", record)
+        self.assertEqual(seen, [(True, 5, [])])          # all five items still there for the scan
+        self.assertFalse(ch.hold_file(self.lock).exists())
+
+    def test_a_kill_inside_record_leaves_the_hold_for_the_next_attempt(self):
+        plan = self.hold()
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        def killed(hold, wakes, attempt):
+            raise self.host_.Killed()
+        with self.assertRaises(self.host_.Killed):
+            ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "release", killed)
+        self.assertTrue(ch.hold_file(self.lock).exists())
+        seen = []
+        _, attempt = ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "guard",
+                                            lambda hold, wakes, a: seen.append(len(hold["items"])))
+        self.assertEqual((attempt["failures"], attempt["undone"], seen), ([], 0, [5]))
+        self.assertFalse(ch.hold_file(self.lock).exists())
+
+    def test_finalize_removes_only_a_fully_restored_hold(self):
+        plan = self.hold()
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        self.assertIsNone(ch.finalize(self.lock, "pilot-1", self.run_dir))     # still held
+        path = ch.hold_file(self.lock); hold = ch.read_hold(path)
+        hold["held"] = []; ch.write_hold(path, hold)
+        self.assertEqual(ch.finalize(self.lock, "pilot-1", self.run_dir)["run_id"], "pilot-1")
+        self.assertFalse(path.exists())
+
+    def test_apply_stops_once_a_restore_has_started(self):
+        plan = self.hold()
+        first, rest = {**plan, "items": plan["items"][:1]}, plan["items"][1:]
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, first)
+        self.host_.fail[("systemctl", "--user", "start", "familiar-reap.timer")] = "busy"
+        ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "guard")
+        stops = len([c for c in self.host_.calls if c[:3] == ("systemctl", "--user", "stop")])
+        with self.assertRaisesRegex(ch.CannotRun, "being restored; holding nothing more"):
+            ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, {**plan, "items": rest})
+        self.assertEqual(len([c for c in self.host_.calls if c[:3] == ("systemctl", "--user", "stop")]), stops)
+
+    def test_apply_stops_when_the_owner_is_dead(self):
+        plan = self.hold()
+        self.host_.alive[4242] = False
+        with self.assertRaisesRegex(ch.CannotRun, "owner pid 4242 of run pilot-1 is dead"):
+            ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        self.assertFalse([c for c in self.host_.calls if c[:3] == ("systemctl", "--user", "stop")])
+
+    def test_other_runs_hold_is_left_alone(self):
+        plan = self.hold()
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        other = self.run_dir.parent / "elsewhere" / "pilot-1"
+        self.assertIsNone(ch.restore_transaction(self.host_, self.lock, "pilot-1", other, "release"))
+        self.assertTrue(ch.hold_file(self.lock).exists())
+
+    def test_restore_of_a_gone_desktop_notes_it(self):
+        plan = self.hold()
+        ch.apply_hold(self.host_, self.lock, "pilot-1", self.run_dir, plan)
+        (self.host_.runtime / "niri.w.1.sock").unlink()
+        _, attempt = ch.restore_transaction(self.host_, self.lock, "pilot-1", self.run_dir, "release")
+        self.assertEqual(attempt["failures"], [])
+        self.assertIn("desktop gone; monitors left as they are", attempt["notes"])
+        self.assertIn("desktop gone; caffeine left as it is", attempt["notes"])
+
+    def test_unreadable_hold_file_cannot_run(self):
+        ch.hold_file(self.lock).write_text("{")
+        with self.assertRaisesRegex(ch.CannotRun, "restore its items by hand"):
+            ch.read_hold(ch.hold_file(self.lock))
+
+
 if __name__ == "__main__":
     unittest.main()
