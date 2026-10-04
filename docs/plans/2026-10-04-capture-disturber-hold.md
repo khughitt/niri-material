@@ -1399,13 +1399,17 @@ class HoldRecordTests(unittest.TestCase):
     def test_scan_is_written_once_and_attempts_accumulate(self):
         run = self.run_dir()
         failed = {"at": "t1", "by": "release", "failures": [{"unit": "a.timer", "error": "x", "restore": "systemctl --user start a.timer"}]}
-        end = cm.update_hold_end(run, {"until_us": 5, "verdict": "clean", "disturbances": []}, failed)
+        end = cm.update_hold_end(run, {"until_us": 5, "verdict": "clean", "disturbances": []}, failed,
+                                 {"guard": "capture-meta-guard-x.service", "owner_pid": 7})
         self.assertEqual(end["restore"]["state"], "failed")
+        end = cm.update_hold_end(run, attempt={"at": "t1b", "by": "release", "failures": failed["failures"]},
+                                 cleanup={"guard": "other", "owner_pid": 8})
+        self.assertEqual(end["cleanup"], {"guard": "capture-meta-guard-x.service", "owner_pid": 7})
         with self.assertRaisesRegex(cm.CannotRun, "written once"):
             cm.update_hold_end(run, {"until_us": 9, "verdict": "clean", "disturbances": []})
         end = cm.update_hold_end(run, attempt={"at": "t2", "by": "guard", "failures": []})
         self.assertEqual(end["restore"]["state"], "complete")
-        self.assertEqual([a["by"] for a in end["restore"]["attempts"]], ["release", "guard"])
+        self.assertEqual([a["by"] for a in end["restore"]["attempts"]], ["release", "release", "guard"])
         self.assertEqual(cm.load_record(run)["hold_end"]["scan"]["until_us"], 5)
 
     def test_exit_codes_follow_the_record(self):
@@ -1451,7 +1455,8 @@ class HoldRecordTests(unittest.TestCase):
     def test_validation_rejects_malformed_hold_sections(self):
         for bad in ({"hold": {"items": {}}},
                     {"hold_end": {"restore": {"state": "maybe", "attempts": []}}},
-                    {"hold_end": {"scan": {"verdict": "fine", "disturbances": []}}}):
+                    {"hold_end": {"scan": {"verdict": "fine", "disturbances": []}}},
+                    {"hold_end": {"cleanup": {"guard": "g", "owner_pid": True}}}):
             with self.subTest(bad=bad), self.assertRaises(cm.CannotRun):
                 cm.validate_record({"schema": cm.SCHEMA, **bad})
 
@@ -1545,6 +1550,11 @@ Add to `validate_record` before the `sub_runs` check:
         if restore is not None and (not isinstance(restore, dict) or restore.get("state") not in ("complete", "failed")
                                     or not isinstance(restore.get("attempts"), list)):
             raise CannotRun(f"{path}: hold_end.restore needs state complete|failed and an attempts list")
+        cleanup = end.get("cleanup")
+        if cleanup is not None and (not isinstance(cleanup, dict) or not isinstance(cleanup.get("guard"), str)
+                                    or isinstance(cleanup.get("owner_pid"), bool)
+                                    or not isinstance(cleanup.get("owner_pid"), int)):
+            raise CannotRun(f"{path}: hold_end.cleanup needs a guard name and an owner_pid")
         scan = end.get("scan")
         if scan is not None and (not isinstance(scan, dict) or scan.get("verdict") not in SCAN_VERDICTS
                                  or not isinstance(scan.get("disturbances"), list)):
@@ -1557,16 +1567,20 @@ Add after `append_sub_run`:
 SCAN_VERDICTS = ("clean", "disturbed", "unscanned", "not-run")
 
 
-def update_hold_end(run_dir, scan=None, attempt=None):
+def update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
     with record_lock(run_dir):
-        return _update_hold_end(run_dir, scan, attempt)
+        return _update_hold_end(run_dir, scan, attempt, cleanup)
 
 
-def _update_hold_end(run_dir, scan=None, attempt=None):
-    """hold_end.scan is written once; hold_end.restore takes every attempt (spec §4.3).
+def _update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
+    """hold_end.scan is written once; hold_end.restore takes every attempt (spec §4.3);
+    hold_end.cleanup ({guard, owner_pid}) is written once, before the hold file can go, so
+    a cleanup interrupted after this save can be finished from the record alone.
     The caller holds record_lock(run_dir)."""
     record = load_record(run_dir)
     end = record.get("hold_end", {})
+    if cleanup is not None and "cleanup" not in end:
+        end["cleanup"] = cleanup
     if scan is not None:
         if "scan" in end:
             raise CannotRun(f"{RECORD}: hold_end.scan is written once")
@@ -1647,7 +1661,7 @@ git commit -m "feat(capture): record the hold and its end in capture.json (mater
 
 - [ ] **Step 1: Write the failing tests**
 
-Change `PreflightTests.run_preflight` so every existing preflight test runs against a fake host with nothing to hold:
+Add `import itertools` to the imports of `tools/test_capture_meta.py`. Change `PreflightTests.run_preflight` so every existing preflight test runs against a fake host with nothing to hold:
 
 ```python
     def run_preflight(self, run, lane="headless", gpu=None, proc=None, env=None, lock=None, host_load=None, host=None, **kw):
@@ -1834,12 +1848,15 @@ class LifecycleTests(unittest.TestCase):
             return real_run(host, *command, **kw)
         def kill_release(*a, **k):
             raise FakeHost.Killed()
-        for name, target, attribute, replacement in (("remove hold", cm.ch, "remove_hold", kill_remove),
-                                                     ("stop guard", FakeHost, "run", kill_stop),
-                                                     ("release lock", cm, "release_lock", kill_release)):
-            with self.subTest(step=name):
+        steps = (("remove hold", cm.ch, "remove_hold", kill_remove),
+                 ("stop guard", FakeHost, "run", kill_stop),
+                 ("release lock", cm, "release_lock", kill_release))
+        starts = (("preflighted", lambda: self.preflight()),
+                  ("only run", self.hold_without_preflight))
+        for (name, target, attribute, replacement), (start, begin) in itertools.product(steps, starts):
+            with self.subTest(step=name, start=start):
                 self.setUp()
-                self.preflight()
+                begin()
                 original = getattr(target, attribute)
                 setattr(target, attribute, replacement)
                 try:
@@ -1854,6 +1871,17 @@ class LifecycleTests(unittest.TestCase):
                 self.assertFalse((self.host.runtime / ch_hold_name()).exists())
                 self.assertFalse(self.host.guards)
                 self.assertIsNone(cm.read_lock(self.lock))
+
+    def hold_without_preflight(self):
+        """The state preflight leaves when killed right after holding: a record with only
+        `run`, a hold file, a guard and the lock."""
+        cm.write_section(self.run, "run", {"id": self.run.name})
+        cm.acquire_lock(self.lock, 4242, self.run.name)
+        plan = cm.ch.plan_hold(self.host)
+        hold = cm.ch.create_hold(self.lock, self.run.name, self.run, 4242, plan, self.host.now_us())
+        cm.start_guard(self.host, hold)
+        cm.ch.apply_hold(self.host, self.lock, self.run.name, self.run, plan)
+        self.assertEqual(set(cm.load_record(self.run)), {"schema", "run"})
 
     def test_restore_by_hand_refuses_a_live_owner_and_records_hand(self):
         self.preflight()
@@ -1978,7 +2006,8 @@ def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
                         scan = {**base, "verdict": verdict, "disturbances": disturbances}
                     except CannotRun as error:
                         scan = {**base, "verdict": "unscanned", "error": str(error)}
-            written["hold_end"] = _update_hold_end(run_dir, scan, attempt)
+            written["hold_end"] = _update_hold_end(run_dir, scan, attempt,
+                                                   {"guard": hold["guard"], "owner_pid": hold["owner_pid"]})
 
     result = ch.restore_transaction(host, lock_file, run_id, run_dir, by, record)
     if result is None:
@@ -1993,15 +2022,19 @@ def finish_cleanup(host, lock_file, hold, run_id, stop_guard=True):
     """After every item is back: stop the guard and release the lock. Both are idempotent."""
     if stop_guard:
         host.run("systemctl", "--user", "stop", hold["guard"])
-    release_lock(lock_file, hold["owner_pid"], run_id)
+    release_lock(lock_file, hold["owner_pid"], run_id)   # hold: the hold file or hold_end.cleanup
 
 
 def finish_leftovers(lock_file, run_dir, run, record):
     """A kill after a complete hold_end was saved can leave the hold file, the guard or the
-    lock behind. Finish them without touching the record."""
-    hold = ch.finalize(lock_file, run["id"], run_dir) or record.get("hold")
-    if hold and hold.get("guard") and hold.get("owner_pid"):
-        finish_cleanup(Host(), lock_file, hold, run["id"])
+    lock behind. Finish them without touching the record, from hold_end.cleanup, which the
+    same save wrote (the record may have no hold or preflight section at all)."""
+    ch.finalize(lock_file, run["id"], run_dir)
+    cleanup = record["hold_end"].get("cleanup")
+    if cleanup is None:
+        raise CannotRun(f"{RECORD}: hold_end is complete but has no cleanup identity; "
+                        "stop capture-meta-guard-*.service and remove the lock by hand if they remain")
+    finish_cleanup(Host(), lock_file, cleanup, run["id"])
 
 
 def recover_stale(host, lock_file):
@@ -2438,4 +2471,5 @@ tasks park material-188aaa "TTY quiet run, desktop stopped, in .worktrees/distur
 - **Deviation recorded:** the spec names the wake log `capture-meta.wakes.<run id>.jsonl`; the plan keys it on `run_key(run_dir)` (the same key as the guard unit), because run ids can collide (spec §4.1). Hold-time invocation ids live in the hold file's `invocations` rather than inside `timer_map`.
 - **Added beyond the spec:** the `monitor-unwatched` kind (Review Focus 3) and the guard's attempt limit (`GUARD_RETRIES` = 20 failed restores, `GUARD_RETRY_S` = 30 s apart; each host command is bounded by `COMMAND_TIMEOUT_S` = 30 s and the journal read by `JOURNAL_TIMEOUT_S` = 120 s, so the total is bounded but not a fixed duration), after which a permanently failing restore ends in a CannotRun pointing at `capture-meta restore` rather than a guard that never exits.
 - **Plan review round 1 (owner-relayed):** restore is one locked transaction that writes the record before the hold file goes (`restore_transaction`, atomic `save_record`); each write-ahead step refuses a `restoring` hold or a dead owner under the same lock; connector discovery refuses an unreadable connector; the guard polls and logs under the lock and the scan keeps only wakes inside the window; the smoke lib writes `SHA256SUMS` in `cleanup` after the last release; `test_capture_hold` puts `tools/` on `sys.path` explicitly; host commands have timeouts.
+- **Plan review round 3 (owner-relayed):** `hold_end.cleanup` (`{guard, owner_pid}`) is saved with the first restore record, before the hold file can be deleted; a release of a complete record finishes the guard and lock from it, so a run whose preflight died before writing `hold` or `preflight` is cleaned up too.
 - **Plan review round 2 (owner-relayed):** the hold file's `items` never shrink (what is left is `held`), so a scan retried after a kill sees the same input; a release of a complete record finishes leftovers (hold file, guard, lock) without touching the record; every read-modify-write of `capture.json` holds `record_lock` (a flock on the run directory), taken after `guarded()` and never before it.
