@@ -2056,6 +2056,90 @@ mod tests {
         }
     }
 
+    /// The pipeline schema must say which stages `glass_signal_inputs` moves
+    /// frame to frame: each such stage is animated and lists the response
+    /// fields that drive it. A flash impulse boosts fringing, distortion and
+    /// the tap count; a ripple impulse raises jelly activity, which drives the
+    /// ripple normal and scales the ring glow; accent presence re-tints.
+    #[test]
+    fn pipeline_signal_driven_stages_are_declared() {
+        use niri_config::material::pipeline::STAGES;
+        use niri_config::ResolvedResponse;
+
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
+
+        let declared = |id: &str, fields: &[&str]| {
+            let stage = STAGES.iter().find(|s| s.id == id).unwrap();
+            assert!(
+                stage.animated,
+                "{id} moves with signals and must be animated"
+            );
+            for field in fields {
+                assert!(
+                    stage.responses.contains(field),
+                    "{id} moves with the {field} response and must list it"
+                );
+            }
+        };
+        const IMPULSES: &[&str] = &["ping", "done", "error"];
+
+        let rest = SignalFrame {
+            accent: None,
+            level: 0.,
+            breath: 0.,
+            impulses: Default::default(),
+            presence: 0.,
+            tint_chroma: None,
+            focus: 0.,
+            beam: BeamFrame::REST,
+        };
+        let impulse = |selector: niri_config::ImpulseResponse| {
+            let mut frame = rest.clone();
+            frame.impulses[0] = ImpulseFrame {
+                selector: selector as u8,
+                envelope: 0.8,
+                progress: 0.1,
+                accent: None,
+            };
+            frame
+        };
+        let glass = ResolvedGlass::default();
+        let response = ResolvedResponse::default();
+        let still = glass_signal_inputs(&rest, &glass, &response);
+
+        let flash = glass_signal_inputs(
+            &impulse(niri_config::ImpulseResponse::Flash),
+            &glass,
+            &response,
+        );
+        assert_ne!(flash.chromatic_aberration, still.chromatic_aberration);
+        declared("fringing", IMPULSES);
+        assert_ne!(flash.distortion, still.distortion);
+        declared("distortion", IMPULSES);
+        assert_ne!(flash.samples, still.samples);
+        declared("directional-blur", IMPULSES);
+
+        let ripple = glass_signal_inputs(
+            &impulse(niri_config::ImpulseResponse::Ripple),
+            &glass,
+            &response,
+        );
+        assert_ne!(ripple.activity_add, still.activity_add);
+        declared("ripple", IMPULSES);
+        declared("ring", IMPULSES);
+
+        let glass = accepted_glass();
+        let tinted = ResolvedResponse {
+            accent_tint: 0.5,
+            ..Default::default()
+        };
+        let absent = glass_signal_inputs(&accent_frame(Some([1., 0.133, 0.]), 0.), &glass, &tinted);
+        let present =
+            glass_signal_inputs(&accent_frame(Some([1., 0.133, 0.]), 1.), &glass, &tinted);
+        assert_ne!(present.attenuation_color, absent.attenuation_color);
+        declared("tint", &["accent", "accent-tint"]);
+    }
+
     fn accepted_glass() -> ResolvedGlass {
         ResolvedGlass {
             thickness: 31.2,

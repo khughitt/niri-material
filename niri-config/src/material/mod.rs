@@ -14,6 +14,7 @@ use crate::FloatOrInt;
 
 pub mod optics;
 pub mod params;
+pub mod pipeline;
 
 /// A window-rule reference to a material definition by name.
 ///
@@ -309,6 +310,33 @@ pub struct Response {
     /// Retired: decoded only so the error can name its replacement.
     #[knuffel(child, unwrap(argument))]
     pub ring_sweep_ms: Option<u32>,
+}
+
+/// The KDL names of every live `Response` field, in struct order. Retired
+/// fields (`ring-inset`, `ring-drift-hz`, `ring-sweep-ms`) are decoded only
+/// to name their replacement and are not listed. `pipeline::STAGES` names
+/// these in `responses`; a test there decodes a sample per entry and pins the
+/// count, so adding a field here without adding it there fails.
+pub fn response_fields() -> &'static [&'static str] {
+    &[
+        "accent",
+        "attention",
+        "ping",
+        "done",
+        "error",
+        "ring-gap",
+        "ring-glow",
+        "ring-rest",
+        "ring-accent",
+        "accent-tint",
+        "ring-beam-speed",
+        "ring-beam-noise",
+        "ring-beam-noise-hz",
+        "ring-beam-decay",
+        "ring-width",
+        "focus",
+        "ring-color",
+    ]
 }
 
 /// A fully resolved response block.

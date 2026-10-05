@@ -140,6 +140,14 @@ to `OPTICS` at its render position. `ORDER` in niri-config must match; a test
 pins them. Add one call per used hook to `shaders/material/main.frag`, in
 `OPTICS` order.
 
+Then add the optic's stage to `niri-config/src/material/pipeline.rs`: its
+site, scope, the parameters it owns and every parameter its GLSL reads, its
+response fields, and `optic(name, hook)`; add an `Interaction` if it makes
+another stage inert or scales it unconditionally. The config tests refuse an
+unowned parameter; the niri tests refuse a hook the program does not call and
+a GLSL read the stage does not list. Regenerate the schema file with the
+parameter table (section 4).
+
 ## 4. Documentation and proof
 
 Regenerate the parameter table:

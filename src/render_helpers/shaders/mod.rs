@@ -538,4 +538,210 @@ mod tests {
         assert!(!main.contains("saturation_post("));
         assert!(!main.contains("noise_post("));
     }
+
+    use niri_config::material::pipeline::{Program, STAGES};
+
+    /// GLSL without its comments, so a commented-out call does not count.
+    fn strip_comments(source: &str) -> String {
+        let mut out = String::with_capacity(source.len());
+        let mut rest = source;
+        while !rest.is_empty() {
+            if let Some(stripped) = rest.strip_prefix("/*") {
+                let end = stripped.find("*/").map(|i| i + 2).unwrap_or(stripped.len());
+                rest = &stripped[end..];
+            } else if let Some(stripped) = rest.strip_prefix("//") {
+                let end = stripped.find('\n').unwrap_or(stripped.len());
+                rest = &stripped[end..];
+            } else {
+                let mut chars = rest.chars();
+                out.push(chars.next().unwrap());
+                rest = chars.as_str();
+            }
+        }
+        out
+    }
+
+    /// Actual calls of `call` (`noise_behind(`): occurrences that are not a
+    /// definition (preceded by a GLSL type) and not the tail of a longer
+    /// identifier. Comments must already be stripped.
+    fn hook_calls(source: &str, call: &str) -> Vec<usize> {
+        const TYPES: &[&str] = &["void", "float", "vec2", "vec3", "vec4"];
+        let bytes = source.as_bytes();
+        let mut found = Vec::new();
+        let mut from = 0;
+        while let Some(at) = source[from..].find(call) {
+            let at = from + at;
+            from = at + 1;
+            if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
+                continue;
+            }
+            let before = source[..at].trim_end();
+            let token_start = before
+                .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            if TYPES.contains(&&before[token_start..]) {
+                continue;
+            }
+            found.push(at);
+        }
+        found
+    }
+
+    #[test]
+    fn hook_call_counter_ignores_comments_and_definitions() {
+        let glsl = strip_comments(
+            "vec3 noise_behind(vec3 c, vec2 p) { return c; }\n// sampled = noise_behind(sampled, p);\n/* noise_behind( */\nsampled = noise_behind(sampled, p);\nx = xnoise_behind(1);\n",
+        );
+        assert_eq!(hook_calls(&glsl, "noise_behind(").len(), 1);
+        let twice = strip_comments("a = noise_behind(a, p);\nb = noise_behind(b, p);\n");
+        assert_eq!(hook_calls(&twice, "noise_behind(").len(), 2);
+    }
+
+    /// The material program after the `// ---- main` marker, comments
+    /// stripped: hook calls are counted there, not in an optic's own GLSL
+    /// where the function is defined.
+    fn main_body() -> String {
+        let source = material_source();
+        let marker = "\n// ---- main\n";
+        let at = source
+            .find(marker)
+            .expect("material_source carries the main marker");
+        strip_comments(&source[at + marker.len()..])
+    }
+
+    #[test]
+    fn pipeline_material_hooks_are_called_exactly_once_in_stage_order() {
+        let body = main_body();
+        let mut last = 0;
+        for stage in STAGES {
+            let Some(optic) = stage.optic else { continue };
+            if optic.program != Program::Material {
+                continue;
+            }
+            let call = format!("{}_{}(", optic.name, optic.hook);
+            let calls = hook_calls(&body, &call);
+            assert_eq!(
+                calls.len(),
+                1,
+                "{}: main.frag calls {call} {} times, expected exactly one",
+                stage.id,
+                calls.len()
+            );
+            assert!(
+                calls[0] >= last,
+                "{}: {call} is called before an earlier stage's hook",
+                stage.id
+            );
+            last = calls[0];
+        }
+    }
+
+    #[test]
+    fn pipeline_other_programs_call_their_hooks_exactly_once() {
+        for stage in STAGES {
+            let Some(optic) = stage.optic else { continue };
+            let source = match optic.program {
+                Program::Material => continue,
+                Program::Effect => strip_comments(concat!(
+                    include_str!("blur_down.frag"),
+                    include_str!("blur_up.frag")
+                )),
+                Program::Postprocess => strip_comments(include_str!("postprocess.frag")),
+            };
+            let call = format!("{}_{}(", optic.name, optic.hook);
+            let calls = hook_calls(&source, &call);
+            assert_eq!(
+                calls.len(),
+                1,
+                "{}: the {:?} program calls {call} {} times, expected exactly one",
+                stage.id,
+                optic.program,
+                calls.len()
+            );
+        }
+    }
+
+    /// `_post(` is a suffix, not a full name, so this test scans for the
+    /// suffix directly rather than through `hook_calls`, whose identifier
+    /// guard would reject every match.
+    #[test]
+    fn pipeline_post_site_is_empty_until_a_stage_lands() {
+        let has_post_stage = STAGES.iter().any(|s| s.site == "post");
+        let has_post_call = main_body().contains("_post(");
+        assert_eq!(
+            has_post_stage, has_post_call,
+            "the post site and the _post( call must arrive together"
+        );
+    }
+
+    /// Uniform names that are not parameters: slab geometry, jelly and signal
+    /// state, textures, and the window's seed.
+    const NON_PARAMETER_UNIFORMS: &[&str] = &[
+        "mat_area_size",
+        "mat_geo_rect",
+        "mat_win_rect",
+        "mat_slab_rect",
+        "mat_bg_rect",
+        "mat_backdrop_rect",
+        "mat_ws_rect",
+        "mat_ws_color",
+        "mat_backdrop_color",
+        "mat_corner_radius",
+        "mat_chamfer",
+        "mat_samples",
+        "mat_bg_prefilter_mix",
+        "mat_backdrop_prefilter_mix",
+        "mat_jelly_seed",
+        "mat_jelly_time",
+        "mat_jelly_activity",
+        "mat_jelly_move",
+        "mat_jelly_resize",
+        "mat_aurora_phase",
+    ];
+
+    /// Uniforms whose name is not the parameter's node: each maps to the
+    /// nodes it carries.
+    fn uniform_nodes(uniform: &str) -> Vec<&'static str> {
+        match uniform {
+            "mat_scatter" => vec!["roughness", "ior"],
+            "mat_noise_type" => vec!["noise type="],
+            "mat_aurora_color_a" | "mat_aurora_color_b" => vec!["aurora color"],
+            "mat_distortion_scale" => vec!["distortion scale="],
+            _ => Vec::new(),
+        }
+    }
+
+    #[test]
+    fn pipeline_optic_glsl_reads_are_declared() {
+        for stage in STAGES {
+            let Some(optic) = stage.optic else { continue };
+            let entry = OPTICS.iter().find(|e| e.name == optic.name).unwrap();
+            let mut seen = HashSet::new();
+            for token in entry
+                .glsl
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            {
+                if !token.starts_with("mat_") || !seen.insert(token) {
+                    continue;
+                }
+                if token.starts_with("mat_sig_") || NON_PARAMETER_UNIFORMS.contains(&token) {
+                    continue;
+                }
+                let nodes = match uniform_nodes(token) {
+                    v if v.is_empty() => {
+                        vec![token.trim_start_matches("mat_").replace('_', "-").leak() as &str]
+                    }
+                    v => v,
+                };
+                for node in nodes {
+                    assert!(
+                        stage.reads.contains(&node),
+                        "{}: its GLSL reads {token} ({node}), which `reads` omits",
+                        stage.id
+                    );
+                }
+            }
+        }
+    }
 }
