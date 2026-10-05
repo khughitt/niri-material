@@ -1,13 +1,15 @@
 ---
 id: material-dcb881
 title: Screencast sample can take a frame before the damage it armed for
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-10-05T03:27:25Z
-updated: 2026-10-05T09:10:26Z
+updated: 2026-10-05T10:49:28Z
+started: 2026-10-05T10:49:28Z
 depends: []
 parent: material-2834d7
 tags: [testing]
@@ -20,3 +22,5 @@ In the dedicated-lane screencast case, cast_sample arms the consumer, causes dam
 
 - 2026-10-05T03:27:25Z (disturber-hold): concerns: material-188aaa extension — the hold's first evidence run exposed a sampling race in the screencast instrument
 - 2026-10-05T09:10:26Z (materials-26.04): correction: the concerns: note above was written before material-188aaa closed, so by the note rules it is a review finding of material-188aaa's live validation, not a concern against closed work; outcome measures should not count it.
+- 2026-10-05T10:49:28Z (materials-26.04): started
+  provenance: {"harness_session":"codex:01a10ba8-8f94-7c11-b2f0-393e0df02dad","harness_session_source":"CODEX_SESSION_ID"}
