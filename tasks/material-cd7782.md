@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-04T15:00:02Z
-updated: 2026-10-04T16:48:06Z
+updated: 2026-10-05T08:54:13Z
 started: 2026-10-04T16:48:06Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -24,3 +24,4 @@ Process: planned
 - 2026-10-04T15:00:02Z (materials-26.04): breach: titan window 2026-09-27T15:00:01Z..2026-10-04T15:00:01Z: hook-pre-commit median 45.305 s, limit 45 s, 140 runs on 8 days
 - 2026-10-04T16:48:06Z (materials-26.04): started
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T08:54:13Z (materials-26.04): halt override: attempted material-511efe by 36e424bd-8c56-41e9-a164-005ea47ccb82: doc-only quiet-run protocol fix found by the quiet session; independent of the pre-commit latency incident
