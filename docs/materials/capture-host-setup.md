@@ -31,8 +31,8 @@ repositories:
 paru -S wlrctl        # or any AUR helper / makepkg
 ```
 
-`host-budget` and `host-load` come from the ops repository's `bin/`, on
-`~/.local/bin`. `tools/capture-meta` ships with this repository.
+`host-budget`, `host-load` and `display-dim` come from the ops repository's
+`bin/`, linked onto `~/.local/bin` by its install recipe. `tools/capture-meta` ships with this repository.
 
 ## Passwordless VT switching (real-TTY lane)
 
