@@ -116,8 +116,8 @@ class RecordedResult(unittest.TestResult):
         super().stopTest(case)
 
 
-def worker(result_path, ids):
-    os.environ['NIRI_TOOLING_FAST'] = '0'
+def worker(result_path, ids, mode):
+    os.environ['NIRI_TOOLING_FAST'] = mode
     sys.path.insert(0, str(Path.cwd() / 'tools'))
     signal.signal(signal.SIGTERM, interrupt)
     signal.signal(signal.SIGINT, interrupt)
@@ -146,15 +146,16 @@ def worker(result_path, ids):
     return 0 if result.wasSuccessful() and not interrupted else 1
 
 
-def run_job(ids: list[str]) -> dict[str, object]:
+def run_job(ids: list[str], mode: str) -> dict[str, object]:
     with tempfile.NamedTemporaryFile(dir=_result_dir, suffix='.json', delete=False) as out:
         path = Path(out.name)
     path.unlink()
     with _worker_lock:
         if _cancelled.is_set():
             raise RuntimeError('tooling worker scheduling cancelled')
-        process = subprocess.Popen([sys.executable, '-m', 'tools.tooling_tests', '--worker', str(path), *ids],
-                                   env=dict(os.environ, NIRI_TOOLING_FAST='0'), start_new_session=True,
+        process = subprocess.Popen([sys.executable, '-m', 'tools.tooling_tests', '--worker', str(path),
+                                    '--worker-mode', mode, *ids],
+                                   env=dict(os.environ, NIRI_TOOLING_FAST=mode), start_new_session=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         _workers.add(process)
     try:
@@ -197,10 +198,13 @@ def run_job(ids: list[str]) -> dict[str, object]:
         path.unlink(missing_ok=True)
 
 
-def run_full(ci: bool = False) -> int:
+def run_tooling(ci: bool = False, fast: bool = False) -> int:
     global _result_dir
     limit = worker_limit()  # fail before discovery or spawning
-    os.environ['NIRI_TOOLING_FAST'] = '0'
+    if fast:
+        limit = min(2, limit)
+    mode = '1' if fast else '0'
+    os.environ['NIRI_TOOLING_FAST'] = mode
     loader = unittest.defaultTestLoader
     loader.errors.clear()
     inventory = flatten(loader.discover('tools'))
@@ -212,21 +216,30 @@ def run_full(ci: bool = False) -> int:
             for subject in (type(case), method):
                 if getattr(subject, '__unittest_skip__', False) and case.id() not in OPTIONAL_SKIPS:
                     raise ValueError(f'unexpected CI skip: {case.id()}: {subject.__unittest_skip_why__}')
-    lifecycle = [case.id() for case in inventory if type(case).__name__ in LIFECYCLE_CLASSES]
-    remainder = [case.id() for case in inventory if type(case).__name__ not in LIFECYCLE_CLASSES]
-    jobs = ([remainder] if remainder else []) + [[case_id] for case_id in lifecycle]
+    if fast:
+        modules = {}
+        for case in inventory:
+            modules.setdefault(type(case).__module__, []).append(case.id())
+        buckets = [[] for _ in range(limit)]
+        for ids in sorted(modules.values(), key=len, reverse=True):
+            min(buckets, key=len).extend(ids)
+        jobs = [bucket for bucket in buckets if bucket]
+    else:
+        lifecycle = [case.id() for case in inventory if type(case).__name__ in LIFECYCLE_CLASSES]
+        remainder = [case.id() for case in inventory if type(case).__name__ not in LIFECYCLE_CLASSES]
+        jobs = ([remainder] if remainder else []) + [[case_id] for case_id in lifecycle]
     expected = {case.id() for case in inventory}
     assigned = [case_id for job in jobs for case_id in job]
     if len(assigned) != len(expected) or set(assigned) != expected:
-        raise RuntimeError('full discovery partition lost or duplicated cases')
+        raise RuntimeError('tooling discovery partition lost or duplicated cases')
     _cancelled.clear()
     before = time.monotonic()
-    print(f'Full tooling: {len(inventory)} cases, {limit} children', flush=True)
+    print(f'{"Fast" if fast else "Full"} tooling: {len(inventory)} cases, {limit} children', flush=True)
     with tempfile.TemporaryDirectory() as directory:
         _result_dir = directory
         with ThreadPoolExecutor(max_workers=limit) as pool:
             try:
-                results = list(pool.map(run_job, jobs))
+                results = list(pool.map(lambda ids: run_job(ids, mode), jobs))
             finally:
                 cancel_pending_and_reap_workers()
     errors = sum(len(result['errors']) for result in results)
@@ -484,20 +497,30 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     choices = parser.add_mutually_exclusive_group(required=True)
     choices.add_argument('--full', action='store_true')
+    choices.add_argument('--fast', action='store_true')
     choices.add_argument('--check-paths', action='store_true')
     choices.add_argument('--worker', metavar='RESULT', help=argparse.SUPPRESS)
     parser.add_argument('--ci', action='store_true')
+    parser.add_argument('--worker-mode', choices=('0', '1'), help=argparse.SUPPRESS)
     parser.add_argument('ids', nargs='*', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.ci and not args.full:
+        parser.error('--ci requires --full')
+    if args.worker_mode is not None and not args.worker:
+        parser.error('--worker-mode requires --worker')
+    if args.ids and not args.worker:
+        parser.error('test IDs require --worker')
     if args.worker:
-        return worker(args.worker, args.ids)
+        if args.worker_mode is None:
+            parser.error('--worker requires --worker-mode')
+        return worker(args.worker, args.ids, args.worker_mode)
     signal.signal(signal.SIGTERM, interrupt)
     signal.signal(signal.SIGINT, interrupt)
     try:
         if args.check_paths:
             check_paths()
             return 0
-        return run_full(args.ci)
+        return run_tooling(args.ci, args.fast)
     except (ValueError, RuntimeError, KeyboardInterrupt) as error:
         print(f'FAILED: {error}', file=sys.stderr)
         return 1

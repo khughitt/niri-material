@@ -1,6 +1,6 @@
 # Pre-commit tooling latency
 
-Task: material-cd7782. Status: Tasks 1–5 implemented and reviewed; full-route stability verified. Task 6 remains open: the serial fast route misses the 35-second headroom target. The amendment below awaits owner review.
+Task: material-cd7782. Status: Tasks 1–5 implemented and reviewed; full-route stability verified. The parallel-fast amendment was accepted on 2026-10-05 and is implemented; Task 6 remains open for final review, stability and post-remedy hook acceptance.
 
 ## Outcome
 
@@ -211,7 +211,7 @@ validation. Tune scheduling from implementation timings if the full hook misses
 ## Exact command and recipe composition
 
 Keep `test_cmd` **Rust only** (`cargo test --all --exclude niri-visual-tests`).
-Define `tooling_fast_cmd` as standard discovery with explicit fast mode `1`, and
+Define `tooling_fast_cmd` as parallel native discovery with explicit fast mode `1`, and
 `tooling_full_cmd` as parallel native discovery with explicit full mode `0`. `check_cmd`
 runs the existing hygiene/target/format/clippy checks, fast tooling, then the
 existing task/report/pin checks. `full_check_cmd` substitutes full tooling at that
@@ -387,10 +387,9 @@ routes and raw-discovery environment caveat.
 
 The static-check substitution satisfies the owner's conditional spec acceptance.
 The implementation plan uses the minimal TERM reproduction, and retains real-case
-isolated/concurrent stress as a shipping gate. The owner reviewed the original plan before implementation. The additional
-fast-route amendment below has its own owner review gate before code changes.
+isolated/concurrent stress as a shipping gate. The owner reviewed the original plan before implementation. The owner accepted the additional fast-route amendment on 2026-10-05 before code changes.
 
-## Execution amendment: parallel fast validation (pending owner review)
+## Execution amendment: parallel fast validation (accepted 2026-10-05)
 
 The implemented revision preserves coverage and passes the real full route, but
 the added contract tests make serial fast discovery too expensive. Three actual

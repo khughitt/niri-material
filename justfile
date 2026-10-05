@@ -24,7 +24,7 @@ fast_cmd := "python3 tools/test-affected --status-level fail --final-status-leve
 one_cmd := nextest_cmd
 test_cmd := "cargo test --all --exclude niri-visual-tests"
 # Explicit flags override a caller's exported fast mode.
-tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m unittest discover -s tools 2>&1"
+tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fast 2>&1"
 tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full 2>&1"
 tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --check-paths"
 hygiene_cmd := "python3 tools/ops-check"
