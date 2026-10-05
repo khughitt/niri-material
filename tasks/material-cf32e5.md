@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T13:02:51Z
+updated: 2026-10-05T13:04:51Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -33,3 +33,5 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-05T12:22:37Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-05T13:02:51Z (material-cf32e5): Design approved in conversation (explorable placement; approach: site property on the noise node, grain pass on the shared sharp texture, agreement validation at load, film grain at post). §7.1 offline simulation run: backdrop grain keeps 32/15/8 % (white) and 19/7/5 % (fine) of its sd after 1/2/3 blur passes; glass grain unchanged; no site dropped
+- 2026-10-05T13:04:51Z (material-cf32e5): parked (waiting on user, review): Spec review round 1 of docs/specs/2026-10-05-noise-placement-design.md (.worktrees/material-cf32e5), reviewer codex; on acceptance run writing-plans for the renderer plan
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
