@@ -10,6 +10,8 @@
 
 **Spec:** `docs/specs/2026-10-05-noise-placement-design.md` (this worktree, `.worktrees/material-cf32e5`). Section numbers below (§3, §4, ...) refer to it. The prism-side contract is prism `docs/specs/2026-10-04-pipeline-schema-design.md` Section 5.
 
+**Status:** revised after plan review round 1 (codex/gpt-6-astra, 2026-10-05): the precision line precedes the shared helpers; the cost script owns its wallpaper PIDs; Task 1 is green on its own (field migration, ownership on the existing stage); `film-grain` precedes `effect-saturation`; the coloured test buffer scales bytes to the single-pixel protocol; tests locate windows by material name; the smoke uses the lib's `spawn_probe`/`calibrate_probe_rect`/`probe_rect`/`assert_about` and a valid ring config; the grain program compiles lazily in the buffer and retries after invalidation; the cost section reports measurements, not verdicts; the capture matrix is the spec's; `just setup` precedes the baseline build.
+
 ## Global Constraints
 
 - Branch `material-cf32e5` in `.worktrees/material-cf32e5`, on `materials-26.04`. Baseline commit `b261ad1a` (the task-start commit).
@@ -40,11 +42,16 @@ Five inputs the spec implies but no test exercised when this plan was drafted; e
 
 **Files:**
 - Modify: `niri-config/src/material/optics/noise.rs`
-- Modify: `niri-config/src/lib.rs` (re-exports near line 60, the `recursion == 0` block near line 533, `impl Config` near line 546, tests beside `glass_noise_type_parses_each_value` near line 1766)
+- Modify: `niri-config/src/lib.rs` (re-exports near line 60, the `recursion == 0` block near line 533, `impl Config` near line 546, tests beside `glass_noise_type_parses_each_value` near line 1766, the `ResolvedNoise` literal near line 1619)
+- Modify: `niri-config/src/material/pipeline.rs` (the existing `noise` row owns and reads `noise site=`)
+- Modify: `src/render_helpers/material/optics/noise.rs:68` and `src/layout/tile.rs:2852` (exhaustive `ResolvedNoise` literals gain the field)
 - Modify: `docs/materials/material-config.md` (generated table between `<!-- params:begin -->` and `<!-- params:end -->`)
+- Modify: `resources/materials/pipeline.json` (regenerated: the `noise` stage's `owns` and `reads`)
+
+This task is green on its own: the new field is written into every exhaustive literal, and the new parameter is owned by the existing `noise` stage, so the ownership pin passes without the new stages (those arrive with their hooks in Task 2).
 
 **Interfaces:**
-- Produces: `pub enum NoiseSite { Glass = 0, Backdrop = 1, Film = 2 }` with `NAMES`, `FromStr`, `Default = Glass`; `ResolvedNoise.site: NoiseSite`; `pub struct BackdropGrain { pub amount: f64, pub kind: NoiseType }`; `pub fn backdrop_grain(materials: &[Material]) -> Result<Option<BackdropGrain>, String>` in `niri_config::material::optics::noise`; `Config::backdrop_grain(&self) -> Option<BackdropGrain>`; `ParamSpec` node `"noise site="`. All re-exported from `niri_config` (`NoiseSite`, `BackdropGrain`).
+- Produces: `pub enum NoiseSite { Glass = 0, Backdrop = 1, Film = 2 }` with `NAMES`, `FromStr`, `Default = Glass`; `ResolvedNoise.site: NoiseSite`; `pub struct BackdropGrain { pub amount: f64, pub kind: NoiseType }`; `pub fn backdrop_grain(materials: &[Material]) -> Result<Option<BackdropGrain>, String>` in `niri_config::material::optics::noise`; `Config::backdrop_grain(&self) -> Option<BackdropGrain>`; `ParamSpec` node `"noise site="`, owned and read by the `noise` stage. All re-exported from `niri_config` (`NoiseSite`, `BackdropGrain`).
 - Consumed by: Task 2 (`site` uniform), Task 3 (`GrainOptions::from(BackdropGrain)`), Task 4 (configs with `site=`).
 
 - [ ] **Step 1: Write the failing parse tests**
@@ -131,7 +138,7 @@ Add `NoiseSite` and `BackdropGrain` to the test module's imports where `NoiseTyp
 Run: `just test-one -p niri-config glass_noise_site`
 Expected: compile error, `NoiseSite` not found.
 
-- [ ] **Step 3: Add the enum, the property, the resolved field, the agreement function and the parameter row**
+- [ ] **Step 3: Add the enum, the property, the resolved field, the agreement function, the parameter row, and the field in every literal**
 
 In `niri-config/src/material/optics/noise.rs`, after `impl FromStr for NoiseType`, add:
 
@@ -297,25 +304,47 @@ In `impl Config`, after `load_default`:
     }
 ```
 
-- [ ] **Step 4: Run the new tests and the whole config crate**
+Exhaustive `ResolvedNoise { amount, kind }` literals no longer compile; give each the field (the `..Default::default()` ones at `src/render_helpers/material/optics/mod.rs:207` and `src/layout/tile.rs:2808` need nothing):
 
-Run: `just test-one -p niri-config glass_noise_site` then `just test-one -p niri-config backdrop_grain` then `just test-one -p niri-config material_`
-Expected: the four new tests PASS; `material_parameter_specs_match_the_parser` PASS (it writes `noise 0.5 site="glass"` through `write`); `material_parameter_table_matches_the_docs` FAILS with "parameter table is stale"; `every_parameter_is_owned_by_exactly_one_stage` FAILS ("noise site=" owned by no stage; Task 2 fixes it, do not touch `pipeline.rs` here).
+- `niri-config/src/lib.rs:1619`: add `site: NoiseSite::Glass,` after `kind: NoiseType::Fine,`.
+- `src/render_helpers/material/optics/noise.rs:68`: add `site: NoiseSite::Glass,` after `kind: NoiseType::Lightness,` and import `NoiseSite` beside `NoiseType` in that test module.
+- `src/layout/tile.rs:2852`: add `site: niri_config::NoiseSite::Glass,` after `kind: noise_type,`.
 
-- [ ] **Step 5: Regenerate the parameter table**
+In `niri-config/src/material/pipeline.rs`, the existing `noise` row owns and reads the new parameter (the new stages come in Task 2):
 
-Run: `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_parameter_table_matches_the_docs`
-Then `git diff docs/materials/material-config.md`: exactly one new row, `| \`noise\` \`site=\` | \`glass\` / \`backdrop\` / \`film\` | \`glass\` | — | — |`, after the `noise type=` row.
+```rust
+    stage(
+        "noise",
+        "behind",
+        Scope::Material,
+        &["noise", "noise type=", "noise site="],
+        &["noise", "noise type=", "noise site=", "blur noise", "backdrop-blur"],
+        &[],
+        optic("noise", "behind"),
+        false,
+    ),
+```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Run the new tests, the config crate, and the niri crate's pins**
+
+Run: `just test-one -p niri-config glass_noise_site` then `just test-one -p niri-config backdrop_grain` then `just test-one -p niri-config material_` then `just test-one -p niri-config pipeline` then `just test-one -p niri pipeline_` then `just test-one -p niri noise`
+Expected: the four new tests PASS; `material_parameter_specs_match_the_parser` PASS (it writes `noise 0.5 site="glass"` through `write`); `every_parameter_is_owned_by_exactly_one_stage` and `reads_cover_owns_and_name_only_parameters` PASS; the niri pins PASS (the GLSL-reads pin checks that what the GLSL reads is listed, not the converse, so the stage may list `noise site=` before the shader declares it); only `material_parameter_table_matches_the_docs` and `material_pipeline_schema_matches_the_file` FAIL, both as "stale".
+
+- [ ] **Step 5: Regenerate the parameter table and the schema file**
+
+Run: `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_parameter_table_matches_the_docs` and `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_pipeline_schema_matches_the_file`
+Then `git diff docs/materials/material-config.md`: exactly one new row, `| \`noise\` \`site=\` | \`glass\` / \`backdrop\` / \`film\` | \`glass\` | — | — |`, after the `noise type=` row. `git diff resources/materials/pipeline.json`: the `noise` stage's `owns` and `reads` each gain `"noise site="`; nothing else.
+
+- [ ] **Step 6: Gate and commit**
+
+Run: `just test-fast` and `just check`. Expected: green.
 
 ```bash
-git add niri-config/src/material/optics/noise.rs niri-config/src/lib.rs docs/materials/material-config.md
+git add niri-config/src/material/optics/noise.rs niri-config/src/lib.rs niri-config/src/material/pipeline.rs \
+  src/render_helpers/material/optics/noise.rs src/layout/tile.rs docs/materials/material-config.md resources/materials/pipeline.json
 just upstream-report --stage && git add docs/materials/upstream-divergence.md
 git commit -m "feat(config): noise site= with the backdrop agreement rule (material-cf32e5)"
 ```
-
-`just check` runs in the pre-commit hook; the ownership pin stays red until Task 2 (the fast tooling and `tasks check` are what the hook runs for a config commit; if the hook runs the ownership test and refuses, squash Task 1 and Task 2's first commit together instead).
 
 ---
 
@@ -324,7 +353,7 @@ git commit -m "feat(config): noise site= with the backdrop agreement rule (mater
 **Files:**
 - Create: `src/render_helpers/shaders/material/common.frag` (the six helpers moved out of the prelude)
 - Create: `src/render_helpers/shaders/grain.frag` (the effect program's `main`)
-- Modify: `src/render_helpers/shaders/material/prelude.frag` (remove the moved helpers)
+- Modify: `src/render_helpers/shaders/material/prelude.frag` (remove the moved helpers and the `precision` line, which moves to the assembler)
 - Modify: `src/render_helpers/shaders/material/noise.frag`
 - Modify: `src/render_helpers/shaders/material/main.frag` (the post call)
 - Modify: `src/render_helpers/shaders/mod.rs` (`material_source`, new `grain_source`, tests)
@@ -334,7 +363,7 @@ git commit -m "feat(config): noise site= with the backdrop agreement rule (mater
 
 **Interfaces:**
 - Consumes: `NoiseSite` (Task 1).
-- Produces: GLSL `vec3 noise_post(vec3 encoded, vec2 fragCoord)`, `vec4 noise_source(vec4 texel, vec2 fragCoord)`, uniform `mat_noise_site`; `pub(crate) fn grain_source() -> String` in `shaders/mod.rs` (a complete `#version 100` fragment program over `varying vec2 v_coords`, `uniform sampler2D tex`, `uniform float mat_noise`, `uniform float mat_noise_type`); schema stages `backdrop-grain`, `noise`, `film-grain`.
+- Produces: GLSL `vec3 noise_post(vec3 encoded, vec2 fragCoord)`, `vec4 noise_source(vec4 texel, vec2 fragCoord)`, uniform `mat_noise_site`; `pub(crate) fn grain_source() -> String` in `shaders/mod.rs` (a complete `#version 100` fragment program over `varying vec2 v_coords`, `uniform sampler2D tex`, `uniform float mat_noise`, `uniform float mat_noise_type`); schema stages `backdrop-grain` and `film-grain` with selectors, and the selector on `noise`.
 
 - [ ] **Step 1: Write the failing pin tests**
 
@@ -347,7 +376,11 @@ Replace the last line of `material_source_is_prelude_then_optics_in_order_then_m
         let post = main.find("glassColor = noise_post(glassColor, gl_FragCoord.xy);").unwrap();
         let coverage = main.find("glassed = vec4(glassColor, 1.0) * coverage;").unwrap();
         assert!(encode < post && post < coverage, "the post hook sits between encode and coverage");
-        assert!(source.contains("// ---- common"));
+        // GLSL ES needs the float precision declared before the first float
+        // function; the shared helpers come right after it, before the prelude.
+        assert!(source.starts_with("precision highp float;\n// ---- common\n"));
+        assert_eq!(source.matches("precision highp float;").count(), 1);
+        assert!(source.find("// ---- common").unwrap() < source.find("// ---- prelude").unwrap());
         assert!(source.contains("uniform float mat_noise_site;"));
 ```
 
@@ -472,16 +505,16 @@ Create `src/render_helpers/shaders/material/common.frag` with, verbatim from `pr
 // concatenated first in both programs.
 ```
 
-Delete those lines from `prelude.frag`. Everything else in the prelude stays in place; `snoise` and its helpers stay in the prelude because only the material program uses them.
+Delete those lines from `prelude.frag`, and delete its `precision highp float;` line too: the assembler now emits it first, ahead of the helpers, because GLSL ES refuses a float function before the float precision is declared. Update the prelude's header comment ("part 1 of 3" becomes "the prelude: core uniforms, shared globals, the slab, and the refraction taps; common.frag precedes it and shaders/mod.rs emits the precision line"). Everything else in the prelude stays in place; `snoise` and its helpers stay there because only the material program uses them.
 
 In `shaders/mod.rs`:
 
 ```rust
-/// The material fragment shader: the shared helpers, the prelude, each
-/// optic's GLSL in `OPTICS` order, then main. A comment marker per part
-/// keeps compile-error line numbers locatable by hand.
+/// The material fragment shader: the precision line, the shared helpers,
+/// the prelude, each optic's GLSL in `OPTICS` order, then main. A comment
+/// marker per part keeps compile-error line numbers locatable by hand.
 pub(crate) fn material_source() -> String {
-    let mut source = String::from("// ---- common\n");
+    let mut source = String::from("precision highp float;\n// ---- common\n");
     source.push_str(include_str!("material/common.frag"));
     source.push_str("\n// ---- prelude\n");
     source.push_str(include_str!("material/prelude.frag"));
@@ -516,7 +549,7 @@ pub(crate) fn grain_source() -> String {
 ```
 
 Run: `just test-one -p niri material_source_is_prelude_then_optics_in_order_then_main`
-Expected: FAIL only on the `noise_post` / `mat_noise_site` assertions (the move itself compiles; the material program is exercised by Task 4's renders and by `just test-fast`'s existing material tests, which must stay green after this step: run `just test-one -p niri material` and expect PASS).
+Expected: FAIL only on the `noise_post` / `mat_noise_site` assertions. The move itself must compile on the GPU: run `just test-one -p niri ring_look` (an in-process render through the real material program) and expect PASS with no "error compiling" warning in its output. If `glslangValidator` is installed, also `cargo run`-free: dump the source from a scratch test or `println!` and run `glslangValidator -S frag <(printf '#version 100\n'; cat source.glsl)`; it must accept.
 
 - [ ] **Step 4: Extend `noise.frag` and call the post hook**
 
@@ -716,7 +749,7 @@ In `STAGES`, insert as the first row (before `blur`):
     ),
 ```
 
-Replace the `noise` row with:
+Wrap the `noise` row (which Task 1 already gave `noise site=` in `owns` and `reads`) in `select(..., "noise site=", "glass")`:
 
 ```rust
     select(
@@ -735,7 +768,7 @@ Replace the `noise` row with:
     ),
 ```
 
-Insert immediately before the `effect-noise` row (the `background-effect` site's first row; `stages_are_grouped_by_site_in_site_order` refuses any other position):
+Insert immediately before the `effect-saturation` row (line 489 today; it is the `background-effect` site's first row, ahead of `effect-noise`, and `stages_are_grouped_by_site_in_site_order` refuses any other position):
 
 ```rust
     select(
@@ -759,7 +792,7 @@ Insert immediately before the `effect-noise` row (the `background-effect` site's
 Run: `just test-one -p niri-config pipeline` (the module's tests) and `just test-one -p niri pipeline_` and `just test-one -p niri grain_source` and `just test-one -p niri material_source` and `just test-one -p niri-config material_`
 Expected: everything PASS except `material_pipeline_schema_matches_the_file` (stale).
 Run: `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_pipeline_schema_matches_the_file`
-Then `git diff resources/materials/pipeline.json`: three stage objects differ or are new, each carrying `"selector": {"param": "noise site=", "variant": ...}`; the `version` is unchanged.
+Then `git diff resources/materials/pipeline.json`: two new stage objects (`backdrop-grain` first, `film-grain` before `effect-saturation`) and a `selector` on `noise`, each `"selector": {"param": "noise site=", "variant": ...}`; the `version` is unchanged.
 
 - [ ] **Step 7: Prove two drifts fail**
 
@@ -783,13 +816,12 @@ git commit -m "feat(material): noise sites in the shader and the schema; grain p
 **Files:**
 - Create: `src/render_helpers/grain.rs`
 - Modify: `src/render_helpers/mod.rs` (declare `pub mod grain;` beside `pub mod blur;`)
-- Modify: `src/render_helpers/shaders/mod.rs` (`Shaders.grain`, compiled beside `blur`)
-- Modify: `src/render_helpers/effect_buffer.rs`
+- Modify: `src/render_helpers/effect_buffer.rs` (the buffer owns and lazily compiles its `GrainProgram`, so a failed compile retries after the next invalidation, as the spec's failure rule requires; `Shaders` is not touched)
 - Modify: `src/niri.rs` (`update_xray_render_elements`, near line 4336)
 
 **Interfaces:**
 - Consumes: `grain_source()` (Task 2), `BackdropGrain`, `NoiseType`, `Config::backdrop_grain()` (Task 1).
-- Produces: `pub struct GrainOptions { pub amount: f32, pub kind: NoiseType }` with `From<BackdropGrain>`; `pub struct GrainProgram` with `compile(&mut GlesRenderer) -> anyhow::Result<Self>` and `render(&self, &mut GlesRenderer, source: &GlesTexture, target: &GlesTexture, GrainOptions) -> anyhow::Result<()>`; `EffectBuffer::update_grain_options(&mut self, Option<GrainOptions>)`; Tracy spans `EffectBuffer::prepare_grain` (CPU) and `Grain::render` (GPU).
+- Produces: `pub struct GrainOptions { pub amount: f32, pub kind: NoiseType }` with `From<BackdropGrain>`; `pub struct GrainProgram` with `compile(&mut GlesRenderer) -> anyhow::Result<Self>`, `context_id(&self) -> ContextId<GlesTexture>` and `render(&self, &mut GlesRenderer, source: &GlesTexture, target: &GlesTexture, GrainOptions) -> anyhow::Result<()>`; `EffectBuffer::update_grain_options(&mut self, Option<GrainOptions>)`; Tracy spans `EffectBuffer::prepare_grain` (CPU) and `Grain::render` (GPU).
 
 - [ ] **Step 1: Write the failing invalidation table test**
 
@@ -831,6 +863,16 @@ In `effect_buffer.rs` tests:
     }
 
     #[test]
+    fn a_failed_grain_pass_retries_only_after_an_invalidation_that_clears_grain() {
+        use Invalidation::*;
+        assert_eq!(next_grain_status(GrainStatus::Failed, cleared_by(BlurOptionsChanged, true)), GrainStatus::Failed);
+        assert_eq!(next_grain_status(GrainStatus::Failed, cleared_by(SharpDamage, true)), GrainStatus::Dirty);
+        assert_eq!(next_grain_status(GrainStatus::Failed, cleared_by(GrainOptionsChanged, false)), GrainStatus::Dirty);
+        assert_eq!(next_grain_status(GrainStatus::Clean, cleared_by(BlurOptionsChanged, true)), GrainStatus::Clean);
+        assert_eq!(next_grain_status(GrainStatus::Clean, cleared_by(SharpDamage, false)), GrainStatus::Dirty);
+    }
+
+    #[test]
     fn grain_options_change_publishes_only_with_an_offscreen_and_never_for_equal_options() {
         let mut buffer = EffectBuffer::new();
         let before = buffer.commit();
@@ -846,7 +888,7 @@ In `effect_buffer.rs` tests:
     }
 ```
 
-Run: `just test-one -p niri each_invalidation` — expected: compile error (`Invalidation`, `Cleared`, `cleared_by`, `GrainOptions` missing).
+Run: `just test-one -p niri each_invalidation` — expected: compile error (`Invalidation`, `Cleared`, `cleared_by`, `next_grain_status`, `GrainOptions` missing).
 
 - [ ] **Step 2: The grain program**
 
@@ -863,7 +905,7 @@ use std::rc::Rc;
 use anyhow::{ensure, Context as _};
 use niri_config::{BackdropGrain, NoiseType};
 use smithay::backend::renderer::gles::{ffi, link_program, GlesRenderer, GlesTexture};
-use smithay::backend::renderer::{Renderer as _, Texture as _};
+use smithay::backend::renderer::{ContextId, Renderer as _, Texture as _};
 use smithay::gpu_span_location;
 
 use crate::render_helpers::shaders::grain_source;
@@ -894,11 +936,13 @@ struct GrainProgramInner {
     uniform_amount: ffi::types::GLint,
     uniform_kind: ffi::types::GLint,
     attrib_vert: ffi::types::GLint,
+    context_id: ContextId<GlesTexture>,
 }
 
 impl GrainProgram {
     pub fn compile(renderer: &mut GlesRenderer) -> anyhow::Result<Self> {
         let source = grain_source();
+        let context_id = renderer.context_id();
         renderer
             .with_context(move |gl| unsafe {
                 let program = link_program(gl, include_str!("shaders/blur.vert"), &source)
@@ -909,9 +953,16 @@ impl GrainProgram {
                     uniform_amount: gl.GetUniformLocation(program, c"mat_noise".as_ptr()),
                     uniform_kind: gl.GetUniformLocation(program, c"mat_noise_type".as_ptr()),
                     attrib_vert: gl.GetAttribLocation(program, c"vert".as_ptr()),
+                    context_id,
                 }))
             })
             .context("error making GL context current")?
+    }
+
+    /// The renderer context the program was linked in; a buffer drops the
+    /// program when its renderer changes, as `Blur` does.
+    pub fn context_id(&self) -> ContextId<GlesTexture> {
+        self.0.context_id.clone()
     }
 
     /// Grains `source` into `target`, same size, one texel to one texel.
@@ -983,17 +1034,7 @@ impl GrainProgram {
 }
 ```
 
-In `src/render_helpers/shaders/mod.rs`, add `pub grain: Option<GrainProgram>` to `Shaders` (import `crate::render_helpers::grain::GrainProgram`) and, in `compile` right after `blur`:
-
-```rust
-        let grain = GrainProgram::compile(renderer)
-            .map_err(|err| {
-                warn!("error compiling grain shader: {err:?}");
-            })
-            .ok();
-```
-
-and carry it into the struct literal. Declare `pub mod grain;` in `src/render_helpers/mod.rs`.
+Declare `pub mod grain;` in `src/render_helpers/mod.rs`. The program is not registered in `Shaders`: it is compiled lazily by the buffer that needs it (Step 3), so a compile failure is retried after the next invalidation instead of being frozen at renderer start.
 
 - [ ] **Step 3: The effect buffer**
 
@@ -1051,16 +1092,28 @@ const fn cleared_by(cause: Invalidation, had_blurred: bool) -> Cleared {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum GrainStatus {
-    /// Needs the pass (no grained texture, or a stale one).
+    /// Needs the pass (no grained texture, or a stale one); also where a
+    /// failed compile or draw is retried.
     Dirty,
     /// `grain_texture` holds the sharp texture grained with the current options.
     Clean,
-    /// The pass failed since the last invalidation; the sharp texture stands in.
+    /// The compile or the pass failed since the last invalidation that
+    /// cleared grain; the sharp texture stands in until then.
     Failed,
+}
+
+/// The grain status after an invalidation: anything that clears grain
+/// returns it to `Dirty`, which is also how a failure gets its retry.
+const fn next_grain_status(status: GrainStatus, cleared: Cleared) -> GrainStatus {
+    if cleared.grain {
+        GrainStatus::Dirty
+    } else {
+        status
+    }
 }
 ```
 
-`EffectBuffer` gains `grain: Option<GrainOptions>` (initialised `None` in `new`). `Offscreen` gains `grain_texture: Option<GlesTexture>` and `grain: GrainStatus` (initialised `None` / `GrainStatus::Dirty` where the offscreen is built, near line 378).
+`EffectBuffer` gains `grain: Option<GrainOptions>` and `grain_program: Option<GrainProgram>` (both `None` in `new`). `Offscreen` gains `grain_texture: Option<GlesTexture>` and `grain: GrainStatus` (initialised `None` / `GrainStatus::Dirty` where the offscreen is built, near line 378).
 
 Add to `Offscreen`:
 
@@ -1076,9 +1129,7 @@ impl Offscreen {
     }
 
     fn clear(&mut self, cleared: Cleared) {
-        if cleared.grain {
-            self.grain = GrainStatus::Dirty;
-        }
+        self.grain = next_grain_status(self.grain, cleared);
         if cleared.blurred {
             self.blurred = None;
         }
@@ -1163,11 +1214,28 @@ with
             return;
         }
         let _span = tracy_client::span!("EffectBuffer::prepare_grain");
+        // The program is the buffer's, compiled on first need and after a
+        // renderer change; a failed compile is retried the next time grain
+        // is Dirty, which the invalidation table decides.
+        if self
+            .grain_program
+            .as_ref()
+            .is_some_and(|p| p.context_id() != renderer.context_id())
+        {
+            self.grain_program = None;
+        }
+        let program = match &self.grain_program {
+            Some(program) => program.clone(),
+            None => match GrainProgram::compile(renderer) {
+                Ok(program) => self.grain_program.insert(program).clone(),
+                Err(err) => {
+                    offscreen.grain = GrainStatus::Failed;
+                    warn!("backdrop grain shader failed to compile; the sharp texture stands in until the next damage: {err:?}");
+                    return;
+                }
+            },
+        };
         let result = (|| -> anyhow::Result<()> {
-            let program = Shaders::get(renderer)
-                .grain
-                .clone()
-                .context("grain program is missing")?;
             let size = offscreen.texture.size();
             let reusable = offscreen
                 .grain_texture
@@ -1221,15 +1289,17 @@ In `src/niri.rs`, in `update_xray_render_elements`, after `let blur_options = ..
 
 and in both `for buf in ...` loops, after `update_blur_options`: `buffer.update_grain_options(grain_options);` (import `crate::render_helpers::grain::GrainOptions`).
 
+(`offscreen` and `self.grain_program` are disjoint borrows of `self`; take `let grain = self.grain;` and the offscreen as `self.offscreen.as_mut()` before touching `self.grain_program`, or split the compile into a small `fn grain_program(&mut self, renderer) -> Option<GrainProgram>` called first.)
+
 - [ ] **Step 4: Run the unit tests and the material tests**
 
-Run: `just test-one -p niri each_invalidation` and `just test-one -p niri grain_options_change` and `just test-one -p niri prefilter_` and `just test-one -p niri material`
-Expected: all PASS (the in-process material renders compile the grain program through `Shaders::compile`; a compile failure would appear as the warning in the test log and as a `Failed` status, not a panic; if the warning appears, fix the GLSL before moving on).
+Run: `just test-one -p niri each_invalidation` and `just test-one -p niri a_failed_grain_pass` and `just test-one -p niri grain_options_change` and `just test-one -p niri prefilter_` and `just test-one -p niri material`
+Expected: all PASS. The in-process renders of Task 4 are the first to compile the grain program on a GPU; a compile failure there appears as the "failed to compile" warning and a `Failed` status, never a panic. If the warning appears, fix the GLSL before moving on.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/render_helpers/grain.rs src/render_helpers/mod.rs src/render_helpers/shaders/mod.rs src/render_helpers/effect_buffer.rs src/niri.rs
+git add src/render_helpers/grain.rs src/render_helpers/mod.rs src/render_helpers/effect_buffer.rs src/niri.rs
 just upstream-report --stage && git add docs/materials/upstream-divergence.md
 git commit -m "feat(render): backdrop grain pass in the effect buffer, published through the commit counter (material-cf32e5)"
 ```
@@ -1241,11 +1311,11 @@ git commit -m "feat(render): backdrop grain pass in the effect buffer, published
 **Files:**
 - Create: `src/tests/noise_site.rs`
 - Modify: `src/tests/mod.rs` (`mod noise_site;`)
-- Modify: `src/tests/client.rs` (a coloured layer buffer helper beside `attach_new_buffer` on the layer surface, near line 488)
+- Modify: `src/tests/client.rs` (a coloured layer buffer helper beside `attach_new_buffer` on the layer surface, near line 488; channels scaled from bytes to the single-pixel protocol's `u32` range)
 - Modify: `src/render_helpers/material/mod.rs` (`MaterialState::commit()` accessor)
 
 **Interfaces:**
-- Consumes: `render_at`, `set_time`, `diff`, `window_rect` from `ring_pair.rs` (`pub(super)`); `Fixture`; `tile.material()`; `Niri::output_state[...].xray.background`.
+- Consumes: `render_at`, `set_time`, `diff` from `ring_pair.rs` (`pub(super)`); `Fixture`; `tile.material()` and `MaterialState::material().name`; `Niri::output_state[...].xray.background`.
 - Produces: nothing other tasks consume; Task 5's smoke mirrors the identities.
 
 - [ ] **Step 1: Helpers**
@@ -1253,11 +1323,15 @@ git commit -m "feat(render): backdrop grain pass in the effect buffer, published
 In `src/tests/client.rs`, on the layer surface impl beside `attach_new_buffer`:
 
 ```rust
-    /// A single-pixel buffer of this colour; `set_size` stretches it over
-    /// the surface through the viewport, which is how a test paints a
-    /// background layer the effect buffer can sample.
-    pub fn attach_new_colored_buffer(&self, r: u32, g: u32, b: u32, a: u32) {
-        let buffer = self.spbm.create_u32_rgba_buffer(r, g, b, a, &self.qh, ());
+    /// A single-pixel buffer of this 8-bit colour; `set_size` stretches it
+    /// over the surface through the viewport, which is how a test paints a
+    /// background layer the effect buffer can sample. The single-pixel
+    /// protocol takes each channel as `0..=u32::MAX`, so a byte is scaled.
+    pub fn attach_new_colored_buffer(&self, r: u8, g: u8, b: u8, a: u8) {
+        let scale = |v: u8| u32::from(v) * (u32::MAX / 255);
+        let buffer = self
+            .spbm
+            .create_u32_rgba_buffer(scale(r), scale(g), scale(b), scale(a), &self.qh, ());
         self.surface.attach(Some(&buffer), 0, 0);
     }
 ```
@@ -1291,7 +1365,7 @@ use smithay::utils::{Logical, Rectangle};
 
 use super::client::LayerConfigureProps;
 use super::fixture::Fixture;
-use super::ring_pair::{diff, render_at, set_time, window_rect};
+use super::ring_pair::{diff, render_at, set_time};
 use crate::render_helpers::RenderTarget;
 
 const OUT_W: u16 = 640;
@@ -1435,10 +1509,24 @@ fn reload(f: &mut Fixture, look: &Look) {
     f.niri_state().refresh_and_flush_clients();
 }
 
-/// RGBA pixels of the output, and the active window's flat face in output px.
+/// The rectangle of the tile whose material has this name, or of the tile
+/// with no material when `name` is `None`. `window_rect` in ring_pair.rs
+/// takes the first tile, which here is the second rule's window, so every
+/// test names the window it means.
+fn tile_rect(f: &mut Fixture, name: Option<&str>) -> Rectangle<f64, Logical> {
+    let niri = f.niri();
+    let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
+    let (tile, pos, _) = workspace
+        .tiles_with_render_positions()
+        .find(|(tile, _, _)| tile.material().map(|m| m.material().name.as_str()) == name)
+        .unwrap_or_else(|| panic!("no tile with material {name:?}"));
+    Rectangle::new(pos + tile.window_loc(), tile.animated_window_size())
+}
+
+/// RGBA pixels of the output, and material `a`'s flat face in output px.
 fn render(f: &mut Fixture) -> (Vec<u8>, Rectangle<i32, Logical>) {
     let pixels = render_at(f, Duration::ZERO);
-    let rect = window_rect(f);
+    let rect = tile_rect(f, Some("a"));
     let inset = f64::from(BEVEL + OFFSET) + 2.;
     let face = Rectangle::new(
         (rect.loc + smithay::utils::Point::from((inset, inset))).to_i32_round(),
@@ -1692,11 +1780,9 @@ fn window_site_element_sees_backdrop_grain() {
         },
     );
     let (after, _) = render(&mut f);
-    // The second window (mapped first, so the left column) has no material
-    // and a blurred background effect; its area must change with the grain.
-    let (_, _, workspace) = f.niri().layout.workspaces().next().unwrap();
-    let (tile, pos, _) = workspace.tiles_with_render_positions().next().unwrap();
-    let rect = Rectangle::new(pos + tile.window_loc(), tile.animated_window_size()).to_i32_round();
+    // The window with no material has the blurred background effect; its
+    // area must change with the grain.
+    let rect = tile_rect(&mut f, None).to_i32_round();
     assert!(
         region_sd(&before, &after, rect) > 0.5,
         "the background-effect element under a window with no material samples the grained backdrop"
@@ -1719,9 +1805,11 @@ fn a_backdrop_only_reload_rerenders_the_unchanged_glass_window() {
             .borrow()
             .commit();
         let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
-        // The first tile is the second rule's window: material `b`, glass site.
-        let (tile, _, _) = workspace.tiles_with_render_positions().next().unwrap();
-        let glass_window = tile.material().expect("material b").commit();
+        let glass_window = workspace
+            .tiles_with_render_positions()
+            .find_map(|(tile, _, _)| tile.material().filter(|m| m.material().name == "b"))
+            .expect("material b")
+            .commit();
         (buffer, glass_window)
     };
     let (buffer_0, window_0) = read(&mut f);
@@ -1804,54 +1892,153 @@ git commit -m "test(material): noise site identities, softening, coverage and da
 
 - [ ] **Step 2: The smoke**
 
-Create `docs/materials/scripts/glass-noise-site-smoke.sh`, built on `glass-optic-smoke-lib.sh` as `glass-render-order-smoke.sh` is (source the lib; `capture_preflight headless`; `build_binaries`; `capture_identity`). Required env: `OUT`, `BASE_NIRI` (the baseline release binary; see Step 3), `CAPTURE_TASK=material-cf32e5`. Config writer: the lib's `write_config` with `GLASS_EXTRA` lines and `TOP_EXTRA` for the `blur { }` block. Three fixtures and the captures:
+Create `docs/materials/scripts/glass-noise-site-smoke.sh` on `glass-optic-smoke-lib.sh`, the way `glass-render-order-smoke.sh` is built: `source "$(dirname "$0")/glass-optic-smoke-lib.sh"`, then `capture_preflight headless`, `build_binaries`, `capture_identity`. Required env: `OUT`, `BASE_NIRI` (the baseline release binary, Step 3), `CAPTURE_TASK=material-cf32e5`, and the lib's `NIRI_MATERIAL_WORK_ROOT`. The lib's API, used as it is defined: `write_config <path>` reads `GLASS_EXTRA` (lines appended inside `glass {}`; a key already in `GLASS_BASELINE` is replaced), `TOP_EXTRA` (top-level nodes), `FOCUS_RESPONSE`, `RESPONSE_EXTRA`; `start_nested <niri> <kdl>`; `spawn_probe <niri> "$IDLE"` (the second argument is the shell command the probe runs); `calibrate_probe_rect <niri> 0` once before any material capture (it measures the one-window layout and writes `probe-rect-0.txt`); `probe_rect <niri>` after each spawn, which sets `PX PY PW PH` for `face_roi`; `shot <niri> <name>`; `roi <name> <geometry> <suffix>`; `sd`, `mean`, `ae`, `rmse` (result in `METRIC`); `assert_zero`, `assert_less`, `assert_greater`, `assert_about <name> <got> <want> <relative tolerance>`; `finish`. `signed_diff` is not in the lib: define it locally as `glass-noise-type-smoke.sh` does.
+
+Wallpaper: `WALL` is set before `write_config` is first called; the identity and roughness fixtures use `magick -size 1280x720 xc:'rgb(140,115,90)'` with one textured quadrant composited (`-seed 11 plasma:fractal` at 400x300 in the lower right), the ring fixture a flat `xc:'rgb(128,128,128)'` (encoded 0.5).
 
 ```bash
-# Identity fixture: ior 1, white attenuation, no responses.
-identity_glass=$'ior 1\nattenuation-color "#ffffff"\nsaturation 1'
-cell() {   # $1 name, $2 binary, $3 glass extra, $4 blur block
-    GLASS_EXTRA="$identity_glass"$'\n'"$3" TOP_EXTRA="blur { $4 }" write_config "$OUT/$1.kdl"
+IDENTITY=$'ior 1\nattenuation-color "#ffffff"\nsaturation 1'
+blur_top() { printf 'blur { passes %s; offset 3; noise 0; saturation 1; }' "$1"; }
+cell() {   # $1 name, $2 binary, $3 glass extra, $4 blur passes
+    GLASS_EXTRA="$IDENTITY"$'\n'"$3" TOP_EXTRA=$(blur_top "$4") write_config "$OUT/$1.kdl"
     start_nested "$2" "$OUT/$1.kdl"
-    spawn_probe "$2" gns-probe
+    spawn_probe "$2" "$IDLE"
+    probe_rect "$2"
     sleep 2
     shot "$2" "$1"
     roi "$1" "$(face_roi)" face
     stop_nested
 }
+calibrate_probe_rect "$NIRI" 0
+
+# The spec's matrix (§7.2): site × blur × kind on the identity fixture.
 for kind in white fine lightness; do
-    cell "omitted-$kind"   "$NIRI"      "noise 0.3 type=\"$kind\""               "passes 3; offset 3; noise 0; saturation 1;"
-    cell "omitted-$kind-again" "$NIRI"  "noise 0.3 type=\"$kind\""               "passes 3; offset 3; noise 0; saturation 1;"
-    cell "baseline-$kind"  "$BASE_NIRI" "noise 0.3 type=\"$kind\""               "passes 3; offset 3; noise 0; saturation 1;"
-    cell "glass-$kind"     "$NIRI"      "noise 0.3 type=\"$kind\" site=\"glass\"" "passes 3; offset 3; noise 0; saturation 1;"
-    cell "film-$kind"      "$NIRI"      "noise 0.3 type=\"$kind\" site=\"film\""  "passes 3; offset 3; noise 0; saturation 1;"
-    cell "backdrop-$kind"  "$NIRI"      "noise 0.3 type=\"$kind\" site=\"backdrop\"" "passes 3; offset 3; noise 0; saturation 1;"
+    cell "omitted-$kind"       "$NIRI"      "noise 0.3 type=\"$kind\""                      3
+    cell "omitted-$kind-again" "$NIRI"      "noise 0.3 type=\"$kind\""                      3
+    cell "baseline-$kind"      "$BASE_NIRI" "noise 0.3 type=\"$kind\""                      3
+    for site in glass backdrop film; do
+        cell "$site-$kind-off" "$NIRI" "noise 0.3 type=\"$kind\" site=\"$site\""             3
+    done
 done
-cell "zero" "$NIRI" "noise 0" "passes 3; offset 3; noise 0; saturation 1;"
+cell "zero-off" "$NIRI" "noise 0" 3
 for p in 1 3; do
-    cell "backdrop-fine-p$p" "$NIRI" $'backdrop-blur true\nnoise 0.3 type="fine" site="backdrop"' "passes $p; offset 3; noise 0; saturation 1;"
-    cell "zero-p$p"          "$NIRI" $'backdrop-blur true\nnoise 0'                                 "passes $p; offset 3; noise 0; saturation 1;"
-    cell "glass-fine-p$p"    "$NIRI" $'backdrop-blur true\nnoise 0.3 type="fine" site="glass"'    "passes $p; offset 3; noise 0; saturation 1;"
+    cell "zero-p$p" "$NIRI" $'backdrop-blur true\nnoise 0' "$p"
+    for site in glass backdrop film; do
+        cell "$site-fine-p$p" "$NIRI" $'backdrop-blur true\nnoise 0.3 type="fine" site="'"$site"'"' "$p"
+    done
 done
-# Roughness fixture: ior 1.5 so the normalized level is roughness.
-for r in 0 0.5 1; do for site in glass backdrop; do
-    GLASS_EXTRA=$'ior 1.5\nattenuation-color "#ffffff"\nsaturation 1\nbackdrop-blur true\nroughness '"$r"$'\nnoise 0.3 type="fine" site="'"$site"'"' \
-        TOP_EXTRA='blur { passes 3; offset 3; noise 0; saturation 1; }' write_config "$OUT/rough-$site-r$r.kdl"
-    start_nested "$NIRI" "$OUT/rough-$site-r$r.kdl"; spawn_probe "$NIRI" gns-probe; sleep 2; shot "$NIRI" "rough-$site-r$r"; roi "rough-$site-r$r" "$(face_roi)" face; stop_nested
-    GLASS_EXTRA=$'ior 1.5\nattenuation-color "#ffffff"\nsaturation 1\nbackdrop-blur true\nroughness '"$r"$'\nnoise 0' \
-        TOP_EXTRA='blur { passes 3; offset 3; noise 0; saturation 1; }' write_config "$OUT/rough-zero-r$r.kdl"
-    start_nested "$NIRI" "$OUT/rough-zero-r$r.kdl"; spawn_probe "$NIRI" gns-probe; sleep 2; shot "$NIRI" "rough-zero-r$r"; roi "rough-zero-r$r" "$(face_roi)" face; stop_nested
+# Roughness fixture: ior 1.5, so the normalized level is roughness.
+ROUGH=$'ior 1.5\nattenuation-color "#ffffff"\nsaturation 1'
+rough_cell() {   # $1 name, $2 glass extra, $3 passes
+    GLASS_EXTRA="$ROUGH"$'\n'"$2" TOP_EXTRA=$(blur_top "$3") write_config "$OUT/$1.kdl"
+    start_nested "$NIRI" "$OUT/$1.kdl"; spawn_probe "$NIRI" "$IDLE"; probe_rect "$NIRI"; sleep 2
+    shot "$NIRI" "$1"; roi "$1" "$(face_roi)" face; stop_nested
+}
+for blur in false true; do for r in 0 0.5 1; do
+    tag="b$blur-r$r"
+    rough_cell "rough-zero-$tag" $'backdrop-blur '"$blur"$'\nroughness '"$r"$'\nnoise 0' 3
+    for site in glass backdrop; do
+        rough_cell "rough-$site-$tag" $'backdrop-blur '"$blur"$'\nroughness '"$r"$'\nnoise 0.3 type="fine" site="'"$site"'"' 3
+    done
 done; done
 ```
 
-Metrics and the seven assertions (write each metric to `$OUT/metrics.txt` as the other smokes do; `signed_diff a b out` as in `glass-noise-type-smoke.sh`, then `sd`):
+Metrics (each appended to `$OUT/metrics.txt` as `name=value`) and the seven assertions:
 
-1. `ae omitted-$kind omitted-$kind-again` → `assert_zero` (determinism).
-2. `ae omitted-$kind glass-$kind` → `assert_zero` for each kind.
-3. `ae omitted-$kind baseline-$kind` → `assert_zero` for each kind (byte identity against the baseline binary).
-4. `magick compare -metric MAE glass-fine-face backdrop-fine-face` → mean absolute error ≤ 2/255 (`assert_less` against `$(magick xc: -format '%[fx:2*quantumrange/255]' info:)`).
-5. `sd(signed_diff backdrop-fine-p$p, zero-p$p)` for p = off (the `backdrop-fine` cell), 1, 3: strictly decreasing (`assert_greater` twice); `sd(signed_diff glass-fine-p$p, zero-p$p)` within 5 % of the blur-off glass value (`assert_close ... 0.05`); roughness: `sd(signed_diff rough-backdrop-r$r, rough-zero-r$r)` decreasing over r, `rough-glass` within 5 %.
-6. `magick compare -metric AE -fuzz 1/255 film-$kind-face glass-$kind-face` → `assert_zero` for each kind (every face pixel within one code).
-7. Ring fixture, separate function: `GLASS_EXTRA` as the identity fixture plus `noise 0.1 type="white" site=<glass|film>`; `FOCUS_RESPONSE=ring-light`, `RESPONSE_EXTRA=$'ring-gap 6\nring-width 3\nring-rest 1\nring-glow 4\nring-beam-speed 400\nring-beam-decay 0'` (the lib's `write_config` writes `ring-beam-speed 0` first; a later line overrides it, confirm with `"$NIRI" validate`); the flat backdrop at encoded 0.5: `WALL` is `magick -size 1280x720 xc:'rgb(128,128,128)'`; after `spawn_probe` wait `ceil(run_length / speed) + 2` seconds, where `run_length` for this probe is the window perimeter plus its tail (`ring::run_length`; print it once from a tiny `cargo run --example`-free way: the smoke computes `2*(w+h) * (1 + 0.25)` px from the probe rect and divides by 400 px/s), then `shot`. Capture `ring-{glass,film}-{on,off}` with amount 0.1 and 0; `band_roi` is a 4 px wide strip at `ring-gap` inside the face edge along the right edge. Measure `e_b = mean(ring-glass-off band)` and assert `0.85 <= e_b <= 0.95` (else the fixture's levels are wrong, not the renderer); compute `expected_glass = decode'(0.5) * encode'(decode(e_b))` in awk with the sRGB formulas; `ratio_site = sd(signed_diff ring-site-on, ring-site-off, band) / sd(..., face)`; `assert_about ratio_film 1.0 0.1`, `assert_about ratio_glass $expected_glass 0.1`.
+1. `ae "$OUT/omitted-$kind.png" "$OUT/omitted-$kind-again.png"` → `assert_zero` per kind.
+2. `ae "$OUT/omitted-$kind.png" "$OUT/glass-$kind-off.png"` → `assert_zero` per kind.
+3. `ae "$OUT/omitted-$kind.png" "$OUT/baseline-$kind.png"` → `assert_zero` per kind: byte identity against the baseline binary.
+4. `magick compare -metric MAE "$OUT/glass-fine-off-face.png" "$OUT/backdrop-fine-off-face.png" null:` (through a local `mae()` built like `compare_metric`) → `assert_less "backdrop vs glass face MAE" "$METRIC" "$(magick xc: -format '%[fx:2*quantumrange/255]' info:)"`.
+5. Grain `sd`: `signed_diff "$OUT/$site-fine-$b-face.png" "$OUT/zero-$b-face.png" "$OUT/grain-$site-$b.png"; sd "$OUT/grain-$site-$b.png"` for `b` in `off p1 p3` and `site` in `glass backdrop film`. `assert_greater` backdrop off > p1 > p3; `assert_about "glass grain under blur" <glass p1> <glass off> 0.05` and the same for p3 and for film. Roughness: the same over `rough-$site-btrue-r{0,0.5,1}` against `rough-zero-btrue-r*`: backdrop strictly decreasing, glass within 5 %; report the `bfalse` row (where roughness still selects pyramid levels of the sharp texture) the same way.
+6. `magick compare -metric AE -fuzz 1/255 "$OUT/film-$kind-off-face.png" "$OUT/glass-$kind-off-face.png" null:` → `assert_zero` per kind: every face pixel within one code.
+7. The ring fixture, in its own function with its own config writer (the lib's `write_config` hard-codes `ring-beam-speed 0`, and a second singleton node does not override the first):
+
+```bash
+write_ring_config() {   # $1 path, $2 site, $3 amount
+    cat > "$1" <<KDL
+prefer-no-csd
+layout { gaps 40; background-color "transparent"; default-column-width { proportion 0.4; }; focus-ring { off; }; border { off; }; shadow { off; } }
+hotkey-overlay { skip-at-startup; }
+config-notification { disable-failed; }
+spawn-at-startup "swaybg" "-m" "fill" "-i" "$RING_WALL"
+blur { passes 3; offset 3; noise 0; saturation 1; }
+material "gos-probe" {
+    glass {
+        ior 1
+        thickness 20
+        attenuation-color "#ffffff"
+        attenuation-distance 60
+        chromatic-aberration 0
+        distortion 0 scale=0.5
+        anisotropic-blur 0
+        roughness 0
+        backdrop-blur false
+        jelly-flex 0
+        jelly-ripple 0
+        bevel 12
+        offset-x 6
+        offset-y 6
+        saturation 1
+        noise $3 type="white" site="$2"
+    }
+    response "default" {
+        focus "ring-light"
+        accent "none"
+        ring-gap 6
+        ring-width 3
+        ring-color "#ffffff"
+        ring-glow 2
+        ring-rest 2
+        ring-beam-speed 400
+        ring-beam-decay 0
+    }
+}
+window-rule {
+    match app-id="^gos-probe$"
+    material "gos-probe"
+    geometry-corner-radius 0
+    background-effect { blur false; noise 0; saturation 1; }
+}
+KDL
+}
+ring_cell() {   # $1 name, $2 site, $3 amount
+    write_ring_config "$OUT/$1.kdl" "$2" "$3"
+    start_nested "$NIRI" "$OUT/$1.kdl"
+    spawn_probe "$NIRI" "$IDLE"
+    probe_rect "$NIRI"
+    # The comet's whole run: a lap (perimeter) plus its tail (25 % of it),
+    # at 400 px/s, plus a margin; only the rest glow remains afterwards.
+    sleep "$(awk -v w="$PW" -v h="$PH" 'BEGIN { printf "%d", 2*(w+h)*1.25/400 + 3 }')"
+    shot "$NIRI" "$1"
+    roi "$1" "$(face_roi)" face
+    # The band: the ring sits ring-gap inside where the face begins, which is
+    # bevel - offset inside the window edge; a 3 px strip there, 300 px tall.
+    roi "$1" "3x300+$((PX + PW - 6 - 6 - 2))+$((PY + 200))" band
+    stop_nested
+}
+for site in glass film; do
+    ring_cell "ring-$site-on"  "$site" 0.1
+    ring_cell "ring-$site-off" "$site" 0
+done
+mean "$OUT/ring-glass-off-band.png"; e_b=$METRIC
+awk -v e="$e_b" 'BEGIN { exit !(e >= 0.85 && e <= 0.95) }' \
+    || fail "ring band level $e_b outside 0.85..0.95: the band crop or the glow/rest values need adjusting (a fixture fix, not a renderer finding)"
+expected_glass=$(awk -v e="$e_b" 'function dec(x) { return x <= 0.04045 ? x/12.92 : ((x+0.055)/1.055)^2.4 }
+    BEGIN { d1 = 2.4/1.055 * ((0.5+0.055)/1.055)^1.4; y = dec(e); d2 = 1.055/2.4 * y^(1/2.4 - 1); printf "%.4f", d1*d2 }')
+for site in glass film; do
+    signed_diff "$OUT/ring-$site-on-face.png" "$OUT/ring-$site-off-face.png" "$OUT/ring-$site-face-grain.png"; sd "$OUT/ring-$site-face-grain.png"; face_sd=$METRIC
+    signed_diff "$OUT/ring-$site-on-band.png" "$OUT/ring-$site-off-band.png" "$OUT/ring-$site-band-grain.png"; sd "$OUT/ring-$site-band-grain.png"; band_sd=$METRIC
+    ratio=$(awk -v a="$band_sd" -v b="$face_sd" 'BEGIN { printf "%.4f", a/b }')
+    printf 'ring_%s_band_over_face=%s\n' "$site" "$ratio" >> "$OUT/metrics.txt"
+    case $site in
+        film)  assert_about "film grain in the ring band" "$ratio" 1.0 0.1 ;;
+        glass) assert_about "glass grain compressed under the ring" "$ratio" "$expected_glass" 0.1 ;;
+    esac
+done
+printf 'ring_band_level=%s\nring_expected_glass_ratio=%s\n' "$e_b" "$expected_glass" >> "$OUT/metrics.txt"
+```
+
+(`assert_about`'s tolerance is relative: 0.1 means ±10 % of the wanted value, which is ±0.1 at 1.0 and ±0.047 at 0.47; the spec's ±0.1 absolute is the looser bound for glass, so pass `0.2` there if the first run lands between.) The ring and rest values 2 and 2 put the rest glow near `0.7 * 2 * 0.2 * 2 = 0.56` linear over the 0.214 backdrop, about 0.89 encoded; both are within their `0..3` bounds. `"$NIRI" validate -c` runs inside `start_nested` and refuses an invalid config.
 
 End with `finish` and a PASS line. Keep `set -eu`, the lib's `trap cleanup EXIT`, and the one-run-dir-per-run pattern.
 
@@ -1862,7 +2049,7 @@ End with `finish` and a PASS line. Keep `set -eu`, the lib's `trap cleanup EXIT`
 work-link --ensure .worktrees
 git worktree add .worktrees/material-cf32e5-baseline b261ad1a
 git worktree lock --reason "on WORK_ROOT storage (host: $(uname -n))" .worktrees/material-cf32e5-baseline
-(cd .worktrees/material-cf32e5-baseline && cargo build --release)
+(cd .worktrees/material-cf32e5-baseline && just setup && cargo build --release)
 BASE=$(cd .worktrees/material-cf32e5-baseline && cargo metadata --format-version 1 --no-deps | jq -r .target_directory)/release/niri
 ```
 
@@ -1902,11 +2089,30 @@ git commit -m "docs(materials): noise placement smoke against the baseline binar
 
 - [ ] **Step 1: The script**
 
-Create `docs/materials/scripts/noise-placement-cost.sh` on the lib (`capture_preflight headless`, `build_binaries`, `capture_identity`, `reserve_tracy_port`, `tools_ready`). Common config: the identity fixture of Task 5 with `backdrop-blur true`, `roughness 0.5`, `ior 1.5`, `noise 0.3 type="fine" site="backdrop"`, three blur passes. Three runs under `$NIRI_TRACY`, each a 30 s Tracy capture (`capture_bg`, `capture_ready`, `capture_wait`):
+Create `docs/materials/scripts/noise-placement-cost.sh` on the lib (`capture_preflight headless`, `build_binaries`, `capture_identity`, `reserve_tracy_port`, `tools_ready`). Common glass: the identity fixture of Task 5 with `backdrop-blur true`, `roughness 0.5`, `ior 1.5`, three blur passes, and `noise 0.3 type="fine" site=<backdrop|glass>`. The script writes its own config (a copy of the lib's `write_config` body without the `spawn-at-startup "swaybg"` line) and launches the wallpaper itself, so it owns every process it starts:
 
-- `static`: swaybg once, the probe window, no stimulus. From the CPU csv (`export_cpu static`), count rows named `EffectBuffer::prepare_grain`, `Blur::render` and `EffectBuffer::prepare_prefilter` in the last 20 s (`trace_end`, `ns_since_start`): `assert_zero` each. Report the counts and the first-frame GPU time of `Grain::render` from the GPU csv (`csvexport --gpu`, columns `Time from start of program`, `GPU execution time`).
-- `damage`: every second for 20 s, restart swaybg with a different solid colour (`magick -size 1280x720 xc:"rgb($((i*10)),100,120)"`; `msg "$NIRI_TRACY" action spawn -- sh -c 'pkill -x swaybg; exec swaybg -m fill -i <png>'`). From the GPU csv take the median `GPU execution time` of `Grain::render`, `Blur::render` and `Prefilter::downsample` rows; report each in ms (`ns_to_ms`) and the grain share of the per-damage total. The animated-backdrop figure is `grain_ms * 60` per second, printed with the word "derived".
-- `drag`: every 100 ms for 5 s, rewrite the config with `noise <0.10..0.59> site="backdrop"` and `msg action load-config-file` (confirm the action name with `"$NIRI_TRACY" msg action --help`; if reloading needs the file watcher instead, touch the file and sleep 100 ms). Count `EffectBuffer::prepare_grain`, `Blur::render`, `EffectBuffer::prepare_prefilter` rows during the drag window: expect about 50 each (`assert_greater 40`); report the per-change cascade total in ms. Repeat the drag with `site="glass"` and report its counts (expected 0 of each) as the comparison.
+```bash
+WALL_PIDS=()
+start_wall() {   # $1 png; the nested niri's display is the newest wayland-* socket in $RT
+    local display; display=$(cd "$RT" && ls -t wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)
+    [ -n "$display" ] || fail "no nested wayland display in $RT"
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$display swaybg -m fill -i "$1" >> "$OUT/swaybg.log" 2>&1 &
+    WALL_PIDS+=($!)
+}
+stop_walls() {   # only the PIDs this run started; never pkill by name, the desktop has its own swaybg
+    local pid
+    for pid in "${WALL_PIDS[@]}"; do kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; done
+    WALL_PIDS=()
+}
+cleanup_cost() { stop_walls; cleanup; }
+trap cleanup_cost EXIT
+```
+
+Three runs under `$NIRI_TRACY` per site, each a 30 s Tracy capture (`capture_bg`, `capture_ready`, `capture_wait`), for `site` in `backdrop` and `glass`:
+
+- `static-$site`: one wallpaper, the probe window, no stimulus. From the CPU csv (`export_cpu`), count rows named `EffectBuffer::prepare_grain`, `Blur::render` and `EffectBuffer::prepare_prefilter` in the last 20 s (`trace_end`, `ns_since_start`): `assert_zero` each for both sites. Report the first-frame `Grain::render` GPU time for `backdrop` from the GPU csv (`csvexport --gpu`; columns `Time from start of program`, `GPU execution time`).
+- `damage-$site`: every second for 20 s, `stop_walls` then `start_wall` with a new solid colour (`magick -size 1280x720 xc:"rgb($((i*10)),100,120)" "$OUT/wall-$i.png"`). From the GPU csv take the median `GPU execution time` of `Grain::render`, `Blur::render`, `Prefilter::downsample` and `MaterialRenderElement::draw` rows during the stimulus window; report each in ms (`ns_to_ms`) per site, and the sum per damage per site.
+- `drag-$site`: every 100 ms for 5 s, rewrite the config with `noise <0.10..0.59>` at the same site and reload it (`msg "$NIRI_TRACY" action load-config-file` if that action exists in `"$NIRI_TRACY" msg action --help`; otherwise write the file in place and let the watcher reload, then sleep the remaining 100 ms). Count `EffectBuffer::prepare_grain`, `Blur::render`, `EffectBuffer::prepare_prefilter` rows in the drag window per site (`assert_greater 40` for backdrop, `assert_zero` for glass), and take the median `MaterialRenderElement::draw` GPU time per site over the same window. Report the per-change cascade in ms for backdrop and the per-redraw material draw for both.
 
 Write everything to `$OUT/metrics.txt`, then `finish`.
 
@@ -1917,11 +2123,11 @@ OUT=/mnt/ssd3/tmp/material-cf32e5/noise-cost-$(date +%Y%m%d-%H%M) CAPTURE_TASK=m
   bash docs/materials/scripts/noise-placement-cost.sh
 ```
 
-Expected: PASS; three case blocks in `metrics.txt`. The headless GPU's numbers are the headless GPU's: the document says so and names the renderer string `capture-meta` recorded.
+Expected: PASS; six case blocks in `metrics.txt`. The headless GPU's numbers are the headless GPU's: the document says so and names the renderer string `capture-meta` recorded. Before and after the run, `pgrep -a swaybg` shows the same desktop wallpaper process as before; the run started and stopped only its own.
 
 - [ ] **Step 3: Append the cost section to the evidence document and commit**
 
-Table with the three cases, the per-damage span medians, the derived animated figure labelled derived, and the drag cascade count and time against the glass site's zero. One paragraph stating in which cases "cheaper" holds (static: yes, nothing runs; animated: no, one more pass per damage; dragging: no, the whole cascade per change) for prism's interaction document to quote.
+A table per case with both sites side by side: counts of cached passes (static), per-damage span medians and their sum (damage), cascade counts and per-change time plus the per-redraw material draw (drag). The conclusions are limited to what was measured: cache behaviour (what runs when nothing changes), the added pass per damage and what it costs next to the blur and the pyramid it precedes, the cascade a backdrop change triggers against the glass site's none, and the material draw at equal redraw workload (the drag runs redraw at the same rate at both sites; the glass site grains per fragment there and the backdrop site does not). The animated-backdrop figure is the per-damage sum times 60 per second, labelled derived. No verdict word ("cheaper") appears unless a measured pair supports it, and then with the pair beside it. The paragraph is written so prism's interaction document can quote it under the cost class.
 
 ```bash
 git add docs/materials/scripts/noise-placement-cost.sh docs/materials/2026-10-*-noise-placement-evidence.md
@@ -1970,6 +2176,6 @@ Also note on `prism-be5abe`: the spec's Section 5 `shadows` sentence is wrong (p
 
 **Placeholders.** The child tasks (`tasks add --parent material-cf32e5`, each depending on the one before) link to these headings through their `step` field: material-dcc79f, 6f299e, eab3ae, 0bed95, 2a1689, 40b563, e50969 for Tasks 1 to 7. `2026-10-<dd>` is the capture date, fixed when Task 5 runs. The one deliberately empty test body in Task 4 Step 3 is replaced in the same step by the half-height fixture form that follows it; execute the second form.
 
-**Type consistency.** `GrainOptions { amount: f32, kind: NoiseType }` in Tasks 3 and 4; `BackdropGrain { amount: f64, kind: NoiseType }` in Tasks 1 and 3; `update_grain_options(Option<GrainOptions>)` in Tasks 3 and 4; `grain_source()` in Tasks 2 and 3; `MaterialState::commit()` in Task 4 only; `noise_source(vec4, vec2)`, `noise_post(vec3, vec2)` in Tasks 2 and 5.
+**Type consistency.** `GrainOptions { amount: f32, kind: NoiseType }` in Tasks 3 and 4; `BackdropGrain { amount: f64, kind: NoiseType }` in Tasks 1 and 3; `update_grain_options(Option<GrainOptions>)` in Tasks 3 and 4; `grain_source()` in Tasks 2 and 3; `GrainProgram::context_id()` in Task 3; `next_grain_status(GrainStatus, Cleared)` in Task 3's code and tests; `MaterialState::commit()` and `tile_rect(f, Option<&str>)` in Task 4 only; `attach_new_colored_buffer(u8, u8, u8, u8)` in Task 4; `noise_source(vec4, vec2)`, `noise_post(vec3, vec2)` in Tasks 2 and 5.
 
 **Review Focus.** Each of the five lines names its test and task; all five tests are written in the task bodies above.
