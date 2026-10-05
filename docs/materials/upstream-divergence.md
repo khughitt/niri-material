@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-235 paths differ: 49 class B (seam), 155 class A (fork-only), 31 class C (scaffolding).
+240 paths differ: 49 class B (seam), 157 class A (fork-only), 34 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -110,7 +110,9 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/tests/mod.rs` | B | M | +7/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
-| `tools/capture-meta` | C | A | +892/-0 |
+| `tools/capture-meta` | C | A | +1181/-0 |
+| `tools/capture_hold.py` | C | A | +576/-0 |
+| `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
 | `tools/ops-check` | C | A | +264/-0 |
 | `tools/optic_settling.py` | C | A | +603/-0 |
@@ -119,11 +121,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/target-dir-check` | C | A | +144/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
-| `tools/test_capture_meta.py` | C | A | +865/-0 |
+| `tools/test_capture_hold.py` | C | A | +445/-0 |
+| `tools/test_capture_meta.py` | C | A | +1293/-0 |
 | `tools/test_gates.py` | C | A | +111/-0 |
-| `tools/test_glass_optic_smoke.py` | C | A | +696/-0 |
+| `tools/test_glass_optic_smoke.py` | C | A | +739/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
-| `tools/test_optic_settling.py` | C | A | +1151/-0 |
+| `tools/test_optic_settling.py` | C | A | +1160/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +281/-0 |
 | `tools/test_target_dir_check.py` | C | A | +180/-0 |

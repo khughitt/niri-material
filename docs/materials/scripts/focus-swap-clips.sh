@@ -81,7 +81,7 @@ cleanup() {
     [ -n "${BURST_PID:-}" ] && kill "$BURST_PID" 2>/dev/null || true
     stop_nested
     rm -rf "$RT"
-    capture_meta release "$OUT" || true
+    capture_meta release "$OUT" || rc=1
     exit "$rc"
 }
 trap cleanup EXIT
