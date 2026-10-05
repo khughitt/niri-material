@@ -275,9 +275,18 @@ const RING_RESPONSES: &[&str] = &[
     "focus",
     "accent",
     "attention",
+    "ping",
+    "done",
+    "error",
 ];
 
-/// Section 1 of the design, in pipeline order.
+/// The impulse responses: a flash boosts fringing, distortion, and the tap
+/// count; a ripple raises jelly activity (the ripple normal, the ring glow).
+const IMPULSE_RESPONSES: &[&str] = &["ping", "done", "error"];
+
+/// Section 1 of the design, in pipeline order, corrected against the signal
+/// code: impulse-driven and presence-driven stages are animated and list the
+/// responses that drive them, and every taps stage reads the prefilter controls.
 pub static STAGES: &[Stage] = &[
     stage(
         "blur",
@@ -315,9 +324,9 @@ pub static STAGES: &[Stage] = &[
         Scope::Material,
         &["distortion", "distortion scale="],
         &["distortion", "distortion scale="],
-        &[],
+        IMPULSE_RESPONSES,
         None,
-        false,
+        true,
     ),
     stage(
         "ripple",
@@ -325,7 +334,7 @@ pub static STAGES: &[Stage] = &[
         Scope::Material,
         &["jelly-ripple"],
         &["jelly-ripple"],
-        &[],
+        IMPULSE_RESPONSES,
         None,
         true,
     ),
@@ -349,10 +358,12 @@ pub static STAGES: &[Stage] = &[
             "ior",
             "thickness",
             "anisotropic-blur",
+            "backdrop-blur",
+            "roughness",
         ],
-        &[],
+        IMPULSE_RESPONSES,
         None,
-        false,
+        true,
     ),
     stage(
         "directional-blur",
@@ -364,10 +375,12 @@ pub static STAGES: &[Stage] = &[
             "ior",
             "thickness",
             "chromatic-aberration",
+            "backdrop-blur",
+            "roughness",
         ],
-        &[],
+        IMPULSE_RESPONSES,
         None,
-        false,
+        true,
     ),
     stage(
         "saturation",
@@ -397,7 +410,7 @@ pub static STAGES: &[Stage] = &[
         &["attenuation-color", "attenuation-distance", "thickness"],
         &["accent-tint", "accent"],
         None,
-        false,
+        true,
     ),
     stage(
         "ring",
@@ -845,6 +858,22 @@ mod tests {
                 ranks, sorted,
                 "optic stages at ({program:?}, {site}) are out of ORDER"
             );
+        }
+    }
+
+    #[test]
+    fn taps_stages_read_the_prefilter_controls() {
+        // Every tap samples the prefiltered background, whose level the
+        // prefilter stage's controls select.
+        let prefilter = STAGES.iter().find(|s| s.id == "prefilter").unwrap();
+        for stage in STAGES.iter().filter(|s| s.site == "taps") {
+            for node in prefilter.owns {
+                assert!(
+                    stage.reads.contains(node),
+                    "{}: its taps sample the prefilter, so it reads {node}",
+                    stage.id
+                );
+            }
         }
     }
 

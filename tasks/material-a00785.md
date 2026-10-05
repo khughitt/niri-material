@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-a00785
 created: 2026-10-05T09:36:02Z
-updated: 2026-10-05T10:49:56Z
+updated: 2026-10-05T11:33:33Z
 started: 2026-10-05T09:36:47Z
 depends: []
 parent: material-3aa1f2
@@ -46,3 +46,5 @@ Direct: the spec settles every table value and test; the remaining choices are s
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-05T10:49:55Z (material-a00785): review: plan round 3 — verdict: accept; findings: none; reviewer: codex
 - 2026-10-05T10:49:55Z (material-a00785): Scoped re-review of 43e6ff90: response probe cleanup removes only its added line, preserving Task1 changes; exhaustive destructuring is accurately described as a compile-time review guard. Prior plan findings remain resolved. Accepted for native execution first, with a fresh whole-branch review before integration.
+- 2026-10-05T11:33:32Z (material-a00785): review: impl round 1 — verdict: revise; findings: Important 1, Minor 3; reviewer: claude-code/opus
+- 2026-10-05T11:33:32Z (material-a00785): Impl review fix: spec Section 1 rows disagree with the signal code (glass_signal_inputs). Flash boosts fringing/distortion/tap count; ripple raises jelly activity (ripple normal, ring glow); accent presence re-tints. Tables now mark distortion, fringing, directional-blur, tint animated; ping/done/error on distortion, ripple, fringing, directional-blur, ring; fringing and directional-blur read backdrop-blur and roughness (taps sample the prefilter). Pinned by pipeline_signal_driven_stages_are_declared (niri) and taps_stages_read_the_prefilter_controls (config). The prism spec Section 1 needs the same correction before prism vendors version 1.
