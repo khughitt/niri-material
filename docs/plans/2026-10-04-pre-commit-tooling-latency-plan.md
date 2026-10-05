@@ -12,6 +12,8 @@
 **Evidence:** [Probe receipts, source reproduction and route recount](../../tasks/files/material-cd7782/material-pre-commit-revision-evidence.md).
 **Workspace:** Reuse `.worktrees/pre-commit-latency`, branch `fix/pre-commit-latency`; setup is complete. Run commands from that worktree. No shared launcher, service or desktop pointer changes.
 
+**Execution status:** Tasks 1–5 are committed and reviewed. Task 6 remains open for fast-route headroom; the fast-runner amendment below needs owner review before code changes.
+
 ## Global constraints
 
 - Fast whole-hook warm median **≤35 s**; full whole-hook warm median **≤45 s**, aim **≤35 s**. Both code routes record `hook-pre-commit`; keep slow and cold samples.
@@ -72,7 +74,7 @@ of native IDs. It is internal; do not expose a new user-facing selection system.
 **Consumes:** Existing driver, real locked-session cleanup test, ten-iteration minimal evidence.
 **Produces:** Deterministic journal signal regression; driver retaining 143 and cleanup with split substitutions.
 
-- [ ] Add `JournalSignalTests` outside `DriverCleanupTests`. Extract the real `stim()` function body from the source, wrap it with the existing literal TERM action and a small EXIT cleanup marker, and inject TERM from the **second** `mono()` call. Use a temporary directory shared across command substitutions to count calls, as in the evidence reproduction. Execute through `subprocess.run(['bash', '-c', script], timeout=15, ...)`; assert 143, empty stderr and the cleanup marker. Do not test a duplicated copy of the arithmetic expression.
+- [x] Add `JournalSignalTests` outside `DriverCleanupTests`. Extract the real `stim()` function body from the source, wrap it with the existing literal TERM action and a small EXIT cleanup marker, and inject TERM from the **second** `mono()` call. Use a temporary directory shared across command substitutions to count calls, as in the evidence reproduction. Execute through `subprocess.run(['bash', '-c', script], timeout=15, ...)`; assert 143, empty stderr and the cleanup marker. Do not test a duplicated copy of the arithmetic expression.
 
 ```python
 body = script_source.split('stim() {', 1)[1].split('\n}\n', 1)[0]
@@ -84,8 +86,8 @@ self.assertEqual(run.stderr, '')
 self.assertIn('cleanup', run.stdout)
 ```
 
-- [ ] Confirm red on Ubuntu Bash 5.2.21 through `just test-one`; host Bash 5.3.20 already passes this old-expression case. Keep the failure receipt. The earlier minimal original-body probe fails Ubuntu 10/10; it does not establish real-driver resolution.
-- [ ] Replace only the end calculation in `stim()`. Preserve the original order: obtain current monotonic time, convert effect duration, add; no added sleeps or changes to the start timestamp.
+- [x] Confirm red on Ubuntu Bash 5.2.21 through `just test-one`; host Bash 5.3.20 already passes this old-expression case. Keep the failure receipt. The earlier minimal original-body probe fails Ubuntu 10/10; it does not establish real-driver resolution.
+- [x] Replace only the end calculation in `stim()`. Preserve the original order: obtain current monotonic time, convert effect duration, add; no added sleeps or changes to the start timestamp.
 
 ```bash
     end=$(mono)
@@ -94,8 +96,8 @@ self.assertIn('cleanup', run.stdout)
     end=$((end + effect_ns))
 ```
 
-- [ ] Register every driver returned by `DriverCleanupTests.start()` for cleanup at launch: a cleanup callback stops its recorded process group if still running and always waits for the driver. Retain `kill_leftovers` for stub PIDs and the existing production cleanup assertions. VT tests already own their process cleanup; inspect and retain it. This gives Task 2's interrupted worker a cleanup callback for the driver as well as its children.
-- [ ] Run the focused journal test, locked-session test, second-TERM test and VT restoration tests through the front door. Then run **10 consecutive isolated locked-session cases per environment**, stopping at the first failure and retaining elapsed time, status, stderr and PID cleanup. Use the evidence's existing Ubuntu dependency/archive bootstrap and a disposable Git copy for Ubuntu; pilot only the journal and locked-session cases here, because consumer portability is fixed later in Task 4. No GI-dependent pilot or complete Ubuntu suite is required in this step. Provide the disposable container's host-budget forwarding stub shown in Task 6 before calling host front doors; it is not a shared host installation. A real-case failure blocks later enablement, even if the minimal regression is green.
+- [x] Register every driver returned by `DriverCleanupTests.start()` for cleanup at launch: a cleanup callback stops its recorded process group if still running and always waits for the driver. Retain `kill_leftovers` for stub PIDs and the existing production cleanup assertions. VT tests already own their process cleanup; inspect and retain it. This gives Task 2's interrupted worker a cleanup callback for the driver as well as its children.
+- [x] Run the focused journal test, locked-session test, second-TERM test and VT restoration tests through the front door. Then run **10 consecutive isolated locked-session cases per environment**, stopping at the first failure and retaining elapsed time, status, stderr and PID cleanup. Use the evidence's existing Ubuntu dependency/archive bootstrap and a disposable Git copy for Ubuntu; pilot only the journal and locked-session cases here, because consumer portability is fixed later in Task 4. No GI-dependent pilot or complete Ubuntu suite is required in this step. Provide the disposable container's host-budget forwarding stub shown in Task 6 before calling host front doors; it is not a shared host installation. A real-case failure blocks later enablement, even if the minimal regression is green.
 
 ```bash
 just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_optic_settling.JournalSignalTests
@@ -103,7 +105,7 @@ just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.
 just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1' test-fast
 ```
 
-- [ ] `tasks check`; close the child with root-cause and real-case receipts; commit `fix: preserve TERM during stimulus journaling`. Full existing commit hooks are expected here; keep their timing.
+- [x] `tasks check`; close the child with root-cause and real-case receipts; commit `fix: preserve TERM during stimulus journaling`. Full existing commit hooks are expected here; keep their timing.
 
 ### Task 2: Add explicit mode and parallel full execution
 
@@ -111,7 +113,7 @@ just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s too
 **Consumes:** Task 1's cleanup callbacks and regression, native discovery, spec's five optional IDs.
 **Produces:** `fast_mode`, `worker_limit`, `flatten`, `run_full` and full/CI CLI; sequential discovery remains usable.
 
-- [ ] Pin parser contracts with table-driven unittest cases and subprocess import checks. Valid mode values are unset/`0`/`1`; valid budget values are unset/`1`/`10`/`999`. Reject empty, `0`, `-1`, `1.5`, whitespace, Unicode digits and arbitrary strings for the budget. Verify no worker was created on parser error.
+- [x] Pin parser contracts with table-driven unittest cases and subprocess import checks. Valid mode values are unset/`0`/`1`; valid budget values are unset/`1`/`10`/`999`. Reject empty, `0`, `-1`, `1.5`, whitespace, Unicode digits and arbitrary strings for the budget. Verify no worker was created on parser error.
 
 ```python
 def fast_mode():
@@ -129,10 +131,10 @@ def worker_limit():
     return min(10, int(raw))
 ```
 
-- [ ] Decorate the two classes with the shared parser; parse at import before decorators, not lazily per method. Use reason `NIRI_TOOLING_FAST=1; use full validation or NIRI_TOOLING_FAST=0`. Repository full CLI sets `0` before discovery and in each child's environment; fast and invalid raw-discovery imports retain their contract.
-- [ ] Replace the four-scenario method with these native methods, sharing a small assertion helper: `test_screencast_refuses_wrong_probe_size`, `test_screencast_refuses_small_probe`, `test_screencast_refuses_wrong_sample_size`, `test_screencast_refuses_dead_consumer`. Copy each existing environment/message pair exactly; fresh setUp/cleanup per method. Retain case/output cleanup assertions. Measure each separately through `just test-one` before enabling the coordinator and append their timings to evidence. This resolves the remaining longest-piece uncertainty; do not assume all four cost ≤19 s.
-- [ ] Implement discovery via `unittest.defaultTestLoader.discover('tools')` after explicit full mode. Flatten recursively and reject duplicate IDs. Classify exactly the two lifecycle class names; all other cases form one remainder job. Compare the union and count of jobs against discovery before spawning. In budget 1, execute jobs sequentially without dropping the remainder.
-- [ ] Use `ThreadPoolExecutor(max_workers=worker_limit())` only to supervise independent `subprocess.Popen` Python workers; each child runs native unittest, with no shared environment mutation. Submit the remainder first, then one lifecycle ID per job. This avoids private multiprocessing APIs for cancellation. Give each worker a private result file inside the coordinator's `TemporaryDirectory`; stdout/stderr remain private until collection. Run module mode so `tools.*` imports can resolve; in the worker add the repository's `tools` directory to `sys.path` before `loadTestsFromNames(ids)`, retaining discovery's native `test_*` module IDs.
+- [x] Decorate the two classes with the shared parser; parse at import before decorators, not lazily per method. Use reason `NIRI_TOOLING_FAST=1; use full validation or NIRI_TOOLING_FAST=0`. Repository full CLI sets `0` before discovery and in each child's environment; fast and invalid raw-discovery imports retain their contract.
+- [x] Replace the four-scenario method with these native methods, sharing a small assertion helper: `test_screencast_refuses_wrong_probe_size`, `test_screencast_refuses_small_probe`, `test_screencast_refuses_wrong_sample_size`, `test_screencast_refuses_dead_consumer`. Copy each existing environment/message pair exactly; fresh setUp/cleanup per method. Retain case/output cleanup assertions. Measure each separately through `just test-one` before enabling the coordinator and append their timings to evidence. This resolves the remaining longest-piece uncertainty; do not assume all four cost ≤19 s.
+- [x] Implement discovery via `unittest.defaultTestLoader.discover('tools')` after explicit full mode. Flatten recursively and reject duplicate IDs. Classify exactly the two lifecycle class names; all other cases form one remainder job. Compare the union and count of jobs against discovery before spawning. In budget 1, execute jobs sequentially without dropping the remainder.
+- [x] Use `ThreadPoolExecutor(max_workers=worker_limit())` only to supervise independent `subprocess.Popen` Python workers; each child runs native unittest, with no shared environment mutation. Submit the remainder first, then one lifecycle ID per job. This avoids private multiprocessing APIs for cancellation. Give each worker a private result file inside the coordinator's `TemporaryDirectory`; stdout/stderr remain private until collection. Run module mode so `tools.*` imports can resolve; in the worker add the repository's `tools` directory to `sys.path` before `loadTestsFromNames(ids)`, retaining discovery's native `test_*` module IDs.
 
 ```python
 jobs = [remainder_ids] + [[case_id] for case_id in lifecycle_ids]
@@ -160,16 +162,16 @@ bound does not replace any existing test assertion. Receipt fields are `ids`, `r
 tracebacks and skip reasons. Missing/malformed receipt or nonzero worker exit fails,
 even if other receipts pass. No worker records a separate top-level timing run.
 
-- [ ] Apply the CI optional skip allowlist before scheduling (class/method decorators) and after collecting native results (dynamic skips). Copy all five IDs from the spec exactly. Optional tests may pass; missing required classes cannot replace optional skips. Test a missing mandatory class, an unexpected dynamic skip, an allowed optional skip, a failure, an import error and `os._exit(7)` using disposable synthetic suites. Test exact inventory union, count, mode override and budget 1 with cheap cases; do not rerun lifecycle tests inside these unit controls.
-- [ ] Handle parent INT/TERM by cancelling queued jobs, signalling tracked workers, waiting for cleanup, then killing/waiting only tracked survivors. Workers convert interruption into a nonzero outcome. A small result subclass retains every started TestCase; the worker's `finally` calls `doCleanups()` on them before exit (already completed cleanups are empty). Retain the references even after native `stopTest`, which runs during unwinding. Native unittest does not guarantee all cleanup on KeyboardInterrupt. Do not rely on killing only the worker group: real stub drivers create their own session. Task 1's registered driver cleanup closes that gap. A synthetic fixture must record a child PID before interruption and prove it is reaped; validate actual drivers again in Task 6. Preserve EXIT cleanup too.
-- [ ] Compare sequential full native discovery with parallel IDs, assertions and optional skips; run focused contracts, then the full Python gate via the parallel override. Keep any full-route implementation hook data after this point as early parallel evidence, though it precedes remedy verification.
+- [x] Apply the CI optional skip allowlist before scheduling (class/method decorators) and after collecting native results (dynamic skips). Copy all five IDs from the spec exactly. Optional tests may pass; missing required classes cannot replace optional skips. Test a missing mandatory class, an unexpected dynamic skip, an allowed optional skip, a failure, an import error and `os._exit(7)` using disposable synthetic suites. Test exact inventory union, count, mode override and budget 1 with cheap cases; do not rerun lifecycle tests inside these unit controls.
+- [x] Handle parent INT/TERM by cancelling queued jobs, signalling tracked workers, waiting for cleanup, then killing/waiting only tracked survivors. Workers convert interruption into a nonzero outcome. A small result subclass retains every started TestCase; the worker's `finally` calls `doCleanups()` on them before exit (already completed cleanups are empty). Retain the references even after native `stopTest`, which runs during unwinding. Native unittest does not guarantee all cleanup on KeyboardInterrupt. Do not rely on killing only the worker group: real stub drivers create their own session. Task 1's registered driver cleanup closes that gap. A synthetic fixture must record a child PID before interruption and prove it is reaped; validate actual drivers again in Task 6. Preserve EXIT cleanup too.
+- [x] Compare sequential full native discovery with parallel IDs, assertions and optional skips; run focused contracts, then the full Python gate via the parallel override. Keep any full-route implementation hook data after this point as early parallel evidence, though it precedes remedy verification.
 
 ```bash
 just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_tooling_tests
 just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 ```
 
-- [ ] `tasks check`; close child; commit `feat: parallelize full tooling validation`.
+- [x] `tasks check`; close child; commit `feat: parallelize full tooling validation`.
 
 ### Task 3: Check narrow lifecycle paths statically
 
@@ -177,8 +179,8 @@ just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --fu
 **Consumes:** `assert_static_coverage` interface and helper module from Task 2.
 **Produces:** Cheap source checker, direct `--check-paths` CLI and a native regression outside skipped classes.
 
-- [ ] Define `tooling_full_paths` in the justfile from the exact spec list, including the sourced shared helper and the two new helper/contract files. Keep one route list, consumed by both hook classification and static tests through `just --evaluate tooling_full_paths`.
-- [ ] Add temporary-root synthetic fixtures: entry driver sources a helper that sources a second helper; a selected test class names a root-relative script; covered Python imports `tools.other`, including `from tools import other`. Start with all paths allowed, then remove each found path in turn and assert failure naming its source location. Include missing source, source cycle, unsupported dynamic source operand and unresolved module cases. No fixture imports or executes its source.
+- [x] Define `tooling_full_paths` in the justfile from the exact spec list, including the sourced shared helper and the two new helper/contract files. Keep one route list, consumed by both hook classification and static tests through `just --evaluate tooling_full_paths`.
+- [x] Add temporary-root synthetic fixtures: entry driver sources a helper that sources a second helper; a selected test class names a root-relative script; covered Python imports `tools.other`, including `from tools import other`. Start with all paths allowed, then remove each found path in turn and assert failure naming its source location. Include missing source, source cycle, unsupported dynamic source operand and unresolved module cases. No fixture imports or executes its source.
 
 ```python
 with self.assertRaisesRegex(ValueError, 'nested-lib.sh'):
@@ -187,12 +189,12 @@ with self.assertRaisesRegex(ValueError, 'tools/other.py'):
     assert_static_coverage(root, patterns_without_other)
 ```
 
-- [ ] Implement a bounded source scanner, not a shell interpreter: inspect lines starting with `.` or `source`, use `shlex` for the operand, resolve literal `$HERE/…`, `${HERE}/…`, `$ROOT/…`, `${ROOT}/…` or relative helper paths. Reject unsupported repository source operands instead of guessing. Recurse through source statements with a visited set and fail if an input is missing. Inspect literal `$ROOT/tools/…` references in the entry driver, resolving analyzer and consumer paths; generated `$OUT` fixtures and external tools are outside this source contract. Read helper contents for further source statements; do not build a general shell call graph or execute heredocs.
+- [x] Implement a bounded source scanner, not a shell interpreter: inspect lines starting with `.` or `source`, use `shlex` for the operand, resolve literal `$HERE/…`, `${HERE}/…`, `$ROOT/…`, `${ROOT}/…` or relative helper paths. Reject unsupported repository source operands instead of guessing. Recurse through source statements with a visited set and fail if an input is missing. Inspect literal `$ROOT/tools/…` references in the entry driver, resolving analyzer and consumer paths; generated `$OUT` fixtures and external tools are outside this source contract. Read helper contents for further source statements; do not build a general shell call graph or execute heredocs.
   Check `$ROOT/tools/…` references only in the entry driver because references that lifecycle tests replace with stubs are outside the contract, including the helper's `CAPTURE_META` fallback to `capture-meta`.
-- [ ] While scanning the driver and recursively sourced helpers, reject command substitution inside arithmetic expansion (`$(( … $(…) … ))`), naming the file and line; add a synthetic fixture so the whole TERM parser defect class is guarded deterministically on the fast route.
-- [ ] Parse Python with `ast`. Resolve `tools.*` imports in the covered modules and their transitive tools imports to module `.py` or package `__init__.py`, allowing the existing namespace package root. Resolve imports rather than imported attributes: `from tools.optic_settling import FAMILIES` adds that module once. Handle relative imports within covered `tools` modules, and reject missing/ambiguous modules. Test `from tools import other` separately.
-- [ ] For the two selected classes, inspect repository-root `Path` division expressions and referenced module-level path definitions (including `LIB`). Recognize the existing `Path(__file__).resolve().parents[1]` and `self.root` anchors; accept only literal path segments beneath the repository root, and fail on dynamic root-path construction. Do not treat temporary-directory paths or docstrings as dependencies. Check each found repository path with `fnmatch.fnmatchcase` against `tooling_full_paths`, reporting the referring file/line. No maintained module-edge list.
-- [ ] Add `LifecycleCoverageTests.test_subject_paths_are_full_routed` outside `DriverCleanupTests`; it reads the patterns and invokes the source checker. Verify it still executes with fast mode `1`. `--check-paths` performs the same check without unittest discovery, for docs-only commits.
+- [x] While scanning the driver and recursively sourced helpers, reject command substitution inside arithmetic expansion (`$(( … $(…) … ))`), naming the file and line; add a synthetic fixture so the whole TERM parser defect class is guarded deterministically on the fast route.
+- [x] Parse Python with `ast`. Resolve `tools.*` imports in the covered modules and their transitive tools imports to module `.py` or package `__init__.py`, allowing the existing namespace package root. Resolve imports rather than imported attributes: `from tools.optic_settling import FAMILIES` adds that module once. Handle relative imports within covered `tools` modules, and reject missing/ambiguous modules. Test `from tools import other` separately.
+- [x] For the two selected classes, inspect repository-root `Path` division expressions and referenced module-level path definitions (including `LIB`). Recognize the existing `Path(__file__).resolve().parents[1]` and `self.root` anchors; accept only literal path segments beneath the repository root, and fail on dynamic root-path construction. Do not treat temporary-directory paths or docstrings as dependencies. Check each found repository path with `fnmatch.fnmatchcase` against `tooling_full_paths`, reporting the referring file/line. No maintained module-edge list.
+- [x] Add `LifecycleCoverageTests.test_subject_paths_are_full_routed` outside `DriverCleanupTests`; it reads the patterns and invokes the source checker. Verify it still executes with fast mode `1`. `--check-paths` performs the same check without unittest discovery, for docs-only commits.
 
 ```python
 patterns = subprocess.check_output(
@@ -200,7 +202,7 @@ patterns = subprocess.check_output(
 assert_static_coverage(ROOT, patterns)
 ```
 
-- [ ] Focused static tests through `just test-one`, then Python `just test-fast` via parallel full override. Confirm checking real sources succeeds without media startup or lifecycle execution. `tasks check`; close child; commit `test: guard lifecycle routing with static source checks`.
+- [x] Focused static tests through `just test-one`, then Python `just test-fast` via parallel full override. Confirm checking real sources succeeds without media startup or lifecycle execution. `tasks check`; close child; commit `test: guard lifecycle routing with static source checks`.
 
 ### Task 4: Make full CI dependencies portable and explicit
 
@@ -208,7 +210,7 @@ assert_static_coverage(ROOT, patterns)
 **Consumes:** Spec dependency evidence; Task 2's guarded full runner.
 **Produces:** Portable fake-service registration, deterministic invalid merge-tree regression and clean-runner gate stubs.
 
-- [ ] Add a mocked `subprocess.run` merge-tree result for each status 0 and 1 with empty stdout and meaningful stderr; assert `ReportError` retains stderr. Keep directory-conflict-with-valid-tree tests. This fails independently of the installed Git version.
+- [x] Add a mocked `subprocess.run` merge-tree result for each status 0 and 1 with empty stdout and meaningful stderr; assert `ReportError` retains stderr. Keep directory-conflict-with-valid-tree tests. This fails independently of the installed Git version.
 
 ```python
 with unittest.mock.patch.object(report.subprocess, 'run', return_value=subprocess.CompletedProcess(
@@ -217,7 +219,7 @@ with unittest.mock.patch.object(report.subprocess, 'run', return_value=subproces
         report.merge_tree(self.root, 'base', 'upstream', 'fork')
 ```
 
-- [ ] Add the protocol guard immediately after splitting stdout:
+- [x] Add the protocol guard immediately after splitting stdout:
 
 ```python
 fields = result.stdout.split('\0')
@@ -225,10 +227,10 @@ if not fields[0]:
     raise ReportError(f'git merge-tree returned no result tree: {result.stderr.strip()}')
 ```
 
-- [ ] Change only `register_object_with_closures2` to `register_object` in the fake service. No runtime version branch or fallback layer. Run all six consumer startup/failure cases on both environments, and report tests against host Git and Ubuntu Git 2.43.
-- [ ] Make gate fixtures provide `host-budget run --` with argv forwarding; assert the remainder of the command is preserved. The test must not resolve shared ops tooling inside CI. Keep the timing and nonzero forwarding assertions.
-- [ ] Through the existing CI command override, pilot one consumer, journal, gate-argv and Cargo-isolation case in clean Ubuntu; assert `gst-inspect-1.0 pipewiresrc` first. Run the guarded full suite once and retain skip IDs. Negative controls remove a required binding in a disposable environment or inject a required dependency skip, and inject a dynamic unexpected skip and a lifecycle failure; each must fail for its intended reason, not a startup failure. Use the previously successful missing-package control as baseline evidence, not as proof of new-runner behavior.
-- [ ] Focused suites and Python full gate through just; `tasks check`; close child; commit `fix: make tooling validation portable on Ubuntu`.
+- [x] Change only `register_object_with_closures2` to `register_object` in the fake service. No runtime version branch or fallback layer. Run all six consumer startup/failure cases on both environments, and report tests against host Git and Ubuntu Git 2.43.
+- [x] Make gate fixtures provide `host-budget run --` with argv forwarding; assert the remainder of the command is preserved. The test must not resolve shared ops tooling inside CI. Keep the timing and nonzero forwarding assertions.
+- [x] Through the existing CI command override, pilot one consumer, journal, gate-argv and Cargo-isolation case in clean Ubuntu; assert `gst-inspect-1.0 pipewiresrc` first. Run the guarded full suite once and retain skip IDs. Negative controls remove a required binding in a disposable environment or inject a required dependency skip, and inject a dynamic unexpected skip and a lifecycle failure; each must fail for its intended reason, not a startup failure. Use the previously successful missing-package control as baseline evidence, not as proof of new-runner behavior.
+- [x] Focused suites and Python full gate through just; `tasks check`; close child; commit `fix: make tooling validation portable on Ubuntu`.
 
 ### Task 5: Route commits and wire guarded full CI
 
@@ -236,9 +238,9 @@ if not fields[0]:
 **Consumes:** Tasks 1–4's green prerequisites, parallel runner and static path list.
 **Produces:** Spec's exact recipe table, fail-closed full routing and separate tooling CI job.
 
-- [ ] Extend gate fixtures first. Assert subject/test/shared-helper/client/full-wiring paths select full; unrelated tools/capture scripts and Rust paths select fast; existing guide/task/spec paths select docs-only. Test mixed paths, deletions, both rename endpoints, empty index, failed Git/pattern reads and undecodable UTF-8. A partial classification may never select fast. Keep LFS behavior intact.
-- [ ] Hook evaluates both lists successfully and reads staged paths via checked NUL-delimited `git diff --cached --name-only --no-renames -z`, strict UTF-8. Full wins over docs-only; any classification error falls back to full (or fails before recipes when justfile cannot load). Both code recipes record `hook-pre-commit`.
-- [ ] Share check fragments; put only these tooling commands in their respective checks:
+- [x] Extend gate fixtures first. Assert subject/test/shared-helper/client/full-wiring paths select full; unrelated tools/capture scripts and Rust paths select fast; existing guide/task/spec paths select docs-only. Test mixed paths, deletions, both rename endpoints, empty index, failed Git/pattern reads and undecodable UTF-8. A partial classification may never select fast. Keep LFS behavior intact.
+- [x] Hook evaluates both lists successfully and reads staged paths via checked NUL-delimited `git diff --cached --name-only --no-renames -z`, strict UTF-8. Full wins over docs-only; any classification error falls back to full (or fails before recipes when justfile cannot load). Both code recipes record `hook-pre-commit`.
+- [x] Share check fragments; put only these tooling commands in their respective checks:
 
 ```just
 # Explicit flags override a caller's exported fast mode.
@@ -255,16 +257,24 @@ push uses full check then Rust `test_cmd`; CI-covered origin push remains fast c
 plus config/IPC nextest. `test`, `ci-test`, `ci-test-release` remain Rust-only. Add
 `ci-tooling-test` using explicit mode 0 and `--full --ci`, through tt without host-budget.
 
-- [ ] Recipe tests override tooling/Rust commands with marker fixtures: assert exact once-only execution, failures forwarded, exported mode `1` cannot weaken full routes, and both full/fast code-hook records use the same target/count. Docs-only static check must run without lifecycle discovery.
-- [ ] Add separate Ubuntu job using `actions/checkout@v6`, the existing Rust toolchain action pinned to supported **1.99.0**, setup-just **1.58.0**, the exact runtime APT list, factory preflight and `just ci-tooling-test`. Do not alter Rust jobs' dependency sets. The job's guarded runner names the five optional skips from the spec and rejects every other one.
-- [ ] Update the justfile `check_cmd` comment, hook “Seconds only” header/classification comments and AGENTS gate/Python guidance. Document raw discovery's exported fast-variable caveat, mode 0 reference discovery, static docs checks, lifecycle subject routing, default/capped child count and distinct full CI recipe.
-- [ ] Focused gate tests and affected Rust `just test-fast`; Python full gate via the coordinator. Keep implementation full-hook timings: serial approximately 240 s before coordinator availability, parallel records afterward. None qualifies for incident verification until the final remedy timestamp. `tasks check`; close child; commit `feat: route lifecycle commits through parallel validation`.
+- [x] Recipe tests override tooling/Rust commands with marker fixtures: assert exact once-only execution, failures forwarded, exported mode `1` cannot weaken full routes, and both full/fast code-hook records use the same target/count. Docs-only static check must run without lifecycle discovery.
+- [x] Add separate Ubuntu job using `actions/checkout@v6`, the existing Rust toolchain action pinned to supported **1.99.0**, setup-just **1.58.0**, the exact runtime APT list, factory preflight and `just ci-tooling-test`. Do not alter Rust jobs' dependency sets. The job's guarded runner names the five optional skips from the spec and rejects every other one.
+- [x] Update the justfile `check_cmd` comment, hook “Seconds only” header/classification comments and AGENTS gate/Python guidance. Document raw discovery's exported fast-variable caveat, mode 0 reference discovery, static docs checks, lifecycle subject routing, default/capped child count and distinct full CI recipe.
+- [x] Focused gate tests and affected Rust `just test-fast`; Python full gate via the coordinator. Keep implementation full-hook timings: serial approximately 240 s before coordinator availability, parallel records afterward. None qualifies for incident verification until the final remedy timestamp. `tasks check`; close child; commit `feat: route lifecycle commits through parallel validation`.
 
 ### Task 6: Verify concurrency stability and close latency evidence
 
-**Files:** Update the linked evidence attachment via `tasks attach/detach`, task notes, and spec/plan status when verified. No new runtime knobs or sleep changes.
+**Files:** `tools/tooling_tests.py`, `tools/test_tooling_tests.py`, `justfile`, `tools/test_gates.py`, `AGENTS.md`, evidence via `tasks attach/detach`, task notes and document status. The proposed fast-route change below awaits owner review. No new runtime knobs or sleep changes.
 **Consumes:** Complete implementation and real hook/CI front doors from Task 5.
 **Produces:** Consecutive-green stability records on both environments, actual full/fast timings, verifier output and incident disposition.
+
+**Proposed amendment — owner review required before implementation:**
+
+- [ ] Add focused synthetic contracts before changing the coordinator: fast overrides exported mode 0, full still overrides 1; two fast workers preserve every discovered ID, skip and native outcome exactly once; whole modules/class fixtures stay within one worker; a budget of one is sequential and malformed budgets fail before discovery; `--fast --ci` and public misuse of private worker mode fail before discovery. Compare against explicit mode-1 native discovery, including the two class skips and expected/unexpected successes. Exercise cancellation under both worker modes without changing the existing cleanup protections.
+- [ ] Extend the existing standard-library coordinator with explicit `--fast`, mode 1 before discovery/worker loading, and private worker mode arguments. Group modules by native inventory; greedily assign largest case-count module groups into at most two buckets, preserving internal native order. Use `min(2, worker_limit())` for fast; keep full scheduling, ten-child default, guarded CI, exact partition checks and native receipt/verdict handling intact. Add no module timing map, tracing, framework or environment variable.
+- [ ] Change only `tooling_fast_cmd` to `env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fast`. Update the recipe contract markers to distinguish the two public modes and retain all once-only, order, count, CI and failure assertions. Keep routing patterns, Rust commands and CI full command unchanged. Document two fast children, the shared budget cap and raw discovery as the reference.
+- [ ] Through `just test-one`, compare the final fast coordinator with native mode-1 discovery by IDs, skip identities and verdict on the incident host and clean Ubuntu; expected current counts are 317 with 37 host or 40 Ubuntu fast skips. Required consumer/media tests remain included. Run the required Python full `just test-fast` override, affected Rust selector if relevant, task checks and the hooks; commit `perf: parallelize fast tooling by module`. Request a scoped review of this amendment's implementation and resolve Important findings before acceptance.
+- [ ] Then repeat the original Task 6 gates below on that final code revision: both environments' isolated/consecutive-full loops and actual-driver cancellation, warm stage timings, a new UTC remedy timestamp, and at least three qualifying actual staged hooks per code route with no command overrides. Retain the completed revision's stability and failed headroom attempts as earlier evidence. Close neither this child nor the incident before all thresholds and the actual verifier pass.
 
 - [ ] Reproduce clean Ubuntu using the earlier evidence Dockerfile's pinned Ubuntu digest and validated just/Cargo archives. Source mounts are read-only; copy into a disposable `/repo`, initialize Git there, and keep result output separate. For focused host recipes, create a private `probe-bin/host-budget` inside the disposable container, chmod it executable and prepend that directory to the container PATH. Its contents are the following forwarding script; `ci-tooling-test` itself needs no host-budget. The same bootstrap permits Task 1's early focused Ubuntu tests. Inspect a pilot covering journal, lock cleanup, consumer, gate forwarding and Cargo isolation before full runs. All commands go through just; Docker stays foreground/`--rm`, tracked by the harness with bounded timeout.
 ```sh
@@ -311,11 +321,14 @@ tt-latency verify material-cd7782 --after '<recorded UTC remedy timestamp>'
 ## Plan acceptance and execution handoff
 
 The owner conditionally accepted the design once runtime read observation became
-a static source check; that substitution is complete. Minimal TERM probes isolate
-a fix candidate, but production/concurrency acceptance is still owed. No repository
-implementation changed while preparing this plan.
+a static source check; that substitution is complete. The implemented TERM fix and production/concurrency stability passed on both
+environments. Fast-route headroom remains unmet; the execution amendment above
+requires owner review before its implementation. Historical probe and acceptance
+receipts remain in the linked task evidence.
 
 The owner accepted this plan with two Task 3 edits incorporated above; no further
 review round is required. The agent executes inline in this worktree, taking its tracked
 children in order, retains failed attempts, and closes the halt only with successful
 latency verification. This review gate does not authorize a GitHub write or desktop use.
+
+[Task 6 stability, actual-hook miss and fast-prototype evidence](../../tasks/files/material-cd7782/material-final-latency-evidence.md) records the proposed amendment's measured basis. Runtime changes remain held for owner review.

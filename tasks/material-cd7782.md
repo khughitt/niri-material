@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency
 created: 2026-10-04T15:00:02Z
-updated: 2026-10-04T23:33:15Z
+updated: 2026-10-05T00:24:36Z
 started: 2026-10-04T16:48:06Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -75,3 +75,10 @@ Process: planned
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-04T23:26:15Z (fix/pre-commit-latency): review: impl round 1 — verdict: revise; findings: Important 3; reviewer: codex/gpt-6-astra
 - 2026-10-04T23:33:15Z (fix/pre-commit-latency): review: impl round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
+- 2026-10-04T23:53:19Z (fix/pre-commit-latency): review: impl round 3 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
+- 2026-10-05T00:03:30Z (fix/pre-commit-latency): remedy: 2026-10-05T00:03:30Z — final implementation 877b084a; fresh review accepted; ten isolated locked-session and five consecutive 317-case full runs green on each environment; actual driver cancellation leaves no recorded PID, socket or runtime directory. Host cap remains 8; clean Ubuntu default 10. Post-remedy actual full/fast hooks now follow.
+- 2026-10-05T00:21:38Z (fix/pre-commit-latency): attached: material-final-latency-evidence.md (1148015 bytes): Final 317-case stability on both environments, actual driver cancellation, native fast headroom miss, dry-run verifier and two-process fast prototype; Task 6 stays open for amendment review.
+- 2026-10-05T00:23:54Z (fix/pre-commit-latency): detached: material-final-latency-evidence.md: Preserve all stability and actual-hook evidence, add final prototype repetitions, Ubuntu inventory and pending-amendment disposition.
+- 2026-10-05T00:23:54Z (fix/pre-commit-latency): attached: material-final-latency-evidence.md (1148015 bytes): Final and earlier 317-case stability, cancellation, real fast/full hooks, unmet 35-second headroom, dry-run verifier, repeated two-process fast prototype and pending owner amendment review.
+- 2026-10-05T00:24:36Z (fix/pre-commit-latency): parked (waiting on user, review): Owner: review the parallel-fast spec and Task 6 plan amendment in .worktrees/pre-commit-latency/docs/specs/2026-10-04-pre-commit-tooling-latency-design.md and .worktrees/pre-commit-latency/docs/plans/2026-10-04-pre-commit-tooling-latency-plan.md. Agent then resumes material-9f9ca2, implements the amendment, re-verifies both routes on final code and closes only with actual verifier success and headroom. Incident remains open; no host pointers changed or owned checks running.
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
