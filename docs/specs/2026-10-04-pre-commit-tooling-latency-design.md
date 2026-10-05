@@ -380,15 +380,15 @@ routes and raw-discovery environment caveat.
    Confirm the fast route additionally meets the ≤ 35-second design target. Schedule
    sequential runs when competing load will not invalidate them; busy or widened
    samples do not count. Read the verifier's actual count and exclusions before
-   retrying. Today's post-now dry run reports `runs: 0, outstanding here`, as expected.
+   retrying. The initial planning dry run reported `runs: 0, outstanding here`; the execution amendment records the current dry-run result.
    Close only after verification exits zero everywhere, and include its output in
    `tasks done`. If the target or incident check fails, keep the task open and revise
    from the measured stage costs.
 
 The static-check substitution satisfies the owner's conditional spec acceptance.
 The implementation plan uses the minimal TERM reproduction, and retains real-case
-isolated/concurrent stress as a shipping gate. Implementation begins after the
-plan's separate owner review, as required by the repository process.
+isolated/concurrent stress as a shipping gate. The owner reviewed the original plan before implementation. The additional
+fast-route amendment below has its own owner review gate before code changes.
 
 ## Execution amendment: parallel fast validation (pending owner review)
 
