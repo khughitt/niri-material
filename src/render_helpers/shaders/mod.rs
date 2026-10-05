@@ -11,17 +11,40 @@ use super::shader_element::ShaderProgram;
 use crate::render_helpers::blur::BlurProgram;
 use crate::render_helpers::material::optics::{self, OPTICS};
 
-/// The material fragment shader: prelude, each optic's GLSL in `OPTICS`
-/// order, then main. A comment marker per part keeps compile-error line
-/// numbers locatable by hand.
+/// The material fragment shader: the precision line, the shared helpers,
+/// the prelude, each optic's GLSL in `OPTICS` order, then main. A comment
+/// marker per part keeps compile-error line numbers locatable by hand.
 pub(crate) fn material_source() -> String {
-    let mut source = String::from(include_str!("material/prelude.frag"));
+    let mut source = String::from("precision highp float;\n// ---- common\n");
+    source.push_str(include_str!("material/common.frag"));
+    source.push_str("\n// ---- prelude\n");
+    source.push_str(include_str!("material/prelude.frag"));
     for entry in OPTICS {
         source.push_str(&format!("\n// ---- optic: {}\n", entry.name));
         source.push_str(entry.glsl);
     }
     source.push_str("\n// ---- main\n");
     source.push_str(include_str!("material/main.frag"));
+    source
+}
+
+/// The effect-program grain pass (`noise site=backdrop`): a complete
+/// `#version 100` fragment program over `blur.vert`'s `v_coords`, built from
+/// the shared helpers, the noise optic's GLSL and `grain.frag`'s main.
+pub(crate) fn grain_source() -> String {
+    let noise = OPTICS
+        .iter()
+        .find(|entry| entry.name == "noise")
+        .expect("the noise optic is registered");
+    let mut source = String::from(
+        "#version 100\nprecision highp float;\nvarying vec2 v_coords;\nuniform sampler2D tex;\n",
+    );
+    source.push_str("\n// ---- common\n");
+    source.push_str(include_str!("material/common.frag"));
+    source.push_str("\n// ---- optic: noise\n");
+    source.push_str(noise.glsl);
+    source.push_str("\n// ---- main\n");
+    source.push_str(include_str!("grain.frag"));
     source
 }
 
@@ -536,7 +559,23 @@ mod tests {
         assert!(!main.contains("* mask"));
         assert!(!main.contains("aurora_emissive"));
         assert!(!main.contains("saturation_post("));
-        assert!(!main.contains("noise_post("));
+        let encode = main.find("vec3 glassColor = linearToSrgb(").unwrap();
+        let post = main
+            .find("glassColor = noise_post(glassColor, gl_FragCoord.xy);")
+            .unwrap();
+        let coverage = main
+            .find("glassed = vec4(glassColor, 1.0) * coverage;")
+            .unwrap();
+        assert!(
+            encode < post && post < coverage,
+            "the post hook sits between encode and coverage"
+        );
+        // GLSL ES needs the float precision declared before the first float
+        // function; the shared helpers come right after it, before the prelude.
+        assert!(source.starts_with("precision highp float;\n// ---- common\n"));
+        assert_eq!(source.matches("precision highp float;").count(), 1);
+        assert!(source.find("// ---- common").unwrap() < source.find("// ---- prelude").unwrap());
+        assert!(source.contains("uniform float mat_noise_site;"));
     }
 
     use niri_config::material::pipeline::{Program, STAGES};
@@ -637,42 +676,66 @@ mod tests {
         }
     }
 
+    /// The non-material programs, each as its files: an Effect hook must be
+    /// called exactly once in exactly one effect file.
+    fn program_files(program: Program) -> Vec<(&'static str, String)> {
+        match program {
+            Program::Material => Vec::new(),
+            Program::Effect => vec![
+                (
+                    "blur_down.frag",
+                    strip_comments(include_str!("blur_down.frag")),
+                ),
+                ("blur_up.frag", strip_comments(include_str!("blur_up.frag"))),
+                ("grain.frag", strip_comments(&grain_source())),
+            ],
+            Program::Postprocess => vec![(
+                "postprocess.frag",
+                strip_comments(include_str!("postprocess.frag")),
+            )],
+        }
+    }
+
     #[test]
     fn pipeline_other_programs_call_their_hooks_exactly_once() {
         for stage in STAGES {
             let Some(optic) = stage.optic else { continue };
-            let source = match optic.program {
-                Program::Material => continue,
-                Program::Effect => strip_comments(concat!(
-                    include_str!("blur_down.frag"),
-                    include_str!("blur_up.frag")
-                )),
-                Program::Postprocess => strip_comments(include_str!("postprocess.frag")),
-            };
+            if optic.program == Program::Material {
+                continue;
+            }
             let call = format!("{}_{}(", optic.name, optic.hook);
-            let calls = hook_calls(&source, &call);
+            let calling: Vec<&str> = program_files(optic.program)
+                .iter()
+                .filter_map(|(file, source)| match hook_calls(source, &call).len() {
+                    0 => None,
+                    1 => Some(*file),
+                    n => panic!("{}: {file} calls {call} {n} times", stage.id),
+                })
+                .collect();
             assert_eq!(
-                calls.len(),
+                calling.len(),
                 1,
-                "{}: the {:?} program calls {call} {} times, expected exactly one",
+                "{}: the {:?} program must call {call} in exactly one file, found {calling:?}",
                 stage.id,
-                optic.program,
-                calls.len()
+                optic.program
             );
         }
     }
 
-    /// `_post(` is a suffix, not a full name, so this test scans for the
-    /// suffix directly rather than through `hook_calls`, whose identifier
-    /// guard would reject every match.
     #[test]
-    fn pipeline_post_site_is_empty_until_a_stage_lands() {
-        let has_post_stage = STAGES.iter().any(|s| s.site == "post");
-        let has_post_call = main_body().contains("_post(");
-        assert_eq!(
-            has_post_stage, has_post_call,
-            "the post site and the _post( call must arrive together"
+    fn grain_source_is_a_complete_effect_program_over_the_noise_optic() {
+        let source = grain_source();
+        assert!(source.starts_with("#version 100\n"));
+        assert_eq!(source.matches("void main()").count(), 1);
+        assert!(source.contains("uniform sampler2D tex;"));
+        assert!(source.contains("vec4 noise_source(vec4 texel, vec2 fragCoord)"));
+        assert!(source.contains("float hash12(vec2 p)"));
+        assert!(
+            !source.contains("niri_v_coords"),
+            "the grain program has no material prelude"
         );
+        let body = strip_comments(source.split_once("// ---- main").unwrap().1);
+        assert_eq!(hook_calls(&body, "noise_source(").len(), 1);
     }
 
     /// Uniform names that are not parameters: slab geometry, jelly and signal
@@ -705,6 +768,7 @@ mod tests {
     fn uniform_nodes(uniform: &str) -> Vec<&'static str> {
         match uniform {
             "mat_scatter" => vec!["roughness", "ior"],
+            "mat_noise_site" => vec!["noise site="],
             "mat_noise_type" => vec!["noise type="],
             "mat_aurora_color_a" | "mat_aurora_color_b" => vec!["aurora color"],
             "mat_distortion_scale" => vec!["distortion scale="],
