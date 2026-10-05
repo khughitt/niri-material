@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-a00785
 created: 2026-10-05T09:36:02Z
-updated: 2026-10-05T10:15:28Z
+updated: 2026-10-05T10:43:22Z
 started: 2026-10-05T09:36:47Z
 depends: []
 parent: material-3aa1f2
@@ -33,4 +33,11 @@ Direct: the spec settles every table value and test; the remaining choices are s
 - 2026-10-05T10:00:34Z (material-a00785): review: plan round 1 — verdict: revise; findings: Important 3; reviewer: codex
 - 2026-10-05T10:01:06Z (material-a00785): Plan review details: (1) lines114-142 response_fields_decode_and_count compares only two handwritten lists, not Response fields. Adding an optional struct field while leaving both lists unchanged passes. Tie coverage to the actual struct and demonstrate the omitted-new-field failure. (2) lines190-205 selectors check only present parameter/variant groups, so absent enum variants and different optics across variants pass. Validate the full variant set exactly once and one optic per selector parameter; include negative fixtures because current stages have no selectors. (3) lines482-499 hook checks use find/contains and accept commented-out calls or duplicate calls; other-program checks also accept definitions without calls. Require exactly one actual call, ignoring comments/definitions, and prove removal/comment, duplicate, and reorder mutations fail. No unsafe host actions found. Native execution with a fresh whole-branch review per repository is recommended after plan corrections.
 - 2026-10-05T10:15:28Z (material-a00785): resumed
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T10:16:09Z (material-a00785): Plan revised for review round 1: response_fields_match_the_struct destructures Response exhaustively (compile-time coverage, proven in Step 4b); check_selectors() enforces every variant exactly once and one optic, with negative fixtures; hook pins require exactly one real call per program, comments stripped and definitions excluded, with three drift demonstrations
+- 2026-10-05T10:16:09Z (material-a00785): parked (waiting on user, review): Re-review docs/plans/2026-10-05-pipeline-schema.md (.worktrees/material-a00785) after round 1 corrections, with the prism plan; on acceptance execute Tasks 1 to 3 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T10:20:57Z (material-a00785): review: plan round 2 — verdict: revise; findings: Important 1, Minor 1; reviewer: codex
+- 2026-10-05T10:21:15Z (material-a00785): Plan round 2 details: selector completeness/one-optic checks and exact non-comment hook calls resolve original findings. Exhaustive Response destructuring also catches the originally requested mutation (new field, unchanged metadata/tests); no stronger macro-based mechanism is required for acceptance. Minor: lines115-117 overclaim that editing the destructuring also forces live metadata equality; describe it as a compile-time review tripwire, since the pattern and live list are independent. Important: Step4b line541 suggests git checkout -- material/mod.rs before Step5 stages Task1 changes. It would erase pub mod pipeline and response_fields() as well as the probe. Remove only ring_probe with a targeted edit, or restore an exact pre-probe snapshot, and verify the intended Task1 diff remains. Fix probe cleanup before execution.
+- 2026-10-05T10:43:22Z (material-a00785): resumed
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
