@@ -13,7 +13,75 @@ use smithay::utils::{Buffer, Logical, Physical, Scale, Size, Transform};
 
 use crate::niri::OutputRenderElements;
 use crate::render_helpers::blur::{Blur, BlurOptions, BlurProgram};
+use crate::render_helpers::grain::{GrainOptions, GrainProgram};
 use crate::render_helpers::shaders::Shaders;
+
+/// Why a cache is being thrown away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Invalidation {
+    /// The sharp texture was redrawn.
+    SharpDamage,
+    /// The agreed backdrop grain changed, including to or from none.
+    GrainOptionsChanged,
+    /// The global blur passes or offset changed.
+    BlurOptionsChanged,
+}
+
+/// What an invalidation clears, and whether consumers must be told through
+/// the commit counter (design §4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Cleared {
+    grain: bool,
+    blurred: bool,
+    sharp_pyramid: bool,
+    blurred_pyramid: bool,
+    publishes: bool,
+}
+
+const fn cleared_by(cause: Invalidation, had_blurred: bool) -> Cleared {
+    match cause {
+        // Everything hangs off the sharp texture; grain changes the source
+        // every consumer reads, blurred or not.
+        Invalidation::SharpDamage | Invalidation::GrainOptionsChanged => Cleared {
+            grain: true,
+            blurred: true,
+            sharp_pyramid: true,
+            blurred_pyramid: true,
+            publishes: true,
+        },
+        // Blur options leave the sharp texture and its grain alone; there is
+        // nothing to publish unless a blurred texture existed to go stale.
+        Invalidation::BlurOptionsChanged => Cleared {
+            grain: false,
+            blurred: true,
+            sharp_pyramid: false,
+            blurred_pyramid: true,
+            publishes: had_blurred,
+        },
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GrainStatus {
+    /// Needs the pass (no grained texture, or a stale one); also where a
+    /// failed compile or draw is retried.
+    Dirty,
+    /// `grain_texture` holds the sharp texture grained with the current options.
+    Clean,
+    /// The compile or the pass failed since the last invalidation that
+    /// cleared grain; the sharp texture stands in until then.
+    Failed,
+}
+
+/// The grain status after an invalidation: anything that clears grain
+/// returns it to `Dirty`, which is also how a failure gets its retry.
+const fn next_grain_status(status: GrainStatus, cleared: Cleared) -> GrainStatus {
+    if cleared.grain {
+        GrainStatus::Dirty
+    } else {
+        status
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrefilterStatus {
@@ -129,6 +197,8 @@ pub struct EffectBuffer {
     scale: Scale<f64>,
     /// Options for blurring.
     blur_options: BlurOptions,
+    grain: Option<GrainOptions>,
+    grain_program: Option<GrainProgram>,
 
     /// Elements to be rendered on demand.
     elements: Elements,
@@ -156,6 +226,8 @@ enum Elements {
 struct Offscreen {
     /// The texture with the offscreen contents.
     texture: GlesTexture,
+    grain_texture: Option<GlesTexture>,
+    grain: GrainStatus,
     /// Id of the renderer context that the texture comes from.
     renderer_context_id: ContextId<GlesTexture>,
     /// Scale of the texture.
@@ -172,6 +244,30 @@ struct Offscreen {
     sharp_prefilter_textures: Vec<GlesTexture>,
     blurred_prefilter: PrefilterState,
     blurred_prefilter_textures: Vec<GlesTexture>,
+}
+
+impl Offscreen {
+    /// What every consumer reads: the grained texture while grain is set and
+    /// prepared, the sharp texture otherwise.
+    fn source(&self, grain: Option<GrainOptions>) -> &GlesTexture {
+        match (grain, self.grain, &self.grain_texture) {
+            (Some(_), GrainStatus::Clean, Some(texture)) => texture,
+            _ => &self.texture,
+        }
+    }
+
+    fn clear(&mut self, cleared: Cleared) {
+        self.grain = next_grain_status(self.grain, cleared);
+        if cleared.blurred {
+            self.blurred = None;
+        }
+        if cleared.sharp_pyramid {
+            self.sharp_prefilter.invalidate();
+        }
+        if cleared.blurred_pyramid {
+            self.blurred_prefilter.invalidate();
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -246,6 +342,8 @@ impl EffectBuffer {
             size: Size::default(),
             scale: Scale::from(1.),
             blur_options: BlurOptions::default(),
+            grain: None,
+            grain_program: None,
             elements: Elements::default(),
             offscreen: None,
             blur: None,
@@ -278,20 +376,31 @@ impl EffectBuffer {
         self.scale = scale;
     }
 
+    fn invalidate(&mut self, cause: Invalidation) {
+        let Some(offscreen) = &mut self.offscreen else {
+            return;
+        };
+        let cleared = cleared_by(cause, offscreen.blurred.is_some());
+        offscreen.clear(cleared);
+        if cleared.publishes {
+            self.commit_counter.increment();
+        }
+    }
+
+    pub fn update_grain_options(&mut self, options: Option<GrainOptions>) {
+        if self.grain == options {
+            return;
+        }
+        self.grain = options;
+        self.invalidate(Invalidation::GrainOptionsChanged);
+    }
+
     pub fn update_blur_options(&mut self, options: BlurOptions) {
         if self.blur_options == options {
             return;
         }
-
         self.blur_options = options;
-
-        if let Some(offscreen) = &mut self.offscreen {
-            offscreen.blurred_prefilter.invalidate();
-            if offscreen.blurred.is_some() {
-                offscreen.blurred = None;
-                self.commit_counter.increment();
-            }
-        }
+        self.invalidate(Invalidation::BlurOptionsChanged);
     }
 
     pub fn elements(&mut self) -> &mut Vec<OutputRenderElements<GlesRenderer>> {
@@ -312,6 +421,8 @@ impl EffectBuffer {
             warn!("error preparing offscreen: {err:?}");
             return false;
         };
+
+        self.prepare_grain(renderer);
 
         if blur {
             if let Err(err) = self.prepare_blur(renderer) {
@@ -373,6 +484,8 @@ impl EffectBuffer {
 
             self.offscreen.insert(Offscreen {
                 texture,
+                grain_texture: None,
+                grain: GrainStatus::Dirty,
                 renderer_context_id: renderer.context_id(),
                 scale: self.scale,
                 damage,
@@ -396,6 +509,7 @@ impl EffectBuffer {
 
             self.commit_counter.increment();
             offscreen.blurred = None;
+            offscreen.grain = GrainStatus::Dirty;
             offscreen.sharp_prefilter.invalidate();
             offscreen.blurred_prefilter.invalidate();
         }
@@ -423,12 +537,10 @@ impl EffectBuffer {
         offscreen.states = res.states;
 
         if res.damage.is_some() {
+            // Original texture changed; everything derived from it is stale.
+            let cleared = cleared_by(Invalidation::SharpDamage, true);
+            offscreen.clear(cleared);
             self.commit_counter.increment();
-
-            // Original texture changed; reset the blurred texture.
-            offscreen.blurred = None;
-            offscreen.sharp_prefilter.invalidate();
-            offscreen.blurred_prefilter.invalidate();
         }
 
         // Clear and put the storage back.
@@ -436,6 +548,66 @@ impl EffectBuffer {
         self.elements = Elements::Unchanged(elements);
 
         Ok(())
+    }
+
+    /// Runs the grain pass when grain is set and the grained texture is
+    /// stale. A failure is logged once per invalidation and the sharp
+    /// texture stands in until the next one (the prefilter's pattern).
+    fn prepare_grain(&mut self, renderer: &mut GlesRenderer) {
+        let Some(options) = self.grain else {
+            return;
+        };
+        let Some(offscreen) = self.offscreen.as_mut() else {
+            return;
+        };
+        if offscreen.grain != GrainStatus::Dirty {
+            return;
+        }
+        let _span = tracy_client::span!("EffectBuffer::prepare_grain");
+        // The program is the buffer's, compiled on first need and after a
+        // renderer change; a failed compile is retried the next time grain
+        // is Dirty, which the invalidation table decides.
+        if self
+            .grain_program
+            .as_ref()
+            .is_some_and(|p| p.context_id() != renderer.context_id())
+        {
+            self.grain_program = None;
+        }
+        let program = match &self.grain_program {
+            Some(program) => program.clone(),
+            None => match GrainProgram::compile(renderer) {
+                Ok(program) => self.grain_program.insert(program).clone(),
+                Err(err) => {
+                    offscreen.grain = GrainStatus::Failed;
+                    warn!("backdrop grain shader failed to compile; the sharp texture stands in until the next damage: {err:?}");
+                    return;
+                }
+            },
+        };
+        let result = (|| -> anyhow::Result<()> {
+            let size = offscreen.texture.size();
+            let reusable = offscreen
+                .grain_texture
+                .as_mut()
+                .is_some_and(|t| t.size() == size && t.is_unique_reference());
+            if !reusable {
+                offscreen.grain_texture = Some(
+                    renderer
+                        .create_buffer(Fourcc::Abgr8888, size)
+                        .context("error creating grain texture")?,
+                );
+            }
+            let target = offscreen.grain_texture.as_ref().expect("just ensured");
+            program.render(renderer, &offscreen.texture, target, options)
+        })();
+        match result {
+            Ok(()) => offscreen.grain = GrainStatus::Clean,
+            Err(err) => {
+                offscreen.grain = GrainStatus::Failed;
+                warn!("backdrop grain pass failed; the sharp texture stands in until the next damage: {err:?}");
+            }
+        }
     }
 
     fn prepare_blur(&mut self, renderer: &mut GlesRenderer) -> anyhow::Result<()> {
@@ -469,7 +641,7 @@ impl EffectBuffer {
 
         blur.prepare_textures(
             |fourcc, size| renderer.create_buffer(fourcc, size),
-            &offscreen.texture,
+            offscreen.source(self.grain),
             self.blur_options,
         )
         .context("error preparing blur textures")?;
@@ -481,7 +653,7 @@ impl EffectBuffer {
         let offscreen = self.offscreen.as_mut().context("offscreen is missing")?;
 
         if !blur {
-            return Ok(offscreen.texture.clone());
+            return Ok(offscreen.source(self.grain).clone());
         }
 
         let texture = if let Some(texture) = &offscreen.blurred {
@@ -491,7 +663,7 @@ impl EffectBuffer {
             let mut guard = frame.renderer();
             let renderer = guard.as_mut();
             let blurred = blur
-                .render(renderer, &offscreen.texture, self.blur_options)
+                .render(renderer, offscreen.source(self.grain), self.blur_options)
                 .context("error rendering blur")?;
             offscreen.blurred_prefilter.invalidate();
             offscreen.blurred.insert(blurred).clone()
@@ -614,6 +786,84 @@ impl EffectBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use niri_config::NoiseType;
+    #[test]
+    fn each_invalidation_clears_what_depends_on_it_and_publishes_damage() {
+        use Invalidation::*;
+        let all = Cleared {
+            grain: true,
+            blurred: true,
+            sharp_pyramid: true,
+            blurred_pyramid: true,
+            publishes: true,
+        };
+        assert_eq!(cleared_by(SharpDamage, false), all);
+        assert_eq!(cleared_by(SharpDamage, true), all);
+        // Grain changes the source every consumer reads, blurred or not.
+        assert_eq!(cleared_by(GrainOptionsChanged, false), all);
+        assert_eq!(cleared_by(GrainOptionsChanged, true), all);
+        // Blur options leave the sharp texture and its grain alone, and
+        // publish only when a blurred texture existed to be stale.
+        let blur_only = Cleared {
+            grain: false,
+            blurred: true,
+            sharp_pyramid: false,
+            blurred_pyramid: true,
+            publishes: false,
+        };
+        assert_eq!(cleared_by(BlurOptionsChanged, false), blur_only);
+        assert_eq!(
+            cleared_by(BlurOptionsChanged, true),
+            Cleared {
+                publishes: true,
+                ..blur_only
+            }
+        );
+    }
+
+    #[test]
+    fn a_failed_grain_pass_retries_only_after_an_invalidation_that_clears_grain() {
+        use Invalidation::*;
+        assert_eq!(
+            next_grain_status(GrainStatus::Failed, cleared_by(BlurOptionsChanged, true)),
+            GrainStatus::Failed
+        );
+        assert_eq!(
+            next_grain_status(GrainStatus::Failed, cleared_by(SharpDamage, true)),
+            GrainStatus::Dirty
+        );
+        assert_eq!(
+            next_grain_status(GrainStatus::Failed, cleared_by(GrainOptionsChanged, false)),
+            GrainStatus::Dirty
+        );
+        assert_eq!(
+            next_grain_status(GrainStatus::Clean, cleared_by(BlurOptionsChanged, true)),
+            GrainStatus::Clean
+        );
+        assert_eq!(
+            next_grain_status(GrainStatus::Clean, cleared_by(SharpDamage, false)),
+            GrainStatus::Dirty
+        );
+    }
+
+    #[test]
+    fn grain_options_change_publishes_only_with_an_offscreen_and_never_for_equal_options() {
+        let mut buffer = EffectBuffer::new();
+        let before = buffer.commit();
+        let grain = Some(GrainOptions {
+            amount: 0.3,
+            kind: NoiseType::Fine,
+        });
+        buffer.update_grain_options(grain);
+        assert_eq!(
+            buffer.commit(),
+            before,
+            "no offscreen yet, nothing to publish"
+        );
+        buffer.update_grain_options(grain);
+        assert_eq!(buffer.commit(), before, "equal options are a no-op");
+        assert_eq!(buffer.grain, grain);
+    }
 
     #[test]
     fn prefilter_levels_reach_one_by_one_and_stay_below_the_source() {

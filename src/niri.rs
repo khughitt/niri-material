@@ -153,6 +153,7 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManag
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
+use crate::render_helpers::grain::GrainOptions;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
@@ -4334,15 +4335,22 @@ impl Niri {
                 }
                 state.xray.backdrop_color = state.backdrop_buffer.color();
                 let blur_options = BlurOptions::from(self.config.borrow().blur);
+                let grain_options = self
+                    .config
+                    .borrow()
+                    .backdrop_grain()
+                    .map(GrainOptions::from);
                 for buf in &state.xray.background {
                     let mut buffer = buf.borrow_mut();
                     buffer.update_size(size, scale);
                     buffer.update_blur_options(blur_options);
+                    buffer.update_grain_options(grain_options);
                 }
                 for buf in &state.xray.backdrop {
                     let mut buffer = buf.borrow_mut();
                     buffer.update_size(size, scale);
                     buffer.update_blur_options(blur_options);
+                    buffer.update_grain_options(grain_options);
                 }
 
                 let layer_map = layer_map_for_output(out);
