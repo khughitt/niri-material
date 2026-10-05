@@ -6,9 +6,9 @@ priority: 2
 size: m
 complexity: high
 process: planned
-owner: materials-26.04
+owner: material-cf32e5
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T14:38:19Z
+updated: 2026-10-05T14:44:00Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -55,3 +55,6 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-05T14:38:18Z (material-cf32e5): Plan revised for round 2: cleanup_cost carries $? past stop_walls; schema_renders_stably asserts the glass selector and checks omission on slab; fixture output 800 px, regions clipped to the output; -fuzz 0.392157%; shot_twice asserts determinism in every cell
 - 2026-10-05T14:38:18Z (material-cf32e5): parked (waiting on user, review): Plan review round 3 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T14:43:20Z (material-cf32e5): resumed
+  provenance: {"harness_session":"codex:01a10c84-1457-7892-bb5d-ed0227e1d702","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T14:44:00Z (material-cf32e5): review: plan round 3 — verdict: accept; findings: none; reviewer: human

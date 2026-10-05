@@ -33,7 +33,7 @@ impl Optic for NoiseOptic {
 mod tests {
     use std::time::Duration;
 
-    use niri_config::{Blur, NoiseType, ResolvedGlass, ResolvedNoise};
+    use niri_config::{Blur, NoiseSite, NoiseType, ResolvedGlass, ResolvedNoise};
     use smithay::backend::renderer::gles::UniformValue;
 
     use super::*;
@@ -68,6 +68,7 @@ mod tests {
             noise: ResolvedNoise {
                 amount: Some(0.3),
                 kind: NoiseType::Lightness,
+                site: NoiseSite::Glass,
             },
             ..Default::default()
         };
