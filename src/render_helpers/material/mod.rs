@@ -2060,7 +2060,8 @@ mod tests {
     /// frame to frame: each such stage is animated and lists the response
     /// fields that drive it. A flash impulse boosts fringing, distortion and
     /// the tap count; a ripple impulse raises jelly activity, which drives the
-    /// ripple normal and scales the ring glow; accent presence re-tints.
+    /// ripple normal and scales the ring glow; accent presence re-tints,
+    /// and colours a sweep that carries no accent of its own.
     #[test]
     fn pipeline_signal_driven_stages_are_declared() {
         use niri_config::material::pipeline::STAGES;
@@ -2138,6 +2139,21 @@ mod tests {
             glass_signal_inputs(&accent_frame(Some([1., 0.133, 0.]), 1.), &glass, &tinted);
         assert_ne!(present.attenuation_color, absent.attenuation_color);
         declared("tint", &["accent", "accent-tint"]);
+
+        // A sweep with no accent of its own borrows the frame's accent scaled
+        // by presence, so its colour follows the accent signal frame to frame.
+        let mut dim = impulse(niri_config::ImpulseResponse::Sweep);
+        dim.accent = Some([1., 0.133, 0.]);
+        dim.presence = 0.25;
+        let mut bright = dim.clone();
+        bright.presence = 1.;
+        let sweep_rgb = |frame: &SignalFrame| {
+            let inputs = glass_signal_inputs(frame, &glass, &response);
+            SignalUniforms::from_frame(frame, &inputs, &response).impulse_rgb[0]
+        };
+        assert_ne!(sweep_rgb(&dim), sweep_rgb(&bright));
+        declared("sweeps", IMPULSES);
+        declared("sweeps", &["accent"]);
     }
 
     fn accepted_glass() -> ResolvedGlass {
