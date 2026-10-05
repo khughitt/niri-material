@@ -1,12 +1,14 @@
 ---
 id: material-cf32e5
 title: "Noise placement: a site attribute selecting backdrop, glass, or film grain"
-status: todo
+status: doing
 priority: 2
 size: m
 complexity: high
+owner: materials-26.04
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T09:36:17Z
+updated: 2026-10-05T12:22:37Z
+started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
 tags: [noise, rendering, cross-project]
@@ -24,3 +26,8 @@ Settle: default (glass), invalidation of blur and pyramids when backdrop grain c
 Prove the look before the contract: compare today's grain with pre-blur grain on one backdrop at several roughness levels. "Cheaper" is a hypothesis: measure static wallpaper, animated backdrop, and parameter dragging separately; backdrop grain adds a texture generation and invalidates the blur and pyramid caches.
 
 The site vocabulary comes from the pipeline schema designed in prism-eef38f (sites, scope, composition law, coverage); do not start before that design is reviewed.
+
+## Notes
+
+- 2026-10-05T12:22:37Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
