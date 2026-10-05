@@ -1,6 +1,5 @@
 # tools/test_screencast_consumer.py
-"""The consumer's sampling logic without GStreamer: a sample is the first
-frame after an armed request, tightly packed (spec 2026-10-02 real-TTY §4)."""
+"""Sampling predicates plus a private-bus GStreamer consumer check."""
 
 import json
 import os
@@ -43,6 +42,43 @@ class SamplerTests(unittest.TestCase):
         sampler.request(self.target, 1)
         with self.assertRaises(RuntimeError):
             sampler.request(self.target.with_name('sample-2.raw'), 2)
+
+    def test_waits_for_changed_client_pixels_despite_other_damage(self):
+        sampler = Sampler()
+        sampler.request(self.target, 1_000)
+        sampler.offer(b'aaabbbcccdddeeefff', 3, 2, 1_001)
+        target = self.target.with_name('sample-2.raw')
+        sampler.request(target, 2_000, different_from=self.target, region=[1, 0, 1, 1])
+        # The other window changes, but the requested client crop is still old.
+        self.assertFalse(sampler.offer(b'XXXbbbcccdddeeefff', 3, 2, 2_001))
+        self.assertFalse(target.exists())
+        self.assertFalse(Path(f'{target}.json').exists())
+        self.assertTrue(sampler.offer(b'XXXNEWcccdddeeefff', 3, 2, 2_002))
+        self.assertEqual(target.read_bytes(), b'XXXNEWcccdddeeefff')
+        self.assertEqual(json.loads(Path(f'{target}.json').read_text())['frame_mono_ns'], 2_002)
+        self.assertEqual(json.loads(Path(f'{target}.json').read_text())['rejected_frame_mono_ns'], [2_001])
+        self.assertIsNone(sampler.pending)
+
+    def test_invalid_reference_cannot_arm_a_request(self):
+        sampler = Sampler()
+        sampler.request(self.target, 1)
+        sampler.offer(b'aaabbbcccdddeeefff', 3, 2, 2)
+        target = self.target.with_name('sample-2.raw')
+        for region in ([0, 0, 0, 1], [2, 1, 2, 1], [-1, 0, 1, 1], [0, 0, 1], [True, 0, 1, 1]):
+            with self.subTest(region=region), self.assertRaises(ValueError):
+                sampler.request(target, 3, different_from=self.target, region=region)
+            self.assertFalse(Path(f'{target}.armed').exists())
+            self.assertIsNone(sampler.pending)
+
+    def test_changed_frame_dimensions_cannot_satisfy_a_crop_request(self):
+        sampler = Sampler()
+        sampler.request(self.target, 1)
+        sampler.offer(b'aaabbb', 2, 1, 2)
+        target = self.target.with_name('sample-2.raw')
+        sampler.request(target, 3, different_from=self.target, region=[0, 0, 1, 1])
+        with self.assertRaises(ValueError):
+            sampler.offer(b'new', 1, 1, 4)
+        self.assertFalse(Path(f'{target}.json').exists())
 
     def test_a_failed_armed_write_leaves_nothing_pending(self):
         sampler = Sampler()
@@ -161,9 +197,9 @@ class ConsumerHarness(unittest.TestCase):
         calls, _ = self.service.communicate()
         return calls.split()
 
-    def start_consumer(self, request=None, pipeline=None):
+    def start_consumer(self, request=None, pipeline=None, launcher=None):
         env = dict(self.env, **({'SCREENCAST_CONSUMER_PIPELINE': pipeline} if pipeline else {}))
-        consumer = subprocess.Popen([sys.executable, str(ROOT / 'tools/screencast_consumer.py'), 'DP-1',
+        consumer = subprocess.Popen([sys.executable, str(launcher or ROOT / 'tools/screencast_consumer.py'), 'DP-1',
                                      str(self.tmp / 'frames'), str(self.tmp / 'summary.json'),
                                      str(request or self.tmp / 'request')],
                                     env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -178,12 +214,70 @@ class ConsumerHarness(unittest.TestCase):
 
 
 class ConsumerEndToEndTests(ConsumerHarness):
+    def test_reference_loading_cannot_lose_journaled_arrivals(self):
+        reference = self.tmp / 'sample-1.raw'
+        reference.write_bytes(bytes([255]) * (6 * 4 * 3))
+        Path(f'{reference}.json').write_text(json.dumps({'width': 6, 'height': 4}))
+        target = self.tmp / 'sample-2.raw'
+        (self.tmp / 'request').write_text(json.dumps(
+            {'path': str(target), 'different_from': str(reference), 'region': [1, 1, 2, 2]}))
+        # Run the real consumer/source, delaying only the reference's file I/O.
+        launcher = self.tmp / 'delayed_consumer.py'
+        launcher.write_text(
+            'import runpy, time\nfrom pathlib import Path\n'
+            'read = Path.read_bytes\n'
+            'def delayed(path):\n'
+            '    data = read(path)\n'
+            '    time.sleep(0.3)\n'
+            '    return data\n'
+            'Path.read_bytes = delayed\n'
+            f'runpy.run_path({str(ROOT / "tools/screencast_consumer.py")!r}, run_name="__main__")\n')
+        consumer = self.start_consumer(launcher=launcher,
+                                      pipeline=TEST_PIPELINE.replace('videotestsrc ', 'videotestsrc pattern=black '))
+        self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
+        consumer.send_signal(signal.SIGUSR1)
+        for _ in range(50):
+            if Path(f'{target}.json').exists():
+                break
+            time.sleep(0.1)
+        consumer.send_signal(signal.SIGTERM)
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertEqual(consumer.returncode, 0, stderr)
+        sample = json.loads(Path(f'{target}.json').read_text())
+        frames = [int(line) for line in (self.tmp / 'frames').read_text().splitlines()]
+        between = [t for t in frames if sample['request_mono_ns'] < t < sample['frame_mono_ns']]
+        self.assertEqual(sample['rejected_frame_mono_ns'], between)
+
+    def test_unchanged_stream_cannot_complete_a_crop_request(self):
+        target = self.tmp / 'sample-2.raw'
+        reference = self.tmp / 'sample-1.raw'
+        reference.write_bytes(bytes(6 * 4 * 3))
+        Path(f'{reference}.json').write_text(json.dumps({'width': 6, 'height': 4}))
+        request = self.tmp / 'request'
+        request.write_text(json.dumps({'path': str(target), 'different_from': str(reference),
+                                       'region': [1, 1, 2, 2]}))
+        consumer = self.start_consumer(pipeline=TEST_PIPELINE.replace('videotestsrc ', 'videotestsrc pattern=black '))
+        self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
+        consumer.send_signal(signal.SIGUSR1)
+        for _ in range(50):
+            if Path(f'{target}.armed').exists() and len((self.tmp / 'frames').read_text().splitlines()) >= 3:
+                break
+            time.sleep(0.1)
+        self.assertTrue(Path(f'{target}.armed').exists())
+        self.assertGreaterEqual(len((self.tmp / 'frames').read_text().splitlines()), 3)
+        self.assertFalse(Path(f'{target}.json').exists())
+        self.assertFalse(target.exists())
+        consumer.send_signal(signal.SIGTERM)
+        _, stderr = consumer.communicate(timeout=10)
+        self.assertEqual(consumer.returncode, 0, stderr)
+        self.assertTrue(json.loads((self.tmp / 'summary.json').read_text())['stopped_by_signal'])
+
     def test_startup_sampling_and_summary(self):
         tmp = self.tmp
         request = tmp / 'request'; target = tmp / 'sample-1.raw'
         consumer = self.start_consumer()
         self.assertEqual(consumer.stdout.readline().strip(), 'ready 7')
-        request.write_text(f'{target}\n')
+        request.write_text(json.dumps({'path': str(target)}))
         consumer.send_signal(signal.SIGUSR1)
         for _ in range(50):
             if Path(f'{target}.json').exists(): break

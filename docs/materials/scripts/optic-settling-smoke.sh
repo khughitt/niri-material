@@ -743,13 +743,24 @@ cast_stop() {
     [ "$EXIT_RC" -eq 0 ] || fail "$CASE: the screencast consumer exited $EXIT_RC (see cast.log)"
 }
 thief_line() { echo "thief $1" > "$OTHER_FIFO"; }
-# Arm a sample, cause its damage, wait for the frame that damage produced.
-# A request no frame answers fails the case; it is never retried.
-cast_sample() {   # label, damage command...
-    local label=$1 target=$CASE_DIR/$1.raw
-    shift
+# Arm a sample, cause damage, wait for an eligible frame. The probe update
+# must change its text crop; unrelated/in-flight frames cannot answer it.
+# A request no eligible frame answers fails within the bound, without retries.
+cast_sample() {   # label, preceding client sample (or empty), damage command...
+    local label=$1 previous=$2 target=$CASE_DIR/$1.raw
+    shift 2
     alive "$CAST_PID" || fail "$CASE: the screencast consumer exited (see cast.log)"
-    printf '%s\n' "$target" > "$CASE_DIR/sample-request"
+    python3 - "$target" "$previous" "$OUT/probe-rect-drm.txt" > "$CASE_DIR/sample-request" <<'PY2'
+import json, sys
+from pathlib import Path
+target, previous, calibration = sys.argv[1:]
+request = dict(path=target)
+if previous:
+    x, y, w, h = map(int, Path(calibration).read_text().split())
+    request.update(different_from=str(Path(target).with_name(f'{previous}.raw')),
+                   region=[x + 10, y + 10, w - 20, 80])
+print(json.dumps(request))
+PY2
     kill -USR1 "$CAST_PID" 2>/dev/null || fail "$CASE: the screencast consumer exited (see cast.log)"
     for _ in $(seq 20); do [ -e "$target.armed" ] && break; alive "$CAST_PID" || break; sleep 0.1; done
     if [ ! -e "$target.armed" ]; then
@@ -758,15 +769,15 @@ cast_sample() {   # label, damage command...
     fi
     "$@"
     for _ in $(seq 30); do [ -e "$target.json" ] && return; sleep 0.1; done
-    fail "$CASE: no cast frame answered $label"
+    fail "$CASE: no eligible cast frame answered $label"
 }
 # sample-2 to sample-3 is the held interval observed while casting (> 5 s).
 drive_screencast() {
     keepalive
     at 20; stim cast-start 1 cast_start
-    at 24; stim sample-1 1 cast_sample sample-1 thief_line 1
-    at 28; stim sample-2 1 cast_sample sample-2 print_line 1
-    at 36; stim sample-3 1 cast_sample sample-3 thief_line 2
+    at 24; stim sample-1 1 cast_sample sample-1 '' thief_line 1
+    at 28; stim sample-2 1 cast_sample sample-2 sample-1 print_line 1
+    at 36; stim sample-3 1 cast_sample sample-3 '' thief_line 2
     at 40; stim cast-stop 1 cast_stop
 }
 # The crops are only as good as the calibration, so the headless probe_rect's
