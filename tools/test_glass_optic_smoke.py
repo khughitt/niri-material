@@ -112,15 +112,6 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
         self.assertNotIn('capture_preflight', code)
         self.assertNotIn('capture-meta preflight', code)
 
-    def test_finish_hashes_every_file_but_the_manifest(self):
-        with tempfile.TemporaryDirectory() as out:
-            for name in ('a.png', 'b.kdl', 'c.tracy', 'capture.json', 'niri.log'):
-                (Path(out) / name).write_text(name)
-            (Path(out) / 'sub').mkdir(); (Path(out) / 'sub' / 'd.csv').write_text('d')
-            script = ('rg() { return 1; }\n' + self.function('finish') + '\nOUT=$1; finish >/dev/null; cut -d" " -f3- "$OUT/SHA256SUMS" | LC_ALL=C sort')
-            result = self.run_bash(script, out)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.split(), ['./a.png', './b.kdl', './c.tracy', './capture.json', './niri.log', './sub/d.csv'])
 
     def test_smokes_preflight_after_sourcing_and_identify_after_build(self):
         for smoke in ('glass-aurora-smoke.sh', 'glass-iridescence-smoke.sh',
@@ -148,14 +139,66 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
                              '--input /source/docs/materials/scripts/glass-optic-smoke-lib.sh '
                              '--input test --config preset=aurora')
 
-    def test_cleanup_ignores_capture_release_refusal(self):
+
+    def test_cleanup_fails_on_capture_release_failure(self):
         with tempfile.TemporaryDirectory() as out:
             script = ('capture_meta() { printf "%s" "$*" > "$OUT/release-call"; return 1; }\n'
                       'stop_weston() { :; }\nremove_runtime_dir() { :; }\n' + self.function('cleanup') +
                       '\nOUT=$1; CAP_PID=; NIRI_PID=; cleanup')
             result = self.run_bash(script, out)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.returncode, 1, result.stderr)
             self.assertEqual((Path(out) / 'release-call').read_text(), f'release {out}')
+
+    LIFECYCLE = ('stop_weston() { :; }\nremove_runtime_dir() { :; }\nrg() { return 1; }\n'
+                 'fail() { echo "FAIL: $*" >&2; exit 1; }\n')
+
+    def test_cleanup_hashes_after_the_last_release_on_success(self):
+        with tempfile.TemporaryDirectory() as out:
+            for name in ('a.png', 'b.kdl', 'c.tracy', 'niri.log'):
+                (Path(out) / name).write_text(name)
+            (Path(out) / 'sub').mkdir(); (Path(out) / 'sub' / 'd.csv').write_text('d')
+            script = (self.LIFECYCLE +
+                      'capture_meta() { echo "{\\"released\\": $(date +%s%N)}" > "$OUT/capture.json"; }\n' +
+                      self.function('write_sums') + '\n' + self.function('cleanup') + '\n' + self.function('finish') +
+                      '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; finish')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('PASS', result.stdout)
+            listed = sorted(line.split()[1] for line in (Path(out) / 'SHA256SUMS').read_text().splitlines())
+            self.assertEqual(listed, ['./a.png', './b.kdl', './c.tracy', './capture.json', './niri.log', './sub/d.csv'])
+            check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=out, capture_output=True, text=True)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_failed_restore_then_successful_retry_keeps_a_valid_manifest(self):
+        with tempfile.TemporaryDirectory() as out:
+            (Path(out) / 'a.png').write_text('a')
+            # First release: restore failed (exit 2) and wrote one record; cleanup's retry rewrites it.
+            script = (self.LIFECYCLE +
+                      'capture_meta() { if [ -e "$OUT/.first" ]; then echo retry > "$OUT/capture.json"; return 0; fi; '
+                      'touch "$OUT/.first"; echo failed > "$OUT/capture.json"; return 2; }\n' +
+                      self.function('write_sums') + '\n' + self.function('cleanup') + '\n' + self.function('finish') +
+                      '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; finish')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('capture release reported 2', result.stderr)
+            self.assertNotIn('PASS', result.stdout)
+            self.assertEqual((Path(out) / 'capture.json').read_text(), 'retry\n')
+            check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=out, capture_output=True, text=True)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_no_manifest_when_the_run_never_reached_finish(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = (self.LIFECYCLE + 'capture_meta() { :; }\n' + self.function('write_sums') + '\n' +
+                      self.function('cleanup') + '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; false')
+            self.run_bash(script, out)
+            self.assertFalse((Path(out) / 'SHA256SUMS').exists())
+
+    def test_clip_fixtures_fail_on_capture_release_failure(self):
+        scripts = Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+        for name in ('ring-motion-clips.sh', 'drag-lag-clips.sh', 'focus-swap-clips.sh'):
+            text = (scripts / name).read_text()
+            self.assertIn('capture_meta release "$OUT" || rc=1', text, name)
+            self.assertNotIn('capture_meta release "$OUT" || true', text, name)
 
 
 class RenderOrderBehindMatrixTest(unittest.TestCase):
