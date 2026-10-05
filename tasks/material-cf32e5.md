@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T14:25:48Z
+updated: 2026-10-05T14:38:19Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -50,4 +50,8 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-05T14:20:07Z (material-cf32e5): review: plan round 1 — verdict: revise; findings: P1 2, P2 8; reviewer: codex/gpt-6-astra
 - 2026-10-05T14:25:47Z (material-cf32e5): Plan revised for round 1: precision line before common.frag; cost script owns swaybg by PID (no pkill); Task 1 green alone (ResolvedNoise literals migrated, noise stage owns the parameter, JSON regenerated); film-grain before effect-saturation; coloured test buffer scaled to u32; tests find tiles by material name; smoke on the lib's real API with calibration, assert_about, own ring config (glow 2, rest 2, one speed node); GrainProgram owned by the buffer, lazy compile, retry after invalidation with a table test; cost section limited to measurements incl. material draw at equal workload; full capture matrix; just setup before the baseline build
 - 2026-10-05T14:25:47Z (material-cf32e5): parked (waiting on user, review): Plan review round 2 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T14:37:24Z (material-cf32e5): review: plan round 2 — verdict: revise; findings: P2 5; reviewer: codex/gpt-6-astra
+- 2026-10-05T14:38:18Z (material-cf32e5): Plan revised for round 2: cleanup_cost carries $? past stop_walls; schema_renders_stably asserts the glass selector and checks omission on slab; fixture output 800 px, regions clipped to the output; -fuzz 0.392157%; shot_twice asserts determinism in every cell
+- 2026-10-05T14:38:18Z (material-cf32e5): parked (waiting on user, review): Plan review round 3 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
