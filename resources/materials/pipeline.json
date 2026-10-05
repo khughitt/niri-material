@@ -154,8 +154,12 @@
         "distortion",
         "distortion scale="
       ],
-      "responses": [],
-      "animated": false
+      "responses": [
+        "ping",
+        "done",
+        "error"
+      ],
+      "animated": true
     },
     {
       "id": "ripple",
@@ -167,7 +171,11 @@
       "reads": [
         "jelly-ripple"
       ],
-      "responses": [],
+      "responses": [
+        "ping",
+        "done",
+        "error"
+      ],
       "animated": true
     },
     {
@@ -198,10 +206,16 @@
         "chromatic-aberration",
         "ior",
         "thickness",
-        "anisotropic-blur"
+        "anisotropic-blur",
+        "backdrop-blur",
+        "roughness"
       ],
-      "responses": [],
-      "animated": false
+      "responses": [
+        "ping",
+        "done",
+        "error"
+      ],
+      "animated": true
     },
     {
       "id": "directional-blur",
@@ -214,10 +228,16 @@
         "anisotropic-blur",
         "ior",
         "thickness",
-        "chromatic-aberration"
+        "chromatic-aberration",
+        "backdrop-blur",
+        "roughness"
       ],
-      "responses": [],
-      "animated": false
+      "responses": [
+        "ping",
+        "done",
+        "error"
+      ],
+      "animated": true
     },
     {
       "id": "saturation",
@@ -278,7 +298,7 @@
         "accent-tint",
         "accent"
       ],
-      "animated": false
+      "animated": true
     },
     {
       "id": "ring",
@@ -307,7 +327,10 @@
         "ring-beam-decay",
         "focus",
         "accent",
-        "attention"
+        "attention",
+        "ping",
+        "done",
+        "error"
       ],
       "animated": true
     },
