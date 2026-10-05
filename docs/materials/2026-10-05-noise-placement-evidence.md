@@ -11,8 +11,8 @@ on 2026-10-05. This is a preparation record, not acceptance for merge.
   pixel/damage tests `8db25b43`.
 - Baseline `b261ad1a`, release binary SHA-256 `932dd408244012476bad6fa71141bdf53e73c26c1f2d73a37a870524865cc20e`.
 - Prepared binary snapshots: `$NIRI_NOISE_ARTIFACTS/noise-binaries-8db25b43/`.
-  Implementation release SHA-256 `10d17132c0524e6ad1f111cd8000fc1ae3fda939733acb9df7c7a738ad386c17`;
-  Tracy release SHA-256 `2ef67a9821926d3bd8b3a759cfd4f82b6cedc2e93a4bb49d973f1c230cd68ac8`. Both builds passed.
+  Pre-review implementation release SHA-256 `10d17132c0524e6ad1f111cd8000fc1ae3fda939733acb9df7c7a738ad386c17`;
+  Tracy release SHA-256 `2ef67a9821926d3bd8b3a759cfd4f82b6cedc2e93a4bb49d973f1c230cd68ac8`. Both builds passed; corrected snapshots are recorded below before handoff.
 - Offline simulation: `$NIRI_NOISE_ARTIFACTS/noise-simulation-20261005-112606/`;
   `sheet-white.png`, `sheet-fine.png`, the cell images and metrics.
 - Refused readiness run:
@@ -40,6 +40,11 @@ GL seed orientation holds; no vertical seed correction was needed.
 The plain-window coverage fixture uses one blur pass and retains the 0.5-code
 presence threshold. At three passes its fine grain spread was only 0.026012
 codes. The separate softening test still uses three passes.
+
+Four additional low-level GPU regressions now cover incomplete framebuffer
+failure, failed draws, sharp fallback held until invalidation, and context-owned
+program reuse after buffer references drop / a shared renderer is replaced.
+A fifth assertion proves a failed pass leaves no GL error for its fallback frame.
 
 ## Offline look model
 
@@ -127,7 +132,12 @@ CAPTURE_TASK=material-cf32e5 \
 bash docs/materials/scripts/noise-placement-cost.sh
 ```
 
-Both runs contain static/damage/drag cases at both sites. The pilot reduces
+Both runs contain static/damage/drag cases at both sites, with simultaneous
+sharp and blurred roughness windows in each workload. Distinct sharp/blurred
+preparation spans validate both pyramids. Each wallpaper process must stay
+alive and publish a layer; each recorded damage interval must show an actual
+layer mapping, sharp damage and both preparations. Incomplete stimuli fail.
+The pilot reduces
 wallpaper changes from 20 to five. Reload spans mark the measured stimulus
 window. Dragging uses completed, unique config paths and the supported explicit
 reload action, preventing the watcher from duplicating the reload.
@@ -146,5 +156,7 @@ cost verdict is available until both measured pairs exist.
 - The ring fixture's encoded band level and transfer ratio are unmeasured.
 - Tracy costs and the actual nested renderer string remain unmeasured; the
   preflight's host GPU name is not a measured rendering-cost result.
-- Review, gate, merge, schema vendoring in prism, and parent close remain part
-  of the task; passing unit tests alone does not meet its acceptance contract.
+- The first whole-branch review found four Important issues; GL error handling,
+  context ownership and capture integrity corrections are in scoped re-review.
+- The pre-correction gate passed; it is rerun after corrections. Merge, schema
+  vendoring in prism and parent close remain blocked on capture acceptance.

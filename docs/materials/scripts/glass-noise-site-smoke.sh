@@ -139,7 +139,7 @@ done
 write_ring_config() {   # $1 path, $2 site, $3 amount
     cat > "$1" <<KDL
 prefer-no-csd
-layout { gaps 40; background-color "transparent"; default-column-width { proportion 0.4; }; focus-ring { off; }; border { off; }; shadow { off; } }
+layout { gaps 40; background-color "transparent"; default-column-width { proportion 0.4; }; focus-ring { off; }; border { off; }; shadow { off; }; }
 hotkey-overlay { skip-at-startup; }
 config-notification { disable-failed; }
 spawn-at-startup "swaybg" "-m" "fill" "-i" "$RING_WALL"
