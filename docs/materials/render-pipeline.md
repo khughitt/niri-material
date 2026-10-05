@@ -29,7 +29,9 @@ topmost. Per output, per frame:
    workspace, and `backdrop`, the same layer drawn as the overview backdrop.
    Both receive the global `blur { passes; offset }` as their blur options.
 2. **Each `EffectBuffer` renders lazily** (`effect_buffer.rs`): its elements
-   into a full-output offscreen (the *sharp* texture); on request, a
+   into a full-output offscreen (the *sharp* texture); when a material places
+   noise at `backdrop`, a cached grain pass over that texture (`grain.rs`,
+   `grain.frag`), shared by every consumer below; on request, a
    dual-Kawase blur of that texture (`blur_down.frag` / `blur_up.frag`,
    `blur.rs`), cached until the source or the blur options change; on
    request, a downsample pyramid of either texture for roughness.
@@ -106,13 +108,13 @@ runs only where the window is transparent or outside the window.
 | 2 | **Normal perturbation.** Fractal simplex noise on element position bends the normal; then, while a spring runs, two-octave simplex ripple scaled by jelly activity. | — | `distortion`, `distortion scale=`, `jelly-ripple` |
 | 3 | **Refraction taps** (`tap`). Refract the orthographic ray at the perturbed normal with `ior`, displace by `thickness`, and sample the composed background there, in linear light. Composition per tap: background buffer over the workspace color, over the backdrop buffer over the backdrop color; outside the workspace rect, the backdrop alone. One tap when both smear controls are zero; otherwise up to eight jittered taps, per channel under aberration. | `niri_tex_bg[_high]`, `niri_tex_backdrop[_high]` | `ior`, `thickness`, `backdrop-blur`, `roughness`, `anisotropic-blur`, `chromatic-aberration` |
 | 3a | **Behind: saturation.** Encode the averaged linear sample, apply `mix(luma(encoded), encoded, saturation)`, then decode. Neutral returns before conversion. | — | `saturation`; neutral 1 |
-| 3b | **Behind: noise.** Grain the averaged backdrop once, using the existing sRGB white/fine formulas or Oklab lightness formula, then return linear light. Grain stays screen-seeded; lightness keeps its gamut clamp. | — | `noise`, `noise type=`; neutral 0 |
+| 3b | **Behind: noise (glass site).** Inert at `backdrop` and `film`; otherwise grain the averaged backdrop once, using the existing sRGB white/fine formulas or Oklab lightness formula, then return linear light. Grain stays screen-seeded; lightness keeps its gamut clamp. | — | `noise`, `noise type=`, `noise site=`; neutral 0 |
 | 4 | **Beer-Lambert attenuation.** `attenuation-color ^ (optical distance / attenuation-distance)`, where optical distance is `thickness / cos(structural normal)`, floored at a quarter, so the chamfer tints more than the face. | — | `attenuation-color`, `attenuation-distance`, `thickness`, response `accent-tint` (tints `attenuation-color` on the CPU before upload) |
 | 5 | **Within: ring and aurora.** The ring beam lands through the light-path index at 20 % of thickness, measured from the face edge (`ring-gap` inward from where the flat face begins, on the face globals `slabSurface` stores); its brightness along the band is an arc-length comet — a Gaussian head at `arcPosition`, whose amplitude carries the `ring-beam-noise` wander, a tail behind it, both darkened together over `ring-beam-decay` px — over a resting glow scaled by `ring-rest`; edge spill on the chamfer, fading from the face edge to the outer edge. Aurora lands the same way. Each contributes `att ^ 0.2`. The ring has no face mask; roughness scatters its Gaussian core and halo with integral conservation. | — | `light-ior`, `roughness`, `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent`, response `focus` / `accent` / `attention`, `aurora`, `aurora drift-hz`, `aurora color` (optic `aurora`; neutral 0) |
 | 6 | **Fresnel glint.** Schlick from `ior` on the structural normal, weighted toward the signal light direction; accent-tinted under `attention "rim-orbit"`. Additive. Then the `iridescence` optic hues the glint from the view angle, before the accent mix. | — | `ior`, `iridescence` (optic `iridescence`; neutral 0), response `attention`, signal accent |
 | 7 | **Emissive: sweeps.** A diagonal Gaussian sweep per impulse whose response is `sweep`. The other impulse responses act earlier: `ripple` adds to the jelly activity of step 2, `flash` raises aberration and distortion for steps 2 and 3. Additive. | — | response `ping` / `done` / `error` |
 | 8 | **Encode.** `glass = linearToSrgb(transmitted + within + specular + emissive)`. | — | — |
-| 9 | **Post (film).** Reserved for screen-space effects on encoded glass; currently empty. | — | — |
+| 9 | **Post: film grain.** `noise_post` grains the encoded glass, over transmitted light, ring, aurora, glint and sweeps, before coverage; active only at `site="film"`. The formulas and seed of 3b act in encoding. | — | `noise`, `noise type=`, `noise site=`; neutral 0 |
 | 10 | **Coverage.** Multiply by the slab coverage from step 1; the result is premultiplied. | — | — |
 | 11 | **Composite.** `out = win + (1 - win.a) * glass`, then `* niri_alpha` (window-rule opacity, applied exactly once). | — | window-rule `opacity` |
 
@@ -126,7 +128,7 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
   glass refracts; `roughness` prefilters that image. Neither is a pass over
   the glass. A frosted look is a refraction of a blurred backdrop, not a
   blur of a refraction.
-- **Noise and saturation belong to the transmitted backdrop.** They run
+- **Glass-site noise and saturation act on the transmitted backdrop.** They run
   once after the averaged taps and before attenuation. The chamfer can still
   transmit grain, attenuated more strongly than on the face. Glint, ring,
   aurora and sweeps are added afterward, so their light is not grained or
@@ -144,9 +146,14 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
   through window transparency and in the band the slab extends past the
   window. A window with `opacity 1` and an opaque surface shows glass only
   on its bevel.
-- **Two noise sites exist.** `postprocess.frag` grains the background-effect
-  element under the window; `material.frag` grains the glass. Prism pins the
-  first to neutral. A design that changes "the noise" must say which.
+- **Noise has three material placements.** `noise site=` places grain before
+  the blur (`backdrop`, one texture per output; every glass window and the
+  blurred background-effect element see it), on the transmitted backdrop
+  (`glass`), or over the finished glass (`film`, including its additive light,
+  on glass coverage). Blur and roughness soften grain at the backdrop site.
+  `postprocess.frag`'s `blur { noise }` remains the window element's own grain.
+  A design that changes noise must name its site.
+
 
 ## 5. Parameter to stage, with Prism names
 
@@ -171,6 +178,7 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
 | `light-ior` | (pending, prism-0ea68f) | 5 |
 | `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent` | `glass.ring.gap`, (none), `glass.ring.color`, `glass.ring.beamSpeed`, `glass.ring.beamNoise`, `glass.ring.beamNoiseHz`, `glass.ring.decay`, `glass.ring.glow`, `glass.ring.rest`, `glass.ring.accent` (prism-f67834, pending) (`gap`, `beamSpeed`, `glow` on Prism's `prism-1514d3`, merged at the rollout) | 5 |
 | `saturation` | `glass.saturation` | 3a |
+| `noise` `site=` | `glass.noiseSite` (pending, prism-be5abe) | source grain pass / 3b / 9 |
 | `noise` `type=` | `glass.noise`; `type=` (pending, prism-51f23b) | 3b |
 
 Prism's `glass.inactive.*` keys write the same native parameters into the
@@ -185,7 +193,8 @@ stages (site, scope, the parameters each owns and reads, the response fields
 it reads, its optic hook and program), and the structural interactions, and
 tests pin them to `all_params()`, `ORDER`, the `Response` block, and the hook
 calls in each shader program. `resources/materials/pipeline.json` is
-generated from them (`MATERIAL_DOCS_UPDATE=1 just test` regenerates it) and
+generated from them (`MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config
+material_pipeline_schema_matches_the_file` regenerates it) and
 is what prism vendors to validate its device rack. Design: prism
 `docs/specs/2026-10-04-pipeline-schema-design.md`.
 

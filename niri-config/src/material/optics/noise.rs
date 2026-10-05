@@ -1,5 +1,5 @@
-//! `noise <amount> type=<type>`: stage 10, screen-space grain on the
-//! encoded glass colour. Neutral at amount 0.
+//! `noise <amount> type=<type> site=<site>`: grain on the shared backdrop,
+//! transmitted backdrop, or encoded glass. Neutral at amount 0.
 
 use std::str::FromStr;
 

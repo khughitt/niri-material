@@ -54,7 +54,7 @@ This task is green on its own: the new field is written into every exhaustive li
 - Produces: `pub enum NoiseSite { Glass = 0, Backdrop = 1, Film = 2 }` with `NAMES`, `FromStr`, `Default = Glass`; `ResolvedNoise.site: NoiseSite`; `pub struct BackdropGrain { pub amount: f64, pub kind: NoiseType }`; `pub fn backdrop_grain(materials: &[Material]) -> Result<Option<BackdropGrain>, String>` in `niri_config::material::optics::noise`; `Config::backdrop_grain(&self) -> Option<BackdropGrain>`; `ParamSpec` node `"noise site="`, owned and read by the `noise` stage. All re-exported from `niri_config` (`NoiseSite`, `BackdropGrain`).
 - Consumed by: Task 2 (`site` uniform), Task 3 (`GrainOptions::from(BackdropGrain)`), Task 4 (configs with `site=`).
 
-- [ ] **Step 1: Write the failing parse tests**
+- [x] **Step 1: Write the failing parse tests**
 
 In `niri-config/src/lib.rs`, directly after `glass_noise_type_cannot_be_written_without_an_amount`, add:
 
@@ -133,12 +133,12 @@ In `niri-config/src/lib.rs`, directly after `glass_noise_type_cannot_be_written_
 
 Add `NoiseSite` and `BackdropGrain` to the test module's imports where `NoiseType` is imported (search `use crate::{` or the `NoiseType` import inside `mod tests`).
 
-- [ ] **Step 2: Run them to see them fail to compile**
+- [x] **Step 2: Run them to see them fail to compile**
 
 Run: `just test-one -p niri-config glass_noise_site`
 Expected: compile error, `NoiseSite` not found.
 
-- [ ] **Step 3: Add the enum, the property, the resolved field, the agreement function, the parameter row, and the field in every literal**
+- [x] **Step 3: Add the enum, the property, the resolved field, the agreement function, the parameter row, and the field in every literal**
 
 In `niri-config/src/material/optics/noise.rs`, after `impl FromStr for NoiseType`, add:
 
@@ -325,17 +325,17 @@ In `niri-config/src/material/pipeline.rs`, the existing `noise` row owns and rea
     ),
 ```
 
-- [ ] **Step 4: Run the new tests, the config crate, and the niri crate's pins**
+- [x] **Step 4: Run the new tests, the config crate, and the niri crate's pins**
 
 Run: `just test-one -p niri-config glass_noise_site` then `just test-one -p niri-config backdrop_grain` then `just test-one -p niri-config material_` then `just test-one -p niri-config pipeline` then `just test-one -p niri pipeline_` then `just test-one -p niri noise`
 Expected: the four new tests PASS; `material_parameter_specs_match_the_parser` PASS (it writes `noise 0.5 site="glass"` through `write`); `every_parameter_is_owned_by_exactly_one_stage` and `reads_cover_owns_and_name_only_parameters` PASS; the niri pins PASS (the GLSL-reads pin checks that what the GLSL reads is listed, not the converse, so the stage may list `noise site=` before the shader declares it); only `material_parameter_table_matches_the_docs` and `material_pipeline_schema_matches_the_file` FAIL, both as "stale".
 
-- [ ] **Step 5: Regenerate the parameter table and the schema file**
+- [x] **Step 5: Regenerate the parameter table and the schema file**
 
 Run: `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_parameter_table_matches_the_docs` and `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_pipeline_schema_matches_the_file`
 Then `git diff docs/materials/material-config.md`: exactly one new row, `| \`noise\` \`site=\` | \`glass\` / \`backdrop\` / \`film\` | \`glass\` | — | — |`, after the `noise type=` row. `git diff resources/materials/pipeline.json`: the `noise` stage's `owns` and `reads` each gain `"noise site="`; nothing else.
 
-- [ ] **Step 6: Gate and commit**
+- [x] **Step 6: Gate and commit**
 
 Run: `just test-fast` and `just check`. Expected: green.
 
@@ -365,7 +365,7 @@ git commit -m "feat(config): noise site= with the backdrop agreement rule (mater
 - Consumes: `NoiseSite` (Task 1).
 - Produces: GLSL `vec3 noise_post(vec3 encoded, vec2 fragCoord)`, `vec4 noise_source(vec4 texel, vec2 fragCoord)`, uniform `mat_noise_site`; `pub(crate) fn grain_source() -> String` in `shaders/mod.rs` (a complete `#version 100` fragment program over `varying vec2 v_coords`, `uniform sampler2D tex`, `uniform float mat_noise`, `uniform float mat_noise_type`); schema stages `backdrop-grain` and `film-grain` with selectors, and the selector on `noise`.
 
-- [ ] **Step 1: Write the failing pin tests**
+- [x] **Step 1: Write the failing pin tests**
 
 In `src/render_helpers/shaders/mod.rs` tests:
 
@@ -511,12 +511,12 @@ In `selector_rules_refuse_each_defect`, if no fixture yet covers two selector st
 
 (Read the function first; the existing seven fixtures may already include it under another name. Keep exactly one such fixture.)
 
-- [ ] **Step 2: Run the pins to see them fail**
+- [x] **Step 2: Run the pins to see them fail**
 
 Run: `just test-one -p niri pipeline_` and `just test-one -p niri-config todays_shape` and `just test-one -p niri-config schema_renders_stably`
 Expected: `grain_source` does not exist (compile error in the niri crate tests); `todays_shape` FAILS on the selector list; `schema_renders_stably_with_a_trailing_newline` FAILS on the noise selector.
 
-- [ ] **Step 3: Move the helpers into `common.frag`**
+- [x] **Step 3: Move the helpers into `common.frag`**
 
 Create `src/render_helpers/shaders/material/common.frag` with, verbatim from `prelude.frag`, the functions `srgbToLinear`, `linearToSrgb` (with the comment block above them, lines 127–142), `hash12`, `fineGrain` (with its comment, lines 228–247) and `linearToOklab`, `oklabToLinear` (with the Oklab comment, lines 249–275). Head the file with:
 
@@ -572,7 +572,7 @@ pub(crate) fn grain_source() -> String {
 Run: `just test-one -p niri material_source_is_prelude_then_optics_in_order_then_main`
 Expected: FAIL only on the `noise_post` / `mat_noise_site` assertions. The move itself must compile on the GPU: run `just test-one -p niri ring_look` (an in-process render through the real material program) and expect PASS with no "error compiling" warning in its output. If `glslangValidator` is installed, also `cargo run`-free: dump the source from a scratch test or `println!` and run `glslangValidator -S frag <(printf '#version 100\n'; cat source.glsl)`; it must accept.
 
-- [ ] **Step 4: Extend `noise.frag` and call the post hook**
+- [x] **Step 4: Extend `noise.frag` and call the post hook**
 
 Replace `src/render_helpers/shaders/material/noise.frag` with:
 
@@ -729,7 +729,7 @@ Update the test helper `pair` in that file to a `triple` returning `(f32, f32, f
 
 (import `NoiseSite` from `niri_config` in the test module).
 
-- [ ] **Step 5: Add the schema stages**
+- [x] **Step 5: Add the schema stages**
 
 In `niri-config/src/material/pipeline.rs`, after `const fn optic`:
 
@@ -808,18 +808,18 @@ Insert immediately before the `effect-saturation` row (line 489 today; it is the
     ),
 ```
 
-- [ ] **Step 6: Run every pin and regenerate the schema file**
+- [x] **Step 6: Run every pin and regenerate the schema file**
 
 Run: `just test-one -p niri-config pipeline` (the module's tests) and `just test-one -p niri pipeline_` and `just test-one -p niri grain_source` and `just test-one -p niri material_source` and `just test-one -p niri-config material_`
 Expected: everything PASS except `material_pipeline_schema_matches_the_file` (stale).
 Run: `MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_pipeline_schema_matches_the_file`
 Then `git diff resources/materials/pipeline.json`: two new stage objects (`backdrop-grain` first, `film-grain` before `effect-saturation`) and a `selector` on `noise`, each `"selector": {"param": "noise site=", "variant": ...}`; the `version` is unchanged.
 
-- [ ] **Step 7: Prove two drifts fail**
+- [x] **Step 7: Prove two drifts fail**
 
 Comment out the `noise_post` call in `main.frag`; run `just test-one -p niri pipeline_material_hooks_are_called_exactly_once_in_stage_order`; expected FAIL naming `film-grain`. Restore the line. Delete `grain.frag`'s call (replace the body with `gl_FragColor = texture2D(tex, v_coords);`); run `just test-one -p niri pipeline_other_programs_call_their_hooks_exactly_once`; expected FAIL naming `backdrop-grain`. Restore it. Confirm `git status` shows no stray change.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add src/render_helpers/shaders/material/common.frag src/render_helpers/shaders/material/prelude.frag \
@@ -844,7 +844,7 @@ git commit -m "feat(material): noise sites in the shader and the schema; grain p
 - Consumes: `grain_source()` (Task 2), `BackdropGrain`, `NoiseType`, `Config::backdrop_grain()` (Task 1).
 - Produces: `pub struct GrainOptions { pub amount: f32, pub kind: NoiseType }` with `From<BackdropGrain>`; `pub struct GrainProgram` with `compile(&mut GlesRenderer) -> anyhow::Result<Self>`, `context_id(&self) -> ContextId<GlesTexture>` and `render(&self, &mut GlesRenderer, source: &GlesTexture, target: &GlesTexture, GrainOptions) -> anyhow::Result<()>`; `EffectBuffer::update_grain_options(&mut self, Option<GrainOptions>)`; Tracy spans `EffectBuffer::prepare_grain` (CPU) and `Grain::render` (GPU).
 
-- [ ] **Step 1: Write the failing invalidation table test**
+- [x] **Step 1: Write the failing invalidation table test**
 
 In `effect_buffer.rs` tests:
 
@@ -911,7 +911,7 @@ In `effect_buffer.rs` tests:
 
 Run: `just test-one -p niri each_invalidation` — expected: compile error (`Invalidation`, `Cleared`, `cleared_by`, `next_grain_status`, `GrainOptions` missing).
 
-- [ ] **Step 2: The grain program**
+- [x] **Step 2: The grain program**
 
 Create `src/render_helpers/grain.rs`:
 
@@ -1057,7 +1057,7 @@ impl GrainProgram {
 
 Declare `pub mod grain;` in `src/render_helpers/mod.rs`. The program is not registered in `Shaders`: it is compiled lazily by the buffer that needs it (Step 3), so a compile failure is retried after the next invalidation instead of being frozen at renderer start.
 
-- [ ] **Step 3: The effect buffer**
+- [x] **Step 3: The effect buffer**
 
 In `effect_buffer.rs`:
 
@@ -1312,12 +1312,12 @@ and in both `for buf in ...` loops, after `update_blur_options`: `buffer.update_
 
 (`offscreen` and `self.grain_program` are disjoint borrows of `self`; take `let grain = self.grain;` and the offscreen as `self.offscreen.as_mut()` before touching `self.grain_program`, or split the compile into a small `fn grain_program(&mut self, renderer) -> Option<GrainProgram>` called first.)
 
-- [ ] **Step 4: Run the unit tests and the material tests**
+- [x] **Step 4: Run the unit tests and the material tests**
 
 Run: `just test-one -p niri each_invalidation` and `just test-one -p niri a_failed_grain_pass` and `just test-one -p niri grain_options_change` and `just test-one -p niri prefilter_` and `just test-one -p niri material`
 Expected: all PASS. The in-process renders of Task 4 are the first to compile the grain program on a GPU; a compile failure there appears as the "failed to compile" warning and a `Failed` status, never a panic. If the warning appears, fix the GLSL before moving on.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/render_helpers/grain.rs src/render_helpers/mod.rs src/render_helpers/effect_buffer.rs src/niri.rs
@@ -1339,7 +1339,7 @@ git commit -m "feat(render): backdrop grain pass in the effect buffer, published
 - Consumes: `render_at`, `set_time`, `diff` from `ring_pair.rs` (`pub(super)`); `Fixture`; `tile.material()` and `MaterialState::material().name`; `Niri::output_state[...].xray.background`.
 - Produces: nothing other tasks consume; Task 5's smoke mirrors the identities.
 
-- [ ] **Step 1: Helpers**
+- [x] **Step 1: Helpers**
 
 In `src/tests/client.rs`, on the layer surface impl beside `attach_new_buffer`:
 
@@ -1367,7 +1367,7 @@ In `src/render_helpers/material/mod.rs`, on `MaterialState`:
     }
 ```
 
-- [ ] **Step 2: The fixture and the first failing test**
+- [x] **Step 2: The fixture and the first failing test**
 
 Create `src/tests/noise_site.rs`:
 
@@ -1626,7 +1626,7 @@ fn omitted_site_equals_glass_pixel_for_pixel() {
 Run: `just test-one -p niri omitted_site_equals_glass`
 Expected: before Tasks 1–3 this would not compile; with them in place it PASSES. Confirm it also discriminates: temporarily change the second look's amount to `0.31`, run, expect FAIL, restore.
 
-- [ ] **Step 3: The remaining tests**
+- [x] **Step 3: The remaining tests**
 
 Append to `noise_site.rs`:
 
@@ -1870,14 +1870,14 @@ Note `niri.output_state` and `xray` are `pub` (`src/niri.rs:261`, `:491`); `Rend
 
 Register the module in `src/tests/mod.rs` (`mod noise_site;`, alphabetical).
 
-- [ ] **Step 4: Run, then prove the damage test needs the increment**
+- [x] **Step 4: Run, then prove the damage test needs the increment**
 
 Run: `just test-one -p niri noise_site`
 Expected: all PASS. If `backdrop_equals_glass_on_the_face_at_blur_off_within_two_codes` fails with a mean near the grain's own spread (around 8 to 12 codes at amount 0.3), the backdrop seed is vertically flipped relative to the screen; the fix is in `grain.frag` and `grain.rs`: add `uniform float grain_height;` to the effect header in `grain_source()`, set it from `size.h as f32` in `GrainProgram::render`, and seed with `vec2(gl_FragCoord.x, grain_height - gl_FragCoord.y)`. Rerun; record which orientation held in the commit message. If the mean stays above 2 with the seeds aligned, the identity claim of §5 (c) does not hold as written: stop, record the measured mean in a task note, and raise it at the whole-branch review rather than loosening the bound.
 
 Then, in `effect_buffer.rs`, temporarily change `cleared_by`'s `GrainOptionsChanged` arm to `publishes: false` (move it to its own arm). Run `just test-one -p niri a_backdrop_only_reload_rerenders_the_unchanged_glass_window` and `just test-one -p niri each_invalidation`: both must FAIL. Restore the arm, rerun, PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/tests/noise_site.rs src/tests/mod.rs src/tests/client.rs src/render_helpers/material/mod.rs
