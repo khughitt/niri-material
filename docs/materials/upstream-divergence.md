@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-254 paths differ: 51 class B (seam), 167 class A (fork-only), 36 class C (scaffolding).
+255 paths differ: 51 class B (seam), 168 class A (fork-only), 36 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -99,11 +99,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/tile.rs` | B | M | +2710/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
-| `src/niri.rs` | B | M | +302/-0 |
+| `src/niri.rs` | B | M | +310/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
-| `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
-| `src/render_helpers/mod.rs` | B | M | +27/-0 |
+| `src/render_helpers/effect_buffer.rs` | B | M | +602/-15 |
+| `src/render_helpers/mod.rs` | B | M | +28/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
 | `src/render_helpers/shaders/mod.rs` | B | M | +447/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
