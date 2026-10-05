@@ -202,6 +202,7 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
         self.stub('python3', 'if [ "$1" = -m ]; then\n'
                   f'  if [ "$2" = unittest ]; then shift 2; exec "{marker}" fast "$@"; fi\n'
                   '  if [ "$2" = tools.tooling_tests ]; then shift 2;\n'
+                  f'    if [ "$1" = --fast ]; then exec "{marker}" fast "$@"; fi\n'
                   f'    if [ "$1" = --full ]; then exec "{marker}" full "$@"; fi\n'
                   f'    if [ "$1" = --check-paths ]; then exec "{marker}" paths "$@"; fi\n'
                   '  fi\nfi\n'
@@ -252,6 +253,8 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
                 for event in events:
                     if event['kind'] in ('fast', 'full', 'paths'):
                         self.assertEqual(event['mode'], '1' if event['kind']=='fast' else '0')
+                    if event['kind'] == 'fast':
+                        self.assertIn('--fast', event['args'])
                 records = [json.loads(line) for line in (self.root / 'timings.jsonl').read_text().splitlines()]
                 if recipe in ('hook-pre-commit', 'hook-pre-commit-full'):
                     self.assertEqual((records[-1]['target'], records[-1]['tests']),

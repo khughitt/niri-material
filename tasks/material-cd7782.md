@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency
 created: 2026-10-04T15:00:02Z
-updated: 2026-10-05T00:24:36Z
+updated: 2026-10-05T09:08:25Z
 started: 2026-10-04T16:48:06Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -82,3 +82,9 @@ Process: planned
 - 2026-10-05T00:23:54Z (fix/pre-commit-latency): attached: material-final-latency-evidence.md (1148015 bytes): Final and earlier 317-case stability, cancellation, real fast/full hooks, unmet 35-second headroom, dry-run verifier, repeated two-process fast prototype and pending owner amendment review.
 - 2026-10-05T00:24:36Z (fix/pre-commit-latency): parked (waiting on user, review): Owner: review the parallel-fast spec and Task 6 plan amendment in .worktrees/pre-commit-latency/docs/specs/2026-10-04-pre-commit-tooling-latency-design.md and .worktrees/pre-commit-latency/docs/plans/2026-10-04-pre-commit-tooling-latency-plan.md. Agent then resumes material-9f9ca2, implements the amendment, re-verifies both routes on final code and closes only with actual verifier success and headroom. Incident remains open; no host pointers changed or owned checks running.
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T08:54:13Z (materials-26.04): halt override: attempted material-511efe by 36e424bd-8c56-41e9-a164-005ea47ccb82: doc-only quiet-run protocol fix found by the quiet session; independent of the pre-commit latency incident
+- 2026-10-05T09:08:21Z (fix/pre-commit-latency): review: spec round 5 — verdict: accept; findings: none; reviewer: human
+- 2026-10-05T09:08:21Z (fix/pre-commit-latency): review: plan round 2 — verdict: accept; findings: none; reviewer: human
+- 2026-10-05T09:08:21Z (fix/pre-commit-latency): resumed
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T09:08:21Z (fix/pre-commit-latency): Merged the newer main-checkout halt-override note at the actual merge timestamp, preserving local review history, attachments and spec/plan links. Approved parallel-fast amendment resumes under Task 6.

@@ -87,6 +87,84 @@ class DriverCleanupTests(Remainder):
             'test_probe.DriverCleanupTests.test_first:0'})
         self.assertEqual(len(lines), 3)
 
+    def test_fast_preserves_native_inventory_and_module_fixtures(self):
+        body = '''def setUpModule():
+    with open(__name__ + '.module', 'a') as out: out.write(str(os.getpid()) + '\\n')
+class Cases(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with open(__name__ + '.class', 'a') as out: out.write(str(os.getpid()) + '\\n')
+    def record(self):
+        with open(__name__ + '.seen', 'a') as out:
+            out.write(self.id() + ':' + os.environ['NIRI_TOOLING_FAST'] + ':' + str(os.getpid()) + '\\n')
+    def test_one(self): self.record()
+    def test_two(self): self.record()
+'''
+        self.fixture(body + '''    @unittest.expectedFailure
+    def test_known(self): self.record(); self.fail('known defect')
+''', 'test_alpha.py')
+        self.fixture(body + '''@unittest.skipIf(os.environ['NIRI_TOOLING_FAST']=='1', 'fast lifecycle omission')
+class DriverCleanupTests(unittest.TestCase):
+    def test_slow(self): self.fail('must be omitted in fast mode')
+''', 'test_beta.py')
+        native = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tools'],
+                                cwd=self.root, env=dict(self.env, NIRI_TOOLING_FAST='1'),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(native.returncode, 0, native.stdout + native.stderr)
+        self.assertIn('Ran 6 tests', native.stderr)
+        self.assertIn('skipped=1, expected failures=1', native.stderr)
+        native_seen = {path.name: [line.rsplit(':', 1)[0] for line in path.read_text().splitlines()]
+                       for path in self.root.glob('*.seen')}
+        expected = {
+            'test_alpha.Cases.test_known', 'test_alpha.Cases.test_one', 'test_alpha.Cases.test_two',
+            'test_beta.Cases.test_one', 'test_beta.Cases.test_two',
+            'test_beta.DriverCleanupTests.test_slow',
+        }
+        self.command = [sys.executable, '-m', 'tools.tooling_tests', '--fast']
+        for budget, children in (('10', 2), ('1', 1)):
+            with self.subTest(budget=budget):
+                for suffix in ('seen', 'class', 'module'):
+                    for path in self.root.glob('*.' + suffix):
+                        path.unlink()
+                run = self.run_suite(NIRI_TOOLING_FAST='0', NEXTEST_TEST_THREADS=budget)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertIn(f'Fast tooling: 6 cases, {children} children', run.stdout)
+                self.assertIn('OK (skipped=1, expected failures=1)', run.stdout)
+                ids = [line[5:].rsplit(': ', 1)[0] for line in run.stdout.splitlines()
+                       if line.startswith('case ')]
+                self.assertEqual(set(ids), expected)
+                self.assertEqual(len(ids), 6)
+                pids = set()
+                for path in self.root.glob('*.seen'):
+                    lines = path.read_text().splitlines()
+                    self.assertEqual([line.rsplit(':', 1)[0] for line in lines], native_seen[path.name])
+                    worker_pids = {line.rsplit(':', 1)[1] for line in lines}
+                    self.assertEqual(len(worker_pids), 1)
+                    pids.update(worker_pids)
+                    for suffix in ('class', 'module'):
+                        self.assertEqual(path.with_suffix('.' + suffix).read_text().splitlines(),
+                                         list(worker_pids))
+                self.assertEqual(len(pids), children)
+
+    def test_fast_rejects_ci_and_public_worker_mode_before_discovery(self):
+        self.fixture("open('imported', 'w').close()\nclass C(unittest.TestCase):\n    def test_ok(self): pass\n")
+        for args, message in ((['--fast', '--ci'], '--ci requires --full'),
+                              (['--full', '--worker-mode', '1'], '--worker-mode requires --worker')):
+            with self.subTest(args=args):
+                self.command = [sys.executable, '-m', 'tools.tooling_tests', *args]
+                run = self.run_suite()
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn(message, run.stderr)
+                self.assertFalse((self.root / 'imported').exists())
+
+    def test_fast_malformed_budget_fails_before_discovery(self):
+        self.fixture("open('imported', 'w').close()\nclass C(unittest.TestCase):\n    def test_ok(self): pass\n")
+        self.command = [sys.executable, '-m', 'tools.tooling_tests', '--fast']
+        run = self.run_suite(NEXTEST_TEST_THREADS='many')
+        self.assertNotEqual(run.returncode, 0)
+        self.assertIn('NEXTEST_TEST_THREADS', run.stderr)
+        self.assertFalse((self.root / 'imported').exists())
+
     def test_malformed_budget_fails_before_discovery_or_spawn(self):
         self.fixture("open('imported', 'w').close()\nclass C(unittest.TestCase):\n    def test_ok(self): pass\n")
         run = self.run_suite(NEXTEST_TEST_THREADS='0')
@@ -137,10 +215,13 @@ class DriverCleanupTests(Remainder):
     @unittest.expectedFailure
     def test_unexpected(self): pass
 ''')
-        run = self.run_suite()
-        self.assertNotEqual(run.returncode, 0, run.stdout)
-        self.assertIn('UNEXPECTED SUCCESS test_probe.C.test_unexpected', run.stdout)
-        self.assertIn('unexpected successes=1', run.stdout)
+        for mode in ('--full', '--fast'):
+            with self.subTest(mode=mode):
+                self.command = [sys.executable, '-m', 'tools.tooling_tests', mode]
+                run = self.run_suite()
+                self.assertNotEqual(run.returncode, 0, run.stdout)
+                self.assertIn('UNEXPECTED SUCCESS test_probe.C.test_unexpected', run.stdout)
+                self.assertIn('unexpected successes=1', run.stdout)
 
     def test_interrupt_reaps_a_child_from_an_unwound_case(self):
         self.fixture('''class DriverCleanupTests(unittest.TestCase):
@@ -151,20 +232,7 @@ class DriverCleanupTests(Remainder):
         with open('child.pid', 'w') as out: out.write(str(child.pid))
         time.sleep(60)
 ''')
-        parent = subprocess.Popen(self.command, cwd=self.root, env=self.env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.addCleanup(self.reap, parent)
-        deadline = time.monotonic() + 15
-        while not (self.root / 'child.pid').exists():
-            self.assertIsNone(parent.poll())
-            self.assertLess(time.monotonic(), deadline)
-            time.sleep(0.02)
-        pid = int((self.root / 'child.pid').read_text())
-        parent.send_signal(signal.SIGTERM)
-        stdout, stderr = parent.communicate(timeout=20)
-        self.assertNotEqual(parent.returncode, 0, stdout + stderr)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(pid, 0)
+        self.check_interrupt('child.pid', 0.02)
 
     def test_interrupt_during_normal_cleanup_finishes_reaping(self):
         self.fixture('''class DriverCleanupTests(unittest.TestCase):
@@ -178,28 +246,35 @@ class DriverCleanupTests(Remainder):
             child.wait()
         self.addCleanup(cleanup)
 ''')
-        parent = subprocess.Popen(self.command, cwd=self.root, env=self.env,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        self.addCleanup(self.reap, parent)
-        marker = self.root / 'cleanup.started'
-        deadline = time.monotonic() + 15
-        while not marker.exists():
-            self.assertIsNone(parent.poll())
-            self.assertLess(time.monotonic(), deadline)
-            time.sleep(0.01)
-        pid = int(marker.read_text())
-        # Keep the deliberately failing red run from leaking its fixture child.
-        def cleanup_probe():
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        self.addCleanup(cleanup_probe)
-        parent.send_signal(signal.SIGTERM)
-        stdout, stderr = parent.communicate(timeout=20)
-        self.assertNotEqual(parent.returncode, 0, stdout + stderr)
-        with self.assertRaises(ProcessLookupError):
-            os.kill(pid, 0)
+        self.check_interrupt('cleanup.started', 0.01)
+
+    def check_interrupt(self, marker_name, poll_s):
+        for mode in ('--full', '--fast'):
+            with self.subTest(mode=mode):
+                (self.root / marker_name).unlink(missing_ok=True)
+                command = [sys.executable, '-m', 'tools.tooling_tests', mode]
+                parent = subprocess.Popen(command, cwd=self.root, env=self.env,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                self.addCleanup(self.reap, parent)
+                marker = self.root / marker_name
+                deadline = time.monotonic() + 15
+                while not marker.exists():
+                    self.assertIsNone(parent.poll())
+                    self.assertLess(time.monotonic(), deadline)
+                    time.sleep(poll_s)
+                pid = int(marker.read_text())
+                # Keep the deliberately failing red run from leaking its fixture child.
+                def cleanup_probe(pid=pid):
+                    try:
+                        os.kill(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                self.addCleanup(cleanup_probe)
+                parent.send_signal(signal.SIGTERM)
+                stdout, stderr = parent.communicate(timeout=20)
+                self.assertNotEqual(parent.returncode, 0, stdout + stderr)
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(pid, 0)
 
     def reap(self, process):
         if process.poll() is None:

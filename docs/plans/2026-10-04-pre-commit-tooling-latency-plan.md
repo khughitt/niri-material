@@ -12,7 +12,7 @@
 **Evidence:** [Probe receipts, source reproduction and route recount](../../tasks/files/material-cd7782/material-pre-commit-revision-evidence.md).
 **Workspace:** Reuse `.worktrees/pre-commit-latency`, branch `fix/pre-commit-latency`; setup is complete. Run commands from that worktree. No shared launcher, service or desktop pointer changes.
 
-**Execution status:** Tasks 1–5 are committed and reviewed. Task 6 remains open for fast-route headroom; the fast-runner amendment below needs owner review before code changes.
+**Execution status:** Tasks 1–5 are committed and reviewed. The fast-runner amendment was accepted on 2026-10-05; Task 6 is executing its implementation and final acceptance.
 
 ## Global constraints
 
@@ -264,11 +264,11 @@ plus config/IPC nextest. `test`, `ci-test`, `ci-test-release` remain Rust-only. 
 
 ### Task 6: Verify concurrency stability and close latency evidence
 
-**Files:** `tools/tooling_tests.py`, `tools/test_tooling_tests.py`, `justfile`, `tools/test_gates.py`, `AGENTS.md`, evidence via `tasks attach/detach`, task notes and document status. The proposed fast-route change below awaits owner review. No new runtime knobs or sleep changes.
+**Files:** `tools/tooling_tests.py`, `tools/test_tooling_tests.py`, `justfile`, `tools/test_gates.py`, `AGENTS.md`, evidence via `tasks attach/detach`, task notes and document status. The fast-route amendment was accepted on 2026-10-05. No new runtime knobs or sleep changes.
 **Consumes:** Complete implementation and real hook/CI front doors from Task 5.
 **Produces:** Consecutive-green stability records on both environments, actual full/fast timings, verifier output and incident disposition.
 
-**Proposed amendment — owner review required before implementation:**
+**Fast-route amendment — accepted 2026-10-05:**
 
 - [ ] Add focused synthetic contracts before changing the coordinator: fast overrides exported mode 0, full still overrides 1; two fast workers preserve every discovered ID, skip and native outcome exactly once; whole modules/class fixtures stay within one worker; a budget of one is sequential and malformed budgets fail before discovery; `--fast --ci` and public misuse of private worker mode fail before discovery. Compare against explicit mode-1 native discovery, including the two class skips and expected/unexpected successes. Exercise cancellation under both worker modes without changing the existing cleanup protections.
 - [ ] Extend the existing standard-library coordinator with explicit `--fast`, mode 1 before discovery/worker loading, and private worker mode arguments. Group modules by native inventory; greedily assign largest case-count module groups into at most two buckets, preserving internal native order. Use `min(2, worker_limit())` for fast; keep full scheduling, ten-child default, guarded CI, exact partition checks and native receipt/verdict handling intact. Add no module timing map, tracing, framework or environment variable.
@@ -322,8 +322,7 @@ tt-latency verify material-cd7782 --after '<recorded UTC remedy timestamp>'
 
 The owner conditionally accepted the design once runtime read observation became
 a static source check; that substitution is complete. The implemented TERM fix and production/concurrency stability passed on both
-environments. Fast-route headroom remains unmet; the execution amendment above
-requires owner review before its implementation. Historical probe and acceptance
+environments. Fast-route headroom remains unmet; the execution amendment was accepted before implementation on 2026-10-05. Historical probe and acceptance
 receipts remain in the linked task evidence.
 
 The owner accepted this plan with two Task 3 edits incorporated above; no further
@@ -331,4 +330,4 @@ review round is required. The agent executes inline in this worktree, taking its
 children in order, retains failed attempts, and closes the halt only with successful
 latency verification. This review gate does not authorize a GitHub write or desktop use.
 
-[Task 6 stability, actual-hook miss and fast-prototype evidence](../../tasks/files/material-cd7782/material-final-latency-evidence.md) records the proposed amendment's measured basis. Runtime changes remain held for owner review.
+[Task 6 stability, actual-hook miss and fast-prototype evidence](../../tasks/files/material-cd7782/material-final-latency-evidence.md) records the proposed amendment's measured basis. The owner accepted the amendment; runtime changes are being verified under Task 6.
