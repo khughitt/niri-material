@@ -471,7 +471,7 @@ pub static STAGES: &[Stage] = &[
         Scope::Material,
         &[],
         &[],
-        &["ping", "done", "error"],
+        &["ping", "done", "error", "accent"],
         None,
         true,
     ),
