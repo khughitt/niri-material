@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-cf32e5
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T14:44:00Z
+updated: 2026-10-05T15:21:05Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -58,3 +58,4 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-05T14:43:20Z (material-cf32e5): resumed
   provenance: {"harness_session":"codex:01a10c84-1457-7892-bb5d-ed0227e1d702","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-05T14:44:00Z (material-cf32e5): review: plan round 3 — verdict: accept; findings: none; reviewer: human
+- 2026-10-05T15:21:05Z (material-cf32e5): Tasks 1–4 committed and verified. Nested captures refused quiet preflight; prepare builds, smoke and cost scripts, simulation, gate and review before parking the quiet run. No desktop process changed.
