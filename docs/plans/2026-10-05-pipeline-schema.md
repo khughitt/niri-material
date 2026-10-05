@@ -24,8 +24,8 @@
 ## Review Focus
 
 1. A new `ParamSpec` added to `core_params()` without a stage must fail the ownership test with the node named, not pass because the test only iterates stages (Task 1 test `every_parameter_is_owned_by_exactly_one_stage` iterates `all_params()` and reports the unowned node).
-2. A new field on `Response` that is not added to `response_fields()` must be caught: the decode-sample test parses one KDL block per listed field, and a separate count assertion pins the list length to the struct's live (non-retired) fields so an omission fails (Task 1 test `response_fields_decode_and_count`).
-3. A stage whose `optic` names a hook its GLSL does not define (`noise_post` before the code exists) must fail the per-program pin, not pass because `main.frag` happens to contain the substring elsewhere; the pin looks for the call `name_hook(` after the `// ---- main` marker in the assembled source (Task 2).
+2. A new field on `Response` that is not added to `response_fields()` must be caught at compile time: the test destructures `Response` exhaustively, so the pattern stops compiling until the field is listed, and the list must then equal `response_fields()` (Task 1 test `response_fields_match_the_struct`, proven in Step 4b).
+3. A stage whose `optic` names a hook the program does not call (`noise_post` before the code exists, or a call left in a comment) must fail the per-program pin; the pin counts actual calls of `name_hook(` after the `// ---- main` marker with comments stripped and definitions excluded, and requires exactly one (Task 2).
 4. `MATERIAL_DOCS_UPDATE=1` must write the JSON with a trailing newline and stable key order, or every regeneration churns the vendored copy (Task 3 asserts the rendered string ends with `\n` and that two renders are equal).
 5. A stage listed before its site's turn (a `behind` stage between two `source` stages) must fail the site-order test with both stage ids named (Task 1 test `stages_are_grouped_by_site_in_site_order`).
 
@@ -111,9 +111,21 @@ mod tests {
     }
 
     #[test]
-    fn response_fields_decode_and_count() {
-        // One KDL sample per field; a field that fails to decode is misspelled.
-        let samples: &[(&str, &str)] = &[
+    fn response_fields_match_the_struct() {
+        // Exhaustive destructuring, no `..`: a field added to `Response` fails
+        // to compile here until it is added to this pattern, and the list
+        // below must then grow with it or the equality fails.
+        let parsed: Vec<crate::material::Response> = knuffel::parse("pipeline.kdl", "response \"t\" { }\n").unwrap();
+        let crate::material::Response {
+            name: _, accent: _, attention: _, ping: _, done: _, error: _,
+            ring_inset: _, ring_gap: _, ring_glow: _, ring_rest: _, ring_accent: _, accent_tint: _,
+            ring_beam_speed: _, ring_beam_noise: _, ring_beam_noise_hz: _, ring_beam_decay: _,
+            ring_width: _, focus: _, ring_color: _, ring_drift_hz: _, ring_sweep_ms: _,
+        } = parsed.into_iter().next().unwrap();
+        // The live fields in struct order, one decodable KDL sample each. The
+        // three retired fields (ring-inset, ring-drift-hz, ring-sweep-ms) are
+        // destructured above and deliberately absent here.
+        let live: &[(&str, &str)] = &[
             ("accent", "accent \"ring-tint\""),
             ("attention", "attention \"none\""),
             ("ping", "ping \"none\""),
@@ -132,10 +144,9 @@ mod tests {
             ("focus", "focus \"ring-light\""),
             ("ring-color", "ring-color \"#ffffff\""),
         ];
-        let listed: Vec<&str> = response_fields().to_vec();
-        assert_eq!(listed.len(), samples.len(), "response_fields() and the sample table disagree; a field was added to one and not the other");
-        for (field, line) in samples {
-            assert!(listed.contains(field), "response_fields() lacks {field}");
+        let listed: Vec<&str> = live.iter().map(|(field, _)| *field).collect();
+        assert_eq!(response_fields(), listed.as_slice(), "response_fields() lists the live Response fields in struct order");
+        for (field, line) in live {
             let kdl = format!("response \"t\" {{ {line}; }}\n");
             let parsed: Result<Vec<crate::material::Response>, _> = knuffel::parse("pipeline.kdl", &kdl);
             assert!(parsed.is_ok(), "{field}: sample `{line}` did not decode: {:?}", parsed.err());
@@ -187,22 +198,56 @@ mod tests {
     }
 
     #[test]
-    fn selectors_name_enum_variants_and_partition_an_optic() {
+    fn todays_stages_pass_the_selector_rules() {
+        check_selectors(STAGES, &all_params()).unwrap();
+    }
+
+    /// A stage selected by `noise type=`; the fixtures below break one rule each.
+    const fn selected(id: &'static str, variant: &'static str, optic_name: &'static str) -> Stage {
+        Stage {
+            id,
+            site: "behind",
+            scope: Scope::Material,
+            owns: &[],
+            reads: &["noise type="],
+            responses: &[],
+            optic: Some(OpticRef { name: optic_name, hook: "behind", program: Program::Material }),
+            selector: Some(Selector { param: "noise type=", variant }),
+            animated: false,
+        }
+    }
+
+    #[test]
+    fn selector_rules_refuse_each_defect() {
         let specs = all_params();
-        let mut by_param: HashMap<(&str, &str), Vec<&str>> = HashMap::new();
-        for stage in STAGES {
-            let Some(selector) = stage.selector else { continue };
-            let spec = specs.iter().find(|s| s.node == selector.param)
-                .unwrap_or_else(|| panic!("{}: selector names unknown parameter {}", stage.id, selector.param));
-            let ParamKind::Enum { variants, .. } = &spec.kind else { panic!("{}: selector {} is not an enum", stage.id, selector.param) };
-            assert!(variants.contains(&selector.variant), "{}: {} has no variant {}", stage.id, selector.param, selector.variant);
-            assert!(stage.owns.contains(&selector.param) || stage.reads.contains(&selector.param), "{}: selector parameter must be in owns or reads", stage.id);
-            let optic = stage.optic.unwrap_or_else(|| panic!("{}: a selected stage must be an optic stage", stage.id)).name;
-            by_param.entry((selector.param, selector.variant)).or_default().push(optic);
-        }
-        for ((param, variant), optics) in by_param {
-            assert_eq!(optics.len(), 1, "{param}={variant} selects {optics:?}; exactly one stage");
-        }
+        let complete = [selected("a", "white", "noise"), selected("b", "fine", "noise"), selected("c", "lightness", "noise")];
+        check_selectors(&complete, &specs).unwrap();
+
+        let missing = [selected("a", "white", "noise")];
+        assert_eq!(check_selectors(&missing, &specs).unwrap_err(), "noise type=: variants fine, lightness select no stage");
+
+        let twice = [selected("a", "white", "noise"), selected("b", "white", "noise"), selected("c", "fine", "noise"), selected("d", "lightness", "noise")];
+        assert_eq!(check_selectors(&twice, &specs).unwrap_err(), "noise type=: variant white selects two stages (a, b)");
+
+        let mixed = [selected("a", "white", "noise"), selected("b", "fine", "saturation"), selected("c", "lightness", "noise")];
+        assert_eq!(check_selectors(&mixed, &specs).unwrap_err(), "noise type=: its stages belong to two optics (noise, saturation)");
+
+        let mut unknown = selected("a", "coarse", "noise");
+        unknown.id = "a";
+        assert_eq!(check_selectors(&[unknown], &specs).unwrap_err(), "a: noise type= has no variant coarse");
+
+        let mut not_enum = selected("a", "white", "noise");
+        not_enum.selector = Some(Selector { param: "ior", variant: "white" });
+        not_enum.reads = &["ior"];
+        assert_eq!(check_selectors(&[not_enum], &specs).unwrap_err(), "a: selector ior is not an enum parameter");
+
+        let mut unread = selected("a", "white", "noise");
+        unread.reads = &[];
+        assert_eq!(check_selectors(&[unread], &specs).unwrap_err(), "a: selector parameter noise type= must be in owns or reads");
+
+        let mut plain = selected("a", "white", "noise");
+        plain.optic = None;
+        assert_eq!(check_selectors(&[plain], &specs).unwrap_err(), "a: a selected stage must be an optic stage");
     }
 
     #[test]
@@ -401,6 +446,67 @@ pub static INTERACTIONS: &[Interaction] = &[
         why: "the prefilter level is roughness * clamp(ior * 2 - 2, 0, 1), so ior 1 flattens Blur while frosted backdrop still selects the blurred source [expose]",
     },
 ];
+
+/// The selector rules (design Section 2): a selector names an `Enum`
+/// parameter the stage owns or reads and one of its variants; across the
+/// stages that select on one parameter, every variant selects exactly one
+/// stage and every stage is the same optic. Checked on `STAGES` by a test,
+/// and on fixtures so the negatives are proven while `STAGES` has none.
+pub fn check_selectors(stages: &[Stage], specs: &[super::params::ParamSpec]) -> Result<(), String> {
+    use std::collections::BTreeMap;
+    use super::params::ParamKind;
+
+    let mut by_param: BTreeMap<&str, Vec<&Stage>> = BTreeMap::new();
+    for stage in stages {
+        let Some(selector) = stage.selector else { continue };
+        let spec = specs
+            .iter()
+            .find(|spec| spec.node == selector.param)
+            .ok_or_else(|| format!("{}: selector names unknown parameter {}", stage.id, selector.param))?;
+        let ParamKind::Enum { variants, .. } = &spec.kind else {
+            return Err(format!("{}: selector {} is not an enum parameter", stage.id, selector.param));
+        };
+        if !variants.contains(&selector.variant) {
+            return Err(format!("{}: {} has no variant {}", stage.id, selector.param, selector.variant));
+        }
+        if !stage.owns.contains(&selector.param) && !stage.reads.contains(&selector.param) {
+            return Err(format!("{}: selector parameter {} must be in owns or reads", stage.id, selector.param));
+        }
+        if stage.optic.is_none() {
+            return Err(format!("{}: a selected stage must be an optic stage", stage.id));
+        }
+        by_param.entry(selector.param).or_default().push(stage);
+    }
+    for (param, selected) in by_param {
+        let spec = specs.iter().find(|spec| spec.node == param).expect("checked above");
+        let ParamKind::Enum { variants, .. } = &spec.kind else { unreachable!() };
+        for variant in *variants {
+            let ids: Vec<&str> = selected
+                .iter()
+                .filter(|stage| stage.selector.map(|s| s.variant) == Some(*variant))
+                .map(|stage| stage.id)
+                .collect();
+            if ids.len() > 1 {
+                return Err(format!("{param}: variant {variant} selects two stages ({})", ids.join(", ")));
+            }
+        }
+        let missing: Vec<&str> = variants
+            .iter()
+            .copied()
+            .filter(|variant| !selected.iter().any(|stage| stage.selector.map(|s| s.variant) == Some(*variant)))
+            .collect();
+        if !missing.is_empty() {
+            return Err(format!("{param}: variants {} select no stage", missing.join(", ")));
+        }
+        let mut optics: Vec<&str> = selected.iter().filter_map(|stage| stage.optic.map(|o| o.name)).collect();
+        optics.sort_unstable();
+        optics.dedup();
+        if optics.len() > 1 {
+            return Err(format!("{param}: its stages belong to two optics ({})", optics.join(", ")));
+        }
+    }
+    Ok(())
+}
 ```
 
 In `niri-config/src/material/mod.rs`, after the `Response` struct (its closing brace is at line 320), add:
@@ -423,19 +529,23 @@ pub fn response_fields() -> &'static [&'static str] {
 
 If `all_params()` turns out to carry a node this plan's `owns` lists do not (the spec counted 23 nodes: `backdrop-blur`, `roughness`, `bevel`, `offset-x`, `offset-y`, `jelly-flex`, `distortion`, `distortion scale=`, `jelly-ripple`, `ior`, `thickness`, `chromatic-aberration`, `anisotropic-blur`, `saturation`, `noise`, `noise type=`, `attenuation-color`, `attenuation-distance`, `light-ior`, `aurora`, `aurora drift-hz`, `aurora color`, `iridescence`), the ownership test names it; add it to the stage whose code reads it as its control, following the rule that ownership follows the control, and record the addition in the task's notes. Do not add an exemption.
 
-The `accent` response sample in `response_fields_decode_and_count` uses `"ring-tint"`; if `AccentResponse` names its variants differently, read `response_from_str!(AccentResponse, …)` in `material/mod.rs` and use a listed name. The same holds for `attention`, the impulse responses, and `focus`.
+The `accent` response sample in `response_fields_match_the_struct` uses `"ring-tint"`; if `AccentResponse` names its variants differently, read `response_from_str!(AccentResponse, …)` in `material/mod.rs` and use a listed name. The same holds for `attention`, the impulse responses, and `focus`.
 
 - [ ] **Step 4: Run the tests to see them pass**
 
 Run: `just test-one -p niri-config pipeline`
-Expected: PASS, 9 tests.
+Expected: PASS, 10 tests.
+
+- [ ] **Step 4b: Prove the response pin bites**
+
+Temporarily add `#[knuffel(child, unwrap(argument))] pub ring_probe: Option<f64>,` to `Response` in `material/mod.rs` and run `just test-one -p niri-config response_fields_match`. Expected: a compile error, `pattern does not mention field ring_probe`, at the destructuring in `pipeline.rs`. Remove the field (`git checkout -- niri-config/src/material/mod.rs` restores it only if nothing else in that file is staged; otherwise delete the line by hand) and rerun: PASS.
 
 - [ ] **Step 5: Format, fast suite, commit**
 
 ```bash
 cargo fmt --all
 just test-fast
-tasks done <step id> "pipeline.rs tables (11 sites, 19 stages, 1 interaction), response_fields(), nine config-side pins"
+tasks done <step id> "pipeline.rs tables (11 sites, 19 stages, 1 interaction), response_fields() tied to the struct, check_selectors() with negative fixtures, ten config-side pins"
 git add niri-config/src/material/pipeline.rs niri-config/src/material/mod.rs tasks/
 just upstream-report
 git add docs/materials/upstream-divergence.md
@@ -461,17 +571,72 @@ Append inside `mod tests` of `src/render_helpers/shaders/mod.rs`:
 ```rust
     use niri_config::material::pipeline::{Program, STAGES};
 
-    /// The material program after the `// ---- main` marker: hook calls are
-    /// counted there, not in an optic's own GLSL where the function is defined.
+    /// GLSL without its comments, so a commented-out call does not count.
+    fn strip_comments(source: &str) -> String {
+        let mut out = String::with_capacity(source.len());
+        let mut rest = source;
+        while !rest.is_empty() {
+            if let Some(stripped) = rest.strip_prefix("/*") {
+                let end = stripped.find("*/").map(|i| i + 2).unwrap_or(stripped.len());
+                rest = &stripped[end..];
+            } else if let Some(stripped) = rest.strip_prefix("//") {
+                let end = stripped.find('\n').unwrap_or(stripped.len());
+                rest = &stripped[end..];
+            } else {
+                let mut chars = rest.chars();
+                out.push(chars.next().unwrap());
+                rest = chars.as_str();
+            }
+        }
+        out
+    }
+
+    /// Actual calls of `call` (`noise_behind(`): occurrences that are not a
+    /// definition (preceded by a GLSL type) and not the tail of a longer
+    /// identifier. Comments must already be stripped.
+    fn hook_calls(source: &str, call: &str) -> Vec<usize> {
+        const TYPES: &[&str] = &["void", "float", "vec2", "vec3", "vec4"];
+        let bytes = source.as_bytes();
+        let mut found = Vec::new();
+        let mut from = 0;
+        while let Some(at) = source[from..].find(call) {
+            let at = from + at;
+            from = at + 1;
+            if at > 0 && (bytes[at - 1].is_ascii_alphanumeric() || bytes[at - 1] == b'_') {
+                continue;
+            }
+            let before = source[..at].trim_end();
+            let token_start = before.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).map(|i| i + 1).unwrap_or(0);
+            if TYPES.contains(&&before[token_start..]) {
+                continue;
+            }
+            found.push(at);
+        }
+        found
+    }
+
+    #[test]
+    fn hook_call_counter_ignores_comments_and_definitions() {
+        let glsl = strip_comments(
+            "vec3 noise_behind(vec3 c, vec2 p) { return c; }\n// sampled = noise_behind(sampled, p);\n/* noise_behind( */\nsampled = noise_behind(sampled, p);\nx = xnoise_behind(1);\n",
+        );
+        assert_eq!(hook_calls(&glsl, "noise_behind(").len(), 1);
+        let twice = strip_comments("a = noise_behind(a, p);\nb = noise_behind(b, p);\n");
+        assert_eq!(hook_calls(&twice, "noise_behind(").len(), 2);
+    }
+
+    /// The material program after the `// ---- main` marker, comments
+    /// stripped: hook calls are counted there, not in an optic's own GLSL
+    /// where the function is defined.
     fn main_body() -> String {
         let source = material_source();
         let marker = "\n// ---- main\n";
         let at = source.find(marker).expect("material_source carries the main marker");
-        source[at + marker.len()..].to_string()
+        strip_comments(&source[at + marker.len()..])
     }
 
     #[test]
-    fn pipeline_material_hooks_are_called_in_stage_order() {
+    fn pipeline_material_hooks_are_called_exactly_once_in_stage_order() {
         let body = main_body();
         let mut last = 0;
         for stage in STAGES {
@@ -480,26 +645,31 @@ Append inside `mod tests` of `src/render_helpers/shaders/mod.rs`:
                 continue;
             }
             let call = format!("{}_{}(", optic.name, optic.hook);
-            let at = body.find(&call).unwrap_or_else(|| panic!("{}: main.frag does not call {call}", stage.id));
-            assert!(at >= last, "{}: {call} is called before an earlier stage's hook", stage.id);
-            last = at;
+            let calls = hook_calls(&body, &call);
+            assert_eq!(calls.len(), 1, "{}: main.frag calls {call} {} times, expected exactly one", stage.id, calls.len());
+            assert!(calls[0] >= last, "{}: {call} is called before an earlier stage's hook", stage.id);
+            last = calls[0];
         }
     }
 
     #[test]
-    fn pipeline_other_programs_contain_their_hooks() {
+    fn pipeline_other_programs_call_their_hooks_exactly_once() {
         for stage in STAGES {
             let Some(optic) = stage.optic else { continue };
             let source = match optic.program {
                 Program::Material => continue,
-                Program::Effect => concat!(include_str!("blur_down.frag"), include_str!("blur_up.frag")),
-                Program::Postprocess => include_str!("postprocess.frag"),
+                Program::Effect => strip_comments(concat!(include_str!("blur_down.frag"), include_str!("blur_up.frag"))),
+                Program::Postprocess => strip_comments(include_str!("postprocess.frag")),
             };
             let call = format!("{}_{}(", optic.name, optic.hook);
-            assert!(source.contains(&call), "{}: the {:?} program does not call {call}", stage.id, optic.program);
+            let calls = hook_calls(&source, &call);
+            assert_eq!(calls.len(), 1, "{}: the {:?} program calls {call} {} times, expected exactly one", stage.id, optic.program, calls.len());
         }
     }
 
+    /// `_post(` is a suffix, not a full name, so this test scans for the
+    /// suffix directly rather than through `hook_calls`, whose identifier
+    /// guard would reject every match.
     #[test]
     fn pipeline_post_site_is_empty_until_a_stage_lands() {
         let has_post_stage = STAGES.iter().any(|s| s.site == "post");
@@ -557,19 +727,25 @@ Append inside `mod tests` of `src/render_helpers/shaders/mod.rs`:
 
 - [ ] **Step 2: Run the tests to see them fail**
 
-Run: `just test-one -p niri pipeline_`
-Expected: the four tests compile and run; `pipeline_optic_glsl_reads_are_declared` must pass against Task 1's `reads` (aurora's `mat_ior`, `mat_light_ior`, `mat_thickness` are listed). If one fails naming a uniform, the failure is the finding: add the node to that stage's `reads` in Task 1's table, since the GLSL is the truth. The other three pass as written. A fully green first run is acceptable for this task: these are pins on existing code, and the drift case is proven in Step 3.
+Run: `just test-one -p niri pipeline_` and `just test-one -p niri hook_call_counter`
+Expected: the counter test passes on its fixtures; the four pipeline tests compile and run; `pipeline_optic_glsl_reads_are_declared` must pass against Task 1's `reads` (aurora's `mat_ior`, `mat_light_ior`, `mat_thickness` are listed). If one fails naming a uniform, the failure is the finding: add the node to that stage's `reads` in Task 1's table, since the GLSL is the truth. The other three pass as written. A fully green first run is acceptable for this task: these are pins on existing code, and the drift case is proven in Step 3.
 
 - [ ] **Step 3: Prove the pins bite**
 
-Temporarily swap the two `behind` calls in `src/render_helpers/shaders/material/main.frag` (lines 80 and 81) and run `just test-one -p niri pipeline_material_hooks`. Expected: FAIL with `noise: noise_behind( is called before an earlier stage's hook`. Restore the lines (`git checkout -- src/render_helpers/shaders/material/main.frag`) and rerun: PASS.
+Three edits to `src/render_helpers/shaders/material/main.frag` lines 80 and 81, each followed by `just test-one -p niri pipeline_material_hooks` and then `git checkout -- src/render_helpers/shaders/material/main.frag`:
+
+1. Swap the two `behind` calls. Expected: FAIL, `noise: noise_behind( is called before an earlier stage's hook`.
+2. Prefix line 81 with `//`. Expected: FAIL, `noise: main.frag calls noise_behind( 0 times, expected exactly one`.
+3. Duplicate line 81. Expected: FAIL, `noise: main.frag calls noise_behind( 2 times, expected exactly one`.
+
+After the last restore, rerun: PASS.
 
 - [ ] **Step 4: Format, fast suite, commit**
 
 ```bash
 cargo fmt --all
 just test-fast
-tasks done <step id> "shader pins: hook calls per program in stage order, post site emptiness, optic GLSL reads against the tables"
+tasks done <step id> "shader pins: exactly one real hook call per program in stage order (comments and definitions excluded), post site emptiness, optic GLSL reads against the tables"
 git add src/render_helpers/shaders/mod.rs tasks/
 just upstream-report
 git add docs/materials/upstream-divergence.md
