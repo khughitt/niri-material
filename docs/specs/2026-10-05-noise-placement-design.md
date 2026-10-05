@@ -1,6 +1,9 @@
 # Noise placement: a site attribute selecting backdrop, glass, or film grain
 
-**Status:** revised after spec review round 1 (codex, 2026-10-05: the
+**Status:** revised after spec review round 2 (codex, 2026-10-05: the
+damage test asserts the commit counters rather than pixels of a fresh
+render; the ring fixture waits for the comet's full run, tail included).
+Round 1 (codex, 2026-10-05: the
 grain change must publish damage through the commit counter; the blurred
 branch must blur the grained source; the lightness arithmetic is kept
 byte-for-byte and checked against a baseline binary; roughness evidence
@@ -403,9 +406,10 @@ Two fixtures, because the prefilter level is `roughness * clamp(ior * 2 -
   `backdrop`, `film`; blur in off, 1 pass, 3 passes; grain `fine` at amount
   0.3, plus `white` and `lightness` at the same amount for the blur-off
   row.
-- **Roughness fixture:** the same at `ior 1.5` (the clamp is 1, so the
-  level is `roughness`), `backdrop-blur` on at 3 passes and off, roughness
-  in 0, 0.5, 1, sites `glass` and `backdrop`, grain `fine` at 0.3.
+- **Roughness fixture:** the same at `ior 1.5` (the clamp is 1, so
+  `roughness` is the normalized level and the pyramid level is `max_level *
+  roughness`), `backdrop-blur` on at 3 passes and off, roughness in 0, 0.5,
+  1, sites `glass` and `backdrop`, grain `fine` at 0.3.
 - **Ring fixture:** for assertion 7 only, below.
 
 Assertions:
@@ -428,8 +432,15 @@ Assertions:
    transfer curve, not by magic. Fixture: a flat backdrop at encoded 0.5
    (linear 0.214), white attenuation, grain amount 0.1 so no cell clips,
    the focus response on with `ring-rest 1` and a high `ring-glow`,
-   captured after the beam's lap has ended (the comet's amplitude is then
-   exactly 0, so the band is static). The band's grain-off encoded level
+   captured after the comet's whole run has ended: the head's envelope
+   reaches 0 at the end of its lap, but the tail keeps draining behind it
+   for `ring::run_length` (perimeter plus tail length, capped by
+   `ring-beam-decay`), so the smoke waits that distance divided by
+   `ring-beam-speed` plus a margin, and only the uniform rest glow remains
+   in the band. Setting `ring-beam-speed 0` before the fixture focuses is
+   the alternative when a static head is acceptable; it is not here,
+   because the head would make the band's level non-uniform. The band's
+   grain-off encoded level
    `e_b` is measured from the capture, not assumed, and should land near
    0.9. Expected ratio of grain `sd` in the band to grain `sd` on the face:
    at `film`, 1.0, because film grain is added in encoding after the light;
@@ -490,12 +501,19 @@ task names; the document says which cases it holds in.
   mapping a background layer surface so the effect buffer has content. A
   fourth render checks that backdrop grain's `sd` over the glass area falls
   when the config sets three blur passes and `backdrop-blur` is on. A
-  fifth covers the damage contract of §4: two windows on one output, one
-  with noise at `backdrop` and one at `glass`; a config reload that changes
-  only the backdrop amount re-renders the `glass` window with the new
-  backdrop (its pixels change) even though its own material is unchanged.
-  Byte identity against the previous renderer is the smoke's baseline
-  comparison (§7.2, assertion 3), since one build cannot hold both.
+  fifth covers the damage contract of §4, and it cannot be a pixel check:
+  the fixture's `render_at` renders every element into a fresh target with
+  full damage, so pixels change there whether or not anyone published
+  damage. The test instead reads the counters the real frame path reads.
+  Two windows on one output, one with noise at `backdrop` and one at
+  `glass`; before and after a config reload that changes only the backdrop
+  amount, it records the output's background effect buffer's `commit()`
+  and the `glass` tile's material render fingerprint (the one that carries
+  `(bg.id(), bg.commit())`), and asserts both advanced. With the increment
+  of §4 removed, the buffer's counter is equal before and after and the
+  assertion fails; the plan demonstrates that once. Byte identity against
+  the previous renderer is the smoke's baseline comparison (§7.2,
+  assertion 3), since one build cannot hold both.
 - **Smoke and cost.** §7.2 and §7.3 run once on the headless lane and their
   results go in the evidence document; the smoke stays in
   `docs/materials/scripts` for reruns.

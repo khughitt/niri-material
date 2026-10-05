@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T13:22:23Z
+updated: 2026-10-05T13:42:45Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -39,3 +39,5 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-05T13:22:22Z (material-cf32e5): Spec revised for round 1: grain option changes increment commit_counter (fifth in-process test: unchanged glass window re-renders on backdrop reload); every content read of the sharp texture incl. the blur.render draw moves to source(); noise_behind arithmetic kept byte-for-byte, byte identity checked against a baseline binary; roughness fixture at ior 1.5; ring-band ratios derived from the transfer curve (glass ≈ decode'(0.5)·encode'(band), film 1.0)
 - 2026-10-05T13:22:22Z (material-cf32e5): parked (waiting on user, review): Spec review round 2 of docs/specs/2026-10-05-noise-placement-design.md (.worktrees/material-cf32e5), reviewer codex; on acceptance run writing-plans
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T13:42:06Z (material-cf32e5): review: spec round 2 — verdict: revise; findings: P2 2; reviewer: codex
+- 2026-10-05T13:42:45Z (material-cf32e5): Spec revised for round 2: the damage test asserts the effect buffer commit() and the unchanged tile's fingerprint advance across a backdrop-only reload (render_at draws with full damage, so pixels prove nothing); the ring fixture waits ring::run_length / speed so only the rest glow remains; roughness wording: normalized level, pyramid level = max_level * roughness
