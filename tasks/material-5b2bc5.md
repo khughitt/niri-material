@@ -1,13 +1,16 @@
 ---
 id: material-5b2bc5
 title: "Pipeline schema: the sweeps stage reads the accent response"
-status: todo
+status: done
 priority: 3
 size: xs
 complexity: low
 process: direct
+owner: material-5b2bc5
 created: 2026-10-05T11:49:38Z
-updated: 2026-10-05T11:49:39Z
+updated: 2026-10-05T12:31:52Z
+started: 2026-10-05T12:24:18Z
+completed: 2026-10-05T12:31:52Z
 depends: []
 parent: material-3aa1f2
 tags: [material, docs]
@@ -19,3 +22,9 @@ The sweeps row in niri-config/src/material/pipeline.rs lists responses ping, don
 ## Notes
 
 - 2026-10-05T11:49:38Z (materials-26.04): concerns: material-a00785 defect — sweeps row omits the accent response that drives its fallback colour
+- 2026-10-05T12:24:18Z (material-5b2bc5): started
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T12:31:52Z (material-5b2bc5): done
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T12:31:52Z (material-5b2bc5): sweeps row lists accent; declared-stages test drives the impulse colour fallback; pipeline.json regenerated; render-pipeline doc row 7 names the signal accent
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
