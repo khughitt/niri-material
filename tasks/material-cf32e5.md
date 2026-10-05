@@ -8,12 +8,13 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T13:42:45Z
+updated: 2026-10-05T14:01:59Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
 tags: [noise, rendering, cross-project]
 agent: claude-code/claude-fable-5-1
+plan: docs/plans/2026-10-05-noise-placement.md
 ---
 
 First device that can move. Give the glass noise node a site attribute (backdrop | glass | film) and implement the two new placements:
@@ -41,3 +42,6 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-05T13:42:06Z (material-cf32e5): review: spec round 2 — verdict: revise; findings: P2 2; reviewer: codex
 - 2026-10-05T13:42:45Z (material-cf32e5): Spec revised for round 2: the damage test asserts the effect buffer commit() and the unchanged tile's fingerprint advance across a backdrop-only reload (render_at draws with full damage, so pixels prove nothing); the ring fixture waits ring::run_length / speed so only the rest glow remains; roughness wording: normalized level, pyramid level = max_level * roughness
+- 2026-10-05T14:01:58Z (material-cf32e5): Plan written: docs/plans/2026-10-05-noise-placement.md, seven child tasks (material-dcc79f config, 6f299e shader+schema, eab3ae grain pass, 0bed95 in-process tests, 2a1689 docs+smoke+evidence, 40b563 cost, e50969 gate+merge+hand-off); spec marked accepted for planning after round 2 and the owner's go-ahead
+- 2026-10-05T14:01:58Z (material-cf32e5): parked (waiting on user, review): Plan review round 1 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
