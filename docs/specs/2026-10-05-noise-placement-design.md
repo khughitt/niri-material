@@ -1,9 +1,14 @@
 # Noise placement: a site attribute selecting backdrop, glass, or film grain
 
-**Status:** draft for spec review (design approved in conversation
-2026-10-05: explorable placement is the goal; a soft backdrop look is a
-finding, not a failure). The §7.1 simulation has run; its table is in
-§7.1 and its sheets await the owner's look.
+**Status:** revised after spec review round 1 (codex, 2026-10-05: the
+grain change must publish damage through the commit counter; the blurred
+branch must blur the grained source; the lightness arithmetic is kept
+byte-for-byte and checked against a baseline binary; roughness evidence
+needs an `ior` above 1; the ring-band expectation is derived from the
+transfer curve). Design approved in conversation 2026-10-05: explorable
+placement is the goal; a soft backdrop look is a finding, not a failure.
+The §7.1 simulation has run; its table is in §7.1 and its sheets await the
+owner's look.
 **Task:** `material-cf32e5`; the first device that can move. Wakes
 `prism-be5abe` (the rack side) and `material-3fcba2` (noise layers) after
 design and plan review.
@@ -166,16 +171,27 @@ material "terminal-glass" {
 - **Options.** `EffectBuffer` gains `grain: Option<GrainOptions { amount:
   f32, kind: NoiseType }>` and `update_grain_options(Option<GrainOptions>)`.
   A change (including `Some` to `None`) clears the grained texture, clears
-  the blurred texture and invalidates both prefilter pyramids. Unchanged
-  options do nothing, as `update_blur_options` behaves.
+  the blurred texture, invalidates both prefilter pyramids, and increments
+  the buffer's `commit_counter` whenever an offscreen exists. The counter
+  is how consumers learn that the buffer's content changed without their
+  own state changing: the tile's material fingerprint carries `(bg.id(),
+  bg.commit())` (`src/layout/tile.rs`) and the xray elements re-render on a
+  changed `commit()` (`src/render_helpers/xray.rs`). `update_blur_options`
+  increments it only when a blurred texture existed, because the sharp
+  texture is unchanged; grain changes the sharp consumers' source too, so
+  it increments unconditionally. Unchanged options do nothing.
 - **Texture.** `Offscreen` gains `grained: Option<GlesTexture>`, the same
   size and format as the sharp texture (`Abgr8888`, output pixels). A
   private `source(&self) -> &GlesTexture` returns the grained texture when
-  grain is set and prepared, the sharp texture otherwise. `prepare_blur`,
-  `render` (the `!blur` branch) and `render_prefiltered` (both the level-0
-  sample and the pyramid base, for the sharp pyramid) read `source()`
-  instead of `texture`. The blurred pyramid is unaffected: its base is the
-  blurred texture, which is now a blur of the grained one.
+  grain is set and prepared, the sharp texture otherwise. Every read of
+  `offscreen.texture` as content moves to `source()`: `prepare_blur`'s
+  `prepare_textures` (size), both branches of `render` (the `!blur` return
+  and the `blur.render(renderer, &offscreen.texture, ..)` draw, which is
+  the one that produces what frosted windows see), and `render_prefiltered`
+  for the sharp pyramid's base and level-0 sample. The blurred pyramid's
+  base is the blurred texture, now a blur of the grained one. The only
+  remaining uses of `texture` itself are its creation, the damage render
+  into it and the grain pass's input.
 - **Pass.** `prepare` runs `prepare_grain` after `prepare_offscreen` when
   grain is set and `grained` is `None`: lazily compile `GrainProgram`
   (as `Blur::new` compiles its programs), create the texture if missing,
@@ -227,17 +243,27 @@ material "terminal-glass" {
   at `backdrop` they are unused by the material program (the grain is in
   the texture), and the schema says so by listing them under `reads` of the
   backdrop stage rather than giving the material a second amount.
-- **Grain core.** `noise.frag` factors today's three formulas into `vec3
-  noise_grain(vec3 encoded, vec2 seed)`: encoded sRGB in, encoded sRGB out;
-  white and fine add signed grain unclamped, lightness goes through Oklab
-  on the clamped color and clamps the result, exactly as now.
-- **`noise_behind`.** Returns `color` unchanged unless `mat_noise_site`
-  is `glass`; otherwise encodes, calls the core, decodes, as today. With
-  the default site the function body is today's, and the amount-0 early
-  return stays first.
+- **`noise_behind` keeps its arithmetic.** The function gains one gate,
+  `mat_noise_site` must be `glass`, beside the amount-0 early return, and
+  nothing else changes: white and fine still encode, add signed grain and
+  decode; lightness still returns its clamped linear Oklab result directly,
+  without an encode-decode round trip. A shared "encoded in, encoded out"
+  core was considered and rejected: the extra round trip on the lightness
+  path can move quantized pixels by one code, and the omitted-equals-glass
+  identity cannot see a regression both share. The byte-identity claim is
+  therefore checked against a baseline binary (§7.2, §8), not only within
+  one build.
+- **`noise_post` and `noise_source` share helpers, not a body.** Both are
+  written in `noise.frag` beside `noise_behind` from the same prelude
+  helpers (`hash12`, `fineGrain`, the transfer and Oklab functions) and the
+  same seed offset, each in its own carrier: `noise_post` takes encoded
+  glass, adds white or fine grain in encoding, and for lightness decodes,
+  moves Oklab lightness on the clamped color, clamps and re-encodes;
+  `noise_source` takes a premultiplied texel (§4). A grain-kind switch
+  shared by the three functions keeps one `if` ladder per kind rather than
+  one formula per site.
 - **`noise_post`.** `vec3 noise_post(vec3 encoded, vec2 fragCoord)`:
-  returns `encoded` unless the site is `film` and the amount is above 0;
-  otherwise the core on the encoded glass with the same seed offset.
+  returns `encoded` unless the site is `film` and the amount is above 0.
   `main.frag` calls it once, where the post comment is, between the encode
   and the coverage multiply:
 
@@ -254,9 +280,11 @@ material "terminal-glass" {
 - **Identities the tests hold.** (a) Omitted site equals `site="glass"`
   pixel for pixel. (b) On the flat face at `ior 1`, white attenuation, no
   signal responses and the other optics neutral, `film` at amount `a` equals
-  `glass` at amount `a` within 1/255 per channel: the glass path is
-  `decode(encode(x) + g)` then `* 1` then `encode`, the film path is
-  `encode(x) + g`. (c) Under the same conditions with `blur { off }` and
+  `glass` at amount `a` within 1/255 per channel: for white and fine the
+  glass path is `decode(encode(x) + g)` then `* 1` then `encode`, the film
+  path is `encode(x) + g`; for lightness both move the Oklab lightness of
+  the same clamped color and differ only in where the final encode
+  happens. (c) Under the same conditions with `blur { off }` and
   roughness 0, `backdrop` at amount `a` equals `glass` at amount `a` within
   2/255: the grain is stored in an 8-bit texture before the tap reads it.
   Each identity is one in-process render test (§8).
@@ -366,23 +394,52 @@ A headless Weston smoke, `docs/materials/scripts/glass-noise-site-smoke.sh`,
 built on `glass-optic-smoke-lib.sh` and the statistics of
 `glass-noise-type-smoke.sh` (difference against the amount-0 capture of the
 same fixture; `sd`, downsampled `sd`, low-frequency ratio, determinism).
-Fixture: a flat warm backdrop with one textured region, the transparent kitty
-over glass at `ior 1`, white attenuation, no responses, as the noise-type
-smoke isolates grain. Cells: site in `glass`, `backdrop`, `film`; blur in
-off, 1 pass, 3 passes; roughness in 0, 0.5, 1; grain `fine` at amount 0.3,
-plus `white` at the same amount for the `p = 0` row. Assertions:
+Two fixtures, because the prefilter level is `roughness * clamp(ior * 2 -
+2, 0, 1)` and is zero at `ior 1` whatever roughness says:
+
+- **Identity fixture:** a flat warm backdrop with one textured region, the
+  transparent kitty over glass at `ior 1`, white attenuation, no responses,
+  as the noise-type smoke isolates grain. Cells: site in `glass`,
+  `backdrop`, `film`; blur in off, 1 pass, 3 passes; grain `fine` at amount
+  0.3, plus `white` and `lightness` at the same amount for the blur-off
+  row.
+- **Roughness fixture:** the same at `ior 1.5` (the clamp is 1, so the
+  level is `roughness`), `backdrop-blur` on at 3 passes and off, roughness
+  in 0, 0.5, 1, sites `glass` and `backdrop`, grain `fine` at 0.3.
+- **Ring fixture:** for assertion 7 only, below.
+
+Assertions:
 
 1. Determinism: two captures of each cell are identical.
-2. Omitted site equals `site="glass"` (absolute error 0).
-3. `backdrop` at blur off, roughness 0 equals `glass` within 2/255 mean
-   absolute error over the glass area.
-4. `backdrop`'s grain `sd` falls monotonically with passes and with
-   roughness; the values are reported beside §7.1's prediction.
-5. `film` at blur off equals `glass` within 1/255 on the face.
-6. With the ring response on and `ring-glow` high, the ring band's
-   difference image (amount `a` against 0) has grain `sd` within 10 % of
-   the face's for `film` and below 10 % of it for `glass`: film grains the
-   light, glass does not.
+2. Omitted site equals `site="glass"` (absolute error 0), for all three
+   grain kinds.
+3. Against a baseline binary built from `b261ad1a` with the same config
+   (which has no `site`), every omitted-site cell is identical (absolute
+   error 0). This is the byte-identity check; assertion 2 alone cannot see
+   a change both paths share.
+4. `backdrop` at blur off equals `glass` within 2/255 mean absolute error
+   over the glass area, in the identity fixture.
+5. `backdrop`'s grain `sd` falls monotonically with passes (identity
+   fixture) and with roughness (roughness fixture), while `glass`'s stays
+   within 5 % across the same cells; the values are reported beside §7.1's
+   prediction.
+6. `film` at blur off equals `glass` within 1/255 on the face.
+7. Film grains the light and glass grain is compressed under it, by the
+   transfer curve, not by magic. Fixture: a flat backdrop at encoded 0.5
+   (linear 0.214), white attenuation, grain amount 0.1 so no cell clips,
+   the focus response on with `ring-rest 1` and a high `ring-glow`,
+   captured after the beam's lap has ended (the comet's amplitude is then
+   exactly 0, so the band is static). The band's grain-off encoded level
+   `e_b` is measured from the capture, not assumed, and should land near
+   0.9. Expected ratio of grain `sd` in the band to grain `sd` on the face:
+   at `film`, 1.0, because film grain is added in encoding after the light;
+   at `glass`, `decode'(0.5) * encode'(decode(e_b))`, because glass grain
+   enters as an encoded perturbation of the transmitted sample, is decoded,
+   has the ring's light added, and is re-encoded at the brighter level
+   (with `att = 1` the two derivatives are the whole effect; at `e_b =
+   0.9` the product is about 0.47). Tolerance ±0.1 on each ratio. The
+   glass site's ratio is not expected near zero: additive light does not
+   remove transmitted grain.
 
 ### 7.3 Cost
 
@@ -432,7 +489,13 @@ task names; the document says which cases it holds in.
   within 2/255 at blur off and roughness 0, with the fixture's test client
   mapping a background layer surface so the effect buffer has content. A
   fourth render checks that backdrop grain's `sd` over the glass area falls
-  when the config sets three blur passes and `backdrop-blur` is on.
+  when the config sets three blur passes and `backdrop-blur` is on. A
+  fifth covers the damage contract of §4: two windows on one output, one
+  with noise at `backdrop` and one at `glass`; a config reload that changes
+  only the backdrop amount re-renders the `glass` window with the new
+  backdrop (its pixels change) even though its own material is unchanged.
+  Byte identity against the previous renderer is the smoke's baseline
+  comparison (§7.2, assertion 3), since one build cannot hold both.
 - **Smoke and cost.** §7.2 and §7.3 run once on the headless lane and their
   results go in the evidence document; the smoke stays in
   `docs/materials/scripts` for reruns.
@@ -441,11 +504,12 @@ task names; the document says which cases it holds in.
   are headless and the capture lane is nested Weston.
 
 Acceptance: every §8 test green; the evidence document records §7.1's
-sheet and table, §7.2's six assertions and §7.3's three cases; the
+sheet and table, §7.2's seven assertions and §7.3's three cases; the
 `material-config.md` table and `render-pipeline.md` rows match the code; the
 generated schema file is fresh and prism's copy is refreshed at merge; a
-config without `site` renders byte-identical (identity (a), plus the
-noise-type smoke's metrics unchanged on rerun).
+config without `site` renders byte-identical to the baseline binary (§7.2
+assertion 3), with identity (a) and the noise-type smoke's metrics
+unchanged on rerun as the in-build checks.
 
 ## 9. Documentation and follow-ups
 
