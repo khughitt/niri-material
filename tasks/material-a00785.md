@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-a00785
 created: 2026-10-05T09:36:02Z
-updated: 2026-10-05T11:43:01Z
+updated: 2026-10-05T11:49:38Z
 started: 2026-10-05T09:36:47Z
 completed: 2026-10-05T11:43:01Z
 depends: []
@@ -55,3 +55,4 @@ Direct: the spec settles every table value and test; the remaining choices are s
   provenance: {"harness_session":"claude-code:1bcbf2fb-4f36-4e05-91c0-2ceace0817f5","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-05T11:43:01Z (material-a00785): pipeline.rs tables (11 sites, 19 stages, 1 interaction) pinned to all_params(), ORDER, Response, shader hook calls, optic GLSL reads and glass_signal_inputs; resources/materials/pipeline.json generated; impl review fixed five spec rows against the signal code (prism spec Section 1 still needs the same correction); just gate green
   provenance: {"harness_session":"claude-code:1bcbf2fb-4f36-4e05-91c0-2ceace0817f5","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T11:49:38Z (materials-26.04): Follow-up triage: filed material-5b2bc5 (sweeps reads accent). Not filed, latent with no present failure: the Effect-program pin requires exactly one call across blur_down+blur_up concatenated (revisit when the first Effect stage lands); hook_calls recognises definitions only after void/float/vec2-4; the GLSL-reads pin scans only an optic's own GLSL, not prelude helpers; refraction stays non-animated though a flash can switch it from one tap to the multi-tap loop when CA and aniso are 0 (the visible change is fringing's).
