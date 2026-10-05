@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: material-5b2bc5
 created: 2026-10-05T11:49:38Z
-updated: 2026-10-05T12:31:52Z
+updated: 2026-10-05T12:51:10Z
 started: 2026-10-05T12:24:18Z
 completed: 2026-10-05T12:31:52Z
 depends: []
@@ -28,3 +28,5 @@ The sweeps row in niri-config/src/material/pipeline.rs lists responses ping, don
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-05T12:31:52Z (material-5b2bc5): sweeps row lists accent; declared-stages test drives the impulse colour fallback; pipeline.json regenerated; render-pipeline doc row 7 names the signal accent
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T12:51:09Z (materials-26.04): review: impl round 1 — verdict: accept; findings: Minor 2; reviewer: claude-code/claude-fable-5-1
+- 2026-10-05T12:51:09Z (materials-26.04): prism told: prism-14040e vendors the regenerated pipeline.json
