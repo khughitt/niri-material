@@ -82,7 +82,7 @@ cleanup() {
     local rc=$?
     stop_nested
     rm -rf "$RT"
-    capture_meta release "$OUT" || true
+    capture_meta release "$OUT" || rc=1
     exit "$rc"
 }
 trap cleanup EXIT

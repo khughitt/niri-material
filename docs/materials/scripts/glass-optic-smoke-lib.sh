@@ -60,7 +60,9 @@ cleanup() {
     if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; fi
     stop_weston || rc=1
     remove_runtime_dir || rc=1
-    capture_meta release "$OUT" || true
+    capture_meta release "$OUT" || rc=1
+    # After the last release: it may have completed capture.json on a retry.
+    [ -z "${SUMS:-}" ] || write_sums || rc=1
     exit "$rc"
 }
 trap cleanup EXIT
@@ -488,8 +490,16 @@ trace_run() {
 ns_to_ms() { awk -v n="$1" 'BEGIN { printf "%.3f", n/1e6 }'; }
 pct_delta() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%+.1f", (b-a)/a*100 }'; }
 
-finish() {
+write_sums() {
     (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS)
+}
+finish() {
+    # Release here to fail a disturbed run before PASS; cleanup's second release changes nothing
+    # (or retries a failed restore) and then writes SHA256SUMS over the finished capture.json.
+    SUMS=1
+    local released=0
+    capture_meta release "$OUT" || released=$?
+    [ "$released" = 0 ] || fail "capture release reported $released (a disturbed run or an unrestored hold); see $OUT/capture.json"
     if rg -n 'material.*(error|fallback)|error compiling material shader|panic' "$OUT/niri.log"; then
         fail "material error, fallback or panic in niri.log"
     fi

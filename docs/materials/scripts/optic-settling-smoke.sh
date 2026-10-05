@@ -28,9 +28,10 @@
 # Exit status is the analyzer's: 0 when every case of the lane passed, with
 # analysis.json verdict "passed" (complete) or "lane-passed" (complete=false,
 # the other-lane cases listed under "unverified"); nonzero for a failed or
-# invalid case, a compositor panic, or a refused/interrupted run. Every exit
-# keeps the partial evidence and writes SHA256SUMS over it (capture.json, which
-# the lock release still updates, excepted) before releasing the capture lock.
+# invalid case, a compositor panic, a refused/interrupted run, or a run the
+# capture hold found disturbed. Every exit keeps the partial evidence,
+# releases the capture lock (which completes capture.json) and then writes
+# SHA256SUMS over everything, capture.json included.
 #
 # CASES (space-separated) limits pilot/matrix to named cases for
 # development; such a run is never a passed pilot.
@@ -114,12 +115,12 @@ on_exit() {
     done
     remove_runtime_dir || rc=1
     vt_restore "$OUT/vt-restore.json" || rc=1
-    write_sums || rc=1
     capture_meta release "$OUT" || rc=1
+    write_sums || rc=1
     exit "$rc"
 }
 write_sums() {
-    (cd "$OUT" && find . -type f ! -name SHA256SUMS ! -name capture.json -print0 | LC_ALL=C sort -z \
+    (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z \
         | xargs -0 -r sha256sum > SHA256SUMS)
 }
 trap 'exit 130' INT
