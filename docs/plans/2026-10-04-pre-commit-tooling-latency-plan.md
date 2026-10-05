@@ -12,7 +12,7 @@
 **Evidence:** [Probe receipts, source reproduction and route recount](../../tasks/files/material-cd7782/material-pre-commit-revision-evidence.md).
 **Workspace:** Reuse `.worktrees/pre-commit-latency`, branch `fix/pre-commit-latency`; setup is complete. Run commands from that worktree. No shared launcher, service or desktop pointer changes.
 
-**Execution status:** Tasks 1–5 are committed and reviewed. The fast-runner amendment was accepted on 2026-10-05; Task 6 is executing its implementation and final acceptance.
+**Execution status:** Tasks 1–5 are committed and reviewed. All six tasks and the accepted fast-runner amendment are implemented and verified on 2026-10-05.
 
 ## Global constraints
 
@@ -270,13 +270,13 @@ plus config/IPC nextest. `test`, `ci-test`, `ci-test-release` remain Rust-only. 
 
 **Fast-route amendment — accepted 2026-10-05:**
 
-- [ ] Add focused synthetic contracts before changing the coordinator: fast overrides exported mode 0, full still overrides 1; two fast workers preserve every discovered ID, skip and native outcome exactly once; whole modules/class fixtures stay within one worker; a budget of one is sequential and malformed budgets fail before discovery; `--fast --ci` and public misuse of private worker mode fail before discovery. Compare against explicit mode-1 native discovery, including the two class skips and expected/unexpected successes. Exercise cancellation under both worker modes without changing the existing cleanup protections.
-- [ ] Extend the existing standard-library coordinator with explicit `--fast`, mode 1 before discovery/worker loading, and private worker mode arguments. Group modules by native inventory; greedily assign largest case-count module groups into at most two buckets, preserving internal native order. Use `min(2, worker_limit())` for fast; keep full scheduling, ten-child default, guarded CI, exact partition checks and native receipt/verdict handling intact. Add no module timing map, tracing, framework or environment variable.
-- [ ] Change only `tooling_fast_cmd` to `env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fast`. Update the recipe contract markers to distinguish the two public modes and retain all once-only, order, count, CI and failure assertions. Keep routing patterns, Rust commands and CI full command unchanged. Document two fast children, the shared budget cap and raw discovery as the reference.
-- [ ] Through `just test-one`, compare the final fast coordinator with native mode-1 discovery by IDs, skip identities and verdict on the incident host and clean Ubuntu; expected current counts are 317 with 37 host or 40 Ubuntu fast skips. Required consumer/media tests remain included. Run the required Python full `just test-fast` override, affected Rust selector if relevant, task checks and the hooks; commit `perf: parallelize fast tooling by module`. Request a scoped review of this amendment's implementation and resolve Important findings before acceptance.
-- [ ] Then repeat the original Task 6 gates below on that final code revision: both environments' isolated/consecutive-full loops and actual-driver cancellation, warm stage timings, a new UTC remedy timestamp, and at least three qualifying actual staged hooks per code route with no command overrides. Retain the completed revision's stability and failed headroom attempts as earlier evidence. Close neither this child nor the incident before all thresholds and the actual verifier pass.
+- [x] Add focused synthetic contracts before changing the coordinator: fast overrides exported mode 0, full still overrides 1; two fast workers preserve every discovered ID, skip and native outcome exactly once; whole modules/class fixtures stay within one worker; a budget of one is sequential and malformed budgets fail before discovery; `--fast --ci` and public misuse of private worker mode fail before discovery. Compare against explicit mode-1 native discovery, including the two class skips and expected/unexpected successes. Exercise cancellation under both worker modes without changing the existing cleanup protections.
+- [x] Extend the existing standard-library coordinator with explicit `--fast`, mode 1 before discovery/worker loading, and private worker mode arguments. Group modules by native inventory; greedily assign largest case-count module groups into at most two buckets, preserving internal native order. Use `min(2, worker_limit())` for fast; keep full scheduling, ten-child default, guarded CI, exact partition checks and native receipt/verdict handling intact. Add no module timing map, tracing, framework or environment variable.
+- [x] Change only `tooling_fast_cmd` to `env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fast`. Update the recipe contract markers to distinguish the two public modes and retain all once-only, order, count, CI and failure assertions. Keep routing patterns, Rust commands and CI full command unchanged. Document two fast children, the shared budget cap and raw discovery as the reference.
+- [x] Through `just test-one`, compare the final fast coordinator with native mode-1 discovery by IDs, skip identities and verdict on the incident host and clean Ubuntu; expected current counts are 317 with 37 host or 40 Ubuntu fast skips. Required consumer/media tests remain included. Run the required Python full `just test-fast` override, affected Rust selector if relevant, task checks and the hooks; commit `perf: parallelize fast tooling by module`. Request a scoped review of this amendment's implementation and resolve Important findings before acceptance.
+- [x] Then repeat the original Task 6 gates below on that final code revision: both environments' isolated/consecutive-full loops and actual-driver cancellation, warm stage timings, a new UTC remedy timestamp, and at least three qualifying actual staged hooks per code route with no command overrides. Retain the completed revision's stability and failed headroom attempts as earlier evidence. Close neither this child nor the incident before all thresholds and the actual verifier pass.
 
-- [ ] Reproduce clean Ubuntu using the earlier evidence Dockerfile's pinned Ubuntu digest and validated just/Cargo archives. Source mounts are read-only; copy into a disposable `/repo`, initialize Git there, and keep result output separate. For focused host recipes, create a private `probe-bin/host-budget` inside the disposable container, chmod it executable and prepend that directory to the container PATH. Its contents are the following forwarding script; `ci-tooling-test` itself needs no host-budget. The same bootstrap permits Task 1's early focused Ubuntu tests. Inspect a pilot covering journal, lock cleanup, consumer, gate forwarding and Cargo isolation before full runs. All commands go through just; Docker stays foreground/`--rm`, tracked by the harness with bounded timeout.
+- [x] Reproduce clean Ubuntu using the earlier evidence Dockerfile's pinned Ubuntu digest and validated just/Cargo archives. Source mounts are read-only; copy into a disposable `/repo`, initialize Git there, and keep result output separate. For focused host recipes, create a private `probe-bin/host-budget` inside the disposable container, chmod it executable and prepend that directory to the container PATH. Its contents are the following forwarding script; `ci-tooling-test` itself needs no host-budget. The same bootstrap permits Task 1's early focused Ubuntu tests. Inspect a pilot covering journal, lock cleanup, consumer, gate forwarding and Cargo isolation before full runs. All commands go through just; Docker stays foreground/`--rm`, tracked by the harness with bounded timeout.
 ```sh
 #!/bin/sh
 [ "$1" = run ] || exit 2
@@ -286,7 +286,7 @@ shift
 exec "$@"
 ```
 
-- [ ] Run the **10 isolated locked-session repetitions** from Task 1 on the final implementation on both the incident host and clean Ubuntu, unless Task 1's ten-run receipts are at this exact final implementation revision. Each is a fresh front-door run; stop on a failure and analyze it. Do not combine ten method invocations into one shared-fixture test or relax timing. Then run **five consecutive green parallel full runs per environment** using the default total 10-child cap (retain the actual host-budget cap). Every full run includes the locked-session case under concurrency. Record the locked case's time, all IDs, skip identities, errors and cleanup for every attempt. This is the concurrency stress loop and the full-suite stability gate. A failure blocks acceptance, resets the consecutive streak after a diagnosed fix, and stays in evidence.
+- [x] Run the **10 isolated locked-session repetitions** from Task 1 on the final implementation on both the incident host and clean Ubuntu, unless Task 1's ten-run receipts are at this exact final implementation revision. Each is a fresh front-door run; stop on a failure and analyze it. Do not combine ten method invocations into one shared-fixture test or relax timing. Then run **five consecutive green parallel full runs per environment** using the default total 10-child cap (retain the actual host-budget cap). Every full run includes the locked-session case under concurrency. Record the locked case's time, all IDs, skip identities, errors and cleanup for every attempt. This is the concurrency stress loop and the full-suite stability gate. A failure blocks acceptance, resets the consecutive streak after a diagnosed fix, and stays in evidence.
 
 ```python
 # Run inside the target environment, with the repository as cwd.
@@ -306,23 +306,23 @@ configuration; host receipts retain their actual cap. Do not override a host
 budget to make performance pass. Record cap-induced slow runs and resolve their cause.
 Each environment needs a complete consecutive-green set, not a single pass.
 
-- [ ] Interrupt a representative actual driver worker under the coordinator and verify every recorded worker/driver/stub PID is gone; retain no leaked bus/socket or runtime directory. The cancellation negative control fails by design and sits outside the five green stability runs.
-- [ ] Warm this worktree's own Rust artifacts through `just check`; preserve cold/refresh records. Run actual staged hook routes with a private index if needed to avoid modifying the working index, **without command overrides**, under the standard host budget/timing log. Keep actual 10-child/capped full data separate from theoretical reviewer estimates. Before declaring remedy active, all fixes and routing must be in place and stability must be green; record a UTC remedy timestamp in a task note.
-- [ ] Obtain at least **three successful, uncontended, unwidened actual full hooks and three fast hooks strictly after the remedy timestamp** on the incident host. Measure all hook stages; require fast median ≤35 s and full median ≤45 s, aim ≤35 s. Keep earlier parallel implementation records as useful performance data; they cannot count toward this post-remedy check. A busy host or widened run does not qualify. Run sequentially and inspect exclusions before retrying.
+- [x] Interrupt a representative actual driver worker under the coordinator and verify every recorded worker/driver/stub PID is gone; retain no leaked bus/socket or runtime directory. The cancellation negative control fails by design and sits outside the five green stability runs.
+- [x] Warm this worktree's own Rust artifacts through `just check`; preserve cold/refresh records. Run actual staged hook routes with a private index if needed to avoid modifying the working index, **without command overrides**, under the standard host budget/timing log. Keep actual 10-child/capped full data separate from theoretical reviewer estimates. Before declaring remedy active, all fixes and routing must be in place and stability must be green; record a UTC remedy timestamp in a task note.
+- [x] Obtain at least **three successful, uncontended, unwidened actual full hooks and three fast hooks strictly after the remedy timestamp** on the incident host. Measure all hook stages; require fast median ≤35 s and full median ≤45 s, aim ≤35 s. Keep earlier parallel implementation records as useful performance data; they cannot count toward this post-remedy check. A busy host or widened run does not qualify. Run sequentially and inspect exclusions before retrying.
 
 ```bash
 tt-latency verify material-cd7782 --after '<recorded UTC remedy timestamp>'
 ```
 
-- [ ] Repeat for every host named in breach notes (currently one host). Require exit 0 and keep its actual count/median/exclusions in evidence. If full speed, stability or the verifier fails, retain the halt, diagnose the stage/worker evidence and revise the affected work; do not close on exhausted effort or fast-only success.
-- [ ] Harvest timings with `tt-report`, inspect `host-load --section session`, restore any host pointer before parking (none is needed here), and remove only owned scratch containers/images. Preserve the existing worktree for review/integration; no push or PR is authorized.
-- [ ] Self-review spec coverage, run the required whole-branch review workflow and correct reproduced Important findings before closing. Update docs to verified behavior, close this child, then `tasks done material-cd7782` with verifier output in the same final evidence commit. `tasks check`; commit `docs: verify pre-commit latency remedy`. Personal-profile local integration follows the applicable finishing workflow; external writes remain gated.
+- [x] Repeat for every host named in breach notes (currently one host). Require exit 0 and keep its actual count/median/exclusions in evidence. If full speed, stability or the verifier fails, retain the halt, diagnose the stage/worker evidence and revise the affected work; do not close on exhausted effort or fast-only success.
+- [x] Harvest timings with `tt-report`, inspect `host-load --section session`, restore any host pointer before parking (none is needed here), and remove only owned scratch containers/images. Preserve the existing worktree for review/integration; no push or PR is authorized.
+- [x] Self-review spec coverage, run the required whole-branch review workflow and correct reproduced Important findings before closing. Update docs to verified behavior, close this child, then `tasks done material-cd7782` with verifier output in the same final evidence commit. `tasks check`; commit `docs: verify pre-commit latency remedy`. Personal-profile local integration follows the applicable finishing workflow; external writes remain gated.
 
 ## Plan acceptance and execution handoff
 
 The owner conditionally accepted the design once runtime read observation became
 a static source check; that substitution is complete. The implemented TERM fix and production/concurrency stability passed on both
-environments. Fast-route headroom remains unmet; the execution amendment was accepted before implementation on 2026-10-05. Historical probe and acceptance
+environments. Fast-route headroom is verified; the execution amendment was accepted before implementation on 2026-10-05. Historical probe and acceptance
 receipts remain in the linked task evidence.
 
 The owner accepted this plan with two Task 3 edits incorporated above; no further
@@ -330,4 +330,15 @@ review round is required. The agent executes inline in this worktree, taking its
 children in order, retains failed attempts, and closes the halt only with successful
 latency verification. This review gate does not authorize a GitHub write or desktop use.
 
-[Task 6 stability, actual-hook miss and fast-prototype evidence](../../tasks/files/material-cd7782/material-final-latency-evidence.md) records the proposed amendment's measured basis. The owner accepted the amendment; runtime changes are being verified under Task 6.
+[Task 6 stability, actual-hook miss and fast-prototype evidence](../../tasks/files/material-cd7782/material-final-latency-evidence.md) records the proposed amendment's measured basis. The owner accepted the amendment; all Task 6 runtime and latency gates passed.
+
+## Verified execution
+
+Merged revision94d3585a includes current main's capture-hold additions. All398
+cases retain native/fast parity and both environments' required stability sets.
+Qualifying actual hook medians: fast24.818s/full40.752s.
+Actual verifier: exit0, six qualifying runs, median32.447s, limit45s; zero widened
+or contended qualifying runs. The initial same-second sample remains excluded.
+[Verified evidence](../../tasks/files/material-9f9ca2/material-verified-latency-evidence.md)
+contains the complete completion receipts and registry workaround. No shared host
+pointers changed, and no push, PR or live desktop use was performed.
