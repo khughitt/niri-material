@@ -1,6 +1,6 @@
 # Noise placement: a site attribute selecting backdrop, glass, or film grain
 
-**Status:** revised after spec review round 2 (codex, 2026-10-05: the
+**Status:** accepted for planning 2026-10-05 after spec review rounds 1 and 2 (codex) and the owner's go-ahead; plan `docs/plans/2026-10-05-noise-placement.md`. Round 2 (codex, 2026-10-05: the
 damage test asserts the commit counters rather than pixels of a fresh
 render; the ring fixture waits for the comet's full run, tail included).
 Round 1 (codex, 2026-10-05: the
