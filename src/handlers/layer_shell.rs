@@ -117,6 +117,7 @@ impl State {
 
             // Resolve rules for newly mapped layer surfaces.
             if was_unmapped {
+                let _span = tracy_client::span!("Layer::mapped");
                 let config = self.niri.config.borrow();
 
                 let rules = &config.layer_rules;

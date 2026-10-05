@@ -51,20 +51,25 @@ class NoisePlacementCostTests(unittest.TestCase):
                     if child.stderr is not None:
                         child.stderr.close()
 
-    def test_damage_report_uses_reload_window_and_counts_every_buffer_pass(self):
+    def damage_report(self, *, missing_map=False, missing_sharp=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             cpu = [
-                ("State::reload_config", 1000, 5), ("State::reload_config", 2000, 5),
-                ("EffectBuffer::prepare_grain", 0, 1),
-                ("EffectBuffer::prepare_grain", 1100, 1),
-                ("EffectBuffer::prepare_grain", 1500, 1),
-            ]
-            gpu = [
-                ("Grain::render", 0, 10000), ("Grain::render", 1100, 100),
-                ("Grain::render", 1500, 300), ("Blur::render", 1200, 400),
-                ("Prefilter::downsample", 1300, 500), ("MaterialRenderElement::draw", 1400, 200),
-            ]
+                ("State::reload_config", t, 5) for t in (1000, 1500, 2000)
+            ] + [("EffectBuffer::prepare_grain", 0, 1)]
+            for t in (1100, 1600):
+                if not (missing_map and t == 1600):
+                    cpu.append(("Layer::mapped", t, 1))
+                cpu += [("EffectBuffer::sharp_damage", t + 1, 1),
+                        ("EffectBuffer::prepare_grain", t + 2, 1),
+                        ("EffectBuffer::prepare_blurred_prefilter", t + 3, 1)]
+                if not missing_sharp:
+                    cpu.append(("EffectBuffer::prepare_sharp_prefilter", t + 4, 1))
+            gpu = [("Grain::render", 0, 10000)]
+            for t, grain in [(1100, 100), (1600, 300)]:
+                gpu += [("Grain::render", t, grain), ("Blur::render", t + 100, 400),
+                        ("Prefilter::downsample", t + 200, 500),
+                        ("MaterialRenderElement::draw", t + 300, 200)]
             for suffix, header, rows in [
                 ("csv", ["name", "ns_since_start", "exec_time_ns"], cpu),
                 ("gpu.csv", ["name", "Time from start of program", "GPU execution time"], gpu),
@@ -73,12 +78,23 @@ class NoisePlacementCostTests(unittest.TestCase):
                     writer = csv.writer(f)
                     writer.writerow(header)
                     writer.writerows(rows)
-            result = subprocess.run(
+            return subprocess.run(
                 ["python3", "-c", report_source(), str(root), "damage-backdrop", "damage", "backdrop", "2"],
                 capture_output=True, text=True, timeout=5,
             )
-            self.assertEqual(result.returncode, 0, result.stderr)
-            metrics = dict(line.split("=", 1) for line in result.stdout.splitlines())
-            self.assertEqual(metrics["damage-backdrop_EffectBuffer::prepare_grain_count"], "2")
-            self.assertEqual(metrics["damage-backdrop_Grain::render_median_ms"], "0.000200")
-            self.assertEqual(metrics["damage-backdrop_mean_total_per_change_ms"], "0.000750")
+
+    def test_damage_report_uses_reload_window_and_counts_every_buffer_pass(self):
+        result = self.damage_report()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        metrics = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        self.assertEqual(metrics["damage-backdrop_EffectBuffer::prepare_grain_count"], "2")
+        self.assertEqual(metrics["damage-backdrop_Grain::render_median_ms"], "0.000200")
+        self.assertEqual(metrics["damage-backdrop_mean_total_per_change_ms"], "0.001300")
+
+    def test_damage_report_refuses_a_partial_wallpaper_stimulus(self):
+        result = self.damage_report(missing_map=True)
+        self.assertNotEqual(result.returncode, 0, "old samples must not validate a missing wallpaper update")
+
+    def test_damage_report_requires_both_pyramid_consumers(self):
+        result = self.damage_report(missing_sharp=True)
+        self.assertNotEqual(result.returncode, 0, "the blurred pyramid alone is not the full cascade")

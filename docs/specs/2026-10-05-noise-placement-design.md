@@ -199,6 +199,11 @@ material "terminal-glass" {
   grain is set and `grained` is `None`: lazily compile `GrainProgram`
   (as `Blur::new` compiles its programs), create the texture if missing,
   draw one full quad from the sharp texture into it under `blur.vert`.
+  A successful program is cached on its owning EGL share group and borrowed
+  by the buffers; reconnections reuse that one program, and context teardown
+  releases it. Failed compilations do not enter the cache. Framebuffer and
+  draw errors return to the sharp-source fallback after releasing the quad's
+  framebuffer and consuming its GL errors.
   Tracy spans `EffectBuffer::prepare_grain` (CPU) and `Grain::render` (GPU,
   through `with_profiled_context`) bracket it, so §7 can count and time it.
 - **Invalidation.** `prepare_offscreen` already clears the blurred texture
@@ -470,6 +475,10 @@ lane:
 - **Parameter dragging:** the amount is changed through config reload at
   10 Hz for 5 s; per change, the full cascade (grain, blur, both pyramids)
   is timed, against the `glass` site where a change costs no cached work.
+  Both workloads contain a blurred and a sharp roughness consumer; distinct
+  preparation spans prove both pyramids were requested. Wallpaper mapping
+  and sharp-damage spans prove each damage stimulus, and incomplete intervals
+  are rejected rather than divided by the requested number of updates.
 
 The numbers go in the evidence document and, as prose, into prism's
 interaction document under the cost class. "Cheaper" was the hypothesis the

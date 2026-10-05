@@ -537,6 +537,7 @@ impl EffectBuffer {
         offscreen.states = res.states;
 
         if res.damage.is_some() {
+            let _span = tracy_client::span!("EffectBuffer::sharp_damage");
             // Original texture changed; everything derived from it is stale.
             let cleared = cleared_by(Invalidation::SharpDamage, true);
             offscreen.clear(cleared);
@@ -741,6 +742,11 @@ impl EffectBuffer {
         };
 
         if state.needs_prepare() {
+            let _span = if blur {
+                tracy_client::span!("EffectBuffer::prepare_blurred_prefilter")
+            } else {
+                tracy_client::span!("EffectBuffer::prepare_sharp_prefilter")
+            };
             let result = program
                 .context("blur downsample program is missing")
                 .and_then(|program| {
@@ -863,6 +869,45 @@ mod tests {
         buffer.update_grain_options(grain);
         assert_eq!(buffer.commit(), before, "equal options are a no-op");
         assert_eq!(buffer.grain, grain);
+    }
+
+    #[test]
+    fn failed_grain_draw_uses_the_sharp_source_until_invalidation() {
+        crate::render_helpers::grain::tests::with_renderer(|renderer| {
+            let mut buffer = EffectBuffer::new();
+            buffer.update_size((8, 8).into(), Scale::from(1.));
+            buffer.elements();
+            buffer.update_grain_options(Some(GrainOptions {
+                amount: 0.3,
+                kind: NoiseType::Fine,
+            }));
+            assert!(buffer.prepare(renderer, false));
+            crate::render_helpers::grain::tests::delete_program(
+                renderer,
+                buffer.grain_program.as_ref().unwrap(),
+            );
+            buffer.update_grain_options(Some(GrainOptions {
+                amount: 0.4,
+                kind: NoiseType::Fine,
+            }));
+            assert!(buffer.prepare(renderer, false));
+            let offscreen = buffer.offscreen.as_ref().unwrap();
+            assert_eq!(offscreen.grain, GrainStatus::Failed);
+            assert_eq!(
+                offscreen.source(buffer.grain).tex_id(),
+                offscreen.texture.tex_id()
+            );
+            assert!(buffer.prepare(renderer, false));
+            assert_eq!(
+                buffer.offscreen.as_ref().unwrap().grain,
+                GrainStatus::Failed
+            );
+            buffer.update_grain_options(Some(GrainOptions {
+                amount: 0.5,
+                kind: NoiseType::Fine,
+            }));
+            assert_eq!(buffer.offscreen.as_ref().unwrap().grain, GrainStatus::Dirty);
+        });
     }
 
     #[test]

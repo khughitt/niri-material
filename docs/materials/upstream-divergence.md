@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-260 paths differ: 51 class B (seam), 172 class A (fork-only), 37 class C (scaffolding).
+261 paths differ: 52 class B (seam), 172 class A (fork-only), 37 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -87,6 +87,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/backend/winit.rs` | B | M | +1/-0 |
 | `src/cli.rs` | B | M | +41/-0 |
 | `src/handlers/compositor.rs` | B | M | +1/-0 |
+| `src/handlers/layer_shell.rs` | B | M | +1/-0 |
 | `src/handlers/xdg_shell.rs` | B | M | +1/-0 |
 | `src/input/pick_color_grab.rs` | B | M | +1/-0 |
 | `src/ipc/client.rs` | B | M | +56/-1 |
@@ -102,7 +103,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/niri.rs` | B | M | +310/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
-| `src/render_helpers/effect_buffer.rs` | B | M | +602/-15 |
+| `src/render_helpers/effect_buffer.rs` | B | M | +647/-15 |
 | `src/render_helpers/mod.rs` | B | M | +28/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
 | `src/render_helpers/shaders/mod.rs` | B | M | +447/-0 |
@@ -128,7 +129,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +278/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +739/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
-| `tools/test_noise_placement_cost.py` | C | A | +84/-0 |
+| `tools/test_noise_placement_cost.py` | C | A | +100/-0 |
 | `tools/test_optic_settling.py` | C | A | +1253/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +375/-0 |

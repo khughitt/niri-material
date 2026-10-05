@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-cf32e5
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T15:21:05Z
+updated: 2026-10-05T16:36:56Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -59,3 +59,5 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
   provenance: {"harness_session":"codex:01a10c84-1457-7892-bb5d-ed0227e1d702","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-05T14:44:00Z (material-cf32e5): review: plan round 3 — verdict: accept; findings: none; reviewer: human
 - 2026-10-05T15:21:05Z (material-cf32e5): Tasks 1–4 committed and verified. Nested captures refused quiet preflight; prepare builds, smoke and cost scripts, simulation, gate and review before parking the quiet run. No desktop process changed.
+- 2026-10-05T15:52:30Z (material-cf32e5): review: impl round 1 — verdict: revise; findings: Important 4; reviewer: codex/gpt-6-astra
+- 2026-10-05T16:36:56Z (material-cf32e5): Impl round 1 corrections: GL framebuffer/draw errors propagate with clean fallback state; one lazy program owned by its EGL share group; cost fixture has sharp and blurred consumers, actual mapped/damage/preparation events required for every interval. All four findings have RED/GREEN checks; 491 affected Rust tests and full tooling 409 pass.
