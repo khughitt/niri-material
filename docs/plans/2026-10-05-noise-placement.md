@@ -10,7 +10,7 @@
 
 **Spec:** `docs/specs/2026-10-05-noise-placement-design.md` (this worktree, `.worktrees/material-cf32e5`). Section numbers below (§3, §4, ...) refer to it. The prism-side contract is prism `docs/specs/2026-10-04-pipeline-schema-design.md` Section 5.
 
-**Status:** revised after plan review round 1 (codex/gpt-6-astra, 2026-10-05): the precision line precedes the shared helpers; the cost script owns its wallpaper PIDs; Task 1 is green on its own (field migration, ownership on the existing stage); `film-grain` precedes `effect-saturation`; the coloured test buffer scales bytes to the single-pixel protocol; tests locate windows by material name; the smoke uses the lib's `spawn_probe`/`calibrate_probe_rect`/`probe_rect`/`assert_about` and a valid ring config; the grain program compiles lazily in the buffer and retries after invalidation; the cost section reports measurements, not verdicts; the capture matrix is the spec's; `just setup` precedes the baseline build.
+**Status:** revised after plan review round 2 (codex/gpt-6-astra, 2026-10-05: the cost cleanup carries the original exit status past its wallpaper stop; the trailing-newline schema test asserts the glass selector and checks omission on an unselected stage; the in-process fixture's output is 800 px wide so both windows fit, and regions are clipped to the output; the one-code tolerance is `-fuzz 0.392157%`; every capture cell is taken twice and compared). Round 1 (codex/gpt-6-astra, 2026-10-05): the precision line precedes the shared helpers; the cost script owns its wallpaper PIDs; Task 1 is green on its own (field migration, ownership on the existing stage); `film-grain` precedes `effect-saturation`; the coloured test buffer scales bytes to the single-pixel protocol; tests locate windows by material name; the smoke uses the lib's `spawn_probe`/`calibrate_probe_rect`/`probe_rect`/`assert_about` and a valid ring config; the grain program compiles lazily in the buffer and retries after invalidation; the cost section reports measurements, not verdicts; the capture matrix is the spec's; `just setup` precedes the baseline build.
 
 ## Global Constraints
 
@@ -475,6 +475,27 @@ In `niri-config/src/material/pipeline.rs` tests, in `todays_shape`, replace the 
         assert!(grain.owns.is_empty() && film.owns.is_empty());
 ```
 
+In `schema_renders_stably_with_a_trailing_newline` (pipeline.rs tests, near line 1054), the `noise` stage now carries a selector, so replace `assert!(noise.get("selector").is_none(), ...)` with
+
+```rust
+        assert_eq!(
+            noise["selector"],
+            serde_json::json!({"param": "noise site=", "variant": "glass"})
+        );
+        let slab = value["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == "slab")
+            .unwrap();
+        assert!(
+            slab.get("selector").is_none(),
+            "an unselected stage omits the field rather than writing null"
+        );
+```
+
+so the omitted-field check moves to a stage that stays unselected.
+
 In `selector_rules_refuse_each_defect`, if no fixture yet covers two selector stages of different optics on one parameter, add one:
 
 ```rust
@@ -492,8 +513,8 @@ In `selector_rules_refuse_each_defect`, if no fixture yet covers two selector st
 
 - [ ] **Step 2: Run the pins to see them fail**
 
-Run: `just test-one -p niri pipeline_` and `just test-one -p niri-config todays_shape`
-Expected: `grain_source` does not exist (compile error in the niri crate tests); `todays_shape` FAILS on the selector list.
+Run: `just test-one -p niri pipeline_` and `just test-one -p niri-config todays_shape` and `just test-one -p niri-config schema_renders_stably`
+Expected: `grain_source` does not exist (compile error in the niri crate tests); `todays_shape` FAILS on the selector list; `schema_renders_stably_with_a_trailing_newline` FAILS on the noise selector.
 
 - [ ] **Step 3: Move the helpers into `common.frag`**
 
@@ -1368,7 +1389,9 @@ use super::fixture::Fixture;
 use super::ring_pair::{diff, render_at, set_time};
 use crate::render_helpers::RenderTarget;
 
-const OUT_W: u16 = 640;
+// Two 320 px windows, three 16 px gaps: 688 px, inside the 800 px output,
+// so neither window is pushed offscreen when the second takes focus.
+const OUT_W: u16 = 800;
 const OUT_H: u16 = 480;
 const W: u16 = 320;
 const H: u16 = 240;
@@ -1536,6 +1559,13 @@ fn render(f: &mut Fixture) -> (Vec<u8>, Rectangle<i32, Logical>) {
 }
 
 fn region_pixels<'a>(pixels: &'a [u8], rect: Rectangle<i32, Logical>) -> impl Iterator<Item = &'a [u8]> {
+    // Clip to the output: a region that reaches past it would index out of
+    // range (or wrap, without overflow checks), and an empty one would make
+    // every mean a division by zero.
+    let output = Rectangle::from_size(smithay::utils::Size::from((i32::from(OUT_W), i32::from(OUT_H))));
+    let rect = rect
+        .intersection(output)
+        .unwrap_or_else(|| panic!("region {rect:?} lies outside the {OUT_W}x{OUT_H} output"));
     let w = usize::from(OUT_W);
     (rect.loc.y..rect.loc.y + rect.size.h).flat_map(move |y| {
         (rect.loc.x..rect.loc.x + rect.size.w).map(move |x| {
@@ -1899,13 +1929,23 @@ Wallpaper: `WALL` is set before `write_config` is first called; the identity and
 ```bash
 IDENTITY=$'ior 1\nattenuation-color "#ffffff"\nsaturation 1'
 blur_top() { printf 'blur { passes %s; offset 3; noise 0; saturation 1; }' "$1"; }
+# Every cell is captured twice in its session and the two must be identical
+# (spec §7.2 assertion 1); the second capture is kept as <name>-again.png.
+shot_twice() {   # $1 binary, $2 name
+    shot "$1" "$2"
+    sleep 1
+    shot "$1" "$2-again"
+    ae "$OUT/$2.png" "$OUT/$2-again.png"
+    assert_zero "$2 determinism" "$METRIC"
+    printf '%s_determinism_ae=%s\n' "$2" "$METRIC" >> "$OUT/metrics.txt"
+}
 cell() {   # $1 name, $2 binary, $3 glass extra, $4 blur passes
     GLASS_EXTRA="$IDENTITY"$'\n'"$3" TOP_EXTRA=$(blur_top "$4") write_config "$OUT/$1.kdl"
     start_nested "$2" "$OUT/$1.kdl"
     spawn_probe "$2" "$IDLE"
     probe_rect "$2"
     sleep 2
-    shot "$2" "$1"
+    shot_twice "$2" "$1"
     roi "$1" "$(face_roi)" face
     stop_nested
 }
@@ -1914,7 +1954,6 @@ calibrate_probe_rect "$NIRI" 0
 # The spec's matrix (§7.2): site × blur × kind on the identity fixture.
 for kind in white fine lightness; do
     cell "omitted-$kind"       "$NIRI"      "noise 0.3 type=\"$kind\""                      3
-    cell "omitted-$kind-again" "$NIRI"      "noise 0.3 type=\"$kind\""                      3
     cell "baseline-$kind"      "$BASE_NIRI" "noise 0.3 type=\"$kind\""                      3
     for site in glass backdrop film; do
         cell "$site-$kind-off" "$NIRI" "noise 0.3 type=\"$kind\" site=\"$site\""             3
@@ -1932,7 +1971,7 @@ ROUGH=$'ior 1.5\nattenuation-color "#ffffff"\nsaturation 1'
 rough_cell() {   # $1 name, $2 glass extra, $3 passes
     GLASS_EXTRA="$ROUGH"$'\n'"$2" TOP_EXTRA=$(blur_top "$3") write_config "$OUT/$1.kdl"
     start_nested "$NIRI" "$OUT/$1.kdl"; spawn_probe "$NIRI" "$IDLE"; probe_rect "$NIRI"; sleep 2
-    shot "$NIRI" "$1"; roi "$1" "$(face_roi)" face; stop_nested
+    shot_twice "$NIRI" "$1"; roi "$1" "$(face_roi)" face; stop_nested
 }
 for blur in false true; do for r in 0 0.5 1; do
     tag="b$blur-r$r"
@@ -1945,12 +1984,12 @@ done; done
 
 Metrics (each appended to `$OUT/metrics.txt` as `name=value`) and the seven assertions:
 
-1. `ae "$OUT/omitted-$kind.png" "$OUT/omitted-$kind-again.png"` → `assert_zero` per kind.
+1. Determinism is asserted inside `shot_twice` for every cell of every fixture (identity, blur, roughness, ring), so no cell is captured only once.
 2. `ae "$OUT/omitted-$kind.png" "$OUT/glass-$kind-off.png"` → `assert_zero` per kind.
 3. `ae "$OUT/omitted-$kind.png" "$OUT/baseline-$kind.png"` → `assert_zero` per kind: byte identity against the baseline binary.
 4. `magick compare -metric MAE "$OUT/glass-fine-off-face.png" "$OUT/backdrop-fine-off-face.png" null:` (through a local `mae()` built like `compare_metric`) → `assert_less "backdrop vs glass face MAE" "$METRIC" "$(magick xc: -format '%[fx:2*quantumrange/255]' info:)"`.
 5. Grain `sd`: `signed_diff "$OUT/$site-fine-$b-face.png" "$OUT/zero-$b-face.png" "$OUT/grain-$site-$b.png"; sd "$OUT/grain-$site-$b.png"` for `b` in `off p1 p3` and `site` in `glass backdrop film`. `assert_greater` backdrop off > p1 > p3; `assert_about "glass grain under blur" <glass p1> <glass off> 0.05` and the same for p3 and for film. Roughness: the same over `rough-$site-btrue-r{0,0.5,1}` against `rough-zero-btrue-r*`: backdrop strictly decreasing, glass within 5 %; report the `bfalse` row (where roughness still selects pyramid levels of the sharp texture) the same way.
-6. `magick compare -metric AE -fuzz 1/255 "$OUT/film-$kind-off-face.png" "$OUT/glass-$kind-off-face.png" null:` → `assert_zero` per kind: every face pixel within one code.
+6. `magick compare -metric AE -fuzz 0.392157% "$OUT/film-$kind-off-face.png" "$OUT/glass-$kind-off-face.png" null:` → `assert_zero` per kind: every face pixel within one code (`-fuzz` takes a percentage of the quantum range; `1/255` is not a tolerance ImageMagick understands, and `0.392157%` accepts a one-code difference and rejects two).
 7. The ring fixture, in its own function with its own config writer (the lib's `write_config` hard-codes `ring-beam-speed 0`, and a second singleton node does not override the first):
 
 ```bash
@@ -2009,7 +2048,7 @@ ring_cell() {   # $1 name, $2 site, $3 amount
     # The comet's whole run: a lap (perimeter) plus its tail (25 % of it),
     # at 400 px/s, plus a margin; only the rest glow remains afterwards.
     sleep "$(awk -v w="$PW" -v h="$PH" 'BEGIN { printf "%d", 2*(w+h)*1.25/400 + 3 }')"
-    shot "$NIRI" "$1"
+    shot_twice "$NIRI" "$1"
     roi "$1" "$(face_roi)" face
     # The band: the ring sits ring-gap inside where the face begins, which is
     # bevel - offset inside the window edge; a 3 px strip there, 300 px tall.
@@ -2104,7 +2143,12 @@ stop_walls() {   # only the PIDs this run started; never pkill by name, the desk
     for pid in "${WALL_PIDS[@]}"; do kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; done
     WALL_PIDS=()
 }
-cleanup_cost() { stop_walls; cleanup; }
+cleanup_cost() {   # the lib's cleanup reads $? on entry: carry the original status past stop_walls
+    local rc=$?
+    stop_walls
+    (exit "$rc")
+    cleanup
+}
 trap cleanup_cost EXIT
 ```
 
