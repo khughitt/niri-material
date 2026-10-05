@@ -177,6 +177,18 @@ Prism's `glass.inactive.*` keys write the same native parameters into the
 unfocused material definition; `glass.focusSplit` decides whether that
 second definition exists.
 
+## 6. The schema file
+
+The structure above is also data: `niri-config/src/material/pipeline.rs`
+holds the sites (carrier, composition law, orderable, coverage, cost), the
+stages (site, scope, the parameters each owns and reads, the response fields
+it reads, its optic hook and program), and the structural interactions, and
+tests pin them to `all_params()`, `ORDER`, the `Response` block, and the hook
+calls in each shader program. `resources/materials/pipeline.json` is
+generated from them (`MATERIAL_DOCS_UPDATE=1 just test` regenerates it) and
+is what prism vendors to validate its device rack. Design: prism
+`docs/specs/2026-10-04-pipeline-schema-design.md`.
+
 ## Related designs
 
 - `2026-08-22-v1-design.md` §2 and §4: the compositing contract and the
