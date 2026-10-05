@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: fix/pre-commit-latency
 created: 2026-10-04T20:39:13Z
-updated: 2026-10-05T09:28:59Z
+updated: 2026-10-05T09:42:05Z
 started: 2026-10-04T23:16:58Z
 depends: [material-d2b55c]
 parent: material-cd7782
@@ -31,3 +31,4 @@ step: "Task 6: Verify concurrency stability and close latency evidence"
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-05T09:28:58Z (fix/pre-commit-latency): attached: material-fast-amendment-evidence.md (284086 bytes): Parallel-fast RED/GREEN contracts, exact native/fast 320-ID parity on both environments, cancellation/native outcome controls and guarded Ubuntu CI success.
 - 2026-10-05T09:28:58Z (fix/pre-commit-latency): Approved fast amendment implemented: explicit --fast, two module buckets capped by strict NEXTEST_TEST_THREADS, private explicit worker modes, full-only CI and preserved native outcomes/cancellation. Host and Ubuntu fast/native IDs and skips match exactly (320 cases, 37/40 fast skips); full validation passes (2/5 optional skips). Scoped review and final-revision stability/actual-hook acceptance remain.
+- 2026-10-05T09:42:05Z (fix/pre-commit-latency): Main advanced during implementation with capture-hold tooling, new tests and lifecycle script changes. Integrate committed main changes into this isolated worktree before final acceptance; retain the completed 320-case host set as earlier evidence. Main uncommitted task files remain untouched.
