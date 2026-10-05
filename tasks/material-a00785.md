@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-a00785
 created: 2026-10-05T09:36:02Z
-updated: 2026-10-05T10:43:22Z
+updated: 2026-10-05T10:49:56Z
 started: 2026-10-05T09:36:47Z
 depends: []
 parent: material-3aa1f2
@@ -41,3 +41,8 @@ Direct: the spec settles every table value and test; the remaining choices are s
 - 2026-10-05T10:21:15Z (material-a00785): Plan round 2 details: selector completeness/one-optic checks and exact non-comment hook calls resolve original findings. Exhaustive Response destructuring also catches the originally requested mutation (new field, unchanged metadata/tests); no stronger macro-based mechanism is required for acceptance. Minor: lines115-117 overclaim that editing the destructuring also forces live metadata equality; describe it as a compile-time review tripwire, since the pattern and live list are independent. Important: Step4b line541 suggests git checkout -- material/mod.rs before Step5 stages Task1 changes. It would erase pub mod pipeline and response_fields() as well as the probe. Remove only ring_probe with a targeted edit, or restore an exact pre-probe snapshot, and verify the intended Task1 diff remains. Fix probe cleanup before execution.
 - 2026-10-05T10:43:22Z (material-a00785): resumed
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T10:43:25Z (material-a00785): Plan revised for review round 2: Step 4b cleanup deletes only the probe line; exhaustive destructuring described as a compile-time review guard, not an automatic list update
+- 2026-10-05T10:43:25Z (material-a00785): parked (waiting on user, review): Re-review the renderer plan (.worktrees/material-a00785/docs/plans/2026-10-05-pipeline-schema.md) after round 2; on acceptance execute Tasks 1 to 3 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T10:49:55Z (material-a00785): review: plan round 3 — verdict: accept; findings: none; reviewer: codex
+- 2026-10-05T10:49:55Z (material-a00785): Scoped re-review of 43e6ff90: response probe cleanup removes only its added line, preserving Task1 changes; exhaustive destructuring is accurately described as a compile-time review guard. Prior plan findings remain resolved. Accepted for native execution first, with a fresh whole-branch review before integration.
