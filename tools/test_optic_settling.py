@@ -738,7 +738,8 @@ STUBS = {
     'capture-meta': (
         'echo "$*" >> "$STUB_DIR/meta.log"\n'
         'if [ "$1" = preflight ] && [ -n "${STUB_REFUSE:-}" ]; then\n'
-        '    echo \'{"refused": "load"}\' > "$2/capture.json"; exit 1\nfi\n'),
+        '    echo \'{"refused": "load"}\' > "$2/capture.json"; exit 1\nfi\n'
+        'if [ "$1" = release ] && [ ! -e "$2/capture.json" ]; then echo \'{"released":true}\' > "$2/capture.json"; fi\n'),
 }
 
 
@@ -900,6 +901,14 @@ class DriverCleanupTests(unittest.TestCase):
         check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=self.out,
                                capture_output=True, text=True)
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        if (self.out / 'capture.json').exists():
+            self.assertIn(' ./capture.json\n', sums)
+
+    def test_exit_path_releases_before_writing_sums(self):
+        text = (self.root / 'docs/materials/scripts/optic-settling-smoke.sh').read_text()
+        body = text[text.index('on_exit() {'):text.index('write_sums() {')]
+        self.assertLess(body.index('capture_meta release "$OUT" || rc=1'), body.index('write_sums || rc=1'))
+        self.assertNotIn("! -name capture.json", text)
 
     def test_term_during_capture_stops_the_schedule_wait(self):
         # startup-no-input waits for its 10 s stimulus straight after the

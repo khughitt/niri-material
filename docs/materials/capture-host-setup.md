@@ -31,8 +31,8 @@ repositories:
 paru -S wlrctl        # or any AUR helper / makepkg
 ```
 
-`host-budget` and `host-load` come from the ops repository's `bin/`, on
-`~/.local/bin`. `tools/capture-meta` ships with this repository.
+`host-budget`, `host-load` and `display-dim` come from the ops repository's
+`bin/`, linked onto `~/.local/bin` by its install recipe. `tools/capture-meta` ships with this repository.
 
 ## Passwordless VT switching (real-TTY lane)
 
@@ -79,6 +79,27 @@ itself is ops's `display-dim` (`ops-a1715a`).
   documents the command list.
 - Runs that need an idle host start from a TTY login with the desktop
   stopped (`tasks quiet`, `--needs headless`).
+
+## Disturber hold
+
+`capture-meta preflight` holds the host's disturbers for the whole run
+([design](../specs/2026-10-04-capture-disturber-hold-design.md)): every
+active user timer, the services named in
+`${XDG_CONFIG_HOME:-~/.config}/niri-material/capture-hold`, and on the
+desktop Noctalia's caffeine and monitor power. `release` restores them and
+scans the journal; a disturbed run fails its fixture.
+
+The reference host's file:
+
+```text
+# Crash-loops every ~14 s while the desktop is stopped (DISPLAY=:0 override).
+dropbox.service
+```
+
+After a killed run the guard unit (`capture-meta-guard-*.service`) restores
+within seconds. If it could not, `tools/capture-meta restore` restores by
+hand; `$XDG_RUNTIME_DIR/capture-meta.hold.json` lists what is still held
+under `held`, each item with its restore command.
 
 ## Running the dedicated lane
 
