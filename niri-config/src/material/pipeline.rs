@@ -6,8 +6,11 @@
 //! block, and (in niri) the shader hook calls, and `resources/materials/
 //! pipeline.json` is generated from them.
 
+use serde::Serialize;
+
 /// The value that leaves a site.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Carrier {
     Texture,
     Normal,
@@ -17,7 +20,8 @@ pub enum Carrier {
 }
 
 /// Whether the order of two stages at a site changes the result.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Law {
     Sequence,
     Sum,
@@ -26,7 +30,8 @@ pub enum Law {
 }
 
 /// Where a site's result lands.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Coverage {
     Backdrop,
     Glass,
@@ -34,14 +39,16 @@ pub enum Coverage {
 }
 
 /// Cached per backdrop damage, or evaluated per glass fragment per frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Cost {
     Cached,
     Fragment,
 }
 
 /// Where a stage's parameters can vary.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Scope {
     Output,
     Material,
@@ -49,7 +56,8 @@ pub enum Scope {
 }
 
 /// The shader program a hook call lives in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Program {
     Material,
     Effect,
@@ -57,14 +65,15 @@ pub enum Program {
 }
 
 /// A structural interaction between two stages.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Kind {
     Requires,
     Attenuates,
     Shadows,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Site {
     pub id: &'static str,
     pub carrier: Carrier,
@@ -74,20 +83,20 @@ pub struct Site {
     pub cost: Cost,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct OpticRef {
     pub name: &'static str,
     pub hook: &'static str,
     pub program: Program,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Selector {
     pub param: &'static str,
     pub variant: &'static str,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Stage {
     pub id: &'static str,
     pub site: &'static str,
@@ -98,12 +107,14 @@ pub struct Stage {
     pub reads: &'static [&'static str],
     /// Response-block fields this stage reads, as the KDL spells them.
     pub responses: &'static [&'static str],
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub optic: Option<OpticRef>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub selector: Option<Selector>,
     pub animated: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Interaction {
     pub kind: Kind,
     pub from: &'static str,
@@ -593,6 +604,29 @@ pub fn check_selectors(stages: &[Stage], specs: &[super::params::ParamSpec]) -> 
     Ok(())
 }
 
+#[derive(Serialize)]
+struct Schema {
+    version: u32,
+    sites: &'static [Site],
+    stages: &'static [Stage],
+    interactions: &'static [Interaction],
+}
+
+/// The schema as `resources/materials/pipeline.json` carries it: version 1,
+/// the three tables verbatim, pretty-printed with a trailing newline so the
+/// file is stable across regenerations.
+pub fn render_schema() -> String {
+    let schema = Schema {
+        version: 1,
+        sites: SITES,
+        stages: STAGES,
+        interactions: INTERACTIONS,
+    };
+    let mut out = serde_json::to_string_pretty(&schema).expect("the schema serializes");
+    out.push('\n');
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{HashMap, HashSet};
@@ -985,5 +1019,54 @@ mod tests {
         );
         let slab = STAGES.iter().find(|s| s.id == "slab").unwrap();
         assert!(slab.reads.contains(&"thickness") && !slab.owns.contains(&"thickness"));
+    }
+
+    #[test]
+    fn schema_renders_stably_with_a_trailing_newline() {
+        let once = render_schema();
+        assert_eq!(once, render_schema(), "two renders are identical");
+        assert!(once.ends_with('\n'));
+        let value: serde_json::Value = serde_json::from_str(&once).unwrap();
+        assert_eq!(value["version"], 1);
+        assert_eq!(value["sites"][0]["id"], "source");
+        assert_eq!(value["sites"][0]["orderable"], false);
+        let noise = value["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == "noise")
+            .unwrap();
+        assert_eq!(
+            noise["optic"],
+            serde_json::json!({"name": "noise", "hook": "behind", "program": "material"})
+        );
+        assert!(
+            noise.get("selector").is_none(),
+            "absent optional fields are omitted, not null"
+        );
+        let encode = value["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == "encode")
+            .unwrap();
+        assert!(encode.get("optic").is_none());
+        assert_eq!(value["interactions"][0]["kind"], "attenuates");
+    }
+
+    #[test]
+    fn material_pipeline_schema_matches_the_file() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../resources/materials/pipeline.json");
+        let expected = render_schema();
+        if std::env::var_os("MATERIAL_DOCS_UPDATE").is_some() {
+            std::fs::write(&path, &expected).unwrap();
+            return;
+        }
+        let actual = std::fs::read_to_string(&path).unwrap_or_default();
+        assert_eq!(
+            actual, expected,
+            "resources/materials/pipeline.json is stale; rerun with MATERIAL_DOCS_UPDATE=1"
+        );
     }
 }

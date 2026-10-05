@@ -1,0 +1,428 @@
+{
+  "version": 1,
+  "sites": [
+    {
+      "id": "source",
+      "carrier": "texture",
+      "law": "sequence",
+      "orderable": false,
+      "coverage": "backdrop",
+      "cost": "cached"
+    },
+    {
+      "id": "normal",
+      "carrier": "normal",
+      "law": "sequence",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "taps",
+      "carrier": "linear",
+      "law": "coupled",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "behind",
+      "carrier": "linear",
+      "law": "sequence",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "attenuation",
+      "carrier": "linear",
+      "law": "product",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "within",
+      "carrier": "light",
+      "law": "sum",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "specular",
+      "carrier": "light",
+      "law": "sequence",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "emissive",
+      "carrier": "light",
+      "law": "sum",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "encode",
+      "carrier": "encoded",
+      "law": "coupled",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "post",
+      "carrier": "encoded",
+      "law": "sequence",
+      "orderable": false,
+      "coverage": "glass",
+      "cost": "fragment"
+    },
+    {
+      "id": "background-effect",
+      "carrier": "encoded",
+      "law": "sequence",
+      "orderable": false,
+      "coverage": "window",
+      "cost": "fragment"
+    }
+  ],
+  "stages": [
+    {
+      "id": "blur",
+      "site": "source",
+      "scope": "output",
+      "owns": [
+        "blur passes",
+        "blur offset"
+      ],
+      "reads": [
+        "blur passes",
+        "blur offset"
+      ],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "prefilter",
+      "site": "source",
+      "scope": "material",
+      "owns": [
+        "backdrop-blur",
+        "roughness"
+      ],
+      "reads": [
+        "backdrop-blur",
+        "roughness",
+        "ior"
+      ],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "slab",
+      "site": "normal",
+      "scope": "material",
+      "owns": [
+        "bevel",
+        "offset-x",
+        "offset-y",
+        "jelly-flex"
+      ],
+      "reads": [
+        "bevel",
+        "offset-x",
+        "offset-y",
+        "jelly-flex",
+        "thickness"
+      ],
+      "responses": [],
+      "animated": true
+    },
+    {
+      "id": "distortion",
+      "site": "normal",
+      "scope": "material",
+      "owns": [
+        "distortion",
+        "distortion scale="
+      ],
+      "reads": [
+        "distortion",
+        "distortion scale="
+      ],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "ripple",
+      "site": "normal",
+      "scope": "material",
+      "owns": [
+        "jelly-ripple"
+      ],
+      "reads": [
+        "jelly-ripple"
+      ],
+      "responses": [],
+      "animated": true
+    },
+    {
+      "id": "refraction",
+      "site": "taps",
+      "scope": "material",
+      "owns": [
+        "ior",
+        "thickness"
+      ],
+      "reads": [
+        "ior",
+        "thickness",
+        "backdrop-blur",
+        "roughness"
+      ],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "fringing",
+      "site": "taps",
+      "scope": "material",
+      "owns": [
+        "chromatic-aberration"
+      ],
+      "reads": [
+        "chromatic-aberration",
+        "ior",
+        "thickness",
+        "anisotropic-blur"
+      ],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "directional-blur",
+      "site": "taps",
+      "scope": "material",
+      "owns": [
+        "anisotropic-blur"
+      ],
+      "reads": [
+        "anisotropic-blur",
+        "ior",
+        "thickness",
+        "chromatic-aberration"
+      ],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "saturation",
+      "site": "behind",
+      "scope": "material",
+      "owns": [
+        "saturation"
+      ],
+      "reads": [
+        "saturation",
+        "blur saturation",
+        "backdrop-blur"
+      ],
+      "responses": [],
+      "optic": {
+        "name": "saturation",
+        "hook": "behind",
+        "program": "material"
+      },
+      "animated": false
+    },
+    {
+      "id": "noise",
+      "site": "behind",
+      "scope": "material",
+      "owns": [
+        "noise",
+        "noise type="
+      ],
+      "reads": [
+        "noise",
+        "noise type=",
+        "blur noise",
+        "backdrop-blur"
+      ],
+      "responses": [],
+      "optic": {
+        "name": "noise",
+        "hook": "behind",
+        "program": "material"
+      },
+      "animated": false
+    },
+    {
+      "id": "tint",
+      "site": "attenuation",
+      "scope": "material",
+      "owns": [
+        "attenuation-color",
+        "attenuation-distance"
+      ],
+      "reads": [
+        "attenuation-color",
+        "attenuation-distance",
+        "thickness"
+      ],
+      "responses": [
+        "accent-tint",
+        "accent"
+      ],
+      "animated": false
+    },
+    {
+      "id": "ring",
+      "site": "within",
+      "scope": "material",
+      "owns": [
+        "light-ior"
+      ],
+      "reads": [
+        "light-ior",
+        "ior",
+        "thickness",
+        "roughness",
+        "chromatic-aberration"
+      ],
+      "responses": [
+        "ring-gap",
+        "ring-width",
+        "ring-color",
+        "ring-glow",
+        "ring-rest",
+        "ring-accent",
+        "ring-beam-speed",
+        "ring-beam-noise",
+        "ring-beam-noise-hz",
+        "ring-beam-decay",
+        "focus",
+        "accent",
+        "attention"
+      ],
+      "animated": true
+    },
+    {
+      "id": "aurora",
+      "site": "within",
+      "scope": "material",
+      "owns": [
+        "aurora",
+        "aurora drift-hz",
+        "aurora color"
+      ],
+      "reads": [
+        "aurora",
+        "aurora drift-hz",
+        "aurora color",
+        "ior",
+        "light-ior",
+        "thickness"
+      ],
+      "responses": [],
+      "optic": {
+        "name": "aurora",
+        "hook": "within",
+        "program": "material"
+      },
+      "animated": true
+    },
+    {
+      "id": "glint",
+      "site": "specular",
+      "scope": "material",
+      "owns": [],
+      "reads": [
+        "ior"
+      ],
+      "responses": [
+        "attention",
+        "accent"
+      ],
+      "animated": true
+    },
+    {
+      "id": "iridescence",
+      "site": "specular",
+      "scope": "material",
+      "owns": [
+        "iridescence"
+      ],
+      "reads": [
+        "iridescence"
+      ],
+      "responses": [],
+      "optic": {
+        "name": "iridescence",
+        "hook": "specular",
+        "program": "material"
+      },
+      "animated": false
+    },
+    {
+      "id": "sweeps",
+      "site": "emissive",
+      "scope": "material",
+      "owns": [],
+      "reads": [],
+      "responses": [
+        "ping",
+        "done",
+        "error"
+      ],
+      "animated": true
+    },
+    {
+      "id": "encode",
+      "site": "encode",
+      "scope": "material",
+      "owns": [],
+      "reads": [],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "effect-saturation",
+      "site": "background-effect",
+      "scope": "window",
+      "owns": [
+        "blur saturation"
+      ],
+      "reads": [
+        "blur saturation"
+      ],
+      "responses": [],
+      "animated": false
+    },
+    {
+      "id": "effect-noise",
+      "site": "background-effect",
+      "scope": "window",
+      "owns": [
+        "blur noise"
+      ],
+      "reads": [
+        "blur noise"
+      ],
+      "responses": [],
+      "animated": false
+    }
+  ],
+  "interactions": [
+    {
+      "kind": "attenuates",
+      "from": "refraction",
+      "on": "prefilter",
+      "why": "the prefilter level is roughness * clamp(ior * 2 - 2, 0, 1), so ior 1 flattens Blur while frosted backdrop still selects the blurred source [expose]"
+    }
+  ]
+}
