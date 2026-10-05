@@ -6,13 +6,14 @@ on 2026-10-05. This is a preparation record, not acceptance for merge.
 
 ## Pinned revisions and artifacts
 
-- Renderer implementation through `8db25b43475cdebe6288be3348a78ad1b1eb6269`:
-  config `b956182f`, shader/schema `fa8a447e`, grain pass `cd176b2a`,
-  pixel/damage tests `8db25b43`.
+- Renderer and capture-integrity corrections through `4609c7bd`; implementation
+  review round 2 accepted all four corrections with no remaining findings.
+  Original implementation: config `b956182f`, shader/schema `fa8a447e`, grain
+  pass `cd176b2a`, pixel/damage tests `8db25b43`.
 - Baseline `b261ad1a`, release binary SHA-256 `932dd408244012476bad6fa71141bdf53e73c26c1f2d73a37a870524865cc20e`.
 - Prepared binary snapshots: `$NIRI_NOISE_ARTIFACTS/noise-binaries-8db25b43/`.
-  Pre-review implementation release SHA-256 `10d17132c0524e6ad1f111cd8000fc1ae3fda939733acb9df7c7a738ad386c17`;
-  Tracy release SHA-256 `2ef67a9821926d3bd8b3a759cfd4f82b6cedc2e93a4bb49d973f1c230cd68ac8`. Both builds passed; corrected snapshots are recorded below before handoff.
+  Corrected release SHA-256 `b380071c1f0b4ea2a413062b9babce896ec47e22cee589ecc6bbd3af610a0a14`;
+  corrected Tracy SHA-256 `ee669cf4934bf6fd5cd224f5de646f9b39131c4deb5546fee0abc10c4c1b63c3`. Both builds passed.
 - Offline simulation: `$NIRI_NOISE_ARTIFACTS/noise-simulation-20261005-112606/`;
   `sheet-white.png`, `sheet-fine.png`, the cell images and metrics.
 - Refused readiness run:
@@ -156,7 +157,10 @@ cost verdict is available until both measured pairs exist.
 - The ring fixture's encoded band level and transfer ratio are unmeasured.
 - Tracy costs and the actual nested renderer string remain unmeasured; the
   preflight's host GPU name is not a measured rendering-cost result.
-- The first whole-branch review found four Important issues; GL error handling,
-  context ownership and capture integrity corrections are in scoped re-review.
-- The pre-correction gate passed; it is rerun after corrections. Merge, schema
-  vendoring in prism and parent close remain blocked on capture acceptance.
+- The first whole-branch review found four Important issues; scoped review
+  round 2 accepted the GL error/lifetime and capture-integrity corrections.
+- Latest host check still showed 16% GPU utilization, P3 and an active browser
+  compute client; the quiet condition remains unmet.
+- Corrected `just gate` passed: 409 tooling cases; Rust suites and doctests
+  passed (491 niri tests, one existing ignored test, plus config/IPC/doctests).
+  Merge, schema vendoring in prism and parent close remain capture-blocked.
