@@ -6,8 +6,8 @@ priority: 2
 size: m
 complexity: mid
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-02T23:07:57Z
-depends: []
+updated: 2026-10-05T12:18:49Z
+depends: [material-cf32e5]
 parent: material-3aa1f2
 tags: [material, noise]
 ---
