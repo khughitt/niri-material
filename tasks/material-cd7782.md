@@ -1,15 +1,16 @@
 ---
 id: material-cd7782
 title: "Test latency over limit: hook-pre-commit 45.305 s against 45 s"
-status: doing
+status: done
 priority: 0
 size: m
 complexity: high
 process: planned
 owner: fix/pre-commit-latency
 created: 2026-10-04T15:00:02Z
-updated: 2026-10-05T09:33:52Z
+updated: 2026-10-05T10:16:51Z
 started: 2026-10-04T16:48:06Z
+completed: 2026-10-05T10:16:51Z
 depends: []
 tags: [halt, test-latency, testing]
 source: "tt-latency:titan:2026-10-04T15:00:01Z"
@@ -89,3 +90,11 @@ Process: planned
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-05T09:08:21Z (fix/pre-commit-latency): Merged the newer main-checkout halt-override note at the actual merge timestamp, preserving local review history, attachments and spec/plan links. Approved parallel-fast amendment resumes under Task 6.
 - 2026-10-05T09:33:52Z (fix/pre-commit-latency): review: impl round 4 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
+- 2026-10-05T09:36:47Z (material-a00785): halt override: attempted material-a00785 by 23285ff0-fcf8-4e52-93eb-5ccb34db3e4c: plan document and task records only, no renderer code this session; independent of the pre-commit latency incident material-cd7782
+- 2026-10-05T09:51:55Z (fix/pre-commit-latency): review: impl round 5 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
+- 2026-10-05T10:04:35Z (fix/pre-commit-latency): remedy: 2026-10-05T10:04:35Z — integrated implementation94d3585a reviewed; ten isolated locked-session and five consecutive398-case full runs green on host and Ubuntu; native/fast parity398 IDs with38/41 skips; actual driver cancellation leaves no PID/socket/runtime directory. Warm stages measured; actual staged full and fast hooks now follow under standard budgets.
+- 2026-10-05T10:12:20Z (fix/pre-commit-latency): verified: titan after 2026-10-05T10:04:35Z: hook-pre-commit median 32.447 s, limit 45 s, 6 runs
+- 2026-10-05T10:16:51Z (fix/pre-commit-latency): done
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T10:16:51Z (fix/pre-commit-latency): tt-latency verify material-cd7782 --after 2026-10-05T10:04:35Z exited0 on the only breached host. Output: titan hook-pre-commit met (median32.4s,6 runs,limit45s); noted: verified:titan after2026-10-05T10:04:35Z: hook-pre-commit median32.447s,limit45s,6 runs; verified:every obligation is met. Three qualifying actual full hooks median40.752s and fast24.818s,398-case full/native-fast parity and both environments stability/cancellation green. All six children done; scoped reviews accepted. Shared timing log unchanged; verifier note used a temporary per-process registry because main copy was stale (ops-64c0ed). No push,PR,host pointer or live desktop use.
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}

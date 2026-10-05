@@ -1,15 +1,16 @@
 ---
 id: material-9f9ca2
 title: Verify concurrency stability and close latency evidence
-status: doing
+status: done
 priority: 0
 size: m
 complexity: mid
 process: direct
 owner: fix/pre-commit-latency
 created: 2026-10-04T20:39:13Z
-updated: 2026-10-05T09:42:05Z
+updated: 2026-10-05T10:16:51Z
 started: 2026-10-04T23:16:58Z
+completed: 2026-10-05T10:16:51Z
 depends: [material-d2b55c]
 parent: material-cd7782
 tags: [testing]
@@ -32,3 +33,8 @@ step: "Task 6: Verify concurrency stability and close latency evidence"
 - 2026-10-05T09:28:58Z (fix/pre-commit-latency): attached: material-fast-amendment-evidence.md (284086 bytes): Parallel-fast RED/GREEN contracts, exact native/fast 320-ID parity on both environments, cancellation/native outcome controls and guarded Ubuntu CI success.
 - 2026-10-05T09:28:58Z (fix/pre-commit-latency): Approved fast amendment implemented: explicit --fast, two module buckets capped by strict NEXTEST_TEST_THREADS, private explicit worker modes, full-only CI and preserved native outcomes/cancellation. Host and Ubuntu fast/native IDs and skips match exactly (320 cases, 37/40 fast skips); full validation passes (2/5 optional skips). Scoped review and final-revision stability/actual-hook acceptance remain.
 - 2026-10-05T09:42:05Z (fix/pre-commit-latency): Main advanced during implementation with capture-hold tooling, new tests and lifecycle script changes. Integrate committed main changes into this isolated worktree before final acceptance; retain the completed 320-case host set as earlier evidence. Main uncommitted task files remain untouched.
+- 2026-10-05T10:15:51Z (fix/pre-commit-latency): attached: material-verified-latency-evidence.md (1065802 bytes): Verified merged398-case parity/stability/cancellation, all stages, three qualifying real hooks per route and actual six-run verifier success.
+- 2026-10-05T10:16:51Z (fix/pre-commit-latency): done
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T10:16:51Z (fix/pre-commit-latency): Implemented and reviewed parallel fast validation; merged current capture-hold tooling.398-case native/fast parity,10 isolated locked and5 consecutive full greens per environment, actual driver cancellation clean. Three qualifying whole hooks per route: fast median24.818s/full40.752s. Actual tt-latency verify exit0 on titan: hook-pre-commit median32.447s, limit45s,6 successful uncontended unwidened runs; every obligation met. Evidence attached; temporary verifier registry only, no shared pointers changed.
+  provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}

@@ -1,6 +1,6 @@
 # Pre-commit tooling latency
 
-Task: material-cd7782. Status: Tasks 1–5 implemented and reviewed; full-route stability verified. The parallel-fast amendment was accepted on 2026-10-05 and is implemented; Task 6 remains open for final review, stability and post-remedy hook acceptance.
+Task: material-cd7782. Status: implemented and verified on 2026-10-05; merged revision `94d3585a`, including the accepted parallel-fast amendment.
 
 ## Outcome
 
@@ -432,10 +432,30 @@ A disposable prototype uses the implemented coordinator with two module buckets
 and fast mode; its first corrected host pilot kept all 317 IDs and 37 skips, with
 17.428-second tooling and 22.296-second hook-recipe timing. It uses a diagnostic
 command override and a separate timing log, so it is feasibility evidence, not
-post-remedy acceptance. The amended implementation and exact source revision
-still need contract tests, fresh review, full/CI stability and actual staged hooks.
+post-remedy acceptance. The amended implementation and merged source revision passed contract tests,
+scoped review, full/CI stability and actual staged hooks; see the verified result below.
 
 Three consecutive corrected host prototype recipe runs passed (median 22.296s);
 the clean Ubuntu prototype passed all 317 identical IDs, with 40 expected fast
 skips and 12.140-second tooling. Neither uses the production fast front door yet.
 Execution receipts are retained in [Task 6 evidence](../../tasks/files/material-cd7782/material-final-latency-evidence.md).
+
+## Verified result (2026-10-05)
+
+The merged398-case implementation passes native/fast parity (38 host/41 Ubuntu
+fast skips), ten isolated locked-session runs and five consecutive full runs per
+environment, and actual-driver cancellation with every recorded PID and runtime
+directory gone. Full skips remain exactly2 host/5 Ubuntu optional cases.
+
+Three qualifying actual hooks per route give warm whole-hook medians
+**24.818s fast** (target35) and **40.752s full** (limit45). Full
+remains above the optional35-second aim. One initial full sample shared the remedy
+timestamp's second and was excluded; an additional full hook supplied the third
+qualifying run. There were no contended or widened qualifying samples.
+
+Actual verification exited0 and recorded six qualifying runs, median32.447s
+against45s, satisfying the incident's sole breached host obligation.
+[Final evidence](../../tasks/files/material-9f9ca2/material-verified-latency-evidence.md)
+retains all IDs, skips, cancellation observations, stage costs, verifier output
+and the per-process registry workaround. Historical failed/cold/prototype records
+remain in the earlier attachments.
