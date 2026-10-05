@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: fix/pre-commit-latency
 created: 2026-10-04T20:39:13Z
-updated: 2026-10-05T10:16:51Z
+updated: 2026-10-05T10:26:30Z
 started: 2026-10-04T23:16:58Z
 completed: 2026-10-05T10:16:51Z
 depends: [material-d2b55c]
@@ -38,3 +38,5 @@ step: "Task 6: Verify concurrency stability and close latency evidence"
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-05T10:16:51Z (fix/pre-commit-latency): Implemented and reviewed parallel fast validation; merged current capture-hold tooling.398-case native/fast parity,10 isolated locked and5 consecutive full greens per environment, actual driver cancellation clean. Three qualifying whole hooks per route: fast median24.818s/full40.752s. Actual tt-latency verify exit0 on titan: hook-pre-commit median32.447s, limit45s,6 successful uncontended unwidened runs; every obligation met. Evidence attached; temporary verifier registry only, no shared pointers changed.
   provenance: {"harness_session":"codex:01a107ab-fa58-7e10-ab82-9b6b7e57845b","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T10:26:29Z (fix/pre-commit-latency): attached: material-integration-verification-evidence.md (130320 bytes): Retained controller HEAD-race failure during redundant completion check; diagnosed source identity mismatch, stable-HEAD focused and full398-case reruns green without source/bound changes.
+- 2026-10-05T10:26:29Z (fix/pre-commit-latency): Post-acceptance integration bookkeeping: controller started redundant completion check before metadata-only reconciliation merge finished, causing binary-source/HEAD mismatch in preflight fixture. Retained failed receipt; stable-HEAD focused case and full398-case SDD completion verification passed. No source or timing assertion changed; all acceptance remains on the same runtime code.
