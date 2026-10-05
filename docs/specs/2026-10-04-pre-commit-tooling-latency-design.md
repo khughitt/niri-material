@@ -1,6 +1,6 @@
 # Pre-commit tooling latency
 
-Task: material-cd7782. Status: implemented; consecutive concurrency stability and post-remedy latency acceptance remain to verify.
+Task: material-cd7782. Status: Tasks 1–5 implemented and reviewed; full-route stability verified. Task 6 remains open: the serial fast route misses the 35-second headroom target. The amendment below awaits owner review.
 
 ## Outcome
 
@@ -307,19 +307,14 @@ incorrect. Preserve status-1 directory conflicts with a valid tree and no
 conflicted-file entries. Add a deterministic empty-output regression independent
 of Git version, and retain the existing conflict tests.
 
-**Shipping blocker:** the clean full suite still fails intermittently in
-`test_optic_settling.DriverCleanupTests.test_term_with_the_session_locked_reaps_the_lock_client`:
-Bash reports `trap: unexpected EOF while looking for matching ')'`, and the driver
-exits 2 instead of the required 143. Diagnose this before enabling the CI job or
-fast omission. A real defect in the production driver's traps or cleanup is in
-scope; the fix must retain the exit-status, failure-bound and cleanup guarantees.
-A minimal reproduction using the actual `stim()` body now isolates TERM during
-its arithmetic expression with two command substitutions: Ubuntu Bash 5.2.21
-reproduces the EOF error, while splitting the substitutions exits 143 cleanly on
-both Bash versions. Ten repetitions confirmed this mechanism; the real lifecycle
-case and concurrent suite still require validation. The evidence retains receipts. Preserve waits and assertions; do not skip the case, widen its bound, or
-retry until green and call it resolved. A passing rerun alone does not discharge
-the blocker. Record reproduction and disposition in the plan and evidence.
+**Resolved production blocker:** the original locked-session TERM case could
+exit 2 with Bash's trap EOF error. Splitting the only arithmetic expression that
+contained command substitutions fixes the Ubuntu Bash 5.2 parser mechanism; the
+static scanner now rejects that expression class throughout the driver and its
+sourced helpers. The final implemented revision passed ten isolated locked cases
+and five consecutive full runs on each environment, plus actual-driver
+cancellation. Status 143, failure bounds, cleanup and production waits remain
+intact. Fast-route headroom remains a separate open Task 6 acceptance issue.
 
 The linked evidence retains pilot/full-run outcomes, negative controls, image and
 archive digests, package versions and API/Git version investigation. Those probes
@@ -330,7 +325,7 @@ parallel route's performance.
 
 Path-triggered full coverage is selected over unconditional fast hooks because
 lifecycle subjects need their tests before committing. Narrow subjects with a
-read-coverage gate replace broad prefixes; measured churn makes broad routing too
+static coverage gate replace broad prefixes; measured churn makes broad routing too
 frequent. Parallel case processes are selected over serial full validation and
 whole-class workers because the full route threatens the aggregate rolling median.
 Fast-route timing alone cannot justify deferring full-route scheduling.
@@ -394,3 +389,54 @@ The static-check substitution satisfies the owner's conditional spec acceptance.
 The implementation plan uses the minimal TERM reproduction, and retains real-case
 isolated/concurrent stress as a shipping gate. Implementation begins after the
 plan's separate owner review, as required by the repository process.
+
+## Execution amendment: parallel fast validation (pending owner review)
+
+The implemented revision preserves coverage and passes the real full route, but
+the added contract tests make serial fast discovery too expensive. Three actual
+staged hooks measured fast **37.488, 37.238 and 36.486 seconds** (median 37.238),
+and full **37.937, 43.151 and 39.293 seconds** (median 39.293). Full workers were
+capped at 8, 7 and 8 by the standard host budget. A verifier dry run finds five
+qualifying runs, median 37.202 seconds against 45; one run is contended. This does
+not discharge the separate fast headroom requirement or the third qualifying full
+run. The incident stays open.
+
+Both environments passed ten isolated locked-session cases and five consecutive
+317-case full runs on the final implementation revision, including actual driver
+cancellation with every recorded worker/driver/stub PID gone, status 143, and no
+socket or runtime directory left. Fresh review accepted the branch and subsequent
+cleanup/outcome/import and fixture corrections. Production waits remain intact.
+
+Keep the 35-second fast target and extend the existing coordinator for a fast
+route with **two native unittest child processes**, capped by the same strict
+positive `NEXTEST_TEST_THREADS` limit. This is preferable to lowering the target
+or adding more omissions. Fast still skips only the two lifecycle classes.
+Discover the complete native inventory in explicit mode 1, group whole modules,
+and place module groups into the currently smallest case-count bucket, largest
+groups first. Preserve native order inside each module and class fixtures inside
+one worker; do not maintain timing weights or a module dependency graph. With
+a one-child budget, run the same inventory sequentially.
+
+Add an explicit public `--fast` route, mutually exclusive with `--full`, and an
+explicit private worker mode supplied by the coordinator. Full always forces mode
+0 and fast always forces mode 1 before discovery and in each child, regardless
+of the caller's exported mode. Reject `--fast --ci` before discovery: tooling CI
+remains guarded full validation. Reuse the existing receipts, native expected
+failure outcomes, cancellation ownership and cleanup signal deferral.
+
+Only `tooling_fast_cmd` changes to the fast coordinator. All routing patterns and
+recipe composition stay the same. Full retains its ten-child default, one
+remainder process and individual lifecycle jobs. Raw explicit-mode discovery
+remains the reference for comparing every ID, skip and verdict.
+
+A disposable prototype uses the implemented coordinator with two module buckets
+and fast mode; its first corrected host pilot kept all 317 IDs and 37 skips, with
+17.428-second tooling and 22.296-second hook-recipe timing. It uses a diagnostic
+command override and a separate timing log, so it is feasibility evidence, not
+post-remedy acceptance. The amended implementation and exact source revision
+still need contract tests, fresh review, full/CI stability and actual staged hooks.
+
+Three consecutive corrected host prototype recipe runs passed (median 22.296s);
+the clean Ubuntu prototype passed all 317 identical IDs, with 40 expected fast
+skips and 12.140-second tooling. Neither uses the production fast front door yet.
+Execution receipts are retained in [Task 6 evidence](../../tasks/files/material-cd7782/material-final-latency-evidence.md).
