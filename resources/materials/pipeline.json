@@ -400,7 +400,8 @@
       "responses": [
         "ping",
         "done",
-        "error"
+        "error",
+        "accent"
       ],
       "animated": true
     },
