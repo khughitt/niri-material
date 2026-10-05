@@ -383,7 +383,8 @@ def analyze_case(run, case, lane, pin=None):
             raise ValueError(f'{name}: edge {index} is not inside stimulus {label}')
 
     # A real screencast consumer: frames arrive where damage was caused, and
-    # each sample is the first frame after its armed request, inside its window.
+    # Each sample is the first eligible frame after its armed request, inside
+    # its window; every skipped arrival must appear in the rejection journal.
     consumer = case.get('consumer')
     if consumer is not None:
         if not isinstance(consumer, dict):
@@ -417,8 +418,15 @@ def analyze_case(run, case, lane, pin=None):
                 raise ValueError(f'{name}: sample {label} is stale or outside its window')
             if frame not in frames:
                 raise ValueError(f'{name}: sample {label} is not a recorded cast frame')
-            if any(request < t < frame for t in frames):
-                raise ValueError(f'{name}: sample {label} is not the first cast frame after its request')
+            rejected = sidecar.get('rejected_frame_mono_ns', [])
+            if not isinstance(rejected, list):
+                raise ValueError(f'{name}: sample {label} rejected cast frames must be a list')
+            rejected = [integer(t, f'{name}: sample {label} rejected cast frames') - offset for t in rejected]
+            between = [t for t in frames if request < t < frame]
+            if rejected != between:
+                if 'rejected_frame_mono_ns' not in sidecar:
+                    raise ValueError(f'{name}: sample {label} is not the first cast frame after its request')
+                raise ValueError(f'{name}: sample {label} rejected cast frames differ from the frame journal')
 
     bounds = [0] + [edge['trace_ns'] for edge in edges] + [trace_end]
     report = []

@@ -11,10 +11,12 @@ journalled as one CLOCK_MONOTONIC line in FRAMES, the clock of niri's optic
 edges. "ready <node>" goes to stdout once the pipeline plays: niri sends no
 frame without damage, so readiness cannot wait for one.
 
-SIGUSR1 arms a sample: the target path is read from REQUEST_FILE, the
-request time is written to <target>.armed, and the first frame arriving
-after it is saved as packed RGB to <target>, then its times and size to
-<target>.json. SIGTERM or SIGINT stops the session and writes SUMMARY.
+SIGUSR1 arms a sample: REQUEST_FILE holds JSON with a target path, which
+is acknowledged in <target>.armed, and the first eligible
+frame arriving after it is saved as packed RGB to <target>, then its times
+and size to <target>.json. An optional different_from/region pair skips
+frames whose crop still matches the preceding sample. SIGTERM or SIGINT
+stops the session and writes SUMMARY.
 
     screencast_consumer.py CONNECTOR FRAMES SUMMARY REQUEST_FILE
 """
@@ -24,6 +26,7 @@ import os
 import signal
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -91,30 +94,70 @@ def write_atomically(path, data):
         raise
 
 
+def rgb_region(data, width, height, region):
+    """Extract a bounded rectangle from a packed RGB frame."""
+    if len(region) != 4 or any(type(v) is not int for v in region):
+        raise ValueError('sample region must contain four integers')
+    x, y, w, h = region
+    if x < 0 or y < 0 or w <= 0 or h <= 0 or x + w > width or y + h > height:
+        raise ValueError('sample region is outside the frame')
+    if len(data) != width * height * 3:
+        raise ValueError('sample RGB size does not match its dimensions')
+    return b''.join(data[(row * width + x) * 3:(row * width + x + w) * 3]
+                    for row in range(y, y + h))
+
+
 class Sampler:
-    """Saves the first frame that arrives after an armed request."""
+    """Saves the first post-request frame satisfying the optional crop check."""
 
     def __init__(self):
         self.pending = None
+        self.lock = threading.Lock()  # GLib requests and appsink offers run on different threads.
 
-    def request(self, path, now_ns):
-        if self.pending is not None:
-            raise RuntimeError('a sample is already pending')
-        Path(f'{path}.armed').write_text(f'{now_ns}\n')
-        self.pending = (Path(path), now_ns)
+    def request(self, path, now_ns=None, *, different_from=None, region=None):
+        with self.lock:
+            if self.pending is not None:
+                raise RuntimeError('a sample is already pending')
+            if now_ns is None:
+                now_ns = time.monotonic_ns()
+            if (different_from is None) != (region is None):
+                raise ValueError('different_from and region must be supplied together')
+            reference = None
+            if different_from is not None:
+                size = json.loads(Path(f'{different_from}.json').read_text())
+                width, height = size['width'], size['height']
+                reference = (width, height, region,
+                             rgb_region(Path(different_from).read_bytes(), width, height, region))
+            self.pending = (Path(path), now_ns, reference, [])
+            try:
+                Path(f'{path}.armed').write_text(f'{now_ns}\n')
+            except BaseException:
+                self.pending = None
+                raise
 
     def offer(self, data, width, height, arrival_ns):
-        if self.pending is None:
-            return False
-        path, requested = self.pending
-        if arrival_ns <= requested:
-            return False
-        # Raw first, JSON last: the driver waits for the JSON.
-        write_atomically(path, data)
-        write_atomically(f'{path}.json', (json.dumps(dict(
-            request_mono_ns=requested, frame_mono_ns=arrival_ns, width=width, height=height)) + '\n').encode())
-        self.pending = None
-        return True
+        with self.lock:
+            if self.pending is None:
+                return False
+            path, requested, reference, rejected = self.pending
+            if arrival_ns <= requested:
+                return False
+            if reference is not None:
+                rw, rh, region, pixels = reference
+                if (width, height) != (rw, rh):
+                    raise ValueError('sample dimensions differ from the reference frame')
+                if rgb_region(data, width, height, region) == pixels:
+                    rejected.append(arrival_ns)
+                    return False
+            # Raw first, JSON last: the driver waits for the JSON. The lock
+            # prevents its next request racing pending's reset after publication.
+            sidecar = dict(request_mono_ns=requested, frame_mono_ns=arrival_ns, width=width, height=height)
+            if reference is not None:
+                sidecar['rejected_frame_mono_ns'] = rejected
+            write_atomically(path, data)
+            write_atomically(f'{path}.json', (json.dumps(sidecar) + '\n').encode())
+            self.pending = None
+            return True
 
 
 def main():
@@ -201,7 +244,9 @@ def main():
             now = time.monotonic_ns()
             times.append(now)
             frames.write(f'{now}\n')
-            if sampler.pending is not None:
+            with sampler.lock:
+                pending = sampler.pending is not None
+            if pending:
                 info = GstVideo.VideoInfo.new_from_caps(sample.get_caps())
                 buffer = sample.get_buffer()
                 ok, mapped = buffer.map(Gst.MapFlags.READ)
@@ -224,7 +269,9 @@ def main():
 
         def on_request():
             try:
-                sampler.request(Path(request_file).read_text().strip(), time.monotonic_ns())
+                request = json.loads(Path(request_file).read_text())
+                sampler.request(request['path'],
+                                different_from=request.get('different_from'), region=request.get('region'))
             except Exception as error:
                 fail(error)
                 return GLib.SOURCE_REMOVE

@@ -253,6 +253,22 @@ class RunTests(unittest.TestCase):
         self.cast([request - 1, frame, frame + 1], samples=[('damage', request, frame)])
         analyze_run(self.run)
 
+    def test_a_sample_can_skip_only_its_recorded_rejected_frames(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': [], 'samples': ['damage']}
+        self.save()
+        request, old, frame = 1014 * S + S // 4, 1014 * S + S // 3, 1014 * S + S // 2
+        self.cast([old, frame], samples=[('damage', request, frame)])
+        path = self.case / 'damage.raw.json'
+        sidecar = json.loads(path.read_text())
+        sidecar['rejected_frame_mono_ns'] = [old]
+        path.write_text(json.dumps(sidecar))
+        analyze_run(self.run)
+        for rejected in ([old - 1], [old, frame], [old, old], None):
+            with self.subTest(rejected=rejected):
+                sidecar['rejected_frame_mono_ns'] = rejected
+                path.write_text(json.dumps(sidecar))
+                self.rejects('rejected cast frames')
+
     def test_a_malformed_cast_frame_names_its_case(self):
         self.manifest['cases'][0]['consumer'] = {}
         self.save()
@@ -681,8 +697,13 @@ def stop(*_):
     sys.exit(0)
 def sample(*_):
     # Answer an armed request at once with a frame of STUB_SAMPLE_SIZE.
-    target = pathlib.Path(pathlib.Path(sys.argv[4]).read_text().strip())
+    request = json.loads(pathlib.Path(sys.argv[4]).read_text())
+    target = pathlib.Path(request['path'])
+    with open(stub / 'sample-requests.jsonl', 'a') as requests:
+        requests.write(json.dumps(request) + '\\n')
     pathlib.Path(f'{target}.armed').touch()
+    if request.get('different_from') and os.environ.get('STUB_CONSUMER_UNCHANGED'):
+        return                                      # old client pixels never satisfy the predicate
     width, height = map(int, os.environ.get('STUB_SAMPLE_SIZE', '3440x1440').split('x'))
     target.write_bytes(bytes(3))
     pathlib.Path(f'{target}.json').write_text(json.dumps({'width': width, 'height': height}))
@@ -1120,6 +1141,13 @@ class DriverCleanupTests(unittest.TestCase):
         self.assert_screencast_refused('the screencast consumer exited (see cast.log)',
                                       STUB_CONSUMER_EXITS='1')
 
+    def test_screencast_fails_within_the_bound_when_client_pixels_never_change(self):
+        self.assert_screencast_refused('no eligible cast frame answered sample-2',
+                                      STUB_CONSUMER_UNCHANGED='1')
+        requests = (self.stubs / 'sample-requests.jsonl').read_text().splitlines()
+        self.assertEqual(len(requests), 2)  # no re-arm or extra damage retry
+        self.assertFalse((self.out / 'screencast/sample-2.raw.json').exists())
+
     def test_a_screencast_run_reaches_its_crops(self):
         # The whole drive with matching sizes: the run gets through every
         # sample and crop (the stub traces then fail analysis, never the driver).
@@ -1130,6 +1158,12 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertEqual((self.out / 'screen-drm.txt').read_text(), '3440 1440\n')
         self.assertTrue((self.out / 'screencast/observation.json').is_file(), stderr)
         self.assertTrue((self.out / 'screencast/cast-summary.json').is_file(), stderr)
+        requests = [json.loads(line) for line in (self.stubs / 'sample-requests.jsonl').read_text().splitlines()]
+        self.assertEqual(len(requests), 3)
+        self.assertNotIn('different_from', requests[0])
+        self.assertEqual(requests[1]['different_from'], str(self.out / 'screencast/sample-1.raw'))
+        self.assertEqual(requests[1]['region'], [110, 110, 980, 80])
+        self.assertNotIn('different_from', requests[2])
 
     def test_a_second_term_during_cleanup_still_restores_and_releases(self):
         (self.stubs / 'vt/chvt').write_text(

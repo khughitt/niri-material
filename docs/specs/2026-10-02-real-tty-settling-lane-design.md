@@ -121,10 +121,13 @@ glcolorconvert ! gldownload ! videoconvert ! video/x-raw,format=RGB !
 appsink`; one CLOCK_MONOTONIC line per received frame, `ready <node>` once
 the pipeline plays, and on SIGTERM a summary with consumer identity, node,
 frame count and capture interval. It also keeps frames, not only their
-times: on SIGUSR1 it writes the **next frame received after the signal** as
-raw RGB to the path named in a request file, with that frame's arrival time
-and the request time in a sidecar. A sample can therefore never be a frame
-the consumer already held. niri offers DMA-BUFs only, so the consumer
+times: on SIGUSR1 it reads a JSON request with `path` and optional
+`different_from` and `region: [x, y, width, height]`. It writes the first
+eligible post-request frame as raw RGB, with arrival/request times and
+dimensions in a sidecar. A crop predicate keeps the request pending while
+the crop equals the preceding sample, recording each rejected arrival in
+`rejected_frame_mono_ns`. Arrival after a request alone does not prove that
+an in-flight frame contains later client damage. niri offers DMA-BUFs only, so the consumer
 imports whatever modifier niri fixates through GStreamer GL on headless EGL
 (`glupload ! glcolorconvert ! gldownload`) and converts to RGB; a probe on
 2026-10-02 imported niri's NVIDIA-tiled `XR24` buffers this way. The
@@ -158,7 +161,8 @@ client damage**, and its window covers both:
 
 - **`sample-1`:** arm, then one line in the focus thief (`gos-other`).
 - **`sample-2`:** arm, then one line in the probe: the client change the
-  sample must show.
+  sample must show. Reject frames whose calibrated client crop still equals
+  `sample-1`, even if pixels in another window changed.
 - **`sample-3`:** at least 2 s after `sample-2`'s window ends with no
   stimulus (the held interval the analyzer observes as quiet), arm, then one
   more line in the focus thief.
@@ -166,8 +170,10 @@ client damage**, and its window covers both:
 In this case the focus thief reads lines from a FIFO, like the probe, so its
 damage is bounded and falls outside both sampled regions: the thief is a
 separate column, never under the probe's crops. The consumer saves the first
-frame that arrives after the request, which is the frame that damage
-produced. From each sample the driver crops two regions in output pixels
+eligible frame after the request. The first and third samples observe the
+held probe; their arrival time does not prove attribution to the thief's
+individual line. The second sample's changed client crop establishes that
+the probe update reached the stream. From each sample the driver crops two regions in output pixels
 (DP-1's scale is pinned to 1), calibrated once per run from an opaque
 geometry probe in the same two-window layout (niri's IPC reports no
 on-screen position for tiled windows), as the headless lanes'
@@ -181,9 +187,9 @@ The verdict requires the client crop to differ from `sample-1` to `sample-2`
 (new content reached the cast) and to be equal from `sample-2` to `sample-3`
 (the thief's damage did not touch it), the Aurora crop to be equal across all
 three samples (the cast renders held optics), and each sample's frame to have
-arrived after its request and inside its stimulus window (no stale frame).
-A request with no frame inside its window fails the case; it is never
-retried.
+arrived after its request and inside its stimulus window. A request with no
+eligible frame within the driver's three-second wait fails the case; it is
+never re-armed or given additional damage to force a retry.
 Equality is exact on decoded bytes, as for the headless pixel pairs.
 
 New analyzer inputs, all generic:
@@ -195,8 +201,9 @@ New analyzer inputs, all generic:
   must hold at least one frame inside each named stimulus window, and its
   summary must report a clean signal stop.
 - `samples`: a cast sample's frame must arrive after its request and inside
-  its stimulus window, and be the first frame the consumer journaled after
-  that request; a sample stimulus must hold a frame at all; its crops enter
+  its stimulus window. Any earlier post-request arrivals must exactly match
+  its sidecar's rejected-frame journal; an unfiltered sample remains the first
+  arrival. A sample stimulus must hold a frame at all; its crops enter
   the existing pixel pairs (`expect: equal` or `different`). The existing
   stimulus-free window check covers the quiet interval before `sample-3`.
 - The idle-inhibitor's `messages` check (`material-80caf4`) is reused as is.
@@ -263,7 +270,10 @@ cases out of Unverified only on a passed lane.
   to switch back yields `failed`, a nonzero exit and the observed VT; a run
   that never switched records `not-needed`.
 - Consumer sampling: a unit test drives the sample request against a
-  synthetic frame source and rejects a frame that arrived before the request.
+  synthetic frame source and rejects a frame that arrived before the request,
+  an old client crop arriving afterward, and unrelated damage outside that crop.
+  Requests and completion are serialized across the GLib and appsink threads
+  so observing an armed or completed file cannot race pending-state changes.
 - Analyzer: a sample stimulus with no frame in its window fails the case,
   and so does a `sample-3` whose preceding quiet interval held a redraw.
 - Lock client: built with `-Wall -Wextra -Werror` in the driver; a headless

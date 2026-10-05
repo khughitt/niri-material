@@ -115,9 +115,9 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
 | `tools/ops-check` | C | A | +264/-0 |
-| `tools/optic_settling.py` | C | A | +603/-0 |
+| `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
-| `tools/screencast_consumer.py` | C | A | +284/-0 |
+| `tools/screencast_consumer.py` | C | A | +331/-0 |
 | `tools/target-dir-check` | C | A | +144/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
@@ -126,9 +126,9 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +278/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +739/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
-| `tools/test_optic_settling.py` | C | A | +1219/-0 |
+| `tools/test_optic_settling.py` | C | A | +1253/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
-| `tools/test_screencast_consumer.py` | C | A | +281/-0 |
+| `tools/test_screencast_consumer.py` | C | A | +375/-0 |
 | `tools/test_target_dir_check.py` | C | A | +180/-0 |
 | `tools/test_tooling_tests.py` | C | A | +372/-0 |
 | `tools/test_upstream_report.py` | C | A | +954/-0 |
