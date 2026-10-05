@@ -265,11 +265,13 @@
       "scope": "material",
       "owns": [
         "noise",
-        "noise type="
+        "noise type=",
+        "noise site="
       ],
       "reads": [
         "noise",
         "noise type=",
+        "noise site=",
         "blur noise",
         "backdrop-blur"
       ],
