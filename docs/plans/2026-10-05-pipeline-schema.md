@@ -24,7 +24,7 @@
 ## Review Focus
 
 1. A new `ParamSpec` added to `core_params()` without a stage must fail the ownership test with the node named, not pass because the test only iterates stages (Task 1 test `every_parameter_is_owned_by_exactly_one_stage` iterates `all_params()` and reports the unowned node).
-2. A new field on `Response` that is not added to `response_fields()` must be caught at compile time: the test destructures `Response` exhaustively, so the pattern stops compiling until the field is listed, and the list must then equal `response_fields()` (Task 1 test `response_fields_match_the_struct`, proven in Step 4b).
+2. A new field on `Response` must not slip past `response_fields()` unnoticed: the test destructures `Response` exhaustively, so the build stops until someone edits the pattern beside the list, a compile-time review guard rather than an automatic update (Task 1 test `response_fields_match_the_struct`, proven in Step 4b).
 3. A stage whose `optic` names a hook the program does not call (`noise_post` before the code exists, or a call left in a comment) must fail the per-program pin; the pin counts actual calls of `name_hook(` after the `// ---- main` marker with comments stripped and definitions excluded, and requires exactly one (Task 2).
 4. `MATERIAL_DOCS_UPDATE=1` must write the JSON with a trailing newline and stable key order, or every regeneration churns the vendored copy (Task 3 asserts the rendered string ends with `\n` and that two renders are equal).
 5. A stage listed before its site's turn (a `behind` stage between two `source` stages) must fail the site-order test with both stage ids named (Task 1 test `stages_are_grouped_by_site_in_site_order`).
@@ -113,8 +113,10 @@ mod tests {
     #[test]
     fn response_fields_match_the_struct() {
         // Exhaustive destructuring, no `..`: a field added to `Response` fails
-        // to compile here until it is added to this pattern, and the list
-        // below must then grow with it or the equality fails.
+        // to compile here until it is added to this pattern. That is a
+        // compile-time review guard: whoever extends the pattern is looking at
+        // the list below and at response_fields(), and decides whether the
+        // field is live. Nothing forces the lists to grow on their own.
         let parsed: Vec<crate::material::Response> = knuffel::parse("pipeline.kdl", "response \"t\" { }\n").unwrap();
         let crate::material::Response {
             name: _, accent: _, attention: _, ping: _, done: _, error: _,
@@ -538,7 +540,7 @@ Expected: PASS, 10 tests.
 
 - [ ] **Step 4b: Prove the response pin bites**
 
-Temporarily add `#[knuffel(child, unwrap(argument))] pub ring_probe: Option<f64>,` to `Response` in `material/mod.rs` and run `just test-one -p niri-config response_fields_match`. Expected: a compile error, `pattern does not mention field ring_probe`, at the destructuring in `pipeline.rs`. Remove the field (`git checkout -- niri-config/src/material/mod.rs` restores it only if nothing else in that file is staged; otherwise delete the line by hand) and rerun: PASS.
+Temporarily add `#[knuffel(child, unwrap(argument))] pub ring_probe: Option<f64>,` to `Response` in `material/mod.rs` and run `just test-one -p niri-config response_fields_match`. Expected: a compile error, `pattern does not mention field ring_probe`, at the destructuring in `pipeline.rs`. Delete that one probe line by hand (never `git checkout --` the file: it also holds this task's `pub mod pipeline;` and `response_fields()`, which are not committed yet) and rerun: PASS.
 
 - [ ] **Step 5: Format, fast suite, commit**
 
