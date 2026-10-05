@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-cf32e5
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T16:36:56Z
+updated: 2026-10-05T16:57:00Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -61,3 +61,8 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-05T15:21:05Z (material-cf32e5): Tasks 1–4 committed and verified. Nested captures refused quiet preflight; prepare builds, smoke and cost scripts, simulation, gate and review before parking the quiet run. No desktop process changed.
 - 2026-10-05T15:52:30Z (material-cf32e5): review: impl round 1 — verdict: revise; findings: Important 4; reviewer: codex/gpt-6-astra
 - 2026-10-05T16:36:56Z (material-cf32e5): Impl round 1 corrections: GL framebuffer/draw errors propagate with clean fallback state; one lazy program owned by its EGL share group; cost fixture has sharp and blurred consumers, actual mapped/damage/preparation events required for every interval. All four findings have RED/GREEN checks; 491 affected Rust tests and full tooling 409 pass.
+- 2026-10-05T16:41:29Z (material-cf32e5): review: impl round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
+- 2026-10-05T16:41:29Z (material-cf32e5): Scoped re-review accepted all four corrections. Capture acceptance remains required: baseline byte identity, nested appearance/ring assertions, actual GPU costs and owner look are unverified; no merge or prism hand-off yet.
+- 2026-10-05T16:56:59Z (material-cf32e5): Corrected release/Tracy builds and just gate passed; full tooling 409, niri 491 plus config/IPC/doctests. Baseline worktree removed after tt-report and host-pointer check, baseline binary retained. Latest GPU read 16% / P3 with active browser compute client; no capture run or merge.
+- 2026-10-05T16:56:59Z (material-cf32e5): parked (waiting on agent, dependency): Agent resumes .worktrees/material-cf32e5: run the quiet capture queue material-2a1689 then material-40b563 (about 60 min total), update evidence, rerun just gate and review changed evidence; then execute material-e50969 local merge, prism schema hand-off, follow-ups and parent close. Implementation review round 2 accepted; actual baseline/visual/Tracy acceptance is unverified. No task process or host pointer left running.
+  provenance: {"harness_session":"codex:01a10c84-1457-7892-bb5d-ed0227e1d702","harness_session_source":"CODEX_SESSION_ID"}
