@@ -1,15 +1,16 @@
 ---
 id: material-be611b
 title: "Realistic glass edges: height-field bevel profile and Fresnel reflection"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-06T23:20:13Z
+updated: 2026-10-06T23:34:47Z
 started: 2026-09-30T23:28:03Z
+completed: 2026-10-06T23:34:47Z
 depends: []
 tags: [rendering, material]
 agent: claude-code/claude-opus-5-5
@@ -116,3 +117,8 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
   provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-06T23:20:11Z (glass-edges): review: impl round 1 — verdict: accept; findings: none; reviewer: human
 - 2026-10-06T23:20:11Z (glass-edges): owner pick 2026-10-06 from glass-edge-sheet.png: cell inactive-k2-r0.6-h0-g0, i.e. the inactive look (ior 1.2, thickness 62.3, attenuation #2e3034 at 42, chromatic-aberration 0.32, distortion 0.2, bevel 15) with bevel-profile 2, reflection 0.6, edge-highlight 0, roughness 0. Prism starting values: bevel-profile 2, reflection 0.6, edge-highlight 0. Owner feedback: the sheet's grid, parameter codes and goal were not self-explanatory; label future sheets (goal title, row/column headers, decoded params, legend).
+- 2026-10-06T23:34:15Z (glass-edges): review: impl round 2 — verdict: accept; findings: Minor 4; reviewer: claude-code/claude-opus-5-5
+- 2026-10-06T23:34:47Z (glass-edges): done
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T23:34:47Z (glass-edges): Height-field bevel profile, reflection and edge-highlight optics; owner picked inactive look with bevel-profile 2, reflection 0.6, edge-highlight 0 (Prism starting values for prism-7024c4). Merged current with materials-26.04, declared in the pipeline schema; final review clean (Minor items fixed or filed as material-fa9acd).
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

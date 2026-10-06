@@ -114,7 +114,7 @@ runs only where the window is transparent or outside the window.
 | 6 | **Fresnel glint.** Schlick from `ior` on the structural normal, weighted toward the signal light direction; accent-tinted under `attention "rim-orbit"`. Additive. Then the `reflection` optic adds the Fresnel-weighted, untinted scene just beyond the silhouette on the bevel, then the `edge-highlight` optic adds a GGX key-light lobe on the bevel; `iridescence` then hues all of it from the view angle, before the accent mix. Specular hooks take the fragment's `Surface` (position, both normals, cosine, Fresnel, `u` and its direction, silhouette distance). | `niri_tex_bg[_high]`, `niri_tex_backdrop[_high]` (reflection) | `ior`, `reflection` (optic `reflection`; neutral 0), `edge-highlight` (optic `edge-highlight`; neutral 0), `iridescence` (optic `iridescence`; neutral 0), response `attention`, signal accent |
 | 7 | **Emissive: sweeps.** A diagonal Gaussian sweep per impulse whose response is `sweep`, coloured by the impulse's own accent or, without one, the signal accent scaled by presence. The other impulse responses act earlier: `ripple` adds to the jelly activity of step 2, `flash` raises aberration and distortion for steps 2 and 3. Additive. | — | response `ping` / `done` / `error`, signal accent |
 | 8 | **Encode.** `glass = linearToSrgb((1 - F) * sampled * att + within + specular + emissive)`. | — | — |
-| 9 | **Post: film grain.** `noise_post` grains the encoded glass, over transmitted light, ring, aurora, glint and sweeps, before coverage; active only at `site="film"`. The formulas and seed of 3b act in encoding. | — | `noise`, `noise type=`, `noise site=`; neutral 0 |
+| 9 | **Post: film grain.** `noise_post` grains the encoded glass, over transmitted light, ring, aurora, glint, reflection, edge highlight and sweeps, before coverage; active only at `site="film"`. The formulas and seed of 3b act in encoding. | — | `noise`, `noise type=`, `noise site=`; neutral 0 |
 | 10 | **Coverage.** Multiply by the slab coverage from step 1; the result is premultiplied. | — | — |
 | 11 | **Composite.** `out = win + (1 - win.a) * glass`, then `* niri_alpha` (window-rule opacity, applied exactly once). | — | window-rule `opacity` |
 
@@ -129,10 +129,11 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
   the glass. A frosted look is a refraction of a blurred backdrop, not a
   blur of a refraction.
 - **Glass-site noise and saturation act on the transmitted backdrop.** They run
-  once after the averaged taps and before attenuation. The chamfer can still
-  transmit grain, attenuated more strongly than on the face. Glint, ring,
-  aurora and sweeps are added afterward, so their light is not grained or
-  desaturated. Grain remains screen-seeded; it does not refract with the image.
+  once after the averaged taps and before attenuation. The bevel can still
+  transmit grain; its path thins toward the silhouette (to zero where
+  `bevel >= thickness`), so it is attenuated less than on the face. Glint,
+  reflection, edge highlight, ring, aurora and sweeps are added afterward, so
+  their light is not grained or desaturated. Grain remains screen-seeded; it does not refract with the image.
   No bevel mask is applied to noise. Neutral hooks return before conversion;
   signed white/fine grain retains the transfer helpers' signed linear branch.
 - **Interior light is evaluated within the slab.** Ring and aurora use the

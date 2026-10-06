@@ -221,7 +221,7 @@ PASS: artifacts in $EV/sheet-4
   - Pilot `sheet-pilot-2`: passed. The crop holds the corner, the bevel and the wallpaper.
   - `sheet`: preflight refused on load1, the tail of the pilot's build.
   - `sheet-2` and `sheet-3`: a settle was refused on a P5 sample after 7 and 16 cells. The previous cell's GPU tail landed in the next 10 s window; an idle 60 s probe held P8 throughout.
-  - The script now waits for 3 s of P8 before each cell (bounded at 60 s). The waits were 3 to 5 s, and the settle gate is unchanged. `dropbox.service`, which crash-loops in a TTY, and `wali-rotate.timer` were stopped for the window and restored afterwards.
+  - The script then waited for 3 s of P8 before each cell (bounded at 60 s); since the materials-26.04 merge the shared `glass-optic-smoke-lib.sh` runs that wait before every launch. The waits were 3 to 5 s, and the settle gate is unchanged. `dropbox.service`, which crash-loops in a TTY, and `wali-rotate.timer` were stopped for the window and restored afterwards.
 
 What the sheet shows, for the owner to judge:
 - `edge-highlight 0.5` at roughness 1 lights an even grey band around the whole bevel on every look. At roughness 0 the lobe is a point at the corner, barely visible at this crop.
