@@ -159,12 +159,7 @@ measurements → budgets for composition, fireflies and lighting, and Fresnel's 
 Bevel → `material-7f5751`, `material-4e3e9c`, `material-933a8b`. Settle contract →
 the motion and signals lanes.
 
-**Pending regrouping (checked 2026-10-06).** `.worktrees/glass-edges` holds the
-newer `material-be611b` record, so it is not edited here. Its child
-`material-124f1f` (the contact sheet) is done there and needs no regrouping.
-`material-77db8a` was dropped unmerged on 2026-10-06. After `material-be611b`'s
-branch merges, the integrating agent applies:
-
-```sh
-tasks edit material-be611b --parent material-6062fd
-```
+**Regrouping (applied 2026-10-06).** `glass-edges` merged into materials-26.04
+(`23a2e37b`); `material-be611b` is done and now sits under `material-6062fd`.
+Its child `material-124f1f` (the contact sheet) was already done.
+`material-77db8a` was dropped unmerged on 2026-10-06.
