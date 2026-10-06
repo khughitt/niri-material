@@ -7,47 +7,6 @@ set -eu
 PILOT=${NOISE_COST_PILOT:-0}
 case "$PILOT" in 0|1) ;; *) echo "NOISE_COST_PILOT must be 0 or 1" >&2; exit 2 ;; esac
 source "$(dirname "$0")/glass-optic-smoke-lib.sh"
-WALL_PIDS=()
-# Every IPC call uses the plain binary as its client: niri-tracy's client
-# calibrates Tracy's timer at startup (about 0.5 s per call), which stretched
-# the 100 ms drag and 1 s damage steps past the 30 s trace. The compositor
-# under test is still niri-tracy and still records every span.
-wall_count() { msg "$NIRI" -j layers | jq 'length'; }
-start_wall() {
-    local display pid
-    [ "$(wall_count)" -eq 0 ] || fail "old wallpaper layer remains before replacement"
-    display=$(cd "$RT" && ls -t wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)
-    [ -n "$display" ] || fail "no nested wayland display in $RT"
-    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$display swaybg -m fill -i "$1" >> "$OUT/swaybg.log" 2>&1 &
-    pid=$!; WALL_PIDS+=("$pid")
-    for _ in $(seq 100); do
-        kill -0 "$pid" 2>/dev/null || fail "wallpaper exited before mapping: $1"
-        [ "$(wall_count)" -eq 1 ] && return
-        sleep 0.05
-    done
-    fail "wallpaper did not publish a layer: $1"
-}
-stop_walls() {
-    local pid
-    for pid in "${WALL_PIDS[@]}"; do
-        kill "$pid" 2>/dev/null || true
-        wait "$pid" 2>/dev/null || true
-    done
-    WALL_PIDS=()
-}
-wait_for_wall_removal() {
-    for _ in $(seq 100); do
-        [ "$(wall_count)" -eq 0 ] && return
-        sleep 0.05
-    done
-    fail "old wallpaper layer did not disappear"
-}
-cleanup_cost() {
-    local rc=$?
-    stop_walls
-    # The conditional preserves rc for cleanup without errexit aborting it.
-    if (exit "$rc"); then cleanup; else cleanup; fi
-}
 trap cleanup_cost EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -80,20 +39,6 @@ window-rule {
     background-effect { blur false; noise 0; saturation 1; }
 }
 KDL
-}
-reload_marker() { msg "$NIRI" action load-config-file --path "$1"; }
-# Sleep to an absolute monotonic deadline: image work and IPC consume part
-# of the specified one-second / 100 ms period, rather than extending it.
-now_ns() { python3 -c 'import time; print(time.monotonic_ns())'; }
-# A step that overruns its deadline by more than $2 ns fails the run, so the
-# pilot shows a stimulus slower than its period before a full run would
-# outlast the trace.
-sleep_until() {
-    python3 - "$1" "$2" <<'PYTIME' || fail "stimulus step overran its deadline by more than half a period"
-import sys, time
-late = time.monotonic_ns() - int(sys.argv[1])
-sys.exit(1 if late > int(sys.argv[2]) else time.sleep(max(0, -late / 1e9)))
-PYTIME
 }
 DAMAGE_STEPS=20
 [ "$PILOT" = 0 ] || DAMAGE_STEPS=5

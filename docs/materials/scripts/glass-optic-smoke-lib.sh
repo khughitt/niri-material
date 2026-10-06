@@ -363,6 +363,23 @@ mean() {
     is_number "$out" || fail "mean of $1 is not numeric: $out"
     METRIC=$out
 }
+metric() { printf '%s=%s\n' "$1" "$2" >> "$OUT/metrics.txt"; }
+signed_diff() {
+    magick "$1" "$2" -compose Mathematics -define compose:args=0,1,-1,0.5 \
+        -composite -colorspace Gray -depth 16 "$3" || fail "signed diff $3 failed"
+}
+
+# Every cell is captured twice in its session and the two must be identical
+# (spec §7.2 assertion 1); the second capture is kept as <name>-again.png.
+shot_twice() {   # $1 binary, $2 name
+    shot "$1" "$2"
+    sleep 1
+    shot "$1" "$2-again"
+    ae "$OUT/$2.png" "$OUT/$2-again.png"
+    assert_zero "$2 determinism" "$METRIC"
+    printf '%s_determinism_ae=%s\n' "$2" "$METRIC" >> "$OUT/metrics.txt"
+}
+
 oklab_ab() {
     magick "$1" -colorspace Oklab -channel R -evaluate set 50% +channel -set colorspace sRGB -depth 16 "$2" \
         || fail "oklab ab $2 failed"
@@ -504,4 +521,62 @@ finish() {
         fail "material error, fallback or panic in niri.log"
     fi
     echo "PASS: artifacts in $OUT"
+}
+
+# --- wallpaper damage -------------------------------------------------------
+WALL_PIDS=()
+# Every IPC call uses the plain binary as its client: niri-tracy's client
+# calibrates Tracy's timer at startup (about 0.5 s per call), which stretched
+# the 100 ms drag and 1 s damage steps past the 30 s trace. The compositor
+# under test is still niri-tracy and still records every span.
+wall_count() { msg "$NIRI" -j layers | jq 'length'; }
+start_wall() {
+    local display pid
+    [ "$(wall_count)" -eq 0 ] || fail "old wallpaper layer remains before replacement"
+    display=$(cd "$RT" && ls -t wayland-* 2>/dev/null | grep -v '\.lock$' | head -1)
+    [ -n "$display" ] || fail "no nested wayland display in $RT"
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$display swaybg -m fill -i "$1" >> "$OUT/swaybg.log" 2>&1 &
+    pid=$!; WALL_PIDS+=("$pid")
+    for _ in $(seq 100); do
+        kill -0 "$pid" 2>/dev/null || fail "wallpaper exited before mapping: $1"
+        [ "$(wall_count)" -eq 1 ] && return
+        sleep 0.05
+    done
+    fail "wallpaper did not publish a layer: $1"
+}
+stop_walls() {
+    local pid
+    for pid in "${WALL_PIDS[@]}"; do
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    done
+    WALL_PIDS=()
+}
+wait_for_wall_removal() {
+    for _ in $(seq 100); do
+        [ "$(wall_count)" -eq 0 ] && return
+        sleep 0.05
+    done
+    fail "old wallpaper layer did not disappear"
+}
+cleanup_cost() {
+    local rc=$?
+    stop_walls
+    # The conditional preserves rc for cleanup without errexit aborting it.
+    if (exit "$rc"); then cleanup; else cleanup; fi
+}
+
+reload_marker() { msg "$NIRI" action load-config-file --path "$1"; }
+# Sleep to an absolute monotonic deadline: image work and IPC consume part
+# of the specified one-second / 100 ms period, rather than extending it.
+now_ns() { python3 -c 'import time; print(time.monotonic_ns())'; }
+# A step that overruns its deadline by more than $2 ns fails the run, so the
+# pilot shows a stimulus slower than its period before a full run would
+# outlast the trace.
+sleep_until() {
+    python3 - "$1" "$2" <<'PYTIME' || fail "stimulus step overran its deadline by more than half a period"
+import sys, time
+late = time.monotonic_ns() - int(sys.argv[1])
+sys.exit(1 if late > int(sys.argv[2]) else time.sleep(max(0, -late / 1e9)))
+PYTIME
 }

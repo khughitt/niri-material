@@ -22,11 +22,6 @@ magick -size 1280x720 xc:'rgb(128,128,128)' "$RING_WALL"
 KINDS=(white fine lightness); BLURS=(false true); ROUGHNESS=(0 0.5 1)
 if [ "$PILOT" = 1 ]; then KINDS=(fine); BLURS=(true); ROUGHNESS=(0 1); fi
 GRAIN_FLOOR=$(awk 'BEGIN { printf "%.8f", 0.5 / 255 }')   # sd, normalized
-metric() { printf '%s=%s\n' "$1" "$2" >> "$OUT/metrics.txt"; }
-signed_diff() {
-    magick "$1" "$2" -compose Mathematics -define compose:args=0,1,-1,0.5 \
-        -composite -colorspace Gray -depth 16 "$3" || fail "signed diff $3 failed"
-}
 mae() { compare_metric MAE "$1" "$2"; }
 film_ae() {
     local out status
@@ -42,16 +37,6 @@ film_ae() {
 
 IDENTITY=$'ior 1\nattenuation-color "#ffffff"\nsaturation 1'
 blur_top() { printf 'blur { passes %s; offset 3; noise 0; saturation 1; }' "$1"; }
-# Every cell is captured twice in its session and the two must be identical
-# (spec §7.2 assertion 1); the second capture is kept as <name>-again.png.
-shot_twice() {   # $1 binary, $2 name
-    shot "$1" "$2"
-    sleep 1
-    shot "$1" "$2-again"
-    ae "$OUT/$2.png" "$OUT/$2-again.png"
-    assert_zero "$2 determinism" "$METRIC"
-    printf '%s_determinism_ae=%s\n' "$2" "$METRIC" >> "$OUT/metrics.txt"
-}
 cell() {   # $1 name, $2 binary, $3 glass extra, $4 blur passes
     GLASS_EXTRA="$IDENTITY"$'\n'"$3" TOP_EXTRA=$(blur_top "$4") write_config "$OUT/$1.kdl"
     start_nested "$2" "$OUT/$1.kdl"
