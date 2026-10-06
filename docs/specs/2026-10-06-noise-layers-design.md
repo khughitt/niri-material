@@ -1,6 +1,9 @@
 # Noise layers: up to four grain generators per material, each with a size
 
-**Status:** draft for owner review, 2026-10-06.
+**Status:** draft for owner review, 2026-10-06; revised after spec review
+round 1 (codex, 2026-10-06: the fine lattice's anticorrelated corners need
+their covariance in the norm, checked by position within the cell; stacked
+layers match one layer's variance, not its distribution).
 **Task:** `material-3fcba2`, in the material library lane (`material-3aa1f2`).
 Folds in `material-829590` (one site per layer), which the noise placement
 design filed as this task's follow-up. Wakes `prism-85f63a` (stacked noise on
@@ -19,10 +22,13 @@ mottling, or lightness grain at the glass under white film grain, become
 expressible in one material.
 
 The owner chose type *and* size (2026-10-06) because a stack of
-independent layers of one type at one size is statistically a single layer:
-two zero-mean grains of amounts `a` and `b` sum to one grain of amount
-`sqrt(a² + b²)`. Layers earn their place by differing in type, site or size,
-so size is the axis that makes stacking worth having.
+independent additive layers of one type at one size and one site, with
+nothing clipping, only approximates a single layer: its variance is that of
+one layer of amount `sqrt(a² + b²)`, but not its distribution (two uniform
+white grains sum to a triangular one; summed fine grains change shape too;
+repeated lightness layers clamp to the gamut in between). That difference is
+small next to a change of type, site or size, so those are what layers are
+for, and size is the axis that makes stacking worth having.
 
 Configs that write at most one `noise` node and no `scale=` render
 byte-identical to the baseline at every site. Opaque client pixels never
@@ -153,11 +159,22 @@ material "film-stock" {
     `i + c + offset` are white (`hash12 - 0.5`) or fine (the lattice's own
     high-pass: each corner's hash minus the mean of its eight neighbours,
     times 0.94280904). The fine corners share one 4×4 block of sixteen
-    hashes, not four times nine. The value is `Σ w_c g_c / sqrt(Σ w_c²)`:
-    dividing by the weights' norm keeps the grain's deviation constant across
-    the cell (plain interpolation drops it to a quarter at the cell centre,
-    which shows the lattice as a contrast grid), so `amount` means the same
-    deviation at every scale.
+    hashes, not four times nine. The value is `Σ w_c g_c / sqrt(wᵀ C w)`,
+    where `C` is the corners' correlation matrix: dividing by the
+    interpolation's own deviation keeps the grain's deviation constant across
+    the cell (plain interpolation drops it to half at the cell centre, which
+    shows the lattice as a contrast grid), so `amount` means the same
+    deviation at every scale and every position in the cell. White corners
+    are independent, so `C = I` and the norm is `sqrt(Σ w_c²)`. Fine corners
+    share hashes and anticorrelate: with each corner `h - mean(8 neighbours)`,
+    adjacent corners correlate at `-1/6` and diagonal ones at `-7/36`
+    (`var = 9/8` of a hash's; spec review round 1 computed it, and the
+    independent-corner norm would leave the cell centre at 68.7 % of the
+    corner deviation). So for fine and lightness
+    `wᵀ C w = Σ w_c² - (1/3)(w00 w10 + w00 w01 + w10 w11 + w01 w11)
+    - (7/18)(w00 w11 + w10 w01)`. `C` is positive definite; the smallest
+    value of `wᵀ C w`, at the cell centre, is 0.118, so the division never
+    nears zero.
   - Crossing `scale` 1 re-rolls the pattern (the per-pixel path seeds pixel
     centres, the lattice seeds integer corners). Dragging the scale across 1
     shows that once; nothing above 1 re-rolls.
@@ -243,7 +260,9 @@ backdrop with one textured region and a transparent kitty at `ior 1`:
 - lightness at scale 1 and 4 (amount 0.3);
 - stacks: white scale 4 under fine scale 1; lightness at the glass under
   white film grain; four fine layers at scale 1 and amount 0.15 beside one
-  fine layer at amount 0.3 (the collapse claim: they should look alike).
+  fine layer at amount 0.3. These two have the same variance and different
+  distributions (§1); the cell shows whether that difference is visible, which
+  decides how the rack explains redundant layers.
 
 The owner looks once and records the verdict in the evidence document's
 "Owner's look" line, judging above all whether the lattice shows at scale 8.
@@ -265,6 +284,11 @@ low-frequency ratio, determinism).
    `sd` within 5 % of `sqrt(2)` times one such layer's.
 5. Normalisation: for white and fine, the grain `sd` at scale 2, 4 and 8 is
    within 10 % of scale 1's, while the low-frequency ratio rises with scale.
+   The aggregate alone cannot see a contrast grid (the independent-corner
+   norm on fine grain passes it at about 91 % while its cell centres sit at
+   69 %), so the same cells are also binned by position within the lattice
+   cell, `fract(fragCoord / scale)` on the pixel centres (64 bins at scale
+   8), and every bin's `sd` must be within 10 % of the cell's aggregate.
 6. Order: lightness then white at the glass differs from white then
    lightness by more than the 8-bit floor (an order that changed nothing
    would mean one layer is not applied).
@@ -295,14 +319,20 @@ class when `prism-85f63a` lands.
   and scale 1.
 - **Effect buffer.** `GrainOptions` equality over the array: an edit to any
   slot triggers the cascade, an equal array does not.
+- **Fine-lattice correlation.** A unit test derives the corners'
+  correlations by enumerating the high-pass definition's hash coefficients
+  (adjacent `-1/6`, diagonal `-7/36`) and checks that the coefficients in
+  `noise.frag`'s norm (`-1/3`, `-7/18`) are twice them, so the shader and the
+  definition cannot drift apart.
 - **Schema.** The existing pins run against the new tables, including the
   GLSL-reads map with `mat_noise_scale`; the generated file is fresh.
 - **Pixels, in process (`src/tests/noise_layers.rs`).** Frozen-clock
   renders: one layer equals the same layer followed by three amount-0 layers
   (absolute error 0) at each site; `scale=1` equals omitted; the
-  independence and normalisation statistics of §7.2 (4 and 5) computed over
-  the glass area of an in-process render, so they gate every build and the
-  smoke repeats them on real hardware; a two-material backdrop config with
+  independence and normalisation statistics of §7.2 (4 and 5), the
+  per-position bins included, computed over the glass area of an in-process
+  render, so they gate every build and the smoke repeats them on real
+  hardware; a two-material backdrop config with
   two layers renders and its effect buffer's commit counter advances when one
   layer's scale changes on reload.
 - **Smoke and cost.** §7.1 to §7.3 run once on the headless lane; the
