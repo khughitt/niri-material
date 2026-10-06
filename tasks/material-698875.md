@@ -1,13 +1,15 @@
 ---
 id: material-698875
 title: Resize snapshot drops the material when a toplevel's buffer is single-pixel
-status: todo
+status: doing
 priority: 3
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-10-01T09:54:50Z
-updated: 2026-10-01T10:00:24Z
+updated: 2026-10-06T13:24:00Z
+started: 2026-10-06T13:24:00Z
 depends: []
 tags: [rendering, bug]
 source: material-0e80c1
@@ -19,3 +21,5 @@ render_snapshot_from_surface_tree (src/render_helpers/surface.rs) bakes only imp
 ## Notes
 
 - 2026-10-01T10:00:23Z (materials-26.04): scope: todo P3, direct. Fix in render_snapshot_from_surface_tree: bake a single-pixel buffer as a solid-colour element at its view rect so the snapshot is never empty. Check: a ring_pair-style test whose client keeps single-pixel buffers renders the material mid-resize. Upstream has the same code path, so note it in upstream-divergence if it lands.
+- 2026-10-06T13:24:00Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
