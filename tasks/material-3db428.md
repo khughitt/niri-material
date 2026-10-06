@@ -1,13 +1,17 @@
 ---
 id: material-3db428
 title: Re-derive the ring sample row and reach bound in focus-ring-light.sh and glass-render-order-smoke.sh for ring-gap (measured from the face edge)
-status: todo
+status: done
 priority: 3
 size: s
 complexity: mid
 process: direct
+needs: [quiet]
+owner: ring-gap-reach
 created: 2026-09-20T10:34:21Z
-updated: 2026-10-02T23:07:56Z
+updated: 2026-10-04T15:35:02Z
+started: 2026-10-04T01:56:01Z
+completed: 2026-10-04T15:35:01Z
 depends: [material-22d78f]
 parent: material-2834d7
 tags: [rendering]
@@ -20,3 +24,21 @@ The ring beam (98013739) moved the filament band from the slab's outer edge to t
 
 - 2026-10-01T09:55:04Z (material-0e80c1): From material-0e80c1: focus-ring-light.sh pins no light-ior, jelly or noise, so it inherits Prism (light-ior 6, jelly-flex 0.0066), and case_tiny's comment cites the retired slabChamfer gate (the shader now gates on hasLine, main.frag). Band core measured at ring-gap inside the face edge; the face sits 2*offset in from the window's left/top and flush right/bottom at offset 6 (brief: docs/notes/2026-09-29-glass-measurement-brief.md#matched-state-ring-findings).
 - 2026-10-01T10:00:23Z (materials-26.04): Depends on material-22d78f, which retires case_resize_flex; skip re-deriving that case's row.
+- 2026-10-04T01:56:01Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T02:55:16Z (materials-26.04): host pointer: stopped wali-rotate.timer and dropbox.service (both active; dropbox crash-loops in a TTY) for this task's captures, 22:56 EDT; restore with 'systemctl --user start wali-rotate.timer dropbox.service' before parking or closing.
+- 2026-10-04T03:07:16Z (materials-26.04): run: focus-ring-light.sh pilot (rest-confinement) PASS, then rest-confinement/accent-midfade/selectors PASS (bin cc5480f3; sample row y=61, band peak y=60-61; reach 17.5 px from the face, bound 46; the old row y=50 sees ~1 code). glass-render-order-smoke within/pixels run 1: every reach case passed its face-edge bound; within-face-strip failed (its strip PX..PX+7 sat at the old slab-edge core; gap-20 core measured at PX+20) -> strip and within_opaque's ring ROI moved to PX+16. Run 2 refused at settle before within-pinned-on: gpu_pstate [P5, P8], the previous capture's GPU tail -> gpu_cooldown in the lib's settle_before_launch (same finding as material-124f1f).
+- 2026-10-04T03:22:52Z (materials-26.04): host pointer restored: wali-rotate.timer and dropbox.service started again 23:23 EDT.
+- 2026-10-04T03:22:53Z (materials-26.04): run: glass-render-order-smoke within/pixels run 3 ($NIRI_MATERIAL_WORK_ROOT/material-3db428/within-3, 23:07-23:22 EDT): PASS, 41/41 settles, cool-down 6-9 polls. Reach bounds from the face: pinned 37 (reach 16.5), dense 61, wide 61 (reach 30.5), rough 56, face 59 (reach 31.5); within-face-strip 3200 changed; opaque identity 0; pinned/rough FWHM 4/9. neutral_identity compared this commit's binary with itself (BASE = candidate), so it checks only capture determinism here. resize-flex not run: material-22d78f.
+- 2026-10-04T03:28:24Z (ring-gap-reach): parked (waiting on agent, dependency): Agent: after material-22d78f lands, run focus-ring-light.sh CASES=resize-flex against branch ring-gap-reach (FIL_Y already re-derived) and close; the other cases passed 2026-10-03 (notes)
+  provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T03:38:13Z (ring-gap-reach): review: impl round 1 — verdict: revise; findings: Important 1, Minor 2; reviewer: claude-code/claude-opus-5-5. Important: gpu_cooldown ran under a CAPTURE_META stub (HWA_REHEARSAL on a busy or non-NVIDIA host would fail after 60 s) -> skipped under a stub. Minor, not changed: callers with their own await_gpu_rest wait twice on real runs (harmless); a historical plan still shows --inset.
+- 2026-10-04T03:45:41Z (ring-gap-reach): review: impl round 2 — verdict: accept; findings: none; reviewer: claude-code/claude-opus-5-5
+- 2026-10-04T15:29:40Z (ring-gap-reach): resumed
+  provenance: {"harness_session":"codex:01a10787-f1ec-75f3-844f-a030f1d09f08","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-04T15:31:12Z (ring-gap-reach): closeout: material-22d78f landed in 97874e9b; reused ring-gap-reach and fast-forwarded to aa6204f7. The remaining resize-flex entry delegates to a frozen-clock test before capture setup and needs no quiet host. Existing ring-gap implementation accepted in impl round 2; dependency accepted in its impl round 1. Rechecking the real entry point plus reach/wrapper tooling tests before closing.
+- 2026-10-04T15:35:01Z (ring-gap-reach): verification: real CASES=resize-flex entry passed via just test-one (ring_tracks_face_during_resize: 1 passed) with NIRI and XDG_STATE_HOME set to nonexistent paths, confirming no capture/runtime dependency. Focused reach/wrapper tooling tests: 43 tests, 2 skipped, exit 0. Python tooling test-fast: 287 tests, 2 skipped, exit 0. Prior rest-confinement/accent-midfade/selectors and within/pixels capture evidence plus accepted implementation reviews complete the task's coverage.
+- 2026-10-04T15:35:01Z (ring-gap-reach): done
+  provenance: {"harness_session":"codex:01a10787-f1ec-75f3-844f-a030f1d09f08","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-04T15:35:01Z (ring-gap-reach): Closed the ring-gap measurement correction: sample rows and reach bounds use the face edge, capture strips follow the relocated core, and the formerly blocked resize-flex entry now passes the deterministic frozen-clock motion check. Existing captures and accepted reviews retained; no additional code change needed.
+  provenance: {"harness_session":"codex:01a10787-f1ec-75f3-844f-a030f1d09f08","harness_session_source":"CODEX_SESSION_ID"}

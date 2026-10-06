@@ -6,11 +6,12 @@ priority: 2
 size: s
 complexity: mid
 process: direct
+needs: [nested]
 created: 2026-09-29T22:06:56Z
-updated: 2026-10-02T23:47:23Z
+updated: 2026-10-03T16:48:43Z
 depends: []
 parent: material-9b8bf9
-tags: [signals, sources, needs-nested]
+tags: [signals, sources]
 source: "docs/notes/2026-09-29-signal-sources-brief.md#terminal-transport"
 agent: codex
 ---

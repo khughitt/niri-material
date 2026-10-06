@@ -2306,6 +2306,8 @@ dependencies = [
  "niri-ipc",
  "pretty_assertions",
  "regex",
+ "serde",
+ "serde_json",
  "smithay",
  "tracing",
  "tracy-client",

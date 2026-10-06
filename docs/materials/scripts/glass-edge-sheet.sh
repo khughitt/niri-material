@@ -30,23 +30,8 @@ declare -A LOOK=(
 )
 corner_roi() { echo "160x160+$((PX > 40 ? PX - 40 : 0))+$((PY > 40 ? PY - 40 : 0))"; }
 
-# The previous cell's GPU work can hold P5 for a moment after its niri exits,
-# which lands in the next settle window and refuses the run (2 of ~25 windows
-# on 2026-10-03; the idle GPU holds P8). Wait for 3 s of P8 before settling;
-# the settle gate itself is unchanged. Waits are logged per cell.
-gpu_cooldown() {   # $1 cell name
-    local start=$SECONDS run=0
-    while [ "$run" -lt 6 ]; do
-        [ $((SECONDS - start)) -lt 60 ] || fail "GPU not back at P8 within 60 s before $1"
-        if [ "$(nvidia-smi --query-gpu=pstate --format=csv,noheader)" = P8 ]; then run=$((run + 1)); else run=0; fi
-        sleep 0.5
-    done
-    echo "$1 $((SECONDS - start))" >> "$OUT/cooldown.txt"
-}
-
 cell() {   # $1 name, $2 glass lines
     GLASS_EXTRA=$2
-    gpu_cooldown "$1"
     write_config "$OUT/$1.kdl"
     start_nested "$NIRI" "$OUT/$1.kdl"
     spawn_probe "$NIRI" "$IDLE"

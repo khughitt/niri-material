@@ -106,6 +106,10 @@ pub struct SignalFrame {
     pub impulses: [ImpulseFrame; 4],
     /// Crossfaded accent presence, 0 to 1.
     pub presence: f32,
+    /// Tint chromaticity for `accent-tint` (design §5–§6); interpolated
+    /// between the crossfade's endpoints, never derived from `accent`.
+    /// `None` exactly when `accent` is.
+    pub tint_chroma: Option<[f32; 3]>,
     /// Crossfaded focus, 0 to 1.
     pub focus: f32,
     /// Beam head, cutoff and decay for this frame; `BeamFrame::REST` at rest.
@@ -118,6 +122,7 @@ pub struct FrameInputs {
     pub level: f32,
     pub accent: Option<[f32; 3]>,
     pub presence: f32,
+    pub tint_chroma: Option<[f32; 3]>,
     pub focus: f32,
     /// Beam head, cutoff and decay for this frame; `BeamFrame::REST` at rest.
     pub beam: BeamFrame,
@@ -129,6 +134,7 @@ impl FrameInputs {
             level: 0.,
             accent: None,
             presence: 0.,
+            tint_chroma: None,
             focus: 0.,
             beam: BeamFrame::REST,
         }
@@ -154,6 +160,23 @@ pub fn color_linear(c: Color) -> [f32; 3] {
         }
     };
     [lin(c.r), lin(c.g), lin(c.b)]
+}
+
+/// Linear-light luminance, Rec. 709 weights.
+pub fn luminance(c: [f32; 3]) -> f32 {
+    0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+}
+
+/// The tint chromaticity of a settled accent (accent-tint design §5): the
+/// straight linear accent scaled to unit luminance, or neutral for black.
+/// It carries hue and saturation only, never brightness.
+pub fn accent_chroma(accent: [f32; 3]) -> [f32; 3] {
+    let y = luminance(accent);
+    if y < 1e-6 {
+        [1.; 3]
+    } else {
+        accent.map(|v| v / y)
+    }
 }
 
 pub fn envelope(age: Duration) -> f32 {
@@ -336,6 +359,7 @@ pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs)
         breath: breath(e.motion, now, seed),
         impulses,
         presence: inputs.presence,
+        tint_chroma: inputs.tint_chroma,
         focus: inputs.focus,
         beam: inputs.beam,
     }
@@ -413,6 +437,33 @@ mod tests {
 
     fn ms(v: u64) -> Duration {
         Duration::from_millis(v)
+    }
+
+    fn hex_linear(r: u8, g: u8, b: u8) -> [f32; 3] {
+        color_linear(niri_config::Color::from_rgba8_unpremul(r, g, b, 0xff))
+    }
+
+    #[test]
+    fn accent_chroma_has_unit_luminance_and_ignores_brightness() {
+        let orange = accent_chroma(hex_linear(0xff, 0x66, 0x00));
+        assert!((luminance(orange) - 1.).abs() < 1e-6, "{orange:?}");
+
+        // A near-black colored accent tints as strongly as a bright one.
+        let red = accent_chroma(hex_linear(0xff, 0x00, 0x00));
+        let dark_red = accent_chroma(hex_linear(0x03, 0x00, 0x00));
+        for i in 0..3 {
+            assert!(
+                (red[i] - dark_red[i]).abs() < 1e-4,
+                "{red:?} vs {dark_red:?}"
+            );
+        }
+
+        // Black and any neutral accent give the neutral chroma.
+        assert_eq!(accent_chroma([0.; 3]), [1.; 3]);
+        let gray = accent_chroma(hex_linear(0x80, 0x80, 0x80));
+        for v in gray {
+            assert!((v - 1.).abs() < 1e-5, "{gray:?}");
+        }
     }
 
     fn folded(motion: M, impulses: Vec<Impulse>) -> Folded {
@@ -702,6 +753,7 @@ mod tests {
                 level: 0.75,
                 accent: Some([0.1, 0.2, 0.3]),
                 presence: 1.,
+                tint_chroma: Some(accent_chroma([0.1, 0.2, 0.3])),
                 ..FrameInputs::quiet()
             },
         );
@@ -729,6 +781,7 @@ mod tests {
                 ImpulseFrame::default(),
             ],
             presence: 1. / 512.,
+            tint_chroma: Some(accent_chroma([1. / 512., 1. / 256., 0.])),
             focus: 1. / 256.,
             beam: BeamFrame {
                 head: 0.25,
@@ -846,6 +899,7 @@ mod tests {
             FrameInputs {
                 accent: Some([1., 0.5, 0.]),
                 presence: 0.5,
+                tint_chroma: Some(accent_chroma([1., 0.5, 0.])),
                 ..FrameInputs::quiet()
             },
         );

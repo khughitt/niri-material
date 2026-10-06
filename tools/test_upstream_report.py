@@ -521,6 +521,14 @@ class Stage(Fixture):
 
 
 class Conflicts(Fixture):
+    def test_empty_result_tree_is_an_error_for_both_protocol_statuses(self):
+        for status in (0, 1):
+            with self.subTest(status=status), unittest.mock.patch.object(
+                    report.subprocess, 'run', return_value=subprocess.CompletedProcess(
+                        [], status, stdout='', stderr='invalid ref diagnostic')):
+                with self.assertRaisesRegex(report.ReportError, 'invalid ref diagnostic'):
+                    report.merge_tree(self.root, 'base', 'upstream', 'fork')
+
     def diverged(self):
         """base, ours, theirs: one file conflicting, one merging cleanly."""
         self.write("shared.txt", "base\n")

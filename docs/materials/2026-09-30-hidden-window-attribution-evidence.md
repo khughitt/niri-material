@@ -130,3 +130,15 @@ stated that its counts were `MaterialRenderElement::draw` zones. The signals
 smoke counts `Niri::redraw` zones (exact name) there; that document is now
 corrected. Its zeros for hidden workspaces, tabs and offscreen columns are
 zero redraws, which also implies zero material draws for those cases.
+
+## Correction, 2026-10-06
+
+The *Offscreen buffer* bullet under Attribution says `MaterialRenderElement`
+declares no opaque region that would let the cover cull the tile. That is not
+the mechanism. `Tile::render_inner` renders the window into its
+`OffscreenBuffer` while it builds the tile's render elements, before smithay's
+damage tracker runs its occlusion pass, so no opaque region on any element
+can skip that render. An opaque region on the material element would only let
+elements behind it be skipped. The recommendation stands: culling the tile
+before `render_inner` (`material-7afc31`) is the fix. The measurements are
+unaffected.

@@ -60,13 +60,62 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
     def test_settle_before_launch_passes_config_and_name(self):
         with tempfile.TemporaryDirectory() as out:
             (Path(out) / 'A.kdl').write_text('glass')
-            script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\n' + self.function('settle_before_launch') +
+            script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\ngpu_cooldown() { :; }\n' +
+                      self.function('settle_before_launch') +
                       '\nOUT=$1; settle_before_launch "$OUT/A.kdl"; cat "$OUT/call"; settle_before_launch "$OUT/A.kdl" A-move-1; cat "$OUT/call"')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
             lines = result.stdout.splitlines()
             self.assertEqual(lines[0], f'settle {out} --sub-run A --input {out}/A.kdl')
             self.assertEqual(lines[1], f'settle {out} --sub-run A-move-1 --input {out}/A.kdl')
+
+    def test_stopping_the_host_finishes_the_settled_sub_run_once(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { printf "%s\\n" "$*" >> "$OUT/calls"; }\ngpu_cooldown() { :; }\n' +
+                      self.function('settle_before_launch') + '\n' + self.function('finish_sub_run') +
+                      '\nOUT=$1; SUB_RUN=; finish_sub_run; settle_before_launch "$OUT/A.kdl" A-move-1; '
+                      'finish_sub_run; finish_sub_run; cat "$OUT/calls"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [f'settle {out} --sub-run A-move-1 --input {out}/A.kdl',
+                                                          f'finish {out} --sub-run A-move-1'])
+
+    def test_stop_nested_finishes_the_sub_run(self):
+        self.assertIn('finish_sub_run', self.function('stop_nested'))
+
+    def gpu_cooldown(self, out, pstates):
+        bin_dir = Path(out) / 'bin'
+        bin_dir.mkdir()
+        fake = bin_dir / 'nvidia-smi'
+        fake.write_text('#!/bin/sh\nn=$(cat "$STATES.n" 2>/dev/null || echo 1)\n'
+                        'echo $((n + 1)) > "$STATES.n"\nsed -n "${n}p" "$STATES" | grep . || tail -n1 "$STATES"\n')
+        fake.chmod(0o755)
+        (Path(out) / 'states').write_text('\n'.join(pstates) + '\n')
+        script = ('fail() { echo "FAIL: $*" >&2; exit 1; }\nsleep() { :; }\n' + self.function('gpu_cooldown') +
+                  '\nOUT=$1; gpu_cooldown A; cat "$OUT/cooldown.txt"')
+        return subprocess.run(['bash', '-eu', '-c', script, 'test', out], text=True, capture_output=True,
+                              env={**os.environ, 'PATH': f'{bin_dir}:{os.environ["PATH"]}',
+                                   'STATES': str(Path(out) / 'states')})
+
+    def test_settle_before_launch_skips_the_cooldown_under_a_capture_meta_stub(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { :; }\ngpu_cooldown() { echo cooled; }\n' + self.function('settle_before_launch') +
+                      '\nOUT=$1; CAPTURE_META=: settle_before_launch "$OUT/A.kdl"; CAPTURE_META= settle_before_launch "$OUT/A.kdl"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), ['cooled'])
+
+    def test_gpu_cooldown_waits_for_six_consecutive_p8_polls(self):
+        with tempfile.TemporaryDirectory() as out:
+            result = self.gpu_cooldown(out, ['P5', 'P8', 'P8', 'P5', 'P8', 'P8', 'P8', 'P8', 'P8', 'P8'])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), 'A 10')
+
+    def test_gpu_cooldown_fails_when_the_gpu_never_idles(self):
+        with tempfile.TemporaryDirectory() as out:
+            result = self.gpu_cooldown(out, ['P5'])
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('GPU not back at P8 within 120 polls before A', result.stderr)
 
     def test_start_nested_settles_first_and_lib_never_preflights(self):
         body = self.function('start_nested')
@@ -77,15 +126,6 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
         self.assertNotIn('capture_preflight', code)
         self.assertNotIn('capture-meta preflight', code)
 
-    def test_finish_hashes_every_file_but_the_manifest(self):
-        with tempfile.TemporaryDirectory() as out:
-            for name in ('a.png', 'b.kdl', 'c.tracy', 'capture.json', 'niri.log'):
-                (Path(out) / name).write_text(name)
-            (Path(out) / 'sub').mkdir(); (Path(out) / 'sub' / 'd.csv').write_text('d')
-            script = ('rg() { return 1; }\n' + self.function('finish') + '\nOUT=$1; finish >/dev/null; cut -d" " -f3- "$OUT/SHA256SUMS" | LC_ALL=C sort')
-            result = self.run_bash(script, out)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.split(), ['./a.png', './b.kdl', './c.tracy', './capture.json', './niri.log', './sub/d.csv'])
 
     def test_smokes_preflight_after_sourcing_and_identify_after_build(self):
         for smoke in ('glass-aurora-smoke.sh', 'glass-iridescence-smoke.sh',
@@ -113,14 +153,66 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
                              '--input /source/docs/materials/scripts/glass-optic-smoke-lib.sh '
                              '--input test --config preset=aurora')
 
-    def test_cleanup_ignores_capture_release_refusal(self):
+
+    def test_cleanup_fails_on_capture_release_failure(self):
         with tempfile.TemporaryDirectory() as out:
             script = ('capture_meta() { printf "%s" "$*" > "$OUT/release-call"; return 1; }\n'
                       'stop_weston() { :; }\nremove_runtime_dir() { :; }\n' + self.function('cleanup') +
                       '\nOUT=$1; CAP_PID=; NIRI_PID=; cleanup')
             result = self.run_bash(script, out)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.returncode, 1, result.stderr)
             self.assertEqual((Path(out) / 'release-call').read_text(), f'release {out}')
+
+    LIFECYCLE = ('stop_weston() { :; }\nremove_runtime_dir() { :; }\nrg() { return 1; }\n'
+                 'fail() { echo "FAIL: $*" >&2; exit 1; }\n')
+
+    def test_cleanup_hashes_after_the_last_release_on_success(self):
+        with tempfile.TemporaryDirectory() as out:
+            for name in ('a.png', 'b.kdl', 'c.tracy', 'niri.log'):
+                (Path(out) / name).write_text(name)
+            (Path(out) / 'sub').mkdir(); (Path(out) / 'sub' / 'd.csv').write_text('d')
+            script = (self.LIFECYCLE +
+                      'capture_meta() { echo "{\\"released\\": $(date +%s%N)}" > "$OUT/capture.json"; }\n' +
+                      self.function('write_sums') + '\n' + self.function('cleanup') + '\n' + self.function('finish') +
+                      '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; finish')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('PASS', result.stdout)
+            listed = sorted(line.split()[1] for line in (Path(out) / 'SHA256SUMS').read_text().splitlines())
+            self.assertEqual(listed, ['./a.png', './b.kdl', './c.tracy', './capture.json', './niri.log', './sub/d.csv'])
+            check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=out, capture_output=True, text=True)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_failed_restore_then_successful_retry_keeps_a_valid_manifest(self):
+        with tempfile.TemporaryDirectory() as out:
+            (Path(out) / 'a.png').write_text('a')
+            # First release: restore failed (exit 2) and wrote one record; cleanup's retry rewrites it.
+            script = (self.LIFECYCLE +
+                      'capture_meta() { if [ -e "$OUT/.first" ]; then echo retry > "$OUT/capture.json"; return 0; fi; '
+                      'touch "$OUT/.first"; echo failed > "$OUT/capture.json"; return 2; }\n' +
+                      self.function('write_sums') + '\n' + self.function('cleanup') + '\n' + self.function('finish') +
+                      '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; finish')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn('capture release reported 2', result.stderr)
+            self.assertNotIn('PASS', result.stdout)
+            self.assertEqual((Path(out) / 'capture.json').read_text(), 'retry\n')
+            check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=out, capture_output=True, text=True)
+            self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_no_manifest_when_the_run_never_reached_finish(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = (self.LIFECYCLE + 'capture_meta() { :; }\n' + self.function('write_sums') + '\n' +
+                      self.function('cleanup') + '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; false')
+            self.run_bash(script, out)
+            self.assertFalse((Path(out) / 'SHA256SUMS').exists())
+
+    def test_clip_fixtures_fail_on_capture_release_failure(self):
+        scripts = Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+        for name in ('ring-motion-clips.sh', 'drag-lag-clips.sh', 'focus-swap-clips.sh'):
+            text = (scripts / name).read_text()
+            self.assertIn('capture_meta release "$OUT" || rc=1', text, name)
+            self.assertNotIn('capture_meta release "$OUT" || true', text, name)
 
 
 class RenderOrderBehindMatrixTest(unittest.TestCase):
@@ -425,12 +517,38 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                 '2026-09-18T12:00:00-04:00 gpu-zero-2 cooldown complete',
             ])
 
+    def test_resize_flex_uses_frozen_clock_check_without_capture_setup(self):
+        root = Path(__file__).resolve().parents[1]
+        for status in (0, 19):
+            with self.subTest(status=status), tempfile.TemporaryDirectory() as out:
+                out = Path(out)
+                runner = out / 'just'
+                runner.write_text(
+                    '#!/bin/sh\nprintf "%s\\n" "$PWD" "$@" > "$FLEX_TEST_LOG"\n'
+                    'exit "$FLEX_TEST_EXIT"\n')
+                runner.chmod(0o755)
+                env = dict(os.environ, PATH=str(out) + ':' + os.defpath,
+                           CASES='resize-flex', NIRI=str(out / 'missing-niri'),
+                           XDG_RUNTIME_DIR=str(out / 'runtime'),
+                           XDG_STATE_HOME=str(out / 'state'),
+                           NIRI_MATERIAL_WORK_ROOT=str(out / 'captures'),
+                           FLEX_TEST_LOG=str(out / 'invocation'),
+                           FLEX_TEST_EXIT=str(status))
+                result = subprocess.run(
+                    ['bash', str(root / 'docs/materials/scripts/focus-ring-light.sh')],
+                    env=env, text=True, capture_output=True)
+                self.assertEqual(result.returncode, status, result.stderr)
+                self.assertEqual((out / 'invocation').read_text().splitlines(), [
+                    str(root), 'test-one', '-p', 'niri', 'ring_tracks_face_during_resize',
+                ])
+                self.assertFalse((out / 'runtime').exists())
+                self.assertFalse((out / 'captures').exists())
+
     def test_old_ring_records_per_frame_motion_reach_timing_and_geometry(self):
         ring = (Path(__file__).resolve().parents[1] /
                 'docs/materials/scripts/focus-ring-light.sh').read_text()
         for value in ('motion_pair_burst()', 'motion_record()', 'ring-motion-$label-move',
                       'ring-motion-$label-resize', 'ring-beam-speed 3000', 'toggles_start',
-                      'resize-flex-motion',
                       'window_layout_json', 'animated slab geometry',
                       'set-column-width +200', 'move-column-right'):
             self.assertIn(value, ring)
