@@ -51,6 +51,8 @@ mkdir -p "$OUT" "$RT"
 
 capture_meta() { python3 "$ROOT/tools/capture-meta" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# After a sequence's host is down; a sequence cut short is never finished.
+finish_sub_run() { capture_meta finish "$OUT" --sub-run "$1" || fail "finish refused for $1; see $OUT/capture.json"; }
 pid_running() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
 msg() { "$NIRI" msg "$@"; }
 kitty_ids() { msg -j windows | jq -r '[.[] | select(.app_id=="kitty")] | sort_by(.layout.pos_in_scrolling_layout[0]) | .[].id'; }
@@ -265,6 +267,7 @@ sequence() {   # $1 = label, $2 = config, $3 = drive function
     "$3" "$1" "${ids[@]}"
     burst_wait "$1"
     stop_nested
+    finish_sub_run "$1"
 }
 drive_focus_left() { drive "$1" focus-window --id "$2"; }
 drive_reversal() { drive "$1" focus-window --id "$2"; ms_sleep "$REVERSAL_MS"; drive "$1" focus-window --id "$3"; }

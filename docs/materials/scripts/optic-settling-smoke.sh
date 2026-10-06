@@ -484,6 +484,7 @@ stop_drm() {
     [ -z "$BUS_PID" ] || reap "$BUS_PID"
     BUS_PID=
     rm -f "$RT"/niri.*.sock "$RT/bus"; sleep 0.5
+    finish_sub_run
 }
 start_host() { if [ "$LANE" = dedicated ]; then start_drm "$@"; else start_nested "$@"; fi; }
 stop_host() { if [ "$LANE" = dedicated ]; then stop_drm; else stop_nested; fi; }

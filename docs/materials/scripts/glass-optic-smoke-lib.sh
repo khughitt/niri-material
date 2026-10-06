@@ -35,7 +35,7 @@ ROOT=$(git rev-parse --show-toplevel)
 # paths, and concurrent runs must never share or delete each other's sockets.
 RT=$(mktemp -d "$XDG_RUNTIME_DIR/gos.XXXXXX")
 RUN=$(basename "$RT")
-HOST=$RUN-host; WESTON_PID=; NIRI_PID=; CAP_PID=
+HOST=$RUN-host; WESTON_PID=; NIRI_PID=; CAP_PID=; SUB_RUN=
 fail() { echo "FAIL: $*" >&2; exit 1; }
 remove_runtime_dir() {
     python3 - "$RT" <<'PY'
@@ -103,11 +103,20 @@ gpu_cooldown() {   # $1 sub-run name
 }
 # Before every nested launch: the sub-run is named after its config unless the
 # caller's observation is not its config (idle-budget reuses six configs).
+# The settle starts the sub-run; finish_sub_run, when the host stops, ends it.
 settle_before_launch() {
     local cfg=$1 name=${2:-}
     [ -n "$name" ] || name=$(basename "$cfg" .kdl)
     [ -n "${CAPTURE_META:-}" ] || gpu_cooldown "$name"
     capture_meta settle "$OUT" --sub-run "$name" --input "$cfg" || fail "settle refused before $name; see $OUT/capture.json"
+    SUB_RUN=$name
+}
+# A sub-run cut short by a failure is never finished: cleanup stops processes
+# without stopping the host through here, so capture.json shows it open.
+finish_sub_run() {
+    [ -n "$SUB_RUN" ] || return 0
+    capture_meta finish "$OUT" --sub-run "$SUB_RUN" || fail "finish refused for $SUB_RUN; see $OUT/capture.json"
+    SUB_RUN=
 }
 
 # --- binaries ---------------------------------------------------------------
@@ -261,6 +270,7 @@ stop_nested() {
     kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; NIRI_PID=
     stop_weston
     rm -f "$RT"/niri.*.sock "$RT/$HOST"; sleep 0.5
+    finish_sub_run
 }
 msg() { "$1" msg "${@:2}"; }
 windows_with() { msg "$1" -j windows | jq -r --arg id "$2" '[.[] | select(.app_id==$id)] | length'; }

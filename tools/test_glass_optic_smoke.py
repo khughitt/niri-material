@@ -69,6 +69,20 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             self.assertEqual(lines[0], f'settle {out} --sub-run A --input {out}/A.kdl')
             self.assertEqual(lines[1], f'settle {out} --sub-run A-move-1 --input {out}/A.kdl')
 
+    def test_stopping_the_host_finishes_the_settled_sub_run_once(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { printf "%s\\n" "$*" >> "$OUT/calls"; }\ngpu_cooldown() { :; }\n' +
+                      self.function('settle_before_launch') + '\n' + self.function('finish_sub_run') +
+                      '\nOUT=$1; SUB_RUN=; finish_sub_run; settle_before_launch "$OUT/A.kdl" A-move-1; '
+                      'finish_sub_run; finish_sub_run; cat "$OUT/calls"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [f'settle {out} --sub-run A-move-1 --input {out}/A.kdl',
+                                                          f'finish {out} --sub-run A-move-1'])
+
+    def test_stop_nested_finishes_the_sub_run(self):
+        self.assertIn('finish_sub_run', self.function('stop_nested'))
+
     def gpu_cooldown(self, out, pstates):
         bin_dir = Path(out) / 'bin'
         bin_dir.mkdir()
