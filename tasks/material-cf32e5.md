@@ -5,14 +5,16 @@ status: doing
 priority: 2
 size: m
 complexity: high
-owner: materials-26.04
+process: planned
+owner: material-cf32e5
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T12:22:37Z
+updated: 2026-10-06T03:55:30Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
 tags: [noise, rendering, cross-project]
 agent: claude-code/claude-fable-5-1
+plan: docs/plans/2026-10-05-noise-placement.md
 ---
 
 First device that can move. Give the glass noise node a site attribute (backdrop | glass | film) and implement the two new placements:
@@ -31,3 +33,39 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 
 - 2026-10-05T12:22:37Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T13:02:51Z (material-cf32e5): Design approved in conversation (explorable placement; approach: site property on the noise node, grain pass on the shared sharp texture, agreement validation at load, film grain at post). §7.1 offline simulation run: backdrop grain keeps 32/15/8 % (white) and 19/7/5 % (fine) of its sd after 1/2/3 blur passes; glass grain unchanged; no site dropped
+- 2026-10-05T13:04:51Z (material-cf32e5): parked (waiting on user, review): Spec review round 1 of docs/specs/2026-10-05-noise-placement-design.md (.worktrees/material-cf32e5), reviewer codex; on acceptance run writing-plans for the renderer plan
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T13:20:50Z (material-cf32e5): review: spec round 1 — verdict: revise; findings: P1 2, P2 3; reviewer: codex
+- 2026-10-05T13:22:22Z (material-cf32e5): Spec revised for round 1: grain option changes increment commit_counter (fifth in-process test: unchanged glass window re-renders on backdrop reload); every content read of the sharp texture incl. the blur.render draw moves to source(); noise_behind arithmetic kept byte-for-byte, byte identity checked against a baseline binary; roughness fixture at ior 1.5; ring-band ratios derived from the transfer curve (glass ≈ decode'(0.5)·encode'(band), film 1.0)
+- 2026-10-05T13:22:22Z (material-cf32e5): parked (waiting on user, review): Spec review round 2 of docs/specs/2026-10-05-noise-placement-design.md (.worktrees/material-cf32e5), reviewer codex; on acceptance run writing-plans
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T13:42:06Z (material-cf32e5): review: spec round 2 — verdict: revise; findings: P2 2; reviewer: codex
+- 2026-10-05T13:42:45Z (material-cf32e5): Spec revised for round 2: the damage test asserts the effect buffer commit() and the unchanged tile's fingerprint advance across a backdrop-only reload (render_at draws with full damage, so pixels prove nothing); the ring fixture waits ring::run_length / speed so only the rest glow remains; roughness wording: normalized level, pyramid level = max_level * roughness
+- 2026-10-05T14:01:58Z (material-cf32e5): Plan written: docs/plans/2026-10-05-noise-placement.md, seven child tasks (material-dcc79f config, 6f299e shader+schema, eab3ae grain pass, 0bed95 in-process tests, 2a1689 docs+smoke+evidence, 40b563 cost, e50969 gate+merge+hand-off); spec marked accepted for planning after round 2 and the owner's go-ahead
+- 2026-10-05T14:01:58Z (material-cf32e5): parked (waiting on user, review): Plan review round 1 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T14:06:11Z (material-cf32e5): parked (waiting on user, review): Plan review round 1 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T14:20:07Z (material-cf32e5): review: plan round 1 — verdict: revise; findings: P1 2, P2 8; reviewer: codex/gpt-6-astra
+- 2026-10-05T14:25:47Z (material-cf32e5): Plan revised for round 1: precision line before common.frag; cost script owns swaybg by PID (no pkill); Task 1 green alone (ResolvedNoise literals migrated, noise stage owns the parameter, JSON regenerated); film-grain before effect-saturation; coloured test buffer scaled to u32; tests find tiles by material name; smoke on the lib's real API with calibration, assert_about, own ring config (glow 2, rest 2, one speed node); GrainProgram owned by the buffer, lazy compile, retry after invalidation with a table test; cost section limited to measurements incl. material draw at equal workload; full capture matrix; just setup before the baseline build
+- 2026-10-05T14:25:47Z (material-cf32e5): parked (waiting on user, review): Plan review round 2 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T14:37:24Z (material-cf32e5): review: plan round 2 — verdict: revise; findings: P2 5; reviewer: codex/gpt-6-astra
+- 2026-10-05T14:38:18Z (material-cf32e5): Plan revised for round 2: cleanup_cost carries $? past stop_walls; schema_renders_stably asserts the glass selector and checks omission on slab; fixture output 800 px, regions clipped to the output; -fuzz 0.392157%; shot_twice asserts determinism in every cell
+- 2026-10-05T14:38:18Z (material-cf32e5): parked (waiting on user, review): Plan review round 3 of docs/plans/2026-10-05-noise-placement.md (.worktrees/material-cf32e5), reviewer codex; on acceptance execute Tasks 1 to 7 natively
+  provenance: {"harness_session":"claude-code:23285ff0-fcf8-4e52-93eb-5ccb34db3e4c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-05T14:43:20Z (material-cf32e5): resumed
+  provenance: {"harness_session":"codex:01a10c84-1457-7892-bb5d-ed0227e1d702","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-05T14:44:00Z (material-cf32e5): review: plan round 3 — verdict: accept; findings: none; reviewer: human
+- 2026-10-05T15:21:05Z (material-cf32e5): Tasks 1–4 committed and verified. Nested captures refused quiet preflight; prepare builds, smoke and cost scripts, simulation, gate and review before parking the quiet run. No desktop process changed.
+- 2026-10-05T15:52:30Z (material-cf32e5): review: impl round 1 — verdict: revise; findings: Important 4; reviewer: codex/gpt-6-astra
+- 2026-10-05T16:36:56Z (material-cf32e5): Impl round 1 corrections: GL framebuffer/draw errors propagate with clean fallback state; one lazy program owned by its EGL share group; cost fixture has sharp and blurred consumers, actual mapped/damage/preparation events required for every interval. All four findings have RED/GREEN checks; 491 affected Rust tests and full tooling 409 pass.
+- 2026-10-05T16:41:29Z (material-cf32e5): review: impl round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
+- 2026-10-05T16:41:29Z (material-cf32e5): Scoped re-review accepted all four corrections. Capture acceptance remains required: baseline byte identity, nested appearance/ring assertions, actual GPU costs and owner look are unverified; no merge or prism hand-off yet.
+- 2026-10-05T16:56:59Z (material-cf32e5): Corrected release/Tracy builds and just gate passed; full tooling 409, niri 491 plus config/IPC/doctests. Baseline worktree removed after tt-report and host-pointer check, baseline binary retained. Latest GPU read 16% / P3 with active browser compute client; no capture run or merge.
+- 2026-10-05T16:56:59Z (material-cf32e5): parked (waiting on agent, dependency): Agent resumes .worktrees/material-cf32e5: run the quiet capture queue material-2a1689 then material-40b563 (about 60 min total), update evidence, rerun just gate and review changed evidence; then execute material-e50969 local merge, prism schema hand-off, follow-ups and parent close. Implementation review round 2 accepted; actual baseline/visual/Tracy acceptance is unverified. No task process or host pointer left running.
+  provenance: {"harness_session":"codex:01a10c84-1457-7892-bb5d-ed0227e1d702","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-06T03:51:48Z (material-cf32e5): review: impl round 3 — verdict: revise; findings: Important 1, Minor 5; reviewer: claude-code/claude-opus-5-5
+- 2026-10-06T03:55:07Z (material-cf32e5): review: impl round 4 — verdict: revise; findings: Important 1, Minor 1; reviewer: claude-code/claude-opus-5-5
+- 2026-10-06T03:55:30Z (material-cf32e5): review: impl round 5 — verdict: accept; findings: none; reviewer: claude-code/claude-opus-5-5

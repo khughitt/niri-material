@@ -1,5 +1,5 @@
-//! `noise`: behind, stage 3b, neutral at amount 0. Applies the inherit-or-neutral
-//! rule to the amount; the grain type never inherits.
+//! `noise`: selected behind/source/post placement, neutral at amount 0.
+//! Only the amount inherits; the grain type and site never do.
 
 use niri_config::ResolvedGlass;
 use smithay::backend::renderer::gles::{Uniform, UniformType};
@@ -14,6 +14,7 @@ impl Optic for NoiseOptic {
     const UNIFORMS: &'static [(&'static str, UniformType)] = &[
         ("mat_noise", UniformType::_1f),
         ("mat_noise_type", UniformType::_1f),
+        ("mat_noise_site", UniformType::_1f),
     ];
 
     fn values(glass: &ResolvedGlass, ctx: &OpticFrame<'_>) -> Vec<Uniform<'static>> {
@@ -25,6 +26,7 @@ impl Optic for NoiseOptic {
         vec![
             Uniform::new("mat_noise", amount as f32),
             Uniform::new("mat_noise_type", glass.noise.kind as u8 as f32),
+            Uniform::new("mat_noise_site", glass.noise.site as u8 as f32),
         ]
     }
 }
@@ -33,7 +35,7 @@ impl Optic for NoiseOptic {
 mod tests {
     use std::time::Duration;
 
-    use niri_config::{Blur, NoiseType, ResolvedGlass, ResolvedNoise};
+    use niri_config::{Blur, NoiseSite, NoiseType, ResolvedGlass, ResolvedNoise};
     use smithay::backend::renderer::gles::UniformValue;
 
     use super::*;
@@ -50,16 +52,21 @@ mod tests {
         }
     }
 
-    fn pair(glass: &ResolvedGlass, backdrop_blur: bool, blur: &Blur) -> (f32, f32) {
+    fn triple(glass: &ResolvedGlass, backdrop_blur: bool, blur: &Blur) -> (f32, f32, f32) {
         let values = NoiseOptic::values(glass, &frame(backdrop_blur, blur));
-        assert_eq!(values.len(), 2);
+        assert_eq!(values.len(), 3);
+        assert_eq!(values[2].name, "mat_noise_site");
         assert_eq!(values[0].name, "mat_noise");
         assert_eq!(values[1].name, "mat_noise_type");
         let f = |v: &UniformValue| match v {
             UniformValue::_1f(v) => *v,
             other => panic!("{other:?}"),
         };
-        (f(&values[0].value), f(&values[1].value))
+        (
+            f(&values[0].value),
+            f(&values[1].value),
+            f(&values[2].value),
+        )
     }
 
     #[test]
@@ -68,6 +75,7 @@ mod tests {
             noise: ResolvedNoise {
                 amount: Some(0.3),
                 kind: NoiseType::Lightness,
+                site: NoiseSite::Glass,
             },
             ..Default::default()
         };
@@ -76,8 +84,8 @@ mod tests {
             off: true,
             ..Default::default()
         };
-        assert_eq!(pair(&glass, true, &blur), (0.3, 2.));
-        assert_eq!(pair(&glass, false, &blur), (0.3, 2.));
+        assert_eq!(triple(&glass, true, &blur), (0.3, 2., 0.));
+        assert_eq!(triple(&glass, false, &blur), (0.3, 2., 0.));
     }
 
     #[test]
@@ -87,7 +95,26 @@ mod tests {
             noise: 0.02,
             ..Default::default()
         };
-        assert_eq!(pair(&glass, true, &blur), (0.02, 0.));
-        assert_eq!(pair(&glass, false, &blur), (0., 0.));
+        assert_eq!(triple(&glass, true, &blur), (0.02, 0., 0.));
+        assert_eq!(triple(&glass, false, &blur), (0., 0., 0.));
+    }
+    #[test]
+    fn the_site_rides_the_third_uniform_and_leaves_amount_and_type_alone() {
+        let blur = Blur::default();
+        for (site, code) in [
+            (NoiseSite::Glass, 0.),
+            (NoiseSite::Backdrop, 1.),
+            (NoiseSite::Film, 2.),
+        ] {
+            let glass = ResolvedGlass {
+                noise: ResolvedNoise {
+                    amount: Some(0.3),
+                    kind: NoiseType::Fine,
+                    site,
+                },
+                ..Default::default()
+            };
+            assert_eq!(triple(&glass, true, &blur), (0.3, 1., code), "{site:?}");
+        }
     }
 }

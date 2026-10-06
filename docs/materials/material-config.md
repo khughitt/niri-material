@@ -57,6 +57,7 @@ lengths are logical pixels.
 | `saturation` | float | inherit | 0–3 | — |
 | `noise` | float | inherit | 0–1 | — |
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
+| `noise` `site=` | `glass` / `backdrop` / `film` | `glass` | — | — |
 | `aurora` | float | 0 | 0–1 | — |
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
@@ -119,7 +120,7 @@ strength — the amount of blur comes from the global `blur` block's `passes` an
 `offset`, shared with every other blur consumer. Setting `blur { off }`
 disables it along with all other blur, regardless of this parameter.
 
-`saturation` then `noise` transform the averaged backdrop before attenuation,
+`saturation` then glass-site `noise` transform the averaged backdrop before attenuation,
 through the `behind` hook. Their formulas run in sRGB (Oklab for lightness
 grain) and return linear light. Additive glint, ring, aurora and sweeps are
 not postprocessed; the chamfer still transmits attenuated grain. A written
@@ -141,8 +142,17 @@ applies the `fine` value to Oklab lightness instead, so the backdrop's chroma
 and hue hold except where the result leaves the sRGB gamut and clamps. The
 type has no inheritance and an omitted type is `white`.
 
-It is unrelated to `anisotropic-blur`, which smears the refraction itself along
-one axis and does not soften the backdrop.
+`noise` also accepts `site="glass"` (default), `"backdrop"`, or `"film"`.
+`backdrop` grains the output's shared effect-buffer texture before the Kawase
+blur and roughness pyramids. Every material placing noise there must agree on
+one amount and one type; disagreement refuses the config and names both
+materials (`materials "a" and "b" both place noise at the backdrop with different
+settings ...`). Grain applies even with `blur { off }`; a window asking for a
+blurred `background-effect` also samples it. `film` grains the finished encoded
+glass after ring, aurora, glint and sweeps, on glass coverage only. The site's
+softening under blur is measured in `2026-10-05-noise-placement-evidence.md`.
+
+`anisotropic-blur` instead smears the refraction itself along one axis.
 
 `roughness` progressively softens detail refracted through the glass. It first
 uses `backdrop-blur` to choose the sharp or globally blurred source, then
@@ -177,11 +187,12 @@ resolves to 1 otherwise.
 
 ### noise
 
-Stage 3b (`behind`). `noise <amount> type=<type>` grains the averaged backdrop
-per screen pixel before attenuation; `white`, `fine`, and `lightness` are
+Stage 3b (`behind`) at `site="glass"`; a source grain pass at
+`site="backdrop"`; stage 9 (`post`) at `site="film"`.
+`noise <amount> type=<type> site=<site>` grains the selected carrier; `white`, `fine`, and `lightness` are
 described above. Its explicit neutral is amount 0. An omitted amount inherits the global `blur`
 block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
-the type never inherits.
+the type and site never inherit.
 
 ### iridescence
 

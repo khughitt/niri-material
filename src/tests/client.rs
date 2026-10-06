@@ -490,6 +490,18 @@ impl LayerSurface {
         self.surface.attach(Some(&buffer), 0, 0);
     }
 
+    /// A single-pixel buffer of this 8-bit colour; `set_size` stretches it
+    /// over the surface through the viewport, which is how a test paints a
+    /// background layer the effect buffer can sample. The single-pixel
+    /// protocol takes each channel as `0..=u32::MAX`, so a byte is scaled.
+    pub fn attach_new_colored_buffer(&self, r: u8, g: u8, b: u8, a: u8) {
+        let scale = |v: u8| u32::from(v) * (u32::MAX / 255);
+        let buffer =
+            self.spbm
+                .create_u32_rgba_buffer(scale(r), scale(g), scale(b), scale(a), &self.qh, ());
+        self.surface.attach(Some(&buffer), 0, 0);
+    }
+
     pub fn attach_null(&self) {
         self.surface.attach(None, 0, 0);
     }

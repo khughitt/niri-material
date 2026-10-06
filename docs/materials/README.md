@@ -47,6 +47,8 @@ rather than retyping it (protocol:
 - `2026-09-05-ring-light-focus-smoke.md`: ring of light focus response wakeup, capture and DRM acceptance evidence.
 - `2026-09-02-material-signals-design.md`: implemented and verified per-window signal, IPC, and glass response design.
 - `2026-09-03-material-signals-smoke.md`: passing suites, IPC, redraw, GPU, package, and physical DRM evidence.
+- `../specs/2026-10-05-noise-placement-design.md`: noise at backdrop, glass or film, its shared scope and verification contract.
+- `2026-10-05-noise-placement-evidence.md`: noise placement pixel, baseline, softening and cost evidence.
 - `material-config.md`: material and glass configuration reference.
 - `render-pipeline.md`: the material render pipeline, pass by pass, and which parameter acts where. Read before any rendering change.
 - `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
