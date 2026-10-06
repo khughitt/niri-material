@@ -35,7 +35,7 @@ the whole tree and is never scoped by class.
 | Workspace IPC field | `niri-ipc/`, `src/ipc/`, `src/layout/workspace.rs` | D | carried | submitted #4147 |
 | Material pass ordering hook | `src/render_helpers/blur.rs`, `effect_buffer.rs` | B | seam | unfiled |
 | Tile material state | `src/layout/tile.rs` | B | fork-only | — |
-| Single-pixel buffers baked into resize snapshots | `src/render_helpers/surface.rs`, `src/layout/mod.rs` | B | seam | unfiled |
+| Single-pixel buffers baked into resize snapshots (test-only protocol; upstream #1463 makes the same change) | `src/render_helpers/surface.rs`, `src/layout/mod.rs` | B | fork-only | — |
 | Test front door and timing | `justfile`, `tools/` | C | fork-only | — |
 
 Posture is `seam`, `fork-only`, or `carried`. Status tracks seam candidates through
