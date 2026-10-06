@@ -366,8 +366,18 @@ impl Window {
         self.surface.attach(Some(&buffer), 0, 0);
     }
 
-    /// A 1×1 ARGB8888 shm buffer, which the renderer imports as a texture (a
-    /// single-pixel buffer never gets one, so a resize snapshot of it is empty).
+    /// A single-pixel buffer of this 8-bit colour, stretched over the window
+    /// by `set_size`. The single-pixel protocol takes each channel as
+    /// `0..=u32::MAX`, so a byte is scaled.
+    pub fn attach_new_colored_buffer(&self, r: u8, g: u8, b: u8, a: u8) {
+        let scale = |v: u8| u32::from(v) * (u32::MAX / 255);
+        let buffer =
+            self.spbm
+                .create_u32_rgba_buffer(scale(r), scale(g), scale(b), scale(a), &self.qh, ());
+        self.surface.attach(Some(&buffer), 0, 0);
+    }
+
+    /// A 1×1 ARGB8888 shm buffer, which the renderer imports as a texture.
     /// Damaged in full: an undamaged commit leaves the window's offscreen on
     /// the previous contents.
     pub fn attach_new_shm_buffer(&self, argb: u32) {
