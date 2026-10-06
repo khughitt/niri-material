@@ -40,8 +40,11 @@ or mouse interaction. The registry suppresses optic deadlines while settled
 and holds rendered values through idle damage (`63702813`).
 The [power re-run](../materials/2026-09-11-idle-budget-evidence.md#re-run-on-48ba40a1)
 measured Aurora at +0.96 W (4 Hz) and +0.77 W (2 Hz) in its pinned scene;
-those are not estimates for new lighting. The three referenced mindful
-thoughts remain unavailable locally; their task bodies and sources are preserved.
+those are not estimates for new lighting. All three original mindful thoughts
+were recovered with their canonical `thought:` IDs on 2026-10-06; their lighting,
+weather and animation suggestions agree with the captured task bodies. The earlier
+unavailable-context report used bare IDs after incorrectly removing `thought:`.
+Source lookup guidance is reported as P1 feedback `tasks-bde218`.
 
 ## Constraints
 
