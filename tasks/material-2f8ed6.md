@@ -1,14 +1,14 @@
 ---
 id: material-2f8ed6
 title: Upstream the single-pixel resize-snapshot fix to niri
-status: doing
+status: dropped
 priority: 3
 size: s
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-2f8ed6
 created: 2026-10-06T14:01:43Z
-updated: 2026-10-06T14:12:05Z
+updated: 2026-10-06T14:14:48Z
 started: 2026-10-06T14:12:05Z
 depends: []
 tags: [rendering, upstream]
@@ -29,4 +29,11 @@ Then prepare the PR on a branch off upstream main: the fix without fork-only cod
 
 - 2026-10-06T14:01:48Z (materials-26.04): concerns: material-698875 extension — take the landed single-pixel snapshot fix upstream
 - 2026-10-06T14:12:05Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T14:14:37Z (material-2f8ed6): resumed
+  provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T14:14:47Z (material-2f8ed6): verified upstream main ed22699d: render_snapshot_from_surface_tree is unchanged, but wp_single_pixel_buffer_manager_v1 is #[cfg(test)] there (and in this fork, src/niri.rs, issue #619), so no real client can hit the bug. Open PR #1463 (Implement wp_single_pixel_buffer_manager_v1 in render helpers) already changes the same function, with maintainer review. CONTRIBUTING.md forbids LLM-written PR code, descriptions and comments.
+- 2026-10-06T14:14:47Z (material-2f8ed6): dropped
+  provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T14:14:47Z (material-2f8ed6): Nothing to upstream: the protocol is test-only upstream, PR #1463 already covers this change, and upstream's LLM policy rules out an agent-written PR. The divergence row is now fork-only.
   provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
