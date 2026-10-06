@@ -8,12 +8,13 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-06T10:01:48Z
+updated: 2026-10-06T10:17:30Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
 tags: [material, noise]
 spec: docs/specs/2026-10-06-noise-layers-design.md
+plan: docs/plans/2026-10-06-noise-layers.md
 ---
 
 Prism goal prism-85f63a wants several noise devices stacked on one material. Extend the glass noise node to a small fixed number of layers (four, after the impulse fan-out precedent): packed vec4 uniforms for gain, type, and scale, an unrolled constant-bound loop in material.frag, and a per-layer seed scale or offset so identical types do not coincide. Single-node configs must render byte-identical. Record the cost of stacked fine layers (nine hashes per fragment per layer).
@@ -36,3 +37,5 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-06T10:01:47Z (material-3fcba2): resumed
   provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-06T10:01:47Z (material-3fcba2): review: spec round 2 — verdict: revise; findings: P2 1; reviewer: codex/gpt-6-astra
+- 2026-10-06T10:17:30Z (material-3fcba2): parked (waiting on user, review): Owner reviews .worktrees/material-3fcba2/docs/plans/2026-10-06-noise-layers.md and picks an execution mode; then agent starts Task 1 (material-ae3a26)
+  provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
