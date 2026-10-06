@@ -148,6 +148,39 @@ shift inside the glass. It stays with `material-d257d9`.
 The static perspective by screen position should be dropped. At rest the
 camera faces the glass, and content must not skew at rest.
 
+## Spike result (`material-89fb6b`)
+
+The result is a planar projection over the faked slab, rendered as frozen
+headless stills. The camera sits 2000 px from the screen, and the tilt is
+about the pane's vertical centre axis. The code is on the unmerged branch
+`spike/material-89fb6b`: the baseline is `69431712` (fixture only, renderer
+as on main) and the spike is `5bfba071`. The contact sheets are attached to
+the task, and the reproduction command is in its notes.
+
+- **Identity.** With the tilt off, all four renders are byte-identical to
+  the baseline commit.
+- **The camera model's cost.** Comparing the 0° pinhole render with main:
+  - Glyphs are identical.
+  - The face interior changes by at most 1 level, because the dark glass
+    hides the ~3 px backdrop shift.
+  - The bevel band changes by up to 55 levels, most on the edge farthest
+    from the centre, and faint ring lines appear.
+
+  A transition that preserves the rest optics must remove this difference.
+- **Text.** Softening is a step that comes from leaving the pixel grid, not
+  from the angle. Sharpness (Laplacian variance against the control) drops
+  to 0.33–0.39 at the near and far sides already at 2°, and stays there at
+  4° and 8°. At the pivot it falls gradually: 0.69, 0.62, 0.39. During a
+  swing, the time spent off the grid matters more than the amplitude.
+- **What follows the tilt.** The subsurface follows. The popup, border,
+  focus ring and shadow stay flat; at 4° the border visibly detaches from
+  the tilted pane. Grain and tap jitter stay fixed to the screen
+  (`gl_FragCoord`).
+- **How it reads.** To the agent: a thick-framed flat card turned in
+  perspective, with no side walls, as the faked slab predicts. On this dark
+  glass the beam at 150 ms is only about 20 levels above rest.
+- **Owner verdict:** pending.
+
 ## Unanswered questions
 
 - **Does it read as 3D glass?** Does a planar tilt of a few degrees, with
