@@ -56,10 +56,12 @@ pub use crate::input::{Input, ModKey, ScrollMethod, TrackLayout, WarpMouseToFocu
 pub use crate::layer_rule::LayerRule;
 pub use crate::layout::*;
 pub use crate::material::optics::aurora::{Aurora, ResolvedAurora};
+pub use crate::material::optics::edge_highlight::{EdgeHighlight, ResolvedEdgeHighlight};
 pub use crate::material::optics::iridescence::{Iridescence, ResolvedIridescence};
 pub use crate::material::optics::noise::{
     BackdropGrain, Noise, NoiseSite, NoiseType, ResolvedNoise,
 };
+pub use crate::material::optics::reflection::{Reflection, ResolvedReflection};
 pub use crate::material::optics::saturation::ResolvedSaturation;
 pub use crate::material::{
     AccentResponse, AttentionResponse, FocusResponse, Glass, ImpulseResponse, Material,
@@ -1515,11 +1517,14 @@ mod tests {
                 anisotropic_blur: 0.75,
                 roughness: 0.08,
                 iridescence: ResolvedIridescence::default(),
+                reflection: ResolvedReflection::default(),
+                edge_highlight: ResolvedEdgeHighlight::default(),
                 aurora: ResolvedAurora::default(),
                 backdrop_blur: false,
                 jelly_flex: 0.01,
                 jelly_ripple: 0.2,
                 bevel: 20.,
+                bevel_profile: 1.,
                 offset_x: -8.,
                 offset_y: 4.,
                 noise: ResolvedNoise::default(),
@@ -1646,6 +1651,25 @@ mod tests {
     }
 
     #[test]
+    fn bevel_profile_parses_and_defaults_to_planar() {
+        let written = do_parse(r##"material "edge" { glass { bevel-profile 2.5; }; }"##);
+        assert_eq!(written.materials[0].resolve().glass.bevel_profile, 2.5);
+        let omitted = do_parse(r##"material "edge" { glass {}; }"##);
+        assert_eq!(omitted.materials[0].resolve().glass.bevel_profile, 1.);
+        assert_eq!(ResolvedGlass::default().bevel_profile, 1.);
+    }
+
+    #[test]
+    fn bevel_profile_rejects_values_outside_one_and_eight() {
+        for value in ["0.99", "8.01"] {
+            let err = do_parse_err(&format!(
+                "material \"edge\" {{ glass {{ bevel-profile {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 1 and 8"), "{err}");
+        }
+    }
+
+    #[test]
     fn iridescence_resolves_through_its_optic() {
         let written = do_parse(r##"material "gem" { glass { iridescence 0.8; }; }"##);
         assert_eq!(
@@ -1665,6 +1689,51 @@ mod tests {
         for value in ["-0.01", "1.01"] {
             let err = do_parse_err(&format!(
                 "material \"gem\" {{ glass {{ iridescence {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 0 and 1"), "{err}");
+        }
+    }
+
+    #[test]
+    fn reflection_resolves_through_its_optic() {
+        let written = do_parse(r##"material "edge" { glass { reflection 0.6; }; }"##);
+        assert_eq!(
+            written.materials[0].resolve().glass.reflection,
+            ResolvedReflection { amount: 0.6 }
+        );
+        let omitted = do_parse(r##"material "edge" { glass {}; }"##);
+        assert_eq!(omitted.materials[0].resolve().glass.reflection.amount, 0.);
+    }
+
+    #[test]
+    fn glass_reflection_rejects_values_outside_zero_and_one() {
+        for value in ["-0.01", "1.01"] {
+            let err = do_parse_err(&format!(
+                "material \"edge\" {{ glass {{ reflection {value}; }}; }}\n"
+            ));
+            assert!(err.contains("value must be between 0 and 1"), "{err}");
+        }
+    }
+
+    #[test]
+    fn edge_highlight_resolves_through_its_optic() {
+        let written = do_parse(r##"material "edge" { glass { edge-highlight 0.5; }; }"##);
+        assert_eq!(
+            written.materials[0].resolve().glass.edge_highlight,
+            ResolvedEdgeHighlight { amount: 0.5 }
+        );
+        let omitted = do_parse(r##"material "edge" { glass {}; }"##);
+        assert_eq!(
+            omitted.materials[0].resolve().glass.edge_highlight.amount,
+            0.
+        );
+    }
+
+    #[test]
+    fn glass_edge_highlight_rejects_values_outside_zero_and_one() {
+        for value in ["-0.01", "1.01"] {
+            let err = do_parse_err(&format!(
+                "material \"edge\" {{ glass {{ edge-highlight {value}; }}; }}\n"
             ));
             assert!(err.contains("value must be between 0 and 1"), "{err}");
         }

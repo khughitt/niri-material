@@ -15,14 +15,18 @@ use smithay::backend::renderer::gles::{Uniform, UniformName, UniformType};
 use crate::activity::OpticTime;
 
 pub mod aurora;
+pub mod edge_highlight;
 pub mod iridescence;
 pub mod noise;
+pub mod reflection;
 pub mod saturation;
 
 /// One pipeline stage. Implemented on a marker type per optic; the resolved
 /// configuration arrives as `ResolvedGlass`, which owns every optic's state.
 pub trait Optic {
-    /// The registry name; matches `niri_config::material::optics::ORDER`.
+    /// The registry name; matches `niri_config::material::optics::ORDER`. A
+    /// hyphenated name keeps its hyphen here, in `ORDER` and in the KDL node, and
+    /// becomes underscores in file, module, hook and uniform names.
     const NAME: &'static str;
     /// The optic's GLSL: its `uniform` declarations and `<NAME>_<hook>`
     /// functions.
@@ -80,6 +84,8 @@ pub static OPTICS: &[OpticEntry] = &[
     OpticEntry::of::<saturation::SaturationOptic>(),
     OpticEntry::of::<noise::NoiseOptic>(),
     OpticEntry::of::<aurora::AuroraOptic>(),
+    OpticEntry::of::<reflection::ReflectionOptic>(),
+    OpticEntry::of::<edge_highlight::EdgeHighlightOptic>(),
     OpticEntry::of::<iridescence::IridescenceOptic>(),
 ];
 

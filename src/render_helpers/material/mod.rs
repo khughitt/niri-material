@@ -23,6 +23,7 @@ use super::signal::{color_linear, ImpulseFrame, SignalFingerprint, SignalFrame};
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 use crate::render_helpers::RenderTarget;
 
+pub mod bevel;
 pub mod optics;
 pub mod ring;
 pub mod tint;
@@ -935,6 +936,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_sig_ring_color", self.signal.ring_color),
             Uniform::new("mat_sig_ring_accent", self.signal.ring_accent),
             Uniform::new("mat_light_ior", g.light_ior as f32),
+            Uniform::new("mat_bevel_profile", g.bevel_profile as f32),
         ];
         uniforms.extend(self.optics.iter().cloned());
         let uniforms: Rc<[Uniform<'static>]> = uniforms.into();
@@ -2045,6 +2047,40 @@ mod tests {
             [1., 1., 1.],
             "no accent falls back to white"
         );
+    }
+
+    #[test]
+    fn the_signal_light_is_never_vertical() {
+        // The glint and edge-highlight normalize the light's xy.
+        for attention in [
+            niri_config::AttentionResponse::None,
+            niri_config::AttentionResponse::RimOrbit,
+        ] {
+            let r = niri_config::ResolvedResponse {
+                attention,
+                ..niri_config::ResolvedResponse::default()
+            };
+            for level in [0., 0.5, 1.] {
+                for breath in [0., 0.5, 1.] {
+                    let frame = SignalFrame {
+                        accent: None,
+                        level,
+                        breath,
+                        impulses: Default::default(),
+                        presence: 0.,
+                        tint_chroma: None,
+                        focus: 0.,
+                        beam: BeamFrame::REST,
+                    };
+                    let g = glass_signal_inputs(&frame, &ResolvedGlass::default(), &r);
+                    let [x, y, _] = SignalUniforms::from_frame(&frame, &g, &r).light;
+                    assert!(
+                        x.hypot(y) >= 0.99,
+                        "{attention:?} {level} {breath}: ({x}, {y})"
+                    );
+                }
+            }
+        }
     }
 
     fn accent_frame(

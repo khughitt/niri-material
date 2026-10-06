@@ -85,6 +85,7 @@ pub struct Window {
 pub struct LayerSurface {
     pub qh: QueueHandle<State>,
     pub spbm: WpSinglePixelBufferManagerV1,
+    pub shm: WlShm,
 
     pub surface: WlSurface,
     pub layer_surface: ZwlrLayerSurfaceV1,
@@ -324,6 +325,7 @@ impl State {
         let layer_surface = LayerSurface {
             qh: self.qh.clone(),
             spbm: self.spbm.clone().unwrap(),
+            shm: self.shm.clone().unwrap(),
 
             surface,
             layer_surface,
@@ -436,6 +438,29 @@ impl Window {
 }
 
 impl LayerSurface {
+    /// A `w`×`h` ARGB8888 shm buffer filled by `argb(x, y)`, damaged in full.
+    pub fn attach_new_shm_pattern(&self, w: u16, h: u16, argb: impl Fn(u16, u16) -> u32) {
+        use std::io::Write as _;
+        use std::os::fd::{AsFd as _, FromRawFd as _, OwnedFd};
+
+        let fd = unsafe { libc::memfd_create(c"niri-test-shm".as_ptr(), libc::MFD_CLOEXEC) };
+        assert!(fd >= 0, "memfd_create failed");
+        let mut file = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+        let mut bytes = Vec::with_capacity(usize::from(w) * usize::from(h) * 4);
+        for y in 0..h {
+            for x in 0..w {
+                bytes.extend_from_slice(&argb(x, y).to_ne_bytes());
+            }
+        }
+        file.write_all(&bytes).unwrap();
+        let (w, h) = (i32::from(w), i32::from(h));
+        let pool = self.shm.create_pool(file.as_fd(), w * h * 4, &self.qh, ());
+        let buffer = pool.create_buffer(0, w, h, w * 4, wl_shm::Format::Argb8888, &self.qh, ());
+        pool.destroy();
+        self.surface.attach(Some(&buffer), 0, 0);
+        self.surface.damage_buffer(0, 0, w, h);
+    }
+
     pub fn commit(&self) {
         self.surface.commit();
     }

@@ -61,6 +61,7 @@ uniform vec4 mat_sig_focus;
 uniform vec3 mat_sig_ring_color;
 uniform float mat_sig_ring_accent;
 uniform float mat_light_ior;
+uniform float mat_bevel_profile;
 
 // Slab geometry published by slabSurface for the focus filament: the outer
 // silhouette and the face (the chamfer's inner edge, jelly included), which
@@ -71,6 +72,30 @@ vec4 g_outer_r;
 vec2 g_face_center;
 vec2 g_face_half;
 vec4 g_face_r;
+
+// Glass edge constants: bevel.rs holds the same values under the same names,
+// and a test there checks these lines (spec 2026-09-30-glass-edge-optics §3.1).
+const float BEVEL_SLOPE_CAP = 20.0;
+const float BEVEL_OUTER_SOFTEN = 0.5;
+const float BEVEL_RIDGE_EPS = 0.0001;
+const float BEVEL_PROFILE_EPS = 0.000001;
+const float BEVEL_LSP_SMALL = 0.001;
+const float BEVEL_TANH_CLAMP = 10.0;
+const float RAY_PATH_FLOOR = 0.25;
+const float TAP_MIN_Z = 0.05;
+
+// What a specular hook sees of the surface at this fragment (spec §3.4).
+struct Surface {
+    vec2 p;            // element-local logical px
+    vec2 v;            // element UV
+    vec3 structural;   // the slab's normal
+    vec3 perturbed;    // after distortion and jelly ripple
+    float cosine;      // structural.z, clamped to [0, 1]
+    float fresnel;     // Schlick at the structural normal
+    float across;      // u: 0 at the face edge, 1 at the silhouette, 0 on the face
+    vec2 acrossDir;    // normalize(grad u), outward across the bevel
+    float outerDist;   // signed distance to the silhouette, negative inside
+};
 
 bool inRect(vec2 v, vec4 rect) {
     return all(greaterThanEqual(v, rect.xy))
@@ -248,14 +273,56 @@ vec2 sdRoundedBoxGrad(vec2 p, vec2 b, vec4 radii) {
     return g * vec2(p.x >= 0.0 ? 1.0 : -1.0, p.y >= 0.0 ? 1.0 : -1.0);
 }
 
+// log(softplus(t)), without overflow for large t or loss for very negative t.
+float lsp(float t) {
+    if (t > 0.0)
+        return log(t + log(1.0 + exp(-t)));
+    float x = exp(t);
+    float ratio = x < BEVEL_LSP_SMALL ? 1.0 - 0.5 * x : log(1.0 + x) / x;
+    return t + log(ratio);
+}
+
+// tanh with a clamped argument: GLSL ES 1.00 has no tanh.
+float tanhs(float t) {
+    float e = exp(2.0 * clamp(t, -BEVEL_TANH_CLAMP, BEVEL_TANH_CLAMP));
+    return (e - 1.0) / (e + 1.0);
+}
+
+// The outer box's softened outward gradient: softplus for each positive part,
+// tanhs for each sign, normalized in the log domain. vec2(0.0) on the ridge
+// between parallel sides, where the caller uses the inner gradient.
+vec2 softOuterGrad(vec2 p, vec2 b, vec4 radii) {
+    float r = cornerRadius(p, radii);
+    vec2 q = abs(p) - b + vec2(r);
+    vec2 l = vec2(lsp(q.x / BEVEL_OUTER_SOFTEN), lsp(q.y / BEVEL_OUTER_SOFTEN));
+    float m = max(l.x, l.y);
+    vec2 c = vec2(exp(l.x - m) * tanhs(p.x / BEVEL_OUTER_SOFTEN),
+                  exp(l.y - m) * tanhs(p.y / BEVEL_OUTER_SOFTEN));
+    float len = length(c);
+    return len < BEVEL_RIDGE_EPS ? vec2(0.0) : c / len;
+}
+
+// f(u) = 1 - (1 - u^k)^(1/k): 0 at the face edge, 1 at the silhouette.
+float bevelProfile(float u, float k) {
+    return 1.0 - pow(max(1.0 - pow(u, k), 0.0), 1.0 / k);
+}
+
+// f'(u), both bases kept off zero: GLSL leaves pow(0, y <= 0) undefined.
+float bevelProfileSlope(float u, float k) {
+    float a = clamp(u, BEVEL_PROFILE_EPS, 1.0);
+    float b = clamp(1.0 - pow(u, k), BEVEL_PROFILE_EPS, 1.0);
+    return pow(a, k - 1.0) * pow(b, 1.0 / k - 1.0);
+}
+
 // The fragment-faked slab at an element-local logical-px position:
-// coverage in [0, 1] and the surface normal (y-down, +z toward the
-// viewer). The outer silhouette is the slab back and stays fixed; the
-// chamfer's inner edge is the front face and trails the jelly shear
-// (later slice-2 work) — the quad-form equivalent of the legacy anchored
-// vertex shear. Chamfer normals slope at 45 degrees like the mesh ring.
+// coverage in [0, 1], the structural normal (y-down, +z toward the viewer),
+// the local height, and the across-bevel coordinate u with its direction.
+// The outer silhouette is the slab back and stays fixed; the face trails
+// the jelly. The bevel is a height field measured against both boundaries
+// (spec 2026-09-30-glass-edge-optics §3.1); bevel.rs mirrors it.
 void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist,
-                 out float innerDist, out float chamferOut) {
+                 out float innerDist, out float chamferOut, out float height,
+                 out float across, out vec2 acrossDir) {
     vec2 slab_min = mat_slab_rect.xy * mat_area_size;
     vec2 slab_size = mat_slab_rect.zw * mat_area_size;
     vec2 half_ext = slab_size * 0.5;
@@ -284,9 +351,10 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     // full-flex resize reaches an inner edge near 90.4, and 90.4 + 2 * 12
     // overflows the 112 px outer edge. Constraining the *inner* radius by
     // both keeps `outer = inner + chamfer` exactly true, which the bevel
-    // normal below depends on — it builds its slope from `chamfer` as the
-    // horizontal run, so a separately fitted outer ring would tilt the
-    // normal at exactly the corners it narrowed.
+    // normal below depends on — it takes its slope from the height field
+    // between the inner and outer boundaries, so a separately fitted outer
+    // ring would change that run, and tilt the normal, at exactly the corners
+    // it narrowed.
     vec2 radius_half = min(inner_half, half_ext - vec2(chamfer));
     vec4 inner_r = fitRadii(mat_corner_radius, radius_half);
     vec4 outer_r = inner_r + vec4(chamfer);
@@ -307,23 +375,56 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     float di = sdRoundedBox(p - inner_center, inner_half, inner_r);
     innerDist = di;
 
+    height = mat_thickness;
+    across = 0.0;
+    acrossDir = vec2(0.0);
+    normal = vec3(0.0, 0.0, 1.0);
     if (chamfer > 0.0 && di >= 0.0) {
-        vec2 g = sdRoundedBoxGrad(p - inner_center, inner_half, inner_r);
-        float bevel = min(chamfer, mat_thickness);
-        float slope = length(vec2(bevel, chamfer));
-        normal = normalize(vec3(g * (bevel / slope), chamfer / slope));
-    } else {
-        normal = vec3(0.0, 0.0, 1.0);
+        vec2 gIn = sdRoundedBoxGrad(p - inner_center, inner_half, inner_r);
+        vec2 gOut = softOuterGrad(p - center, half_ext, outer_r);
+        if (gOut == vec2(0.0))
+            gOut = gIn;
+        float w = di - d;
+        vec2 gradU;
+        if (w < aa) {
+            // Narrower than a physical pixel: rim.
+            across = 1.0;
+            gradU = gIn / max(w, aa);
+        } else {
+            across = clamp(di / w, 0.0, 1.0);
+            gradU = (-d * gIn + di * gOut) / (w * w);
+        }
+        float rise = min(chamfer, mat_thickness);
+        float k = mat_bevel_profile;
+        height = mat_thickness - rise * bevelProfile(across, k);
+        vec2 slope = rise * bevelProfileSlope(across, k) * gradU;
+        float s = length(slope);
+        if (s > BEVEL_SLOPE_CAP)
+            slope *= BEVEL_SLOPE_CAP / s;
+        normal = normalize(vec3(slope, 1.0));
+        acrossDir = length(gradU) > 0.0 ? normalize(gradU) : gIn;
     }
 }
 
-// One refraction tap: bend the orthographic ray at the surface normal and
-// sample the composed background where the displaced ray lands. Offsets
-// are logical px mapped through the element-UV frame; the element and the
-// background buffers share the y-down orientation, so no axis flip.
-vec3 tap(vec2 v, vec3 n, float ior, float thickness) {
-    vec3 refr = refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior);
-    vec2 vv = v + (refr.xy * thickness) / mat_area_size;
+// The refracted ray's length to the backdrop plane under local height h
+// (spec §3.1 "Ray model"). On the face, t = (0, 0, -1) and L = h.
+float rayPath(vec3 t, float h) {
+    return h / max(-t.z, RAY_PATH_FLOOR);
+}
+
+// Distortion and ripple can tip a tap's normal past horizontal; lift it into
+// the structural cap so every refracted ray points down.
+vec3 liftTapNormal(vec3 n) {
+    return normalize(vec3(n.xy, max(n.z, TAP_MIN_Z)));
+}
+
+// One refraction tap: bend the orthographic ray at the lifted normal, follow
+// it to the backdrop plane under height h, and sample the composed background
+// there. Offsets are logical px mapped through the element-UV frame; the
+// element and the background buffers share the y-down orientation.
+vec3 tap(vec2 v, vec3 n, float ior, float h) {
+    vec3 refr = refract(vec3(0.0, 0.0, -1.0), liftTapNormal(n), 1.0 / ior);
+    vec2 vv = v + (refr.xy * rayPath(refr, h)) / mat_area_size;
     return srgbToLinear(sampleBackground(vv));
 }
 

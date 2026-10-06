@@ -51,6 +51,7 @@ lengths are logical pixels.
 | `jelly-flex` | float | 0.004 | 0–0.02 | — |
 | `jelly-ripple` | float | 0.06 | 0–0.5 | — |
 | `bevel` | float | 12 | 0–128 | logical px |
+| `bevel-profile` | float | 1 | 1–8 | — |
 | `light-ior` | float | 6 | 1–12 | — |
 | `offset-x` | float | 6 | −64–64 | logical px |
 | `offset-y` | float | 6 | −64–64 | logical px |
@@ -62,6 +63,8 @@ lengths are logical pixels.
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
 | `aurora` `color` | color | `#7a5cff` | any color | — |
+| `reflection` | float | 0 | 0–1 | — |
+| `edge-highlight` | float | 0 | 0–1 | — |
 | `iridescence` | float | 0 | 0–1 | — |
 
 <!-- params:end -->
@@ -77,6 +80,16 @@ interactive-drag behavior or a new perceptual range.
 `light-ior` multiplies the bend applied to ring and aurora interior-light
 paths only; the background taps are unaffected. The light-path index is
 `1 + (ior - 1) * light-ior`.
+
+`bevel-profile` shapes the bevel between the face and the silhouette:
+`1` is a planar chamfer, `2` a quarter-round, and larger values a squircle
+that stays flat longer and rolls off harder. The bevel is a height field: the
+glass thins from `thickness` at the face edge to `thickness - min(bevel,
+thickness)` at the silhouette, refraction and attenuation follow the refracted
+ray to the backdrop plane under that local height, and the reflected share
+`F` of the light is no longer transmitted (`docs/specs/2026-09-30-glass-edge-optics-design.md`).
+At `bevel-profile 1` on a straight side the normal, and so the ring cap table
+above, is unchanged; for larger values the tilt varies across the bevel.
 
 The ring's shared refracted shift is capped at half `ring-gap`, 4 px at the
 default gap of 8. The cap keeps a second copy of the band core off the
@@ -122,8 +135,9 @@ disables it along with all other blur, regardless of this parameter.
 
 `saturation` then glass-site `noise` transform the averaged backdrop before attenuation,
 through the `behind` hook. Their formulas run in sRGB (Oklab for lightness
-grain) and return linear light. Additive glint, ring, aurora and sweeps are
-not postprocessed; the chamfer still transmits attenuated grain. A written
+grain) and return linear light. Additive glint, reflection, edge highlight,
+ring, aurora and sweeps are not postprocessed; the bevel still transmits
+attenuated grain. A written
 value is a material optic and applies regardless of `backdrop-blur` and of
 `blur { off }`. An omitted
 value inherits the global `blur` block's `noise` or `saturation` while
@@ -173,7 +187,8 @@ the offsets. Its inner corners follow the window's effective
 The glass pipeline is a slab plus an ordered list of optics. Each optic owns
 its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
 changes nothing; omission can instead inherit where stated below.
-Optics are listed in render order: `saturation`, `noise`, `aurora`, `iridescence`.
+Optics are listed in render order: `saturation`, `noise`, `aurora`, `reflection`,
+`edge-highlight`, `iridescence`.
 Contributors: see `adding-an-optic.md`.
 
 ### saturation
@@ -204,6 +219,28 @@ mix, so an accent still tints the result. Its explicit neutral is 0, and
 omission is 0; nothing inherits. The `rainbow` preset pairs it with
 `chromatic-aberration`, which is the dispersion the refracted image carries;
 iridescence colours the edge light.
+
+### reflection
+
+Stage 6. `reflection <amount>` adds what the bevel reflects: the scene just
+beyond the silhouette, sampled outward across the bevel and one thickness
+further, weighted by the Fresnel term and faded in over the first tenth of
+the bevel. It is not tinted by `attenuation-color` (reflection happens at the
+surface), so a dark edge still shows the wallpaper's colours, and it goes
+through the same prefilter as the refracted image, so `roughness` softens it.
+Distortion and jelly ripple bend its direction. Its explicit neutral is 0, and
+omission is 0; nothing inherits.
+
+### edge-highlight
+
+Stage 6. `edge-highlight <amount>` adds a key-light lobe on the bevel where
+its normal bisects the view and a light at 45 degrees' elevation in the signal
+light's direction (top left at rest; `attention "rim-orbit"` sways it with the
+glint). The lobe is GGX, peak-normalized so the amount is the peak added
+linear brightness, and `roughness` widens it. It fades in with the bevel's
+tilt, so a rounded face join stays dark; a planar facet lights uniformly and
+flashes when its slope matches the light's half-angle (`R / bevel = 0.414`).
+Its explicit neutral is 0, and omission is 0; nothing inherits.
 
 ### aurora
 

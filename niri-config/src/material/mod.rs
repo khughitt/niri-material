@@ -518,6 +518,10 @@ pub struct Glass {
     pub roughness: Option<FloatOrInt<0, 1>>,
     #[knuffel(child, unwrap(argument))]
     pub iridescence: Option<optics::iridescence::Iridescence>,
+    #[knuffel(child, unwrap(argument))]
+    pub reflection: Option<optics::reflection::Reflection>,
+    #[knuffel(child, unwrap(argument))]
+    pub edge_highlight: Option<optics::edge_highlight::EdgeHighlight>,
     #[knuffel(child)]
     pub aurora: Option<optics::aurora::Aurora>,
     #[knuffel(child)]
@@ -532,6 +536,11 @@ pub struct Glass {
     pub jelly_ripple: Option<Milli<0, 500>>,
     #[knuffel(child, unwrap(argument))]
     pub bevel: Option<FloatOrInt<0, 128>>,
+    /// Bevel profile exponent: 1 is a planar chamfer, 2 a quarter-round, and
+    /// higher values a squircle that stays flat longer and rolls off harder
+    /// (docs/specs/2026-09-30-glass-edge-optics-design.md §3.1).
+    #[knuffel(child, unwrap(argument))]
+    pub bevel_profile: Option<FloatOrInt<1, 8>>,
     #[knuffel(child, unwrap(argument))]
     pub offset_x: Option<FloatOrInt<-64, 64>>,
     #[knuffel(child, unwrap(argument))]
@@ -576,6 +585,8 @@ pub struct ResolvedGlass {
     pub anisotropic_blur: f64,
     pub roughness: f64,
     pub iridescence: optics::iridescence::ResolvedIridescence,
+    pub reflection: optics::reflection::ResolvedReflection,
+    pub edge_highlight: optics::edge_highlight::ResolvedEdgeHighlight,
     pub aurora: optics::aurora::ResolvedAurora,
     /// Whether the material samples the blurred backdrop. Strength comes from
     /// the global `blur` block; `blur { off }` overrides this.
@@ -583,6 +594,7 @@ pub struct ResolvedGlass {
     pub jelly_flex: f64,
     pub jelly_ripple: f64,
     pub bevel: f64,
+    pub bevel_profile: f64,
     pub offset_x: f64,
     pub offset_y: f64,
     pub noise: optics::noise::ResolvedNoise,
@@ -604,11 +616,14 @@ impl Default for ResolvedGlass {
             anisotropic_blur: 0.,
             roughness: 0.,
             iridescence: optics::iridescence::ResolvedIridescence::default(),
+            reflection: optics::reflection::ResolvedReflection::default(),
+            edge_highlight: optics::edge_highlight::ResolvedEdgeHighlight::default(),
             aurora: optics::aurora::ResolvedAurora::default(),
             backdrop_blur: false,
             jelly_flex: 0.004,
             jelly_ripple: 0.06,
             bevel: 12.,
+            bevel_profile: 1.,
             offset_x: 6.,
             offset_y: 6.,
             noise: optics::noise::ResolvedNoise::default(),
@@ -708,6 +723,12 @@ pub fn core_params() -> Vec<params::ParamSpec> {
             read: Some(|g| Some(g.bevel)),
         },
         ParamSpec {
+            node: "bevel-profile",
+            kind: ParamKind::float::<FloatOrInt<1, 8>>(d.bevel_profile, "—"),
+            write: |v| format!("bevel-profile {v}"),
+            read: Some(|g| Some(g.bevel_profile)),
+        },
+        ParamSpec {
             node: "light-ior",
             kind: ParamKind::float::<FloatOrInt<1, 12>>(d.light_ior, "—"),
             write: |v| format!("light-ior {v}"),
@@ -779,11 +800,14 @@ impl Material {
                 anisotropic_blur: g.anisotropic_blur.map_or(d.anisotropic_blur, |x| x.0),
                 roughness: g.roughness.map_or(d.roughness, |x| x.0),
                 iridescence: optics::iridescence::resolve(g.iridescence),
+                reflection: optics::reflection::resolve(g.reflection),
+                edge_highlight: optics::edge_highlight::resolve(g.edge_highlight),
                 aurora: optics::aurora::resolve(g.aurora.as_ref()),
                 backdrop_blur: g.backdrop_blur.unwrap_or(d.backdrop_blur),
                 jelly_flex: g.jelly_flex.map_or(d.jelly_flex, |x| x.0),
                 jelly_ripple: g.jelly_ripple.map_or(d.jelly_ripple, |x| x.0),
                 bevel: g.bevel.map_or(d.bevel, |x| x.0),
+                bevel_profile: g.bevel_profile.map_or(d.bevel_profile, |x| x.0),
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
                 noise: optics::noise::resolve(g.noise),
