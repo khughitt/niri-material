@@ -12,6 +12,8 @@
 
 **Status:** accepted for native execution 2026-10-06 after plan review round 4 (codex: accept, no findings; the real nextest `FAIL` line format stays an execution check, and an unexpected format fails closed). Round 3 (codex, 2026-10-06): the mutation harness aborts before editing when its backup fails, deletes the backup only after a verified restore, and counts a mutation as caught only on log evidence that the named test alone failed at the expected assertion; every exit path was simulated while planning. Round 2 (codex, 2026-10-06): mutation demonstrations restore a saved copy through one harness, since Task 2's run precedes its commit; the order test's configs are raw strings. Round 1 (codex, 2026-10-06): the smoke's `bins()` checks `identify` and the helper's status and clears stale values; the coefficient pin reads code, not comments, with mutation demonstrations; the cost cleanup test follows `stop_walls` and `cleanup_cost` into the lib; a fixed-seed, hook-ordered reference checks each site's slot order, with reversal demonstrations; a visible lattice blocks the merge unless fixed or the owner explicitly accepts deferral. Execution: native (owner, 2026-10-06).
 
+**Execution:** native/inline 2026-10-06. Tasks 1–3 committed and verified; Tasks 4–5 scripts and offline checks prepared. The capture preflight refused CPU/load/GPU quietness before any cells ran. Baseline release build prepared separately; smoke/cost evidence and the owner’s contact-sheet review remain before Task 6.
+
 ## Global Constraints
 
 - Branch `material-3fcba2` in `.worktrees/material-3fcba2`, on `materials-26.04`. Baseline commit `4a8b2072` (the task-start commit).
@@ -155,7 +157,7 @@ This task is green on its own: the renderer keeps its float uniforms and reads s
 - Produces (in `niri_config::material::optics::noise`, re-exported from `niri_config`): `pub const NOISE_LAYERS: usize = 4`; `Noise { amount, kind, site, scale: Option<FloatOrInt<1, 16>> }`; `pub struct ResolvedNoiseLayer { pub amount: f64, pub kind: NoiseType, pub site: NoiseSite, pub scale: f64 }`; `pub struct ResolvedNoise { pub layers: [Option<ResolvedNoiseLayer>; NOISE_LAYERS] }` with `ResolvedNoise::single(amount: f64, kind: NoiseType, site: NoiseSite) -> Self` and `ResolvedNoise::is_omitted(&self) -> bool`; `pub fn resolve(nodes: &[Noise]) -> ResolvedNoise`; `pub fn validate(nodes: &[Noise]) -> Result<(), String>`; `pub struct BackdropLayer { pub amount: f64, pub kind: NoiseType, pub scale: f64 }`; `pub struct BackdropGrain { pub layers: [Option<BackdropLayer>; NOISE_LAYERS] }` with `Display` (`[0.3 fine, 0.1 white scale 4]`); `pub fn backdrop_grain(materials: &[Material]) -> Result<Option<BackdropGrain>, String>`; `Config::backdrop_grain(&self) -> Option<BackdropGrain>` (unchanged signature). `Glass.noise: Vec<Noise>`. `ParamSpec` node `"noise scale="`.
 - Consumed by: Task 2 (slots, `NOISE_LAYERS`, `BackdropGrain` layers), Task 3 (configs).
 
-- [ ] **Step 1: Write the failing config tests**
+- [x] **Step 1: Write the failing config tests**
 
 In `niri-config/src/lib.rs` (its test module imports through `use super::*`, so Step 3's re-exports reach it), replace these existing tests with the versions below (same names unless stated), and add the new ones after `glass_noise_site_rejects_an_unknown_value`:
 
@@ -501,12 +503,12 @@ In `src/render_helpers/material/mod.rs` tests, add after `noise_type_change_adva
     }
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `just test-one -p niri-config glass_noise`
 Expected: compile errors (`ResolvedNoise::single`, `layers`, `ResolvedNoiseLayer`, `BackdropLayer` unknown).
 
-- [ ] **Step 3: Implement the config side**
+- [x] **Step 3: Implement the config side**
 
 Replace the body of `niri-config/src/material/optics/noise.rs` from the `Noise` struct to the end of `backdrop_grain` with:
 
@@ -727,7 +729,7 @@ In `niri-config/src/material/pipeline.rs`, the three noise stages (`backdrop-gra
             &["noise", "noise type=", "noise site=", "noise scale="],
 ```
 
-- [ ] **Step 4: Keep the renderer on slot 0 (interim)**
+- [x] **Step 4: Keep the renderer on slot 0 (interim)**
 
 `src/render_helpers/material/optics/noise.rs`, `values`:
 
@@ -796,7 +798,7 @@ Literals:
     }
 ```
 
-- [ ] **Step 5: Regenerate the table and the schema file**
+- [x] **Step 5: Regenerate the table and the schema file**
 
 ```bash
 MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config material_parameter_table_matches_the_docs
@@ -806,12 +808,12 @@ git diff --stat docs/materials/material-config.md resources/materials/pipeline.j
 
 Expected: the table gains one row, `` | `noise` `scale=` | float | 1 | 1–16 | px | `` (the renderer's column format); `pipeline.json` gains `"noise scale="` in the three noise stages' lists and nothing else.
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `just test-one -p niri-config noise` then `just test-one -p niri-config material_parameter` then `just test-one -p niri noise` then `just test-fast`.
 Expected: all PASS (the `niri` noise tests include `src/tests/noise_site.rs`, whose identities still hold on slot 0).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 tasks done material-ae3a26 "Config: up to four noise nodes with scale=, list agreement at the backdrop, the noise scale= row"
@@ -838,7 +840,7 @@ git commit -m "feat(material): decode up to four noise layers with a scale each 
 - Consumes: `ResolvedNoise.layers`, `NOISE_LAYERS`, `BackdropGrain.layers` (Task 1).
 - Produces: `GrainOptions { pub layers: [Option<GrainLayer>; NOISE_LAYERS] }`, `GrainLayer { pub amount: f32, pub kind: NoiseType, pub scale: f32 }`, `GrainOptions::uniforms(&self) -> [[f32; 4]; 3]` (amounts, kinds, scales), test-only `GrainOptions::one(amount: f32, kind: NoiseType) -> Self`; uniforms `mat_noise`, `mat_noise_type`, `mat_noise_site`, `mat_noise_scale`, all `vec4`. GLSL: `noiseValue(vec2, float type, float scale, vec2 offset)`, `noiseApply(vec3, float grain, float type)`, hooks `noise_behind`, `noise_post`, `noise_source` unchanged in signature.
 
-- [ ] **Step 1: Write the failing optic and grain tests**
+- [x] **Step 1: Write the failing optic and grain tests**
 
 Replace the `tests` module of `src/render_helpers/material/optics/noise.rs` with:
 
@@ -1046,12 +1048,12 @@ In `src/render_helpers/grain.rs` tests, add:
     }
 ```
 
-- [ ] **Step 2: Run them to see them fail**
+- [x] **Step 2: Run them to see them fail**
 
 Run: `just test-one -p niri -E 'test(noise) | test(grain)'`
 Expected: compile errors (`GrainLayer`, `GrainOptions::one`, `uniforms` unknown).
 
-- [ ] **Step 3: Write `noise.frag`**
+- [x] **Step 3: Write `noise.frag`**
 
 Replace `src/render_helpers/shaders/material/noise.frag` with:
 
@@ -1232,7 +1234,7 @@ vec4 noise_source(vec4 texel, vec2 fragCoord) {
 
 Each single-layer path keeps the old operations in the old order: the old `noise_behind` white branch computed `encoded + (hash12(seed) - 0.5) * mat_noise` and decoded; the new one computes `(hash12(fragCoord + offset) - 0.5) * amount`, adds it as `vec3(grain)` and decodes. The baseline-binary smoke (Task 4) is the byte-level check; if it reports a difference, compare the two compiled paths before changing a tolerance.
 
-- [ ] **Step 4: Upload four vectors from the optic**
+- [x] **Step 4: Upload four vectors from the optic**
 
 `src/render_helpers/material/optics/noise.rs`:
 
@@ -1283,7 +1285,7 @@ impl Optic for NoiseOptic {
 }
 ```
 
-- [ ] **Step 5: Carry the layers through the grain pass**
+- [x] **Step 5: Carry the layers through the grain pass**
 
 `src/render_helpers/grain.rs`, replacing `GrainOptions` and its `From`:
 
@@ -1358,7 +1360,7 @@ Imports: `use niri_config::{BackdropGrain, NoiseType, NOISE_LAYERS};`. `GrainPro
 
 In `grain.rs` and `effect_buffer.rs` tests, replace every `GrainOptions { amount: A, kind: K }` with `GrainOptions::one(A, K)`.
 
-- [ ] **Step 6: Update the pins and the tile tests**
+- [x] **Step 6: Update the pins and the tile tests**
 
 `src/render_helpers/shaders/mod.rs:578`: `assert!(source.contains("uniform vec4 mat_noise_site;"));`. In `uniform_nodes`, add `"mat_noise_scale" => vec!["noise scale="],` beside `mat_noise_site`.
 
@@ -1379,12 +1381,12 @@ In `grain.rs` and `effect_buffer.rs` tests, replace every `GrainOptions { amount
 
 and replace `uniform_f32(&uniforms, "mat_noise")` and `uniform_f32(&uniforms, "mat_noise_type")` (three calls in the two noise tests) with `uniform_slot0(...)`. `mat_saturation` keeps `uniform_f32`.
 
-- [ ] **Step 7: Run the unit tests and the existing pixel identities**
+- [x] **Step 7: Run the unit tests and the existing pixel identities**
 
 Run: `just test-one -p niri -E 'test(noise) | test(grain) | test(pipeline) | test(uniform)'`
 Expected: PASS, including `the_fine_norm_coefficients_are_twice_the_corner_correlations`, every pin in `shaders/mod.rs`, and `src/tests/noise_site.rs` (omitted equals glass, film within one code of glass, backdrop within two codes, amount 0 neutral, damage contract): the single-layer paths are unchanged.
 
-- [ ] **Step 7a: Demonstrate that the coefficient pin reads the code**
+- [x] **Step 7a: Demonstrate that the coefficient pin reads the code**
 
 With the mutation harness (above), on the uncommitted rewrite:
 
@@ -1401,7 +1403,7 @@ just test-one -p niri "$T"
 
 Expected: `caught:` and exit 0 for all three (any other exit code stops the step: read the message and, for 4, the kept log), `cmp` silent, and the final run PASSES. Record `tasks note material-cb80f7 "mutation: coefficient pin fails for adjacent, diagonal and deleted correction"`.
 
-- [ ] **Step 8: Run the fast suite and commit**
+- [x] **Step 8: Run the fast suite and commit**
 
 ```bash
 just test-fast
@@ -1428,7 +1430,7 @@ git commit -m "feat(material): four noise slots with a grain size in the materia
 
 These tests run against the finished shader, so they pass on first run; Step 3 demonstrates once that the per-position check catches the independent-corner norm the spec review found.
 
-- [ ] **Step 1: Write the test file**
+- [x] **Step 1: Write the test file**
 
 `src/tests/noise_layers.rs`:
 
@@ -1869,12 +1871,12 @@ fn a_backdrop_layer_scale_change_publishes_damage() {
 }
 ```
 
-- [ ] **Step 2: Run the new tests**
+- [x] **Step 2: Run the new tests**
 
 Run: `just test-one -p niri -E 'test(noise_layers) | test(a_backdrop_layer_scale_change_publishes_damage)'`
 Expected: PASS. If `render`'s size assertion fails, the test client did not get its size: read the configure the fixture's layout sent (`default-column-width`) and set `layout { default-column-width { fixed 1200; } }` in `config`, then rerun; do not shrink the window, because the position classes need the samples.
 
-- [ ] **Step 3: Demonstrate that the position check catches the independent-corner norm**
+- [x] **Step 3: Demonstrate that the position check catches the independent-corner norm**
 
 With the mutation harness, the fine branch loses its covariance correction, so fine uses `Σ w²` as round 1's spec did:
 
@@ -1888,7 +1890,7 @@ just test-one -p niri grain_deviation_holds_across_scales_and_cell_positions
 
 Expected: `caught: no-correction` and exit 0, the matched text naming a `fine scale <s>: position (x, y)` class (at scale 8 the weakest class is near 0.8 of the aggregate, per spec review round 2's 79.5 %; a smaller scale may fail first). The expected pattern excludes the aggregate assertion's message, so a failure there exits 4 instead of counting; `cmp` silent; the final run PASSES. Record the failing line: `tasks note material-d184da "mutation: independent-corner norm fails <line>"`.
 
-- [ ] **Step 3a: Demonstrate that the order check catches reversed application**
+- [x] **Step 3a: Demonstrate that the order check catches reversed application**
 
 With the mutation harness, each hook's four slot calls run in reverse order (each call keeps its own components and seed):
 
@@ -1902,7 +1904,7 @@ cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
 
 Expected: `caught:` and exit 0 three times, the glass and film means near 1.4 codes in the kept output; `cmp` silent. Exit 4 stops the step (read the kept log). If `reverse-backdrop` reports `MUTATION SURVIVED` (exit 1), its 8-bit storage hides the reversal at these amounts: raise all four amounts in the test (reference and stacks) to 0.6 (about 1.8 codes reversed, per the planning simulation), rerun the unmutated test to PASS and all three mutations, and say so in the note. Record `tasks note material-d184da "mutation: reversed glass, film and backdrop application each fail a_sites_layers_apply_in_slot_order: <means>"`, and rerun the test to PASS.
 
-- [ ] **Step 4: Fast suite and commit**
+- [x] **Step 4: Fast suite and commit**
 
 ```bash
 just test-fast
@@ -1929,7 +1931,7 @@ git commit -m "test(material): noise layer identities, seeding and per-position 
 - Consumes: the lib's `capture_preflight`, `build_binaries`, `capture_identity`, `write_config`, `start_nested`, `spawn_probe`, `calibrate_probe_rect`, `probe_rect`, `shot`, `roi`, `sd`, `ae`, `assert_zero`, `assert_about`, `assert_greater`, `finish`; `$NIRI`, `$WALL`, `$IDLE`, `$OUT`, `PX PY PW PH`.
 - Produces: `metric NAME VALUE`, `signed_diff A B OUT`, `shot_twice BINARY NAME` in the lib (moved verbatim); the smoke's `metrics.txt` keys named in Step 4.
 
-- [ ] **Step 1: Document layers**
+- [x] **Step 1: Document layers**
 
 `docs/materials/material-config.md`, replace the paragraph that starts `` `noise` also accepts `site="glass"` `` with:
 
@@ -1977,11 +1979,11 @@ site; a written node never inherits, and type, site and scale never do.
 - §4, the `Noise has three material placements.` bullet: append `A material writes up to four `noise` nodes, each a layer with its own site and `scale=`; each site applies its layers in the order written.`
 - §5 table: after the `noise` `type=` row add `` | `noise` `scale=` | (pending, prism-85f63a) | source grain pass / 3b / 9 | ``.
 
-- [ ] **Step 2: Move the three capture helpers into the lib**
+- [x] **Step 2: Move the three capture helpers into the lib**
 
 Cut `metric()`, `signed_diff()` and `shot_twice()` (with its comment) from `glass-noise-site-smoke.sh` and paste them verbatim into `glass-optic-smoke-lib.sh` after `mean()`. Run `bash -n` on both files. `glass-noise-site-smoke.sh` still sources the lib before using them, so its behaviour is unchanged.
 
-- [ ] **Step 3: Write the position-class helper**
+- [x] **Step 3: Write the position-class helper**
 
 `docs/materials/scripts/noise-layers-bins.py`:
 
@@ -2053,7 +2055,7 @@ python3 -I docs/materials/scripts/noise-layers-bins.py "$S/u.raw" 256 256 8
 
 Expected: `min_bin_ratio` and `max_bin_ratio` within 0.9..1.1 and `lf_ratio` near 0.25 (independent pixels).
 
-- [ ] **Step 4: Write the smoke**
+- [x] **Step 4: Write the smoke**
 
 `docs/materials/scripts/glass-noise-layers-smoke.sh` (mode 0755):
 
@@ -2277,7 +2279,7 @@ git commit -m "docs(materials): noise layers smoke, contact sheet and evidence (
 - Consumes: the lib's Tracy helpers (`reserve_tracy_port`, `tools_ready`, `capture_bg`, `capture_ready`, `capture_wait`, `csvexport`, `count_last20`), `$NIRI_TRACY`, `probe_rect`.
 - Produces: `metrics.txt` keys `<case>_MaterialRenderElement::draw_median_ms`, `<case>_Grain::render_median_ms`, `<case>_glass_area_px`, `<case>_material_ns_per_px_over_none`.
 
-- [ ] **Step 1: Move the wallpaper-damage helpers into the lib**
+- [x] **Step 1: Move the wallpaper-damage helpers into the lib**
 
 Cut `WALL_PIDS=()`, `wall_count()`, `start_wall()`, `stop_walls()`, `wait_for_wall_removal()` and the comment above `wall_count` (lines 10–43 of `noise-placement-cost.sh` at `4a8b2072`), and `reload_marker()`, `now_ns()`, `sleep_until()` with their comments (lines 84–98), and `cleanup_cost()` with its comment, from `noise-placement-cost.sh` into the lib under a `# --- wallpaper damage` header, verbatim. Each cost script keeps its own `trap cleanup_cost EXIT` line after sourcing the lib. `bash -n` both files.
 
@@ -2304,7 +2306,7 @@ and in `test_failure_cleanup_reaps_owned_wallpaper_and_preserves_exit_status`, r
 
 Expected: PASS, all four tests. Then `just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`, since the lib is in `tooling_full_paths`.
 
-- [ ] **Step 2: Write the cost script**
+- [x] **Step 2: Write the cost script**
 
 `docs/materials/scripts/noise-layers-cost.sh` (mode 0755):
 
