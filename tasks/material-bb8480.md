@@ -1,19 +1,21 @@
 ---
 id: material-bb8480
 title: Calibrate a glass warp measurement against photometric controls
-status: doing
+status: done
 priority: 2
 size: s
 complexity: high
 process: direct
-owner: materials-26.04
+owner: material-bb8480
 created: 2026-09-29T22:38:51Z
-updated: 2026-10-06T17:02:02Z
+updated: 2026-10-06T17:34:43Z
 started: 2026-10-06T17:02:02Z
+completed: 2026-10-06T17:34:43Z
 depends: []
 parent: material-49871a
 tags: [harness]
 source: "docs/notes/2026-09-29-glass-measurement-brief.md#warp-calibration"
+model: claude-opus-5-5
 agent: codex
 ---
 
@@ -26,4 +28,10 @@ Ideas it wakes: On completion, run tasks note on material-343f27 and material-88
 ## Notes
 
 - 2026-10-06T17:02:02Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:e09fb767-0d8d-4b44-86a6-8d9ffc6849af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T17:02:12Z (material-bb8480): resumed
+  provenance: {"harness_session":"claude-code:e09fb767-0d8d-4b44-86a6-8d9ffc6849af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T17:34:43Z (material-bb8480): done
+  provenance: {"harness_session":"claude-code:e09fb767-0d8d-4b44-86a6-8d9ffc6849af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T17:34:43Z (material-bb8480): Adopted for straight chamfer edges with a geometry mask: ZNCC + Gauss-Newton on the seeded aperiodic backdrop (docs/materials/scripts/warp-calibration.py, 7 px window) reads chamfer shifts of 1-20 px to 0.02 px in the strip interior, rejects photometric-only change, and trusts no pixel >1 px wrong; the 20 px grid refuses every pixel and its RMSE is 0 for 1/3/20 px shifts. Rendered control still needed: a flat-field pair over two uniform backdrops divides out attenuation and the Fresnel glint (ior 1 and thickness 0 are confounded). Evidence 2026-10-06-glass-warp-calibration-evidence.md; brief updated; notes on material-343f27 and material-8867aa; affine model filed as material-79fb49.
   provenance: {"harness_session":"claude-code:e09fb767-0d8d-4b44-86a6-8d9ffc6849af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

@@ -73,12 +73,14 @@ in this pass already answers the two questions below.
   below, and a matched pair measures band position to about 0.01 px under
   flex. The owner judges any later proposed visual change; this pass does not
   require that judgment.
-- Can a local estimator recover a known non-rigid warp while rejecting
-  photometric-only change? `material-bb8480` quantifies error and failure
-  cases, then recommends a rendered control before claiming actual bending.
-- Should the sweep use that calibrated backdrop or a separate one?
-  `material-bb8480` recommends the smallest reusable artifact with explicit
-  comparability to the old grid.
+- Answered by `material-bb8480`: on a seeded aperiodic backdrop, ZNCC
+  matching refined by Gauss-Newton recovers a chamfer-shaped warp to 0.02 px
+  inside the strip and rejects photometric-only change, with windows across
+  the strip's edges flagged and masked by geometry. A rendered flat-field
+  pair is still needed before a reading counts as bending; see
+  [warp calibration findings](#warp-calibration-findings).
+- Answered by `material-bb8480`: the sweep reuses the calibrated backdrop,
+  with `grid20` kept by name for comparability.
 
 ## Matched-state ring findings
 <a id="matched-state-ring-findings"></a>
@@ -219,6 +221,33 @@ runs the test before capture initialization, propagates failure, and starts
 no nested compositor for this case. Other capture cases retain their
 existing host requirements. The old two-host resize comparison and its
 skew-only metrics are retired; its historical captures remain history.
+
+## Warp calibration findings
+<a id="warp-calibration-findings"></a>
+
+`material-bb8480`, 2026-10-06, offline; the
+[evidence](../materials/2026-10-06-glass-warp-calibration-evidence.md)
+holds the tables and `docs/materials/scripts/warp-calibration.py`
+reproduces them.
+
+- **Adopted, for straight chamfer edges.** At a 7 px window, chamfer shifts
+  of 1 to 20 px read to 0.02 px in the strip interior; no case trusted a
+  pixel more than 1 px wrong. A parabola-only subpixel fit is biased by
+  0.2 px at p95 and, without the residual check, trusts boundary windows up
+  to 41 px wrong.
+- **The 20 px grid measures nothing.** Every pixel is refused, and its RMSE
+  is exactly 0 for 1, 3 and 20 px chamfer shifts while a tint alone scores
+  17.2. RMSE on the aperiodic field is not monotonic in the shift either.
+- **Masks and limits.** Boundary windows (half a window at each strip edge)
+  are masked from the window rect and bevel. Fields that vary inside a
+  window (rounded corners, `distortion` above 0) fail the residual check;
+  `material-79fb49` holds the affine-warp model for them. Clipped
+  highlights are flagged. The range is the search radius, 24 px.
+- **Rendered control.** Render the glass over two uniform backdrops beside
+  the textured one: attenuation multiplies and the Fresnel glint adds, both
+  independent of backdrop content, so the pair divides them out per pixel.
+  `ior 1` and `thickness 0` are not clean controls; each also changes
+  Fresnel or the bevel normal.
 
 ## Proposed decomposition
 
