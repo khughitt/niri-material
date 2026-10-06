@@ -23,8 +23,10 @@ KINDS=(white fine lightness); BLURS=(false true); ROUGHNESS=(0 0.5 1)
 if [ "$PILOT" = 1 ]; then KINDS=(fine); BLURS=(true); ROUGHNESS=(0 1); fi
 GRAIN_FLOOR=$(awk 'BEGIN { printf "%.8f", 0.5 / 255 }')   # sd, normalized
 metric() { printf '%s=%s\n' "$1" "$2" >> "$OUT/metrics.txt"; }
+# $1 - $2 + 0.5 as 16-bit gray: compose Mathematics computes
+# A*Sc*Dc + B*Sc + C*Dc + D with Sc the second image, so B=-1, C=1.
 signed_diff() {
-    magick "$1" "$2" -compose Mathematics -define compose:args=0,1,-1,0.5 \
+    magick "$1" "$2" -compose Mathematics -define compose:args=0,-1,1,0.5 \
         -composite -colorspace Gray -depth 16 "$3" || fail "signed diff $3 failed"
 }
 mae() { compare_metric MAE "$1" "$2"; }
