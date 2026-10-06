@@ -86,7 +86,7 @@ their older names. Define one function for each hook the optic uses:
 | `normal` | `vec3 <name>_normal(vec3 n, vec2 p)` | `n` |
 | `behind` | `vec3 <name>_behind(vec3 color, vec2 fragCoord)` | `color` |
 | `within` | `vec3 <name>_within(vec2 p, vec3 n, vec3 att, float innerDist)` | `vec3(0.0)` |
-| `specular` | `vec3 <name>_specular(vec3 specular, vec3 surfaceNormal, float surfaceCosine)` | `specular` |
+| `specular` | `vec3 <name>_specular(vec3 specular, Surface s)` | `specular` |
 | `emissive` | `vec3 <name>_emissive(vec2 p, vec3 n, vec3 att, float innerDist)` | `vec3(0.0)` |
 | `post` | `vec3 <name>_post(vec3 color, vec2 fragCoord)` | `color` |
 
@@ -98,6 +98,19 @@ therefore owns remaining-path attenuation. `emissive` is surface-only light:
 it must return an unattenuated contribution even though its signature carries
 `att`.
 `post` is the empty site after final encoding, reserved for screen-space film.
+
+`specular` receives the fragment's `Surface`: `p` (element-local logical px),
+`v` (element UV), `structural` (the slab's normal), `perturbed` (after
+distortion and jelly ripple), `cosine` (`structural.z`, clamped to [0, 1]),
+`fresnel` (Schlick at the structural normal), `across` (`u`: 0 at the face
+edge, 1 at the silhouette, 0 on the face), `acrossDir` (`normalize(grad u)`,
+outward across the bevel), and `outerDist` (signed distance to the silhouette,
+negative inside).
+
+A hyphenated optic name keeps its hyphen in `NAME`, `ORDER` and the KDL node,
+and becomes underscores in file, module, hook and uniform names
+(`edge-highlight`: `edge_highlight.frag`, `edge_highlight_specular`,
+`mat_edge_highlight`).
 
 The file is concatenated after `prelude.frag`, which provides `snoise`,
 `snoiseFractal`, `hash12`, `fineGrain`, the colour conversions,

@@ -150,12 +150,14 @@
       "scope": "material",
       "owns": [
         "bevel",
+        "bevel-profile",
         "offset-x",
         "offset-y",
         "jelly-flex"
       ],
       "reads": [
         "bevel",
+        "bevel-profile",
         "offset-x",
         "offset-y",
         "jelly-flex",
@@ -211,6 +213,8 @@
       "reads": [
         "ior",
         "thickness",
+        "bevel",
+        "bevel-profile",
         "backdrop-blur",
         "roughness"
       ],
@@ -228,6 +232,8 @@
         "chromatic-aberration",
         "ior",
         "thickness",
+        "bevel",
+        "bevel-profile",
         "anisotropic-blur",
         "backdrop-blur",
         "roughness"
@@ -250,6 +256,8 @@
         "anisotropic-blur",
         "ior",
         "thickness",
+        "bevel",
+        "bevel-profile",
         "chromatic-aberration",
         "backdrop-blur",
         "roughness"
@@ -320,7 +328,10 @@
       "reads": [
         "attenuation-color",
         "attenuation-distance",
-        "thickness"
+        "thickness",
+        "ior",
+        "bevel",
+        "bevel-profile"
       ],
       "responses": [
         "accent-tint",
@@ -339,6 +350,8 @@
         "light-ior",
         "ior",
         "thickness",
+        "bevel",
+        "bevel-profile",
         "roughness",
         "chromatic-aberration"
       ],
@@ -399,6 +412,53 @@
         "attention",
         "accent"
       ],
+      "animated": true
+    },
+    {
+      "id": "reflection",
+      "site": "specular",
+      "scope": "material",
+      "owns": [
+        "reflection"
+      ],
+      "reads": [
+        "reflection",
+        "ior",
+        "thickness",
+        "bevel",
+        "bevel-profile",
+        "backdrop-blur",
+        "roughness"
+      ],
+      "responses": [],
+      "optic": {
+        "name": "reflection",
+        "hook": "specular",
+        "program": "material"
+      },
+      "animated": false
+    },
+    {
+      "id": "edge-highlight",
+      "site": "specular",
+      "scope": "material",
+      "owns": [
+        "edge-highlight"
+      ],
+      "reads": [
+        "edge-highlight",
+        "roughness",
+        "bevel",
+        "bevel-profile"
+      ],
+      "responses": [
+        "attention"
+      ],
+      "optic": {
+        "name": "edge-highlight",
+        "hook": "specular",
+        "program": "material"
+      },
       "animated": true
     },
     {

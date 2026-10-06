@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-274 paths differ: 52 class B (seam), 184 class A (fork-only), 38 class C (scaffolding).
+287 paths differ: 52 class B (seam), 197 class A (fork-only), 38 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -72,7 +72,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `justfile` | C | A | +123/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1682/-127 |
+| `niri-config/src/lib.rs` | B | M | +1751/-127 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -106,11 +106,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/effect_buffer.rs` | B | M | +647/-15 |
 | `src/render_helpers/mod.rs` | B | M | +28/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +447/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +469/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/client.rs` | B | M | +117/-0 |
+| `src/tests/client.rs` | B | M | +142/-0 |
 | `src/tests/fixture.rs` | B | M | +3/-1 |
-| `src/tests/mod.rs` | B | M | +8/-0 |
+| `src/tests/mod.rs` | B | M | +9/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +1268/-0 |
