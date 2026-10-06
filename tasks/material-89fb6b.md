@@ -1,14 +1,16 @@
 ---
 id: material-89fb6b
 title: Determine whether a planar in-shader tilt of window and glass reads as 3D glass
-status: todo
+status: doing
 priority: 1
 size: m
 complexity: mid
 process: direct
 needs: [owner]
+owner: materials-26.04
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-06T21:22:26Z
+updated: 2026-10-06T21:29:42Z
+started: 2026-10-06T21:29:41Z
 depends: []
 parent: material-53f873
 tags: [rendering, camera]
@@ -72,3 +74,6 @@ Ideas it wakes: On completion, run tasks note on material-6901e0 with the findin
 - 2026-10-06T21:12:19Z (materials-26.04): review round 1 applied: verdict bounded to a planar projection with faked slab shading; pinned camera (d 2000 px, vertical axis, front-face pivot) and slab-local ray mapping replacing tap()'s element-UV offsets; patterned backdrop, glyphs over translucent fill, pinned main baseline and native crops, decoration inventory kept separate; code unmerged, evidence returned to main via tasks attach; subsurfaces follow the window texture, popups do not
 - 2026-10-06T21:21:59Z (materials-26.04): review: spec round 2 — verdict: revise; findings: P1 1, P2 1; reviewer: codex/gpt-6-astra
 - 2026-10-06T21:22:26Z (materials-26.04): review round 2 applied: controls are unchanged main and the unrotated pinhole; tilted renders compare against the unrotated pinhole; the main-vs-pinhole difference is recorded as the camera model's cost; no exact-zero special case; ring band stays slab-local with the half-gap cap, and only the backdrop sample is projected
+- 2026-10-06T21:29:41Z (materials-26.04): review: spec round 3 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
+- 2026-10-06T21:29:41Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
