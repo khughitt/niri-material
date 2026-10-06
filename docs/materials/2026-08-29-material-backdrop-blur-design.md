@@ -19,6 +19,16 @@ Deployed to the daily driver 2026-08-29T17:14:52 as `niri-material
 26.04.r133.g52f74f10-1`. Prism exposes the switch as `glass.backdropBlur`, and
 the compositor validated and reloaded the generated `backdrop-blur` node.
 
+**Code locations, 2026-10-06:** the file and line references below record the
+source this design was written against and have since moved. `material.rs` is
+now `src/render_helpers/material/mod.rs`, and `MaterialRenderElement::draw`
+calls `EffectBuffer::render_prefiltered`, which selects the sharp or blurred
+source and the roughness levels, in place of `render(frame, false)`. Both
+`prepare` sites are in `Tile::render_inner` (`src/layout/tile.rs`) and pass the
+effective `backdrop_blur`. `EffectBuffer::prepare` is in
+`src/render_helpers/effect_buffer.rs`, and the per-frame blur options are set
+in `Niri::update_xray_render_elements` (`src/niri.rs`).
+
 ### Investigation state, 2026-09-01
 
 Instrumented builds (branch `debug/overview-drag-frost`, four probe rounds on

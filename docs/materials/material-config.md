@@ -143,7 +143,7 @@ and hue hold except where the result leaves the sRGB gamut and clamps. The
 type has no inheritance and an omitted type is `white`.
 
 `noise` also accepts `site="glass"` (default), `"backdrop"`, or `"film"`.
-`backdrop` grains the output's shared effect-buffer texture before the Kawase
+`backdrop` grains the output's shared backdrop buffers before the Kawase
 blur and roughness pyramids. Every material placing noise there must agree on
 one amount and one type; disagreement refuses the config and names both
 materials (`materials "a" and "b" both place noise at the backdrop with different
@@ -483,7 +483,7 @@ crossfade. `material-signal` is the baseline signal crossfade; it defaults to
 400 ms with `ease-out-cubic` and follows the normal animation configuration,
 including `animations { off }`. The focus filament fades in and out with
 `material-signal` too; `reduced`, `off`, and `animations { off }` skip its
-focus-gain sweep.
+focus-gain beam.
 
 `idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
 `flash`) settles to the static indication (level and accent lit, no pulse),
