@@ -1,6 +1,7 @@
 # Deferred glass signal responses
 
-Scope pass: 2026-09-29. Handoff, not an approved design. Goal: `material-0a4093`.
+Scope passes: 2026-09-29 and 2026-10-06. Handoff, not an approved design.
+Goal: `material-0a4093`.
 
 ## Problem
 
@@ -8,19 +9,24 @@ Give windows richer identity and state cues through five deferred responses:
 fireflies (`material-54bcac`), idle frost (`material-4bf8b8`), progress fill
 (`material-5d854f`), attenuation tint (`material-6f45a0`), and inactive client
 desaturation (`material-987655`). Their original outcomes remain in their task
-bodies. None is ready for rendering implementation merely because the signals
-foundation shipped.
+bodies. Tint has since shipped; the other four responses remain unresolved.
+The follow-up pass covers desaturation together with workspace summaries
+(`material-6cca0a`, now shelved) in the
+[signal-model brief](2026-09-29-signal-model-extensions-brief.md).
 
 ## Current behaviour and evidence
 
 - The original [signals design](../materials/2026-09-02-material-signals-design.md)
   §11 explicitly deferred these responses. Foundation `material-a54d89` landed
-  at `663202b1`. Current `niri-config/src/material/mod.rs` still accepts only
-  `ring`/`none` for accent and `rim-orbit`/`ring-pulse`/`none` for attention.
-- `Tile::signal_for_frame` in `src/layout/tile.rs` already crossfades accent
-  color and presence. `SignalFrame` in `src/render_helpers/signal.rs` carries
-  both, while `material/main.frag` applies attenuation before interior light.
-  This gives tint an existing animation and rendering site.
+  at `663202b1`. The accent selector remains `ring`/`none`; independent
+  `accent-tint` is now a response weight, default 0, in
+  `niri-config/src/material/mod.rs`.
+- `material-6f45a0` and its design task `material-3bdffc` are complete.
+  The [accepted tint design](../specs/2026-10-03-accent-tint-design.md)
+  uses the existing accent/presence crossfade and computes attenuation tint
+  on the CPU (`src/render_helpers/material/mod.rs`). Neutral output and
+  opaque client pixels remain unchanged. This does not supply client
+  desaturation.
 - Input inactivity already suppresses sustained attention through
   `effective(..., input_active)`. `niri-config/src/signal.rs` defaults
   `idle-after-ms` to 30000; config support landed at `c0b2e151`. Quiet signal
@@ -33,7 +39,10 @@ foundation shipped.
   `src/render_helpers/shaders/material/main.frag` show that opaque client
   pixels return immediately. Saturation now acts on the sampled backdrop
   before attenuation (`e33aa968`); it cannot desaturate the client texture.
-  `material-cad932` therefore does not cover `material-987655`.
+  `material-cad932` therefore does not cover `material-987655`. The current
+  saturation optic (`src/render_helpers/material/optics/saturation.rs` and
+  `src/render_helpers/shaders/material/saturation.frag`) owns this backdrop-only hook and returns
+  unchanged color at 1; it is not a window-texture postprocess.
 
 ## Constraints
 
@@ -49,13 +58,18 @@ original signals design's historical ring placement.
 Related open work: `material-1c5a30` covers broader organic lighting;
 `material-f86183` covers wider inactivity/quiescence; `material-79d1de` needs
 the future progress channel for OSC reports. These remain separate ideas;
-this pass found no existing open research task answering the tint contract.
+`material-d257d9` already designs the shared opt-in client-content boundary
+for `material-7f5751` and desaturation. Keep the desaturation idea's source,
+parent and trigger decision; do not create a second content-stage design.
+`material-a7e72e` concerns film-site saturation of glass, not client pixels.
 
 ## Alternatives
 
-1. **Start with attenuation tint (current lean).** Design one opt-in response
-   using existing accent/presence animation and the attenuation stage; settle
-   its weight and coexistence with ring identity first.
+1. **Reuse the content-stage design (current lean for desaturation).**
+   `material-d257d9` settles opt-in client coverage, sampling/composition,
+   neutral behavior and readability. It coordinates desaturation's own
+   trigger without assuming Quiet and unfocused are equivalent. Retain
+   current client pixels until written design and plan reviews are complete.
 2. Start with frost or progress. Frost needs timing and wipe decisions;
    progress needs a signal/IPC extension and arbitration before any visual
    implementation. Both carry more unresolved state than tint.
@@ -65,9 +79,6 @@ this pass found no existing open research task answering the tint contract.
 
 ## Unanswered questions
 
-- **Tint:** replacement accent selector or independent weight alongside ring?
-  What color space and missing-accent behavior? The tint design task proposes
-  the contract; the owner reviews its design and visual acceptance captures.
 - **Frost:** elapsed Quiet time, input inactivity, or both? Which growth/wipe
   geometry and reduced-motion behavior? A later frost design must settle
   these against `material-f86183`; reusing the global idle gate alone is
@@ -78,17 +89,23 @@ this pass found no existing open research task answering the tint contract.
 - **Fireflies:** particle density, depth and absent-accent hue behavior, with
   what measured GPU ceiling? A bounded visual/performance spike, coordinated
   with `material-1c5a30`, can answer; no measurement was run in this pass.
-- **Desaturation:** Quiet or unfocused trigger, and should opaque client
-  content, popups and nonmaterial windows change? The owner must judge the
-  intended look before a design changes client-pixel coverage.
+- **Desaturation:** Quiet, unfocused, or a separate opt-in trigger? Should
+  opaque text, images, popups, nonmaterial windows and capture targets change?
+  `material-d257d9` frames the alternatives and neutral/alpha checks; the
+  owner reviews the design and text comparisons. Input idle, signal Quiet
+  and focus are distinct; no trigger or cost ceiling is accepted here.
 
 ## Proposed decomposition
 
-- `material-0a4093` groups the five ideas; all remain unclaimed `idea` records.
-- `material-3bdffc` designs attenuation tint only, including config, color
-  mixing, ring coexistence and default/zero-weight, crossfade and settled-cost
-  checks. It wakes `material-6f45a0` with a finding note in the result commit.
-  Spec and implementation-plan reviews precede rendering implementation.
-- The other four ideas remain briefed with the questions above. No additional
-  research/design tasks are filed until their respective direction is taken;
-  existing lighting, inactivity and OSC ideas retain their sources and scope.
+- `material-0a4093` retains the five responses; tint `material-6f45a0` and
+  design `material-3bdffc` are done, while the other four remain ideas.
+- Reuse `material-d257d9`: P2 / m / high / planned, under the existing optics
+  lane. Its body already requires written spec/plan review, client sampling
+  and alpha order, readability, popup/capture coverage, default opaque-pixel
+  identity and a later bounded cost check. Its design result records a
+  finding on `material-987655` and `material-7f5751` in the same commit and
+  updates both this brief and the
+  [optics brief](2026-10-06-glass-optics-brief.md).
+- `material-987655` remains briefed; no parallel desaturation design or
+  implementation task is needed. Other lighting, inactivity and OSC ideas
+  retain their sources and scope; no new task was filed in this pass.
