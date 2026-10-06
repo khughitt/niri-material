@@ -64,11 +64,20 @@ absent or 0 for some timers). A timer whose `Transient` property is `yes` is
 recorded as `not_held`: stopping a transient timer unloads it, so it could
 not be started again. Each other timer is stopped with
 `systemctl --user stop <timer>`; restore runs `systemctl --user start
-<timer>`. A stopped timer does not fire. On start, a monotonic timer whose
-interval elapsed during the run, or a `Persistent=true` calendar timer that
-missed its elapse, fires once, after the run. A service a timer activated
-that is still running at hold time is recorded (`active_at_hold`) but not
-stopped: the preflight's own samples judge whether it disturbs.
+<timer>`. A stopped timer does not fire. Restore is not schedule-preserving:
+starting a timer re-anchors its `OnActiveSec` trigger at the restore instant,
+and an `OnBootSec` trigger whose boot offset has already elapsed fires
+immediately on start, so a held run can add off-schedule timer runs after
+release (an extra run at the restore instant, or one shortest-`OnActiveSec`
+interval later) even
+when nothing elapsed during the run. `OnUnitActiveSec`, `OnUnitInactiveSec`
+and `OnCalendar` triggers keep their anchors across a restart, and a
+`Persistent=true` calendar timer that missed its elapse fires once, after
+the run. systemd exposes no writable next-elapse for a stopped timer, so no
+faithful restore exists; the extra fires land outside the capture window
+and are accepted (recorded in capture-host-setup). A service a timer
+activated that is still running at hold time is recorded (`active_at_hold`)
+but not stopped: the preflight's own samples judge whether it disturbs.
 
 ### 3.2 Declared services
 
