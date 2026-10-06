@@ -6,12 +6,14 @@ priority: 2
 size: m
 complexity: high
 process: planned
+needs: [owner]
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-06T23:34:47Z
+updated: 2026-10-06T23:35:41Z
 started: 2026-09-30T23:28:03Z
 completed: 2026-10-06T23:34:47Z
 depends: []
+parent: material-6062fd
 tags: [rendering, material]
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-09-30-glass-edge-optics-design.md
