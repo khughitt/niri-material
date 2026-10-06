@@ -334,10 +334,19 @@ class ShowTests(unittest.TestCase):
                   "preflight": {"verdict": "quiet", "thresholds": {}},
                   "provenance": {"source": {"commit": "abc", "branch": "main", "dirty": False},
                                  "binaries": [{"name": "niri", "sha256": "00"}], "inputs": [], "config": {"preset": "aurora"}},
-                  "sub_runs": [{"name": "gpu-plain-1", "verdict": "settled"},
+                  "sub_runs": [{"name": "gpu-plain-1", "verdict": "settled", "started": "2026-09-11T04:35:00-04:00",
+                                "finished": "2026-09-11T04:36:00-04:00", "duration_s": 60},
+                               {"name": "gpu-plain-2", "verdict": "settled", "started": "2026-09-11T04:37:00-04:00"},
                                {"name": "gpu-aurora-1", "verdict": "refused", "reason": "gpu_power_w 24.1 exceeds baseline"}]}
         text = cm.render(record)
-        for needle in ("trace-1", "RTX", "610", "abc", "niri 00", "gpu-plain-1: settled",
+        record["run"].update(finished="2026-09-11T04:40:00-04:00", duration_s=327)
+        record["preflight"]["at"] = "2026-09-11T04:34:50-04:00"
+        finished = cm.render(record)
+        self.assertIn("finished 2026-09-11T04:40:00-04:00 (327 s)", finished)
+        self.assertIn("preflight quiet at 2026-09-11T04:34:50-04:00", finished)
+        for needle in ("trace-1", "RTX", "610", "abc", "niri 00", "not finished",
+                       "gpu-plain-1: settled  2026-09-11T04:35:00-04:00 to 2026-09-11T04:36:00-04:00 (60 s)",
+                       "gpu-plain-2: settled  2026-09-11T04:37:00-04:00, never finished",
                        "gpu-aurora-1: refused (gpu_power_w 24.1 exceeds baseline)", "preset=aurora"):
             self.assertIn(needle, text)
 
@@ -387,6 +396,8 @@ class FakeHostLoad:
                 "load": {"load1": 6.65, "cpus": 32, "interval_s": 1.0, "top": [dict(p) for p in self._top]}}
 
 
+# Every run section preflight writes carries its start; a release stamps the finish against it.
+STARTED = "2026-10-06T10:00:00-04:00"
 QUIET = {"util_pct": 0.0, "power_w": 18.4, "clock_mhz": 360, "pstate": "P8"}
 
 
@@ -572,6 +583,7 @@ class PreflightTests(unittest.TestCase):
             self.assertEqual(record["environment"]["session"], {"type": "wayland", "display": "wayland-1"})
             self.assertEqual(record["baseline"]["samples"], 3)
             self.assertEqual(record["preflight"]["verdict"], "quiet")
+            self.assertRegex(record["preflight"]["at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
             self.assertEqual(record["preflight"]["thresholds"], cm.DEFAULT_THRESHOLDS)
             self.assertEqual(record["preflight"]["lock"]["owner_pid"], os.getpid())
             self.assertTrue((run / "lock").exists())
@@ -665,6 +677,7 @@ class PreflightTests(unittest.TestCase):
                 self.run_preflight(run, lock=lambda: lock)
             record = cm.load_record(run)
             self.assertEqual(record["preflight"]["verdict"], "refused")
+            self.assertRegex(record["preflight"]["at"], r"^\d{4}-")
             self.assertIn("other-run", " ".join(record["preflight"]["reasons"]))
             self.assertNotIn("baseline", record)
             self.assertEqual(cm.read_lock(lock)["run_id"], "other-run")
@@ -719,6 +732,8 @@ class SettleTests(unittest.TestCase):
             self.assertEqual(entry["inputs"][0]["name"], "A.kdl")
             self.assertEqual(entry["gpu_power_w"], 19.0)
             self.assertRegex(entry["settled_at"], r"^\d{4}-")
+            self.assertLessEqual(entry["started"], entry["settled_at"])
+            self.assertNotIn("finished", entry)
 
     def test_off_baseline_appends_refused_and_raises(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -760,6 +775,49 @@ class SettleTests(unittest.TestCase):
                               sleep=lambda s: None, lock=lambda: lock)
                 self.assertEqual((run / cm.RECORD).read_text(), before)
 
+    def settled(self, run, lock, name, power_w=19.0, clock=("2026-10-06T10:00:00-04:00",
+                                                            "2026-10-06T10:00:10-04:00")):
+        with mock.patch.object(cm, "now_rfc3339", side_effect=clock):
+            cm.settle(run, name, [run / "A.kdl"], 3, FakeProc([(i * 2, i * 100) for i in range(9)]),
+                      FakeGpu([dict(QUIET, power_w=power_w)] * 3), sleep=lambda s: None, lock=lambda: lock)
+
+    def test_finish_stamps_the_sub_runs_end_and_duration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            self.settled(run, lock, "A")
+            with mock.patch.object(cm, "now_rfc3339", return_value="2026-10-06T10:02:05-04:00"):
+                self.assertEqual(cm.main(["finish", str(run), "--sub-run", "A"]), 0)
+            entry = cm.load_record(run)["sub_runs"][0]
+            self.assertEqual((entry["started"], entry["settled_at"], entry["finished"], entry["duration_s"]),
+                             ("2026-10-06T10:00:00-04:00", "2026-10-06T10:00:10-04:00",
+                              "2026-10-06T10:02:05-04:00", 125))
+
+    def test_finish_takes_the_latest_settle_of_a_repeated_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            self.settled(run, lock, "A")
+            cm.finish_sub_run(run, "A")
+            self.settled(run, lock, "A", clock=("2026-10-06T11:00:00-04:00", "2026-10-06T11:00:10-04:00"))
+            with mock.patch.object(cm, "now_rfc3339", return_value="2026-10-06T11:00:30-04:00"):
+                cm.finish_sub_run(run, "A")
+            first, second = cm.load_record(run)["sub_runs"]
+            self.assertEqual(second["duration_s"], 30)
+            self.assertNotEqual(first["finished"], second["finished"])
+
+    def test_finish_refuses_an_unknown_refused_or_finished_sub_run_without_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            self.settled(run, lock, "A")
+            cm.finish_sub_run(run, "A")
+            with self.assertRaises(cm.Refused):
+                self.settled(run, lock, "B", power_w=24.1)
+            before = (run / cm.RECORD).read_text()
+            for name, message in (("C", "no sub-run 'C'"), ("B", "was refused"), ("A", "already finished")):
+                with self.subTest(name=name), self.assertRaisesRegex(cm.CannotRun, message):
+                    cm.finish_sub_run(run, name)
+                self.assertEqual((run / cm.RECORD).read_text(), before)
+            self.assertEqual(cm.main(["finish", str(run), "--sub-run", "C"]), 2)
+
     def test_release_command_is_ownership_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             run, lock = self.prepared(directory)
@@ -781,7 +839,7 @@ class SettleTests(unittest.TestCase):
     def test_refused_before_acquire_does_not_release_foreign_lock(self):
         with tempfile.TemporaryDirectory() as directory:
             run = pathlib.Path(directory) / "r"; run.mkdir()
-            cm.write_section(run, "run", {"id": run.name})
+            cm.write_section(run, "run", {"id": run.name, "started": STARTED})
             cm.write_section(run, "preflight", {"verdict": "refused", "reasons": ["held"]})
             saved = os.environ.get("XDG_RUNTIME_DIR"); os.environ["XDG_RUNTIME_DIR"] = directory
             try:
@@ -873,9 +931,14 @@ class EndToEndTest(unittest.TestCase):
             code, _, stderr = cm_run("settle", str(run), "--sub-run", "A-1", "--input", str(root / "A.kdl"),
                                      "--seconds", "1", sampling=True)
             self.assertEqual(code, 0, stderr)
+            code, _, stderr = cm_run("finish", str(run), "--sub-run", "A-1")
+            self.assertEqual(code, 0, stderr)
             code, _, stderr = cm_run("release", str(run))
             self.assertEqual(code, 0, stderr)
             record = json.loads((run / "capture.json").read_text())
+            self.assertGreaterEqual(record["run"]["duration_s"], 1)
+            self.assertLessEqual(record["preflight"]["at"], record["run"]["finished"])
+            self.assertGreaterEqual(record["sub_runs"][0]["duration_s"], 1)
             self.assertEqual(record["hold"]["desktop"], "absent")
             self.assertEqual(record["hold_end"]["scan"]["verdict"], "clean")
             self.assertFalse((runtime / "capture-meta.hold.json").exists())
@@ -904,7 +967,7 @@ class HoldRecordTests(unittest.TestCase):
     def run_dir(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         run = pathlib.Path(temp.name) / "r"; run.mkdir()
-        cm.write_section(run, "run", {"id": "r"})
+        cm.write_section(run, "run", {"id": "r", "started": STARTED})
         return run
 
     def test_scan_is_written_once_and_attempts_accumulate(self):
@@ -1018,8 +1081,13 @@ class LifecycleTests(unittest.TestCase):
         guard_call = next(c for c in self.host.calls if c[0] == "systemd-run")
         self.assertLess(self.host.calls.index(guard_call),
                         self.host.calls.index(("systemctl", "--user", "stop", "wali-rotate.timer")))
-        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        started = cm.load_record(self.run)["run"]["started"]
+        finished = (cm.datetime.datetime.fromisoformat(started) + cm.datetime.timedelta(seconds=754)).isoformat()
+        with mock.patch.object(cm, "now_rfc3339", return_value=finished):
+            self.assertEqual(cm.main(["release", str(self.run)]), 0)
         self.assertEqual(self.host.snapshot(), self.before)
+        run = cm.load_record(self.run)["run"]
+        self.assertEqual((run["finished"], run["duration_s"]), (finished, 754))
         end = cm.load_record(self.run)["hold_end"]
         self.assertEqual((end["restore"]["state"], end["scan"]["verdict"]), ("complete", "clean"))
         self.assertFalse(self.host.guards)
@@ -1052,7 +1120,12 @@ class LifecycleTests(unittest.TestCase):
         end = cm.load_record(self.run)["hold_end"]
         self.assertEqual((end["scan"]["verdict"], end["restore"]["attempts"][-1]["by"]), ("not-run", "preflight"))
         self.assertIsNone(cm.read_lock(self.lock))
+        self.assertNotIn("finished", cm.load_record(self.run)["run"])
         self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        record = cm.load_record(self.run)
+        self.assertEqual(record["preflight"]["verdict"], "refused")
+        self.assertIn("finished", record["run"])
+        self.assertGreaterEqual(record["run"]["duration_s"], 0)
 
     def test_guard_that_does_not_start_holds_nothing(self):
         def broken(host, hold):
@@ -1179,7 +1252,7 @@ class LifecycleTests(unittest.TestCase):
     def hold_without_preflight(self):
         """The state preflight leaves when killed right after holding: a record with only
         `run`, a hold file, a guard and the lock."""
-        cm.write_section(self.run, "run", {"id": self.run.name})
+        cm.write_section(self.run, "run", {"id": self.run.name, "started": STARTED})
         cm.acquire_lock(self.lock, 4242, self.run.name, run_dir=self.run)
         plan = cm.ch.plan_hold(self.host)
         hold = cm.ch.create_hold(self.lock, self.run.name, self.run, 4242, plan, self.host.now_us())
@@ -1210,7 +1283,7 @@ class LifecycleTests(unittest.TestCase):
     def test_hold_file_naming_another_run_dir_is_not_released(self):
         self.preflight()
         twin = self.root / "elsewhere" / "pilot-1"; twin.mkdir(parents=True)
-        cm.write_section(twin, "run", {"id": "pilot-1"})
+        cm.write_section(twin, "run", {"id": "pilot-1", "started": STARTED})
         cm.main(["release", str(twin)])
         self.assertTrue((self.host.runtime / ch_hold_name()).exists())
 
@@ -1228,6 +1301,16 @@ class LifecycleTests(unittest.TestCase):
         self.assertTrue(self.lock.exists())
         self.assertEqual(self.lock.read_bytes(), lock)
         self.assertEqual(cm.ch.hold_file(self.lock).read_bytes(), hold)
+
+    def test_release_after_the_manifest_rehashes_the_stamped_record(self):
+        import hashlib
+        self.preflight()
+        record = self.run / cm.RECORD
+        manifest = self.run / "SHA256SUMS"
+        manifest.write_text(hashlib.sha256(record.read_bytes()).hexdigest() + "  ./capture.json\n")
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertIn("finished", cm.load_record(self.run)["run"])
+        self.assertEqual(manifest.read_text(), hashlib.sha256(record.read_bytes()).hexdigest() + "  ./capture.json\n")
 
     def test_completed_release_does_not_rehash_an_altered_record(self):
         import hashlib

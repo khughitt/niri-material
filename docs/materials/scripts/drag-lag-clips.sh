@@ -39,6 +39,8 @@ mkdir -p "$OUT" "$RT"
 
 capture_meta() { python3 "$ROOT/tools/capture-meta" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# After a sequence's host is down; a sequence cut short is never finished.
+finish_sub_run() { capture_meta finish "$OUT" --sub-run "$1" || fail "finish refused for $1; see $OUT/capture.json"; }
 pid_running() { local state; state=$(ps -o stat= -p "$1" 2>/dev/null) || return 1; [[ $state != Z* ]]; }
 msg() { "$NIRI" msg "$@"; }
 app_ids() { msg -j windows | jq -r '.[].app_id'; }
@@ -215,6 +217,7 @@ drag_sequence() {   # $1 = label, $2 = config, $3 = dx per event, $4 = events
     [ "$moving" = 1 ] || fail "$1: the timed segment never ran as an interactive move (a view pan, or the lift failed)"
     echo "$1: interactive move confirmed during the timed segment" | tee -a "$OUT/clips.txt"
     stop_nested
+    finish_sub_run "$1"
 }
 seq_native() {
     start_nested "$OUT/tiled.kdl" native
@@ -228,6 +231,7 @@ seq_native() {
     msg action move-column-left
     burst_wait native
     stop_nested
+    finish_sub_run native
 }
 
 for s in $SEQUENCES; do
