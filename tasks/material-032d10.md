@@ -1,13 +1,15 @@
 ---
 id: material-032d10
 title: capture-meta stamps run.finished when a guard or later preflight recovers a killed run
-status: todo
+status: doing
 priority: 3
 size: s
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-06T13:03:08Z
+updated: 2026-10-06T13:05:45Z
+started: 2026-10-06T13:05:45Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -23,3 +25,5 @@ Where to look: tools/capture-meta restore_run's record() callback and finish_run
 ## Notes
 
 - 2026-10-06T13:03:07Z (materials-26.04): concerns: material-c44509 extension — killed runs recovered by the guard or a later preflight still get no end time
+- 2026-10-06T13:05:45Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:ccbf10ba-80e6-4814-9bd6-02a8e9cb3816","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
