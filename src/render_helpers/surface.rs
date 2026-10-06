@@ -2,56 +2,20 @@ use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::backend::renderer::utils::{import_surface, RendererSurfaceStateUserData};
-use smithay::backend::renderer::{Color32F, ImportAll, Renderer};
+use smithay::backend::renderer::{ImportAll, Renderer};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Physical, Point, Scale};
 use smithay::wayland::compositor::{with_surface_tree_downward, TraversalAction};
-use smithay::wayland::single_pixel_buffer::get_single_pixel_buffer;
 
-use super::primary_gpu_texture::PrimaryGpuTextureRenderElement;
-use super::solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use super::texture::TextureBuffer;
-use super::{BakedBuffer, ToRenderElement};
-use crate::niri_render_elements;
+use super::BakedBuffer;
 
-/// A surface buffer baked into a snapshot.
-#[derive(Debug)]
-pub enum BakedSurface {
-    Texture(BakedBuffer<TextureBuffer<GlesTexture>>),
-    /// A single-pixel buffer, which is drawn as a solid colour and never imported.
-    SolidColor(BakedBuffer<SolidColorBuffer>),
-}
-
-niri_render_elements! {
-    BakedSurfaceRenderElement => {
-        Texture = PrimaryGpuTextureRenderElement,
-        SolidColor = SolidColorRenderElement,
-    }
-}
-
-impl ToRenderElement for BakedSurface {
-    type RenderElement = BakedSurfaceRenderElement;
-
-    fn to_render_element(
-        &self,
-        location: Point<f64, Logical>,
-        scale: Scale<f64>,
-        alpha: f32,
-        kind: Kind,
-    ) -> Self::RenderElement {
-        match self {
-            Self::Texture(baked) => baked.to_render_element(location, scale, alpha, kind).into(),
-            Self::SolidColor(baked) => baked.to_render_element(location, scale, alpha, kind).into(),
-        }
-    }
-}
-
-/// Bakes the buffers of a surface tree into `storage`.
+/// Renders elements from a surface tree as textures into `storage`.
 pub fn render_snapshot_from_surface_tree(
     renderer: &mut GlesRenderer,
     surface: &WlSurface,
     location: Point<f64, Logical>,
-    storage: &mut Vec<BakedSurface>,
+    storage: &mut Vec<BakedBuffer<TextureBuffer<GlesTexture>>>,
 ) {
     let _span = tracy_client::span!("render_snapshot_from_surface_tree");
 
@@ -85,21 +49,6 @@ pub fn render_snapshot_from_surface_tree(
                 };
                 location += view.offset.to_f64();
 
-                let single_pixel = data.lock().unwrap().buffer().and_then(|buffer| {
-                    get_single_pixel_buffer(buffer)
-                        .ok()
-                        .map(|spb| Color32F::from(spb.rgba32f()))
-                });
-                if let Some(color) = single_pixel {
-                    storage.push(BakedSurface::SolidColor(BakedBuffer {
-                        buffer: SolidColorBuffer::new(view.dst.to_f64(), color),
-                        location,
-                        src: None,
-                        dst: None,
-                    }));
-                    return;
-                }
-
                 if let Err(err) = import_surface(renderer, states) {
                     warn!("failed to import surface: {err:?}");
                     return;
@@ -125,7 +74,7 @@ pub fn render_snapshot_from_surface_tree(
                     dst: Some(view.dst),
                 };
 
-                storage.push(BakedSurface::Texture(baked));
+                storage.push(baked);
             }
         },
         |_, _, _| true,

@@ -35,7 +35,6 @@ the whole tree and is never scoped by class.
 | Workspace IPC field | `niri-ipc/`, `src/ipc/`, `src/layout/workspace.rs` | D | carried | submitted #4147 |
 | Material pass ordering hook | `src/render_helpers/blur.rs`, `effect_buffer.rs` | B | seam | unfiled |
 | Tile material state | `src/layout/tile.rs` | B | fork-only | — |
-| Single-pixel buffers baked into resize snapshots (test-only protocol; upstream #1463 makes the same change) | `src/render_helpers/surface.rs`, `src/layout/mod.rs` | B | fork-only | — |
 | Test front door and timing | `justfile`, `tools/` | C | fork-only | — |
 
 Posture is `seam`, `fork-only`, or `carried`. Status tracks seam candidates through
@@ -49,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-262 paths differ: 53 class B (seam), 172 class A (fork-only), 37 class C (scaffolding).
+261 paths differ: 52 class B (seam), 172 class A (fork-only), 37 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -94,7 +93,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
 | `src/layout/floating.rs` | B | M | +16/-5 |
-| `src/layout/mod.rs` | B | M | +107/-13 |
+| `src/layout/mod.rs` | B | M | +104/-9 |
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
 | `src/layout/tests.rs` | B | M | +304/-4 |
@@ -108,9 +107,8 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/mod.rs` | B | M | +28/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
 | `src/render_helpers/shaders/mod.rs` | B | M | +447/-0 |
-| `src/render_helpers/surface.rs` | B | M | +56/-5 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/client.rs` | B | M | +127/-0 |
+| `src/tests/client.rs` | B | M | +117/-0 |
 | `src/tests/fixture.rs` | B | M | +3/-1 |
 | `src/tests/mod.rs` | B | M | +8/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
