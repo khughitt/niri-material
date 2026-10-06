@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: material-233295
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-06T15:07:49Z
+updated: 2026-10-06T16:42:26Z
 started: 2026-10-06T14:59:39Z
 completed: 2026-10-06T15:07:49Z
 depends: []
@@ -35,3 +35,4 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
   provenance: {"harness_session":"claude-code:6f0031a6-34a9-4a30-bf8b-47dd178d115f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-06T15:07:49Z (material-233295): docs/materials/performance.md: a concise map of where GPU, CPU, memory and power go (backdrop chain, per-window, per-fragment), redraw sources, focus split, hidden windows, parameter costs and open levers, each claim cited to an evidence doc or verified in code; indexed in the materials README and linked from render-pipeline.md, whose two stale claims (resolve_material per frame, backdrop grain 'one texture per output') are corrected. Follow-ups: material-7f6d0e, material-1debaa.
   provenance: {"harness_session":"claude-code:6f0031a6-34a9-4a30-bf8b-47dd178d115f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T16:42:26Z (materials-26.04): review: impl round 1 — verdict: revise; findings: P2 5, P3 2; reviewer: unknown (pasted into session)
