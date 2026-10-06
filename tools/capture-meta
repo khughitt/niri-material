@@ -807,6 +807,12 @@ def refresh_record_sum(run_dir):
         tmp.replace(manifest)
 
 
+# Who restores a hold whose fixture never released: its end time is stamped then,
+# or the record would never get one. Preflight's own rollback is not among them:
+# the fixture is alive and releases from its exit trap.
+RECOVERERS = ("guard", "next-preflight", "hand")
+
+
 def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
     """Restore this run's hold, scan it once, record both (spec §4.3).
 
@@ -814,6 +820,7 @@ def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
     file goes, under record_lock. A kill at any point leaves the hold file
     (the next attempt finishes the record, scanning the same items) or a
     complete record (release finishes the leftovers without touching it).
+    A recoverer (RECOVERERS) also stamps the run's end when no release did.
     Returns {"attempt", "hold_end"}, or None when no hold file names the run.
     """
     run_dir = pathlib.Path(run_dir)
@@ -823,27 +830,33 @@ def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
         if not (run_dir / RECORD).exists():
             return
         with record_lock(run_dir):
-            end = load_record(run_dir).get("hold_end", {})
-            if attempt["undone"] == 0 and "scan" in end and end.get("restore", {}).get("state") == "complete":
-                refresh_record_sum(run_dir)
-                written["hold_end"] = end      # a leftover after a saved record: nothing new to say
-                return
-            scan = None
-            if "scan" not in end:
-                base = {"until_us": hold["until_us"], "disturbances": []}
-                if preflight_exit is not None:
-                    scan = {**base, "verdict": "not-run", "preflight_exit": preflight_exit}
-                elif hold.get("wake_error"):
-                    scan = {**base, "verdict": "unscanned", "error": hold["wake_error"]}
-                else:
-                    try:
-                        verdict, disturbances = ch.scan(host, hold, wakes)
-                        scan = {**base, "verdict": verdict, "disturbances": disturbances}
-                    except CannotRun as error:
-                        scan = {**base, "verdict": "unscanned", "error": str(error)}
-            written["hold_end"] = _update_hold_end(run_dir, scan, attempt,
-                                                   {"guard": hold["guard"], "owner_pid": hold["owner_pid"]})
+            record_end(hold, wakes, attempt)
+            if by in RECOVERERS:
+                recovered = load_record(run_dir)
+                if "run" in recovered and stamp_finish(recovered, by):
+                    save_record(run_dir, recovered)
             refresh_record_sum(run_dir)
+
+    def record_end(hold, wakes, attempt):
+        end = load_record(run_dir).get("hold_end", {})
+        if attempt["undone"] == 0 and "scan" in end and end.get("restore", {}).get("state") == "complete":
+            written["hold_end"] = end      # a leftover after a saved record: nothing new to say
+            return
+        scan = None
+        if "scan" not in end:
+            base = {"until_us": hold["until_us"], "disturbances": []}
+            if preflight_exit is not None:
+                scan = {**base, "verdict": "not-run", "preflight_exit": preflight_exit}
+            elif hold.get("wake_error"):
+                scan = {**base, "verdict": "unscanned", "error": hold["wake_error"]}
+            else:
+                try:
+                    verdict, disturbances = ch.scan(host, hold, wakes)
+                    scan = {**base, "verdict": verdict, "disturbances": disturbances}
+                except CannotRun as error:
+                    scan = {**base, "verdict": "unscanned", "error": str(error)}
+        written["hold_end"] = _update_hold_end(run_dir, scan, attempt,
+                                               {"guard": hold["guard"], "owner_pid": hold["owner_pid"]})
 
     result = ch.restore_transaction(host, lock_file, run_id, run_dir, by, record)
     if result is None:
@@ -1034,19 +1047,28 @@ def cmd_finish(args):
     finish_sub_run(args.run_dir, args.sub_run)
 
 
+def stamp_finish(record, by):
+    """Stamps the run's end once, naming who stamped it. A recoverer's time is when it
+    restored the hold, not when the fixture died: about a second late from the guard,
+    an upper bound from a later preflight or a hand restore. Returns whether it stamped."""
+    run = record["run"]
+    if "finished" in run:
+        return False
+    run["finished"] = now_rfc3339()
+    run["duration_s"] = duration_s(run.get("started"), run["finished"], "run")
+    run["finished_by"] = by
+    return True
+
+
 def finish_run(run_dir):
     """The first release ends the run, after its hold is restored or not: every fixture
     releases from its EXIT trap, so a refused or aborted run is stamped too. A later
-    release leaves the stamp alone."""
+    release leaves the stamp alone, as it does one a recoverer wrote."""
     with record_lock(run_dir):
         record = load_record(run_dir)
-        run = record["run"]
-        if "finished" in run:
-            return
-        run["finished"] = now_rfc3339()
-        run["duration_s"] = duration_s(run.get("started"), run["finished"], "run")
-        save_record(run_dir, record)
-        refresh_record_sum(pathlib.Path(run_dir))
+        if stamp_finish(record, "release"):
+            save_record(run_dir, record)
+            refresh_record_sum(pathlib.Path(run_dir))
 
 
 def cmd_release(args):
@@ -1113,8 +1135,8 @@ def render(record):
     lines = []
     run = record.get("run", {})
     lines.append(f"run {run.get('id')}  task {run.get('task')}  fixture {run.get('fixture')}  lane {run.get('lane')}")
-    finished = (f"finished {run['finished']} ({run.get('duration_s')} s)" if "finished" in run
-                else "not finished")
+    finished = (f"finished {run['finished']} ({run.get('duration_s')} s, by {run.get('finished_by')})"
+                if "finished" in run else "not finished")
     lines.append(f"started {run.get('started')}  {finished}  host {run.get('host')}")
     env = record.get("environment")
     if env:

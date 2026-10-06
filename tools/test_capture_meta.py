@@ -339,10 +339,10 @@ class ShowTests(unittest.TestCase):
                                {"name": "gpu-plain-2", "verdict": "settled", "started": "2026-09-11T04:37:00-04:00"},
                                {"name": "gpu-aurora-1", "verdict": "refused", "reason": "gpu_power_w 24.1 exceeds baseline"}]}
         text = cm.render(record)
-        record["run"].update(finished="2026-09-11T04:40:00-04:00", duration_s=327)
+        record["run"].update(finished="2026-09-11T04:40:00-04:00", duration_s=327, finished_by="guard")
         record["preflight"]["at"] = "2026-09-11T04:34:50-04:00"
         finished = cm.render(record)
-        self.assertIn("finished 2026-09-11T04:40:00-04:00 (327 s)", finished)
+        self.assertIn("finished 2026-09-11T04:40:00-04:00 (327 s, by guard)", finished)
         self.assertIn("preflight quiet at 2026-09-11T04:34:50-04:00", finished)
         for needle in ("trace-1", "RTX", "610", "abc", "niri 00", "not finished",
                        "gpu-plain-1: settled  2026-09-11T04:35:00-04:00 to 2026-09-11T04:36:00-04:00 (60 s)",
@@ -1087,7 +1087,7 @@ class LifecycleTests(unittest.TestCase):
             self.assertEqual(cm.main(["release", str(self.run)]), 0)
         self.assertEqual(self.host.snapshot(), self.before)
         run = cm.load_record(self.run)["run"]
-        self.assertEqual((run["finished"], run["duration_s"]), (finished, 754))
+        self.assertEqual((run["finished"], run["duration_s"], run["finished_by"]), (finished, 754, "release"))
         end = cm.load_record(self.run)["hold_end"]
         self.assertEqual((end["restore"]["state"], end["scan"]["verdict"]), ("complete", "clean"))
         self.assertFalse(self.host.guards)
@@ -1173,6 +1173,7 @@ class LifecycleTests(unittest.TestCase):
         end = cm.load_record(self.run)["hold_end"]
         self.assertEqual((end["restore"]["state"], end["restore"]["attempts"][-1]["by"]), ("complete", "guard"))
         self.assertEqual(self.host.snapshot()[:2], self.before[:2])
+        self.assertEqual(cm.load_record(self.run)["run"]["finished_by"], "release")
 
     def test_guard_after_a_kill_mid_run_writes_scan_and_restore(self):
         self.preflight()
@@ -1181,6 +1182,56 @@ class LifecycleTests(unittest.TestCase):
         end = cm.load_record(self.run)["hold_end"]
         self.assertEqual((end["scan"]["verdict"], end["restore"]["attempts"][-1]["by"]), ("clean", "guard"))
         self.assertEqual(self.host.snapshot(), self.before)
+        run = cm.load_record(self.run)["run"]
+        self.assertEqual(run["finished_by"], "guard")
+        self.assertGreaterEqual(run["duration_s"], 0)
+
+    def test_guard_stamps_the_end_after_a_kill_left_only_the_record(self):
+        self.preflight()
+        self.host.alive[4242] = False
+        real = cm.ch.remove_hold
+        def killed(lock_file, hold):
+            raise FakeHost.Killed()
+        cm.ch.remove_hold = killed
+        try:
+            with self.assertRaises(FakeHost.Killed):
+                cm.guard(self.host, self.lock, self.run)
+        finally:
+            cm.ch.remove_hold = real
+        stamped = cm.load_record(self.run)["run"]
+        self.assertEqual(stamped["finished_by"], "guard")
+        self.assertTrue((self.host.runtime / ch_hold_name()).exists())
+        self.assertEqual(cm.guard(self.host, self.lock, self.run), "restored")
+        self.assertEqual(cm.load_record(self.run)["run"], stamped)
+
+    def test_a_kill_before_the_stamp_is_stamped_by_the_next_recovery(self):
+        self.preflight()
+        self.host.alive[4242] = False
+        real = cm.stamp_finish
+        def killed(record, by):
+            raise FakeHost.Killed()
+        cm.stamp_finish = killed
+        try:
+            with self.assertRaises(FakeHost.Killed):
+                cm.guard(self.host, self.lock, self.run)
+        finally:
+            cm.stamp_finish = real
+        record = cm.load_record(self.run)
+        self.assertEqual(record["hold_end"]["restore"]["state"], "complete")
+        self.assertNotIn("finished", record["run"])
+        self.assertEqual(cm.main(["restore"]), 0)
+        self.assertEqual(cm.load_record(self.run)["run"]["finished_by"], "hand")
+
+    def test_recovered_end_refreshes_the_manifest(self):
+        import hashlib
+        self.preflight()
+        record = self.run / cm.RECORD
+        manifest = self.run / "SHA256SUMS"
+        manifest.write_text(hashlib.sha256(record.read_bytes()).hexdigest() + "  ./capture.json\n")
+        self.host.alive[4242] = False
+        self.assertEqual(cm.guard(self.host, self.lock, self.run), "restored")
+        self.assertIn("finished", cm.load_record(self.run)["run"])
+        self.assertEqual(manifest.read_text(), hashlib.sha256(record.read_bytes()).hexdigest() + "  ./capture.json\n")
 
     def test_guard_survives_an_unreadable_connector(self):
         self.preflight()
@@ -1266,6 +1317,7 @@ class LifecycleTests(unittest.TestCase):
         self.host.alive[4242] = False
         self.assertEqual(cm.main(["restore"]), 0)
         self.assertEqual(cm.load_record(self.run)["hold_end"]["restore"]["attempts"][-1]["by"], "hand")
+        self.assertEqual(cm.load_record(self.run)["run"]["finished_by"], "hand")
         self.assertEqual(cm.main(["restore"]), 0)
 
     def test_next_preflight_recovers_a_stale_hold_and_updates_its_run(self):
@@ -1279,6 +1331,8 @@ class LifecycleTests(unittest.TestCase):
         recovered = cm.load_record(self.run)["hold"]["recovered"]
         self.assertEqual(recovered["run_id"], "pilot-1")
         self.assertEqual(cm.load_record(first)["hold_end"]["restore"]["attempts"][-1]["by"], "next-preflight")
+        self.assertEqual(cm.load_record(first)["run"]["finished_by"], "next-preflight")
+        self.assertNotIn("finished", cm.load_record(self.run)["run"])
 
     def test_hold_file_naming_another_run_dir_is_not_released(self):
         self.preflight()
