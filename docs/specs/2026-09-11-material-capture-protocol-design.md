@@ -209,7 +209,7 @@ that exists (exit 2), so a fixture cannot half-rerun into a directory.
   "run": {"id": "trace-20260911T043433", "task": "material-300b87",
           "fixture": "aurora-iridescence-hardware.sh", "lane": "headless",
           "started": "2026-09-11T04:34:33-04:00", "host": "<hostname>",
-          "finished": "2026-09-11T04:46:07-04:00", "duration_s": 694},
+          "finished": "2026-09-11T04:46:07-04:00", "duration_s": 694, "finished_by": "release"},
   "environment": {
     "kernel": "7.2.2-arch1-1", "cpu": "AMD Ryzen Threadripper 1950X",
     "cpu_threads": 32, "memory_total_kib": 67108864,
@@ -256,8 +256,18 @@ refused, the lock refusal included. The first `release` stamps `run.finished`
 and `run.duration_s` (whole seconds since `run.started`) after it restores the
 hold, whether that release succeeds or not; every fixture releases from its exit
 trap, so a refused or aborted run is stamped too, and a later release leaves the
-stamp alone. When the fixture has already written `SHA256SUMS`, the release
-refreshes its `capture.json` line. A run killed outright stays unstamped. These
+stamp alone. A fixture killed outright never releases: whoever then restores its
+hold (the guard, the next preflight, or `capture-meta restore` by hand) stamps the
+end instead, inside the same restore transaction, so a kill partway through is
+stamped by the next recovery (`material-032d10`). `run.finished_by` names who
+stamped: `release`, `guard`, `next-preflight`, or `hand`. A recovered time is when
+the recoverer restored the hold, not when the fixture died: the guard checks its
+owner once a second, so its stamp trails the death by about a second plus the
+restore (longer when a restore is retried), while `next-preflight` and `hand` run
+only after the guard failed and can come hours later, so their time is an upper
+bound and a reader of durations should treat it as one. Preflight's rollback of its own refused hold
+stamps nothing, since the fixture is alive and releases next. When the fixture has
+already written `SHA256SUMS`, the stamp refreshes its `capture.json` line. These
 fields are additive too: schema 1 records without them stay valid.
 
 Field rules: every measured value carries its unit in the key; hashes are full
