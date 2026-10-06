@@ -1,7 +1,10 @@
 # Noise layers: up to four grain generators per material, each with a size
 
 **Status:** accepted for planning 2026-10-06 after spec review rounds 1 and
-2 (codex) and the owner's go-ahead. Round 2 (2026-10-06: the
+2 (codex) and the owner's go-ahead; amended while planning (§3: the
+validation message's form and resolution's bound on an invalid material;
+§7.2 (6) and §8: a per-slot check replaces the order check, which seeds
+confound); plan `docs/plans/2026-10-06-noise-layers.md`. Round 2 (2026-10-06: the
 `material-config.md` instruction still carried the unqualified collapse
 claim). Round 1 (2026-10-06: the fine lattice's anticorrelated corners need
 their covariance in the norm, checked by position within the cell; stacked
@@ -95,7 +98,10 @@ material "film-stock" {
 - **Repeated node.** `Glass.noise` becomes `Vec<Noise>` decoded with
   `children(name = "noise")`. `NOISE_LAYERS = 4`. A fifth node fails
   `Material::validate` with
-  `material "film-stock": at most 4 noise layers, found 5`.
+  `material film-stock: at most 4 noise layers, found 5` (the file's
+  `material <name>:` form). The invalid material still reaches the
+  post-include backdrop check, so resolution takes at most four nodes rather
+  than assuming validation passed.
 - **`scale=`.** `Noise` gains `#[knuffel(property)] scale:
   Option<FloatOrInt<1, 16>>`. Omitted is 1. The unit is the carrier's pixel:
   physical output pixels at every site, as today's grain is (so `scale=4` on
@@ -293,9 +299,12 @@ low-frequency ratio, determinism).
    69 %), so the same cells are also binned by position within the lattice
    cell, `fract(fragCoord / scale)` on the pixel centres (64 bins at scale
    8), and every bin's `sd` must be within 10 % of the cell's aggregate.
-6. Order: lightness then white at the glass differs from white then
-   lightness by more than the 8-bit floor (an order that changed nothing
-   would mean one layer is not applied).
+6. Every slot is applied and seeded apart: fine grain at amount 0.3 alone
+   in slot `k` (earlier slots `noise 0`), for `k` 1 to 3, has a grain `sd`
+   within 5 % of slot 0's, and the `sd` of its difference from slot 0's
+   grain is at least slot 0's `sd` (an identical pattern would give 0).
+   Swapping two layers' order cannot test application: it swaps their seeds
+   too, so the result differs even when one layer is never applied.
 
 ### 7.3 Cost
 
@@ -332,7 +341,8 @@ class when `prism-85f63a` lands.
   GLSL-reads map with `mat_noise_scale`; the generated file is fresh.
 - **Pixels, in process (`src/tests/noise_layers.rs`).** Frozen-clock
   renders: one layer equals the same layer followed by three amount-0 layers
-  (absolute error 0) at each site; `scale=1` equals omitted; the
+  (absolute error 0) at each site; `scale=1` equals omitted; the per-slot
+  check of §7.2 (6); the
   independence and normalisation statistics of §7.2 (4 and 5), the
   per-position bins included, computed over the glass area of an in-process
   render, so they gate every build and the smoke repeats them on real
