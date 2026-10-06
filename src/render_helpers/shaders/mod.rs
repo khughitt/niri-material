@@ -575,7 +575,7 @@ mod tests {
         assert!(source.starts_with("precision highp float;\n// ---- common\n"));
         assert_eq!(source.matches("precision highp float;").count(), 1);
         assert!(source.find("// ---- common").unwrap() < source.find("// ---- prelude").unwrap());
-        assert!(source.contains("uniform float mat_noise_site;"));
+        assert!(source.contains("uniform vec4 mat_noise_site;"));
     }
 
     use niri_config::material::pipeline::{Program, STAGES};
@@ -768,6 +768,7 @@ mod tests {
     fn uniform_nodes(uniform: &str) -> Vec<&'static str> {
         match uniform {
             "mat_scatter" => vec!["roughness", "ior"],
+            "mat_noise_scale" => vec!["noise scale="],
             "mat_noise_site" => vec!["noise site="],
             "mat_noise_type" => vec!["noise type="],
             "mat_aurora_color_a" | "mat_aurora_color_b" => vec!["aurora color"],
