@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-262 paths differ: 52 class B (seam), 173 class A (fork-only), 37 class C (scaffolding).
+265 paths differ: 52 class B (seam), 175 class A (fork-only), 38 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -138,6 +138,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_upstream_report.py` | C | A | +954/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
+| `tools/test_warp_calibration.py` | C | A | +87/-0 |
 | `tools/tooling_tests.py` | C | A | +530/-0 |
 | `tools/tt` | C | A | +328/-0 |
 | `tools/upstream-report` | C | A | +738/-0 |
