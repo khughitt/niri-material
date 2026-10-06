@@ -14,6 +14,10 @@ binary (quiet TTY run, 2026-10-05); Tracy costs are measured for all six cases.
 - Prepared binary snapshots: `$NIRI_NOISE_ARTIFACTS/noise-binaries-8db25b43/`.
   Corrected release SHA-256 `b380071c1f0b4ea2a413062b9babce896ec47e22cee589ecc6bbd3af610a0a14`;
   corrected Tracy SHA-256 `ee669cf4934bf6fd5cd224f5de646f9b39131c4deb5546fee0abc10c4c1b63c3`. Both builds passed.
+  The quiet runs rebuilt both from `96571593` (no source, config or Cargo
+  change since `4609c7bd`; the tree was dirty only in scripts, spec and task
+  records) and record `edfa03ad…` (niri) and `0c189406…` (niri-tracy): niri
+  embeds its git revision, so a rebuild at a new commit changes the hash.
 - Offline simulation: `$NIRI_NOISE_ARTIFACTS/noise-simulation-20261005-112606/`;
   `sheet-white.png`, `sheet-fine.png`, the cell images and metrics.
 - Refused readiness run:
@@ -129,11 +133,17 @@ glass site's grain beside §7.1's model prediction for fine grain:
 The real chain removes backdrop grain far faster than the model predicted:
 one Kawase pass leaves about 4 % (under one code), three passes or any
 roughness pyramid level leave none above the 8-bit floor. The blurred
-roughness-1 cell's 0.000144 (0.037 codes, at most one code per pixel) is a
-low-frequency rounding residue the pyramid upsample spreads (63 % of it
-survives an 8× downsample, against 4.5 % of real grain), so assertion 5 now
-reads "monotone down to the 8-bit floor" (spec §7.2, half a code, the
-in-process presence threshold). In practice `site="backdrop"` is visible grain
+roughness-1 cell's 0.000144 (grey `sd`, 0.037 codes) is not grain texture: only
+blue differs, the backdrop cell one code lower on 44,066 of 80,000 face
+pixels (mean −0.55 codes, blue-only `sd` 0.50 codes, red and green
+identical), one-signed and near-DC (63 % of the grey `sd` survives an 8×
+downsample, against 4.5 % of real grain). Its cause is not established:
+clipping of the grain on extreme blue texels and rounding in the 8-bit blur
+chain both fit, and the sharp pyramid at roughness 1 shows exactly 0. Strict
+"falls monotonically" cannot hold once grain reaches zero (the full run has
+three 0 → 0 steps), so assertion 5 now reads "monotone down to the 8-bit
+floor" (spec §7.2, half a code, the in-process presence threshold); in blue
+alone this residue sits at that floor, which the grey metric does not show. In practice `site="backdrop"` is visible grain
 only with `backdrop-blur false` and roughness 0, the sharp case §4 targets.
 **Owner's look: pending.**
 
@@ -157,17 +167,22 @@ EGL device, from `weston.log`; niri's log at this level prints none):
 GPU span medians (ms) and sample counts, sharp and blurred roughness windows
 open at once:
 
-| Case | Grain::render | Blur::render | Prefilter::downsample | Material draw | per-call sum | mean total per change | derived 60 Hz (ms/s) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| damage, backdrop | 0.0876 (40) | 0.456 (40) | 0.267 (80) | 0.210 (162) | 1.021 | 3.656 | 219 |
-| damage, glass | — (0) | 0.452 (40) | 0.267 (80) | 0.272 (162) | 0.991 | 3.756 | 225 |
-| drag, backdrop | 0.0364 (100) | 0.145 (100) | 0.0957 (200) | 0.0317 (104) | 0.309 | 1.416 | 85 |
-| drag, glass | — (0) | — (0) | — (0) | 0.149 (104) | 0.149 | 0.285 | 17 |
+| Case | Grain::render | Blur::render | Prefilter::downsample | Material draw | per-call sum | mean total per stimulus | per damage / change | derived 60 Hz (ms/s) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| damage, backdrop | 0.0876 (40) | 0.456 (40) | 0.267 (80) | 0.210 (162) | 1.021 | 3.656 | 1.83 | 110 |
+| damage, glass | — (0) | 0.452 (40) | 0.267 (80) | 0.272 (162) | 0.991 | 3.756 | 1.88 | 113 |
+| drag, backdrop | 0.0364 (100) | 0.145 (100) | 0.0957 (200) | 0.0317 (104) | 0.309 | 1.416 | 1.42 | 85 |
+| drag, glass | — (0) | — (0) | — (0) | 0.149 (104) | 0.149 | 0.285 | 0.285 | 17 |
 
 Static cases: no grain, blur or prefilter work in the 20 s window at either
 site; backdrop's first grain pass took 0.62 ms. Each wallpaper change damages
-the backdrop twice (removal, then the new layer), so the counts are twice the
-stimuli and every pass is in the per-change total.
+the backdrop twice, once at the old layer's removal (about 60 ms after the
+reload) and once after the new layer's `Layer::mapped` (about 150 ms), so the
+damage counts are twice the stimuli and the per-damage column halves the
+per-stimulus total. A drag step is one change but runs the chain twice within
+a millisecond of its reload: a grain option change updates both the
+`xray.background` and `xray.backdrop` effect buffers (`src/niri.rs`), and the
+per-change total covers both.
 
 Reading: on backdrop damage the grain pass adds about 0.09 ms per pass, but
 the per-change totals cannot resolve it: backdrop's 3.66 ms is 0.1 ms *below*
@@ -175,8 +190,9 @@ glass's 3.76 ms, the opposite of the added work, so the totals vary by more
 than the pass costs. A grain option change (the drag) costs `backdrop` a full chain
 rerun, grain plus blur plus both pyramids, 1.4 ms per change against 0.29 ms
 for `glass`, which only redraws its material. Derived 60 Hz figures are the
-per-change total times 60, labelled derived: a continuously dragged backdrop
-amount slider would spend about 85 ms of GPU time per second.
+per-damage (or per-change) total times 60, labelled derived: an animated
+backdrop under either site spends about 110 ms of GPU time per second, and a
+continuously dragged backdrop amount slider about 85 ms.
 
 Script corrections during the quiet run: the IPC client is the plain binary,
 because `niri-tracy msg` pays Tracy's timer calibration (539 ms against 18

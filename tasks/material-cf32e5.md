@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-cf32e5
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-05T16:57:00Z
+updated: 2026-10-06T03:51:48Z
 started: 2026-10-05T12:22:37Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
@@ -66,3 +66,4 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-05T16:56:59Z (material-cf32e5): Corrected release/Tracy builds and just gate passed; full tooling 409, niri 491 plus config/IPC/doctests. Baseline worktree removed after tt-report and host-pointer check, baseline binary retained. Latest GPU read 16% / P3 with active browser compute client; no capture run or merge.
 - 2026-10-05T16:56:59Z (material-cf32e5): parked (waiting on agent, dependency): Agent resumes .worktrees/material-cf32e5: run the quiet capture queue material-2a1689 then material-40b563 (about 60 min total), update evidence, rerun just gate and review changed evidence; then execute material-e50969 local merge, prism schema hand-off, follow-ups and parent close. Implementation review round 2 accepted; actual baseline/visual/Tracy acceptance is unverified. No task process or host pointer left running.
   provenance: {"harness_session":"codex:01a10c84-1457-7892-bb5d-ed0227e1d702","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-06T03:51:48Z (material-cf32e5): review: impl round 3 — verdict: revise; findings: Important 1, Minor 5; reviewer: claude-code/claude-opus-5-5
