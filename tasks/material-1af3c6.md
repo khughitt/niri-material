@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 needs: [quiet]
 created: 2026-10-02T08:06:31Z
-updated: 2026-10-04T03:28:50Z
+updated: 2026-10-06T09:08:25Z
 depends: []
 parent: material-f86183
 tags: [performance]
@@ -22,3 +22,5 @@ Remaining output-removal acceptance from material-2ee11e. Use a real two-output 
 ## Notes
 
 - 2026-10-04T03:28:50Z (materials-26.04): 2026-10-03 quiet TTY session: not runnable here, only one output is connected on titan (card1-DP-1; every other connector disconnected). Needs a second monitor attached (or a host with two) before its pilot.
+- 2026-10-06T09:08:25Z (materials-26.04): parked (waiting on user, environment): Owner: attach a second monitor to titan (or name a two-output host); then agent: add the bounded two-output capture lane and run its end-to-end pilot before the matrix
+  provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
