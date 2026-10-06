@@ -203,7 +203,9 @@ covered ones.
 | `aurora` | Redraws at `drift-hz`; close to 1 W in the measured setup | `drift-hz 0`, `aurora 0`, or `signal { motion "off" }`; a shorter `idle-after-ms` |
 | `ring-beam-speed`, `ring-beam-decay` | Refresh-rate run per focus gain | Faster speed or shorter decay; speed 0 or `signal { motion "off" }` removes the run |
 | Window transparency, `bevel`, `offset-*` | The area that runs the shader | Opaque content, a narrower band |
-| `saturation`, `iridescence`, `attenuation-*`, ring at rest | A few operations | — |
+| `reflection` | One prefiltered background read per bevel fragment, two when the prefilter mix is fractional | 0 |
+| `bevel-profile` above 1 | A few operations per bevel fragment (the height field and its normal) | 1, a planar chamfer |
+| `saturation`, `iridescence`, `edge-highlight`, `attenuation-*`, ring at rest | A few operations | — |
 
 ## 8. Open levers
 

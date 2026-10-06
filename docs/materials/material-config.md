@@ -135,8 +135,9 @@ disables it along with all other blur, regardless of this parameter.
 
 `saturation` then glass-site `noise` transform the averaged backdrop before attenuation,
 through the `behind` hook. Their formulas run in sRGB (Oklab for lightness
-grain) and return linear light. Additive glint, ring, aurora and sweeps are
-not postprocessed; the chamfer still transmits attenuated grain. A written
+grain) and return linear light. Additive glint, reflection, edge highlight,
+ring, aurora and sweeps are not postprocessed; the bevel still transmits
+attenuated grain. A written
 value is a material optic and applies regardless of `backdrop-blur` and of
 `blur { off }`. An omitted
 value inherits the global `blur` block's `noise` or `saturation` while
@@ -186,7 +187,8 @@ the offsets. Its inner corners follow the window's effective
 The glass pipeline is a slab plus an ordered list of optics. Each optic owns
 its node, resolved values, uniforms, and GLSL stage. Its explicit neutral
 changes nothing; omission can instead inherit where stated below.
-Optics are listed in render order: `saturation`, `noise`, `aurora`, `iridescence`.
+Optics are listed in render order: `saturation`, `noise`, `aurora`, `reflection`,
+`edge-highlight`, `iridescence`.
 Contributors: see `adding-an-optic.md`.
 
 ### saturation
