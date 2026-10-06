@@ -10,7 +10,7 @@
 
 **Spec:** `docs/specs/2026-10-06-noise-layers-design.md` (this worktree, `.worktrees/material-3fcba2`). Section numbers below (§3, §4, ...) refer to it. It builds on `docs/specs/2026-10-05-noise-placement-design.md` (the sites) and `docs/materials/render-pipeline.md` (read it before touching the shaders).
 
-**Status:** draft for owner review, 2026-10-06.
+**Status:** revised after plan review round 1 (codex, 2026-10-06: the smoke's `bins()` checks `identify` and the helper's status and clears stale values; the coefficient pin reads code, not comments, with mutation demonstrations; the cost cleanup test follows `stop_walls` and `cleanup_cost` into the lib; a fixed-seed, hook-ordered reference checks each site's slot order, with reversal demonstrations; a visible lattice blocks the merge unless fixed or the owner explicitly accepts deferral). Execution: native (owner, 2026-10-06).
 
 ## Global Constraints
 
@@ -883,13 +883,26 @@ mod tests {
         let diagonal = fine_corner_correlation((1, 1));
         assert!((adjacent + 1. / 6.).abs() < 1e-12, "{adjacent}");
         assert!((diagonal + 7. / 36.).abs() < 1e-12, "{diagonal}");
-        for (name, coefficient) in [("adjacent", -2. * adjacent), ("diagonal", -2. * diagonal)] {
-            let literal = format!("{coefficient:.8}");
-            assert!(
-                NoiseOptic::GLSL.contains(&literal),
-                "noise.frag's fine norm lacks the {name} coefficient {literal}"
-            );
-        }
+        // The comments name the coefficients too, so only code counts, and
+        // the whole subtraction must be there, not the bare literals.
+        let code = NoiseOptic::GLSL
+            .lines()
+            .map(|line| line.split("//").next().unwrap())
+            .collect::<Vec<_>>()
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let expected = format!(
+            "norm -= {:.8} * (w00 * w10 + w00 * w01 + w10 * w11 + w01 * w11) \
+             + {:.8} * (w00 * w11 + w10 * w01);",
+            -2. * adjacent,
+            -2. * diagonal
+        );
+        assert!(
+            code.contains(&expected),
+            "noise.frag's fine branch must subtract the corner covariance: `{expected}`"
+        );
     }
 }
 ```
@@ -1273,6 +1286,16 @@ and replace `uniform_f32(&uniforms, "mat_noise")` and `uniform_f32(&uniforms, "m
 Run: `just test-one -p niri -E 'test(noise) | test(grain) | test(pipeline) | test(uniform)'`
 Expected: PASS, including `the_fine_norm_coefficients_are_twice_the_corner_correlations`, every pin in `shaders/mod.rs`, and `src/tests/noise_site.rs` (omitted equals glass, film within one code of glass, backdrop within two codes, amount 0 neutral, damage contract): the single-layer paths are unchanged.
 
+- [ ] **Step 7a: Demonstrate that the coefficient pin reads the code**
+
+Three temporary edits to `noise.frag`, one at a time, each followed by `just test-one -p niri the_fine_norm_coefficients_are_twice_the_corner_correlations` and `git checkout src/render_helpers/shaders/material/noise.frag`:
+
+1. `0.33333333 *` in the `norm -=` line becomes `0.33333300 *` (the comment keeps `0.33333333`). Expected: FAIL.
+2. `0.38888889 *` becomes `0.38888800 *`. Expected: FAIL.
+3. Delete the two `norm -= ...` lines. Expected: FAIL.
+
+After the last restore the test PASSES again. Record `tasks note material-cb80f7 "mutation: coefficient pin fails for adjacent, diagonal and deleted correction"`.
+
 - [ ] **Step 8: Run the fast suite and commit**
 
 ```bash
@@ -1625,6 +1648,60 @@ fn grain_deviation_holds_across_scales_and_cell_positions() {
     }
 }
 
+/// Mean and maximum absolute RGB difference over the face, in codes.
+fn face_diff(a: &[u8], b: &[u8], face: Rectangle<i32, Logical>) -> (f64, u8) {
+    let w = usize::from(OUT_W);
+    let (mut sum, mut max, mut n) = (0u64, 0u8, 0u64);
+    for y in face.loc.y..face.loc.y + face.size.h {
+        for x in face.loc.x..face.loc.x + face.size.w {
+            let i = (y as usize * w + x as usize) * 4;
+            for c in 0..3 {
+                let d = a[i + c].abs_diff(b[i + c]);
+                sum += u64::from(d);
+                max = max.max(d);
+                n += 1;
+            }
+        }
+    }
+    (sum as f64 / n as f64, max)
+}
+
+/// Lightness in slot 0, then white in slot 1, with each slot's seed fixed.
+/// In the reference the hooks fix the order: the glass hook runs the
+/// lightness layer before the film hook adds white. Applied as a stack at
+/// one site, the same two layers must give the same pixels, so a shader that
+/// applies a site's slots in another order fails here. Swapping the config
+/// lines cannot test this, because it swaps the seeds too. At amount 0.5 each
+/// on this backdrop, reversing the two moves a pixel by about 1.4 codes on
+/// average (a float simulation of the formulas while planning); the glass and
+/// film stacks differ from the reference only by float rounding, and the
+/// backdrop stack by its 8-bit storage (under half a code on average).
+#[test]
+fn a_sites_layers_apply_in_slot_order() {
+    let mut f = fixture();
+    reload(
+        &mut f,
+        "noise 0.5 type="lightness" site="glass"
+noise 0.5 type="white" site="film"",
+    );
+    let (reference, face) = render(&mut f);
+    for (site, mean_limit, max_limit) in [("glass", 0.1, 1), ("film", 0.1, 1), ("backdrop", 0.7, 2)] {
+        reload(
+            &mut f,
+            &format!(
+                "noise 0.5 type="lightness" site="{site}"
+                 noise 0.5 type="white" site="{site}""
+            ),
+        );
+        let (stack, _) = render(&mut f);
+        let (mean, max) = face_diff(&reference, &stack, face);
+        assert!(
+            mean <= mean_limit && max <= max_limit,
+            "{site} stack against the hook-ordered reference: mean {mean:.3}, max {max} codes"
+        );
+    }
+}
+
 #[test]
 fn a_fractional_scale_keeps_the_deviation() {
     let mut f = fixture();
@@ -1699,6 +1776,10 @@ Temporarily delete the two `norm -= ...` lines in `noise.frag`'s fine branch, so
 `just test-one -p niri grain_deviation_holds_across_scales_and_cell_positions`
 
 Expected: FAIL on a `fine scale 8: position (x, y)` line with a ratio near 0.8 (spec review round 2 computed 79.5 % for the weakest class), while the aggregate assertion for that scale passes. Record the failing line in a task note (`tasks note material-d184da "mutation: independent-corner norm fails <line>"`), then restore the lines with `git checkout src/render_helpers/shaders/material/noise.frag` and rerun the test to PASS.
+
+- [ ] **Step 3a: Demonstrate that the order check catches reversed application**
+
+Temporarily reverse the order of the four `noiseBehindLayer(...)` calls in `noise_behind` (the `.w` call first, the `.x` call last; each call keeps its own components and seed). Run `just test-one -p niri a_sites_layers_apply_in_slot_order`. Expected: FAIL on the `glass stack` line with a mean near 1.4 codes. Restore with `git checkout src/render_helpers/shaders/material/noise.frag`. Repeat with the four `noisePostLayer` calls in `noise_post` (expected: FAIL on `film stack`) and the four `noiseSourceLayer` calls in `noise_source` (expected: FAIL on `backdrop stack`), restoring after each. If the backdrop mutation passes, its 8-bit storage hides the reversal at these amounts: raise both amounts in the test to 0.6 (about 1.8 codes reversed, per the planning simulation), rerun the unmutated test and the mutation, and say so in the note. Record `tasks note material-d184da "mutation: reversed glass, film and backdrop application each fail a_sites_layers_apply_in_slot_order: <means>"`, and rerun the test to PASS.
 
 - [ ] **Step 4: Fast suite and commit**
 
@@ -1898,12 +1979,29 @@ grain_sd() {   # $1 cell, $2 reference cell; sets METRIC
     signed_diff "$OUT/$1-face.png" "$OUT/$2-face.png" "$OUT/grain-$1.png"
     sd "$OUT/grain-$1.png"
 }
-bins() {   # $1 cell (its grain image must exist), $2 scale; sets BIN_*
-    local raw=$OUT/grain-$1.raw w h
-    magick "$OUT/grain-$1.png" -depth 16 -endian MSB "gray:$raw" || fail "raw export of $1 failed"
-    read -r w h < <(magick identify -format '%w %h' "$OUT/grain-$1.png")
-    eval "$(python3 -I "$BINS" "$raw" "$w" "$h" "$2" | sed 's/^/BIN_/')" \
-        || fail "position classes of $1 failed"
+# Sets BIN_aggregate_sd, BIN_min_bin_ratio, BIN_max_bin_ratio, BIN_lf_ratio,
+# clearing them first so a failed run can never leave the previous cell's.
+# identify prints no trailing newline, so its output is captured and checked,
+# never piped into `read` (which returns 1 at EOF and trips set -e).
+bins() {   # $1 cell (its grain image must exist), $2 scale
+    local png=$OUT/grain-$1.png raw=$OUT/grain-$1.raw dims w h out key value name
+    unset BIN_aggregate_sd BIN_min_bin_ratio BIN_max_bin_ratio BIN_lf_ratio
+    magick "$png" -depth 16 -endian MSB "gray:$raw" || fail "raw export of $1 failed"
+    dims=$(magick identify -format '%w %h' "$png") || fail "identify of $1 failed"
+    [[ $dims =~ ^([0-9]+)\ ([0-9]+)$ ]] || fail "identify of $1 returned '$dims'"
+    w=${BASH_REMATCH[1]}; h=${BASH_REMATCH[2]}
+    out=$(python3 -I "$BINS" "$raw" "$w" "$h" "$2") || fail "position classes of $1 failed"
+    while IFS='=' read -r key value; do
+        case $key in
+            aggregate_sd|min_bin_ratio|max_bin_ratio|lf_ratio) ;;
+            *) fail "position classes of $1: unexpected line '$key=$value'" ;;
+        esac
+        is_number "$value" || fail "position classes of $1: $key is '$value'"
+        printf -v "BIN_$key" '%s' "$value"
+    done <<< "$out"
+    for name in BIN_aggregate_sd BIN_min_bin_ratio BIN_max_bin_ratio BIN_lf_ratio; do
+        [ -n "${!name:-}" ] || fail "position classes of $1: no ${name#BIN_}"
+    done
 }
 calibrate_probe_rect "$NIRI" 0
 
@@ -1986,7 +2084,27 @@ finish
 printf "PASS: noise layers (pilot=%s)\n" "$PILOT"
 ```
 
-`assert_greater` takes `(label, a, b)` and passes when `a > b`, as in `glass-noise-site-smoke.sh`. Run `bash -n docs/materials/scripts/glass-noise-layers-smoke.sh`.
+`assert_greater` takes `(label, a, b)` and passes when `a > b`, and `assert_about` takes `(label, value, expected, relative tolerance)`, as in the lib. Run `bash -n docs/materials/scripts/glass-noise-layers-smoke.sh`.
+
+Check `bins()` offline before any capture, with the lib's `fail` and `is_number` and a synthetic grain image, including a failing helper:
+
+```bash
+S=$(mktemp -d)
+cat > "$S/bins-check.sh" <<'EOF'
+set -eu
+OUT=$1; BINS=$2
+fail() { echo "FAIL: $*" >&2; exit 1; }
+is_number() { [[ $1 =~ ^-?[0-9]+([.][0-9]+)?([eE][-+]?[0-9]+)?$ ]]; }
+EOF
+sed -n '/^# Sets BIN_aggregate_sd/,/^}/p' docs/materials/scripts/glass-noise-layers-smoke.sh >> "$S/bins-check.sh"
+printf 'bins cell 8\necho "min=$BIN_min_bin_ratio lf=$BIN_lf_ratio"\n' >> "$S/bins-check.sh"
+magick -size 256x256 xc:gray50 +noise Uniform -colorspace Gray "$S/grain-cell.png"
+bash "$S/bins-check.sh" "$S" docs/materials/scripts/noise-layers-bins.py
+printf '#!/usr/bin/env python3\nimport sys\nsys.exit(3)\n' > "$S/broken.py"
+bash "$S/bins-check.sh" "$S" "$S/broken.py"; echo "exit $?"
+```
+
+Expected: the first run prints `min=` near 1 and `lf=` near 0.25; the second prints `FAIL: position classes of cell failed` and `exit 1`, with no `BIN_` value printed.
 
 - [ ] **Step 5: Build the baseline and run the pilot**
 
@@ -2040,7 +2158,30 @@ git commit -m "docs(materials): noise layers smoke, contact sheet and evidence (
 
 - [ ] **Step 1: Move the wallpaper-damage helpers into the lib**
 
-Cut `WALL_PIDS=()`, `wall_count()`, `start_wall()`, `stop_walls()`, `wait_for_wall_removal()` and the comment above `wall_count` (lines 10–43 of `noise-placement-cost.sh` at `4a8b2072`), and `reload_marker()`, `now_ns()`, `sleep_until()` with their comments (lines 84–98), from `noise-placement-cost.sh` into the lib under a `# --- wallpaper damage` header, verbatim. `cleanup_cost` and its `trap` stay in the cost script. `bash -n` both files.
+Cut `WALL_PIDS=()`, `wall_count()`, `start_wall()`, `stop_walls()`, `wait_for_wall_removal()` and the comment above `wall_count` (lines 10–43 of `noise-placement-cost.sh` at `4a8b2072`), and `reload_marker()`, `now_ns()`, `sleep_until()` with their comments (lines 84–98), and `cleanup_cost()` with its comment, from `noise-placement-cost.sh` into the lib under a `# --- wallpaper damage` header, verbatim. Each cost script keeps its own `trap cleanup_cost EXIT` line after sourcing the lib. `bash -n` both files.
+
+`tools/test_noise_placement_cost.py` extracts `stop_walls` and `cleanup_cost` from the cost script's text, so it would raise `IndexError` after the move. Point the cleanup test at the lib, which is where both functions now live:
+
+```python
+ROOT = Path(__file__).resolve().parent.parent
+SCRIPT = ROOT / "docs/materials/scripts/noise-placement-cost.sh"
+LIB = ROOT / "docs/materials/scripts/glass-optic-smoke-lib.sh"
+```
+
+and in `test_failure_cleanup_reaps_owned_wallpaper_and_preserves_exit_status`, read the functions from the lib while asserting that the script still installs the trap:
+
+```python
+        library = LIB.read_text()
+        self.assertIn("trap cleanup_cost EXIT", SCRIPT.read_text())
+        stop = library.split("stop_walls() {", 1)[1].split("\n}\n", 1)[0]
+        cleanup = library.split("cleanup_cost() {", 1)[1].split("\n}\n", 1)[0]
+```
+
+(`report_source()` keeps reading the script: the `PYREPORT` block does not move.) Run the focused tooling check:
+
+`just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_noise_placement_cost`
+
+Expected: PASS, all four tests. Then `just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`, since the lib is in `tooling_full_paths`.
 
 - [ ] **Step 2: Write the cost script**
 
@@ -2058,11 +2199,6 @@ set -eu
 PILOT=${NOISE_LAYERS_COST_PILOT:-0}
 case "$PILOT" in 0|1) ;; *) echo "NOISE_LAYERS_COST_PILOT must be 0 or 1" >&2; exit 2 ;; esac
 source "$(dirname "$0")/glass-optic-smoke-lib.sh"
-cleanup_cost() {
-    local rc=$?
-    stop_walls
-    if (exit "$rc"); then cleanup; else cleanup; fi
-}
 trap cleanup_cost EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -2171,7 +2307,7 @@ Add a `## Cost` section to the evidence document: a table of the six cases' `Mat
 ```bash
 tasks done material-2f2af4 "Tracy costs of stacked fine layers and the backdrop pass at scale 1 and 8"
 just check
-git add docs tasks/
+git add docs tools/test_noise_placement_cost.py tasks/
 just upstream-report --stage
 git add docs/materials/upstream-divergence.md
 git commit -m "docs(materials): noise layers cost captures (material-3fcba2)"
@@ -2187,7 +2323,12 @@ git commit -m "docs(materials): noise layers cost captures (material-3fcba2)"
 
 - [ ] **Step 1: The owner's look**
 
-Park for the owner: `tasks park material-41d052 "Owner looks at the contact sheet attached to material-3fcba2 (grain sizes, stacks, four at 0.15 against one at 0.3) and judges whether the lattice shows at scale 8; agent records the verdict and continues with the gate" --waiting-on user --reason review`. When the verdict arrives, write it on the evidence document's `Owner's look:` line. A visible lattice is a finding: file `tasks add "Rotated or jittered noise lattice above scale 1" --parent material-3aa1f2 ...` with `concerns:` noted per the global instructions, and continue; it does not block this merge unless the owner says so.
+Park for the owner: `tasks park material-41d052 "Owner looks at the contact sheet attached to material-3fcba2 (grain sizes, stacks, four at 0.15 against one at 0.3) and judges whether the lattice shows at scale 8; agent records the verdict and continues with the gate" --waiting-on user --reason review`. When the verdict arrives, write it on the evidence document's `Owner's look:` line and note it on the task (`tasks note material-3fcba2 "owner's look: <verdict>"`).
+
+The spec makes a visible lattice a finding that reshapes `scale > 1`, so it gates the merge. If the owner sees the lattice, one of two things happens before Step 2:
+
+- **Fix it on this branch** (the default): amend the spec's §4 with the reshaped lattice (a rotated or jittered lattice; the owner's look names what showed), have that amendment reviewed, change `noiseValue`'s lattice branch, rerun Task 3's tests including both demonstrations, rerun the smoke (Task 4, Steps 5 and 6) and the cost captures (Task 5, Step 3), and ask for the owner's look again.
+- **Defer only on the owner's explicit word**: the owner says in so many words that this merge may ship with the lattice. Record it (`tasks note material-3fcba2 "owner's look: lattice visible at scale <s>; owner accepts deferral: <their words>"`) and file the reshape as a task under `material-3aa1f2` with the evidence document's sheet as its source. It is a finding before close, so it carries no `concerns:` note.
 
 - [ ] **Step 2: Gate**
 
