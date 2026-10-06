@@ -35,7 +35,7 @@ ROOT=$(git rev-parse --show-toplevel)
 # paths, and concurrent runs must never share or delete each other's sockets.
 RT=$(mktemp -d "$XDG_RUNTIME_DIR/gos.XXXXXX")
 RUN=$(basename "$RT")
-HOST=$RUN-host; WESTON_PID=; NIRI_PID=; CAP_PID=
+HOST=$RUN-host; WESTON_PID=; NIRI_PID=; CAP_PID=; SUB_RUN=
 fail() { echo "FAIL: $*" >&2; exit 1; }
 remove_runtime_dir() {
     python3 - "$RT" <<'PY'
@@ -60,7 +60,9 @@ cleanup() {
     if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; fi
     stop_weston || rc=1
     remove_runtime_dir || rc=1
-    capture_meta release "$OUT" || true
+    capture_meta release "$OUT" || rc=1
+    # After the last release: it may have completed capture.json on a retry.
+    [ -z "${SUMS:-}" ] || write_sums || rc=1
     exit "$rc"
 }
 trap cleanup EXIT
@@ -82,12 +84,39 @@ capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the insta
         --input "$ROOT/docs/materials/scripts/glass-optic-smoke-lib.sh" --input "$0" "$@" \
         || fail "identity refused"
 }
+# The previous launch's GPU work can hold P5 for a moment after its niri exits;
+# settling straight away lands that tail in the window and refuses the run (the
+# idle GPU holds P8: material-3db428, material-124f1f). Wait for 3 s of
+# consecutive P8 samples, at most 120 polls (60 s), before the settle. The
+# settle gate itself is unchanged. Waits are logged to $OUT/cooldown.txt.
+# Skipped when CAPTURE_META substitutes the tool (tests, rehearsals on a busy
+# or non-NVIDIA host), which then settles nothing either.
+gpu_cooldown() {   # $1 sub-run name
+    local polls=0 run=0
+    while [ "$run" -lt 6 ]; do
+        [ "$polls" -lt 120 ] || fail "GPU not back at P8 within 120 polls before $1"
+        if [ "$(nvidia-smi --query-gpu=pstate --format=csv,noheader)" = P8 ]; then run=$((run + 1)); else run=0; fi
+        polls=$((polls + 1))
+        sleep 0.5
+    done
+    echo "$1 $polls" >> "$OUT/cooldown.txt"
+}
 # Before every nested launch: the sub-run is named after its config unless the
 # caller's observation is not its config (idle-budget reuses six configs).
+# The settle starts the sub-run; finish_sub_run, when the host stops, ends it.
 settle_before_launch() {
     local cfg=$1 name=${2:-}
     [ -n "$name" ] || name=$(basename "$cfg" .kdl)
+    [ -n "${CAPTURE_META:-}" ] || gpu_cooldown "$name"
     capture_meta settle "$OUT" --sub-run "$name" --input "$cfg" || fail "settle refused before $name; see $OUT/capture.json"
+    SUB_RUN=$name
+}
+# A sub-run cut short by a failure is never finished: cleanup stops processes
+# without stopping the host through here, so capture.json shows it open.
+finish_sub_run() {
+    [ -n "$SUB_RUN" ] || return 0
+    capture_meta finish "$OUT" --sub-run "$SUB_RUN" || fail "finish refused for $SUB_RUN; see $OUT/capture.json"
+    SUB_RUN=
 }
 
 # --- binaries ---------------------------------------------------------------
@@ -241,6 +270,7 @@ stop_nested() {
     kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; NIRI_PID=
     stop_weston
     rm -f "$RT"/niri.*.sock "$RT/$HOST"; sleep 0.5
+    finish_sub_run
 }
 msg() { "$1" msg "${@:2}"; }
 windows_with() { msg "$1" -j windows | jq -r --arg id "$2" '[.[] | select(.app_id==$id)] | length'; }
@@ -461,8 +491,10 @@ median3() {
 trace_run() {
     write_config "$OUT/$1.kdl"
     start_nested "$NIRI_TRACY" "$OUT/$1.kdl"
-    spawn_probe "$NIRI_TRACY" "$2"
-    [ "$3" = 1 ] && steal_focus "$NIRI_TRACY"
+    # IPC goes through the plain binary: niri-tracy's msg client spends about
+    # 0.5 s per call calibrating Tracy's timer. The compositor is still niri-tracy.
+    spawn_probe "$NIRI" "$2"
+    [ "$3" = 1 ] && steal_focus "$NIRI"
     sleep 2
     capture_bg "$1"; capture_ready "$1"; capture_wait
     stop_nested
@@ -470,8 +502,16 @@ trace_run() {
 ns_to_ms() { awk -v n="$1" 'BEGIN { printf "%.3f", n/1e6 }'; }
 pct_delta() { awk -v a="$1" -v b="$2" 'BEGIN { printf "%+.1f", (b-a)/a*100 }'; }
 
-finish() {
+write_sums() {
     (cd "$OUT" && find . -type f ! -name SHA256SUMS -print0 | LC_ALL=C sort -z | xargs -0 sha256sum > SHA256SUMS)
+}
+finish() {
+    # Release here to fail a disturbed run before PASS; cleanup's second release changes nothing
+    # (or retries a failed restore) and then writes SHA256SUMS over the finished capture.json.
+    SUMS=1
+    local released=0
+    capture_meta release "$OUT" || released=$?
+    [ "$released" = 0 ] || fail "capture release reported $released (a disturbed run or an unrestored hold); see $OUT/capture.json"
     if rg -n 'material.*(error|fallback)|error compiling material shader|panic' "$OUT/niri.log"; then
         fail "material error, fallback or panic in niri.log"
     fi

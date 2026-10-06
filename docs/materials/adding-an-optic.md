@@ -7,7 +7,7 @@ example. See `../specs/2026-09-10-material-optics-design.md` for the design.
 ## 1. Config: `niri-config/src/material/optics/<name>.rs`
 
 Define the knuffel node, a resolved struct with `Default`, `resolve`, and the
-parameter metadata. `noise` carries an amount and a `type=` property:
+parameter metadata. `noise` carries an amount, a `type=` property and a `site=` property:
 
 ```rust
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -16,18 +16,22 @@ pub struct Noise {
     pub amount: FloatOrInt<0, 1>,
     #[knuffel(property(name = "type"), str)]
     pub kind: Option<NoiseType>,
+    #[knuffel(property(name = "site"), str)]
+    pub site: Option<NoiseSite>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ResolvedNoise {
     pub amount: Option<f64>,
     pub kind: NoiseType,
+    pub site: NoiseSite,
 }
 
 pub fn resolve(node: Option<Noise>) -> ResolvedNoise {
     ResolvedNoise {
         amount: node.map(|n| n.amount.0),
         kind: node.and_then(|n| n.kind).unwrap_or_default(),
+        site: node.and_then(|n| n.site).unwrap_or_default(),
     }
 }
 
@@ -128,6 +132,7 @@ impl Optic for NoiseOptic {
     const UNIFORMS: &'static [(&'static str, UniformType)] = &[
         ("mat_noise", UniformType::_1f),
         ("mat_noise_type", UniformType::_1f),
+        ("mat_noise_site", UniformType::_1f),
     ];
 
     fn values(glass: &ResolvedGlass, ctx: &OpticFrame<'_>) -> Vec<Uniform<'static>> {
@@ -152,6 +157,20 @@ Finally, export the module and append `OpticEntry::of::<<name>::<Name>Optic>()`
 to `OPTICS` at its render position. `ORDER` in niri-config must match; a test
 pins them. Add one call per used hook to `shaders/material/main.frag`, in
 `OPTICS` order.
+
+Then add the optic's stage to `niri-config/src/material/pipeline.rs`: its
+site, scope, the parameters it owns and every parameter its GLSL reads, its
+response fields, and `optic(name, hook)`; add an `Interaction` if it makes
+another stage inert or scales it unconditionally. The config tests refuse an
+unowned parameter; the niri tests refuse a hook the program does not call and
+a GLSL read the stage does not list. Regenerate the schema file with the
+parameter table (section 4).
+
+An optic with several placements has one stage per placement in `pipeline.rs`,
+each with a selector on its enum parameter (`select(stage(..), "noise site=",
+"film")`) and a hook per placement. Another program calls its hook in that
+program's file (`noise_source` in `grain.frag`). `check_selectors` requires each
+variant to select exactly one stage, all belonging to the same optic.
 
 ## 4. Documentation and proof
 

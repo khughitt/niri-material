@@ -56,6 +56,7 @@ nothing else in the run directory.
 tools/capture-meta preflight <run-dir> --lane headless|dedicated --task ID --fixture NAME [--seconds N] [--owner-pid PID] [--threshold KEY=VALUE]...
 tools/capture-meta identity  <run-dir> --source <checkout> --binary PATH... --input PATH... [--config KEY=VALUE]...
 tools/capture-meta settle    <run-dir> --sub-run NAME [--input PATH]... [--seconds N]
+tools/capture-meta finish    <run-dir> --sub-run NAME
 tools/capture-meta release   <run-dir>
 tools/capture-meta show      <run-dir>
 ```
@@ -146,6 +147,13 @@ and the run directory shows exactly which sub-run was reached and why the rest
 are absent. It never waits and retries on its own: how long to wait is the
 fixture's decision, and a silent retry would hide the disturbance from the record.
 
+The entry's `started` is when the settle began sampling, so a sub-run's time
+includes its gate. `finish --sub-run NAME`, called once the sub-run's compositor
+has stopped, stamps `finished` and `duration_s` on the latest settled entry of
+that name; it exits 2 for a name with no settled entry or one already finished.
+A sub-run cut short by a failure or a kill is never finished, so the record
+shows it open.
+
 ### 2.4 Quietness
 
 A sample is the tuple (CPU busy fraction from `/proc/stat` deltas, 1-minute load
@@ -200,7 +208,8 @@ that exists (exit 2), so a fixture cannot half-rerun into a directory.
   "schema": 1,
   "run": {"id": "trace-20260911T043433", "task": "material-300b87",
           "fixture": "aurora-iridescence-hardware.sh", "lane": "headless",
-          "started": "2026-09-11T04:34:33-04:00", "host": "<hostname>"},
+          "started": "2026-09-11T04:34:33-04:00", "host": "<hostname>",
+          "finished": "2026-09-11T04:46:07-04:00", "duration_s": 694, "finished_by": "release"},
   "environment": {
     "kernel": "7.2.2-arch1-1", "cpu": "AMD Ryzen Threadripper 1950X",
     "cpu_threads": 32, "memory_total_kib": 67108864,
@@ -214,7 +223,8 @@ that exists (exit 2), so a fixture cannot half-rerun into a directory.
                "gpu_util_pct": 0, "gpu_power_w": 18.4, "gpu_power_iqr_w": 0.3,
                "gpu_clock_mhz": 360, "gpu_pstate": "P8",
                "gpu_clients": {"compute": [], "graphics": ["niri", "kitty", "noctalia-shell"]}},
-  "preflight": {"verdict": "quiet", "thresholds": {"cpu_busy_pct": 10, "...": "..."},
+  "preflight": {"verdict": "quiet", "at": "2026-09-11T04:35:05-04:00",
+                "thresholds": {"cpu_busy_pct": 10, "...": "..."},
                 "lock": {"path": "…/capture-meta.lock", "owner_pid": 12345, "reclaimed": false}},
   "provenance": {
     "source": {"commit": "2ad7fc3c…", "branch": "materials-26.04", "dirty": false},
@@ -224,11 +234,11 @@ that exists (exit 2), so a fixture cannot half-rerun into a directory.
     "config": {"preset": "aurora", "glass.ior": "1.24", "output": "1280x720@60", "scale": "1", "vrr": "off"}
   },
   "sub_runs": [
-    {"name": "gpu-plain-1", "settled_at": "…", "seconds": 10,
+    {"name": "gpu-plain-1", "started": "…", "settled_at": "…", "seconds": 10,
      "cpu_busy_pct": 1.9, "mem_available_pct": 77.8, "gpu_util_pct": 0, "gpu_power_w": 18.6, "gpu_pstate": "P8",
      "inputs": [{"name": "gpu-plain-1.kdl", "sha256": "…"}],
-     "verdict": "settled"},
-    {"name": "gpu-aurora-1", "settled_at": "…", "verdict": "refused",
+     "verdict": "settled", "finished": "…", "duration_s": 41},
+    {"name": "gpu-aurora-1", "started": "…", "settled_at": "…", "verdict": "refused",
      "reason": "gpu_power_w 24.1 exceeds baseline 18.4 by more than 1.5"}
   ]
 }
@@ -238,6 +248,27 @@ A preflight refused on `cpu_busy_pct` or `load1` also carries `host_load`, the
 `host-load` report verbatim (`{"host", "at", "load": {"load1", …, "top": [{"pid",
 "comm", "cmd", "cpu_pct", "age_s", "tty", "unit", "scope_dead", …}]}}`). The field is
 optional and additive, so schema 1 records without it stay valid.
+
+The record carries the run's timing, so a run started from a TTY or launched
+detached, which no agent transcript sees, still says how long it took
+(`material-c44509`). `preflight.at` is when the verdict was reached, quiet or
+refused, the lock refusal included. The first `release` stamps `run.finished`
+and `run.duration_s` (whole seconds since `run.started`) after it restores the
+hold, whether that release succeeds or not; every fixture releases from its exit
+trap, so a refused or aborted run is stamped too, and a later release leaves the
+stamp alone. A fixture killed outright never releases: whoever then restores its
+hold (the guard, the next preflight, or `capture-meta restore` by hand) stamps the
+end instead, inside the same restore transaction, so a kill partway through is
+stamped by the next recovery (`material-032d10`). `run.finished_by` names who
+stamped: `release`, `guard`, `next-preflight`, or `hand`. A recovered time is when
+the recoverer restored the hold, not when the fixture died: the guard checks its
+owner once a second, so its stamp trails the death by about a second plus the
+restore (longer when a restore is retried), while `next-preflight` and `hand` run
+only after the guard failed and can come hours later, so their time is an upper
+bound and a reader of durations should treat it as one. Preflight's rollback of its own refused hold
+stamps nothing, since the fixture is alive and releases next. When the fixture has
+already written `SHA256SUMS`, the stamp refreshes its `capture.json` line. These
+fields are additive too: schema 1 records without them stay valid.
 
 Field rules: every measured value carries its unit in the key; hashes are full
 SHA-256 hex; timestamps are RFC 3339 with offset; `host` is the hostname, never

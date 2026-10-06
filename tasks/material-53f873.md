@@ -5,12 +5,15 @@ status: todo
 priority: 1
 size: l
 complexity: high
+lane: true
 created: 2026-09-11T00:47:47Z
-updated: 2026-10-02T23:47:24Z
+updated: 2026-10-06T22:10:56Z
 depends: []
-tags: [quick-add, dynamics, rendering, lane]
+tags: [quick-add, dynamics, rendering]
 source: "mindful:thought:3f94e656b70f4e5585c1cb60c166e4da"
 ---
+
+Make glass respond to movement and focus, then settle completely under the accepted settle contract. Next milestone: the reviewed design of a transient tilt with side walls (material-abc08c), built on material-be611b's height-field edge once its sheet is reviewed. The planar-tilt stills (material-89fb6b) were judged on 2026-10-06: one object, side walls first.
 
 Goal: for the 3d glass to look its best it cannot be 100% static. Inject more movement:
 

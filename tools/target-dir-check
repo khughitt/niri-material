@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Refuse a worktree whose cargo build output another checkout of this repository uses.
+
+    tools/target-dir-check
+
+Cargo keys a workspace crate's artifacts by its path relative to the workspace root,
+and decides whether they are fresh by comparing source mtimes with the last build. Two
+checkouts sharing a build dir therefore write the same fingerprints and artifacts for
+every workspace member, and a checkout whose sources are older than the other's last
+build reuses that build without compiling, crate by crate: a compile error naming a
+field its own source has, or a binary mixing the other tree's crates with its own and
+no error at all. Sharing a target dir alone also collides the final binaries
+(`target/release/niri`), which the capture scripts copy. So each checkout builds into
+a target dir and a build dir of its own. Registry crates are the same in every checkout
+and were never at risk; the cost of separate dirs is one full build per worktree.
+(cargo's unstable -Z checksum-freshness would tell the trees apart by content; a
+`build.build-dir` containing `{workspace-path-hash}` separates intermediates but not
+the shared final binaries.) Cargo merges config files key by key, so a checkout whose
+own .cargo/config.toml sets both `target-dir = "target"` and `build-dir = "target"` is
+separate whatever a parent directory's or $CARGO_HOME's config says.
+
+The main checkout keeps the dirs it has: a linked worktree sharing either dir with any
+other checkout fails here, while the main checkout only lists the worktrees that share
+with it. Those worktrees fail their own check once they carry this tool; until then
+nothing refuses them. Each checkout's dirs are the ones cargo itself resolves there
+(`cargo metadata`: `target_directory` and `build_directory`), so .cargo/config.toml in
+any parent directory, CARGO_HOME and the CARGO_* environment all count.
+
+Another checkout is skipped, with a note on stderr, when git lists it as prunable or
+bare, when its directory is missing, or when cargo cannot read its manifest or stat its
+dirs: a tree that cannot build writes nothing. This checkout's own failures are fatal.
+
+Standard library only. Exits 1 when this checkout shares, 2 when it cannot run.
+"""
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+CARGO = os.environ.get("CARGO", "cargo")
+ENV = ("CARGO_TARGET_DIR", "CARGO_BUILD_TARGET_DIR", "CARGO_BUILD_BUILD_DIR")
+
+
+class Unreadable(Exception):
+    pass
+
+
+def note(message):
+    print(f"target-dir-check: {message}", file=sys.stderr)
+
+
+def run(cwd, *args):
+    try:
+        result = subprocess.run(args, cwd=cwd, capture_output=True, text=True, check=False)
+    except OSError as error:
+        raise Unreadable(f"{' '.join(args)} in {cwd}: {error}") from error
+    if result.returncode != 0:
+        raise Unreadable(f"{' '.join(args)} in {cwd}: {result.stderr.strip()}")
+    return result.stdout
+
+
+def worktrees(cwd):
+    """(main checkout or None, other usable checkouts), skipping unusable entries."""
+    blocks = [dict(line.partition(" ")[::2] for line in block.splitlines())
+              for block in run(cwd, "git", "worktree", "list", "--porcelain").split("\n\n")]
+    blocks = [fields for fields in blocks if "worktree" in fields]
+    checkouts = []
+    for fields in blocks:
+        path = pathlib.Path(fields["worktree"])
+        if "bare" in fields:
+            continue
+        if "prunable" in fields or not path.is_dir():
+            note(f"skipping {path}: its directory is missing")
+            continue
+        checkouts.append(path.resolve())
+    main = pathlib.Path(blocks[0]["worktree"]).resolve() if blocks and "bare" not in blocks[0] else None
+    return main, checkouts
+
+
+def key(path):
+    """Identity of a directory: its inode when it exists, else its resolved path."""
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return str(path.resolve())
+    except (OSError, RuntimeError) as error:
+        raise Unreadable(f"{path}: {error}") from error
+    return (stat.st_dev, stat.st_ino)
+
+
+def build_dirs(checkout):
+    """{identity: path} of the target and build dirs cargo resolves in `checkout`."""
+    metadata = json.loads(run(checkout, CARGO, "metadata", "--no-deps", "--format-version",
+                              "1", "--offline"))
+    dirs = {pathlib.Path(metadata["target_directory"])}
+    if metadata.get("build_directory"):
+        dirs.add(pathlib.Path(metadata["build_directory"]))
+    return {key(path): path for path in dirs}
+
+
+def main():
+    try:
+        here = pathlib.Path(run(".", "git", "rev-parse", "--show-toplevel").strip()).resolve()
+        main_checkout, checkouts = worktrees(here)
+        mine = build_dirs(here)
+    except Unreadable as error:
+        note(str(error))
+        return 2
+    sharing = []
+    for checkout in checkouts:
+        if checkout == here:
+            continue
+        try:
+            theirs = build_dirs(checkout)
+        except Unreadable as error:
+            note(f"skipping {checkout}: {error}")
+            continue
+        shared = sorted(str(mine[k]) for k in theirs.keys() & mine.keys())
+        if shared:
+            sharing.append((checkout, shared))
+    if not sharing:
+        return 0
+    names = "\n".join(f"  {checkout} ({', '.join(dirs)})" for checkout, dirs in sharing)
+    if here == main_checkout:
+        note(f"worktrees still sharing this checkout's cargo build output; each fails its "
+             f"own check once it carries tools/target-dir-check:\n{names}")
+        return 0
+    env = [name for name in ENV if os.environ.get(name)]
+    fix = ("set both `target-dir = \"target\"` and `build-dir = \"target\"` under "
+           "`[build]` in this checkout's own .cargo/config.toml, so cargo builds into "
+           f"{here / 'target'} whatever a parent directory's or $CARGO_HOME's config says")
+    if env:
+        fix = (f"unset {' and '.join(env)}, which overrides every checkout's cargo config, "
+               f"then rerun")
+    note(f"this worktree shares cargo build output with:\n{names}\n"
+         f"cargo keys workspace crates by root-relative path and checks them by mtime, so "
+         f"one checkout's build is served to the other as fresh. Fix: {fix}. The first "
+         f"build there is a full one.")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

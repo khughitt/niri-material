@@ -428,7 +428,9 @@ The focus response (`focus "ring-light"`, added after this design) lights
 the same band on the focused window and is the one bounded motion the ring
 carries: on every focus gain the ring beam — one comet of light running the
 band's perimeter once at `ring-beam-speed` px/s, its tail draining behind
-it — runs on the animation loop through `are_transitions_ongoing`, then the
+it — runs on the animation loop through `are_animations_ongoing` (not
+`are_transitions_ongoing`, which would hold layout transitions and the
+pointer-focus refresh; changed in `06b71bb1`), then the
 ring settles to a resting glow with no deadline and a constant fingerprint,
 so a focused window at rest costs nothing. It is not an attention motion:
 the idle gate does not touch it, and the `reduced`/`off` policies skip it.

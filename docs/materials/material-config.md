@@ -58,6 +58,7 @@ lengths are logical pixels.
 | `saturation` | float | inherit | 0–3 | — |
 | `noise` | float | inherit | 0–1 | — |
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
+| `noise` `site=` | `glass` / `backdrop` / `film` | `glass` | — | — |
 | `aurora` | float | 0 | 0–1 | — |
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
@@ -132,7 +133,7 @@ strength — the amount of blur comes from the global `blur` block's `passes` an
 `offset`, shared with every other blur consumer. Setting `blur { off }`
 disables it along with all other blur, regardless of this parameter.
 
-`saturation` then `noise` transform the averaged backdrop before attenuation,
+`saturation` then glass-site `noise` transform the averaged backdrop before attenuation,
 through the `behind` hook. Their formulas run in sRGB (Oklab for lightness
 grain) and return linear light. Additive glint, ring, aurora and sweeps are
 not postprocessed; the chamfer still transmits attenuated grain. A written
@@ -154,8 +155,17 @@ applies the `fine` value to Oklab lightness instead, so the backdrop's chroma
 and hue hold except where the result leaves the sRGB gamut and clamps. The
 type has no inheritance and an omitted type is `white`.
 
-It is unrelated to `anisotropic-blur`, which smears the refraction itself along
-one axis and does not soften the backdrop.
+`noise` also accepts `site="glass"` (default), `"backdrop"`, or `"film"`.
+`backdrop` grains the output's shared backdrop buffers before the Kawase
+blur and roughness pyramids. Every material placing noise there must agree on
+one amount and one type; disagreement refuses the config and names both
+materials (`materials "a" and "b" both place noise at the backdrop with different
+settings ...`). Grain applies even with `blur { off }`; a window asking for a
+blurred `background-effect` also samples it. `film` grains the finished encoded
+glass after ring, aurora, glint and sweeps, on glass coverage only. The site's
+softening under blur is measured in `2026-10-05-noise-placement-evidence.md`.
+
+`anisotropic-blur` instead smears the refraction itself along one axis.
 
 `roughness` progressively softens detail refracted through the glass. It first
 uses `backdrop-blur` to choose the sharp or globally blurred source, then
@@ -190,11 +200,12 @@ resolves to 1 otherwise.
 
 ### noise
 
-Stage 3b (`behind`). `noise <amount> type=<type>` grains the averaged backdrop
-per screen pixel before attenuation; `white`, `fine`, and `lightness` are
+Stage 3b (`behind`) at `site="glass"`; a source grain pass at
+`site="backdrop"`; stage 9 (`post`) at `site="film"`.
+`noise <amount> type=<type> site=<site>` grains the selected carrier; `white`, `fine`, and `lightness` are
 described above. Its explicit neutral is amount 0. An omitted amount inherits the global `blur`
 block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
-the type never inherits.
+the type and site never inherit.
 
 ### iridescence
 
@@ -297,6 +308,7 @@ blocks. A material with no response blocks gets this built-in `default`:
 | Parameter | Values | Default |
 | --- | --- | --- |
 | `accent` | `ring`, `none` | `ring` |
+| `accent-tint` | 0–1 | 0 (off) |
 | `focus` | `ring-light`, `none` | `ring-light` |
 | `attention` | `rim-orbit`, `ring-pulse`, `none` | `rim-orbit` |
 | `ping` | `ripple`, `flash`, `sweep`, `none` | `ripple` |
@@ -325,6 +337,7 @@ material "terminal-glass" {
 
     response "default" {
         accent "ring"
+        accent-tint 0
         focus "ring-light"
         attention "rim-orbit"
         ping "ripple"
@@ -433,6 +446,24 @@ shows through translucent window pixels. On the chamfer the beam spills a
 little light outward from the face edge, fading to the outer edge, so the
 frame reads as lit by the beam. `ring-width` must be positive.
 
+`accent-tint` tints the glass body toward the signal accent's hue,
+independently of `accent`: `accent "none"` takes the accent off the band and
+leaves the tint. The weight moves hue and saturation only. The flat face
+transmits the same luminance as the untinted glass over a neutral backdrop,
+so dark glass stays dark; a saturated backdrop shifts, brighter in the
+channels the tint opens and darker in the others. The chamfer and the ring's
+light pass the same tinted glass: under `accent "ring"` the band and the
+focus light brighten with the tint (magenta at weight 1 by about 1.7× on
+dark glass), and under `accent "none"` a near-white `ring-color` band dims.
+Near-white glass has little room for hue at its own luminance, so the tint
+barely shows on the default glass. Without an accent the glass is unchanged,
+and the tint follows the accent's crossfade in and out. Design:
+[accent tint](../specs/2026-10-03-accent-tint-design.md).
+On dark glass the recommended weight is `1`. The hue reads mainly through
+the band and the focus light, which pass the tinted glass; the body keeps
+its luminance, so under a translucent window it shifts only a few levels in
+hue, and lower weights barely register. The default stays 0.
+
 Two limits follow from the placement. An opaque window shows no ring: the
 band lies wholly under the face and there is no fallback band on the
 chamfer. A face narrower than `2 * ring-gap` on either axis has no beam
@@ -487,7 +518,7 @@ crossfade. `material-signal` is the baseline signal crossfade; it defaults to
 400 ms with `ease-out-cubic` and follows the normal animation configuration,
 including `animations { off }`. The focus filament fades in and out with
 `material-signal` too; `reduced`, `off`, and `animations { off }` skip its
-focus-gain sweep.
+focus-gain beam.
 
 `idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
 `flash`) settles to the static indication (level and accent lit, no pulse),

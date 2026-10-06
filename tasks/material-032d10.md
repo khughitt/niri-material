@@ -1,0 +1,36 @@
+---
+id: material-032d10
+title: capture-meta stamps run.finished when a guard or later preflight recovers a killed run
+status: done
+priority: 3
+size: s
+complexity: low
+process: direct
+owner: recovered-finish
+created: 2026-10-06T13:03:07Z
+updated: 2026-10-06T13:13:25Z
+started: 2026-10-06T13:05:45Z
+completed: 2026-10-06T13:13:25Z
+depends: []
+parent: material-2834d7
+tags: [capture]
+agent: claude-code/claude-opus-5-5
+---
+
+Why: run.finished is written by the first release, which only an exit trap calls. A fixture killed outright (SIGKILL, OOM, a closed scope) never releases; its hold is restored by the guard unit, the next preflight's recover_stale, or capture-meta restore, and capture.json keeps no end time, which is the artifact-only case material-c44509 set out to close.
+
+Done when restore_run, called by guard, next-preflight or hand, writes run.finished and run.duration_s when absent, with run.finished_by naming who stamped it (release otherwise), so a recovered end time (the moment recovery noticed, not the moment of death) is never mistaken for the fixture's own. Tests in tools/test_capture_meta.py LifecycleTests (guard after a kill mid-run, next-preflight recovery); spec §3 timing paragraph updated.
+
+Where to look: tools/capture-meta restore_run's record() callback and finish_run.
+
+## Notes
+
+- 2026-10-06T13:03:07Z (materials-26.04): concerns: material-c44509 extension — killed runs recovered by the guard or a later preflight still get no end time
+- 2026-10-06T13:05:45Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:ccbf10ba-80e6-4814-9bd6-02a8e9cb3816","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T13:05:50Z (recovered-finish): resumed
+  provenance: {"harness_session":"claude-code:ccbf10ba-80e6-4814-9bd6-02a8e9cb3816","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T13:13:25Z (recovered-finish): done
+  provenance: {"harness_session":"claude-code:ccbf10ba-80e6-4814-9bd6-02a8e9cb3816","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T13:13:25Z (recovered-finish): restore_run stamps run.finished/duration_s for guard, next-preflight and hand recoveries inside the restore transaction (a kill before the stamp is stamped by the next recovery); run.finished_by names release or the recoverer; preflight's own rollback stamps nothing; spec §3 states that next-preflight and hand times are an upper bound
+  provenance: {"harness_session":"claude-code:ccbf10ba-80e6-4814-9bd6-02a8e9cb3816","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

@@ -4,6 +4,7 @@ mod client;
 mod fixture;
 mod server;
 
+mod accent_tint;
 mod animations;
 mod attention_idle;
 mod floating;
@@ -12,6 +13,7 @@ mod fullscreen;
 mod glass_edge;
 mod layer_shell;
 mod material;
+mod noise_site;
 mod remove_output;
 mod ring_look;
 mod ring_pair;

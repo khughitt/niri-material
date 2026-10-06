@@ -5,6 +5,7 @@ import hashlib
 import json
 import io
 import os
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -12,6 +13,8 @@ import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+
+from tools.tooling_tests import assert_static_coverage, fast_mode
 
 from tools.optic_settling import FAMILIES, analyze_run, check_window, config_identity, main, parse_edges
 
@@ -120,6 +123,193 @@ class RunTests(unittest.TestCase):
         if message:
             self.assertIn(message, str(caught.exception))
 
+    def test_edge_must_fall_inside_its_named_stimulus(self):
+        # A second stimulus around the resume edge (trace 20 s); the damage
+        # stimulus and its draws at 14.5 s stay where they are. It ends the
+        # settled quiet span at 19.5 s (4.5 s after damage), so the declared
+        # hold drops to 4 s for this case.
+        self.manifest['cases'][0]['hold_ns'] = 4 * S
+        self.manifest['cases'][0]['stimuli'].append({'label': 'resume'})
+        self.observation['journal'].append({'label': 'resume', 'start_mono_ns': 1019 * S + S // 2,
+                                            'end_mono_ns': 1020 * S + S // 2})
+        self.manifest['cases'][0]['edge_in'] = [[1, 'damage']]
+        self.save()
+        self.rejects('edge 1 is not inside stimulus damage')
+        self.manifest['cases'][0]['edge_in'] = [[1, 'resume']]
+        self.save()
+        analyze_run(self.run)
+        self.manifest['cases'][0]['edge_in'] = [[2, 'resume']]   # no such edge
+        self.save()
+        self.rejects('edge 2 is not inside stimulus resume')
+
+    def test_dedicated_topology_pins_output_mode_and_scale(self):
+        self.manifest['lane'] = 'dedicated'
+        self.manifest['drm'] = {'output': 'DP-1', 'mode': '3440x1440@59.999'}
+        for index, case in enumerate(self.manifest['cases']):
+            case['lane'] = 'dedicated' if index == 0 else 'headless'
+        good = {'name': 'DP-1', 'mode': {'width': 3440, 'height': 1440, 'refresh_hz': 59.999}, 'scale': 1.0}
+        self.observation['topology'] = [good]
+        self.save()
+        analyze_run(self.run)
+        self.observation['topology'] = [dict(good, mode=dict(good['mode'], refresh_hz=59.995))]
+        self.save()
+        analyze_run(self.run)                                   # refresh within 0.01 Hz
+        for output, message in (
+            ('headless-1', 'must record name, mode and scale'),
+            (dict(good, name='HDMI-A-1'), "output 'HDMI-A-1' is not the pinned DP-1"),
+            (dict(good, scale=2.0), 'output scale 2.0, expected 1'),
+            (dict(good, mode=dict(good['mode'], width=2560)), 'output mode 2560x1440, expected 3440x1440'),
+            (dict(good, mode=dict(good['mode'], refresh_hz=59.97)), 'output refresh 59.97 Hz'),
+            (dict(good, mode=None), 'output DP-1 has no current mode'),
+        ):
+            with self.subTest(output=output):
+                self.observation['topology'] = [output]
+                self.save()
+                self.rejects(message)
+        self.observation['topology'] = [good]
+        for drm, message in ((None, 'names no drm output'),
+                             ({'output': 'DP-1', 'mode': 'bogus'}, 'is not WIDTHxHEIGHT[@REFRESH]')):
+            with self.subTest(drm=drm):
+                self.manifest['drm'] = drm
+                self.save()
+                self.rejects(message)
+        self.manifest['drm'] = {'output': 'DP-1', 'mode': '3440x1440'}   # no refresh pinned
+        self.observation['topology'] = [dict(good, mode=dict(good['mode'], refresh_hz=75.0))]
+        self.save()
+        analyze_run(self.run)
+
+    def cast(self, frames, stopped=True, samples=()):
+        (self.case / 'cast-frames.tsv').write_text(''.join(f'{t}\n' for t in frames))
+        (self.case / 'cast-summary.json').write_text(json.dumps({'stopped_by_signal': stopped}))
+        for label, request, frame in samples:
+            (self.case / f'{label}.raw.json').write_text(json.dumps(
+                {'request_mono_ns': request, 'frame_mono_ns': frame, 'width': 1, 'height': 1}))
+
+    def test_consumer_frames_and_samples(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': ['damage'], 'samples': ['damage']}
+        self.save()
+        inside = 1014 * S + S // 2
+        self.cast([1013 * S], samples=[('damage', 1014 * S + S // 4, inside)])
+        self.rejects('no cast frame inside stimulus damage')
+        self.cast([inside], samples=[('damage', 1014 * S + S // 4, inside)])
+        analyze_run(self.run)
+        self.cast([inside], stopped=False, samples=[('damage', 1014 * S + S // 4, inside)])
+        self.rejects('did not stop on a signal')
+
+    def test_rejects_stale_missing_and_late_samples(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': [], 'samples': ['damage']}
+        self.save()
+        inside = 1014 * S + S // 2
+        for label, request, frame in (
+            ('stale', inside, inside),                         # the frame did not follow the request
+            ('early request', 1013 * S, inside),               # armed before the stimulus began
+            ('late frame', 1014 * S + S // 4, 1016 * S),       # answered after the window
+        ):
+            with self.subTest(label):
+                self.cast([inside], samples=[('damage', request, frame)])
+                self.rejects('sample damage is stale or outside its window')
+        (self.case / 'damage.raw.json').unlink()
+        self.rejects('damage.raw.json')
+
+    def test_an_empty_consumer_is_still_checked(self):
+        # A declared consumer, even one naming no stimulus, needs its signal stop.
+        self.manifest['cases'][0]['consumer'] = {}
+        self.save()
+        self.rejects('cast-frames.tsv')
+        self.cast([], stopped=False)
+        self.rejects('did not stop on a signal')
+        self.cast([])
+        analyze_run(self.run)
+        for consumer, message in (
+            ([], 'consumer must be a mapping'),
+            ({'frames_in': 'damage'}, 'consumer frames_in must be a list'),
+            ({'samples': None}, 'consumer samples must be a list'),
+        ):
+            with self.subTest(consumer=consumer):
+                self.manifest['cases'][0]['consumer'] = consumer
+                self.save()
+                self.rejects(message)
+
+    def test_rejects_malformed_edge_in_entries(self):
+        for entry in ([-1, 'damage'], [1], [1, 'damage', 2], 'damage',
+                      [True, 'damage'], [1, 2], [1.5, 'damage']):
+            with self.subTest(entry=entry):
+                self.manifest['cases'][0]['edge_in'] = [entry]
+                self.save()
+                self.rejects('active-idle-resume: invalid edge_in entry')
+        self.manifest['cases'][0]['edge_in'] = 'damage'
+        self.save()
+        self.rejects('active-idle-resume: edge_in must be a list')
+
+    def test_a_sample_must_be_the_first_cast_frame_after_its_request(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': [], 'samples': ['damage']}
+        self.save()
+        request, frame = 1014 * S + S // 4, 1014 * S + S // 2
+        self.cast([1014 * S + S // 3], samples=[('damage', request, frame)])
+        self.rejects('active-idle-resume: sample damage is not a recorded cast frame')
+        between = 1014 * S + S // 3
+        self.cast([between, frame], samples=[('damage', request, frame)])
+        self.rejects('active-idle-resume: sample damage is not the first cast frame after its request')
+        self.cast([request - 1, frame, frame + 1], samples=[('damage', request, frame)])
+        analyze_run(self.run)
+
+    def test_a_sample_can_skip_only_its_recorded_rejected_frames(self):
+        self.manifest['cases'][0]['consumer'] = {'frames_in': [], 'samples': ['damage']}
+        self.save()
+        request, old, frame = 1014 * S + S // 4, 1014 * S + S // 3, 1014 * S + S // 2
+        self.cast([old, frame], samples=[('damage', request, frame)])
+        path = self.case / 'damage.raw.json'
+        sidecar = json.loads(path.read_text())
+        sidecar['rejected_frame_mono_ns'] = [old]
+        path.write_text(json.dumps(sidecar))
+        analyze_run(self.run)
+        for rejected in ([old - 1], [old, frame], [old, old], None):
+            with self.subTest(rejected=rejected):
+                sidecar['rejected_frame_mono_ns'] = rejected
+                path.write_text(json.dumps(sidecar))
+                self.rejects('rejected cast frames')
+
+    def test_a_malformed_cast_frame_names_its_case(self):
+        self.manifest['cases'][0]['consumer'] = {}
+        self.save()
+        for line in ('x', '-5', '1.5'):
+            with self.subTest(line=line):
+                self.cast([line])
+                self.rejects(f"active-idle-resume: invalid cast frame {line!r} in cast-frames.tsv")
+
+    def test_tty_resume_needs_the_resume_edge_inside_vt_return(self):
+        # The driver's tty-resume declaration on this fixture's resume edge
+        # (trace 20 s): paused on the spare VT niri cannot redraw, so only
+        # vt-return needs a redraw. No client damage in this case.
+        self.cpu = [row for row in self.cpu if row[1] != 14 * S + S // 2]
+        self.gpu = [row for row in self.gpu if row[1] != 14 * S + S // 2]
+        self.write_tables()
+        case = self.manifest['cases'][0]
+        case['stimuli'] = [{'label': 'vt-out'}, {'label': 'vt-return', 'min_redraws': 1}]
+        case['edge_in'] = [[1, 'vt-return']]
+
+        def windows(out, back):   # trace seconds: vt-out [out, back - gap), vt-return [back, back + 1.5)
+            (out_start, out_end), back_start = out, back
+            self.observation['journal'] = [
+                {'label': 'vt-out', 'start_mono_ns': int((1000 + out_start) * S),
+                 'end_mono_ns': int((1000 + out_end) * S)},
+                {'label': 'vt-return', 'start_mono_ns': int((1000 + back_start) * S),
+                 'end_mono_ns': int((1000 + back_start + 1.5) * S)}]
+            self.save()
+
+        windows((17, 19.5), 19.5)              # the resume falls in the return
+        analyze_run(self.run)
+        windows((17.5, 20.5), 20.5)            # the resume falls in the switch out
+        self.rejects('active-idle-resume: edge 1 is not inside stimulus vt-return')
+        windows((17, 19.5), 20.5)              # the resume falls between the two
+        self.rejects('active-idle-resume: edge 1 is not inside stimulus vt-return')
+
+    def test_a_redraw_between_samples_breaks_the_quiet_interval(self):
+        # The settled-segment check is what keeps the gap before sample-3 quiet.
+        self.cpu += [['Niri::redraw', 17 * S, 1000]]
+        self.write_tables()
+        self.rejects('while settled')
+
     def test_complete_pilot_passes(self):
         result = analyze_run(self.run)
         self.assertEqual(result['verdict'], 'lane-passed')
@@ -127,6 +317,22 @@ class RunTests(unittest.TestCase):
         self.assertEqual([s['state'] for s in case['segments']], ['active', 'settled', 'active'])
         self.assertEqual(case['segments'][1]['redraws'], 1)
         self.assertEqual({r['verdict'] for r in result['cases'][1:]}, {'unverified'})
+
+    def test_zone_names_with_unquoted_commas(self):
+        # tracy-csvexport writes generic zone names unquoted, so a name like
+        # MultiRenderer<'_, '_, '_> spans several fields; the DRM renderer's
+        # zones put text where the time column would be.
+        lines = ['name,src_file,src_line,ns_since_start,exec_time_ns,thread,value']
+        lines += [f'{name},src/niri.rs,1,{t},{d},1,' for name, t, d in self.cpu]
+        lines += [f"<smithay::backend::renderer::multigpu::MultiRenderer<'_, '_, '_> as "
+                  f"smithay::backend::renderer::Renderer>::cleanup_texture_cache,"
+                  f"/smithay/src/backend/renderer/multigpu/mod.rs,1032,{15 * S + 1},20,1,",
+                  f"smithay::backend::renderer::gles::GlesFrame<'_, '_>::finish_internal,"
+                  f"/smithay/src/backend/renderer/gles/mod.rs,2478,{16 * S},20,1,"]
+        (self.case / 'cpu.csv').write_text('\n'.join(lines) + '\n')
+        result = analyze_run(self.run)
+        self.assertEqual(result['verdict'], 'lane-passed')
+        self.assertEqual(result['cases'][0]['segments'][1]['redraws'], 1)
 
     def test_rejects_absent_edges_headers_export_and_controls(self):
         for name, mutate in (
@@ -180,6 +386,17 @@ class RunTests(unittest.TestCase):
         self.cpu += [['Niri::redraw', 15 * S + S // 10, 1000]]
         self.write_tables()
         self.rejects('while settled')
+
+    def test_stimulus_requires_its_messages_inside_its_window(self):
+        self.manifest['cases'][0]['stimuli'][0]['messages'] = ['IdleInhibit inhibited=1']
+        self.save()
+        self.rejects("stimulus damage never traced 'IdleInhibit inhibited=1'")
+        late = ['IdleInhibit inhibited=1', 16 * S]          # after the 14-15 s window
+        self.write_csv('messages.csv', ['MessageName', 'total_ns'], self.messages + [late])
+        self.rejects("stimulus damage never traced 'IdleInhibit inhibited=1'")
+        inside = ['IdleInhibit inhibited=1', 14 * S + S // 2]
+        self.write_csv('messages.csv', ['MessageName', 'total_ns'], self.messages + [inside])
+        analyze_run(self.run)
 
     def test_rejects_heartbeat_gap(self):
         self.cpu = [row for row in self.cpu if not (row[0] == 'Niri::refresh_idle_inhibit' and 15 * S < row[1] < 19 * S)]
@@ -385,9 +602,61 @@ class PrepareTests(unittest.TestCase):
             # grim is a screencopy; a screencast needs a consumer this lane lacks.
             by_name = {case['name']: case for case in manifest['cases']}
             self.assertEqual(by_name['screencopy']['lane'], 'headless')
-            self.assertEqual((by_name['screencast']['lane'], by_name['screencast']['why']),
-                             ('screencast-consumer', 'no screencast consumer in the headless lane'))
-            self.assertFalse(by_name['screencast']['required'])
+            self.assertEqual((by_name['screencast']['lane'], by_name['screencast']['required']),
+                             ('dedicated', False))
+            # The idle inhibitor runs in this lane: a real client, traced taking hold.
+            inhibitor = by_name['idle-inhibitor']
+            self.assertEqual((inhibitor['lane'], inhibitor['edges']), ('headless', [0]))
+            self.assertEqual(
+                [(stimulus['label'], stimulus.get('messages')) for stimulus in inhibitor['stimuli']],
+                [('inhibit', ['IdleInhibit inhibited=1']), ('client', None),
+                 ('release', ['IdleInhibit inhibited=0']), ('collect', None)])
+
+    def test_prepare_the_dedicated_lane(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            bin_dir = base / 'bin'; bin_dir.mkdir()
+            niri = bin_dir / 'niri'
+            niri.write_text('#!/bin/sh\n[ "$1" = validate ]\n')
+            magick = bin_dir / 'magick'
+            magick.write_text('#!/bin/sh\nfor arg do :; done\nprintf image > "$arg"\n')
+            niri.chmod(0o755); magick.chmod(0o755)
+            source = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+            identity = dict(source_commit=source, features=['profile-with-tracy'],
+                            binary_sha256=hashlib.sha256(niri.read_bytes()).hexdigest())
+            Path(str(niri) + '.identity.json').write_text(json.dumps(identity))
+            env = dict(os.environ, OUT=str(base / 'out'), NIRI_BIN=str(niri),
+                       NIRI_MATERIAL_WORK_ROOT=str(base), XDG_RUNTIME_DIR=str(base),
+                       CAPTURE_META='/bin/true', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                       PATH=f'{bin_dir}:{os.environ["PATH"]}')
+            script = root / 'docs/materials/scripts/optic-settling-smoke.sh'
+            run = subprocess.run(['bash', str(script), 'prepare', '--lane', 'dedicated'], env=env,
+                                 capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, run.stderr)
+            manifest = json.loads((base / 'out/manifest.json').read_text())
+            by_name = {case['name']: case for case in manifest['cases']}
+            dedicated = sorted(name for name, case in by_name.items() if case['lane'] == 'dedicated')
+            self.assertEqual(dedicated, ['drm-aurora', 'screencast', 'tty-resume', 'unlock'])
+            self.assertEqual(by_name['tty-resume']['edge_in'], [[1, 'vt-return']])
+            # Paused on the spare VT, niri cannot redraw: only the return must.
+            self.assertEqual(by_name['tty-resume']['stimuli'][:2],
+                             [{'label': 'vt-out'}, {'label': 'vt-return', 'min_redraws': 1}])
+            self.assertEqual(by_name['unlock']['edge_in'], [[1, 'unlock']])
+            self.assertEqual(by_name['screencast']['consumer'],
+                             {'frames_in': ['sample-1', 'sample-2', 'sample-3'],
+                              'samples': ['sample-1', 'sample-2', 'sample-3']})
+            for name in dedicated:
+                self.assertIn({'label': 'collect', 'min_redraws': 1}, by_name[name]['stimuli'], name)
+                kdl = (base / 'out' / name / 'case.kdl').read_text()
+                self.assertIn('output "DP-1" { mode "3440x1440@59.999"; scale 1; }', kdl)
+                self.assertIn('dbus-interfaces-in-non-session-instances', kdl)
+            self.assertFalse((base / 'out/aurora-full').exists())      # headless configs not written
+            missing = subprocess.run(['bash', str(script), 'prepare', '--lane', 'dedicated'],
+                                     env=dict(env, OUT=str(base / 'out2'), DRM_MODE=''),
+                                     capture_output=True, text=True)
+            self.assertNotEqual(missing.returncode, 0)
+            self.assertIn('DRM_MODE', missing.stderr)
 
 
 # Stubs for every program the driver launches. Each long-lived one records
@@ -397,6 +666,8 @@ import os, signal, socket, sys, time
 os.chdir(os.environ['XDG_RUNTIME_DIR'])        # relative binds keep socket paths short
 if sys.argv[1] == 'weston':
     names = [arg.split('=', 1)[1] for arg in sys.argv[2:] if arg.startswith('--socket=')]
+elif sys.argv[1] == 'dbus-daemon':
+    names = [arg.split('path=', 1)[1] for arg in sys.argv[2:] if arg.startswith('--address=')]
 else:
     names = ['stub-1', f'niri.stub-1.{os.getpid()}.sock']
 sockets = []
@@ -411,20 +682,71 @@ def stop(*_):
             pass
     sys.exit(0)
 signal.signal(signal.SIGTERM, stop)
+if sys.argv[1] == 'niri' and os.environ.get('STUB_NIRI_IGNORES_TERM'):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
 while True:
     time.sleep(60)
+"""
+CONSUMER = """
+import json, os, pathlib, signal, sys, time
+stub = pathlib.Path(os.environ['STUB_DIR'])
+with open(stub / 'pids', 'a') as pids:
+    pids.write(f'consumer {os.getpid()}\\n')
+def stop(*_):
+    pathlib.Path(sys.argv[3]).write_text(json.dumps({'stopped_by_signal': True}))
+    sys.exit(0)
+def sample(*_):
+    # Answer an armed request at once with a frame of STUB_SAMPLE_SIZE.
+    request = json.loads(pathlib.Path(sys.argv[4]).read_text())
+    target = pathlib.Path(request['path'])
+    with open(stub / 'sample-requests.jsonl', 'a') as requests:
+        requests.write(json.dumps(request) + '\\n')
+    pathlib.Path(f'{target}.armed').touch()
+    if request.get('different_from') and os.environ.get('STUB_CONSUMER_UNCHANGED'):
+        return                                      # old client pixels never satisfy the predicate
+    width, height = map(int, os.environ.get('STUB_SAMPLE_SIZE', '3440x1440').split('x'))
+    target.write_bytes(bytes(3))
+    pathlib.Path(f'{target}.json').write_text(json.dumps({'width': width, 'height': height}))
+signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGUSR1, sample)
+print('ready 1', flush=True)
+(stub / 'cast-ready').touch()
+if os.environ.get('STUB_CONSUMER_EXITS'):
+    sys.exit(0)                                     # dies after ready, before any sample
+while True:
+    time.sleep(0.1)
 """
 STUBS = {
     'bin/weston': 'echo "weston $$" >> "$STUB_DIR/pids"\nexec python3 "$STUB_DIR/serve.py" weston "$@"\n',
     'bin/niri': (
         'case $1 in\n'
         '    validate) exit 0 ;;\n'
-        '    msg) [ "$2" != -j ] || echo \'[{"id": 1, "app_id": "gos-probe", "is_focused": false},'
-        ' {"id": 2, "app_id": "gos-other", "is_focused": true}]\'; exit 0 ;;\n'
+        '    msg) case "$2 $3" in\n'
+        '        "-j outputs") echo \'{"DP-1": {"name": "DP-1", "current_mode": 0, "logical": {"scale": 1.0},'
+        ' "modes": [{"width": 3440, "height": 1440, "refresh_rate": 59999, "is_preferred": true}]}}\' ;;\n'
+        '        -j*) echo "[{\\"id\\": 1, \\"app_id\\": \\"gos-probe\\", \\"is_focused\\": false,'
+        ' \\"layout\\": {\\"window_size\\": [${STUB_PROBE_SIZE:-1000, 1200}]}},'
+        ' {\\"id\\": 2, \\"app_id\\": \\"gos-other\\", \\"is_focused\\": true}]" ;;\n'
+        '        esac\n'
+        '        for a do case $prev in --path) printf png > "$a" ;; esac; prev=$a; done; exit 0 ;;\n'
         '    -c) echo "niri $$" >> "$STUB_DIR/pids"; exec python3 "$STUB_DIR/serve.py" niri ;;\n'
         'esac\nexit 2\n'),
     'bin/kitty': 'echo "kitty $$" >> "$STUB_DIR/pids"\nwhile [ "$1" != sh ]; do shift; done\nexec "$@"\n',
-    'bin/magick': 'for arg do :; done\nprintf image > "$arg"\n',
+    'bin/magick': ('case "$*" in\n'
+                   # info: output ends without a newline, as real magick's does.
+                   '    *%@*) printf %s "${STUB_RECT:-1000x1200+100+100}"; exit 0 ;;\n'
+                   '    *"%w %h"*) printf "3440 1440"; exit 0 ;;\n'
+                   'esac\nfor arg do :; done\n'
+                   'case $arg in *:-) printf image ;; *) printf image > "$arg" ;; esac\n'),
+    'bin/dbus-daemon': 'echo "dbus-daemon $$" >> "$STUB_DIR/pids"\nexec python3 "$STUB_DIR/serve.py" dbus-daemon "$@"\n',
+    'bin/sudo': 'exit 0\n',
+    'bin/pgrep': 'exit 1\n',
+    'bin/gst-inspect-1.0': 'exit 0\n',
+    'vt/chvt': ('printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\necho "chvt $1" >> "$STUB_DIR/meta.log"\n'
+                '[ "$1" = 1 ] || : > "$STUB_DIR/away"\n'),
+    'vt/loginctl': 'exit 0\n',
+    'tools/lock': ('echo "lock $$" >> "$STUB_DIR/pids"\ntrap \'exit 0\' USR1\necho locked\n'
+                   ': > "$STUB_DIR/locked"\nwhile :; do sleep 0.1; done\n'),
     'bin/nvidia-smi': 'echo P8\n',
     'bin/ss': 'case "$*" in *established*) echo "ESTAB 0 0 127.0.0.1:1 127.0.0.1:2" ;; esac\n',
     'tools/tracy-capture': (
@@ -437,7 +759,8 @@ STUBS = {
     'capture-meta': (
         'echo "$*" >> "$STUB_DIR/meta.log"\n'
         'if [ "$1" = preflight ] && [ -n "${STUB_REFUSE:-}" ]; then\n'
-        '    echo \'{"refused": "load"}\' > "$2/capture.json"; exit 1\nfi\n'),
+        '    echo \'{"refused": "load"}\' > "$2/capture.json"; exit 1\nfi\n'
+        'if [ "$1" = release ] && [ ! -e "$2/capture.json" ]; then echo \'{"released":true}\' > "$2/capture.json"; fi\n'),
 }
 
 
@@ -448,6 +771,40 @@ def alive(pid):
         return False
 
 
+class LifecycleCoverageTests(unittest.TestCase):
+    def test_subject_paths_are_full_routed(self):
+        root = Path(__file__).resolve().parents[1]
+        patterns = subprocess.check_output(['just', '--evaluate', 'tooling_full_paths'],
+                                          cwd=root, text=True).split()
+        assert_static_coverage(root, patterns)
+
+
+class JournalSignalTests(unittest.TestCase):
+    def test_term_during_journal_end_preserves_exit_and_cleanup(self):
+        source = (Path(__file__).resolve().parents[1] /
+                  'docs/materials/scripts/optic-settling-smoke.sh').read_text()
+        body = source.split('stim() {', 1)[1].split('\n}\n', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            prefix = r"""
+set -eu
+on_exit() { local rc=$?; trap - EXIT; trap : INT TERM HUP; printf 'cleanup\n'; exit "$rc"; }
+trap 'exit 143' TERM
+trap on_exit EXIT
+mono() {
+    if [ -e "$CASE_DIR/first" ]; then kill -TERM $$; else : > "$CASE_DIR/first"; fi
+    printf 100
+}
+"""
+            run = subprocess.run(['bash', '-c', prefix + 'stim() {' + body +
+                                  '\n}\nstim lock 2 true\n'],
+                                 env=dict(os.environ, CASE_DIR=directory),
+                                 capture_output=True, text=True, timeout=15)
+        self.assertEqual(run.returncode, 143, run.stderr)
+        self.assertEqual(run.stderr, '')
+        self.assertIn('cleanup', run.stdout)
+
+
+@unittest.skipIf(fast_mode(), 'NIRI_TOOLING_FAST=1; use full validation or NIRI_TOOLING_FAST=0')
 class DriverCleanupTests(unittest.TestCase):
     """The driver on stubs: a signal or a refusal must stop every child promptly,
     keep the partial evidence and release the capture lock."""
@@ -466,6 +823,7 @@ class DriverCleanupTests(unittest.TestCase):
             path.write_text('#!/bin/sh\n' + body)
             path.chmod(0o755)
         (self.stubs / 'serve.py').write_text(SERVE)
+        (self.stubs / 'tools/consumer.py').write_text(CONSUMER)
         (self.stubs / 'pids').touch()
         self.runtime = self.base / 'rt'
         self.runtime.mkdir()
@@ -481,6 +839,16 @@ class DriverCleanupTests(unittest.TestCase):
                         OPTIC_SETTLING_STUB_TOOLS=str(self.stubs / 'tools'),
                         PATH=f'{self.stubs / "bin"}:{os.environ["PATH"]}')
         self.addCleanup(self.kill_leftovers)
+        self.drm = self.sysfs({'card1-DP-1': 'connected', 'card1-HDMI-A-1': 'disconnected'})
+
+    def sysfs(self, connectors):
+        root = self.base / 'drm'
+        shutil.rmtree(root, ignore_errors=True)
+        for connector, status in connectors.items():
+            (root / connector).mkdir(parents=True)
+            (root / connector / 'status').write_text(status + '\n')
+        (root / 'card1').mkdir(parents=True)                   # the card itself has no status
+        return root
 
     def pids(self):
         return [int(line.split()[1]) for line in (self.stubs / 'pids').read_text().splitlines()]
@@ -494,9 +862,32 @@ class DriverCleanupTests(unittest.TestCase):
 
     def start(self, case, **env):
         script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
-        return subprocess.Popen(['bash', str(script), 'pilot'], cwd=self.root, start_new_session=True,
-                                env=dict(self.env, CASES=case, **env),
+        lane = env.pop('LANE_ARGS', '').split()
+        run_env = dict(self.env, CASES=case, **env)
+        if lane:
+            # The dedicated lane refuses a Wayland session; this suite may run inside one.
+            run_env.pop('WAYLAND_DISPLAY', None)
+            # Nor may it read this host's outputs.
+            run_env.setdefault('OPTIC_SETTLING_STUB_DRM_SYSFS', str(self.drm))
+        driver = subprocess.Popen(['bash', str(script), 'pilot', *lane], cwd=self.root, start_new_session=True,
+                                env=run_env,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(self.reap_driver, driver)
+        return driver
+
+    def reap_driver(self, driver):
+        if driver.poll() is None:
+            try:
+                os.killpg(driver.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                driver.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                os.killpg(driver.pid, signal.SIGKILL)
+        driver.wait()
+        driver.stdout.close()
+        driver.stderr.close()
 
     def await_marker(self, driver, marker, timeout_s):
         deadline = time.monotonic() + timeout_s
@@ -531,6 +922,14 @@ class DriverCleanupTests(unittest.TestCase):
         check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=self.out,
                                capture_output=True, text=True)
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        if (self.out / 'capture.json').exists():
+            self.assertIn(' ./capture.json\n', sums)
+
+    def test_exit_path_releases_before_writing_sums(self):
+        text = (self.root / 'docs/materials/scripts/optic-settling-smoke.sh').read_text()
+        body = text[text.index('on_exit() {'):text.index('write_sums() {')]
+        self.assertLess(body.index('capture_meta release "$OUT" || rc=1'), body.index('write_sums || rc=1'))
+        self.assertNotIn("! -name capture.json", text)
 
     def test_term_during_capture_stops_the_schedule_wait(self):
         # startup-no-input waits for its 10 s stimulus straight after the
@@ -575,3 +974,280 @@ class DriverCleanupTests(unittest.TestCase):
                              capture_output=True, text=True, timeout=60)
         self.assertNotEqual(run.returncode, 0)
         self.assertIn('OPTIC_SETTLING_STUB_TOOLS needs a stub CAPTURE_META', run.stderr)
+
+    def dedicated(self, case, marker):
+        """TERM a stub dedicated run once `marker` appears; everything is reaped."""
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start(case, STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05',
+                            OPTIC_SETTLING_STUB_CONSUMER=str(self.stubs / 'tools/consumer.py'),
+                            OPTIC_SETTLING_STUB_LOCK=str(self.stubs / 'tools/lock'),
+                            LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, marker, 60)
+        elapsed, stderr = self.terminate(driver)
+        self.assertEqual(driver.returncode, 143, stderr)
+        self.assertLess(elapsed, self.BOUND_S, stderr)
+        self.assert_cleaned_up(case)
+        return active
+
+    def started(self, name):
+        return [line for line in (self.stubs / 'pids').read_text().splitlines() if line.startswith(name)]
+
+    def test_term_while_casting_reaps_the_consumer_and_the_bus(self):
+        self.dedicated('screencast', 'cast-ready')
+        self.assertTrue(self.started('consumer'))
+        self.assertTrue(self.started('dbus-daemon'))
+
+    def test_term_with_the_session_locked_reaps_the_lock_client(self):
+        self.dedicated('unlock', 'locked')
+        self.assertTrue(self.started('lock'))
+
+    def test_term_while_switched_away_restores_the_vt_before_release(self):
+        active = self.dedicated('tty-resume', 'away')
+        self.assertEqual(active.read_text(), 'tty1\n')
+        record = json.loads((self.out / 'vt-restore.json').read_text())
+        self.assertEqual((record['outcome'], record['home'], record['from']), ('restored', 1, 2))
+        meta = (self.stubs / 'meta.log').read_text().splitlines()
+        self.assertLess(meta.index('chvt 1'), max(i for i, line in enumerate(meta) if line.startswith('release ')))
+
+    def test_stub_overrides_need_stub_tools(self):
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        for name, value in (('OPTIC_SETTLING_STUB_TIMESCALE', '0.05'),
+                            ('OPTIC_SETTLING_STUB_DRM_SYSFS', str(self.base / 'drm'))):
+            with self.subTest(name=name):
+                env = dict(self.env, OUT=str(self.base / f'out-{name}'), **{name: value})
+                env.pop('OPTIC_SETTLING_STUB_TOOLS')
+                run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
+                                     capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn('need OPTIC_SETTLING_STUB_TOOLS', run.stderr)
+
+    def test_vt_overrides_need_stub_tools(self):
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        for name, value in (('VT_CHVT', '/bin/true'), ('VT_LOGINCTL', '/bin/true'),
+                            ('VT_ACTIVE_FILE', str(self.base / 'active'))):
+            with self.subTest(name=name):
+                env = dict(self.env, OUT=str(self.base / f'out-{name}'), **{name: value})
+                env.pop('OPTIC_SETTLING_STUB_TOOLS')
+                run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
+                                     capture_output=True, text=True, timeout=60)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn(f'{name} needs OPTIC_SETTLING_STUB_TOOLS', run.stderr)
+
+    def test_a_refused_return_fails_the_run_after_release(self):
+        # The return to VT 1 never lands: restoration fails, the run exits 1,
+        # and the capture lock is still released.
+        (self.stubs / 'vt/chvt').write_text(
+            '#!/bin/sh\necho "chvt $1" >> "$STUB_DIR/meta.log"\n[ "$1" = 1 ] && exit 0\n'
+            'printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n: > "$STUB_DIR/away"\n')
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('tty-resume', STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05', LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, 'away', 60)
+        _, stderr = self.terminate(driver)
+        self.assertEqual(driver.returncode, 1, stderr)
+        self.assertIn('VT restoration failed', stderr)
+        record = json.loads((self.out / 'vt-restore.json').read_text())
+        self.assertEqual((record['outcome'], record['home'], record['observed']), ('failed', 1, 2))
+        self.assertEqual(active.read_text(), 'tty2\n')
+        meta = (self.stubs / 'meta.log').read_text().splitlines()
+        self.assertEqual(meta.count('chvt 1'), 3)                 # three verified attempts
+        self.assertTrue(meta[-1].startswith('release '), meta)
+        self.assertEqual([pid for pid in self.pids() if alive(pid)], [])
+
+    def test_a_drm_niri_that_ignores_term_is_killed_at_case_end(self):
+        # A DRM niri that ignores TERM holds the device and the VT; the case's
+        # stop must not wait on it forever, or restoration never runs.
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('drm-aurora', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'), STUB_NIRI_IGNORES_TERM='1',
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05', LANE_ARGS='--lane dedicated')
+        try:
+            _, stderr = driver.communicate(timeout=60)
+        except subprocess.TimeoutExpired:
+            driver.kill()
+            self.fail('the driver hung on a niri that ignores TERM')
+        observation = json.loads((self.out / 'drm-aurora/observation.json').read_text())   # the case ran to its stop
+        self.assertEqual(observation['topology'],
+                         [{'name': 'DP-1', 'scale': 1.0,
+                           'mode': {'width': 3440, 'height': 1440, 'refresh_hz': 59.999}}])
+        self.assertEqual(json.loads((self.out / 'manifest.json').read_text())['drm'],
+                         {'output': 'DP-1', 'mode': '3440x1440@59.999'})
+        self.assertTrue(self.started('niri'))
+        self.assertEqual([pid for pid in self.pids() if alive(pid)], [])
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
+        self.assertTrue((self.stubs / 'meta.log').read_text().splitlines()[-1].startswith('release '))
+
+    def run_dedicated(self, case, timeout_s=90, **env):
+        """A stub dedicated run left to finish on its own; returns its stderr."""
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start(case, DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05',
+                            OPTIC_SETTLING_STUB_CONSUMER=str(self.stubs / 'tools/consumer.py'),
+                            OPTIC_SETTLING_STUB_LOCK=str(self.stubs / 'tools/lock'),
+                            LANE_ARGS='--lane dedicated', **env)
+        try:
+            _, stderr = driver.communicate(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            driver.kill()
+            self.fail(f'the {case} run hung')
+        self.returncode = driver.returncode
+        self.assertEqual([pid for pid in self.pids() if alive(pid)], [])
+        self.assertTrue((self.stubs / 'meta.log').read_text().splitlines()[-1].startswith('release '))
+        return stderr
+
+    def test_a_lock_client_that_ignores_unlock_fails_within_the_bound(self):
+        (self.stubs / 'tools/lock').write_text(
+            '#!/bin/sh\necho "lock $$" >> "$STUB_DIR/pids"\ntrap \'\' USR1\necho locked\n'
+            'while :; do sleep 0.1; done\n')
+        started = time.monotonic()
+        stderr = self.run_dedicated('unlock')
+        self.assertEqual(self.returncode, 1, stderr)
+        self.assertIn('unlock: the lock client did not exit within 10 s', stderr)
+        self.assertLess(time.monotonic() - started, 45, stderr)
+        self.assertTrue(self.started('lock'))
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
+
+    def assert_screencast_refused(self, message, **env):
+        stderr = self.run_dedicated('screencast', **env)
+        self.assertEqual(self.returncode, 1, stderr)
+        self.assertIn(f'screencast: {message}', stderr)
+
+    def test_screencast_refuses_wrong_probe_size(self):
+        self.assert_screencast_refused(
+            "calibrated probe 1000x1200, the case's probe is 900x1200 over IPC",
+            STUB_PROBE_SIZE='900, 1200')
+
+    def test_screencast_refuses_small_probe(self):
+        self.assert_screencast_refused('probe 400x1200 is too small for the screencast crops',
+                                      STUB_RECT='400x1200+100+100', STUB_PROBE_SIZE='400, 1200')
+
+    def test_screencast_refuses_wrong_sample_size(self):
+        self.assert_screencast_refused('sample-1 is 1280x720, the calibrated screen is 3440x1440',
+                                      STUB_SAMPLE_SIZE='1280x720')
+
+    def test_screencast_refuses_dead_consumer(self):
+        self.assert_screencast_refused('the screencast consumer exited (see cast.log)',
+                                      STUB_CONSUMER_EXITS='1')
+
+    def test_screencast_fails_within_the_bound_when_client_pixels_never_change(self):
+        self.assert_screencast_refused('no eligible cast frame answered sample-2',
+                                      STUB_CONSUMER_UNCHANGED='1')
+        requests = (self.stubs / 'sample-requests.jsonl').read_text().splitlines()
+        self.assertEqual(len(requests), 2)  # no re-arm or extra damage retry
+        self.assertFalse((self.out / 'screencast/sample-2.raw.json').exists())
+
+    def test_a_screencast_run_reaches_its_crops(self):
+        # The whole drive with matching sizes: the run gets through every
+        # sample and crop (the stub traces then fail analysis, never the driver).
+        stderr = self.run_dedicated('screencast')
+        for k in (1, 2, 3):
+            for crop in ('client', 'aurora'):
+                self.assertTrue((self.out / f'screencast/{crop}-{k}.rgb').is_file(), stderr)
+        self.assertEqual((self.out / 'screen-drm.txt').read_text(), '3440 1440\n')
+        self.assertTrue((self.out / 'screencast/observation.json').is_file(), stderr)
+        self.assertTrue((self.out / 'screencast/cast-summary.json').is_file(), stderr)
+        requests = [json.loads(line) for line in (self.stubs / 'sample-requests.jsonl').read_text().splitlines()]
+        self.assertEqual(len(requests), 3)
+        self.assertNotIn('different_from', requests[0])
+        self.assertEqual(requests[1]['different_from'], str(self.out / 'screencast/sample-1.raw'))
+        self.assertEqual(requests[1]['region'], [110, 110, 980, 80])
+        self.assertNotIn('different_from', requests[2])
+
+    def test_a_second_term_during_cleanup_still_restores_and_releases(self):
+        (self.stubs / 'vt/chvt').write_text(
+            '#!/bin/sh\necho "chvt $1" >> "$STUB_DIR/meta.log"\n'
+            'if [ "$1" = 1 ]; then : > "$STUB_DIR/restoring"; sleep 1; fi\n'
+            'printf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n[ "$1" = 1 ] || : > "$STUB_DIR/away"\n')
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('tty-resume', STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(active), VT_CHVT=str(self.stubs / 'vt/chvt'),
+                            VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            OPTIC_SETTLING_STUB_TIMESCALE='0.05', LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, 'away', 60)
+        driver.send_signal(signal.SIGTERM)
+        self.await_marker(driver, 'restoring', 30)
+        driver.send_signal(signal.SIGTERM)                    # lands while restoration runs
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 143, stderr)
+        self.assertEqual(active.read_text(), 'tty1\n')
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'restored')
+        self.assert_cleaned_up('tty-resume')
+
+    def test_term_during_a_dedicated_capture_reaps_the_bus_and_records_the_vt(self):
+        active = self.base / 'active'
+        active.write_text('tty1\n')
+        driver = self.start('drm-aurora', STUB_CAPTURE_S='600', DRM_OUTPUT='DP-1',
+                            DRM_MODE='3440x1440@59.999', VT_ACTIVE_FILE=str(active),
+                            VT_CHVT=str(self.stubs / 'vt/chvt'), VT_LOGINCTL=str(self.stubs / 'vt/loginctl'),
+                            LANE_ARGS='--lane dedicated')
+        self.await_marker(driver, 'capture-started', 60)
+        time.sleep(0.5)
+        elapsed, stderr = self.terminate(driver)
+        self.assertEqual(driver.returncode, 143, stderr)
+        self.assertLess(elapsed, self.BOUND_S, stderr)
+        self.assertIn('dbus-daemon', (self.stubs / 'pids').read_text())
+        self.assert_cleaned_up('drm-aurora')
+        self.assertEqual(json.loads((self.out / 'vt-restore.json').read_text())['outcome'], 'not-needed')
+        self.assertEqual(json.loads((self.out / 'vt.json').read_text()), {'home': 1, 'spare': 2})
+
+    def test_dedicated_prerequisites_name_the_missing_item(self):
+        (self.stubs / 'bin/sudo').write_text('#!/bin/sh\nexit 1\n')
+        driver = self.start('drm-aurora', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(self.base / 'active'), LANE_ARGS='--lane dedicated')
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 1)
+        self.assertIn('no NOPASSWD rule for /usr/bin/chvt', stderr)
+        self.assertEqual(self.pids(), [])                     # nothing was launched
+        self.assertEqual(list(self.runtime.glob('gos.*')), [])
+
+    def refused(self, **env):
+        driver = self.start('drm-aurora', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
+                            VT_ACTIVE_FILE=str(self.base / 'active'), LANE_ARGS='--lane dedicated', **env)
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 1, stderr)
+        self.assertEqual(self.pids(), [])                     # nothing was launched
+        return stderr
+
+    def test_a_second_connected_output_is_refused_before_launch(self):
+        drm = self.sysfs({'card1-DP-1': 'connected', 'card1-HDMI-A-1': 'connected'})
+        stderr = self.refused(OPTIC_SETTLING_STUB_DRM_SYSFS=str(drm))
+        self.assertIn('HDMI-A-1 is connected besides DRM_OUTPUT DP-1', stderr)
+
+    def test_an_unconnected_drm_output_is_refused_before_launch(self):
+        for index, connectors in enumerate((
+                {'card1-DP-1': 'disconnected', 'card1-HDMI-A-1': 'disconnected'},  # none connected
+                {})):                                                                # no connector
+            with self.subTest(connectors=connectors):
+                drm = self.sysfs(connectors)
+                stderr = self.refused(OPTIC_SETTLING_STUB_DRM_SYSFS=str(drm), OUT=str(self.base / f'out-{index}'))
+                self.assertIn('DRM_OUTPUT DP-1 is not connected', stderr)
+
+    def test_a_leftover_niri_from_an_earlier_run_is_refused(self):
+        # pgrep -x niri misses it: the run's snapshot copy is named binary.
+        old = self.base / 'optic-settling/pilot-old'
+        old.mkdir(parents=True)
+        shutil.copy(shutil.which('sleep'), old / 'binary')
+        leftover = subprocess.Popen([str(old / 'binary'), '60'])
+        self.addCleanup(leftover.wait)
+        self.addCleanup(leftover.kill)
+        stderr = self.refused()
+        self.assertIn(f'pid {leftover.pid} runs {(old / "binary").resolve()}', stderr)
+
+    def test_a_tty_resume_run_journals_the_switch_out_and_the_return_apart(self):
+        self.run_dedicated('tty-resume')
+        labels = [line.split('\t')[0] for line in
+                  (self.out / 'tty-resume/journal.tsv').read_text().splitlines()]
+        self.assertEqual(labels[:2], ['vt-out', 'vt-return'])

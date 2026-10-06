@@ -48,29 +48,31 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-230 paths differ: 48 class B (seam), 157 class A (fork-only), 25 class C (scaffolding).
+287 paths differ: 52 class B (seam), 197 class A (fork-only), 38 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
 | `.githooks/post-checkout` | C | A | +3/-0 |
 | `.githooks/post-commit` | C | A | +3/-0 |
 | `.githooks/post-merge` | C | A | +3/-0 |
-| `.githooks/pre-commit` | C | A | +24/-0 |
+| `.githooks/pre-commit` | C | A | +31/-0 |
 | `.githooks/pre-push` | C | A | +67/-0 |
 | `.github/FUNDING.yml` | B | D | +0/-1 |
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
 | `.github/dependabot.yml` | B | D | +0/-24 |
-| `.github/workflows/ci.yml` | B | M | +6/-2 |
+| `.github/workflows/ci.yml` | B | M | +25/-2 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +56/-0 |
+| `AGENTS.md` | C | A | +88/-0 |
+| `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
-| `justfile` | C | A | +95/-0 |
+| `justfile` | C | A | +123/-0 |
+| `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1618/-127 |
+| `niri-config/src/lib.rs` | B | M | +1751/-127 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -85,6 +87,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/backend/winit.rs` | B | M | +1/-0 |
 | `src/cli.rs` | B | M | +41/-0 |
 | `src/handlers/compositor.rs` | B | M | +1/-0 |
+| `src/handlers/layer_shell.rs` | B | M | +1/-0 |
 | `src/handlers/xdg_shell.rs` | B | M | +1/-0 |
 | `src/input/pick_color_grab.rs` | B | M | +1/-0 |
 | `src/ipc/client.rs` | B | M | +56/-1 |
@@ -94,37 +97,51 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
 | `src/layout/tests.rs` | B | M | +304/-4 |
-| `src/layout/tile.rs` | B | M | +2444/-78 |
+| `src/layout/tile.rs` | B | M | +2710/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
-| `src/niri.rs` | B | M | +293/-0 |
+| `src/niri.rs` | B | M | +310/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
-| `src/render_helpers/effect_buffer.rs` | B | M | +338/-1 |
-| `src/render_helpers/mod.rs` | B | M | +27/-0 |
+| `src/render_helpers/effect_buffer.rs` | B | M | +647/-15 |
+| `src/render_helpers/mod.rs` | B | M | +28/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +196/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +469/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/client.rs` | B | M | +130/-0 |
-| `src/tests/mod.rs` | B | M | +7/-0 |
+| `src/tests/client.rs` | B | M | +142/-0 |
+| `src/tests/fixture.rs` | B | M | +3/-1 |
+| `src/tests/mod.rs` | B | M | +9/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
-| `tools/capture-meta` | C | A | +892/-0 |
+| `tools/capture-meta` | C | A | +1268/-0 |
+| `tools/capture_hold.py` | C | A | +577/-0 |
+| `tools/fake_capture_host.py` | C | A | +156/-0 |
+| `tools/fake_screencast.py` | C | A | +41/-0 |
 | `tools/ops-check` | C | A | +264/-0 |
-| `tools/optic_settling.py` | C | A | +478/-0 |
+| `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
+| `tools/screencast_consumer.py` | C | A | +331/-0 |
+| `tools/target-dir-check` | C | A | +144/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
-| `tools/test_capture_meta.py` | C | A | +865/-0 |
-| `tools/test_gates.py` | C | A | +111/-0 |
-| `tools/test_glass_optic_smoke.py` | C | A | +635/-0 |
-| `tools/test_glass_render_order_metrics.py` | C | A | +184/-0 |
-| `tools/test_optic_settling.py` | C | A | +577/-0 |
+| `tools/test_capture_hold.py` | C | A | +445/-0 |
+| `tools/test_capture_meta.py` | C | A | +1430/-0 |
+| `tools/test_gates.py` | C | A | +278/-0 |
+| `tools/test_glass_optic_smoke.py` | C | A | +753/-0 |
+| `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
+| `tools/test_noise_placement_cost.py` | C | A | +100/-0 |
+| `tools/test_optic_settling.py` | C | A | +1253/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
-| `tools/test_upstream_report.py` | C | A | +946/-0 |
+| `tools/test_screencast_consumer.py` | C | A | +375/-0 |
+| `tools/test_target_dir_check.py` | C | A | +180/-0 |
+| `tools/test_tooling_tests.py` | C | A | +372/-0 |
+| `tools/test_upstream_report.py` | C | A | +954/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
-| `tools/tt` | C | A | +297/-0 |
-| `tools/upstream-report` | C | A | +736/-0 |
+| `tools/test_vt_lib.py` | C | A | +161/-0 |
+| `tools/test_warp_calibration.py` | C | A | +87/-0 |
+| `tools/tooling_tests.py` | C | A | +530/-0 |
+| `tools/tt` | C | A | +328/-0 |
+| `tools/upstream-report` | C | A | +738/-0 |
 
 Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can. Task records under `tasks/` are not counted.
 <!-- END GENERATED: local -->

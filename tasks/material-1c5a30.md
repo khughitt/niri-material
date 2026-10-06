@@ -4,7 +4,7 @@ title: "Lighting spike: sunrise, lanterns, fireflies, warm organic light"
 status: idea
 priority: 2
 created: 2026-09-06T22:07:49Z
-updated: 2026-10-02T23:07:57Z
+updated: 2026-10-06T18:41:53Z
 depends: []
 parent: material-53f873
 tags: [rendering, lighting, spike]
@@ -19,3 +19,7 @@ Explore lighting effects for the glass materials beyond the ring of light:
 - interact with the mouse?
 
 Spike shape: enumerate options, measure performance cost, plan experiments. Related directions: clouds, fluids.
+
+## Notes
+
+- 2026-10-06T18:41:53Z (materials-26.04): scope: briefed; organic lighting and weather have no established visual or temporal contract; material-ffd61f will map existing optics to one bounded experiment before implementation; brief: docs/notes/2026-09-29-material-dynamics-brief.md

@@ -1,0 +1,365 @@
+# Explicit modes and parallel native tooling receipts
+
+301 unique IDs and two optional skip identities match the green sequential reference (231.577 s) and parallel execution (31.479 s). Fast reference ran the same 301 discovered cases in 27.623 s, skipping 35 lifecycle cases plus two optional ones. These are tooling times, not whole hooks; acceptance remains owed.
+
+## Split scenarios
+
+```json
+[
+  {
+    "case": "wrong_probe_size",
+    "seconds": 10.921762099998887,
+    "exit": 0,
+    "stdout": ".\n----------------------------------------------------------------------\nRan 1 test in 10.085s\n\nOK\n",
+    "stderr": ""
+  },
+  {
+    "case": "small_probe",
+    "seconds": 11.000068281005952,
+    "exit": 0,
+    "stdout": ".\n----------------------------------------------------------------------\nRan 1 test in 10.189s\n\nOK\n",
+    "stderr": ""
+  },
+  {
+    "case": "wrong_sample_size",
+    "seconds": 14.286617078003474,
+    "exit": 0,
+    "stdout": ".\n----------------------------------------------------------------------\nRan 1 test in 13.488s\n\nOK\n",
+    "stderr": ""
+  },
+  {
+    "case": "dead_consumer",
+    "seconds": 13.150417781987926,
+    "exit": 0,
+    "stdout": ".\n----------------------------------------------------------------------\nRan 1 test in 12.326s\n\nOK\n",
+    "stderr": ""
+  }
+]
+```
+
+## Focused contract controls
+
+```text
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 1.479s
+
+OK
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 1.275s
+
+OK
+```
+
+## Parallel receipt
+
+```text
+Full tooling: 301 cases, 9 children
+case test_affected.Select.test_docs_and_tasks_select_nothing: 0.000s
+case test_affected.Select.test_excluded_member_is_never_selected: 0.000s
+case test_affected.Select.test_member_change_selects_its_dependents: 0.000s
+case test_affected.Select.test_nothing_changed_selects_nothing: 0.000s
+case test_affected.Select.test_root_source_selects_the_root_package: 0.000s
+case test_affected.Select.test_workspace_files_select_everything: 0.000s
+case test_capture_meta.EndToEndTest.test_real_binary_against_fake_nvidia_smi: 2.717s
+case test_capture_meta.GpuEvidenceTests.test_clients_and_invalid_telemetry: 0.000s
+case test_capture_meta.GpuEvidenceTests.test_failed_command_reports_stdout_when_stderr_is_empty: 0.001s
+case test_capture_meta.GpuEvidenceTests.test_malformed_gpu_sample_and_cpu_memory_cannot_run: 0.000s
+case test_capture_meta.GpuEvidenceTests.test_missing_or_unsupported_inventory_cannot_run: 0.000s
+case test_capture_meta.HostLoadReaderTests.test_absent_tool_cannot_run_with_install_hint: 0.002s
+case test_capture_meta.HostLoadReaderTests.test_failed_or_malformed_report_cannot_run: 0.021s
+case test_capture_meta.HostLoadReaderTests.test_report_runs_the_load_section_and_drops_its_own_process: 0.006s
+case test_capture_meta.IdentityTests.test_dirty_tree_records_diff_hash: 0.042s
+case test_capture_meta.IdentityTests.test_git_launch_failure_is_cannot_run_and_writes_nothing: 0.002s
+case test_capture_meta.IdentityTests.test_hashes_match_sha256sum_and_records_source: 0.025s
+case test_capture_meta.IdentityTests.test_missing_input_cli_refuses_without_writing: 0.003s
+case test_capture_meta.IdentityTests.test_missing_path_refuses_and_writes_nothing: 0.014s
+case test_capture_meta.IdentityTests.test_untracked_source_file_makes_the_tree_dirty_and_enters_the_hash: 0.042s
+case test_capture_meta.IdentityTests.test_untracked_source_handles_unusual_filenames: 0.022s
+case test_capture_meta.IdentityTests.test_untracked_symlink_hashes_its_target_text: 0.040s
+case test_capture_meta.JudgementTests.test_each_quiet_threshold_and_lane_client_refuses: 0.001s
+case test_capture_meta.JudgementTests.test_quiet_and_settle: 0.000s
+case test_capture_meta.JudgementTests.test_threshold_validation: 0.000s
+case test_capture_meta.LockTests.test_acquire_release_and_ownership_check: 0.001s
+case test_capture_meta.LockTests.test_binary_corrupt_lock_is_never_reclaimed: 0.001s
+case test_capture_meta.LockTests.test_guard_serializes_acquire_against_a_concurrent_holder: 0.301s
+case test_capture_meta.LockTests.test_half_written_or_corrupt_lock_is_never_reclaimed: 0.006s
+case test_capture_meta.LockTests.test_held_by_live_pid_refuses_stale_is_reclaimed: 0.001s
+case test_capture_meta.LockTests.test_public_read_waits_for_guard: 0.301s
+case test_capture_meta.LockTests.test_rejects_invalid_owner_fields: 0.006s
+case test_capture_meta.LockTests.test_two_processes_racing_admit_exactly_one: 0.136s
+case test_capture_meta.PreflightTests.test_busy_machine_refuses_and_records_reasons_and_clients: 0.005s
+case test_capture_meta.PreflightTests.test_cli_validation_returns_two_without_mutating_run: 0.001s
+case test_capture_meta.PreflightTests.test_cpu_or_load_refusal_records_and_names_the_load: 0.007s
+case test_capture_meta.PreflightTests.test_dedicated_requires_tty_and_no_clients: 0.010s
+case test_capture_meta.PreflightTests.test_gpu_only_refusal_does_not_ask_who_loads_the_cpu: 0.003s
+case test_capture_meta.PreflightTests.test_held_lock_refuses_without_sampling: 0.002s
+case test_capture_meta.PreflightTests.test_host_load_failure_cannot_run_names_the_refusal_and_releases_lock: 0.003s
+case test_capture_meta.PreflightTests.test_invalid_seconds_or_pid_does_not_mutate_run: 0.001s
+case test_capture_meta.PreflightTests.test_missing_tool_cannot_run_and_releases_lock: 0.003s
+case test_capture_meta.PreflightTests.test_quiet_headless_writes_run_environment_baseline_preflight: 0.004s
+case test_capture_meta.PreflightTests.test_quiet_preflight_does_not_run_host_load: 0.003s
+case test_capture_meta.RecordTests.test_append_sub_run_accumulates_in_order: 0.000s
+case test_capture_meta.RecordTests.test_append_sub_run_rejects_non_list: 0.000s
+case test_capture_meta.RecordTests.test_expected_read_failures_are_cannot_run: 0.000s
+case test_capture_meta.RecordTests.test_load_record_rejects_malformed_and_unknown_schema: 0.000s
+case test_capture_meta.RecordTests.test_load_record_rejects_non_object_json: 0.000s
+case test_capture_meta.RecordTests.test_malformed_sections_make_cli_consumers_exit_two_without_mutation: 0.400s
+case test_capture_meta.RecordTests.test_write_section_creates_record_and_refuses_rewrite: 0.001s
+case test_capture_meta.SamplingTests.test_proc_reader_does_not_double_count_guest_ticks: 0.006s
+case test_capture_meta.SamplingTests.test_sample_stream_and_summary: 0.000s
+case test_capture_meta.SamplingTests.test_summary_medians_iqr_and_clients: 0.000s
+case test_capture_meta.SettleTests.test_invalid_seconds_does_not_mutate_or_sample: 0.006s
+case test_capture_meta.SettleTests.test_missing_input_and_foreign_lock_refuse: 0.006s
+case test_capture_meta.SettleTests.test_off_baseline_appends_refused_and_raises: 0.005s
+case test_capture_meta.SettleTests.test_refused_before_acquire_does_not_release_foreign_lock: 0.002s
+case test_capture_meta.SettleTests.test_release_command_is_ownership_checked: 0.006s
+case test_capture_meta.SettleTests.test_same_run_id_with_wrong_owner_refuses: 0.004s
+case test_capture_meta.SettleTests.test_settled_entry_carries_inputs: 0.004s
+case test_capture_meta.ShowTests.test_main_show_exit_codes: 0.002s
+case test_capture_meta.ShowTests.test_render_lists_environment_provenance_and_verdicts: 0.000s
+case test_gates.Gates.test_failing_remote_evaluation_with_partial_output_takes_full_gate: 0.024s
+case test_gates.Gates.test_focused_recipe_preserves_arguments_and_counts_stderr: 0.738s
+case test_gates.Gates.test_focused_recipe_requires_arguments: 0.014s
+case test_gates.Gates.test_lfs_failure_stops_before_gate: 0.053s
+case test_gates.Gates.test_push_selects_ci_gate_and_preserves_lfs_input: 0.304s
+case test_gates.Gates.test_staged_paths_select_docs_only_conservatively: 0.595s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_cleanup_ignores_capture_release_refusal: 0.003s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_finish_hashes_every_file_but_the_manifest: 0.012s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_gpu_cooldown_fails_when_the_gpu_never_idles: 1.023s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_gpu_cooldown_waits_for_six_consecutive_p8_polls: 0.080s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_preflight_and_identity_pass_complete_capture_arguments: 0.004s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_settle_before_launch_passes_config_and_name: 0.007s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_settle_before_launch_skips_the_cooldown_under_a_capture_meta_stub: 0.006s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_smokes_preflight_after_sourcing_and_identify_after_build: 0.000s
+case test_glass_optic_smoke.CaptureMetaAdoptionTest.test_start_nested_settles_first_and_lib_never_preflights: 0.001s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_additive_rejects_shader_fallback_before_accepting_metrics: 0.000s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_additive_uses_face_for_aurora_and_chamfer_for_surface_lights: 0.012s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_capture_serializes_default_opacity_as_kdl_float: 0.005s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_capture_validates_the_generated_single_response_config_before_launch: 0.012s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_cost_scope_rejects_capture_override_before_preflight: 0.005s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_explicit_retained_candidate_inputs_skip_build: 0.003s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_gpu_trace_propagates_strict_settle_refusal_after_wait: 0.007s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_gpu_trace_waits_before_strict_settle_then_checks_log_and_median: 0.007s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_matrix_pins_required_fixture_values: 0.000s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_aurora_gpu_case_cools_before_trace: 0.008s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_ring_motion_moves_the_tracked_rightmost_column: 0.001s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_ring_records_per_frame_motion_reach_timing_and_geometry: 0.001s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_ring_replaces_inherited_default_response_with_retained_candidate: 0.000s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_ring_rest_measurement_pins_roughness_and_response_values: 0.000s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_ring_writes_all_baseline_rest_selector_and_motion_configs: 0.279s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_positive_face_gate_requires_more_than_one_code: 0.047s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_remaining_within_configs_validate_with_retained_candidate: 0.000s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_resize_flex_uses_frozen_clock_check_without_capture_setup: 0.022s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_scope_dispatch_never_runs_cost_from_pixel_scope: 0.007s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_signed_transfer_helpers_reject_black_clipped_and_wrong_solid_output: 0.510s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_verify_runs_the_focused_pixel_matrix_in_order: 0.002s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_within_aurora_generates_one_distortion_node_and_attenuation_skips_reach_bound: 0.071s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_within_aurora_motion_records_frames_and_ipc_geometry_without_repeat_gate: 0.000s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_within_matrix_prepares_every_offline_fixture: 0.003s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_within_measurements_pass_the_profile_and_interval_inputs_to_reach: 0.020s
+case test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_within_ring_reuses_the_default_pinned_beam: 0.000s
+case test_glass_optic_smoke.TraceCoverageTest.test_complete_idle_and_four_hz_traces: 0.045s
+case test_glass_optic_smoke.TraceCoverageTest.test_empty_truncated_and_stalled_traces_fail: 0.051s
+case test_glass_render_order_metrics.RenderOrderMetricsTest.test_cli_distinguishes_failed_gate_from_invalid_capture: 1.280s
+case test_glass_render_order_metrics.RenderOrderMetricsTest.test_profile_and_attenuation_use_decoded_quantization_intervals: 0.006s
+case test_glass_render_order_metrics.RenderOrderMetricsTest.test_reach_is_measured_from_the_face_edge: 0.273s
+case test_glass_render_order_metrics.RenderOrderMetricsTest.test_reach_rejects_invalid_or_uncovered_slab_even_without_a_delta: 0.001s
+case test_glass_render_order_metrics.RenderOrderMetricsTest.test_reach_uses_scatter_bound_and_rounded_slab_geometry: 0.226s
+case test_glass_render_order_metrics.RenderOrderMetricsTest.test_signed_grain_and_quantized_additive_light: 0.022s
+case test_optic_settling.EdgeTests.test_pause_resume_preserve_logical_time: 0.000s
+case test_optic_settling.EdgeTests.test_window_counts_half_open_intervals: 0.000s
+case test_optic_settling.IdentityTests.test_run_identity_ignores_the_run_directory_only: 0.007s
+case test_optic_settling.JournalSignalTests.test_term_during_journal_end_preserves_exit_and_cleanup: 0.005s
+case test_optic_settling.PrepareTests.test_prepare_the_dedicated_lane: 0.275s
+case test_optic_settling.PrepareTests.test_prepare_validates_inventory_and_cleans_runtime: 0.435s
+case test_optic_settling.RunTests.test_a_malformed_cast_frame_names_its_case: 0.006s
+case test_optic_settling.RunTests.test_a_redraw_between_samples_breaks_the_quiet_interval: 0.003s
+case test_optic_settling.RunTests.test_a_sample_must_be_the_first_cast_frame_after_its_request: 0.006s
+case test_optic_settling.RunTests.test_an_empty_consumer_is_still_checked: 0.009s
+case test_optic_settling.RunTests.test_bounds_the_edge_flush_and_settled_redraws: 0.005s
+case test_optic_settling.RunTests.test_collect_frame_must_redraw: 0.003s
+case test_optic_settling.RunTests.test_complete_lane_passes: 0.011s
+case test_optic_settling.RunTests.test_complete_pilot_passes: 0.002s
+case test_optic_settling.RunTests.test_consumer_frames_and_samples: 0.006s
+case test_optic_settling.RunTests.test_dedicated_topology_pins_output_mode_and_scale: 0.015s
+case test_optic_settling.RunTests.test_development_subset_never_passes_as_a_pilot: 0.004s
+case test_optic_settling.RunTests.test_edge_must_fall_inside_its_named_stimulus: 0.005s
+case test_optic_settling.RunTests.test_journal_needs_consistent_alignment: 0.002s
+case test_optic_settling.RunTests.test_lane_verdict_exits_zero_and_lists_unverified_cases: 0.006s
+case test_optic_settling.RunTests.test_rejects_a_panic_in_the_compositor_log: 0.004s
+case test_optic_settling.RunTests.test_rejects_a_trace_that_stops_before_the_declared_end: 0.006s
+case test_optic_settling.RunTests.test_rejects_absent_edges_headers_export_and_controls: 0.008s
+case test_optic_settling.RunTests.test_rejects_heartbeat_gap: 0.003s
+case test_optic_settling.RunTests.test_rejects_malformed_edge_in_entries: 0.010s
+case test_optic_settling.RunTests.test_rejects_missing_duplicate_short_and_false_hardware_cases: 0.011s
+case test_optic_settling.RunTests.test_rejects_short_trace_against_declared_capture: 0.005s
+case test_optic_settling.RunTests.test_rejects_stale_missing_and_late_samples: 0.006s
+case test_optic_settling.RunTests.test_rejects_stimulus_after_the_trace: 0.003s
+case test_optic_settling.RunTests.test_setup_segment_is_unchecked_only_before_a_pause: 0.004s
+case test_optic_settling.RunTests.test_stimulus_exempts_only_its_interval: 0.003s
+case test_optic_settling.RunTests.test_stimulus_requires_its_messages_inside_its_window: 0.005s
+case test_optic_settling.RunTests.test_trace_without_messages: 0.004s
+case test_optic_settling.RunTests.test_tty_resume_needs_the_resume_edge_inside_vt_return: 0.005s
+case test_optic_settling.RunTests.test_unverified_lanes_carry_their_reason: 0.003s
+case test_optic_settling.RunTests.test_zone_names_with_unquoted_commas: 0.003s
+case test_package_pin.PinTest.test_check_accepts_a_pkgbuild_that_describes_its_own_commit: 0.110s
+case test_package_pin.PinTest.test_check_rejects_a_hand_edited_count: 0.113s
+case test_package_pin.PinTest.test_the_count_is_the_commits_this_fork_carries_over_the_baseline: 0.074s
+case test_package_pin.PinTest.test_writing_a_pin_replaces_all_three_values: 0.070s
+case test_screencast_consumer.ConsumerEndToEndTests.test_startup_sampling_and_summary: 0.478s
+case test_screencast_consumer.ConsumerFailureTests.test_a_pipeline_that_cannot_be_built_stops_the_session_and_exits_nonzero: 0.354s
+case test_screencast_consumer.ConsumerFailureTests.test_a_pipeline_that_cannot_start_exits_nonzero_with_gstreamers_error: 0.374s
+case test_screencast_consumer.ConsumerFailureTests.test_a_pipeline_that_fails_after_playing_exits_nonzero_with_gstreamers_error: 0.449s
+case test_screencast_consumer.ConsumerFailureTests.test_term_while_waiting_for_the_node_still_stops_the_session: 0.475s
+case test_screencast_consumer.ConsumerFailureTests.test_unreadable_request_file_exits_nonzero: 0.365s
+case test_screencast_consumer.PackedRgbTests.test_packed_input_is_unchanged: 0.000s
+case test_screencast_consumer.PackedRgbTests.test_short_buffer_raises: 0.000s
+case test_screencast_consumer.PackedRgbTests.test_strips_row_padding: 0.000s
+case test_screencast_consumer.PipelineTests.test_imports_dma_bufs_through_gl: 0.000s
+case test_screencast_consumer.SamplerTests.test_a_failed_armed_write_leaves_nothing_pending: 0.000s
+case test_screencast_consumer.SamplerTests.test_nothing_is_saved_without_a_request: 0.000s
+case test_screencast_consumer.SamplerTests.test_refuses_a_second_request_while_one_is_pending: 0.000s
+case test_screencast_consumer.SamplerTests.test_samples_are_written_atomically_raw_first_json_last: 0.001s
+case test_screencast_consumer.SamplerTests.test_saves_the_first_frame_after_the_request: 0.001s
+case test_screencast_consumer.WaitForTests.test_the_discovery_deadline_cannot_stop_consumption: 0.754s
+case test_screencast_consumer.WaitForTests.test_times_out_without_a_node: 0.201s
+case test_target_dir_check.TargetDirCheckTest.test_a_shared_build_dir_is_shared: 0.239s
+case test_target_dir_check.TargetDirCheckTest.test_another_checkout_whose_target_cannot_be_read_is_skipped: 0.236s
+case test_target_dir_check.TargetDirCheckTest.test_another_checkout_with_a_broken_manifest_is_skipped: 0.167s
+case test_target_dir_check.TargetDirCheckTest.test_cargo_build_target_dir_in_the_environment_is_named: 0.163s
+case test_target_dir_check.TargetDirCheckTest.test_cargo_target_dir_in_the_environment_is_named: 0.180s
+case test_target_dir_check.TargetDirCheckTest.test_locked_worktree_whose_directory_is_gone_is_skipped: 0.252s
+case test_target_dir_check.TargetDirCheckTest.test_main_checkout_warns_but_passes: 0.164s
+case test_target_dir_check.TargetDirCheckTest.test_missing_worktree_is_skipped: 0.262s
+case test_target_dir_check.TargetDirCheckTest.test_runs_from_a_subdirectory: 0.313s
+case test_target_dir_check.TargetDirCheckTest.test_same_dir_through_a_symlink_is_shared: 0.165s
+case test_target_dir_check.TargetDirCheckTest.test_the_hint_overrides_a_shared_parent_config: 0.439s
+case test_target_dir_check.TargetDirCheckTest.test_this_checkout_with_a_broken_manifest_cannot_run: 0.115s
+case test_target_dir_check.TargetDirCheckTest.test_two_worktrees_sharing_a_third_dir_both_fail: 0.425s
+case test_target_dir_check.TargetDirCheckTest.test_worktree_borrowing_the_main_target_fails: 0.288s
+case test_target_dir_check.TargetDirCheckTest.test_worktrees_with_their_own_target_pass: 0.460s
+case test_tooling_tests.CoordinatorTests.test_ci_rejects_required_class_skip_before_execution: 0.081s
+case test_tooling_tests.CoordinatorTests.test_dynamic_skip_failure_import_error_and_crash_fail: 0.546s
+case test_tooling_tests.CoordinatorTests.test_full_overrides_fast_and_budget_one_preserves_all_ids: 0.250s
+case test_tooling_tests.CoordinatorTests.test_interrupt_reaps_a_child_from_an_unwound_case: 0.211s
+case test_tooling_tests.CoordinatorTests.test_malformed_budget_fails_before_discovery_or_spawn: 0.077s
+case test_tooling_tests.CoordinatorTests.test_optional_skip_is_permitted: 0.168s
+case test_tooling_tests.ModeTests.test_budget_caps_total_children_and_rejects_malformed_values: 0.023s
+case test_tooling_tests.ModeTests.test_flatten_rejects_duplicate_native_ids: 0.000s
+case test_tooling_tests.ModeTests.test_modes_fail_early: 0.015s
+case test_tooling_tests.ModeTests.test_raw_imports_validate_before_skipping: 0.158s
+case test_upstream_report.Baseline.test_fork_tree_mismatch_fails: 0.118s
+case test_upstream_report.Baseline.test_merge_base_is_never_consulted: 0.104s
+case test_upstream_report.Baseline.test_missing_carried_key_fails: 0.057s
+case test_upstream_report.Baseline.test_recorded_tree_mismatch_fails: 0.076s
+case test_upstream_report.Baseline.test_resolution_needs_no_branches: 0.104s
+case test_upstream_report.Baseline.test_rewritten_ancestry_with_identical_tree_validates: 0.116s
+case test_upstream_report.Baseline.test_tag_naming_another_tree_fails: 0.098s
+case test_upstream_report.Baseline.test_tag_resolving_to_another_commit_with_the_same_tree_validates: 0.126s
+case test_upstream_report.Baseline.test_wrong_carried_patch_ids_fail: 0.111s
+case test_upstream_report.Classify.test_added_scaffolding_is_class_c: 0.000s
+case test_upstream_report.Classify.test_deleted_and_renamed_upstream_files_are_class_b: 0.000s
+case test_upstream_report.Classify.test_modified_upstream_files_are_class_b: 0.000s
+case test_upstream_report.Classify.test_other_additions_are_class_a: 0.000s
+case test_upstream_report.Cli.test_bad_upstream_ref_exits_two_not_one: 0.292s
+case test_upstream_report.Cli.test_drift_conflict_exits_one: 0.255s
+case test_upstream_report.Cli.test_fresh_report_exits_zero: 0.293s
+case test_upstream_report.Cli.test_malformed_toml_exits_two_without_a_traceback: 0.179s
+case test_upstream_report.Cli.test_missing_markers_exit_two: 0.186s
+case test_upstream_report.Cli.test_stage_makes_the_check_pass_and_refuses_unstaged_edits: 0.503s
+case test_upstream_report.Cli.test_stale_report_exits_one: 0.183s
+case test_upstream_report.Cli.test_truncated_hash_exits_two: 0.154s
+case test_upstream_report.Cli.test_unexpected_exception_exits_two_not_one: 0.019s
+case test_upstream_report.Cli.test_wrong_typed_config_exits_two_without_a_traceback: 0.326s
+case test_upstream_report.Conflicts.test_a_directory_cannot_be_acknowledged_away: 0.075s
+case test_upstream_report.Conflicts.test_a_directory_cannot_be_acknowledged_beside_a_real_one: 0.064s
+case test_upstream_report.Conflicts.test_acknowledged_path_passes: 0.012s
+case test_upstream_report.Conflicts.test_bad_ref_is_an_error_not_a_clean_result: 0.055s
+case test_upstream_report.Conflicts.test_clean_merge_reports_no_conflicts: 0.052s
+case test_upstream_report.Conflicts.test_clean_status_never_produces_findings: 0.018s
+case test_upstream_report.Conflicts.test_conflict_notice_on_an_unlisted_path_fails: 0.018s
+case test_upstream_report.Conflicts.test_conflict_reports_exit_one_and_the_exact_paths: 0.076s
+case test_upstream_report.Conflicts.test_directory_rename_split_fails_beside_an_acknowledged_conflict: 0.086s
+case test_upstream_report.Conflicts.test_directory_rename_split_fails_the_verdict: 0.088s
+case test_upstream_report.Conflicts.test_directory_rename_split_has_no_conflicted_file_entries: 0.074s
+case test_upstream_report.Conflicts.test_malformed_informational_section_raises: 0.014s
+case test_upstream_report.Conflicts.test_unacknowledged_path_is_a_finding: 0.018s
+case test_upstream_report.Conflicts.test_unattributed_conflict_fails: 0.018s
+case test_upstream_report.Conflicts.test_unattributed_conflict_is_not_hidden_by_an_acknowledged_path: 0.012s
+case test_upstream_report.Drift.test_churn_counts_from_the_fork_baseline_commit_not_the_tag: 0.141s
+case test_upstream_report.Drift.test_churn_follows_the_baseline_path_across_a_fork_rename: 0.126s
+case test_upstream_report.Drift.test_resolve_baseline_exposes_the_fork_baseline_commit: 0.116s
+case test_upstream_report.Drift.test_seam_paths_map_to_the_baseline_name: 0.097s
+case test_upstream_report.Freshness.test_fresh_checkout_with_empty_staging_area_validates_the_commit: 0.157s
+case test_upstream_report.Freshness.test_generation_is_a_fixpoint: 0.131s
+case test_upstream_report.Freshness.test_regenerated_and_staged_report_passes: 0.146s
+case test_upstream_report.Freshness.test_regeneration_preserves_unstaged_prose: 0.138s
+case test_upstream_report.Freshness.test_stale_report_is_a_finding: 0.129s
+case test_upstream_report.Freshness.test_unstaged_baseline_edit_is_ignored: 0.139s
+case test_upstream_report.Freshness.test_unstaged_source_change_does_not_affect_the_verdict: 0.142s
+case test_upstream_report.Inventory.test_disagreeing_diff_formats_are_an_error: 0.108s
+case test_upstream_report.Inventory.test_inventory_excludes_task_records: 0.114s
+case test_upstream_report.Inventory.test_inventory_excludes_the_tools_own_files: 0.093s
+case test_upstream_report.Inventory.test_inventory_is_sorted_by_path: 0.108s
+case test_upstream_report.Inventory.test_inventory_reads_the_index_not_the_working_tree: 0.115s
+case test_upstream_report.Inventory.test_inventory_reports_status_path_and_line_counts: 0.105s
+case test_upstream_report.Inventory.test_local_block_counts_classes: 0.128s
+case test_upstream_report.Inventory.test_rename_joins_both_diff_formats_on_the_new_path: 0.089s
+case test_upstream_report.Splice.test_markers_out_of_order_are_an_error: 0.000s
+case test_upstream_report.Splice.test_missing_markers_are_an_error: 0.000s
+case test_upstream_report.Splice.test_splice_is_idempotent: 0.000s
+case test_upstream_report.Splice.test_splice_replaces_only_between_markers: 0.000s
+case test_upstream_report.Stage.test_fresh_report_is_left_alone: 0.138s
+case test_upstream_report.Stage.test_pathspec_commit_index_is_refused_only_when_stale: 0.162s
+case test_upstream_report.Stage.test_stale_report_is_regenerated_and_staged: 0.130s
+case test_upstream_report.Stage.test_unstaged_report_edit_is_refused_and_nothing_changes: 0.124s
+case test_upstream_report.Stage.test_unstaged_source_change_stays_out_of_the_staged_report: 0.139s
+case test_vdrag.WireTest.test_fixed_is_24_8: 0.000s
+case test_vdrag.WireTest.test_header_packs_object_size_and_opcode: 0.000s
+case test_vdrag.WireTest.test_parse_global: 0.000s
+case test_vdrag.WireTest.test_split_messages_handles_partial_tail: 0.000s
+case test_vdrag.WireTest.test_string_is_padded_and_nul_terminated: 0.000s
+case test_vdrag.WireTest.test_stripes_fill_the_buffer_translucent_and_premultiplied: 0.000s
+case test_optic_settling.DriverCleanupTests.test_a_drm_niri_that_ignores_term_is_killed_at_case_end: 19.228s
+case test_optic_settling.DriverCleanupTests.test_a_leftover_niri_from_an_earlier_run_is_refused: 1.537s
+case test_optic_settling.DriverCleanupTests.test_a_lock_client_that_ignores_unlock_fails_within_the_bound: 16.415s
+case test_optic_settling.DriverCleanupTests.test_a_refused_return_fails_the_run_after_release: 11.959s
+case test_optic_settling.DriverCleanupTests.test_a_screencast_run_reaches_its_crops: 16.515s
+case test_optic_settling.DriverCleanupTests.test_a_second_connected_output_is_refused_before_launch: 1.720s
+case test_optic_settling.DriverCleanupTests.test_a_second_term_during_cleanup_still_restores_and_releases: 6.582s
+case test_optic_settling.DriverCleanupTests.test_a_tty_resume_run_journals_the_switch_out_and_the_return_apart: 8.713s
+case test_optic_settling.DriverCleanupTests.test_an_unconnected_drm_output_is_refused_before_launch: 3.275s
+case test_optic_settling.DriverCleanupTests.test_dedicated_prerequisites_name_the_missing_item: 1.648s
+case test_optic_settling.DriverCleanupTests.test_failed_preflight_releases_and_keeps_its_record: 0.132s
+case test_optic_settling.DriverCleanupTests.test_screencast_refuses_dead_consumer: 12.286s
+case test_optic_settling.DriverCleanupTests.test_screencast_refuses_small_probe: 10.093s
+case test_optic_settling.DriverCleanupTests.test_screencast_refuses_wrong_probe_size: 9.941s
+case test_optic_settling.DriverCleanupTests.test_screencast_refuses_wrong_sample_size: 13.269s
+case test_optic_settling.DriverCleanupTests.test_stub_overrides_need_stub_tools: 0.232s
+case test_optic_settling.DriverCleanupTests.test_stub_tools_need_a_stub_capture_record: 0.200s
+case test_optic_settling.DriverCleanupTests.test_term_during_a_dedicated_capture_reaps_the_bus_and_records_the_vt: 4.915s
+case test_optic_settling.DriverCleanupTests.test_term_during_capture_stops_the_schedule_wait: 3.353s
+case test_optic_settling.DriverCleanupTests.test_term_during_export: 15.155s
+case test_optic_settling.DriverCleanupTests.test_term_while_casting_reaps_the_consumer_and_the_bus: 12.243s
+case test_optic_settling.DriverCleanupTests.test_term_while_switched_away_restores_the_vt_before_release: 5.587s
+case test_optic_settling.DriverCleanupTests.test_term_with_the_session_locked_reaps_the_lock_client: 5.604s
+case test_optic_settling.DriverCleanupTests.test_vt_overrides_need_stub_tools: 0.321s
+case test_vt_lib.VtLibTests.test_a_hanging_chvt_is_bounded: 8.025s
+case test_vt_lib.VtLibTests.test_failed_restore_reports_the_observed_vt: 6.337s
+case test_vt_lib.VtLibTests.test_failed_restore_with_an_unreadable_active_vt_is_valid_json: 6.343s
+case test_vt_lib.VtLibTests.test_restore_not_needed_when_never_switched: 0.010s
+case test_vt_lib.VtLibTests.test_restore_with_an_unreadable_active_vt_still_restores: 0.028s
+case test_vt_lib.VtLibTests.test_spare_fails_loudly_when_loginctl_fails: 0.020s
+case test_vt_lib.VtLibTests.test_spare_skips_home_and_logind_sessions: 0.022s
+case test_vt_lib.VtLibTests.test_spare_skips_the_home_vt: 0.019s
+case test_vt_lib.VtLibTests.test_spare_without_a_free_vt_fails: 0.079s
+case test_vt_lib.VtLibTests.test_switch_verifies_that_the_vt_landed: 2.123s
+case test_vt_lib.VtLibTests.test_term_while_away_restores_home: 0.069s
+SKIP test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_ring_replaces_inherited_default_response_with_retained_candidate: set MATERIAL_RETAINED_NIRI to validate generated KDL
+SKIP test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_remaining_within_configs_validate_with_retained_candidate: set MATERIAL_RETAINED_NIRI to validate generated KDL
+
+Ran 301 tests in 31.479s
+OK (skipped=2)
+```

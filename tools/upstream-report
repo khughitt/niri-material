@@ -364,6 +364,8 @@ def merge_tree(root, base, upstream, fork):
         )
 
     fields = result.stdout.split("\0")
+    if not fields[0]:
+        raise ReportError(f"git merge-tree returned no result tree: {result.stderr.strip()}")
     paths = []
     index = 1
     while index < len(fields) and fields[index] != "":
