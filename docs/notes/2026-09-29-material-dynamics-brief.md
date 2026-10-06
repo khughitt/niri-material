@@ -44,9 +44,9 @@ transient note's whole-ring snap description therefore overstates the gap.
 `docs/materials/material-config.md` document the immediate beam cut;
 `src/render_helpers/material/ring.rs` already implements finite tail/decay
 and exact rest. A short loss drain is a candidate extension, not implemented
-or visually accepted. Focus-gain view tilt is separate pending work in
-`material-77db8a`; its renderer/spec are absent from this fixed checkout and
-were not inspected through another worktree.
+or visually accepted. The optical-only focus-gain view tilt (`material-77db8a`) was
+rejected on 2026-10-06; a rigid tilt of window and glass is scoped in the
+[transient depth brief](2026-10-06-transient-depth-brief.md).
 
 ### Organic light feasibility
 
@@ -71,7 +71,7 @@ pixels, finite settling, visibility and reduced/off motion behavior, and the
 `material-39a46f`'s power verification and `material-0db905`'s settling
 design are complete; do not reopen those questions. Fireflies
 `material-54bcac` and ambient transport `material-f41c54` keep their existing
-goals. `material-77db8a` still awaits owner review. No host capture is needed
+goals. No host capture is needed
 for the new feasibility task; later measured runs declare `quiet` and run a pilot first.
 
 ## Alternatives

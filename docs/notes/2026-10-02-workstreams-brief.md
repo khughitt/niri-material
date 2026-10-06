@@ -28,8 +28,8 @@ run at once:
 
 - The settle-lifecycle captures `material-80caf4`, `material-3acc86` and
   `material-f7eb0b` are done; two-output removal (`material-1af3c6`) remains.
-  View-tilt (`material-77db8a`) passed its refreshed smoke and clips on 2026-10-03
-  and waits for owner review. The quiet queue now holds the glass-edge contact
+  View-tilt (`material-77db8a`) was rejected in owner review on 2026-10-06; the
+  rigid tilt follows the [transient depth brief](2026-10-06-transient-depth-brief.md). The quiet queue now holds the glass-edge contact
   sheet (`material-124f1f`). The cost study `material-31074f` is the wake hub for
   `material-2ebf2c`, `material-a0cbb0`, `material-a91346`, `material-0c7eed` and
   `material-f6e284`, and it needs a quiet host.
@@ -117,7 +117,7 @@ park still records the actual handoff to the owner.
 | Quiescence and cost | `material-5d6b2c` (existing) | **quiet** for verification; preparation none | measurements and their conditions; the settle contract | remaining settle lifecycle evidence, then a bounded cost pilot; `material-233295` needs no host |
 | Glass optics | `material-6062fd` (P1) | headless, plus owner review | the bevel height field | `material-be611b` implemented and reviewed |
 | Material library and composition | `material-3aa1f2` | none or headless; quiet for measured cost (`material-bb3fe5`) | none yet; layer stack is a hypothesis | `material-3fcba2` with single-layer identity preserved |
-| Motion and time | `material-53f873` (existing, retitled "Responsive glass that settles completely") | headless/owner; idle for clips | native animations and named responses | `material-77db8a` brought current and verified |
+| Motion and time | `material-53f873` (existing, retitled "Responsive glass that settles completely") | headless/owner; idle for clips | native animations and named responses | owner-judged stills of a rigid tilt (`material-89fb6b`) |
 | Signals | `material-6f606b` | none; `material-07bac9` needs a nested compositor | source to store to response | `material-c1330b` replay finding (done) and `material-07bac9` transport/attribution finding |
 
 **Next parallel push.** Instruments: `material-3a17b8`, then `material-22d78f`;
@@ -126,8 +126,8 @@ park still records the actual handoff to the owner.
 `tools/target-dir-check` refuses sharing. Signals: `material-07bac9` is the remaining
 nested-host demonstration after `material-c1330b`. Optics: run the quiet contact
 sheet, obtain owner review, then merge `material-be611b`; prepare ring comparison
-cases meanwhile. Motion: owner review of the refreshed `material-77db8a` grids,
-then bring the branch current again before its rollout. Optics and motion still
+cases meanwhile. Motion: frozen stills of a rigid tilt (`material-89fb6b`) for the
+owner, before its design (`material-abc08c`). Optics and motion still
 compete for shader and configuration code ownership.
 
 The opaque-content opt-in contract stays visible across lanes: content depth
@@ -146,13 +146,12 @@ the motion and signals lanes.
 
 **Pending regrouping (checked 2026-10-03).** `material-be611b` still refuses an edit
 here with `stale_copy`: `.worktrees/glass-edges` has the newer record.
-`material-77db8a` has no live claim, but its record and plan exist only in
-`.worktrees/material-77db8a`. After those branches merge, the integrating agent applies:
+`material-77db8a` was dropped unmerged on 2026-10-06. After `material-be611b`'s
+branch merges, the integrating agent applies:
 
 ```sh
 tasks edit material-be611b --parent material-6062fd --need owner
 tasks edit material-124f1f --need quiet --need nested
-tasks edit material-77db8a --parent material-53f873 --need owner
 ```
 
 `material-124f1f` is the glass-edges-only contact-sheet task and remains parked in
