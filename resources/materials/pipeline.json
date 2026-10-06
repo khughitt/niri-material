@@ -92,6 +92,28 @@
   ],
   "stages": [
     {
+      "id": "backdrop-grain",
+      "site": "source",
+      "scope": "output",
+      "owns": [],
+      "reads": [
+        "noise",
+        "noise type=",
+        "noise site="
+      ],
+      "responses": [],
+      "optic": {
+        "name": "noise",
+        "hook": "source",
+        "program": "effect"
+      },
+      "selector": {
+        "param": "noise site=",
+        "variant": "backdrop"
+      },
+      "animated": false
+    },
+    {
       "id": "blur",
       "site": "source",
       "scope": "output",
@@ -265,11 +287,13 @@
       "scope": "material",
       "owns": [
         "noise",
-        "noise type="
+        "noise type=",
+        "noise site="
       ],
       "reads": [
         "noise",
         "noise type=",
+        "noise site=",
         "blur noise",
         "backdrop-blur"
       ],
@@ -278,6 +302,10 @@
         "name": "noise",
         "hook": "behind",
         "program": "material"
+      },
+      "selector": {
+        "param": "noise site=",
+        "variant": "glass"
       },
       "animated": false
     },
@@ -412,6 +440,28 @@
       "owns": [],
       "reads": [],
       "responses": [],
+      "animated": false
+    },
+    {
+      "id": "film-grain",
+      "site": "post",
+      "scope": "material",
+      "owns": [],
+      "reads": [
+        "noise",
+        "noise type=",
+        "noise site="
+      ],
+      "responses": [],
+      "optic": {
+        "name": "noise",
+        "hook": "post",
+        "program": "material"
+      },
+      "selector": {
+        "param": "noise site=",
+        "variant": "film"
+      },
       "animated": false
     },
     {

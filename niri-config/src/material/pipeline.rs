@@ -261,6 +261,22 @@ const fn optic(name: &'static str, hook: &'static str) -> Option<OpticRef> {
     })
 }
 
+const fn effect_optic(name: &'static str, hook: &'static str) -> Option<OpticRef> {
+    Some(OpticRef {
+        name,
+        hook,
+        program: Program::Effect,
+    })
+}
+
+/// A stage active only while an enum parameter picks it (design Section 2).
+const fn select(stage: Stage, param: &'static str, variant: &'static str) -> Stage {
+    Stage {
+        selector: Some(Selector { param, variant }),
+        ..stage
+    }
+}
+
 const RING_RESPONSES: &[&str] = &[
     "ring-gap",
     "ring-width",
@@ -288,6 +304,20 @@ const IMPULSE_RESPONSES: &[&str] = &["ping", "done", "error"];
 /// code: impulse-driven and presence-driven stages are animated and list the
 /// responses that drive them, and every taps stage reads the prefilter controls.
 pub static STAGES: &[Stage] = &[
+    select(
+        stage(
+            "backdrop-grain",
+            "source",
+            Scope::Output,
+            &[],
+            &["noise", "noise type=", "noise site="],
+            &[],
+            effect_optic("noise", "source"),
+            false,
+        ),
+        "noise site=",
+        "backdrop",
+    ),
     stage(
         "blur",
         "source",
@@ -392,15 +422,25 @@ pub static STAGES: &[Stage] = &[
         optic("saturation", "behind"),
         false,
     ),
-    stage(
-        "noise",
-        "behind",
-        Scope::Material,
-        &["noise", "noise type="],
-        &["noise", "noise type=", "blur noise", "backdrop-blur"],
-        &[],
-        optic("noise", "behind"),
-        false,
+    select(
+        stage(
+            "noise",
+            "behind",
+            Scope::Material,
+            &["noise", "noise type=", "noise site="],
+            &[
+                "noise",
+                "noise type=",
+                "noise site=",
+                "blur noise",
+                "backdrop-blur",
+            ],
+            &[],
+            optic("noise", "behind"),
+            false,
+        ),
+        "noise site=",
+        "glass",
     ),
     stage(
         "tint",
@@ -484,6 +524,20 @@ pub static STAGES: &[Stage] = &[
         &[],
         None,
         false,
+    ),
+    select(
+        stage(
+            "film-grain",
+            "post",
+            Scope::Material,
+            &[],
+            &["noise", "noise type=", "noise site="],
+            &[],
+            optic("noise", "post"),
+            false,
+        ),
+        "noise site=",
+        "film",
     ),
     stage(
         "effect-saturation",
@@ -1028,10 +1082,39 @@ mod tests {
             .map(|s| s.id)
             .collect();
         assert_eq!(behind, ["saturation", "noise"]);
-        assert!(
-            STAGES.iter().all(|s| s.selector.is_none()),
-            "no selector yet"
+        let selected: Vec<(&str, &str, &str)> = STAGES
+            .iter()
+            .filter_map(|s| s.selector.map(|sel| (s.id, sel.param, sel.variant)))
+            .collect();
+        assert_eq!(
+            selected,
+            [
+                ("backdrop-grain", "noise site=", "backdrop"),
+                ("noise", "noise site=", "glass"),
+                ("film-grain", "noise site=", "film"),
+            ]
         );
+        let source: Vec<&str> = STAGES
+            .iter()
+            .filter(|s| s.site == "source")
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(source, ["backdrop-grain", "blur", "prefilter"]);
+        let post: Vec<&str> = STAGES
+            .iter()
+            .filter(|s| s.site == "post")
+            .map(|s| s.id)
+            .collect();
+        assert_eq!(post, ["film-grain"]);
+        let film = STAGES.iter().find(|s| s.id == "film-grain").unwrap();
+        assert_eq!(film.optic.map(|o| o.program), Some(Program::Material));
+        let grain = STAGES.iter().find(|s| s.id == "backdrop-grain").unwrap();
+        assert_eq!(
+            grain.optic.map(|o| (o.program, o.hook)),
+            Some((Program::Effect, "source"))
+        );
+        assert_eq!(grain.scope, Scope::Output);
+        assert!(grain.owns.is_empty() && film.owns.is_empty());
         assert_eq!(INTERACTIONS.len(), 1);
         assert_eq!(
             (
@@ -1069,9 +1152,19 @@ mod tests {
             noise["optic"],
             serde_json::json!({"name": "noise", "hook": "behind", "program": "material"})
         );
+        assert_eq!(
+            noise["selector"],
+            serde_json::json!({"param": "noise site=", "variant": "glass"})
+        );
+        let slab = value["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["id"] == "slab")
+            .unwrap();
         assert!(
-            noise.get("selector").is_none(),
-            "absent optional fields are omitted, not null"
+            slab.get("selector").is_none(),
+            "an unselected stage omits the field rather than writing null"
         );
         let encode = value["stages"]
             .as_array()

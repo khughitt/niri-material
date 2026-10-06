@@ -215,7 +215,9 @@ void main() {
         }
 
         vec3 glassColor = linearToSrgb(transmitted + within + specular + emissive);
-        // Post hooks are reserved here for future screen-space film effects.
+        // Post hooks, in OPTICS order (render-pipeline.md stage 9): film grain
+        // over the finished, encoded glass.
+        glassColor = noise_post(glassColor, gl_FragCoord.xy);
         glassed = vec4(glassColor, 1.0) * coverage;
     }
 

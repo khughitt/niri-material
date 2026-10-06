@@ -659,6 +659,13 @@ impl MaterialState {
         &self.id
     }
 
+    /// The element commit `advance_commit` last returned; tests read it to
+    /// see that a changed input was noticed.
+    #[cfg(test)]
+    pub(crate) fn commit(&self) -> CommitCounter {
+        self.commit.get()
+    }
+
     pub fn material(&self) -> &ResolvedMaterial {
         &self.config.material
     }

@@ -2852,6 +2852,7 @@ mod tests {
                     noise: niri_config::ResolvedNoise {
                         amount: Some(0.3),
                         kind: noise_type,
+                        site: niri_config::NoiseSite::Glass,
                     },
                     backdrop_blur,
                     ..Default::default()
