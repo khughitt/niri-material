@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 needs: [owner]
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-06T21:12:20Z
+updated: 2026-10-06T21:22:26Z
 depends: []
 parent: material-53f873
 tags: [rendering, camera]
@@ -29,8 +29,8 @@ Bound:
   1. Cast the camera ray through the screen pixel and rotate it into slab-local coordinates.
   2. Intersect the front-face plane, and sample the window texture and slabSurface at that point.
   3. Refract the slab-local ray at the slab normal and carry it through thickness.
-  4. Rotate the exit point back and project it to screen coordinates for the backdrop sample.
-  5. Apply the same mapping to the ring's light shift.
+  4. Rotate the exit point back and project it to screen coordinates for the backdrop sample. Only the backdrop sample is projected to screen.
+  5. The ring uses the same slab-local incident ray, refracted with its light IOR to its interior depth (0.2 * thickness). Its band (filamentBand, arcPosition) is evaluated in slab-local coordinates. Keep the existing half-gap cap on the shared shift, applied to the slab-local displacement.
 
   Do not add slab-local offsets to element coordinates. State the approximations in the result: faked slab, backdrop as the untilted screen plane.
 - Enlarge the element area to the tilted footprint.
@@ -41,7 +41,13 @@ Fixture (identical inputs for every render):
 - A window buffer of opaque glyph-like strokes over a translucent fill.
 - Frozen renders at rest and mid-beam.
 - Comparisons:
-  - Clean appearance: decorations off. A pinned main baseline commit is rendered with the same inputs; the tilt-0 render is compared to it byte for byte.
+  - Clean appearance: decorations off, with two controls rendered from the same inputs.
+    - Unchanged main, at a pinned baseline commit.
+    - The unrotated pinhole render (tilt 0 under the camera model).
+    The pinhole camera's rays are oblique away from the pane centre while today's are parallel, so even at 0 degrees it changes backdrop refraction, ring displacement and view-dependent shading. Under the accepted settings (thickness 31.2, IOR 1.28) the backdrop sample moves about 3 px at 800 px from the centre.
+    - Compare tilted renders against the unrotated pinhole, not against main.
+    - Record the main vs unrotated-pinhole difference on its own, as the cost of the camera model.
+    - Do not special-case exactly 0 degrees to match main. That would hide a jump as the swing settles, and a continuous transition back to today's rest optics is left to material-abc08c.
   - Decoration inventory, as a separate set: border, shadow and focus ring on, plus a popup and a subsurface, recording which follow the tilt.
 - Native-resolution crops of text, the bevel edge and the ring, next to the full frames.
 
@@ -52,7 +58,7 @@ Expected result:
   - a note with the branch commit, the baseline commit and the reproduction command;
   - a result section in the brief.
 - Recorded:
-  - the tilt-0 identity check;
+  - the main vs unrotated-pinhole difference (where it moves, by how much);
   - the elements that stay flat;
   - grain behaviour;
   - text softness by angle;
@@ -64,3 +70,5 @@ Ideas it wakes: On completion, run tasks note on material-6901e0 with the findin
 
 - 2026-10-06T21:11:20Z (materials-26.04): review: spec round 1 — verdict: revise; findings: P1 1, P2 3, correction 1; reviewer: codex/gpt-6-astra
 - 2026-10-06T21:12:19Z (materials-26.04): review round 1 applied: verdict bounded to a planar projection with faked slab shading; pinned camera (d 2000 px, vertical axis, front-face pivot) and slab-local ray mapping replacing tap()'s element-UV offsets; patterned backdrop, glyphs over translucent fill, pinned main baseline and native crops, decoration inventory kept separate; code unmerged, evidence returned to main via tasks attach; subsurfaces follow the window texture, popups do not
+- 2026-10-06T21:21:59Z (materials-26.04): review: spec round 2 — verdict: revise; findings: P1 1, P2 1; reviewer: codex/gpt-6-astra
+- 2026-10-06T21:22:26Z (materials-26.04): review round 2 applied: controls are unchanged main and the unrotated pinhole; tilted renders compare against the unrotated pinhole; the main-vs-pinhole difference is recorded as the camera model's cost; no exact-zero special case; ring band stays slab-local with the half-gap cap, and only the backdrop sample is projected

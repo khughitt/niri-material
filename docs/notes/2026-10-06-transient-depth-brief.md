@@ -87,7 +87,10 @@ of `material-77db8a`.
    4. Refracts the slab-local ray at the slab normal and carries it through
       `thickness`.
    5. Maps the exit point back to screen coordinates (rotate, then project)
-      before the backdrop sample.
+      before the backdrop sample. Only the backdrop sample is projected.
+   6. For the ring, refracts the same slab-local ray with the light IOR to
+      the interior depth and evaluates the band (`filamentBand`,
+      `arcPosition`) in slab-local coordinates, keeping the half-gap cap.
 
    This replaces `tap()`'s fixed straight-down ray and its direct addition of
    offsets to element coordinates (`prelude.frag`). 77db8a's view routing
@@ -98,6 +101,16 @@ of `material-77db8a`.
    volume), and the backdrop is a plane lying on the untilted screen. A
    planar tilt therefore exposes no side walls and no depth-dependent
    occlusion.
+
+   A pinhole camera also changes the optics at zero tilt, because its rays
+   are oblique away from the pane centre while today's are parallel. With
+   the accepted glass (thickness 31.2, IOR 1.28) and `d` = 2000, the backdrop
+   sample moves about 3 px at 800 px from the centre. Keeping the rest path
+   unchanged therefore needs a continuous transition back to parallel rays
+   as the swing settles, for example the camera distance growing without
+   bound. A special case at exactly zero tilt would hide a jump instead.
+   The spike measures the size of this effect; `material-abc08c` designs
+   the transition.
    - Gains:
      - Window and glass move as one body.
      - The backdrop is re-sampled through one consistent ray rather than

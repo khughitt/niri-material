@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-06T21:12:26Z
+updated: 2026-10-06T21:22:26Z
 depends: [material-89fb6b]
 parent: material-53f873
 tags: [rendering, camera, dynamics]
@@ -34,3 +34,4 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 ## Notes
 
 - 2026-10-06T21:12:26Z (materials-26.04): From spike review round 1: the design must also settle whether the faked slab suffices or a real ray-slab intersection (side walls, occlusion) is needed, and adopt one camera model and slab-local ray mapping for refraction and light shift (see the brief's alternative 1).
+- 2026-10-06T21:22:26Z (materials-26.04): From spike review round 2: the pinhole camera changes refraction, ring displacement and shading even at zero tilt (about 3 px at 800 px from centre with the accepted glass). The design must return continuously to today's parallel-ray rest optics as the swing settles; an exact-zero bypass does not satisfy this. The ring evaluates its band in slab-local coordinates; only the backdrop sample is projected to screen.
