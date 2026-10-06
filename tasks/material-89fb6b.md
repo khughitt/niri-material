@@ -1,7 +1,7 @@
 ---
 id: material-89fb6b
 title: Determine whether a planar in-shader tilt of window and glass reads as 3D glass
-status: doing
+status: done
 priority: 1
 size: m
 complexity: mid
@@ -9,8 +9,9 @@ process: direct
 needs: [owner]
 owner: spike/material-89fb6b
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-06T21:51:02Z
+updated: 2026-10-06T22:10:28Z
 started: 2026-10-06T21:29:41Z
+completed: 2026-10-06T22:10:25Z
 depends: []
 parent: material-53f873
 tags: [rendering, camera]
@@ -87,4 +88,12 @@ Ideas it wakes: On completion, run tasks note on material-6901e0 with the findin
 - 2026-10-06T21:50:05Z (spike/material-89fb6b): result: branch spike/material-89fb6b, baseline 69431712 (fixture only, renderer as main), spike 5bfba071. Reproduce: at either commit, TILT_SPIKE_DUMP=<dir> just test-one -p niri --run-ignored only -E 'test(tilt_spike_stills)', then python3 docs/materials/scripts/tilt-spike-sheet.py <dir> <out> at 5bfba071. Dumps in $NIRI_MATERIAL_WORK_ROOT/tilt-spike-89fb6b/{baseline,spike,sheets}.
 - 2026-10-06T21:50:05Z (spike/material-89fb6b): finding: spike-off renders byte-identical to the baseline commit (4/4). 0-degree pinhole vs main: glyphs identical, face interior <=1 level, bevel band up to 55 levels (edge farthest from the centre) plus faint ring lines. Text sharpness (Laplacian variance vs control) 0.33-0.39 at near/far sides from 2 degrees on, 0.69/0.62/0.39 at the pivot: softening is a step on leaving the pixel grid, not proportional to angle. Subsurface follows the tilt; popup, border, focus ring and shadow stay flat. Grain and tap jitter stay screen-fixed (gl_FragCoord). Reads, to the agent, as a thick-framed flat card turned in perspective: no side walls (faked slab). Owner verdict pending.
 - 2026-10-06T21:51:02Z (spike/material-89fb6b): parked (waiting on user, review): Owner: judge the stills attached to this task (crops-clean.png and tilt-steps.gif first; files in $NIRI_MATERIAL_WORK_ROOT/tilt-spike-89fb6b/sheets/): does a planar tilt read as 3D glass, is the text softening acceptable while moving, and if not, is the gap geometric thickness (side walls) or interior detail? Then agent: record the verdict as a note and in the brief's result section, note material-6901e0 with the finding, bring the record to main, tasks done.
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T22:10:25Z (spike/material-89fb6b): resumed
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T22:10:25Z (spike/material-89fb6b): review: impl round 1 — verdict: accept; findings: none; reviewer: human
+- 2026-10-06T22:10:25Z (spike/material-89fb6b): owner verdict 2026-10-06: better; it reads as one object, though the glass itself is hard to judge on the dark terminal fill (short attenuation distance, deep slab). Text softening while moving is acceptable. Missing first: geometric thickness (side walls); interior detail second. Side walls also come up for the resting glass (material-be611b's height-field edge), so the tilt design should share that slab model.
+- 2026-10-06T22:10:25Z (spike/material-89fb6b): done
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T22:10:25Z (spike/material-89fb6b): Planar in-shader tilt stills judged: reads as one object, text softening acceptable; side walls first, interior detail second. Code stays on spike/material-89fb6b (69431712 baseline, 5bfba071 spike).
   provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
