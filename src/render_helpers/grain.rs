@@ -21,10 +21,12 @@ pub struct GrainOptions {
 }
 
 impl From<BackdropGrain> for GrainOptions {
+    // Interim (plan Task 1): the first backdrop layer; Task 2 takes all.
     fn from(grain: BackdropGrain) -> Self {
+        let first = grain.layers[0].expect("a BackdropGrain has a first layer");
         Self {
-            amount: grain.amount as f32,
-            kind: grain.kind,
+            amount: first.amount as f32,
+            kind: first.kind,
         }
     }
 }

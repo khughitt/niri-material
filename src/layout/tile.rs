@@ -2805,10 +2805,13 @@ mod tests {
         ] {
             let options = options_for(
                 niri_config::ResolvedGlass {
-                    noise: niri_config::ResolvedNoise {
-                        amount: noise,
-                        ..Default::default()
-                    },
+                    noise: noise.map_or_else(niri_config::ResolvedNoise::default, |amount| {
+                        niri_config::ResolvedNoise::single(
+                            amount,
+                            niri_config::NoiseType::White,
+                            niri_config::NoiseSite::Glass,
+                        )
+                    }),
                     saturation: niri_config::ResolvedSaturation { amount: saturation },
                     backdrop_blur,
                     ..Default::default()
@@ -2849,11 +2852,11 @@ mod tests {
         ] {
             let options = options_for(
                 niri_config::ResolvedGlass {
-                    noise: niri_config::ResolvedNoise {
-                        amount: Some(0.3),
-                        kind: noise_type,
-                        site: niri_config::NoiseSite::Glass,
-                    },
+                    noise: niri_config::ResolvedNoise::single(
+                        0.3,
+                        noise_type,
+                        niri_config::NoiseSite::Glass,
+                    ),
                     backdrop_blur,
                     ..Default::default()
                 },

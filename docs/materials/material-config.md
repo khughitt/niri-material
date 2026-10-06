@@ -58,6 +58,7 @@ lengths are logical pixels.
 | `noise` | float | inherit | 0–1 | — |
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
 | `noise` `site=` | `glass` / `backdrop` / `film` | `glass` | — | — |
+| `noise` `scale=` | float | 1 | 1–16 | px |
 | `aurora` | float | 0 | 0–1 | — |
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |

@@ -1322,7 +1322,11 @@ mod tests {
         let initial_commit = slot.as_ref().unwrap().commit.get();
 
         let mut changed = render_config("frost");
-        changed.material.glass.noise.amount = Some(0.04);
+        changed.material.glass.noise = niri_config::ResolvedNoise::single(
+            0.04,
+            niri_config::NoiseType::White,
+            niri_config::NoiseSite::Glass,
+        );
         assert!(!apply_resolved(&mut slot, Some(&changed)));
         assert_eq!(slot.as_ref().unwrap().id(), &id_before);
         let noise_commit = slot.as_ref().unwrap().commit.get();
@@ -1407,13 +1411,44 @@ mod tests {
     }
 
     #[test]
-    fn noise_type_change_advances_the_commit_in_place() {
-        let mut slot = Some(MaterialState::new(render_config("frost")));
+    fn noise_scale_change_advances_the_commit_in_place() {
+        let mut base = render_config("frost");
+        base.material.glass.noise = niri_config::ResolvedNoise::single(
+            0.04,
+            niri_config::NoiseType::Fine,
+            niri_config::NoiseSite::Glass,
+        );
+        let mut slot = Some(MaterialState::new(base.clone()));
         let id_before = slot.as_ref().unwrap().id().clone();
         let initial_commit = slot.as_ref().unwrap().commit.get();
 
-        let mut changed = render_config("frost");
-        changed.material.glass.noise.kind = niri_config::NoiseType::Fine;
+        let mut changed = base;
+        changed.material.glass.noise.layers[0]
+            .as_mut()
+            .unwrap()
+            .scale = 4.;
+        assert!(!apply_resolved(&mut slot, Some(&changed)));
+        assert_eq!(slot.as_ref().unwrap().id(), &id_before);
+        assert_ne!(slot.as_ref().unwrap().commit.get(), initial_commit);
+    }
+
+    #[test]
+    fn noise_type_change_advances_the_commit_in_place() {
+        let mut base = render_config("frost");
+        base.material.glass.noise = niri_config::ResolvedNoise::single(
+            0.04,
+            niri_config::NoiseType::White,
+            niri_config::NoiseSite::Glass,
+        );
+        let mut slot = Some(MaterialState::new(base.clone()));
+        let id_before = slot.as_ref().unwrap().id().clone();
+        let initial_commit = slot.as_ref().unwrap().commit.get();
+
+        let mut changed = base;
+        changed.material.glass.noise.layers[0]
+            .as_mut()
+            .unwrap()
+            .kind = niri_config::NoiseType::Fine;
         assert!(!apply_resolved(&mut slot, Some(&changed)));
         assert_eq!(slot.as_ref().unwrap().id(), &id_before);
         assert_ne!(slot.as_ref().unwrap().commit.get(), initial_commit);
