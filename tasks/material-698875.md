@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-698875
 created: 2026-10-01T09:54:50Z
-updated: 2026-10-06T13:32:58Z
+updated: 2026-10-06T14:14:47Z
 started: 2026-10-06T13:24:00Z
 completed: 2026-10-06T13:32:58Z
 depends: []
@@ -30,3 +30,4 @@ render_snapshot_from_surface_tree (src/render_helpers/surface.rs) bakes only imp
   provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-06T13:32:58Z (material-698875): Resize snapshots bake a single-pixel buffer as a solid-colour element at its view rect (BakedSurface in render_helpers/surface.rs), so a single-pixel toplevel or subsurface keeps the material mid-resize; ring_pair's single_pixel_window_keeps_the_material_mid_resize renders pixel-identical to the shm fixture; seam row added to upstream-divergence
   provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T14:14:47Z (material-2f8ed6): correction: the single-pixel protocol is #[cfg(test)] in this fork and upstream (src/niri.rs, niri#619), so the fix only reaches the test client; no real toplevel or subsurface could hit the bug. Upstream PR #1463 makes the same change (see material-2f8ed6).
