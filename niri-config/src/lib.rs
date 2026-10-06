@@ -1849,8 +1849,9 @@ mod tests {
         assert!(
             err.contains(
                 "materials \"a\" and \"b\" both place noise at the backdrop with different"
-            ) && err
-                .contains("settings (0.3 fine, 0.1 fine); the backdrop is one texture per output"),
+            ) && err.contains(
+                "settings (0.3 fine, 0.1 fine); backdrop grain is one setting per output"
+            ),
             "{err}"
         );
         let err = do_parse_err(

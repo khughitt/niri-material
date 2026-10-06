@@ -7,6 +7,17 @@ Prism definition and sink wiring landed on its `main` branch at `c3c459d`.
 Final merge into the native production branch is pending. Tracked by
 `material-c854bd`.
 
+**As built, 2026-10-06:** `src/render_helpers/effect_buffer.rs` owns both the
+`PrefilterState` and the pyramid textures (`Offscreen`, `prepare_prefilter`);
+`blur.rs` supplies only the downsample program (`render_downsample`), not
+storage as *Renderer ownership* below says. `material.rs` is now
+`src/render_helpers/material/mod.rs`. The cache contract below predates
+backdrop grain (noise placement design,
+[`../specs/2026-10-05-noise-placement-design.md`](../specs/2026-10-05-noise-placement-design.md)):
+sharp damage and a grain-option change now clear grain, the blurred result and
+both pyramids at once (`cleared_by`), and `highest_prepared_level` holds only
+zero or the full count, since partial rebuilds are not implemented.
+
 ## Context
 
 Native glass has no `roughness` control. The accepted v1 design deliberately

@@ -1,15 +1,16 @@
 ---
 id: material-1debaa
 title: Correct stale cost and ownership claims in older material designs
-status: doing
+status: done
 priority: 3
 size: xs
 complexity: low
 process: direct
-owner: materials-26.04
+owner: material-1debaa
 created: 2026-10-06T15:07:38Z
-updated: 2026-10-06T16:52:20Z
+updated: 2026-10-06T16:57:28Z
 started: 2026-10-06T16:52:20Z
+completed: 2026-10-06T16:57:28Z
 depends: []
 parent: material-5d6b2c
 tags: [docs]
@@ -21,4 +22,10 @@ Found while writing docs/materials/performance.md (material-233295), verified ag
 ## Notes
 
 - 2026-10-06T16:52:20Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:6f0031a6-34a9-4a30-bf8b-47dd178d115f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T16:52:24Z (material-1debaa): resumed
+  provenance: {"harness_session":"claude-code:6f0031a6-34a9-4a30-bf8b-47dd178d115f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T16:57:28Z (material-1debaa): done
+  provenance: {"harness_session":"claude-code:6f0031a6-34a9-4a30-bf8b-47dd178d115f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T16:57:28Z (material-1debaa): Corrected stale claims: dated code-location note in the backdrop-blur design; as-built note in the roughness design (effect_buffer.rs owns pyramid state and textures, grain invalidation, no partial rebuilds); signals design's beam paragraph names are_animations_ongoing; material-config.md says focus-gain beam and shared backdrop buffers; backdrop-grain agreement error now says 'backdrop grain is one setting per output' (test updated first). Noise-placement spec and plan keep the original quoted message as record.
   provenance: {"harness_session":"claude-code:6f0031a6-34a9-4a30-bf8b-47dd178d115f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
