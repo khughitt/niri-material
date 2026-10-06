@@ -51,6 +51,7 @@ rather than retyping it (protocol:
 - `2026-10-05-noise-placement-evidence.md`: noise placement pixel, baseline, softening and cost evidence.
 - `material-config.md`: material and glass configuration reference.
 - `render-pipeline.md`: the material render pipeline, pass by pass, and which parameter acts where. Read before any rendering change.
+- `performance.md`: where GPU, CPU, memory and power go in the material, which parameters are expensive, and the levers; a map onto the evidence docs.
 - `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
 - `scripts/focus-ring-light.sh`: headless harness for the focus ring light captures and the measured filament checks.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
