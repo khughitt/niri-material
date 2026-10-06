@@ -16,6 +16,7 @@ import pathlib
 import shutil
 import subprocess
 import time
+from typing import TypeGuard
 
 HOLD_NAME = "capture-meta.hold.json"
 JOB_START = "7d4958e842da4a758f6c1cdc7b36dcc5"
@@ -261,8 +262,8 @@ def write_hold(path, hold):
         raise CannotRun(f"cannot write hold file {path}: {error}") from error
 
 
-def names_run(hold, run_id, run_dir):
-    return (hold is not None and hold["run_id"] == run_id
+def names_run(hold: dict | None, run_id, run_dir) -> TypeGuard[dict]:
+    return (isinstance(hold, dict) and hold["run_id"] == run_id
             and hold["run_dir"] == str(pathlib.Path(run_dir).resolve()))
 
 
