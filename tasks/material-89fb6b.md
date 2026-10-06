@@ -7,9 +7,9 @@ size: m
 complexity: mid
 process: direct
 needs: [owner]
-owner: materials-26.04
+owner: spike/material-89fb6b
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-06T21:29:42Z
+updated: 2026-10-06T21:51:02Z
 started: 2026-10-06T21:29:41Z
 depends: []
 parent: material-53f873
@@ -76,4 +76,15 @@ Ideas it wakes: On completion, run tasks note on material-6901e0 with the findin
 - 2026-10-06T21:22:26Z (materials-26.04): review round 2 applied: controls are unchanged main and the unrotated pinhole; tilted renders compare against the unrotated pinhole; the main-vs-pinhole difference is recorded as the camera model's cost; no exact-zero special case; ring band stays slab-local with the half-gap cap, and only the backdrop sample is projected
 - 2026-10-06T21:29:41Z (materials-26.04): review: spec round 3 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
 - 2026-10-06T21:29:41Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T21:29:53Z (spike/material-89fb6b): resumed
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T21:50:04Z (spike/material-89fb6b): attached: overview-clean.png (1078838 bytes): Clean scene, pane region at 40%: main, 0-degree pinhole control, 2/4/8 degrees, at rest and mid-beam
+- 2026-10-06T21:50:04Z (spike/material-89fb6b): attached: crops-clean.png (221301 bytes): Native crops per variant at fixed screen rects: near/far text, bevel corner (1x and 3x), ring mid-beam
+- 2026-10-06T21:50:05Z (spike/material-89fb6b): attached: overview-deco.png (987276 bytes): Decoration inventory at rest: border, focus ring, shadow, subsurface (red) and popup (blue) per variant
+- 2026-10-06T21:50:05Z (spike/material-89fb6b): attached: diff-pin0-main.png (25403 bytes): |0-degree pinhole - main| at rest, x8: the camera model's cost, on the bevel band
+- 2026-10-06T21:50:05Z (spike/material-89fb6b): attached: tilt-steps.gif (591315 bytes): Stepped 0-2-4-8-4-2 degrees at rest, 60%: not real timing, a stepped view of the same stills
+- 2026-10-06T21:50:05Z (spike/material-89fb6b): result: branch spike/material-89fb6b, baseline 69431712 (fixture only, renderer as main), spike 5bfba071. Reproduce: at either commit, TILT_SPIKE_DUMP=<dir> just test-one -p niri --run-ignored only -E 'test(tilt_spike_stills)', then python3 docs/materials/scripts/tilt-spike-sheet.py <dir> <out> at 5bfba071. Dumps in $NIRI_MATERIAL_WORK_ROOT/tilt-spike-89fb6b/{baseline,spike,sheets}.
+- 2026-10-06T21:50:05Z (spike/material-89fb6b): finding: spike-off renders byte-identical to the baseline commit (4/4). 0-degree pinhole vs main: glyphs identical, face interior <=1 level, bevel band up to 55 levels (edge farthest from the centre) plus faint ring lines. Text sharpness (Laplacian variance vs control) 0.33-0.39 at near/far sides from 2 degrees on, 0.69/0.62/0.39 at the pivot: softening is a step on leaving the pixel grid, not proportional to angle. Subsurface follows the tilt; popup, border, focus ring and shadow stay flat. Grain and tap jitter stay screen-fixed (gl_FragCoord). Reads, to the agent, as a thick-framed flat card turned in perspective: no side walls (faked slab). Owner verdict pending.
+- 2026-10-06T21:51:02Z (spike/material-89fb6b): parked (waiting on user, review): Owner: judge the stills attached to this task (crops-clean.png and tilt-steps.gif first; files in $NIRI_MATERIAL_WORK_ROOT/tilt-spike-89fb6b/sheets/): does a planar tilt read as 3D glass, is the text softening acceptable while moving, and if not, is the gap geometric thickness (side walls) or interior detail? Then agent: record the verdict as a note and in the brief's result section, note material-6901e0 with the finding, bring the record to main, tasks done.
   provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
