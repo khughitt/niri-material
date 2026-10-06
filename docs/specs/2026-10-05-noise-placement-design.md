@@ -431,7 +431,12 @@ Assertions:
 5. `backdrop`'s grain `sd` falls monotonically with passes (identity
    fixture) and with roughness (roughness fixture), while `glass`'s stays
    within 5 % across the same cells; the values are reported beside §7.1's
-   prediction.
+   prediction. "Monotonically" holds down to the 8-bit floor: once a cell's
+   grain `sd` is below half a code (the in-process presence threshold),
+   later cells must stay below it rather than fall further. The quiet pilot
+   of 2026-10-05 measured backdrop roughness 0 at exactly 0 under three
+   passes and roughness 1 at 0.037 codes, a low-frequency rounding residue
+   the pyramid upsample spreads, not returning grain.
 6. `film` at blur off equals `glass` within 1/255 on the face.
 7. Film grains the light and glass grain is compressed under it, by the
    transfer curve, not by magic. Fixture: a flat backdrop at encoded 0.5

@@ -21,6 +21,7 @@ RING_WALL=$OUT/ring-mid.png
 magick -size 1280x720 xc:'rgb(128,128,128)' "$RING_WALL"
 KINDS=(white fine lightness); BLURS=(false true); ROUGHNESS=(0 0.5 1)
 if [ "$PILOT" = 1 ]; then KINDS=(fine); BLURS=(true); ROUGHNESS=(0 1); fi
+GRAIN_FLOOR=$(awk 'BEGIN { printf "%.8f", 0.5 / 255 }')   # sd, normalized
 metric() { printf '%s=%s\n' "$1" "$2" >> "$OUT/metrics.txt"; }
 signed_diff() {
     magick "$1" "$2" -compose Mathematics -define compose:args=0,1,-1,0.5 \
@@ -34,6 +35,7 @@ film_ae() {
     status=$?
     set -e
     [ "$status" -le 1 ] || fail "film comparison failed: $out"
+    out=${out%% *}   # ImageMagick 7 appends the normalized value: "0 (0)"
     is_number "$out" || fail "film comparison is not numeric: $out"
     METRIC=$out
 }
@@ -129,7 +131,14 @@ for blur in "${BLURS[@]}"; do
             if [ "$site" = glass ]; then
                 assert_about "glass grain at $tag" "$METRIC" "$reference" 0.05
             elif [ -n "$previous" ]; then
-                assert_greater "backdrop roughness $blur: previous > $r" "$previous" "$METRIC"
+                # Monotone down to the 8-bit floor: once the grain is below half a
+                # code (the in-process presence threshold), the pyramid's upsample
+                # may spread a rounded sub-code residue but must not lift it back.
+                if awk -v p="$previous" -v f="$GRAIN_FLOOR" 'BEGIN { exit !(p >= f) }'; then
+                    assert_greater "backdrop roughness $blur: previous > $r" "$previous" "$METRIC"
+                else
+                    assert_less "backdrop roughness $blur: stays below the floor at $r" "$METRIC" "$GRAIN_FLOOR"
+                fi
             fi
             previous=$METRIC
         done
@@ -194,9 +203,10 @@ ring_cell() {   # $1 name, $2 site, $3 amount
     sleep "$(awk -v w="$PW" -v h="$PH" 'BEGIN { printf "%d", 2*(w+h)*1.25/400 + 3 }')"
     shot_twice "$NIRI" "$1"
     roi "$1" "$(face_roi)" face
-    # The band: the ring sits ring-gap inside where the face begins, which is
-    # bevel - offset inside the window edge; a 3 px strip there, 300 px tall.
-    roi "$1" "3x300+$((PX + PW - 6 - 6 - 2))+$((PY + 200))" band
+    # The band: the ring follows the face, the window inset by bevel (12) and
+    # shifted by offset-x (6), so its right edge peaks at PX + PW - 6.5
+    # (measured in the 2026-10-05 pilot); a 3 px strip centred there, 300 px tall.
+    roi "$1" "3x300+$((PX + PW - 12 + 6 - 2))+$((PY + 200))" band
     stop_nested
 }
 for site in glass film; do
