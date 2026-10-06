@@ -481,8 +481,10 @@ median3() {
 trace_run() {
     write_config "$OUT/$1.kdl"
     start_nested "$NIRI_TRACY" "$OUT/$1.kdl"
-    spawn_probe "$NIRI_TRACY" "$2"
-    [ "$3" = 1 ] && steal_focus "$NIRI_TRACY"
+    # IPC goes through the plain binary: niri-tracy's msg client spends about
+    # 0.5 s per call calibrating Tracy's timer. The compositor is still niri-tracy.
+    spawn_probe "$NIRI" "$2"
+    [ "$3" = 1 ] && steal_focus "$NIRI"
     sleep 2
     capture_bg "$1"; capture_ready "$1"; capture_wait
     stop_nested

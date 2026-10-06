@@ -177,12 +177,12 @@ share() {   # $1 image, $2 fx expression over u; result in METRIC
     is_number "$out" || fail "share of $1 is not numeric: $out"
     METRIC=$out
 }
-# Signed difference of two captures offset by 0.5, as a 16-bit gray image,
-# for statistics that need the sign (compose Mathematics computes
-# source - destination + 0.5; which operand is which does not matter to a
-# standard deviation). abs difference is for statistics that do not.
+# Signed difference a - b offset by 0.5, as a 16-bit gray image, for
+# statistics that need the sign (compose Mathematics computes
+# A*Sc*Dc + B*Sc + C*Dc + D with Sc the second image, so B=-1, C=1).
+# abs difference is for statistics that do not.
 signed_diff() {   # $1 a, $2 b, $3 out
-    magick "$1" "$2" -compose Mathematics -define compose:args=0,1,-1,0.5 -composite -colorspace Gray -depth 16 "$3" || fail "signed diff $3 failed"
+    magick "$1" "$2" -compose Mathematics -define compose:args=0,-1,1,0.5 -composite -colorspace Gray -depth 16 "$3" || fail "signed diff $3 failed"
 }
 ratio() {   # $1 numerator variance, $2 denominator variance, printed
     awk -v a="$1" -v b="$2" 'BEGIN { if (b == 0) print "nan"; else print a / b }'
