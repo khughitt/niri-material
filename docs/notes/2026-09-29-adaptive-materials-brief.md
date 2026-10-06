@@ -3,10 +3,12 @@
 ## Problem
 
 Make useful combinations of glass parameters easier to find, compose and reuse.
-This pass covers parameter structure (`material-0c7eed`), compositional profiles
+The original pass covers parameter structure (`material-0c7eed`), compositional profiles
 (`material-764d8c`) and learned render order (`material-e2f01a`), which share an
 adaptive-material source and tag. Goal: `material-0f225e`. This is a scoping
-handoff, not an approved implementation design.
+handoff, not an approved implementation design. The 2026-10-06 follow-up pairs
+`material-764d8c` with focus transients (`material-d873bf`) in the
+[dynamics brief](2026-09-29-material-dynamics-brief.md), retaining both parents.
 
 ## Current behaviour and evidence
 
@@ -18,7 +20,9 @@ handoff, not an approved implementation design.
   definition and named response overrides over a default response.
   `src/layout/tile.rs::resolve_material` selects one definition and response.
   Separately, `src/window/signal.rs::fold` selects signal level/motion and
-  accent/tag, and `shaders/material/main.frag` mixes the accent into ring light.
+  accent/tag, and `src/render_helpers/shaders/material/main.frag` mixes the
+  accent into ring light. Responses also carry the shipped `accent-tint`
+  attenuation weight; they are a fixed vocabulary, not arbitrary glass layers.
   `material-930c55` records owner-confirmed Familiar hues on 2026-09-24.
   These are existing composition mechanisms, not a general profile algebra.
 - `src/render_helpers/material/optics/mod.rs::OPTICS` is a static registry;
@@ -33,8 +37,12 @@ handoff, not an approved implementation design.
   Current Prism implementations and the referenced cross-project tasks were
   not inspected in this checkout. A rack is not evidence of runtime reorder.
 
-The original Mindful thought `a476e6bcd1fd4297b70824758235d821` could not be
-retrieved locally. Original task bodies, sources and notes remain intact.
+The original Mindful source was retrieved on 2026-10-06 with its canonical
+ID, `thought:a476e6bcd1fd4297b70824758235d821`. It explicitly suggests a
+base/Familiar/niri composition model but leaves the operators undecided;
+its broader goal is useful, reusable combinations learned from preferences.
+The earlier bare-ID lookup was incorrect, not evidence that the source was
+unavailable. Original task bodies, sources and notes remain intact.
 
 ## Constraints
 
@@ -42,8 +50,8 @@ Preserve optical depth, linear-light/encoded-light boundaries, opaque-client
 bypass, neutral behavior, and idle/motion gates. Parser bounds establish legal
 inputs, not visually good regions. Cost sensitivity, displacement and visual
 preference are different quantities: `material-31074f` measures cost and
-interactions; `material-bb8480` calibrates displacement, not aesthetic quality.
-Reuse these open investigations and the focus-swap study `material-8e3b73`;
+interactions; completed `material-bb8480` calibrates displacement, not aesthetic
+quality. Reuse the cost investigation and completed focus-swap study `material-8e3b73`;
 their existing goals and sources remain unchanged. New model/API behavior
 requires reviewed design and plan documents after a concrete gap is established.
 
@@ -68,10 +76,12 @@ requires reviewed design and plan documents after a concrete gap is established.
 - What desired base/Familiar/focus combination cannot the current mechanisms
   express? `material-8e3b73` supplied the state/parameter inventory and visual
   baseline; the owner kept the hard cut (2026-10-02). Focus can select a
-  definition (hard cut, fresh state), a named response (in place, ring and
-  signal values only) or signal accents (folded and crossfaded independently),
-  so focus-dependent glass needs two definitions today. This clarifies the
-  question without settling generic override, blend or constrain semantics.
+  definition (hard cut, fresh state), a named response (in place, the defined
+  response fields including attenuation tint) or signal accents (folded and
+  crossfaded independently). Arbitrary focus-dependent glass parameters still
+  require separate definitions. No concrete combination beyond these mechanisms
+  is demonstrated. A requesting feature must supply the missing values and
+  acceptance check before override, blend or constrain semantics are designed.
 - Which orders could legally vary, and what objective justifies learning them?
   A future renderer design and reproducible comparison must answer. Verify
   `prism-a03862` and `prism-542904` then; their old references do not prove that
@@ -83,9 +93,13 @@ requires reviewed design and plan documents after a concrete gap is established.
   high complexity, planned. No duplicate research or design task is filed.
 - `material-0c7eed`: **briefed**; reuse `material-31074f`. Its completion note
   must wake this idea alongside its existing waiting ideas and update this brief.
-- `material-764d8c`: **briefed**; reuse `material-8e3b73`, now complete: its
-  composition finding is recorded above and noted on this idea. No additional capture lane
-  is required; remaining profile questions stay explicit.
+- `material-764d8c`: **shelved** until a concrete base/Familiar/focus combination
+  exceeds named definitions, response overrides and signal folding. Wake with
+  desired values, operator semantics and an acceptance check. `material-8e3b73`
+  is complete; no replacement study or general profile-algebra design is needed.
+- Related `material-d873bf` remains under the dynamics lane. Its bounded
+  focus-loss design `material-ccda38` reuses the ring mechanisms and does not
+  establish a need for an adaptive profile model.
 - `material-e2f01a`: **shelved** until a renderer-supported constrained reorder
   mechanism exists and a reproducible visual or cost objective justifies
   comparing legal orders. Verify the Prism prerequisites before unshelving.

@@ -5,10 +5,13 @@ Updated 2026-10-06. Handoff for `material-53f873`, not an approved design.
 ## Problem
 
 Give glass convincing movement and warm changing light while settling completely.
-This pass covers the five oldest eligible ideas in the dynamics lane:
+The original pass covers the five oldest eligible ideas in the dynamics lane:
 `material-5a5fff`, `material-6d4de5`, `material-1c5a30`, `material-f3e4e4`
 and `material-9be53d`. Completed research narrows the movement work; lighting
-still needs a bounded experiment before implementation.
+still needs a bounded experiment before implementation. The follow-up covers
+finite transients (`material-d873bf`) together with compositional profiles
+(`material-764d8c`) in the [adaptive brief](2026-09-29-adaptive-materials-brief.md).
+The earlier lane ideas are related context, not reprocessed members.
 
 ## Current behaviour and evidence
 
@@ -30,6 +33,20 @@ in place and replaces state, seed and offscreen on a name swap; layout motion
 survives. Named responses and `material-signal` crossfades already exist.
 [Detailed drag and focus findings](2026-10-06-material-dynamics-findings.md)
 retain the original traces, parameter inventory and capture provenance.
+
+### Focus-loss boundary
+
+`Tile::update_render_elements` clears `focus_beam` immediately on loss but
+also starts `focus_crossfade` from the current focus value to zero. The
+moving comet cuts; the resting focus light already fades. The original
+transient note's whole-ring snap description therefore overstates the gap.
+[The beam contract](../specs/2026-09-19-ring-beam-design.md) §2 and
+`docs/materials/material-config.md` document the immediate beam cut;
+`src/render_helpers/material/ring.rs` already implements finite tail/decay
+and exact rest. A short loss drain is a candidate extension, not implemented
+or visually accepted. Focus-gain view tilt is separate pending work in
+`material-77db8a`; its renderer/spec are absent from this fixed checkout and
+were not inspected through another worktree.
 
 ### Organic light feasibility
 
@@ -61,6 +78,8 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
 
 1. **Current lean: reuse existing animations, responses and optics.** Keep
    the accepted focus cut and drag response; examine one warm-light experiment.
+   For loss, compare the existing beam cut/light crossfade against one short
+   drain before choosing new behavior; avoid a generic profile/state system.
 2. Design a targeted deformation or light envelope only after a demonstrated
    gap establishes the required look, timing and checks.
 3. Build named animation profiles or a general state machine now. Shelve
@@ -76,6 +95,11 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
 - **Clock:** should weather follow activity, real time or an event, and what
   should input inactivity freeze? The feasibility proposal frames these choices;
   no weather clock or ambient-source ownership is chosen here.
+- **Focus loss:** does a finite beam drain improve focus readability over
+  the current crossfade? What happens after an already-finished beam, rapid
+  refocus, a material swap, hide/reveal or reduced/off motion? `material-ccda38`
+  frames one candidate and its checks; the owner reviews the design and look.
+  It coordinates with the pending focus-gain tilt without assuming acceptance.
 
 ## Proposed decomposition
 
@@ -89,6 +113,14 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
   or capture run. Completion updates this brief and adds finding notes to both ideas.
 - `material-9be53d`: shelved until a reproducible wanted behavior and acceptance
   check demonstrate a gap in existing animations, responses or optic clocks.
+- `material-d873bf`: briefed; `material-ccda38` (P2 / s / high / planned,
+  owner need) designs one finite focus-loss cue against the current baseline.
+  Written spec and plan reviews precede code. Default behavior, termination,
+  refocus, policy, visibility and neutral-client checks must be explicit;
+  keeping current behavior remains an acceptable verdict. Completion updates
+  this brief and wakes the original idea with a finding note in the same commit.
+  Open/move/resize glints remain in the idea's preserved body, outside this
+  first design. No host capture or rendering implementation ran in this pass.
 - Reuse the existing lane; no new goal or animation subsystem. Historical
   baseline tasks `material-b3ce14` and `material-8e3b73` are complete.
   Previously shelved `material-e6036d` remains related context, untouched.
