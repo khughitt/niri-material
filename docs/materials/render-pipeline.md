@@ -56,8 +56,8 @@ inert and every visible effect comes from the material element.
 
 ## 2. The material element
 
-`resolve_material` (`tile.rs`) resolves the window rule's material once per
-frame, settles the `backdrop-blur && !blur.off` source gate, and attaches the
+`resolve_material` (`tile.rs`) resolves the window rule's material when the
+config or the window's rules change (`refresh_material`), settles the `backdrop-blur && !blur.off` source gate, and attaches the
 selected response block. The noise and saturation optics own their
 inherit-or-neutral rules and read the effective gate and global `blur` block
 through `OpticFrame`.
@@ -147,7 +147,8 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
   window. A window with `opacity 1` and an opaque surface shows glass only
   on its bevel.
 - **Noise has three material placements.** `noise site=` places grain before
-  the blur (`backdrop`, one texture per output; every glass window and the
+  the blur (`backdrop`, one setting per output, grained into each backdrop
+  buffer; every glass window and the
   blurred background-effect element see it), on the transmitted backdrop
   (`glass`), or over the finished glass (`film`, including its additive light,
   on glass coverage). Blur and roughness soften grain at the backdrop site.
@@ -213,3 +214,4 @@ is what prism vendors to validate its device rack. Design: prism
 - `2026-09-02-material-signals-design.md`: the signal inputs to steps 5
   to 7.
 - `../specs/2026-10-03-accent-tint-design.md`: the accent tint of step 4.
+- `performance.md`: what each stage above costs, and when it runs.
