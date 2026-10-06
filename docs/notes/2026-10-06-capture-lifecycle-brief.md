@@ -8,8 +8,8 @@ Run each evidence check on the least host it needs and make retained capture
 records describe what actually completed. This pass covers GPU preflight
 requirements (`material-6bd4a3`), software rendering (`material-925518`),
 external DRM sub-run completion (`material-a9a455`) and fixture outcome
-recording (`material-e1ef98`). All four remain ideas while their respective
-protocol or consumer questions are resolved.
+recording (`material-e1ef98`). Three remain ideas while their protocol or
+consumer questions are resolved; `material-925518` is shelved (see below).
 
 ## Current behaviour and evidence
 
@@ -20,9 +20,11 @@ protocol or consumer questions are resolved.
   records three desktop attempts losing settle checks to different transients.
 - `tools/capture-meta::sample_stream`, `judge_quiet` and `judge_settled`
   require NVIDIA telemetry for both current lanes. `GpuReader` refuses without
-  `nvidia-smi`. No software lane exists. The claimed llvmpipe consumer
-  `glass-view-tilt-smoke.sh` and its `material-cd0e1d` record are absent from
-  this checkout, so their current renderer verification is unconfirmed.
+  `nvidia-smi`. No software lane exists. The only named llvmpipe consumer,
+  `glass-view-tilt-smoke.sh` (`material-cd0e1d`), exists only on the dropped
+  `material-77db8a` branch, and its smoke passed under the existing GPU gates
+  on 2026-09-24 (`renderer_verified_launches=15`). No current fixture needs
+  software-rendered timing.
 - The [workstreams brief](2026-10-02-workstreams-brief.md) already routes
   visual identity toward frozen-clock fixtures such as `src/tests/ring_pair.rs`.
   A software-rendered nested fixture can still involve GPU-rendered Weston
@@ -61,8 +63,10 @@ These follow-ups need no host capture; later measured execution declares
 
 ## Unanswered questions
 
-- Which remaining consumer needs software-rendered timing, and can every
-  participating renderer be verified? `material-18c2a1` frames the lane contract.
+- Which remaining consumer needs software-rendered timing? Answered in review:
+  none. The view-tilt smoke was the only one named, and it left with
+  `material-77db8a`. `material-18c2a1` now frames per-lane host conditions for
+  the hardware routes; a software lane waits for a demonstrated consumer.
 - Is the external idle-budget DRM consumer still supported, and where should
   normal completion call `finish_sub_run`? `material-282edc` checks the actual code.
 - Which outcome can be recorded truthfully after hold restoration and checksum
@@ -73,9 +77,11 @@ These follow-ups need no host capture; later measured execution declares
 
 ### Renderer-aware capture
 
-- `material-6bd4a3` and `material-925518`: **briefed**, waiting on
-  `material-18c2a1` (P1, small, high complexity, planned): reviewed renderer-aware
-  evidence/preflight design, then a reviewed implementation plan.
+- `material-6bd4a3`: **briefed**, waiting on `material-18c2a1` (P1, small,
+  high complexity, planned): reviewed per-lane host-condition design for
+  preflight and settle evidence, then a reviewed implementation plan.
+- `material-925518`: **shelved** in review, with no consumer. Unshelve when a
+  new fixture needs software-rendered timing.
 
 ### External idle-budget consumer
 
