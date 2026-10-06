@@ -141,8 +141,9 @@ downsample, against 4.5 % of real grain). Its cause is not established:
 the positive sign fits clipping of the grain at 0 on dark blue texels (24 %
 of the plasma region's blue texels lie within the grain's ±38-code span of 0),
 rounding in the 8-bit blur chain is not excluded, and the sharp pyramid at
-roughness 1 shows exactly 0. (The smoke's `grain-*.png` images are the zero
-cell minus the site cell; `sd` is unaffected by the sign.) Strict
+roughness 1 shows exactly 0. (The 2026-10-05 runs' `grain-*.png` images are the
+zero cell minus the site cell; `sd` is unaffected by the sign, and
+material-0966ba since made `signed_diff` the site cell minus the zero cell.) Strict
 "falls monotonically" cannot hold once grain reaches zero (the full run has
 three 0 → 0 steps), so assertion 5 now reads "monotone down to the 8-bit
 floor" (spec §7.2, half a code, the in-process presence threshold); in blue
