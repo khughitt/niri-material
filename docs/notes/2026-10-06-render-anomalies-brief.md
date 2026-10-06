@@ -34,7 +34,10 @@ their causes. Keep their investigations independent.
   clamps straight grained color to [0, 1], then premultiplies. The grain
   target in `src/render_helpers/effect_buffer.rs` is `Abgr8888`, as required
   by the [accepted placement design](../specs/2026-10-05-noise-placement-design.md)
-  §4. A wider target alone would not remove the explicit clamp. Existing
+  §4. A wider target alone would not remove the explicit clamp. For the
+  lightness kind, `noiseLightness` also clamps its input and its per-channel
+  linear result after the Oklab round trip: a second clip site, unexercised by
+  the residue evidence, which used fine grain. Existing
   `src/tests/noise_site.rs` renders deterministic pixels with frozen clocks;
   `glass-noise-site-smoke.sh::signed_diff` was corrected to site minus zero
   (`ff8e4a99`). Neither existing check isolates the lift's mechanism.
@@ -70,9 +73,12 @@ by these investigations. The pending noise-layers branch is unnecessary.
   Its result may instead report ranked candidates and the next falsifiable check.
 - Does clipping alone explain the blue lift, or does downstream rounding
   contribute? `material-aaa714` compares dark/midtone/upper-bound controls,
-  zero/backdrop/glass, blur and roughness, with a signed offline reference.
+  zero/backdrop/glass, blur and roughness, for the fine and lightness kinds,
+  with a signed offline reference.
 - Is a supported bias acceptable, or worth a clamp/format change? Reuse
-  `material-674d4e` for owner judgement; format support, cost and the new
+  `material-674d4e` for owner judgement; it carries the `owner` need and
+  waits on `material-aaa714`, so the look is judged with the bias explained.
+  Format support, cost and the new
   color/alpha contract remain questions for any subsequently justified design.
 
 ## Proposed decomposition

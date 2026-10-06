@@ -1,11 +1,10 @@
 ---
 id: material-925518
 title: "capture-meta: an llvmpipe lane that doesn't gate on the NVIDIA GPU"
-status: idea
+status: shelved
 priority: 2
-needs: [quiet]
 created: 2026-09-23T19:47:41Z
-updated: 2026-10-06T19:17:33Z
+updated: 2026-10-06T21:17:05Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -17,3 +16,4 @@ The preflight and settle checks gate on NVIDIA utilisation, P-state and power sp
 ## Notes
 
 - 2026-10-06T19:17:33Z (materials-26.04): scope: briefed; current sampling and settle require NVIDIA telemetry; software-renderer proof, Weston/client GPU use and evidence claims need a reviewed lane contract before removing gates; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md
+- 2026-10-06T21:17:04Z (materials-26.04): shelved: Its only named consumer, glass-view-tilt-smoke.sh (material-cd0e1d), exists only on the dropped material-77db8a branch and passed under the GPU gates on 2026-09-24. Unshelve when a new fixture needs software-rendered timing and material-18c2a1's design leaves room for it.
