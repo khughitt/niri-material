@@ -42,6 +42,8 @@ rather than retyping it (protocol:
 - `2026-09-10-material-optics-evidence.md`: decoded-pixel-identical captures before and after the saturation and noise optic migration.
 - `2026-09-06-glass-parameter-sweep-evidence.md`: sweep tables for `ior`, thickness, roughness, noise and saturation, and the global `blur` block, with a per-slider summary for Prism.
 - `scripts/glass-parameter-sweep.sh`: headless harness that renders one KDL parameter at N values and tabulates the neighbouring deltas.
+- `2026-10-06-glass-warp-calibration-evidence.md`: offline calibration of a local displacement estimator against known warps and photometric-only controls; adopts it for the chamfer with a geometry mask, and names the flat-field render that separates bending from Fresnel and attenuation.
+- `scripts/warp-calibration.py`: that calibration, and the seeded aperiodic backdrop it measured.
 - `2026-09-04-focus-glass-spike.md`: passing focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.
 - `2026-09-05-focus-ring-light-spike.md`: focus ring light spike; an embedded, refracted ring of light wins over motes, rays, shadow, noise, and canopy, and the static gradient ring is invisible on the dark focus glass.
 - `2026-09-05-ring-light-focus-smoke.md`: ring of light focus response wakeup, capture and DRM acceptance evidence.
