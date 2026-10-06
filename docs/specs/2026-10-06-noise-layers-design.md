@@ -1,7 +1,9 @@
 # Noise layers: up to four grain generators per material, each with a size
 
-**Status:** draft for owner review, 2026-10-06; revised after spec review
-round 1 (codex, 2026-10-06: the fine lattice's anticorrelated corners need
+**Status:** accepted for planning 2026-10-06 after spec review rounds 1 and
+2 (codex) and the owner's go-ahead. Round 2 (2026-10-06: the
+`material-config.md` instruction still carried the unqualified collapse
+claim). Round 1 (2026-10-06: the fine lattice's anticorrelated corners need
 their covariance in the norm, checked by position within the cell; stacked
 layers match one layer's variance, not its distribution).
 **Task:** `material-3fcba2`, in the material library lane (`material-3aa1f2`).
@@ -138,8 +140,10 @@ material "film-stock" {
   noise there. Validation guarantees agreement, so the accessor takes the
   first match.
 - **`material-config.md`.** The noise paragraph says: up to four nodes, the
-  order rule, the seed rule, `scale=` and its unit, and that layers at one
-  size and type collapse into one.
+  order rule, the seed rule, `scale=` and its unit, and §1's qualified
+  equivalence: independent additive layers of one type and size at one site,
+  with nothing clipping, have the variance of one layer of amount
+  `sqrt(a² + b²)` but not its distribution, so they are close to redundant.
 
 ## 4. The material shader
 
@@ -173,8 +177,8 @@ material "film-stock" {
     corner deviation). So for fine and lightness
     `wᵀ C w = Σ w_c² - (1/3)(w00 w10 + w00 w01 + w10 w11 + w01 w11)
     - (7/18)(w00 w11 + w10 w01)`. `C` is positive definite; the smallest
-    value of `wᵀ C w`, at the cell centre, is 0.118, so the division never
-    nears zero.
+    value of `wᵀ C w`, at the cell centre, is 17/144 ≈ 0.118, so the
+    denominator `sqrt(wᵀ C w)` never falls below about 0.344.
   - Crossing `scale` 1 re-rolls the pattern (the per-pixel path seeds pixel
     centres, the lattice seeds integer corners). Dragging the scale across 1
     shows that once; nothing above 1 re-rolls.
