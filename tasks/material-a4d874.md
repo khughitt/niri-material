@@ -8,7 +8,7 @@ process: direct
 needs: [quiet]
 owner: material-3fcba2
 created: 2026-10-06T10:17:17Z
-updated: 2026-10-06T11:24:53Z
+updated: 2026-10-06T11:31:17Z
 started: 2026-10-06T11:19:53Z
 depends: []
 parent: material-3fcba2
@@ -27,3 +27,6 @@ step: "Task 4: Docs, the nested-Weston smoke and contact sheet, the evidence doc
   provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-06T11:23:32Z (material-3fcba2): Preparation complete: layer and pipeline docs, smoke script, position-class helper, shared capture helpers; synthetic bins min/max 0.9585/1.0415 and LF 0.2489, broken helper exits 1 without stale values; full tooling 409 passed with 2 optional retained-binary skips. Baseline worktree created and release build tracked by this session.
 - 2026-10-06T11:24:53Z (material-3fcba2): Validation detail: full tooling ran 409 cases, 407 passed and 2 optional retained-binary checks skipped; preflight record: /mnt/ssd3/niri-material/noise-layers-preflight-1791285645/capture.json
+- 2026-10-06T11:31:16Z (material-3fcba2): Baseline 4a8b2072 built successfully in 3m 26s after just setup in the locked .worktrees/material-3fcba2-baseline; binary: .worktrees/material-3fcba2-baseline/target/release/niri. Prep committed as daa55b22; owner sheet and smoke evidence not yet produced.
+- 2026-10-06T11:31:16Z (material-3fcba2): parked (waiting on user, quiet; headless, 21 min): Agent: run the smoke pilot in .worktrees/material-3fcba2 with BASE_NIRI=.worktrees/material-3fcba2-baseline/target/release/niri resolved from the main checkout (NOISE_LAYERS_PILOT=1, ~6 min: candidate builds 4, cells 2), then full (~15 min: cells 15), then write and attach evidence; baseline already built; prior preflight refused CPU/load/GPU P5, no cells ran
+  provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}

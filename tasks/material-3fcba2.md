@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-06T11:01:31Z
+updated: 2026-10-06T11:31:50Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -61,4 +61,10 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-06T10:59:55Z (material-3fcba2): parked (waiting on user, approval): Agent: execute the plan natively from Task 1 (tasks start material-ae3a26 in .worktrees/material-3fcba2); the first mutation demonstration (Task 2 Step 7a) also confirms nextest's real FAIL line format
   provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-06T11:01:31Z (material-3fcba2): resumed
+  provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-06T11:31:16Z (material-3fcba2): Executed inline: Task 1 65ca684e, Task 2 c066e7e7, Task 3 520c33b1; capture preparation daa55b22. Rust fast suite 504 passed, 1 skipped after Task 3; material docs/config 48 passed after prose edits; full tooling 407 passed, 2 optional skips; all coefficient/norm/order mutations caught. Baseline release built. Captures blocked by measured CPU/load/GPU activity; no sheet/evidence/costs or owner verdict yet. No merge or prism write performed.
+- 2026-10-06T11:31:16Z (material-3fcba2): Ruling: checked actual host preflight before baseline release build to avoid unnecessary builds on a refused host; baseline subsequently built while preparing offline scripts; no rendering or capture assertion changed.
+- 2026-10-06T11:31:16Z (material-3fcba2): parked (waiting on user, quiet; headless, 39 min): Agent: run material-a4d874's prepared smoke pilot (~6 min) and full (~15 min), write/attach evidence, then material-2f2af4's cost pilot (~8 min) and full (~10 min); baseline already built. Owner then judges contact sheet; agent runs gate, dispatches whole-branch review, integrates and handles prism schema refresh after its external-action approval. Prior headless preflight refused CPU 16.5%, load 4.92, GPU 34% at P5; no cells ran.
+  provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-06T11:31:50Z (material-3fcba2): parked (waiting on user, quiet; headless, 39 min): Agent: run material-a4d874's prepared smoke pilot (~6 min) and full (~15 min), write/attach evidence, then material-2f2af4's cost pilot (~8 min) and full (~10 min); baseline already built. Owner then judges contact sheet; agent runs gate, dispatches whole-branch review, integrates, follows prism's repository instructions for the schema refresh, and closes the task. Prior headless preflight refused CPU 16.5%, load 4.92, GPU 34% at P5; no cells ran.
   provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}
