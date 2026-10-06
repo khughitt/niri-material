@@ -1,6 +1,6 @@
 # Deferred signal-model extensions
 
-Scope pass: 2026-09-29. Goal: `material-b5cbd6`. This brief is not an
+Scope passes: 2026-09-29 and 2026-10-06. Goal: `material-b5cbd6`. This brief is not an
 approved design. The three ideas share §11 of the original signals design;
 their original bodies and dependency on `material-a54d89` are preserved.
 
@@ -9,7 +9,10 @@ their original bodies and dependency on `material-a54d89` are preserved.
 Decide whether the shipped signal model needs distinct timing for Ping,
 Done and Error, workspace summaries for bars/overviews, or window rules
 that select on attention level. Each extends an existing mechanism, but
-none yet has a settled consumer or visual contract.
+none yet has a settled consumer or visual contract. The 2026-10-06 pass pairs
+`material-6cca0a` with inactive desaturation (`material-987655`) in the
+[glass-response brief](2026-09-29-glass-signal-responses-brief.md): both need
+a consumer or appearance contract before extending the shipped signal system.
 
 ## Current behaviour and evidence
 
@@ -30,8 +33,10 @@ none yet has a settled consumer or visual contract.
   `WindowOpenedOrChanged`, folded signal changes as `WindowSignalChanged`,
   and closes as `WindowClosed`. `niri-ipc/src/state.rs` maintains window
   snapshots and applies these events. Workspaces carry native urgency but
-  no folded material signal. This supplies a plausible client aggregation
-  path; it does not demonstrate a complete consumer or atomic summaries.
+  no folded material signal. Completed replay `material-c1330b` (`4a586bc8`)
+  establishes a correct client-side maximum-level fold through moves, TTL
+  demotion, clear, close and reconnect. It establishes neither a consumer,
+  refresh-atomic summaries nor measured cost; details remain below.
 - `niri-config/src/window_rule.rs::Match` has source/tag and native urgency
   matches, but no signal-level match. `src/window/mod.rs::window_matches`
   folds the raw signal for source/tag matching. Signal mutations already
@@ -52,12 +57,13 @@ Raw folded level and the rendered, crossfaded level are different inputs.
 Matching the latter could introduce animation-driven rule churn. Workspace
 summaries also need a defined treatment of absent membership and reconnects.
 The sources and glass-response briefs already cover transport and visual
-extensions; no open local research task was found answering workspace replay.
+extensions. Workspace replay is complete; do not repeat it or file a compositor
+API design without a consumer requirement that the existing fold cannot meet.
 
 ## Alternatives
 
-1. **Reuse current mechanisms first (current lean).** Replay workspace
-   aggregation in an IPC client, keep the shared impulse envelope, and
+1. **Reuse current mechanisms first (current lean).** Use the demonstrated
+   client-side workspace fold, keep the shared impulse envelope, and
    establish an actual level-rule use case before designing syntax.
 2. Add native workspace summary events and raw folded-level matching.
    This centralizes semantics, but requires a consumer contract, fold
@@ -82,7 +88,7 @@ extensions; no open local research task was found answering workspace replay.
 - **Impulse timing:** Which kind is poorly served by the shared envelope?
   A repeatable visual comparison and the owner's judgment can answer.
 
-## Workspace replay
+### Workspace replay
 
 Result of `material-c1330b` (2026-10-02). The replay is
 `niri-ipc/tests/workspace_signal_replay.rs`: it feeds compositor-shaped
@@ -195,13 +201,17 @@ and latency budget per event.
 
 - `material-b5cbd6` groups `material-6cca0a`, `material-d88a8f` and
   `material-1cc048`; none was started or claimed during this pass.
-- `material-c1330b` is priority 2, small, mid complexity, direct process.
-  It traces and replays the existing IPC reducer, records evidence and a
-  recommendation here, and wakes `material-6cca0a` with a finding note in
-  its result commit. It adds no compositor API or bar integration.
-- `material-6cca0a` and `material-d88a8f` remain briefed ideas. File a
-  design follow-up if replay or a concrete rule use case justifies one;
-  this brief does not authorize an implementation design.
+- `material-c1330b` is complete (`4a586bc8`); its result and wake-up note
+  support client-side aggregation. No replacement research task is needed.
+- `material-6cca0a` is shelved until a named bar/overview requires
+  refresh-atomic cross-workspace summaries, defined drag attribution, a shared
+  fold beyond maximum level, or demonstrates unacceptable client folding
+  cost. Record the requirement and budget before unshelving.
+- `material-d88a8f` remains a briefed idea, unchanged by the follow-up pass.
+  A concrete rule use case must justify a design; this brief authorizes none.
+- Related `material-987655` remains under its existing response goal and
+  reuses `material-d257d9` for the opt-in client-content boundary. No new
+  goal, summary event or duplicate design task was created in this pass.
 - `material-1cc048` is shelved until a repeatable comparison identifies a
   specific shared-envelope usability problem and the kind needing different
   timing. Unshelve it with that evidence before reviewing it again.
