@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-06T20:28:21Z
-updated: 2026-10-06T20:28:21Z
+updated: 2026-10-06T21:03:54Z
 depends: []
 parent: material-53f873
 tags: [dynamics, rendering]
@@ -27,3 +27,7 @@ Verification contract: define frozen-clock gain/loss/refocus sequences and neutr
 Coordinate with material-77db8a's pending focus-gain view-tilt review; its branch's appearance is not accepted or on current main, and no cross-checkout renderer inspection is implied. Design may proceed from the current ring baseline; settle combined behavior only once the relevant branch is current and its review result is available. Related material-6d4de5 remains under its own existing scoping verdict and is not reprocessed.
 
 On the design result, update the dynamics brief and run tasks note on material-d873bf with the finding in the same commit, so the idea can be reconsidered. Owner judgement is required for the design and visual contract; no new measurement is claimed.
+
+## Notes
+
+- 2026-10-06T21:03:54Z (materials-26.04): 2026-10-06: material-77db8a's optical-only focus-gain tilt was rejected and dropped unmerged; there is no combined behaviour with it to settle. A rigid tilt of window and glass is scoped as material-89fb6b then material-abc08c (docs/notes/2026-10-06-transient-depth-brief.md); coordinate with that design instead.
