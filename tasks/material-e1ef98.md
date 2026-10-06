@@ -4,7 +4,7 @@ title: capture.json records the fixture's exit status at release
 status: idea
 priority: 2
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-06T13:03:08Z
+updated: 2026-10-06T19:17:33Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -16,3 +16,4 @@ Why: the run: note's outcome (passed, failed, refused, hung, aborted) must still
 ## Notes
 
 - 2026-10-06T13:03:07Z (materials-26.04): concerns: material-c44509 extension — the record has the run's length but not its outcome
+- 2026-10-06T19:17:33Z (materials-26.04): scope: briefed; early release, repeated-release immutability and checksum work after release prevent treating release success as fixture exit; design final outcome recording separately from hold restoration; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md

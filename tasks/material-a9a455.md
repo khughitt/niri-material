@@ -4,7 +4,7 @@ title: "idle-budget fixture: finish its DRM sub-runs in capture.json"
 status: idea
 priority: 2
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-06T13:03:08Z
+updated: 2026-10-06T19:17:33Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -16,3 +16,4 @@ Why: material-c44509 closes sub-runs in glass-optic-smoke-lib.sh's stop_nested a
 ## Notes
 
 - 2026-10-06T13:03:07Z (materials-26.04): concerns: material-c44509 extension — the lib's sub-run finish does not reach a consumer with its own host stop
+- 2026-10-06T19:17:33Z (materials-26.04): scope: briefed; local DRM stop already finishes sub-runs; the external idle-budget consumer is not present in this checkout and needs a bounded lifecycle inventory before a patch; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md
