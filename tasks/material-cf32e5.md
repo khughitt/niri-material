@@ -1,18 +1,20 @@
 ---
 id: material-cf32e5
 title: "Noise placement: a site attribute selecting backdrop, glass, or film grain"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: high
 process: planned
 owner: material-cf32e5
 created: 2026-10-05T01:45:48Z
-updated: 2026-10-06T03:55:30Z
+updated: 2026-10-06T03:57:46Z
 started: 2026-10-05T12:22:37Z
+completed: 2026-10-06T03:57:46Z
 depends: [prism-eef38f, material-a00785]
 parent: material-3aa1f2
 tags: [noise, rendering, cross-project]
+model: claude-opus-5-5
 agent: claude-code/claude-fable-5-1
 plan: docs/plans/2026-10-05-noise-placement.md
 ---
@@ -69,3 +71,7 @@ The site vocabulary comes from the pipeline schema designed in prism-eef38f (sit
 - 2026-10-06T03:51:48Z (material-cf32e5): review: impl round 3 — verdict: revise; findings: Important 1, Minor 5; reviewer: claude-code/claude-opus-5-5
 - 2026-10-06T03:55:07Z (material-cf32e5): review: impl round 4 — verdict: revise; findings: Important 1, Minor 1; reviewer: claude-code/claude-opus-5-5
 - 2026-10-06T03:55:30Z (material-cf32e5): review: impl round 5 — verdict: accept; findings: none; reviewer: claude-code/claude-opus-5-5
+- 2026-10-06T03:57:46Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:51715bc9-2053-49ae-bc45-d479866d8d8b","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T03:57:46Z (materials-26.04): noise site= glass|backdrop|film: grain pass in the effect buffer published through the commit counter, film hook at post, three selector stages in the schema; evidence docs/materials/2026-10-05-noise-placement-evidence.md: baseline byte identity (AE 0, three kinds), all seven smoke assertions pass; softening predicted fine 19/7/5% at 1/2/3 passes, measured 4/–/0% (none above the 8-bit floor from three passes or any roughness >0); cost: grain pass ~0.09 ms per damage, ~110 ms/s derived for an animated backdrop at either site, dragged backdrop amount 1.4 ms per change vs 0.29 ms glass. Owner's look at the backdrop site pending.
+  provenance: {"harness_session":"claude-code:51715bc9-2053-49ae-bc45-d479866d8d8b","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
