@@ -1,13 +1,15 @@
 ---
 id: material-4233bd
 title: "Back out the fork-only single-pixel snapshot change until niri#1463 lands"
-status: todo
+status: doing
 priority: 3
 size: xs
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-10-06T14:25:00Z
-updated: 2026-10-06T14:25:01Z
+updated: 2026-10-06T14:25:10Z
+started: 2026-10-06T14:25:10Z
 depends: []
 tags: [rendering, upstream]
 source: material-698875
@@ -19,3 +21,5 @@ material-698875 baked single-pixel buffers into resize snapshots, but the protoc
 ## Notes
 
 - 2026-10-06T14:25:00Z (materials-26.04): concerns: material-698875 change — keep render_snapshot_from_surface_tree identical to upstream rather than carrying our own fix
+- 2026-10-06T14:25:10Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:d57c1528-57e5-424d-9b5a-e9635e5720d4","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
