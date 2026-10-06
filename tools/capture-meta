@@ -698,6 +698,14 @@ def now_rfc3339():
     return datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
 
 
+def duration_s(started, finished, what):
+    try:
+        seconds = (datetime.datetime.fromisoformat(finished) - datetime.datetime.fromisoformat(started)).total_seconds()
+    except (TypeError, ValueError) as error:
+        raise CannotRun(f"{RECORD}: {what} needs RFC 3339 start and finish times: {error}") from error
+    return int(seconds)
+
+
 def tool_versions(tools):
     versions = {}
     for spec in tools or []:
@@ -896,7 +904,8 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
     try:
         lock_info = acquire_lock(lock_file, owner_pid, run["id"], run_dir=run_dir)
     except Refused as error:
-        write_section(run_dir, "preflight", {"verdict": "refused", "reasons": [str(error)], "thresholds": thresholds})
+        write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": [str(error)],
+                                             "thresholds": thresholds})
         raise
     held = False
     try:
@@ -915,7 +924,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         summary = summarize(samples)
         write_section(run_dir, "baseline", {"seconds": seconds, **summary})
         reasons += judge_quiet(summary, samples, thresholds, lane)
-        section = {"verdict": "quiet" if not reasons else "refused",
+        section = {"verdict": "quiet" if not reasons else "refused", "at": now_rfc3339(),
                    "reasons": reasons, "thresholds": thresholds, "lock": lock_info}
         message = "; ".join(reasons)
         if any(summary[key] > thresholds[key] for key in HOST_LOAD_KEYS):
@@ -987,10 +996,11 @@ def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=
             or holder.get("run_dir") != str(pathlib.Path(run_dir).resolve())):
         raise Refused(f"lock no longer names this run ({record['run'].get('id')}); holder: {holder}")
     entry_inputs = hashed(inputs)
+    started = now_rfc3339()
     samples = sample_stream(proc, gpu, seconds, sleep)
     summary = summarize(samples)
     reasons = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
-    entry = {"name": sub_run, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
+    entry = {"name": sub_run, "started": started, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
              "inputs": entry_inputs, "verdict": "settled" if not reasons else "refused"}
     if reasons:
         entry["reason"] = "; ".join(reasons)
@@ -1003,12 +1013,55 @@ def cmd_settle(args):
     settle(args.run_dir, args.sub_run, args.input, args.seconds, ProcReader(), GpuReader())
 
 
+def finish_sub_run(run_dir, sub_run):
+    """Stamps the end of the latest settled sub-run of that name. A sub-run a fixture
+    abandons (a failure, a kill) is never finished, and the record shows it open."""
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        entry = next((e for e in reversed(record.get("sub_runs", [])) if e["name"] == sub_run), None)
+        if entry is None:
+            raise CannotRun(f"{RECORD} has no sub-run {sub_run!r} to finish")
+        if entry["verdict"] != "settled":
+            raise CannotRun(f"sub-run {sub_run!r} was {entry['verdict']}, not settled; nothing ran to finish")
+        if "finished" in entry:
+            raise CannotRun(f"sub-run {sub_run!r} is already finished; settle it again to start another")
+        entry["finished"] = now_rfc3339()
+        entry["duration_s"] = duration_s(entry.get("started"), entry["finished"], f"sub-run {sub_run!r}")
+        save_record(run_dir, record)
+
+
+def cmd_finish(args):
+    finish_sub_run(args.run_dir, args.sub_run)
+
+
+def finish_run(run_dir):
+    """The first release ends the run, after its hold is restored or not: every fixture
+    releases from its EXIT trap, so a refused or aborted run is stamped too. A later
+    release leaves the stamp alone."""
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        run = record["run"]
+        if "finished" in run:
+            return
+        run["finished"] = now_rfc3339()
+        run["duration_s"] = duration_s(run.get("started"), run["finished"], "run")
+        save_record(run_dir, record)
+        refresh_record_sum(pathlib.Path(run_dir))
+
+
 def cmd_release(args):
     run_dir = pathlib.Path(args.run_dir)
     record = load_record(run_dir)
     run = record.get("run")
     if not run:
         return
+    try:
+        release(run_dir, record, run)
+    finally:
+        finish_run(run_dir)
+
+
+def release(run_dir, record, run):
     lock_file = lock_path()
     end = record.get("hold_end")
     state = (end or {}).get("restore", {}).get("state")
@@ -1060,7 +1113,9 @@ def render(record):
     lines = []
     run = record.get("run", {})
     lines.append(f"run {run.get('id')}  task {run.get('task')}  fixture {run.get('fixture')}  lane {run.get('lane')}")
-    lines.append(f"started {run.get('started')}  host {run.get('host')}")
+    finished = (f"finished {run['finished']} ({run.get('duration_s')} s)" if "finished" in run
+                else "not finished")
+    lines.append(f"started {run.get('started')}  {finished}  host {run.get('host')}")
     env = record.get("environment")
     if env:
         gpu = env.get("gpu", {})
@@ -1077,7 +1132,8 @@ def render(record):
         lines += ["", "baseline"] + [f"  {key} {value}" for key, value in baseline.items()]
     preflight = record.get("preflight")
     if preflight:
-        lines += ["", f"preflight {preflight.get('verdict')}"]
+        at = f" at {preflight['at']}" if "at" in preflight else ""
+        lines += ["", f"preflight {preflight.get('verdict')}{at}"]
         for reason in preflight.get("reasons", []):
             lines.append(f"  {reason}")
         host_load = preflight.get("host_load")
@@ -1111,7 +1167,12 @@ def render(record):
         lines += ["", "sub-runs"]
         for entry in sub_runs:
             reason = f" ({entry['reason']})" if entry.get("reason") else ""
-            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}")
+            span = ""
+            if "finished" in entry:
+                span = f"  {entry.get('started')} to {entry['finished']} ({entry.get('duration_s')} s)"
+            elif "started" in entry and entry["verdict"] == "settled":
+                span = f"  {entry['started']}, never finished"
+            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}")
     return "\n".join(lines) + "\n"
 
 
@@ -1152,6 +1213,10 @@ def build_parser():
     st.add_argument("--input", action="append", default=[])
     st.add_argument("--seconds", type=int, default=10)
     st.set_defaults(func=cmd_settle)
+    fin = subs.add_parser("finish")
+    fin.add_argument("run_dir")
+    fin.add_argument("--sub-run", required=True)
+    fin.set_defaults(func=cmd_finish)
     rel = subs.add_parser("release")
     rel.add_argument("run_dir")
     rel.set_defaults(func=cmd_release)
