@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-06T09:57:58Z
+updated: 2026-10-06T10:01:48Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -33,3 +33,6 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-06T09:57:12Z (material-3fcba2): review: spec round 1 — verdict: revise; findings: P1 1, P2 1; reviewer: codex/gpt-6-astra
 - 2026-10-06T09:57:58Z (material-3fcba2): parked (waiting on user, review): Owner reviews the revised .worktrees/material-3fcba2/docs/specs/2026-10-06-noise-layers-design.md (round 1 fixes: covariance norm, per-position check, narrowed collapse claim); on acceptance agent drops material-829590, notes prism-85f63a, writes the plan
   provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T10:01:47Z (material-3fcba2): resumed
+  provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T10:01:47Z (material-3fcba2): review: spec round 2 — verdict: revise; findings: P2 1; reviewer: codex/gpt-6-astra
