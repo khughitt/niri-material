@@ -4,7 +4,8 @@
 2 (codex) and the owner's go-ahead; amended while planning (§3: the
 validation message's form and resolution's bound on an invalid material;
 §7.2 (6) and §8: a per-slot check replaces the order check, which seeds
-confound); plan `docs/plans/2026-10-06-noise-layers.md`. Round 2 (2026-10-06: the
+confound, and a fixed-seed hook-ordered reference checks order; plan review
+round 1); plan `docs/plans/2026-10-06-noise-layers.md`. Round 2 (2026-10-06: the
 `material-config.md` instruction still carried the unqualified collapse
 claim). Round 1 (2026-10-06: the fine lattice's anticorrelated corners need
 their covariance in the norm, checked by position within the cell; stacked
@@ -304,7 +305,8 @@ low-frequency ratio, determinism).
    within 5 % of slot 0's, and the `sd` of its difference from slot 0's
    grain is at least slot 0's `sd` (an identical pattern would give 0).
    Swapping two layers' order cannot test application: it swaps their seeds
-   too, so the result differs even when one layer is never applied.
+   too, so the result differs even when one layer is never applied. Order
+   is checked in process instead (§8) against a fixed-seed reference.
 
 ### 7.3 Cost
 
@@ -342,7 +344,11 @@ class when `prism-85f63a` lands.
 - **Pixels, in process (`src/tests/noise_layers.rs`).** Frozen-clock
   renders: one layer equals the same layer followed by three amount-0 layers
   (absolute error 0) at each site; `scale=1` equals omitted; the per-slot
-  check of §7.2 (6); the
+  check of §7.2 (6); slot order at each site, against a reference whose
+  order the hooks fix (lightness in slot 0 at the glass, white in slot 1 on
+  the film, amount 0.5 each): the same two layers stacked at the glass, on
+  the film and at the backdrop must match it, and reversing a hook's slot
+  order must fail; the
   independence and normalisation statistics of §7.2 (4 and 5), the
   per-position bins included, computed over the glass area of an in-process
   render, so they gate every build and the smoke repeats them on real

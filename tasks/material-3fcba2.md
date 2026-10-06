@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-06T10:17:30Z
+updated: 2026-10-06T10:30:04Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -38,4 +38,10 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
   provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-06T10:01:47Z (material-3fcba2): review: spec round 2 — verdict: revise; findings: P2 1; reviewer: codex/gpt-6-astra
 - 2026-10-06T10:17:30Z (material-3fcba2): parked (waiting on user, review): Owner reviews .worktrees/material-3fcba2/docs/plans/2026-10-06-noise-layers.md and picks an execution mode; then agent starts Task 1 (material-ae3a26)
+  provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T10:26:50Z (material-3fcba2): resumed
+  provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T10:26:50Z (material-3fcba2): review: plan round 1 — verdict: revise; findings: P1 1, P2 4; reviewer: codex
+- 2026-10-06T10:26:50Z (material-3fcba2): Execution mode: native (owner, 2026-10-06), whole-branch review at the end.
+- 2026-10-06T10:30:04Z (material-3fcba2): parked (waiting on user, review): Codex runs plan review round 2 on .worktrees/material-3fcba2/docs/plans/2026-10-06-noise-layers.md; on acceptance agent starts Task 1 (material-ae3a26) natively
   provenance: {"harness_session":"claude-code:931ef8b7-a925-41a6-983b-bb8509d7d7d0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
