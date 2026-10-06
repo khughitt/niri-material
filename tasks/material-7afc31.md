@@ -5,7 +5,7 @@ status: idea
 priority: 1
 needs: [quiet]
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-06T15:07:38Z
+updated: 2026-10-06T20:11:16Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
@@ -24,3 +24,4 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-09-29T21:43:50Z (materials-26.04): scope: briefed; hidden-workspace/tab/offscreen attention draws already gate to zero; broader material/prefilter and client attribution still need a bounded audit; brief: docs/notes/2026-09-29-resource-aware-rendering-brief.md
 - 2026-10-01T04:39:26Z (materials-26.04): material-d09741 finding (docs/materials/2026-09-30-hidden-window-attribution-evidence.md): hidden material tiles (inactive workspace, hidden tab, offscreen column, opaque cover) draw no material and never rebuild the prefilter; a frame-callback-paced client drops from 60 to the 1 Hz fallback cadence. Residue for this idea: each hidden-client commit queues an output redraw, and for an offscreen column or a tile under an opaque window Tile::render_inner re-renders the tile's OffscreenBuffer per commit though nothing draws it (ScrollingSpace::render walks every column; MaterialRenderElement declares no opaque region). Unmeasured: a sustained optic under an opaque cover (tick_deadline rejects only out-of-view tiles) and a second lit output. The reported 34% Kitty GPU on a hidden workspace is client work: compositor material draws are zero while hidden, so a client still busy there is not paced by frame callbacks.
 - 2026-10-06T15:07:38Z (material-233295): From material-233295: Tile::tick_deadline rejects only windows out of view, not covered ones, so a sustained optic under an opaque cover may still schedule redraws (unmeasured); include that case in the visibility matrix.
+- 2026-10-06T20:11:16Z (materials-26.04): scope: briefed; measured hidden tiles draw no material but offscreen preparation persists; safe culling and covered-optic scheduling need one shared boundary audit before implementation; brief: docs/notes/2026-09-29-resource-aware-rendering-brief.md

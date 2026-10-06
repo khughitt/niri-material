@@ -4,7 +4,7 @@ title: Narrowed damage and opaque regions for the material element
 status: idea
 priority: 2
 created: 2026-10-06T15:07:38Z
-updated: 2026-10-06T16:44:07Z
+updated: 2026-10-06T20:11:16Z
 depends: []
 parent: material-5d6b2c
 tags: [performance, rendering]
@@ -16,3 +16,4 @@ MaterialRenderElement (src/render_helpers/material/mod.rs) keeps smithay's defau
 ## Notes
 
 - 2026-10-06T16:44:06Z (material-832caf): Review of material-233295 corrected this idea's scope: opaque regions cannot skip a covered tile's offscreen render (prepared in render_inner before occlusion); that part moves to material-7afc31.
+- 2026-10-06T20:11:16Z (materials-26.04): scope: briefed; damage and opacity affect the final draw, not eager offscreen preparation; audit per-target damage history, geometry and trustworthy opacity before choosing an implementation; brief: docs/notes/2026-09-29-resource-aware-rendering-brief.md
