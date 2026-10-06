@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-06T21:03:34Z
+updated: 2026-10-06T21:12:26Z
 depends: [material-89fb6b]
 parent: material-53f873
 tags: [rendering, camera, dynamics]
@@ -30,3 +30,7 @@ Done: a written design and implementation plan, reviewed by the owner before ren
 Verification contract: frozen-clock swing sequences, exact rest and no deadlines after the finite run, identity at tilt 0, and an owner-reviewed clip on the nested lane before any defaults. Any live capture gets its own preparation step and smallest pilot.
 
 On the design result, update the brief and run tasks note on material-6901e0 in the same commit.
+
+## Notes
+
+- 2026-10-06T21:12:26Z (materials-26.04): From spike review round 1: the design must also settle whether the faked slab suffices or a real ray-slab intersection (side walls, occlusion) is needed, and adopt one camera model and slab-local ray mapping for refraction and light shift (see the brief's alternative 1).

@@ -72,18 +72,44 @@ of `material-77db8a`.
 
 ## Alternatives
 
-1. **Rigid tilt inside the material pass (current lean).** The fragment shader
-   maps each screen pixel back through the tilt's homography into slab-local
-   coordinates. It samples the window texture and the slab geometry there,
-   and takes the view ray from the tilted slab normal (77db8a's routing
-   becomes the optical half). Backdrop taps stay at true screen positions.
-   - Gains: window and glass move as one body; refraction of the backdrop is
-     physically right; the element and its pass order stay as they are.
+1. **Rigid tilt inside the material pass (current lean).** One pinhole
+   camera model:
+   - The camera sits on the pane's centre axis, at a fixed distance `d` in
+     front of the screen plane.
+   - The pane rotates about one in-plane axis through its centre, with the
+     pivot on the slab's front face.
+
+   For each screen pixel, the shader:
+   1. Casts the camera ray through that pixel.
+   2. Rotates the ray into slab-local coordinates.
+   3. Intersects it with the front-face plane, giving the slab-local point
+      where the window texture and `slabSurface` are sampled.
+   4. Refracts the slab-local ray at the slab normal and carries it through
+      `thickness`.
+   5. Maps the exit point back to screen coordinates (rotate, then project)
+      before the backdrop sample.
+
+   This replaces `tap()`'s fixed straight-down ray and its direct addition of
+   offsets to element coordinates (`prelude.frag`). 77db8a's view routing
+   then becomes this camera ray, not a separate tilt.
+
+   The approximation, stated plainly: the slab stays the fragment-faked one
+   (a 2D silhouette with simulated normals; `slabSurface` intersects no
+   volume), and the backdrop is a plane lying on the untilted screen. A
+   planar tilt therefore exposes no side walls and no depth-dependent
+   occlusion.
+   - Gains:
+     - Window and glass move as one body.
+     - The backdrop is re-sampled through one consistent ray rather than
+       warped with the pane.
+     - The element and its pass order stay as they are.
    - Costs:
      - A larger element area during the swing.
      - Text resampled bilinearly while it moves.
-     - Elements outside the material (border, shadow, a separate focus ring)
-       stay flat unless they are handled too.
+     - Elements outside the material stay flat unless they are handled too:
+       border, shadow, a separate focus ring and popups. Subsurfaces render
+       into the material's window texture (`render_normal()` in
+       `src/window/mapped.rs`), so they follow the tilt.
 2. **Warp an offscreen of the whole tile**, as the open animation does.
    - Gains: the tile's other elements tilt for free.
    - Costs:
@@ -111,29 +137,40 @@ camera faces the glass, and content must not skew at rest.
 
 ## Unanswered questions
 
-- **Does it read as 3D glass?** Does a rigid tilt of a few degrees on today's
-  slab and ring read as 3D glass, and how much text softening is acceptable
-  while it moves? Answered by the owner, from the frozen stills of the spike
-  task below.
-- **What tilts with the pane?** Border, shadow, the separate focus ring, and
-  popups or subsurfaces outside the window texture. The spike inventories
-  them; the design decides.
+- **Does it read as 3D glass?** Does a planar tilt of a few degrees, with
+  today's faked slab shading and ring, read as 3D glass, and how much text
+  softening is acceptable while it moves? Answered by the owner, from the
+  frozen stills of the spike task below. The verdict covers only that
+  planar projection: a negative result does not show that a rigid tilt
+  needs particles or a richer interior.
+- **What tilts with the pane?** Border, shadow, the separate focus ring and
+  popups. Subsurfaces already follow the window texture. The spike
+  inventories them; the design decides.
 - **Which transitions, and what motion each?** The lean is focus gain first,
   reusing 77db8a's curve and focus origin, then move, resize and open. The
   owner chooses the later ones after the first is seen.
 - **The pivot.** A rotation about the pane centre, or a door-like hinge facing
   the focus origin. Settled in the design.
-- **Interior depth.** Is today's interior non-uniform enough to show depth
-  when tilted, or does the payoff need a volumetric interior or particle
-  light? The spike's stills show the gap; any interior work joins
-  `material-4e3e9c` or `material-d0518d`.
+- **What is missing, if it does not read as glass?** Two gaps are recorded
+  separately:
+  - Geometric thickness: side walls and occlusion would need a real
+    ray-slab intersection in place of the faked slab.
+  - Interior detail: a non-uniform volume, or particle light.
+
+  Interior work joins `material-4e3e9c` or `material-d0518d`. Geometric
+  thickness would be a new design question for `material-abc08c`.
 
 ## Proposed decomposition
 
 - `material-6901e0` stays an idea, waiting on the spike and the design below.
-- `material-89fb6b`, the spike (P1, direct, owner): frozen stills of a fixed rigid tilt in the
-  material pass, with no animation, on a throwaway branch. It records the
-  element inventory and the identity check, and it wakes `material-6901e0`.
+- `material-89fb6b`, the spike (P1, direct, owner): frozen stills of a fixed planar tilt under
+  the pinned camera model, with no animation.
+  - The experimental code stays on an unmerged branch.
+  - The results return to main: the contact sheet attached to the task, the
+    branch commit, the reproduction command, and a result section here.
+  - A clean appearance comparison against a pinned main baseline is kept
+    separate from the decoration inventory.
+  - It wakes `material-6901e0`.
 - `material-abc08c`, the design (P1, planned, high, owner, depends on
   `material-89fb6b`): one transient
   rigid tilt with finite settling. The first trigger is focus gain.
