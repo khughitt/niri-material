@@ -18,15 +18,17 @@ impl Optic for NoiseOptic {
     ];
 
     fn values(glass: &ResolvedGlass, ctx: &OpticFrame<'_>) -> Vec<Uniform<'static>> {
-        let amount = glass.noise.amount.unwrap_or(if ctx.backdrop_blur {
+        // Interim (plan Task 1): slot 0 only; Task 2 uploads every slot.
+        let first = glass.noise.layers[0];
+        let inherited = if ctx.backdrop_blur {
             ctx.blur.noise
         } else {
             0.
-        });
+        };
         vec![
-            Uniform::new("mat_noise", amount as f32),
-            Uniform::new("mat_noise_type", glass.noise.kind as u8 as f32),
-            Uniform::new("mat_noise_site", glass.noise.site as u8 as f32),
+            Uniform::new("mat_noise", first.map_or(inherited, |l| l.amount) as f32),
+            Uniform::new("mat_noise_type", first.map_or(0., |l| l.kind as u8 as f32)),
+            Uniform::new("mat_noise_site", first.map_or(0., |l| l.site as u8 as f32)),
         ]
     }
 }
@@ -72,11 +74,7 @@ mod tests {
     #[test]
     fn written_noise_applies_regardless_of_blur_and_carries_its_type() {
         let glass = ResolvedGlass {
-            noise: ResolvedNoise {
-                amount: Some(0.3),
-                kind: NoiseType::Lightness,
-                site: NoiseSite::Glass,
-            },
+            noise: ResolvedNoise::single(0.3, NoiseType::Lightness, NoiseSite::Glass),
             ..Default::default()
         };
         let blur = Blur {
@@ -107,11 +105,7 @@ mod tests {
             (NoiseSite::Film, 2.),
         ] {
             let glass = ResolvedGlass {
-                noise: ResolvedNoise {
-                    amount: Some(0.3),
-                    kind: NoiseType::Fine,
-                    site,
-                },
+                noise: ResolvedNoise::single(0.3, NoiseType::Fine, site),
                 ..Default::default()
             };
             assert_eq!(triple(&glass, true, &blur), (0.3, 1., code), "{site:?}");
