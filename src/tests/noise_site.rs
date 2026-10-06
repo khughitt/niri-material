@@ -508,3 +508,49 @@ fn a_backdrop_only_reload_rerenders_the_unchanged_glass_window() {
         "the glass window's fingerprint carries the buffer's commit"
     );
 }
+
+#[test]
+fn a_backdrop_layer_scale_change_publishes_damage() {
+    let look = Look {
+        noise_a: "noise 0.2 type=\"fine\" site=\"backdrop\"\n\
+                  noise 0.1 type=\"white\" site=\"backdrop\" scale=4",
+        noise_b: "noise 0.1 type=\"fine\" site=\"glass\"",
+        ..Default::default()
+    };
+    let mut f = fixture(&look);
+    let _ = render(&mut f);
+    let read = |f: &mut Fixture| {
+        let output = f.niri_output(1);
+        let niri = f.niri();
+        let buffer = niri.output_state[&output].xray.background
+            [RenderTarget::ScreenCapture as usize]
+            .borrow()
+            .commit();
+        let (_, _, workspace) = niri.layout.workspaces().next().unwrap();
+        let glass_window = workspace
+            .tiles_with_render_positions()
+            .find_map(|(tile, _, _)| tile.material().filter(|m| m.material().name == "b"))
+            .expect("material b")
+            .commit();
+        (buffer, glass_window)
+    };
+    let (buffer_0, window_0) = read(&mut f);
+    reload(
+        &mut f,
+        &Look {
+            noise_a: "noise 0.2 type=\"fine\" site=\"backdrop\"\n\
+                      noise 0.1 type=\"white\" site=\"backdrop\" scale=8",
+            ..look
+        },
+    );
+    let _ = render(&mut f);
+    let (buffer_1, window_1) = read(&mut f);
+    assert_ne!(
+        buffer_1, buffer_0,
+        "the effect buffer publishes the scale change"
+    );
+    assert_ne!(
+        window_1, window_0,
+        "the glass window's fingerprint carries the buffer's commit"
+    );
+}
