@@ -10,7 +10,7 @@
 
 **Spec:** `docs/specs/2026-10-06-noise-layers-design.md` (this worktree, `.worktrees/material-3fcba2`). Section numbers below (§3, §4, ...) refer to it. It builds on `docs/specs/2026-10-05-noise-placement-design.md` (the sites) and `docs/materials/render-pipeline.md` (read it before touching the shaders).
 
-**Status:** revised after plan review round 1 (codex, 2026-10-06: the smoke's `bins()` checks `identify` and the helper's status and clears stale values; the coefficient pin reads code, not comments, with mutation demonstrations; the cost cleanup test follows `stop_walls` and `cleanup_cost` into the lib; a fixed-seed, hook-ordered reference checks each site's slot order, with reversal demonstrations; a visible lattice blocks the merge unless fixed or the owner explicitly accepts deferral). Revised after plan review round 2 (codex, 2026-10-06: mutation demonstrations restore a saved copy through one harness, since Task 2's run precedes its commit; the order test's configs are raw strings). Execution: native (owner, 2026-10-06).
+**Status:** revised after plan review round 1 (codex, 2026-10-06: the smoke's `bins()` checks `identify` and the helper's status and clears stale values; the coefficient pin reads code, not comments, with mutation demonstrations; the cost cleanup test follows `stop_walls` and `cleanup_cost` into the lib; a fixed-seed, hook-ordered reference checks each site's slot order, with reversal demonstrations; a visible lattice blocks the merge unless fixed or the owner explicitly accepts deferral). Revised after plan review round 3 (codex, 2026-10-06: the mutation harness aborts before editing when its backup fails, deletes the backup only after a verified restore, and counts a mutation as caught only on log evidence that the named test alone failed at the expected assertion; every exit path was simulated while planning). Round 2 (codex, 2026-10-06: mutation demonstrations restore a saved copy through one harness, since Task 2's run precedes its commit; the order test's configs are raw strings). Execution: native (owner, 2026-10-06).
 
 ## Global Constraints
 
@@ -39,7 +39,7 @@ Five inputs the spec implies but its listed tests do not exercise; each has a te
 
 ## Mutation harness
 
-Tasks 2 and 3 demonstrate that a test catches a defect by editing `noise.frag`, running the test, and restoring the file. Task 2's demonstrations run before its rewrite is committed, so `git checkout` would restore the old single-layer shader: every demonstration goes through this harness instead, which restores the exact file it found on every exit path, including a failing or interrupted test run. Create it once per session in a scratch directory (it is never committed):
+Tasks 2 and 3 demonstrate that a test catches a defect by editing `noise.frag`, running the test, and restoring the file. Task 2's demonstrations run before its rewrite is committed, so `git checkout` would restore the old single-layer shader: every demonstration goes through this harness instead. It refuses to edit anything unless its backup was written and compares equal; it restores that exact copy on every exit path, including a failing or interrupted test run, and deletes the backup only after the restored file compares equal (otherwise it exits 3 and prints where the original is). A demonstration counts as caught only with evidence from the runner's log: exactly one test selected (`Starting 1 test across`), the summary `1 test run: 0 passed, 1 failed`, a `FAIL` line ending in the named test, and the expected assertion text. A build error, a runner failure (exit 127), a different test or a different assertion exits 4 with the log kept; a passing test exits 1. Create it once per session in a scratch directory (it is never committed):
 
 ```bash
 M=$(mktemp -d)
@@ -78,23 +78,57 @@ open(path, "w").write(mutated)
 PY
 cat > "$M/mutation.sh" <<'SH'
 #!/usr/bin/env bash
-# mutation.sh <edit> <test name>: saves noise.frag as it is now, applies one
-# named edit, runs one test, and restores the saved copy on every exit path.
-# Exit 0: the test failed, so the mutation was caught. Exit 1: it survived.
-# Exit 2: the edit could not be applied.
+# mutation.sh <edit> <test name> <expected failure, an extended regex>:
+# saves noise.frag as it is now, applies one named edit, runs one test, and
+# restores the saved copy on every exit path.
+# Exit 0: the named test ran alone and failed with the expected message.
+# 1: it passed, so the mutation survived. 2: the backup or the edit failed;
+# noise.frag is untouched or restored. 3: restoring failed; the original is
+# kept at the path printed. 4: the runner failed some other way (a build
+# error, no test or another test selected, another assertion); its log is
+# kept at the path printed.
 set -u
+[ $# -eq 3 ] || { echo "usage: mutation.sh <edit> <test> <expected regex>" >&2; exit 2; }
 F=src/render_helpers/shaders/material/noise.frag
-SAVED=$(mktemp)
-cp "$F" "$SAVED"
-trap 'cp "$SAVED" "$F"; rm -f "$SAVED"' EXIT
+[ -s "$F" ] || { echo "mutation: $F is missing or empty" >&2; exit 2; }
+SAVED=$(mktemp) || { echo "mutation: cannot create a backup file; nothing changed" >&2; exit 2; }
+if ! cp "$F" "$SAVED" || ! cmp -s "$F" "$SAVED"; then
+    rm -f "$SAVED"
+    echo "mutation: backup of $F failed; nothing changed" >&2
+    exit 2
+fi
+restore() {
+    local rc=$?
+    if cp "$SAVED" "$F" && cmp -s "$SAVED" "$F"; then
+        rm -f "$SAVED"
+        exit "$rc"
+    fi
+    echo "mutation: RESTORE FAILED; the original noise.frag is kept at $SAVED" >&2
+    exit 3
+}
+trap restore EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 python3 -I "$(dirname "$0")/mutate.py" "$F" "$1" || exit 2
-if just test-one -p niri "$2"; then
-    echo "MUTATION SURVIVED: $1" >&2
+LOG=$(mktemp) || exit 2
+just test-one -p niri "$2" > "$LOG" 2>&1
+status=$?
+selected_one() { grep -Eq '^ *Starting 1 test across' "$LOG"; }
+if [ "$status" -eq 0 ] && selected_one && grep -Eq 'Summary \[.*\] 1 test run: 1 passed' "$LOG"; then
+    rm -f "$LOG"
+    echo "MUTATION SURVIVED: $1 ($2 passed)" >&2
     exit 1
 fi
-echo "caught: $1"
+if [ "$status" -ne 0 ] && selected_one \
+    && grep -Eq 'Summary \[.*\] 1 test run: 0 passed, 1 failed' "$LOG" \
+    && grep -Eq "FAIL .*::$2\$" "$LOG" \
+    && grep -Eq -- "$3" "$LOG"; then
+    echo "caught: $1 ($2: $(grep -Eo -- "$3" "$LOG" | head -1))"
+    rm -f "$LOG"
+    exit 0
+fi
+echo "mutation: $2 did not fail as expected under $1 (runner exit $status); log kept at $LOG" >&2
+exit 4
 SH
 chmod +x "$M/mutation.sh"
 ```
@@ -1357,14 +1391,15 @@ With the mutation harness (above), on the uncommitted rewrite:
 ```bash
 cp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
 T=the_fine_norm_coefficients_are_twice_the_corner_correlations
-"$M/mutation.sh" adjacent "$T"        # 0.33333333 in code becomes 0.33333300; the comment keeps it
-"$M/mutation.sh" diagonal "$T"        # 0.38888889 in code becomes 0.38888800
-"$M/mutation.sh" no-correction "$T"   # the norm -= statement is deleted
+E="fine branch must subtract the corner covariance"
+"$M/mutation.sh" adjacent "$T" "$E"        # 0.33333333 in code becomes 0.33333300; the comment keeps it
+"$M/mutation.sh" diagonal "$T" "$E"        # 0.38888889 in code becomes 0.38888800
+"$M/mutation.sh" no-correction "$T" "$E"   # the norm -= statement is deleted
 cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
 just test-one -p niri "$T"
 ```
 
-Expected: `caught:` for all three, `cmp` silent, and the final run PASSES. Record `tasks note material-cb80f7 "mutation: coefficient pin fails for adjacent, diagonal and deleted correction"`.
+Expected: `caught:` and exit 0 for all three (any other exit code stops the step: read the message and, for 4, the kept log), `cmp` silent, and the final run PASSES. Record `tasks note material-cb80f7 "mutation: coefficient pin fails for adjacent, diagonal and deleted correction"`.
 
 - [ ] **Step 8: Run the fast suite and commit**
 
@@ -1845,12 +1880,13 @@ With the mutation harness, the fine branch loses its covariance correction, so f
 
 ```bash
 cp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
-"$M/mutation.sh" no-correction grain_deviation_holds_across_scales_and_cell_positions
+"$M/mutation.sh" no-correction grain_deviation_holds_across_scales_and_cell_positions \
+    'fine scale [0-9]+: position \([0-9]+, [0-9]+\) has sd'
 cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
 just test-one -p niri grain_deviation_holds_across_scales_and_cell_positions
 ```
 
-Expected: `caught: no-correction`, the test output failing on a `fine scale 8: position (x, y)` line with a ratio near 0.8 (spec review round 2 computed 79.5 % for the weakest class) while the aggregate assertion for that scale passed; `cmp` silent; the final run PASSES. Record the failing line: `tasks note material-d184da "mutation: independent-corner norm fails <line>"`.
+Expected: `caught: no-correction` and exit 0, the matched text naming a `fine scale <s>: position (x, y)` class (at scale 8 the weakest class is near 0.8 of the aggregate, per spec review round 2's 79.5 %; a smaller scale may fail first). The expected pattern excludes the aggregate assertion's message, so a failure there exits 4 instead of counting; `cmp` silent; the final run PASSES. Record the failing line: `tasks note material-d184da "mutation: independent-corner norm fails <line>"`.
 
 - [ ] **Step 3a: Demonstrate that the order check catches reversed application**
 
@@ -1858,13 +1894,13 @@ With the mutation harness, each hook's four slot calls run in reverse order (eac
 
 ```bash
 cp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
-"$M/mutation.sh" reverse-glass a_sites_layers_apply_in_slot_order
-"$M/mutation.sh" reverse-film a_sites_layers_apply_in_slot_order
-"$M/mutation.sh" reverse-backdrop a_sites_layers_apply_in_slot_order
+"$M/mutation.sh" reverse-glass a_sites_layers_apply_in_slot_order 'glass stack against the hook-ordered reference'
+"$M/mutation.sh" reverse-film a_sites_layers_apply_in_slot_order 'film stack against the hook-ordered reference'
+"$M/mutation.sh" reverse-backdrop a_sites_layers_apply_in_slot_order 'backdrop stack against the hook-ordered reference'
 cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
 ```
 
-Expected: `caught:` three times, failing on the `glass stack`, `film stack` and `backdrop stack` lines respectively, the glass and film means near 1.4 codes; `cmp` silent. If `reverse-backdrop` reports `MUTATION SURVIVED`, its 8-bit storage hides the reversal at these amounts: raise all four amounts in the test (reference and stacks) to 0.6 (about 1.8 codes reversed, per the planning simulation), rerun the unmutated test to PASS and all three mutations, and say so in the note. Record `tasks note material-d184da "mutation: reversed glass, film and backdrop application each fail a_sites_layers_apply_in_slot_order: <means>"`, and rerun the test to PASS.
+Expected: `caught:` and exit 0 three times, the glass and film means near 1.4 codes in the kept output; `cmp` silent. Exit 4 stops the step (read the kept log). If `reverse-backdrop` reports `MUTATION SURVIVED` (exit 1), its 8-bit storage hides the reversal at these amounts: raise all four amounts in the test (reference and stacks) to 0.6 (about 1.8 codes reversed, per the planning simulation), rerun the unmutated test to PASS and all three mutations, and say so in the note. Record `tasks note material-d184da "mutation: reversed glass, film and backdrop application each fail a_sites_layers_apply_in_slot_order: <means>"`, and rerun the test to PASS.
 
 - [ ] **Step 4: Fast suite and commit**
 
