@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: glass-edges
 created: 2026-09-30T23:27:38Z
-updated: 2026-10-04T02:45:32Z
+updated: 2026-10-06T23:20:13Z
 started: 2026-09-30T23:28:03Z
 depends: []
 tags: [rendering, material]
@@ -111,3 +111,8 @@ Candidate fixes, ranked: (1) height-field bevel profile (linear chamfer to round
 - 2026-10-04T02:44:21Z (glass-edges): attached: glass-edge-sheet.png (1333985 bytes): glass edge contact sheet: bevel-profile x looks x reflection/edge-highlight/roughness, planar facet row
 - 2026-10-04T02:45:32Z (glass-edges): parked (waiting on user, review): Owner reviews the contact sheet attached to material-be611b and picks Prism starting values for bevel-profile, reflection and edge-highlight; then the branch gets its final review and prism-7024c4 is unblocked
   provenance: {"harness_session":"claude-code:d752873e-df16-40ec-ae7a-2e0b6a4ee888","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-04T03:28:50Z (glass-edges): Merge note: materials-26.04 gains gpu_cooldown in glass-optic-smoke-lib.sh's settle_before_launch (branch ring-gap-reach, material-3db428); when glass-edges merges, drop glass-edge-sheet.sh's local gpu_cooldown and its call in cell(), which would then wait twice.
+- 2026-10-06T23:20:11Z (glass-edges): resumed
+  provenance: {"harness_session":"claude-code:2b1bf82b-c436-48cf-9d01-3e841f43eb09","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-06T23:20:11Z (glass-edges): review: impl round 1 — verdict: accept; findings: none; reviewer: human
+- 2026-10-06T23:20:11Z (glass-edges): owner pick 2026-10-06 from glass-edge-sheet.png: cell inactive-k2-r0.6-h0-g0, i.e. the inactive look (ior 1.2, thickness 62.3, attenuation #2e3034 at 42, chromatic-aberration 0.32, distortion 0.2, bevel 15) with bevel-profile 2, reflection 0.6, edge-highlight 0, roughness 0. Prism starting values: bevel-profile 2, reflection 0.6, edge-highlight 0. Owner feedback: the sheet's grid, parameter codes and goal were not self-explanatory; label future sheets (goal title, row/column headers, decoded params, legend).
