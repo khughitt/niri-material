@@ -1,6 +1,6 @@
 # Noise placement: a site attribute selecting backdrop, glass, or film grain
 
-**Status:** accepted for planning 2026-10-05 after spec review rounds 1 and 2 (codex) and the owner's go-ahead; plan `docs/plans/2026-10-05-noise-placement.md`. Round 2 (codex, 2026-10-05: the
+**Status:** accepted for planning 2026-10-05 after spec review rounds 1 and 2 (codex) and the owner's go-ahead; §7.2 assertion 5 amended 2026-10-05 during the quiet capture run (monotone down to the 8-bit floor); plan `docs/plans/2026-10-05-noise-placement.md`. Round 2 (codex, 2026-10-05: the
 damage test asserts the commit counters rather than pixels of a fresh
 render; the ring fixture waits for the comet's full run, tail included).
 Round 1 (codex, 2026-10-05: the
@@ -35,7 +35,9 @@ The goal is that noise can sit at each legal site and that the renderer, its
 schema and the rack tell the truth about what each site does: scope, cost
 class, what the grain covers and what softens it. The frosted blur averages
 hundreds of pixels at its default three passes, so backdrop grain under a
-frosted window survives as faint low-frequency mottling rather than grain.
+frosted window survives as faint low-frequency mottling rather than grain
+(predicted; the 2026-10-05 captures measured none above the 8-bit floor at
+three passes or at any roughness above 0, see the evidence document).
 That is recorded as evidence (§7) and as a conditional dependency in the
 interaction document, not treated as a defect. A site is dropped before the
 contract only if its look is useless at every blur setting; backdrop grain
@@ -388,7 +390,9 @@ every cell (it is added after the chain):
 Absolute `sd` at `p = 0`: 0.0856 (white), 0.0839 (fine), the uniform grain's
 `0.3 / sqrt(12)` as expected. The sheets match the prediction: at `p = 0`
 the two sites are the same grain; at `p = 1` backdrop grain is soft but
-still grain; from `p = 2` it is colour mottling at the blur's scale, and
+still grain; from `p = 2` it is colour mottling at the blur's scale (the
+model's view: the real chain measured 4 % at one pass and nothing above the
+8-bit floor from three passes, see the evidence document), and
 fine grain, being high-pass, is erased faster than white. Nothing in the
 run argues for dropping the site: under a sharp window it is the glass
 grain moved into the image, and under a frosted one it is a different,
@@ -435,8 +439,8 @@ Assertions:
    grain `sd` is below half a code (the in-process presence threshold),
    later cells must stay below it rather than fall further. The quiet pilot
    of 2026-10-05 measured backdrop roughness 0 at exactly 0 under three
-   passes and roughness 1 at 0.037 codes, a low-frequency rounding residue
-   the pyramid upsample spreads, not returning grain.
+   passes and roughness 1 at 0.037 codes grey (a one-signed, blue-only
+   one-code shift; cause not established), not returning grain texture.
 6. `film` at blur off equals `glass` within 1/255 on the face.
 7. Film grains the light and glass grain is compressed under it, by the
    transfer curve, not by magic. Fixture: a flat backdrop at encoded 0.5
