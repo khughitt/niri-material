@@ -134,12 +134,15 @@ The real chain removes backdrop grain far faster than the model predicted:
 one Kawase pass leaves about 4 % (under one code), three passes or any
 roughness pyramid level leave none above the 8-bit floor. The blurred
 roughness-1 cell's 0.000144 (grey `sd`, 0.037 codes) is not grain texture: only
-blue differs, the backdrop cell one code lower on 44,066 of 80,000 face
-pixels (mean −0.55 codes, blue-only `sd` 0.50 codes, red and green
+blue differs, the backdrop cell one code higher on 44,066 of 80,000 face
+pixels (mean +0.55 codes, blue-only `sd` 0.50 codes, red and green
 identical), one-signed and near-DC (63 % of the grey `sd` survives an 8×
 downsample, against 4.5 % of real grain). Its cause is not established:
-clipping of the grain on extreme blue texels and rounding in the 8-bit blur
-chain both fit, and the sharp pyramid at roughness 1 shows exactly 0. Strict
+the positive sign fits clipping of the grain at 0 on dark blue texels (24 %
+of the plasma region's blue texels lie within the grain's ±38-code span of 0),
+rounding in the 8-bit blur chain is not excluded, and the sharp pyramid at
+roughness 1 shows exactly 0. (The smoke's `grain-*.png` images are the zero
+cell minus the site cell; `sd` is unaffected by the sign.) Strict
 "falls monotonically" cannot hold once grain reaches zero (the full run has
 three 0 → 0 steps), so assertion 5 now reads "monotone down to the 8-bit
 floor" (spec §7.2, half a code, the in-process presence threshold); in blue
@@ -185,7 +188,7 @@ a millisecond of its reload: a grain option change updates both the
 per-change total covers both.
 
 Reading: on backdrop damage the grain pass adds about 0.09 ms per pass, but
-the per-change totals cannot resolve it: backdrop's 3.66 ms is 0.1 ms *below*
+the per-stimulus totals cannot resolve it: backdrop's 3.66 ms is 0.1 ms *below*
 glass's 3.76 ms, the opposite of the added work, so the totals vary by more
 than the pass costs. A grain option change (the drag) costs `backdrop` a full chain
 rerun, grain plus blur plus both pyramids, 1.4 ms per change against 0.29 ms
