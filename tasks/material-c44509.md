@@ -1,13 +1,15 @@
 ---
 id: material-c44509
 title: capture.json records when the run finished and how long it took
-status: todo
+status: doing
 priority: 3
 size: s
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-09-24T10:01:25Z
-updated: 2026-10-02T23:07:56Z
+updated: 2026-10-06T12:38:38Z
+started: 2026-10-06T12:38:38Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -20,3 +22,8 @@ Why: capture.json has run.started but no finish time or duration, and its prefli
 Done when the capture fixtures (ring-motion-clips.sh, glass-view-tilt-smoke.sh, and the capture-meta preflight they share) write run.finished and run.duration_s, a start and finish per sub_run, and the preflight verdict's time, including on refusal and on abort through a trap. A refused or aborted run still leaves a capture.json with its end time.
 
 Where to look: docs/materials/scripts/ and the capture.json writer they share.
+
+## Notes
+
+- 2026-10-06T12:38:38Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:ccbf10ba-80e6-4814-9bd6-02a8e9cb3816","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
