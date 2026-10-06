@@ -5,8 +5,9 @@
 //! `set_time` immediately before each render (dispatch and reload both unfreeze
 //! it). Response-only and glass-parameter reloads keep the material state, its
 //! seed and the resize animation, so every variant is rendered from one
-//! fixture at one instant. The client attaches 1×1 shm buffers; a single-pixel
-//! buffer renders the same mid-resize (material-698875).
+//! fixture at one instant. The client attaches shm buffers: a single-pixel
+//! buffer never becomes a texture, its resize snapshot is empty, and the tile
+//! then falls back to a plain render without the material.
 //!
 //! The matched-pair report records the light map (on minus off) per edge.
 //! Separate checks grade face tracking during resize and the capped band core.
@@ -21,14 +22,12 @@ use smithay::backend::allocator::Fourcc;
 use smithay::utils::{Logical, Rectangle, Scale, Transform};
 use wayland_client::protocol::wl_surface::WlSurface;
 
-use super::client::{ClientId, Window};
+use super::client::ClientId;
 use super::*;
 use crate::render_helpers::{render_to_vec, RenderCtx, RenderTarget};
 
 const OUT_W: u16 = 1280;
 const OUT_H: u16 = 720;
-/// The fixture's default buffer: one transparent shm pixel.
-const CLEAR_SHM: fn(&Window) = |w| w.attach_new_shm_buffer(0);
 const W: u16 = 640;
 const H: u16 = 360;
 const MID: Duration = Duration::from_millis(500);
@@ -355,10 +354,10 @@ fn pair(
     (report, on)
 }
 
-/// A focused window whose column is half way through a 200 px wider linear
-/// resize, ready to render at `MID`; `attach` gives it each buffer. Every
-/// variant renders from this one state.
-fn mid_resize_fixture(glass: &Glass, attach: fn(&Window)) -> (Fixture, ClientId, WlSurface) {
+/// A focused shm window whose column is half way through a 200 px wider
+/// linear resize, ready to render at `MID`. Every variant renders from this
+/// one state.
+fn mid_resize_fixture(glass: &Glass) -> (Fixture, ClientId, WlSurface) {
     let mut f = Fixture::with_config(config(glass, BASE));
     f.niri_state().backend.headless().add_renderer().unwrap();
     f.add_output(1, (OUT_W, OUT_H));
@@ -368,7 +367,7 @@ fn mid_resize_fixture(glass: &Glass, attach: fn(&Window)) -> (Fixture, ClientId,
     window.commit();
     f.roundtrip(id);
     let window = f.client(id).window(&surface);
-    attach(window);
+    window.attach_new_shm_buffer(0);
     window.set_size(W, H);
     window.ack_last_and_commit();
     f.double_roundtrip(id);
@@ -386,7 +385,7 @@ fn mid_resize_fixture(glass: &Glass, attach: fn(&Window)) -> (Fixture, ClientId,
         .set_column_width(SizeChange::AdjustFixed(200));
     f.double_roundtrip(id);
     let window = f.client(id).window(&surface);
-    attach(window);
+    window.attach_new_shm_buffer(0);
     window.set_size(W + 200, H);
     window.ack_last_and_commit();
     f.roundtrip(id);
@@ -394,7 +393,7 @@ fn mid_resize_fixture(glass: &Glass, attach: fn(&Window)) -> (Fixture, ClientId,
 }
 
 fn matched_pairs(glass: &Glass) -> String {
-    let (mut f, id, surface) = mid_resize_fixture(glass, CLEAR_SHM);
+    let (mut f, id, surface) = mid_resize_fixture(glass);
 
     let mut report = String::new();
     let seed = {
@@ -510,22 +509,6 @@ fn matched_pairs(glass: &Glass) -> String {
     report
 }
 
-/// A single-pixel buffer bakes into the resize snapshot as its colour, so the
-/// material renders mid-resize exactly as over the same pixel in shm. An empty
-/// snapshot falls back to a plain render without the material.
-#[test]
-fn single_pixel_window_keeps_the_material_mid_resize() {
-    let render = |attach| {
-        let (mut f, _, _) = mid_resize_fixture(&STOCK, attach);
-        render_at(&mut f, MID)
-    };
-    let shm = render(|w| w.attach_new_shm_buffer(0x8020_2020));
-    let single_pixel = render(|w| w.attach_new_colored_buffer(0x20, 0x20, 0x20, 0x80));
-    dump("single-pixel-shm", &shm);
-    dump("single-pixel", &single_pixel);
-    assert_eq!(diff(&shm, &single_pixel), (0, 0));
-}
-
 /// The cap's guard (spec 2026-10-01-filament-shift-cap-design): one band core
 /// per edge. `samples` are (value, inward distance) across one window edge,
 /// in any order; the face edge sits `face_inset` px inward. The core is the
@@ -595,7 +578,7 @@ fn ring_pair_is_reproducible_at_a_frozen_instant() {
 #[test]
 fn ring_tracks_face_during_resize() {
     for glass in [&STOCK, &BINDING] {
-        let (mut f, _, _) = mid_resize_fixture(glass, CLEAR_SHM);
+        let (mut f, _, _) = mid_resize_fixture(glass);
         // Keep the measured core wholly on the flat face, clear of the
         // refracted chamfer. The binding cap is covered by ring_cap_keeps_one_core.
         let base = Variant {
@@ -762,7 +745,7 @@ fn one_core_rejects_an_unlit_or_misplaced_core() {
 fn ring_cap_keeps_one_core() {
     let mut failures = Vec::new();
     for glass in [&STOCK, &BINDING, &IOR102, &IOR124, &IOR150] {
-        let (mut f, _, _) = mid_resize_fixture(glass, CLEAR_SHM);
+        let (mut f, _, _) = mid_resize_fixture(glass);
         let mut ring_on = Vec::new();
         for light_ior in [1., 6., 12.] {
             let v = Variant { light_ior, ..BASE };
