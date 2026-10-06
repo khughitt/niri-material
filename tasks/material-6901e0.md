@@ -4,7 +4,7 @@ title: "View tilt: a geometric tilt that moves window content and glass together
 status: idea
 priority: 1
 created: 2026-09-22T23:46:32Z
-updated: 2026-10-06T21:03:55Z
+updated: 2026-10-06T22:10:40Z
 depends: [material-77db8a]
 parent: material-53f873
 tags: [rendering, camera]
@@ -20,3 +20,4 @@ Reusable from the unmerged branch material-77db8a: the swing curve and settle (r
 ## Notes
 
 - 2026-10-06T21:03:54Z (materials-26.04): scope: briefed; P1 under lane material-53f873; rigid in-shader tilt is the lean (window and glass as one body, backdrop at true screen position); spike material-89fb6b (owner stills) then design material-abc08c; brief: docs/notes/2026-10-06-transient-depth-brief.md
+- 2026-10-06T22:10:40Z (materials-26.04): finding (material-89fb6b, 2026-10-06): a planar in-shader tilt reads to the owner as one object and its text softening is acceptable; side walls are missing first, interior detail second. Next: material-abc08c, building side walls on material-be611b's height-field edge.

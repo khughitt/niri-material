@@ -179,11 +179,19 @@ the task, and the reproduction command is in its notes.
 - **How it reads.** To the agent: a thick-framed flat card turned in
   perspective, with no side walls, as the faked slab predicts. On this dark
   glass the beam at 150 ms is only about 20 levels above rest.
-- **Owner verdict:** pending.
+- **Owner verdict (2026-10-06).** Better: it reads as one object. The glass
+  itself is hard to judge on the dark terminal fill (short attenuation
+  distance, deep slab), so later stills need a lighter look beside the
+  accepted one. Text softening while moving is acceptable. Missing first:
+  geometric thickness (side walls); interior detail second. Side walls also
+  matter for the resting glass, where `material-be611b`'s height-field edge
+  is in review, so the tilt's slab model should build on that profile rather
+  than a separate one.
 
 ## Unanswered questions
 
-- **Does it read as 3D glass?** Does a planar tilt of a few degrees, with
+- **Does it read as 3D glass?** Answered 2026-10-06 by the spike result
+  above: as one object, yes; text softening acceptable. Does a planar tilt of a few degrees, with
   today's faked slab shading and ring, read as 3D glass, and how much text
   softening is acceptable while it moves? Answered by the owner, from the
   frozen stills of the spike task below. The verdict covers only that
@@ -197,7 +205,8 @@ the task, and the reproduction command is in its notes.
   owner chooses the later ones after the first is seen.
 - **The pivot.** A rotation about the pane centre, or a door-like hinge facing
   the focus origin. Settled in the design.
-- **What is missing, if it does not read as glass?** Two gaps are recorded
+- **What is missing, if it does not read as glass?** Answered 2026-10-06:
+  side walls first, interior detail second. Two gaps are recorded
   separately:
   - Geometric thickness: side walls and occlusion would need a real
     ray-slab intersection in place of the faked slab.
