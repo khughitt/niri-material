@@ -10,7 +10,7 @@
 
 **Spec:** `docs/specs/2026-10-06-noise-layers-design.md` (this worktree, `.worktrees/material-3fcba2`). Section numbers below (§3, §4, ...) refer to it. It builds on `docs/specs/2026-10-05-noise-placement-design.md` (the sites) and `docs/materials/render-pipeline.md` (read it before touching the shaders).
 
-**Status:** revised after plan review round 1 (codex, 2026-10-06: the smoke's `bins()` checks `identify` and the helper's status and clears stale values; the coefficient pin reads code, not comments, with mutation demonstrations; the cost cleanup test follows `stop_walls` and `cleanup_cost` into the lib; a fixed-seed, hook-ordered reference checks each site's slot order, with reversal demonstrations; a visible lattice blocks the merge unless fixed or the owner explicitly accepts deferral). Execution: native (owner, 2026-10-06).
+**Status:** revised after plan review round 1 (codex, 2026-10-06: the smoke's `bins()` checks `identify` and the helper's status and clears stale values; the coefficient pin reads code, not comments, with mutation demonstrations; the cost cleanup test follows `stop_walls` and `cleanup_cost` into the lib; a fixed-seed, hook-ordered reference checks each site's slot order, with reversal demonstrations; a visible lattice blocks the merge unless fixed or the owner explicitly accepts deferral). Revised after plan review round 2 (codex, 2026-10-06: mutation demonstrations restore a saved copy through one harness, since Task 2's run precedes its commit; the order test's configs are raw strings). Execution: native (owner, 2026-10-06).
 
 ## Global Constraints
 
@@ -36,6 +36,70 @@ Five inputs the spec implies but its listed tests do not exercise; each has a te
 3. **A reload that changes only one layer's `scale=`.** The glass must re-render: the material commit has to advance. Test `noise_scale_change_advances_the_commit_in_place`, Task 1.
 4. **Amount-0 layers carrying other properties** (`noise 0 type="lightness" scale=8 site="film"`). A person muting a layer expects no visible change, whatever else the node says. Test `amount_zero_layers_are_neutral_with_any_properties`, Task 3.
 5. **A non-integer `scale=`** (`scale=2.5`). Lattice cells then straddle pixels; a person expects grain of the same strength, not a seam or a weaker field. Test `a_fractional_scale_keeps_the_deviation`, Task 3.
+
+## Mutation harness
+
+Tasks 2 and 3 demonstrate that a test catches a defect by editing `noise.frag`, running the test, and restoring the file. Task 2's demonstrations run before its rewrite is committed, so `git checkout` would restore the old single-layer shader: every demonstration goes through this harness instead, which restores the exact file it found on every exit path, including a failing or interrupted test run. Create it once per session in a scratch directory (it is never committed):
+
+```bash
+M=$(mktemp -d)
+cat > "$M/mutate.py" <<'PY'
+"""mutate.py <noise.frag> <edit>: applies one named edit in place."""
+import re
+import sys
+
+path, name = sys.argv[1], sys.argv[2]
+text = open(path).read()
+
+
+def reverse_calls(text, marker):
+    """Reverses the order of the four one-line calls containing `marker`;
+    each call keeps its own components and seed."""
+    lines = text.split("\n")
+    where = [i for i, line in enumerate(lines) if marker in line]
+    assert len(where) == 4, f"{marker}: found {len(where)} calls"
+    calls = [lines[i] for i in where]
+    for i, line in zip(where, reversed(calls)):
+        lines[i] = line
+    return "\n".join(lines)
+
+
+EDITS = {
+    "adjacent": lambda t: t.replace("norm -= 0.33333333 *", "norm -= 0.33333300 *"),
+    "diagonal": lambda t: t.replace("+ 0.38888889 * (w00 * w11", "+ 0.38888800 * (w00 * w11"),
+    "no-correction": lambda t: re.sub(r"\n[ \t]*norm -= 0\.33333333.*?;", "", t, flags=re.S),
+    "reverse-glass": lambda t: reverse_calls(t, "noiseBehindLayer(v, isLinear,"),
+    "reverse-film": lambda t: reverse_calls(t, "encoded = noisePostLayer("),
+    "reverse-backdrop": lambda t: reverse_calls(t, "straight = noiseSourceLayer("),
+}
+mutated = EDITS[name](text)
+assert mutated != text, f"{name}: the edit changed nothing"
+open(path, "w").write(mutated)
+PY
+cat > "$M/mutation.sh" <<'SH'
+#!/usr/bin/env bash
+# mutation.sh <edit> <test name>: saves noise.frag as it is now, applies one
+# named edit, runs one test, and restores the saved copy on every exit path.
+# Exit 0: the test failed, so the mutation was caught. Exit 1: it survived.
+# Exit 2: the edit could not be applied.
+set -u
+F=src/render_helpers/shaders/material/noise.frag
+SAVED=$(mktemp)
+cp "$F" "$SAVED"
+trap 'cp "$SAVED" "$F"; rm -f "$SAVED"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+python3 -I "$(dirname "$0")/mutate.py" "$F" "$1" || exit 2
+if just test-one -p niri "$2"; then
+    echo "MUTATION SURVIVED: $1" >&2
+    exit 1
+fi
+echo "caught: $1"
+SH
+chmod +x "$M/mutation.sh"
+```
+
+Run it from `.worktrees/material-3fcba2`. Around each group of demonstrations, keep a reference copy and compare afterwards: `cp src/render_helpers/shaders/material/noise.frag "$M/before.frag"` first, `cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"` last (expected: no output).
 
 ---
 
@@ -1288,13 +1352,19 @@ Expected: PASS, including `the_fine_norm_coefficients_are_twice_the_corner_corre
 
 - [ ] **Step 7a: Demonstrate that the coefficient pin reads the code**
 
-Three temporary edits to `noise.frag`, one at a time, each followed by `just test-one -p niri the_fine_norm_coefficients_are_twice_the_corner_correlations` and `git checkout src/render_helpers/shaders/material/noise.frag`:
+With the mutation harness (above), on the uncommitted rewrite:
 
-1. `0.33333333 *` in the `norm -=` line becomes `0.33333300 *` (the comment keeps `0.33333333`). Expected: FAIL.
-2. `0.38888889 *` becomes `0.38888800 *`. Expected: FAIL.
-3. Delete the two `norm -= ...` lines. Expected: FAIL.
+```bash
+cp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
+T=the_fine_norm_coefficients_are_twice_the_corner_correlations
+"$M/mutation.sh" adjacent "$T"        # 0.33333333 in code becomes 0.33333300; the comment keeps it
+"$M/mutation.sh" diagonal "$T"        # 0.38888889 in code becomes 0.38888800
+"$M/mutation.sh" no-correction "$T"   # the norm -= statement is deleted
+cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
+just test-one -p niri "$T"
+```
 
-After the last restore the test PASSES again. Record `tasks note material-cb80f7 "mutation: coefficient pin fails for adjacent, diagonal and deleted correction"`.
+Expected: `caught:` for all three, `cmp` silent, and the final run PASSES. Record `tasks note material-cb80f7 "mutation: coefficient pin fails for adjacent, diagonal and deleted correction"`.
 
 - [ ] **Step 8: Run the fast suite and commit**
 
@@ -1681,16 +1751,16 @@ fn a_sites_layers_apply_in_slot_order() {
     let mut f = fixture();
     reload(
         &mut f,
-        "noise 0.5 type="lightness" site="glass"
-noise 0.5 type="white" site="film"",
+        r#"noise 0.5 type="lightness" site="glass"
+           noise 0.5 type="white" site="film""#,
     );
     let (reference, face) = render(&mut f);
     for (site, mean_limit, max_limit) in [("glass", 0.1, 1), ("film", 0.1, 1), ("backdrop", 0.7, 2)] {
         reload(
             &mut f,
             &format!(
-                "noise 0.5 type="lightness" site="{site}"
-                 noise 0.5 type="white" site="{site}""
+                r#"noise 0.5 type="lightness" site="{site}"
+                   noise 0.5 type="white" site="{site}""#
             ),
         );
         let (stack, _) = render(&mut f);
@@ -1771,15 +1841,30 @@ Expected: PASS. If `render`'s size assertion fails, the test client did not get 
 
 - [ ] **Step 3: Demonstrate that the position check catches the independent-corner norm**
 
-Temporarily delete the two `norm -= ...` lines in `noise.frag`'s fine branch, so fine uses `Σ w²` as round 1's spec did. Run:
+With the mutation harness, the fine branch loses its covariance correction, so fine uses `Σ w²` as round 1's spec did:
 
-`just test-one -p niri grain_deviation_holds_across_scales_and_cell_positions`
+```bash
+cp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
+"$M/mutation.sh" no-correction grain_deviation_holds_across_scales_and_cell_positions
+cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
+just test-one -p niri grain_deviation_holds_across_scales_and_cell_positions
+```
 
-Expected: FAIL on a `fine scale 8: position (x, y)` line with a ratio near 0.8 (spec review round 2 computed 79.5 % for the weakest class), while the aggregate assertion for that scale passes. Record the failing line in a task note (`tasks note material-d184da "mutation: independent-corner norm fails <line>"`), then restore the lines with `git checkout src/render_helpers/shaders/material/noise.frag` and rerun the test to PASS.
+Expected: `caught: no-correction`, the test output failing on a `fine scale 8: position (x, y)` line with a ratio near 0.8 (spec review round 2 computed 79.5 % for the weakest class) while the aggregate assertion for that scale passed; `cmp` silent; the final run PASSES. Record the failing line: `tasks note material-d184da "mutation: independent-corner norm fails <line>"`.
 
 - [ ] **Step 3a: Demonstrate that the order check catches reversed application**
 
-Temporarily reverse the order of the four `noiseBehindLayer(...)` calls in `noise_behind` (the `.w` call first, the `.x` call last; each call keeps its own components and seed). Run `just test-one -p niri a_sites_layers_apply_in_slot_order`. Expected: FAIL on the `glass stack` line with a mean near 1.4 codes. Restore with `git checkout src/render_helpers/shaders/material/noise.frag`. Repeat with the four `noisePostLayer` calls in `noise_post` (expected: FAIL on `film stack`) and the four `noiseSourceLayer` calls in `noise_source` (expected: FAIL on `backdrop stack`), restoring after each. If the backdrop mutation passes, its 8-bit storage hides the reversal at these amounts: raise both amounts in the test to 0.6 (about 1.8 codes reversed, per the planning simulation), rerun the unmutated test and the mutation, and say so in the note. Record `tasks note material-d184da "mutation: reversed glass, film and backdrop application each fail a_sites_layers_apply_in_slot_order: <means>"`, and rerun the test to PASS.
+With the mutation harness, each hook's four slot calls run in reverse order (each call keeps its own components and seed):
+
+```bash
+cp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
+"$M/mutation.sh" reverse-glass a_sites_layers_apply_in_slot_order
+"$M/mutation.sh" reverse-film a_sites_layers_apply_in_slot_order
+"$M/mutation.sh" reverse-backdrop a_sites_layers_apply_in_slot_order
+cmp src/render_helpers/shaders/material/noise.frag "$M/before.frag"
+```
+
+Expected: `caught:` three times, failing on the `glass stack`, `film stack` and `backdrop stack` lines respectively, the glass and film means near 1.4 codes; `cmp` silent. If `reverse-backdrop` reports `MUTATION SURVIVED`, its 8-bit storage hides the reversal at these amounts: raise all four amounts in the test (reference and stacks) to 0.6 (about 1.8 codes reversed, per the planning simulation), rerun the unmutated test to PASS and all three mutations, and say so in the note. Record `tasks note material-d184da "mutation: reversed glass, film and backdrop application each fail a_sites_layers_apply_in_slot_order: <means>"`, and rerun the test to PASS.
 
 - [ ] **Step 4: Fast suite and commit**
 
