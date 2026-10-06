@@ -8,7 +8,11 @@ PILOT=${NOISE_COST_PILOT:-0}
 case "$PILOT" in 0|1) ;; *) echo "NOISE_COST_PILOT must be 0 or 1" >&2; exit 2 ;; esac
 source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 WALL_PIDS=()
-wall_count() { msg "$NIRI_TRACY" -j layers | jq 'length'; }
+# Every IPC call uses the plain binary as its client: niri-tracy's client
+# calibrates Tracy's timer at startup (about 0.5 s per call), which stretched
+# the 100 ms drag and 1 s damage steps past the 30 s trace. The compositor
+# under test is still niri-tracy and still records every span.
+wall_count() { msg "$NIRI" -j layers | jq 'length'; }
 start_wall() {
     local display pid
     [ "$(wall_count)" -eq 0 ] || fail "old wallpaper layer remains before replacement"
@@ -77,14 +81,18 @@ window-rule {
 }
 KDL
 }
-reload_marker() { msg "$NIRI_TRACY" action load-config-file --path "$1"; }
+reload_marker() { msg "$NIRI" action load-config-file --path "$1"; }
 # Sleep to an absolute monotonic deadline: image work and IPC consume part
 # of the specified one-second / 100 ms period, rather than extending it.
 now_ns() { python3 -c 'import time; print(time.monotonic_ns())'; }
+# A step that overruns its deadline by more than $2 ns fails the run, so the
+# pilot shows a stimulus slower than its period before a full run would
+# outlast the trace.
 sleep_until() {
-    python3 - "$1" <<'PYTIME'
+    python3 - "$1" "$2" <<'PYTIME' || fail "stimulus step overran its deadline by more than half a period"
 import sys, time
-time.sleep(max(0, (int(sys.argv[1]) - time.monotonic_ns()) / 1e9))
+late = time.monotonic_ns() - int(sys.argv[1])
+sys.exit(1 if late > int(sys.argv[2]) else time.sleep(max(0, -late / 1e9)))
 PYTIME
 }
 DAMAGE_STEPS=20
@@ -98,14 +106,14 @@ for site in backdrop glass; do
         capture_bg "$name"; capture_ready "$name"
         start_wall "$WALL"
         sleep 0.5
-        spawn_probe "$NIRI_TRACY" "$IDLE"
-        msg "$NIRI_TRACY" action spawn -- kitty --config NONE --class gos-sharp \
+        spawn_probe "$NIRI" "$IDLE"
+        msg "$NIRI" action spawn -- kitty --config NONE --class gos-sharp \
             -o background_opacity=0 -o cursor_blink_interval=0 sh -c "$IDLE"
         for _ in $(seq 100); do
-            [ "$(windows_with "$NIRI_TRACY" gos-sharp)" -eq 1 ] && break
+            [ "$(windows_with "$NIRI" gos-sharp)" -eq 1 ] && break
             sleep 0.05
         done
-        [ "$(windows_with "$NIRI_TRACY" gos-sharp)" -eq 1 ] || fail "no sharp roughness consumer"
+        [ "$(windows_with "$NIRI" gos-sharp)" -eq 1 ] || fail "no sharp roughness consumer"
         sleep 1
         steps=0
         if [ "$case_name" = drag ]; then reload_marker "$cfg"; sleep 0.2; fi
@@ -116,7 +124,7 @@ for site in backdrop glass; do
                 reload_marker "$cfg"
                 magick -size 1280x720 xc:"rgb($((i*10)),100,120)" "$OUT/$name-wall-$i.png"
                 stop_walls; wait_for_wall_removal; start_wall "$OUT/$name-wall-$i.png"
-                sleep_until "$((start + i*1000000000))"
+                sleep_until "$((start + i*1000000000))" 500000000
             done
         elif [ "$case_name" = drag ]; then
             steps=50
@@ -128,7 +136,7 @@ for site in backdrop glass; do
                 # Completed files, unique paths: the watcher cannot duplicate
                 # the explicit reload while a file is still being written.
                 reload_marker "$next_cfg"
-                sleep_until "$((start + (i+1)*100000000))"
+                sleep_until "$((start + (i+1)*100000000))" 50000000
             done
             cfg=$next_cfg
         fi
