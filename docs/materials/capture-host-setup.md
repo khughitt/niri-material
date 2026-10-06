@@ -89,6 +89,19 @@ active user timer, the services named in
 desktop Noctalia's caffeine and monitor power. `release` restores them and
 scans the journal; a disturbed run fails its fixture.
 
+Restore is not schedule-preserving: `systemctl --user start` re-anchors
+each timer's `OnActiveSec` trigger at the restore instant (and an
+`OnBootSec` trigger whose boot offset has already elapsed fires at once),
+so a held run can add off-schedule timer runs after release, even when
+nothing elapsed during the run. Observed 2026-10-05: `familiar-reap` fired
+at restore and `atoms-recertify` moved its next run five minutes out. The
+extra fires land outside the capture window, so no run is disturbed; they
+are accepted, because systemd exposes no writable next-elapse for a stopped
+timer and no faithful restore exists. `OnUnitActiveSec`, `OnUnitInactiveSec`
+and `OnCalendar` triggers keep their schedule across restore, except that a
+`Persistent=true` calendar timer that missed its elapse during the hold
+fires once after release.
+
 The reference host's file:
 
 ```text
