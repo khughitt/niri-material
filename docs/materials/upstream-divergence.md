@@ -114,7 +114,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +1268/-0 |
-| `tools/capture_hold.py` | C | A | +576/-0 |
+| `tools/capture_hold.py` | C | A | +577/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
 | `tools/ops-check` | C | A | +264/-0 |
