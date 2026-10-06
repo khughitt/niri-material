@@ -114,8 +114,9 @@ pub struct BackdropGrain {
 
 /// The backdrop grain the material table agrees on: `None` when no material
 /// places noise there, the agreed pair otherwise, and an error naming the
-/// first two materials that disagree. The backdrop is one texture per
-/// output, so there is no per-material value to fall back on.
+/// first two materials that disagree. Grain is applied to the output's shared
+/// backdrop buffers, so there is one setting per output and no per-material
+/// value to fall back on.
 pub fn backdrop_grain(
     materials: &[crate::material::Material],
 ) -> Result<Option<BackdropGrain>, String> {
@@ -137,7 +138,7 @@ pub fn backdrop_grain(
             Some((first, g)) if g != grain => {
                 return Err(format!(
                     "materials \"{first}\" and \"{}\" both place noise at the backdrop with \
-                     different settings ({} {}, {} {}); the backdrop is one texture per output",
+                     different settings ({} {}, {} {}); backdrop grain is one setting per output",
                     material.name,
                     g.amount,
                     NoiseType::NAMES[g.kind as usize],
