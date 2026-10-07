@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-07T03:19:49Z
+updated: 2026-10-07T03:20:32Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -74,3 +74,5 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-07T03:17:43Z (material-3fcba2): just gate passed at a1d0c330 (1.6 min): tooling 409 (2 optional skips), Rust 504 passed 1 ignored, doctests ok
 - 2026-10-07T03:19:24Z (material-3fcba2): review: impl round 1 — verdict: accept; findings: Minor 4; reviewer: claude-code/claude-opus-5-5
 - 2026-10-07T03:19:49Z (material-3fcba2): Review round 1 dispositions: 1 (spec claim of exact single-layer arithmetic) fixed in spec; 2 (seed coincidence understated) fixed in spec and material-config; 3 rejected: grain_deviation_holds_across_scales_and_cell_positions renders lone layers at scale 2/4/8 and would fail if the fast path ignored scale; 4 filed as material-49d816
+- 2026-10-07T03:20:32Z (material-3fcba2): parked (waiting on user, review): Waiting on the owner's look (material-41d052); then agent merges into materials-26.04, refreshes prism's pipeline schema, closes; gate passed and review accepted at 299679cd
+  provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
