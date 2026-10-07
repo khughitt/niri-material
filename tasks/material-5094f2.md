@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency-2
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-07T11:08:04Z
+updated: 2026-10-07T11:19:10Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -60,4 +60,11 @@ Process: planned
   provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-07T11:08:03Z (fix/pre-commit-latency-2): plan round 2: report save/restore per staged hook run (subshell trap on EXIT/INT/TERM, temp index removed), step children started and closed in their own commits, acceptance child then final branch review then parent; constraints say staged hook runs. Pilot of the helper: fast route rc=0 38.2 s (pre-remedy), working tree unchanged
 - 2026-10-07T11:08:03Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review round 2 of .worktrees/material-5094f2/docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md. After acceptance, agent executes Tasks 1-3 inline (material-8a5af7, -4c455e, -bea903), then one fresh final reviewer.
+  provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T11:12:15Z (fix/pre-commit-latency-2): review: plan round 2 — verdict: revise; findings: P1 1; reviewer: codex
+- 2026-10-07T11:12:15Z (fix/pre-commit-latency-2): Round 2: original P1/P2 resolved. Ran the exact cleanup helper through just test-one with a temporary stub hook under zsh for success, hook failure, and process-group SIGINT: report/index preserved and temporary files removed in all three; no live hook/build was interrupted and no child remains. New P1 at Task 3 Steps 4/6 (lines 345-347, 362): non-dry-run verify records the obligation met before final review; tt-latency.verify then skips met pairs even when --after advances. A synthetic read-only probe with an old verified note, a newer after, and zero new runs returned exit 0, median null, runs null. Thus the proposed corrective rerun cannot verify the new remedy or refresh its floor. Use dry-run verification during acceptance and every corrective round, and perform the first recording verify only after final review/corrections, immediately before parent closure, with the latest remedy timestamp and current results. Filed tooling gap ops-38f668. Inline execution/fresh final reviewer remains appropriate.
+- 2026-10-07T11:18:51Z (fix/pre-commit-latency-2): resumed
+  provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T11:19:09Z (fix/pre-commit-latency-2): plan round 3: acceptance and corrective rounds use tt-latency verify --dry-run; the single recording verify runs after the final review passes, right before parent closure, with the latest remedy timestamp
+- 2026-10-07T11:19:09Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review round 3 of .worktrees/material-5094f2/docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md. After acceptance, agent executes Tasks 1-3 inline (material-8a5af7, -4c455e, -bea903), then one fresh final reviewer, then the recording verify and parent closure.
   provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
