@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-07T03:25:54Z
+updated: 2026-10-07T14:42:19Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -26,3 +26,4 @@ Process: planned
   provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-07T03:25:53Z (materials-26.04): diagnosis: post-floor window (after 2026-10-05T10:16:51Z) splits by route: fast-tooling 40 runs median 37.5 s, full-tooling 7 runs median 106.6 s, legacy discover 4 runs ~242 s. Idle-host fast route ~35 s: fast tooling 24.1 s (409 cases, 2 children, 34.9 s of case time), clippy 6.4 s, ops-check 2.2 s, fmt 1.2 s, rest <1 s. Live check at 03:21Z reads ok (median 42.256 s, 39 runs) only because tonight's commits were fast-route: borderline, a recurrence of material-cd7782
 - 2026-10-07T03:25:53Z (materials-26.04): probe: fast tooling at 2/4/6 children took 24.1/11.4/15.7 s (two runs each, idle host); at 4 and 6 the only failure is test_fast_preserves_native_inventory_and_module_fixtures pinning '2 children'; probe reverted
+- 2026-10-07T14:42:19Z (materials-26.04): halt override: attempted material-f5b371 by 044e7cb1-1b19-4001-a38a-95fd6d1ec424: halt work (material-bea903) needs an idle host; desktop up with load ~2.7 and other agent sessions, so it cannot run now
