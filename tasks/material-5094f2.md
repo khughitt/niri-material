@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency-2
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-07T10:15:30Z
+updated: 2026-10-07T10:30:52Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -42,4 +42,7 @@ Process: planned
 - 2026-10-07T10:10:10Z (fix/pre-commit-latency-2): review: spec round 1 — verdict: revise; findings: P1 1, P2 1; reviewer: codex
 - 2026-10-07T10:10:10Z (fix/pre-commit-latency-2): Spec review: preserve a warm full-route acceptance check before deferring that route: the preceding design required full median <=45 s and verified 40.752 s; the incident log reproduces 37 judged runs at 45.425 s, with 29 qualifying fast runs (37.618 s median), 4 qualifying full runs (89.7645 s median), and 4 legacy runs (242.398 s median). Separate cold/contended/legacy evidence before attributing recurrence to fast-suite growth. The proposed cap/assertion-only change also fails CoordinatorTests.test_fast_preserves_native_inventory_and_module_fixtures: its fixture has only two modules, so observed PID count remains 2 versus expected 4. Confirmed through just test-one using a temporary copy; add four nonempty fixture modules and retain native inventory/module fixture assertions.
 - 2026-10-07T10:15:30Z (fix/pre-commit-latency-2): resumed
+  provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T10:30:51Z (fix/pre-commit-latency-2): spec round 2: full route measured warm at 46.3/46.6 s (check-full); cause is the single remainder process (26.7 s at 10-04, 38.8 s now). Design adds module-bucketed remainder (4 buckets, buckets first) and a 16 pool ceiling for granted budgets (unset stays 10): probe 22.7-23.5 s full tooling. P2: fast fixture grows to four modules; new full-route coordinator test
+- 2026-10-07T10:30:51Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review round 2 of .worktrees/material-5094f2/docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md (fast 4 children; full remainder bucketed, pool 16). After acceptance, agent writes the plan, implements, measures check/check-full, runs the staged hook commits and tt-latency verify.
   provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
