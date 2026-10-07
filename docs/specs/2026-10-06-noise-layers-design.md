@@ -1,6 +1,10 @@
 # Noise layers: up to four grain generators per material, each with a size
 
-**Status:** accepted for planning 2026-10-06 after spec review rounds 1 and
+**Status:** amended 2026-10-07 after the owner's look: §4's lattice is
+reshaped from Hermite to cubic B-spline, with cost, §8's correlation test
+and a lattice-visibility check to match (amendment review round 3, claude:
+accept, four wording fixes applied).
+Accepted for planning 2026-10-06 after spec review rounds 1 and
 2 (codex) and the owner's go-ahead; amended while planning (§3: the
 validation message's form and resolution's bound on an invalid material;
 §7.2 (6) and §8: a per-slot check replaces the order check, which seeds
@@ -165,31 +169,48 @@ material "film-stock" {
   - `scale <= 1.0`: today's per-pixel path, unchanged: `hash12(fragCoord +
     offset) - 0.5` for white, `fineGrain(fragCoord + offset)` for fine and
     lightness.
-  - `scale > 1.0`: value noise on a lattice of cell `scale`. `p = fragCoord /
-    scale`, `i = floor(p)`, `f = fract(p)`, Hermite weights
-    `w = f * f * (3 - 2f)` per axis. The four corner values `g_c` at
-    `i + c + offset` are white (`hash12 - 0.5`) or fine (the lattice's own
-    high-pass: each corner's hash minus the mean of its eight neighbours,
-    times 0.94280904). The fine corners share one 4×4 block of sixteen
-    hashes, not four times nine. The value is `Σ w_c g_c / sqrt(wᵀ C w)`,
-    where `C` is the corners' correlation matrix: dividing by the
-    interpolation's own deviation keeps the grain's deviation constant across
-    the cell (plain interpolation drops it to half at the cell centre, which
-    shows the lattice as a contrast grid), so `amount` means the same
-    deviation at every scale and every position in the cell. White corners
-    are independent, so `C = I` and the norm is `sqrt(Σ w_c²)`. Fine corners
-    share hashes and anticorrelate: with each corner `h - mean(8 neighbours)`,
-    adjacent corners correlate at `-1/6` and diagonal ones at `-7/36`
-    (`var = 9/8` of a hash's; spec review round 1 computed it, and the
-    independent-corner norm would leave the cell centre at 68.7 % of the
-    corner deviation). So for fine and lightness
-    `wᵀ C w = Σ w_c² - (1/3)(w00 w10 + w00 w01 + w10 w11 + w01 w11)
-    - (7/18)(w00 w11 + w10 w01)`. `C` is positive definite; the smallest
-    value of `wᵀ C w`, at the cell centre, is 17/144 ≈ 0.118, so the
-    denominator `sqrt(wᵀ C w)` never falls below about 0.344.
+  - `scale > 1.0`: value noise on a lattice of cell `scale`, reconstructed
+    with the uniform cubic B-spline over the 4×4 lattice points around the
+    pixel. `p = fragCoord / scale`, `i = floor(p)`, `t = fract(p)`, weights
+    per axis `b(t) = ((1-t)³, 3t³-6t²+4, -3t³+3t²+3t+1, t³) / 6` for the
+    points `i - 1` to `i + 2`, `w = bx ⊗ by`. The sixteen values `g` at those
+    points plus `offset` are white (`hash12 - 0.5`) or fine (the lattice's
+    own high-pass: each point's hash minus the mean of its eight neighbours,
+    times 0.94280904); the fine values share one 6×6 block of thirty-six
+    hashes. The value is `Σ w g / sqrt(wᵀ C w)`, where `C` is the values'
+    correlation matrix: dividing by the reconstruction's own deviation keeps
+    the grain's deviation constant across the cell, so `amount` means the
+    same deviation at every scale and every position in the cell. Because
+    `w` is separable and `C` depends only on the offset between two points,
+    `wᵀ C w = Σ_d C(d) X(|dx|) Y(|dy|)`, with `X(k) = Σ_j bx_j bx_{j+k}` and
+    `Y` the same over `by`. White values are independent, so
+    `wᵀ C w = X0 Y0`. Fine values correlate up to two points apart: `-1/6`
+    adjacent, `-7/36` diagonal, `1/24` at (2, 0), `1/36` at (2, 1), `1/72` at
+    (2, 2) (`var = 9/8` of a hash's before the 0.94280904). So for fine and
+    lightness
+    `wᵀ C w = X0 Y0 - (1/3)(X1 Y0 + X0 Y1) - (7/9) X1 Y1 + (1/12)(X2 Y0 + X0 Y2)
+    + (1/9)(X2 Y1 + X1 Y2) + (1/18) X2 Y2`, each coefficient the
+    correlation times the number of offsets that share it. `C` is positive
+    definite (smallest eigenvalue 0.113): the smallest `wᵀ C w` is about
+    0.089 for fine and 0.21 for white, so the denominator never falls below
+    about 0.30.
+  - *Why the B-spline (owner's look, 2026-10-07).* The first lattice used
+    Hermite (`smoothstep`) interpolation of the 2×2 corners. Its derivative
+    is zero at every lattice point, so the grain went flat at the points and
+    steep along the cell edges: the owner saw scale-8 white grain as blocky,
+    a grid of squares. Rotating that lattice only tilts the squares. The
+    cubic B-spline is C², and its weights stay within a narrow band across
+    the cell. In an offline prototype of this arithmetic, the mean squared
+    gradient by position in the cell stayed within 0.54 to 1.59 of its mean
+    at scales 2 to 8 for both types, against 0.00 to 4.00 for Hermite. §8
+    pins that with the lattice-visibility check. Blobs come out rounder and
+    somewhat larger at the same `scale`; `scale` remains the lattice cell,
+    not a blob diameter.
   - Crossing `scale` 1 re-rolls the pattern (the per-pixel path seeds pixel
-    centres, the lattice seeds integer corners). Dragging the scale across 1
-    shows that once; nothing above 1 re-rolls.
+    centres, the lattice seeds integer lattice points) and coarsens it in one
+    step: the B-spline approximates rather than interpolates, so just above 1
+    the grain is visibly smoother than the per-pixel path. Dragging the scale
+    across 1 shows that once; nothing above 1 re-rolls.
 - **Applying a layer.** `vec3 noiseApply(vec3 encoded, float grain, float
   type)`: white and fine add `grain` in encoding; lightness goes through
   today's `noiseLightness`. This is the existing `noiseEncoded` split at the
@@ -216,10 +237,10 @@ material "film-stock" {
 - **`noise_post` (film).** Applies the film-site layers in slot order to the
   encoded glass, as today's single call does.
 - **Cost.** Per active layer per fragment: one hash (white, scale 1), nine
-  (fine or lightness, scale 1), four (white, scale above 1), sixteen (fine or
-  lightness, scale above 1), plus an Oklab round trip for lightness. Four
-  fine layers above scale 1 cost 64 hashes per glass fragment where today
-  costs at most nine. Inactive slots cost a uniform compare. §7.3 measures
+  (fine or lightness, scale 1), sixteen (white, scale above 1), thirty-six
+  (fine or lightness, scale above 1), plus an Oklab round trip for
+  lightness. Four fine layers above scale 1 cost 144 hashes per glass
+  fragment where today costs at most nine. Inactive slots cost a uniform compare. §7.3 measures
   it; the material renders only when damaged, so settled glass pays
   nothing.
 
@@ -284,8 +305,10 @@ backdrop with one textured region and a transparent kitty at `ior 1`:
 
 The owner looks once and records the verdict in the evidence document's
 "Owner's look" line, judging above all whether the lattice shows at scale 8.
-A visible lattice is a finding that reshapes `scale > 1` (a rotated or
-jittered lattice), not a reason to drop sizes.
+A visible lattice is a finding that reshapes `scale > 1`, not a reason to
+drop sizes. The first look (2026-10-07) found the Hermite lattice blocky at
+scale 8; §4 now uses the B-spline, and the owner looks again at the reshaped
+sheet.
 
 ### 7.2 Captures and statistics
 
@@ -341,10 +364,14 @@ class when `prism-85f63a` lands.
   and scale 1.
 - **Effect buffer.** `GrainOptions` equality over the array: an edit to any
   slot triggers the cascade, an equal array does not.
-- **Fine-lattice correlation.** A unit test derives the corners'
+- **Fine-lattice correlation.** A unit test derives the fine values'
   correlations by enumerating the high-pass definition's hash coefficients
-  (adjacent `-1/6`, diagonal `-7/36`) and checks that the coefficients in
-  `noise.frag`'s norm (`-1/3`, `-7/18`) are twice them, so the shader and the
+  (`-1/6`, `-7/36`, `1/24`, `1/36`, `1/72` at offsets (1, 0), (1, 1),
+  (2, 0), (2, 1), (2, 2), and 0 beyond) and checks that the coefficients in
+  `noise.frag`'s norm (`-1/3`, `-7/9`, `1/12`, `1/9`, `1/18`) are each
+  correlation times its offset count, and that the shader's `x1` and `x2`
+  sums with those coefficients equal the brute-force `wᵀ C w` over the
+  sixteen values at sampled cell positions, so the shader and the
   definition cannot drift apart.
 - **Schema.** The existing pins run against the new tables, including the
   GLSL-reads map with `mat_noise_scale`; the generated file is fresh.
@@ -357,8 +384,12 @@ class when `prism-85f63a` lands.
   the film and at the backdrop must match it, and reversing a hook's slot
   order must fail; the
   independence and normalisation statistics of §7.2 (4 and 5), the
-  per-position bins included, computed over the glass area of an in-process
-  render, so they gate every build and the smoke repeats them on real
+  per-position bins included, and a lattice-visibility check: at scales 2,
+  4 and 8 for white and fine, the mean squared difference between
+  horizontally and vertically adjacent grain pixels, grouped by the
+  position in the cell of the pair's left or upper pixel, stays within 0.4 to 2.0 of its mean (the Hermite lattice the
+  owner saw as blocky fails it by far: about 0.01 and 2.6 at white scale 8);
+  all computed over the glass area of an in-process render, so they gate every build and the smoke repeats them on real
   hardware; a two-material backdrop config with
   two layers renders and its effect buffer's commit counter advances when one
   layer's scale changes on reload.
@@ -381,8 +412,9 @@ the generated schema is fresh and prism's copy is refreshed at merge.
 - `prism-85f63a`: a note that the renderer accepts four layers with
   `scale=`, that the schema carries no multiplicity, and that its brainstorm
   owns the bus and rack representation.
-- If the owner finds the lattice visible at large scales (§7.1), a task for
-  a rotated or jittered lattice.
+- The owner found the first (Hermite) lattice visible at scale 8 (§7.1,
+  2026-10-07); §4's B-spline reshape replaced it on this branch, so no
+  follow-up task.
 
 ## Out of scope
 
