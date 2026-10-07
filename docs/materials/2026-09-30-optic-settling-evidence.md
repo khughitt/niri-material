@@ -3,8 +3,9 @@
 **Status:** headless lane passed (pilot and matrix, 2026-10-02); owner accepted
 the idle/resume clip and authorized local integration on 2026-10-02; rerun with
 a real idle inhibitor on 2026-10-03, which passed; the dedicated real-TTY lane
-(TTY resume, unlock, a real screencast consumer) passed on 2026-10-03; only
-output removal remains unverified.
+(TTY resume, unlock, a real screencast consumer) passed on 2026-10-03; output
+removal, which no capture host could drive, is covered by a deterministic
+in-process test (2026-10-07).
 **Task:** `material-2ee11e` under `material-f86183`; the idle-inhibitor rerun
 is `material-80caf4`, the dedicated lane `material-f7eb0b` and
 `material-3acc86`.
@@ -54,16 +55,26 @@ the same readings for every other case.
 
 ### Unverified
 
-`output-removal` (needs a second output; the nested and dedicated lanes
-each drive one) stays open. `tty-resume`, `unlock` and `screencast` passed in
-the [dedicated lane](#dedicated-lane) on 2026-10-03.
+`output-removal` needs a second output, and the nested and dedicated lanes
+each drive one. `tty-resume`, `unlock` and `screencast` passed in the
+[dedicated lane](#dedicated-lane) on 2026-10-03.
 
-| Remaining acceptance | Task |
+The two-output capture (`material-1af3c6`) was dropped on 2026-10-07: no host
+here has a second output, so it stays unverified on hardware. Its deterministic
+coverage is `optic_settling_removing_one_of_two_outputs_keeps_the_shared_timeline`
+in `src/tests/attention_idle.rs` (`material-f5b371`). It uses two headless outputs
+with real calloop timers and an Aurora tile on the output that stays lit:
+
+| Case | Assertion |
 | --- | --- |
-| Removal of one of two outputs | `material-1af3c6` |
+| Remove while active | The timeline keeps running on its anchor; the lit output re-arms its optic timer, which fires and redraws it. |
+| Re-add while active | Still running on the same anchor; the lit output keeps its cadence. |
+| Remove while idle | The timeline stays held; no output state remains for the removed output and no redraw is queued; the lit output's next pass arms no deadline and samples the held instant. |
+| Re-add while idle | Still held at the same instant; neither output arms an optic deadline. |
+| Resume | The timeline resumes from the held instant. |
 
-It remains a child of `material-f86183`, alongside the deferred review
-minors in `material-285f81`; the goal is not complete.
+Two mutations made it fail: dropping the optic timer's redraw, and pausing
+the timeline in `Niri::remove_output`.
 
 On resume, the offline reducer reproduced both recorded verdicts of the
 2026-10-02 runs, and all 277 pilot and 333 matrix artifact hashes matched
