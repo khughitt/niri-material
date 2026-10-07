@@ -40,12 +40,13 @@ def fast_mode() -> bool:
 
 
 def worker_limit() -> int:
+    # Unset (CI, raw runs) keeps 10; a host-budget grant may use up to 16.
     raw = os.environ.get('NEXTEST_TEST_THREADS')
     if raw is None:
         return 10
     if re.fullmatch(r'[0-9]+', raw) is None or int(raw) < 1:
         raise ValueError('NEXTEST_TEST_THREADS must be a positive decimal integer')
-    return min(10, int(raw))
+    return min(16, int(raw))
 
 
 MODULE_BUCKETS = 4
@@ -234,9 +235,10 @@ def run_tooling(ci: bool = False, fast: bool = False) -> int:
     if fast:
         jobs = module_buckets(inventory, buckets)
     else:
+        # Remainder buckets go first so they never queue behind the slow lifecycle cases.
         lifecycle = [case.id() for case in inventory if type(case).__name__ in LIFECYCLE_CLASSES]
-        remainder = [case.id() for case in inventory if type(case).__name__ not in LIFECYCLE_CLASSES]
-        jobs = ([remainder] if remainder else []) + [[case_id] for case_id in lifecycle]
+        remainder = [case for case in inventory if type(case).__name__ not in LIFECYCLE_CLASSES]
+        jobs = module_buckets(remainder, buckets) + [[case_id] for case_id in lifecycle]
     expected = {case.id() for case in inventory}
     assigned = [case_id for job in jobs for case_id in job]
     if len(assigned) != len(expected) or set(assigned) != expected:
