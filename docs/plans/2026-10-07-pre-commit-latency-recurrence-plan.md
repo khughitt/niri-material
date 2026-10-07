@@ -16,8 +16,9 @@
 - Full route: remainder in `min(4, limit)` module buckets, submitted first; each `DriverCleanupTests`/`VtLibTests` case in its own process.
 - Pool ceiling: an explicit `NEXTEST_TEST_THREADS` grant is capped at 16; unset gives 10. Malformed values still fail before discovery.
 - Budget `1` means one child at a time: the remainder in one process, then each lifecycle case in its own sequential process.
+- Each step child is started before its work and closed with `tasks done` in the commit that lands it, its record staged with the code. The parent closes last, after the acceptance child and the final branch review.
 - No test is omitted, no sleep shortened, no time bound relaxed, and the 45 s limit is not raised.
-- Acceptance (warm, idle host): median of three `just check-full` ≤ 35 s (required ≤ 45 s); median of three `just check` ≤ 30 s; one real full-route hook commit < 35 s; three staged fast-route hook commits each < 30 s; `tt-latency verify material-5094f2 --after <remedy commit time>` exits 0.
+- Acceptance (warm, idle host): median of three `just check-full` ≤ 35 s (required ≤ 45 s); median of three `just check` ≤ 30 s; three real hook runs per code route through `.githooks/pre-commit` on staged changes (fast each < 30 s, full each < 35 s), plus Task 2's own full-route commit hook < 35 s; `tt-latency verify material-5094f2 --after <remedy commit time>` exits 0.
 
 ## Review Focus
 
@@ -49,6 +50,8 @@ Commits touching `tools/tooling_tests.py` or `tools/test_tooling_tests.py` take 
 - Modify: `tools/tooling_tests.py` (`worker_limit` neighbourhood for the new constant and helper; `run_tooling` fast branch around lines 202–216)
 - Modify: `tools/test_tooling_tests.py:90-147` (`test_fast_preserves_native_inventory_and_module_fixtures`)
 - Modify: `AGENTS.md` (Gates, the "Fast tooling uses … with two children" sentence)
+
+Start: `tasks start material-8a5af7`.
 
 **Interfaces:**
 - Produces: `MODULE_BUCKETS: int = 4`; `module_buckets(cases: Sequence[unittest.TestCase], count: int) -> list[list[str]]` — whole modules per bucket, largest module first into the emptiest bucket, empty buckets dropped, case IDs in discovery order within a module.
@@ -143,9 +146,10 @@ Expected: `Fast tooling: <n> cases, 4 children`, then `OK`. Note the `Ran … in
 - [ ] **Step 6: Commit.**
 
 ```bash
+tasks done material-8a5af7 "fast tooling runs four module buckets through module_buckets(); fixture has four modules"
 tasks check
-git add tools/tooling_tests.py tools/test_tooling_tests.py AGENTS.md
-git commit -m "perf(tools): run fast tooling in four module buckets (material-5094f2)"
+git add tools/tooling_tests.py tools/test_tooling_tests.py AGENTS.md tasks/material-8a5af7.md
+git commit -m "perf(tools): run fast tooling in four module buckets (material-8a5af7)"
 ```
 
 ### Task 2: Bucketed full remainder and the 16-worker grant ceiling
@@ -155,6 +159,8 @@ git commit -m "perf(tools): run fast tooling in four module buckets (material-50
 - Modify: `tools/test_tooling_tests.py:30-39` (`test_budget_caps_total_children_and_rejects_malformed_values`)
 - Create test: `CoordinatorTests.test_full_buckets_remainder_modules_and_isolates_lifecycle_cases` in `tools/test_tooling_tests.py`, after `test_full_overrides_fast_and_budget_one_preserves_all_ids`
 - Modify: `AGENTS.md` (Gates, "Full tooling defaults to ten children total")
+
+Start: `tasks start material-4c455e`.
 
 **Interfaces:**
 - Consumes: `MODULE_BUCKETS`, `module_buckets(cases, count)` from Task 1; the local `buckets = min(MODULE_BUCKETS, limit)` in `run_tooling`.
@@ -262,23 +268,26 @@ Expected: `Ran <n> tests` with the same `<n>` and `OK (skipped=2)`. The coordina
 - [ ] **Step 6: Commit.**
 
 ```bash
+tasks done material-4c455e "full remainder runs in four module buckets ahead of lifecycle cases; granted budgets reach 16 workers"
 tasks check
-git add tools/tooling_tests.py tools/test_tooling_tests.py AGENTS.md
-git commit -m "perf(tools): bucket the full tooling remainder and allow a 16-worker grant (material-5094f2)"
+git add tools/tooling_tests.py tools/test_tooling_tests.py AGENTS.md tasks/material-4c455e.md
+git commit -m "perf(tools): bucket the full tooling remainder and allow a 16-worker grant (material-4c455e)"
 ```
 
 This commit takes the full pre-commit route; its `hook-pre-commit` run is the first real full-route sample. Its UTC commit time is the remedy timestamp for Task 3 (step 4 there shows the command).
 
 ### Task 3: Acceptance measurements and latency verification
 
+Start: `tasks start material-bea903`.
+
 **Files:**
-- Modify: `tasks/material-5094f2.md` through `tasks note` / `tasks done` only.
+- Modify: `tasks/material-bea903.md` and `tasks/material-5094f2.md` through `tasks note` / `tasks done` only.
 - Modify: `docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md` (status line, measured results).
 
 **Interfaces:**
 - Consumes: Tasks 1 and 2 committed on the branch; the remedy timestamp from Task 2's commit.
 
-- [ ] **Step 1: Check the host is idle.** Run `uptime` and `host-load`. If the load average exceeds 4, or another session runs a build or capture, park with `tasks park material-5094f2 "rerun Task 3 measurements, then verify" --reason quiet --waiting-on user --minutes 15`.
+- [ ] **Step 1: Check the host is idle.** Run `uptime` and `host-load`. If the load average exceeds 4, or another session runs a build or capture, park with `tasks park material-bea903 "rerun Task 3 measurements, then verify" --reason quiet --waiting-on user --minutes 15`.
 
 - [ ] **Step 2: Measure both routes, warm.** One untimed `just check-full` to warm clippy, then:
 
@@ -293,18 +302,31 @@ Expected: every `rc=0`; `check-full` median ≤ 35 s; `check` median ≤ 30 s. A
 
 - [ ] **Step 3: Run the real hook on each code route, three times.** As material-cd7782 did, stage through a private index so the working index stays untouched, and run `.githooks/pre-commit` itself with no command overrides; it picks the route from the staged paths and records `hook-pre-commit` through `tools/tt`. A fast-route subject is `tools/upstream-report` (code, not in `tooling_full_paths` or `docs_paths`); a full-route subject is `tools/tooling_tests.py`.
 
+The hook's first step, `python3 tools/upstream-report --stage`, regenerates `docs/materials/upstream-divergence.md` in the working tree from the staged paths, so a private-index run leaves that file changed and the next run refuses the unstaged edit. Each run therefore saves the report first and restores it on every exit, including failure and interruption, and removes its temporary index. Each run happens in a subshell so its trap cannot leak into the session.
+
 ```bash
-stage_run() {  # $1: path whose staged blob gains a trailing newline
-  idx=$(mktemp); cp "$(git rev-parse --git-path index)" "$idx"
+REPORT=docs/materials/upstream-divergence.md
+stage_run() (  # $1: path whose staged blob gains a trailing newline
+  set -u
+  saved=$(mktemp); idx=$(mktemp)
+  cp -p "$REPORT" "$saved"
+  cleanup() { cp -p "$saved" "$REPORT"; rm -f "$saved" "$idx"; }
+  trap cleanup EXIT
+  trap 'exit 130' INT TERM
+  cp "$(git rev-parse --git-path index)" "$idx"
   mode=$(git ls-files -s -- "$1" | cut -d' ' -f1)
   blob=$( { cat "$1"; echo; } | git hash-object -w --stdin)
   GIT_INDEX_FILE=$idx git update-index --cacheinfo "$mode,$blob,$1"
   s=$(date +%s.%N); GIT_INDEX_FILE=$idx .githooks/pre-commit >/dev/null 2>&1; rc=$?
-  echo "$1 rc=$rc $(python3 -c "print(round($(date +%s.%N)-$s,1))") s"; rm -f "$idx"
-}
+  echo "$1 rc=$rc $(python3 -c "print(round($(date +%s.%N)-$s,1))") s"
+)
+before=$(git status --porcelain)
 for i in 1 2 3; do stage_run tools/upstream-report; done
 for i in 1 2 3; do stage_run tools/tooling_tests.py; done
+[ "$(git status --porcelain)" = "$before" ] && echo "working tree unchanged" || git status --short
 ```
+
+The last line must print `working tree unchanged`; anything else is a cleanup fault to fix before going on.
 
 Confirm the recorded runs and their routes:
 
@@ -327,12 +349,23 @@ tt-latency verify material-5094f2 --after <remedy timestamp>
 
 Expected: exit 0 once three qualifying runs exist (`[verify] min_runs = 3`). Keep the full output for the `tasks done` message.
 
-- [ ] **Step 5: Record and close.** Update the spec's status line to "Implemented (material-5094f2)" and add a "Results" paragraph under §4 with the step 2 medians, the step 3 hook seconds, and the verify verdict. Then:
+- [ ] **Step 5: Record and close the acceptance step.** Update the spec's status line to "Implemented (material-5094f2)" and add a "Results" paragraph under §4 with the step 2 medians, the step 3 hook seconds, and the verify verdict. Then:
 
 ```bash
-tasks note material-5094f2 "accept: check-full median <x> s, check median <y> s, full hook <z> s, fast hooks <a>/<b>/<c> s"
-tasks done material-5094f2 "<verify output>"
+tasks note material-5094f2 "accept: check-full median <x> s, check median <y> s, full hooks <z1>/<z2>/<z3> s (Task 2 commit <z0> s), fast hooks <a>/<b>/<c> s"
+tasks done material-bea903 "both routes under target; tt-latency verify exit 0"
 tasks check
-git add docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md tasks/material-5094f2.md
+git add docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md tasks/material-bea903.md tasks/material-5094f2.md
+git commit -m "docs(specs): record the latency recurrence results (material-bea903)"
+```
+
+- [ ] **Step 6: Final branch review and corrections.** Dispatch one fresh reviewer on the most capable model over the whole branch (`git diff materials-26.04...HEAD`), with the spec and this plan. Note the round on the parent: `tasks note material-5094f2 "review: impl round <n> — verdict: <revise|accept>; findings: <label> <count>, … | none; reviewer: <harness/model>"`. While a re-review reproduces Critical or Important findings, run up to five corrective rounds (one fix commit plus one scoped re-review each). A fix that touches `tools/` invalidates step 2 and step 3 timings: rerun both, and rerun step 4 with the fix's commit time as the new remedy timestamp.
+
+- [ ] **Step 7: Close the parent.** Only after steps 5 and 6, with every child done:
+
+```bash
+tasks done material-5094f2 "<full tt-latency verify output from step 4, or its rerun>"
+tasks check
+git add tasks/material-5094f2.md
 git commit -m "chore(tasks): close the pre-commit latency recurrence (material-5094f2)"
 ```

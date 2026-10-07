@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency-2
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-07T10:57:37Z
+updated: 2026-10-07T11:08:04Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -53,4 +53,11 @@ Process: planned
   provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-07T10:57:36Z (fix/pre-commit-latency-2): plan drafted: docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md (3 tasks: material-8a5af7, material-4c455e, material-bea903); spec line 127 clarified (budget 1 = one child at a time, lifecycle cases still separate sequential processes); real-hook acceptance uses private-index staged runs per route, as material-cd7782 did
 - 2026-10-07T10:57:36Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review .worktrees/material-5094f2/docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md. After acceptance, agent executes Tasks 1-3 (material-8a5af7, -4c455e, -bea903).
+  provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T11:05:36Z (fix/pre-commit-latency-2): review: plan round 1 — verdict: revise; findings: P1 1, P2 1; reviewer: codex
+- 2026-10-07T11:05:36Z (fix/pre-commit-latency-2): Plan review P1 (Task 3 Step 3, lines 297-307): a private index does not isolate the working-tree report. tools/upstream-report --stage writes docs/materials/upstream-divergence.md; the staged newline changes its generated contents (confirmed with a private-index render-only probe), but removing the private index leaves that report changed against the real index. The next sample copies the old report index entry and --stage refuses unstaged report edits. Require a clean report, preserve its exact bytes, and restore it after every hook attempt, including failures/interruption; clean up the private index too. P2 (Task 3 Step 5, lines 330-337): tasks done material-5094f2 is attempted while material-bea903 is still open, so the CLI refuses. Close/stage each step record in its corresponding commit; close acceptance child before the parent, and put final whole-branch review/corrective rounds before final parent completion. Inline execution plus one fresh final reviewer is appropriate. Direct invocation of the real hook on staged code is accepted as timing evidence; make the global constraints say hook runs consistently. The jq query is valid against the current string command field. No repository code or report was changed.
+- 2026-10-07T11:06:37Z (fix/pre-commit-latency-2): resumed
+  provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T11:08:03Z (fix/pre-commit-latency-2): plan round 2: report save/restore per staged hook run (subshell trap on EXIT/INT/TERM, temp index removed), step children started and closed in their own commits, acceptance child then final branch review then parent; constraints say staged hook runs. Pilot of the helper: fast route rc=0 38.2 s (pre-remedy), working tree unchanged
+- 2026-10-07T11:08:03Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review round 2 of .worktrees/material-5094f2/docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md. After acceptance, agent executes Tasks 1-3 inline (material-8a5af7, -4c455e, -bea903), then one fresh final reviewer.
   provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
