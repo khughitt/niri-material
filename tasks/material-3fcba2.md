@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-07T03:20:32Z
+updated: 2026-10-07T10:10:01Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -76,3 +76,6 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-07T03:19:49Z (material-3fcba2): Review round 1 dispositions: 1 (spec claim of exact single-layer arithmetic) fixed in spec; 2 (seed coincidence understated) fixed in spec and material-config; 3 rejected: grain_deviation_holds_across_scales_and_cell_positions renders lone layers at scale 2/4/8 and would fail if the fast path ignored scale; 4 filed as material-49d816
 - 2026-10-07T03:20:32Z (material-3fcba2): parked (waiting on user, review): Waiting on the owner's look (material-41d052); then agent merges into materials-26.04, refreshes prism's pipeline schema, closes; gate passed and review accepted at 299679cd
   provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T09:59:47Z (material-3fcba2): owner's look: lattice visible at scale 8 (white reads blocky); no deferral — reshape scale > 1 on this branch per plan Task 6
+- 2026-10-07T10:06:58Z (material-3fcba2): review: spec round 3 — verdict: accept; findings: P3 4; reviewer: claude-code/claude-opus-5-5
+- 2026-10-07T10:10:01Z (material-3fcba2): lattice reshaped to cubic B-spline over 4x4 points (spec §4 amended, round 3 accept); in-process: 28 noise tests pass, new lattice-visibility test measures 0.55-1.57 of mean (Hermite 0.10 at white scale 2); x2-sum and coefficient mutations caught. Smoke and cost captures must rerun on an idle host.

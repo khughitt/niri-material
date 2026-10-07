@@ -1,7 +1,7 @@
 //! Noise layers (design 2026-10-06-noise-layers-design.md §7.2, §8): slot
 //! identities, per-slot application and seeding, independence, and grain
-//! size with its normalisation by position in the lattice cell, rendered in
-//! process through the headless GLES renderer under a frozen clock.
+//! size with its normalisation and smoothness by position in the lattice
+//! cell, rendered in process through the headless GLES renderer under a frozen clock.
 
 use std::time::Duration;
 
@@ -182,6 +182,32 @@ fn position_sds(g: &[(i32, i32, f64)], s: i32) -> Vec<f64> {
         classes[(y.rem_euclid(s) * s + x.rem_euclid(s)) as usize].push(v);
     }
     classes.iter().map(|c| sd(c)).collect()
+}
+
+/// Mean squared difference to the right and lower neighbours, per position
+/// class `(x mod s, y mod s)`, over the classes' mean. A lattice whose grain
+/// flattens at its points and steepens along its cell edges, the grid the
+/// owner saw at scale 8 (design §4), spreads these far from 1.
+fn position_gradient_energies(
+    g: &[(i32, i32, f64)],
+    face: Rectangle<i32, Logical>,
+    s: i32,
+) -> Vec<f64> {
+    let (w, h) = (face.size.w as usize, face.size.h as usize);
+    let mut sums = vec![(0., 0usize); (s * s) as usize];
+    for y in 0..h - 1 {
+        for x in 0..w - 1 {
+            let (px, py, v) = g[y * w + x];
+            let dx = g[y * w + x + 1].2 - v;
+            let dy = g[(y + 1) * w + x].2 - v;
+            let class = &mut sums[(py.rem_euclid(s) * s + px.rem_euclid(s)) as usize];
+            class.0 += dx * dx + dy * dy;
+            class.1 += 1;
+        }
+    }
+    let means: Vec<f64> = sums.iter().map(|(e, n)| e / *n as f64).collect();
+    let mean = means.iter().sum::<f64>() / means.len() as f64;
+    means.iter().map(|m| m / mean).collect()
 }
 
 /// Deviation of 4x4 block means over the pixels' deviation: about 1/4 for
@@ -370,6 +396,26 @@ fn a_sites_layers_apply_in_slot_order() {
             mean <= mean_limit && max <= max_limit,
             "{site} stack against the hook-ordered reference: mean {mean:.3}, max {max} codes"
         );
+    }
+}
+
+#[test]
+fn the_lattice_does_not_show_by_position_in_the_cell() {
+    let mut f = fixture();
+    for kind in ["white", "fine"] {
+        for scale in [2, 4, 8] {
+            let (g, face) = grain_of(&mut f, &format!("noise 0.3 type=\"{kind}\" scale={scale}"));
+            for (i, e) in position_gradient_energies(&g, face, scale)
+                .into_iter()
+                .enumerate()
+            {
+                let (x, y) = (i as i32 % scale, i as i32 / scale);
+                assert!(
+                    (0.4..=2.0).contains(&e),
+                    "{kind} scale {scale}: position ({x}, {y}) has gradient energy {e:.2} of the mean"
+                );
+            }
+        }
     }
 }
 

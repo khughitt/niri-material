@@ -166,9 +166,9 @@ mod tests {
         }
     }
 
-    /// Correlation of two fine-lattice corners `d` apart, from the high-pass
+    /// Correlation of two fine-lattice values `d` apart, from the high-pass
     /// definition `h(p) - mean(h at p's eight neighbours)`, by enumerating
-    /// each corner's hash coefficients (design §4).
+    /// each value's hash coefficients (design §4).
     fn fine_corner_correlation(d: (i32, i32)) -> f64 {
         let coefficients = |c: (i32, i32)| {
             let mut m = HashMap::new();
@@ -190,13 +190,28 @@ mod tests {
     }
 
     #[test]
-    fn the_fine_norm_coefficients_are_twice_the_corner_correlations() {
-        let adjacent = fine_corner_correlation((1, 0));
-        let diagonal = fine_corner_correlation((1, 1));
-        assert!((adjacent + 1. / 6.).abs() < 1e-12, "{adjacent}");
-        assert!((diagonal + 7. / 36.).abs() < 1e-12, "{diagonal}");
+    fn the_fine_norm_coefficients_are_the_correlations_times_their_offset_counts() {
+        let expected = [
+            ((1, 0), -1. / 6.),
+            ((1, 1), -7. / 36.),
+            ((2, 0), 1. / 24.),
+            ((2, 1), 1. / 36.),
+            ((2, 2), 1. / 72.),
+        ];
+        for (d, want) in expected {
+            let got = fine_corner_correlation(d);
+            assert!((got - want).abs() < 1e-12, "{d:?}: {got}");
+        }
+        for d in [(3, 0), (3, 1), (3, 2), (3, 3)] {
+            assert_eq!(fine_corner_correlation(d), 0., "{d:?}");
+        }
+        // Offsets (1, 0) and (2, 0) occur along each axis in both directions
+        // (two each); (1, 1), (2, 1) and (2, 2) in all four sign combinations.
+        let c = |d| fine_corner_correlation(d);
+        let (adjacent, diagonal) = (-2. * c((1, 0)), -4. * c((1, 1)));
+        let (two, knight, far) = (2. * c((2, 0)), 4. * c((2, 1)), 4. * c((2, 2)));
         // The comments name the coefficients too, so only code counts, and
-        // the whole subtraction must be there, not the bare literals.
+        // the whole norm must be there, not the bare literals.
         let code = NoiseOptic::GLSL
             .lines()
             .map(|line| line.split("//").next().unwrap())
@@ -206,14 +221,53 @@ mod tests {
             .collect::<Vec<_>>()
             .join(" ");
         let expected = format!(
-            "norm -= {:.8} * (w00 * w10 + w00 * w01 + w10 * w11 + w01 * w11) \
-             + {:.8} * (w00 * w11 + w10 * w01);",
-            -2. * adjacent,
-            -2. * diagonal
+            "norm = x0 * y0 - {adjacent:.8} * (x1 * y0 + x0 * y1) - {diagonal:.8} * x1 * y1 \
+             + {two:.8} * (x2 * y0 + x0 * y2) + {knight:.8} * (x2 * y1 + x1 * y2) \
+             + {far:.8} * x2 * y2;"
         );
         assert!(
             code.contains(&expected),
-            "noise.frag's fine branch must subtract the corner covariance: `{expected}`"
+            "noise.frag's fine branch must carry the value covariance: `{expected}`"
         );
+        for sums in [
+            "float x1 = bx.x * bx.y + bx.y * bx.z + bx.z * bx.w;",
+            "float x2 = bx.x * bx.z + bx.y * bx.w;",
+        ] {
+            assert!(code.contains(sums), "noise.frag must compute `{sums}`");
+        }
+
+        // Those sums with those coefficients are w^T C w over the sixteen
+        // values, w the B-spline weights' outer product.
+        let bspline = |t: f64| {
+            let s = 1. - t;
+            [
+                s * s * s / 6.,
+                (3. * t * t * t - 6. * t * t + 4.) / 6.,
+                (-3. * t * t * t + 3. * t * t + 3. * t + 1.) / 6.,
+                t * t * t / 6.,
+            ]
+        };
+        let lag = |b: [f64; 4], k: usize| (0..4 - k).map(|j| b[j] * b[j + k]).sum::<f64>();
+        for (tx, ty) in [(0., 0.), (0.5, 0.5), (0.2, 0.7), (0.9, 0.35)] {
+            let (bx, by) = (bspline(tx), bspline(ty));
+            let (x0, x1, x2) = (lag(bx, 0), lag(bx, 1), lag(bx, 2));
+            let (y0, y1, y2) = (lag(by, 0), lag(by, 1), lag(by, 2));
+            let grouped = x0 * y0 - adjacent * (x1 * y0 + x0 * y1) - diagonal * x1 * y1
+                + two * (x2 * y0 + x0 * y2)
+                + knight * (x2 * y1 + x1 * y2)
+                + far * x2 * y2;
+            let mut brute = 0.;
+            for (a, b) in (0..16).flat_map(|a| (0..16).map(move |b| (a, b))) {
+                let d = (
+                    (b % 4) as i32 - (a % 4) as i32,
+                    (b / 4) as i32 - (a / 4) as i32,
+                );
+                brute += bx[a % 4] * by[a / 4] * bx[b % 4] * by[b / 4] * fine_corner_correlation(d);
+            }
+            assert!(
+                (grouped - brute).abs() < 1e-12,
+                "t ({tx}, {ty}): {grouped} vs {brute}"
+            );
+        }
     }
 }

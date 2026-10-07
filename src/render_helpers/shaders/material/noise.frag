@@ -20,54 +20,78 @@ const vec2 NOISE_SEED_1 = vec2(1301.0, 2659.0);
 const vec2 NOISE_SEED_2 = vec2(3709.0, 977.0);
 const vec2 NOISE_SEED_3 = vec2(2381.0, 3917.0);
 
+// Uniform cubic B-spline weights of the lattice points i - 1 to i + 2 at
+// position t in the cell.
+vec4 noiseBspline(float t) {
+    float t2 = t * t;
+    float t3 = t2 * t;
+    float s = 1.0 - t;
+    return vec4(s * s * s, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0;
+}
+
 // One layer's signed grain before its amount. White is hash12 - 0.5; fine
 // and lightness use fineGrain's high-pass. At scale 1 and below, the
-// original per-pixel hash. Above it, Hermite-interpolated lattice values
-// divided by the interpolation's own deviation sqrt(w^T C w), so the
-// grain's deviation is the same at every scale and every position in a
-// cell. White corners are independent (C = I). Fine corners share hashes:
-// adjacent ones correlate at -1/6 and diagonal ones at -7/36, which the
-// norm subtracts as twice those (0.33333333, 0.38888889).
+// original per-pixel hash. Above it, lattice values reconstructed with the
+// cubic B-spline over the 4x4 points around the pixel, divided by the
+// reconstruction's own deviation sqrt(w^T C w), so the grain's deviation is
+// the same at every scale and every position in a cell. The weights are
+// separable, so w^T C w = sum over offsets d of C(d) x(|dx|) y(|dy|), where
+// x(k) sums bx_j bx_(j+k). White values are independent: x0 y0. Fine values
+// share hashes and correlate up to two points apart (-1/6, -7/36, 1/24,
+// 1/36, 1/72 at (1,0), (1,1), (2,0), (2,1), (2,2)); each norm coefficient is
+// that correlation times the number of offsets sharing it. Hermite corners
+// went flat at the lattice points and read as a grid of squares at scale 8
+// (owner's look, 2026-10-07).
 float noiseValue(vec2 fragCoord, float type, float scale, vec2 offset) {
     if (scale <= 1.0)
         return type < 0.5 ? hash12(fragCoord + offset) - 0.5 : fineGrain(fragCoord + offset);
     vec2 p = fragCoord / scale;
     vec2 base = floor(p) + offset;
-    vec2 u = fract(p);
-    u = u * u * (3.0 - 2.0 * u);
-    float w00 = (1.0 - u.x) * (1.0 - u.y);
-    float w10 = u.x * (1.0 - u.y);
-    float w01 = (1.0 - u.x) * u.y;
-    float w11 = u.x * u.y;
-    float norm = w00 * w00 + w10 * w10 + w01 * w01 + w11 * w11;
-    float g00;
-    float g10;
-    float g01;
-    float g11;
+    vec2 t = fract(p);
+    vec4 bx = noiseBspline(t.x);
+    vec4 by = noiseBspline(t.y);
+    float x0 = dot(bx, bx);
+    float y0 = dot(by, by);
+    float g[16];
+    float norm;
     if (type < 0.5) {
-        g00 = hash12(base) - 0.5;
-        g10 = hash12(base + vec2(1.0, 0.0)) - 0.5;
-        g01 = hash12(base + vec2(0.0, 1.0)) - 0.5;
-        g11 = hash12(base + vec2(1.0, 1.0)) - 0.5;
-    } else {
-        // The 4x4 block of hashes around the cell: block (x, y) is the
-        // lattice point base + (x - 1, y - 1), so the corners are block
-        // cells 5, 6, 9 and 10, and each corner's 3x3 neighbourhood lies in
-        // the block. A corner's fine value is (9 h - its 3x3 sum) / 8,
-        // scaled as fineGrain scales.
-        float h[16];
+        // Value (x, y) is the lattice point base + (x - 1, y - 1).
         for (int y = 0; y < 4; y++)
             for (int x = 0; x < 4; x++)
-                h[y * 4 + x] = hash12(base + vec2(float(x) - 1.0, float(y) - 1.0));
+                g[y * 4 + x] = hash12(base + vec2(float(x) - 1.0, float(y) - 1.0)) - 0.5;
+        norm = x0 * y0;
+    } else {
+        // The 6x6 block of hashes around the cell: block (x, y) is the
+        // lattice point base + (x - 2, y - 2), so value (x, y) is block
+        // (x + 1, y + 1) and its 3x3 neighbourhood lies in the block. A
+        // value is (9 h - its 3x3 sum) / 8, scaled as fineGrain scales; the
+        // 3x3 sums go through row sums of three.
+        float h[36];
+        for (int y = 0; y < 6; y++)
+            for (int x = 0; x < 6; x++)
+                h[y * 6 + x] = hash12(base + vec2(float(x) - 2.0, float(y) - 2.0));
+        float r[24];
+        for (int y = 0; y < 6; y++)
+            for (int x = 0; x < 4; x++)
+                r[y * 4 + x] = h[y * 6 + x] + h[y * 6 + x + 1] + h[y * 6 + x + 2];
         float k = 0.94280904 / 8.0;
-        g00 = (9.0 * h[5] - (h[0] + h[1] + h[2] + h[4] + h[5] + h[6] + h[8] + h[9] + h[10])) * k;
-        g10 = (9.0 * h[6] - (h[1] + h[2] + h[3] + h[5] + h[6] + h[7] + h[9] + h[10] + h[11])) * k;
-        g01 = (9.0 * h[9] - (h[4] + h[5] + h[6] + h[8] + h[9] + h[10] + h[12] + h[13] + h[14])) * k;
-        g11 = (9.0 * h[10] - (h[5] + h[6] + h[7] + h[9] + h[10] + h[11] + h[13] + h[14] + h[15])) * k;
-        norm -= 0.33333333 * (w00 * w10 + w00 * w01 + w10 * w11 + w01 * w11)
-              + 0.38888889 * (w00 * w11 + w10 * w01);
+        for (int y = 0; y < 4; y++)
+            for (int x = 0; x < 4; x++)
+                g[y * 4 + x] = (9.0 * h[(y + 1) * 6 + x + 1]
+                                - (r[y * 4 + x] + r[(y + 1) * 4 + x] + r[(y + 2) * 4 + x])) * k;
+        float x1 = bx.x * bx.y + bx.y * bx.z + bx.z * bx.w;
+        float y1 = by.x * by.y + by.y * by.z + by.z * by.w;
+        float x2 = bx.x * bx.z + bx.y * bx.w;
+        float y2 = by.x * by.z + by.y * by.w;
+        norm = x0 * y0 - 0.33333333 * (x1 * y0 + x0 * y1) - 0.77777778 * x1 * y1
+             + 0.08333333 * (x2 * y0 + x0 * y2) + 0.11111111 * (x2 * y1 + x1 * y2)
+             + 0.05555556 * x2 * y2;
     }
-    return (w00 * g00 + w10 * g10 + w01 * g01 + w11 * g11) / sqrt(norm);
+    vec4 rows = vec4(dot(bx, vec4(g[0], g[1], g[2], g[3])),
+                     dot(bx, vec4(g[4], g[5], g[6], g[7])),
+                     dot(bx, vec4(g[8], g[9], g[10], g[11])),
+                     dot(bx, vec4(g[12], g[13], g[14], g[15])));
+    return dot(by, rows) / sqrt(norm);
 }
 
 // Lightness grain on an encoded colour: Oklab L of the clamped colour moves
