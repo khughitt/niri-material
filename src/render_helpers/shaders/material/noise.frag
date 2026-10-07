@@ -117,10 +117,26 @@ void noiseBehindLayer(inout vec3 v, inout bool isLinear, vec2 fragCoord,
 }
 
 // Glass: the averaged linear backdrop, encoded once for the glass layers,
-// returned in linear light. One active layer is the pre-layer arithmetic.
+// returned in linear light. A lone slot-0 layer at scale 1 runs the
+// pre-layer body verbatim: the layered path computes the same values, but
+// the driver compiles its lightness arithmetic differently, which moved one
+// pixel by one code against the 4a8b2072 baseline.
 vec3 noise_behind(vec3 color, vec2 fragCoord) {
     if (!noiseAt(0.0))
         return color;
+    if (mat_noise_site.x == 0.0 && mat_noise_scale.x <= 1.0
+        && mat_noise.y <= 0.0 && mat_noise.z <= 0.0 && mat_noise.w <= 0.0) {
+        vec3 encoded = linearToSrgb(color);
+        vec2 noiseSeed = fragCoord + NOISE_SEED_0;
+        if (mat_noise_type.x < 0.5)
+            return srgbToLinear(encoded + (hash12(noiseSeed) - 0.5) * mat_noise.x);
+        float grain = fineGrain(noiseSeed) * mat_noise.x;
+        if (mat_noise_type.x < 1.5)
+            return srgbToLinear(encoded + vec3(grain));
+        vec3 lab = linearToOklab(srgbToLinear(clamp(encoded, 0.0, 1.0)));
+        lab.x += grain;
+        return clamp(oklabToLinear(lab), 0.0, 1.0);
+    }
     vec3 v = linearToSrgb(color);
     bool isLinear = false;
     noiseBehindLayer(v, isLinear, fragCoord, mat_noise.x, mat_noise_type.x, mat_noise_site.x, mat_noise_scale.x, NOISE_SEED_0);
