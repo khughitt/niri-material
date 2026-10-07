@@ -28,7 +28,7 @@ class ModeTests(unittest.TestCase):
                     fast_mode()
 
     def test_budget_caps_total_children_and_rejects_malformed_values(self):
-        for value, expected in ((None, 10), ('1', 1), ('10', 10), ('999', 10)):
+        for value, expected in ((None, 10), ('1', 1), ('10', 10), ('12', 12), ('16', 16), ('999', 16)):
             with self.subTest(value=value), mock.patch.dict(os.environ, {}, clear=True):
                 if value is not None:
                     os.environ['NEXTEST_TEST_THREADS'] = value
@@ -86,6 +86,41 @@ class DriverCleanupTests(Remainder):
             'test_probe.Remainder.test_first:0', 'test_probe.Remainder.test_second:0',
             'test_probe.DriverCleanupTests.test_first:0'})
         self.assertEqual(len(lines), 3)
+
+    def test_full_buckets_remainder_modules_and_isolates_lifecycle_cases(self):
+        cases = '''    def record(self):
+        with open(self.id() + '.pid', 'a') as out:
+            out.write(os.environ['NIRI_TOOLING_FAST'] + ':' + str(os.getpid()) + '\\n')
+    def test_one(self): self.record()
+    def test_two(self): self.record()
+'''
+        modules = ('alpha', 'beta', 'gamma', 'delta')
+        for name in modules:
+            self.fixture('class Cases(unittest.TestCase):\n' + cases, f'test_{name}.py')
+        self.fixture('class DriverCleanupTests(unittest.TestCase):\n' + cases, 'test_life.py')
+        lifecycle = ['test_life.DriverCleanupTests.test_one', 'test_life.DriverCleanupTests.test_two']
+        expected = {f'test_{name}.Cases.test_{case}' for name in modules for case in ('one', 'two')}
+        expected.update(lifecycle)
+        for budget, children, remainder_processes in (('10', 10, 4), ('1', 1, 1)):
+            with self.subTest(budget=budget):
+                for path in self.root.glob('*.pid'):
+                    path.unlink()
+                run = self.run_suite(NEXTEST_TEST_THREADS=budget)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertIn(f'Full tooling: 10 cases, {children} children', run.stdout)
+                self.assertIn('Ran 10 tests', run.stdout)
+                runs = {path.name.removesuffix('.pid'): path.read_text().splitlines()
+                        for path in self.root.glob('*.pid')}
+                self.assertEqual(set(runs), expected)
+                self.assertTrue(all(len(lines) == 1 for lines in runs.values()), runs)
+                pid = {case_id: lines[0].split(':')[1] for case_id, lines in runs.items()}
+                self.assertEqual({lines[0].split(':')[0] for lines in runs.values()}, {'0'})
+                for name in modules:
+                    self.assertEqual(pid[f'test_{name}.Cases.test_one'], pid[f'test_{name}.Cases.test_two'])
+                remainder = {pid[case_id] for case_id in expected if '.Cases.' in case_id}
+                self.assertEqual(len(remainder), remainder_processes)
+                self.assertEqual(len({pid[case_id] for case_id in lifecycle}), 2)
+                self.assertFalse(remainder & {pid[case_id] for case_id in lifecycle})
 
     def test_fast_preserves_native_inventory_and_module_fixtures(self):
         body = '''def setUpModule():
