@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency-2
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-07T03:26:53Z
+updated: 2026-10-07T03:28:42Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -30,3 +30,6 @@ Process: planned
 - 2026-10-07T03:26:03Z (fix/pre-commit-latency-2): resumed
   provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-07T03:26:52Z (fix/pre-commit-latency-2): spec drafted: docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md (fast tooling 2 -> 4 children; full route unchanged; limit unchanged)
+- 2026-10-07T03:28:41Z (fix/pre-commit-latency-2): filed ops-6cff48 (gap: no per-route latency target)
+- 2026-10-07T03:28:41Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review .worktrees/material-5094f2/docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md (fast tooling 2 -> 4 children). After acceptance, agent writes the plan, implements, runs three staged hook commits and tt-latency verify.
+  provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
