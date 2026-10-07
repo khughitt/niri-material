@@ -1,6 +1,6 @@
 # Pre-commit latency recurrence
 
-Status: draft for owner review, round 2 (material-5094f2).
+Status: accepted for planning, round 2 (material-5094f2).
 
 ## 1. Incident
 
@@ -124,7 +124,9 @@ the whole hook.
   two lifecycle cases, budget `10`. Every case ID runs exactly once in full
   mode; each remainder module's cases and fixtures share one process; each
   lifecycle case runs in a process of its own; the remainder uses four
-  processes. At budget `1` the same IDs run in one child.
+  processes. At budget `1` the same IDs run one child at a time: the
+  remainder in one process, and each lifecycle case still in a separate
+  process of its own, sequentially.
 
 **AGENTS.md, Gates:** fast tooling runs "with two children" becomes four, and
 "Full tooling defaults to ten children total" names the 16 ceiling for a

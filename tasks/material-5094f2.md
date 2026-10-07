@@ -8,12 +8,13 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency-2
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-07T10:30:52Z
+updated: 2026-10-07T10:57:37Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
 source: "tt-latency:titan:2026-10-07T03:05:28Z"
 spec: docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md
+plan: docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md
 ---
 
 Filed by tt-latency on titan: the median of successful, uncontended, unwidened runs over the trailing window is over the limit in latency.toml (ops). The material project is halted while this task is open: tasks start refuses new lower-priority work there. Each pair in a `breach:` note below is an obligation on the host it names. Fix the suite, then run `tt-latency verify <this id> --after <remedy timestamp>` on each host named; the task closes when verify exits 0, and the tasks done message carries its output.
@@ -45,4 +46,11 @@ Process: planned
   provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-07T10:30:51Z (fix/pre-commit-latency-2): spec round 2: full route measured warm at 46.3/46.6 s (check-full); cause is the single remainder process (26.7 s at 10-04, 38.8 s now). Design adds module-bucketed remainder (4 buckets, buckets first) and a 16 pool ceiling for granted budgets (unset stays 10): probe 22.7-23.5 s full tooling. P2: fast fixture grows to four modules; new full-route coordinator test
 - 2026-10-07T10:30:51Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review round 2 of .worktrees/material-5094f2/docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md (fast 4 children; full remainder bucketed, pool 16). After acceptance, agent writes the plan, implements, measures check/check-full, runs the staged hook commits and tt-latency verify.
+  provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T10:36:16Z (fix/pre-commit-latency-2): review: spec round 2 — verdict: accept; findings: P3 1; reviewer: codex
+- 2026-10-07T10:36:16Z (fix/pre-commit-latency-2): Round 2 design accepted for planning: warm full-route regression is measured; shared four-bucket remainder partition and explicit-grant ceiling 16 address it while unset stays 10. Four nonempty fast fixture modules resolve P2, and independent fast/full acceptance prevents a fast-only mixed-median verdict from masking full regression. P3 clarification for spec line 127 and the plan: budget 1 means one child at a time; one remainder worker and each lifecycle case still launch as separate sequential processes. This does not block planning. Timing log confirms successful 424-case check-full runs near 46.2/46.5 s after a 52.9 s cold run. Review covers the proposed design; coordinator implementation and tests remain to be written.
+- 2026-10-07T10:55:12Z (fix/pre-commit-latency-2): resumed
+  provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T10:57:36Z (fix/pre-commit-latency-2): plan drafted: docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md (3 tasks: material-8a5af7, material-4c455e, material-bea903); spec line 127 clarified (budget 1 = one child at a time, lifecycle cases still separate sequential processes); real-hook acceptance uses private-index staged runs per route, as material-cd7782 did
+- 2026-10-07T10:57:36Z (fix/pre-commit-latency-2): parked (waiting on user, review): Owner: review .worktrees/material-5094f2/docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md. After acceptance, agent executes Tasks 1-3 (material-8a5af7, -4c455e, -bea903).
   provenance: {"harness_session":"claude-code:b4fd4877-edf1-425e-b39a-e543fd97c021","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
