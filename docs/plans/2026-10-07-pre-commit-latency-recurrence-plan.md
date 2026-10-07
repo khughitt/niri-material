@@ -18,7 +18,7 @@
 - Budget `1` means one child at a time: the remainder in one process, then each lifecycle case in its own sequential process.
 - Each step child is started before its work and closed with `tasks done` in the commit that lands it, its record staged with the code. The parent closes last, after the acceptance child and the final branch review.
 - No test is omitted, no sleep shortened, no time bound relaxed, and the 45 s limit is not raised.
-- Acceptance (warm, idle host): median of three `just check-full` ≤ 35 s (required ≤ 45 s); median of three `just check` ≤ 30 s; three real hook runs per code route through `.githooks/pre-commit` on staged changes (fast each < 30 s, full each < 35 s), plus Task 2's own full-route commit hook < 35 s; `tt-latency verify material-5094f2 --after <remedy commit time>` exits 0.
+- Acceptance (warm, idle host): median of three `just check-full` ≤ 35 s (required ≤ 45 s); median of three `just check` ≤ 30 s; three real hook runs per code route through `.githooks/pre-commit` on staged changes (fast each < 30 s, full each < 35 s), plus Task 2's own full-route commit hook < 35 s; `tt-latency verify material-5094f2 --after <remedy commit time> --dry-run` exits 0 during acceptance and corrections, and the one recording `tt-latency verify` runs after the final review passes, immediately before parent closure, with the latest remedy timestamp. A recorded verification marks the target satisfied and later runs skip it, even with a newer `--after`.
 
 ## Review Focus
 
@@ -336,36 +336,40 @@ jq -r --arg since "<remedy timestamp>" 'select(.project=="material" and .target=
 
 Expected: every run exits 0; three fast runs each under 30 s; the full runs (three here plus Task 2's commit) each under 35 s. A miss stops here: note the numbers before changing anything.
 
-- [ ] **Step 4: Verify.** The remedy timestamp is Task 2's commit time in UTC:
+- [ ] **Step 4: Verify without recording.** The remedy timestamp is Task 2's commit time in UTC:
 
 ```bash
 TZ=UTC git log -1 --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd <task-2-commit>
-```
-
-```bash
 tt-latency verify material-5094f2 --after <remedy timestamp> --dry-run
-tt-latency verify material-5094f2 --after <remedy timestamp>
 ```
 
-Expected: exit 0 once three qualifying runs exist (`[verify] min_runs = 3`). Keep the full output for the `tasks done` message.
+Expected: exit 0 once three qualifying runs exist (`[verify] min_runs = 3`). Do not run it without `--dry-run` here: a recorded verification marks the target satisfied, and a later corrective rerun with a newer `--after` would then pass with no new runs.
 
-- [ ] **Step 5: Record and close the acceptance step.** Update the spec's status line to "Implemented (material-5094f2)" and add a "Results" paragraph under §4 with the step 2 medians, the step 3 hook seconds, and the verify verdict. Then:
+- [ ] **Step 5: Record and close the acceptance step.** Update the spec's status line to "Implemented (material-5094f2)" and add a "Results" paragraph under §4 with the step 2 medians, the step 3 hook seconds, and the dry-run verify verdict. Then:
 
 ```bash
 tasks note material-5094f2 "accept: check-full median <x> s, check median <y> s, full hooks <z1>/<z2>/<z3> s (Task 2 commit <z0> s), fast hooks <a>/<b>/<c> s"
-tasks done material-bea903 "both routes under target; tt-latency verify exit 0"
+tasks done material-bea903 "both routes under target; tt-latency verify --dry-run exit 0"
 tasks check
 git add docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md tasks/material-bea903.md tasks/material-5094f2.md
 git commit -m "docs(specs): record the latency recurrence results (material-bea903)"
 ```
 
-- [ ] **Step 6: Final branch review and corrections.** Dispatch one fresh reviewer on the most capable model over the whole branch (`git diff materials-26.04...HEAD`), with the spec and this plan. Note the round on the parent: `tasks note material-5094f2 "review: impl round <n> — verdict: <revise|accept>; findings: <label> <count>, … | none; reviewer: <harness/model>"`. While a re-review reproduces Critical or Important findings, run up to five corrective rounds (one fix commit plus one scoped re-review each). A fix that touches `tools/` invalidates step 2 and step 3 timings: rerun both, and rerun step 4 with the fix's commit time as the new remedy timestamp.
+- [ ] **Step 6: Final branch review and corrections.** Dispatch one fresh reviewer on the most capable model over the whole branch (`git diff materials-26.04...HEAD`), with the spec and this plan. Note the round on the parent: `tasks note material-5094f2 "review: impl round <n> — verdict: <revise|accept>; findings: <label> <count>, … | none; reviewer: <harness/model>"`. While a re-review reproduces Critical or Important findings, run up to five corrective rounds (one fix commit plus one scoped re-review each). A fix that touches `tools/` invalidates step 2 and step 3 timings: rerun both, and rerun step 4 (still `--dry-run`) with the fix's commit time as the new remedy timestamp. The latest remedy timestamp, Task 2's or the last `tools/` fix's, is the one step 7 uses.
 
-- [ ] **Step 7: Close the parent.** Only after steps 5 and 6, with every child done:
+- [ ] **Step 7: Record verification and close the parent.** Only after step 6's final review passes, with every child done. This is the first and only recording verification:
 
 ```bash
-tasks done material-5094f2 "<full tt-latency verify output from step 4, or its rerun>"
+tt-latency verify material-5094f2 --after <latest remedy timestamp>
+```
+
+It must exit 0; keep its full output. Then, immediately:
+
+```bash
+tasks done material-5094f2 "<full tt-latency verify output>"
 tasks check
 git add tasks/material-5094f2.md
 git commit -m "chore(tasks): close the pre-commit latency recurrence (material-5094f2)"
 ```
+
+If it does not exit 0, do not close: note the output on the parent and return to step 2.
