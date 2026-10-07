@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 6
+# ops-check version 7
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -199,9 +199,14 @@ def project_prefix(before, previous):
     return found.group(0) if found else None
 
 
+def basenames_of(root):
+    return {pathlib.PurePosixPath(f).name for f in tracked(root)}
+
+
 def references(root, projects, basenames, doc):
-    """Findings for one document: (path, line, message)."""
-    justfile, names = recipes(root)
+    """Findings for one document: (path, line, message). A reference qualified by a
+    registered project is checked against that project's files and justfile only."""
+    owners = {root: (basenames, recipes(root))}
     text = (root / doc).read_text()
     previous = ""
     for number, line in prose_lines(text):
@@ -210,18 +215,21 @@ def references(root, projects, basenames, doc):
             kind = classify(token)
             if kind is None:
                 continue
-            if kind == "recipe":
-                if names is not None and RECIPE.match(token).group(1) not in names:
-                    yield doc, number, f"`{token}` is not a recipe in {justfile}"
-                continue
-            if kind == "filename":
-                if token not in basenames:
-                    yield doc, number, f"`{token}` is not a tracked file"
-                continue
             before = line[:found.start()]
             separated = not before.strip() or before[-1] == " "
             prefix = project_prefix(before, previous) if separated else None
             base, where = (projects[prefix], f" in {prefix}") if prefix in projects else (root, "")
+            if base not in owners:
+                owners[base] = (basenames_of(base), recipes(base))
+            names_here, (justfile, names) = owners[base]
+            if kind == "recipe":
+                if names is not None and RECIPE.match(token).group(1) not in names:
+                    yield doc, number, f"`{token}` is not a recipe in {justfile}{where}"
+                continue
+            if kind == "filename":
+                if token not in names_here:
+                    yield doc, number, f"`{token}` is not a tracked file{where}"
+                continue
             if (base / token).exists():
                 continue
             if git(base, "check-ignore", "-q", token) is not None:
