@@ -128,10 +128,11 @@ material "film-stock" {
   position in the backdrop list (§5), so the output's grain does not depend
   on where a material wrote its backdrop node. A single node in slot 0 seeds
   as today at every site, which keeps the placement design's identities. The
-  one coincidence left: a material's first backdrop layer and a glass layer
-  in slot 0 share a pattern. That is the placement design's identity case
-  (backdrop grain lands where glass grain would at `ior 1`); refraction and
-  blur decorrelate it otherwise.
+  coincidence left: backdrop layer k and a material's glass or film layer in
+  slot k share a seed, so their patterns coincide. For k = 0 that is the
+  placement design's identity case (backdrop grain lands where glass grain
+  would at `ior 1`); for any k, refraction and blur decorrelate them, and
+  without either the two add coherently rather than in quadrature.
 - **Backdrop agreement over lists.** The materials that place any layer at
   the backdrop must agree on the ordered list of their backdrop layers'
   `(amount, kind, scale)`. The check stays beside `validate_material_refs`
@@ -205,7 +206,13 @@ material "film-stock" {
   is re-encoded only if another glass layer follows. The function returns
   linear light: decoded after a white or fine last layer, directly after a
   lightness last layer. With one active layer this is the baseline
-  arithmetic exactly, lightness's direct return included.
+  arithmetic, lightness's direct return included; but the NVIDIA driver
+  compiles the layered lightness path one code off the baseline at one pixel
+  in the smoke (`2026-10-06-noise-layers-evidence.md`), so when slot 0 is the
+  only active slot at any site and is a glass layer at scale 1,
+  `noise_behind` runs the baseline body verbatim. A lone glass layer beside
+  backdrop or film layers takes the layered path; that config has no
+  baseline to match.
 - **`noise_post` (film).** Applies the film-site layers in slot order to the
   encoded glass, as today's single call does.
 - **Cost.** Per active layer per fragment: one hash (white, scale 1), nine
