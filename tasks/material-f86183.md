@@ -8,7 +8,7 @@ complexity: high
 process: direct
 owner: materials-26.04
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-06T18:13:15Z
+updated: 2026-10-07T08:12:16Z
 started: 2026-10-02T16:22:49Z
 depends: []
 parent: material-5d6b2c
@@ -41,3 +41,6 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
   provenance: {"harness_session":"claude-code:e09fb767-0d8d-4b44-86a6-8d9ffc6849af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-06T18:13:14Z (materials-26.04): parked (waiting on user, dependency): Owner: attach a second monitor to titan (or name a two-output host) so material-1af3c6 can run; then agent: finish 1af3c6's two-output lane and its pilot, confirm this goal's acceptance against the landed lifecycle lanes (f7eb0b TTY resume/unlock, 3acc86 screencast, 80caf4 idle inhibitor, all done), and close it.
   provenance: {"harness_session":"claude-code:e09fb767-0d8d-4b44-86a6-8d9ffc6849af","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T08:12:15Z (materials-26.04): material-1af3c6 dropped on the owner's word (no second monitor); replaced by material-f5b371, a deterministic in-process two-output removal test. The real two-output capture stays unverified on hardware.
+- 2026-10-07T08:12:15Z (materials-26.04): parked (waiting on agent): Agent: implement material-f5b371 (in-process two-output removal test, evidence doc update), then confirm this goal's acceptance against the landed lanes (f7eb0b, 3acc86, 80caf4) and close it
+  provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
