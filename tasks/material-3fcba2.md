@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-07T03:14:21Z
+updated: 2026-10-07T03:19:49Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -69,3 +69,8 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-06T11:31:50Z (material-3fcba2): parked (waiting on user, quiet; headless, 39 min): Agent: run material-a4d874's prepared smoke pilot (~6 min) and full (~15 min), write/attach evidence, then material-2f2af4's cost pilot (~8 min) and full (~10 min); baseline already built. Owner then judges contact sheet; agent runs gate, dispatches whole-branch review, integrates, follows prism's repository instructions for the schema refresh, and closes the task. Prior headless preflight refused CPU 16.5%, load 4.92, GPU 34% at P5; no cells ran.
   provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-07T03:14:21Z (material-3fcba2): attached: 2026-10-06-noise-layers-sheet.png (1280028 bytes): Noise layers contact sheet: grain sizes, stacks, four-at-0.15 against one-at-0.3; 1:1 crops at 2x, controls bordered
+- 2026-10-07T03:15:37Z (material-3fcba2): resumed
+  provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T03:17:43Z (material-3fcba2): just gate passed at a1d0c330 (1.6 min): tooling 409 (2 optional skips), Rust 504 passed 1 ignored, doctests ok
+- 2026-10-07T03:19:24Z (material-3fcba2): review: impl round 1 — verdict: accept; findings: Minor 4; reviewer: claude-code/claude-opus-5-5
+- 2026-10-07T03:19:49Z (material-3fcba2): Review round 1 dispositions: 1 (spec claim of exact single-layer arithmetic) fixed in spec; 2 (seed coincidence understated) fixed in spec and material-config; 3 rejected: grain_deviation_holds_across_scales_and_cell_positions renders lone layers at scale 2/4/8 and would fail if the fast path ignored scale; 4 filed as material-49d816

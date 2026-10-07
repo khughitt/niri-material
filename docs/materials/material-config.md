@@ -159,9 +159,12 @@ own amount, `type=`, `site=` and `scale=`, and a fifth node refuses the
 config. Each site applies its layers in the order written; sites run backdrop,
 glass, film. `scale=` is the grain's cell size in physical output pixels, 1
 (the default, per-pixel grain) to 16; above 1 the grain is smooth value noise
-normalised so an amount means the same strength at every size. Each layer has
-its own grain pattern: glass and film layers by their position among the
-material's nodes, backdrop layers by their position among the backdrop layers.
+normalised so an amount means the same strength at every size. A layer's
+grain pattern follows its position: glass and film layers their position among
+the material's nodes, backdrop layers theirs among the backdrop layers. Layers
+in different positions get different patterns; the k-th backdrop layer shares
+its pattern with a glass or film layer in position k, which blur and
+refraction decorrelate.
 Independent white or fine layers of one type and size at one site, with
 nothing clipping, have the variance of one layer of amount `sqrt(a² + b²)` but
 not its distribution, so they are close to redundant: layers are for
