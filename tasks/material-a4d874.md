@@ -1,18 +1,20 @@
 ---
 id: material-a4d874
 title: "Noise layers docs, nested smoke, contact sheet and evidence"
-status: doing
+status: done
 priority: 2
 complexity: mid
 process: direct
 needs: [quiet]
 owner: material-3fcba2
 created: 2026-10-06T10:17:17Z
-updated: 2026-10-07T02:45:15Z
+updated: 2026-10-07T03:14:27Z
 started: 2026-10-06T11:19:53Z
+completed: 2026-10-07T03:14:27Z
 depends: []
 parent: material-3fcba2
 tags: []
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 plan: docs/plans/2026-10-06-noise-layers.md
 step: "Task 4: Docs, the nested-Weston smoke and contact sheet, the evidence document"
@@ -36,3 +38,8 @@ step: "Task 4: Docs, the nested-Weston smoke and contact sheet, the evidence doc
 - 2026-10-07T02:07:34Z (material-3fcba2): run: 6.3 min (est 15, headless); build 0.1, cells 6.2; failed: lightness glass vs baseline AE 1 pixel ((219,578) green 121 vs 120, deterministic in both sessions); white and fine byte-identical at all three sites; remaining assertions not reached; run dir noise-layers-full-1791338406
 - 2026-10-07T02:24:47Z (material-3fcba2): run: 16.8 min (est 15, headless); build 0.1, cells 16.7; passed with lightness glass baseline identity recorded, not asserted (scratch copy of the smoke, one line changed): lightness_glass_baseline_ae=0.000980392 (one pixel, one code); all other assertions pass (9 site identities less that one, inherit, scale=1 x3, quadrature 1.4159, scale sd within 1.2%, bins within 1.7%, lf rising, slots); clean release; run dir noise-layers-full-soft-1791338868
 - 2026-10-07T02:45:15Z (material-3fcba2): Lightness glass identity fixed by a lone-slot-0 scale-1 path in noise_behind running the 4a8b2072 body verbatim (the layered path computes the same values; the driver compiles its lightness arithmetic differently). Glass-site identity run (white, fine, lightness): all AE 0, run dir noise-layers-ident-1791340828; in-process noise 27/27, test-fast 504 passed
+- 2026-10-07T03:05:46Z (material-3fcba2): run: 19.4 min (est 15, headless); build 2.7, cells 16.7; passed: all six assertions strict at 558bfa02, every baseline identity AE 0, 44 cells deterministic; clean release; run dir noise-layers-full2-1791341162
+- 2026-10-07T03:14:27Z (material-3fcba2): done
+  provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-07T03:14:27Z (material-3fcba2): Nested smoke passes all six assertions strict at 558bfa02 against 4a8b2072 (after fixing a one-pixel lightness glass identity miss); evidence document and annotated contact sheet
+  provenance: {"harness_session":"claude-code:4acbe34b-b4ad-4dd2-a0a5-6d4fd4a4df22","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

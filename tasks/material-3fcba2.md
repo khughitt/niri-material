@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-06T11:31:50Z
+updated: 2026-10-07T03:14:21Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -68,3 +68,4 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
   provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}
 - 2026-10-06T11:31:50Z (material-3fcba2): parked (waiting on user, quiet; headless, 39 min): Agent: run material-a4d874's prepared smoke pilot (~6 min) and full (~15 min), write/attach evidence, then material-2f2af4's cost pilot (~8 min) and full (~10 min); baseline already built. Owner then judges contact sheet; agent runs gate, dispatches whole-branch review, integrates, follows prism's repository instructions for the schema refresh, and closes the task. Prior headless preflight refused CPU 16.5%, load 4.92, GPU 34% at P5; no cells ran.
   provenance: {"harness_session":"codex:01a110dd-fa22-7dd1-aea1-b7dc927a8f5a","harness_session_source":"CODEX_SESSION_ID"}
+- 2026-10-07T03:14:21Z (material-3fcba2): attached: 2026-10-06-noise-layers-sheet.png (1280028 bytes): Noise layers contact sheet: grain sizes, stacks, four-at-0.15 against one-at-0.3; 1:1 crops at 2x, controls bordered
