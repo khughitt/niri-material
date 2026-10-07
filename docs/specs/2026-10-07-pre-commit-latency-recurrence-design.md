@@ -1,6 +1,6 @@
 # Pre-commit latency recurrence
 
-Status: draft for owner review (material-5094f2).
+Status: draft for owner review, round 2 (material-5094f2).
 
 ## 1. Incident
 
@@ -10,23 +10,30 @@ Status: draft for owner review (material-5094f2).
 2026-10-05T10:16:51Z. It is that incident again, two days later, by the same
 0.4 s margin.
 
+material-cd7782's design (2026-10-04) set two targets for this hook: a warm
+fast-route median of at most 35 s, and a warm full-route median of at most
+45 s, aiming for 35 s. It verified the full route at 40.752 s. Both targets
+apply here; neither is measured standing, so both crept.
+
 ## 2. What the runs show
 
-The hook has three routes (AGENTS.md, Gates). Successful wrapper runs after
-the floor, by route:
+The hook has three routes (AGENTS.md, Gates). Replaying the incident's
+filtering (successful, uncontended, unwidened runs in the window) over the
+timing log splits the 37 judged runs by route:
 
-| Route | Runs | Median | Range |
-| --- | ---: | ---: | --- |
-| fast tooling | 40 | 37.5 s | 33.8–102.2 s |
-| full tooling (lifecycle subjects, gate wiring) | 7 | 106.6 s | 46.3–298.7 s |
-| legacy `unittest discover` (before routing landed) | 4 | 242.4 s | 241.7–258.6 s |
+| Route | Judged runs | Median |
+| --- | ---: | ---: |
+| fast tooling | 29 | 37.618 s |
+| full tooling (lifecycle subjects, gate wiring) | 4 | 89.765 s |
+| legacy `unittest discover` (before routing landed) | 4 | 242.398 s |
 
-The median of the judged set sits on the fast route's upper edge. A handful of
-full-route commits in the window decides the verdict: the live check at
-03:21Z read `ok` (median 42.256 s, 39 runs) only because the evening's
-commits were all fast-route.
+The 8 slow runs push the window median into the upper part of the fast
+route's spread. The legacy runs age out of the window; the full and fast runs
+stay, so both routes need to shrink.
 
-The fast route on the idle host (one run per step, 2026-10-06 23:30 local):
+### Fast route
+
+On the idle host (one run per step, 2026-10-06 23:30 local):
 
 | Step | Seconds |
 | --- | ---: |
@@ -36,60 +43,123 @@ The fast route on the idle host (one run per step, 2026-10-06 23:30 local):
 | `cargo fmt --check` | 1.2 |
 | upstream-report, target-dir-check, tasks check, package-pin | < 1 together |
 
-The fast route has no cases slow enough to omit: the largest module is
-`test_upstream_report` at 6.9 s and the slowest case 2.7 s. The 2-child cap
-from material-cd7782 (spec 2026-10-04, §"two native unittest child
-processes") was the minimal change that met its 35 s fast target then. The
-suite has grown since, and nothing measures the fast target, so it crept back.
+No case is slow enough to omit: the largest module is `test_upstream_report`
+at 6.9 s and the slowest case 2.7 s. The 2-child cap from material-cd7782 was
+the minimal change that met 35 s then; the suite has grown since.
 
 Worker-count probe, fast tooling alone, two runs each, idle host:
 
-| Children | Seconds | Failures |
-| ---: | ---: | --- |
-| 2 | 24.1, 24.0 | none |
-| 4 | 11.4, 11.5 | only the test pinning "2 children" |
-| 6 | 15.7, 15.7 | only the test pinning "2 children" |
+| Children | Seconds |
+| ---: | --- |
+| 2 | 24.1, 24.0 |
+| 4 | 11.4, 11.5 |
+| 6 | 15.7, 15.7 |
 
-Six children are slower than four: whole-module buckets leave the largest
-module as a floor, and each extra child pays interpreter start and discovery.
+Six are slower than four: whole-module buckets leave the largest module as a
+floor, and each extra child pays interpreter start and discovery.
+
+### Full route
+
+Warm `just check-full` on the worktree (2026-10-07, load average about 3 on
+32 CPUs, Dropbox syncing): 53.0 s cold-clippy, then **46.3 s and 46.6 s**.
+The full route is over its 45 s requirement, not only its 35 s aim.
+
+Full tooling is 40.3 s of that. The coordinator runs every non-lifecycle case
+(387 cases, 38.8 s of case time) in a single remainder process, beside the 37
+`DriverCleanupTests`/`VtLibTests` cases (219.7 s of case time, longest
+20.6 s) scheduled one per process. The remainder was 26.7 s in the 10-04
+design; at 38.8 s it is now the critical path by itself.
+
+The lifecycle cases mostly wait on their time bounds: a run uses about 95 s of
+CPU over 32 s of wall time. Probes, full tooling alone, two runs each,
+remainder split into module buckets with the fast route's partition:
+
+| Remainder | Pool | Order | Seconds |
+| --- | ---: | --- | --- |
+| one process (today) | 10 | — | 40.0, 40.1 |
+| 4 module buckets | 10 | buckets first | 31.6, 31.8 |
+| 4 module buckets | 10 | lifecycle first | 33.4, 33.8 |
+| 6 module buckets | 10 | buckets first | 31.9, 31.7 |
+| 4 module buckets | 14 | buckets first | 25.4, 25.4 |
+| 4 module buckets | 16 | buckets first | 22.7, 23.5 |
+
+Every probe passed with the same 424 cases. At 16 the floor is the longest
+lifecycle case (20.6 s).
 
 ## 3. Design
 
-**Fast route: four children.** In `tools/tooling_tests.py`, the fast limit
-becomes `min(4, limit)`, still capped by `NEXTEST_TEST_THREADS`, and the
-module-bucket partition is unchanged. The coordinator test asserts four,
-and AGENTS.md's Gates section, which says fast tooling runs "with two
-children", says four.
-The hook runs under `host-budget run`, which granted `NEXTEST_TEST_THREADS=16`
-on the idle host, so the cap of four is what applies; a loaded host's smaller
-grant still wins.
-Expected fast route on an idle host: about 23 s, leaving about 20 s of
-headroom under the 45 s limit.
+All changes are in `tools/tooling_tests.py`, its tests, and AGENTS.md.
 
-**Full route: unchanged here.** Its 7 runs are the lifecycle and gate-wiring
-commits material-cd7782 sent to the full suite on purpose. With the fast route
-near 23 s, the judged median sits on the fast route unless more than half the
-window's commits take the full route.
+**One module partition.** Factor the fast route's module-bucket partition
+(largest module first into the emptiest bucket, whole modules per bucket) into
+one function, used by both routes, with **`min(4, limit)` buckets**.
+
+**Fast route: four children.** The fast pool becomes `min(4, limit)`
+children, each running one bucket. Expected on an idle host: about 23 s for
+the whole hook.
+
+**Full route: bucketed remainder, larger pool.**
+- The non-lifecycle remainder is split into `min(4, limit)` module buckets
+  instead of one process. Lifecycle cases stay one per process.
+- Jobs are submitted buckets first, then lifecycle cases, so the remainder
+  never queues behind the slow cases.
+- The pool ceiling for an explicit `NEXTEST_TEST_THREADS` grant rises from 10
+  to **16**. `host-budget run` granted 16 on the idle host; a loaded host's
+  smaller grant still wins. With the variable unset (CI's `ci-tooling-test`,
+  a raw run), the default stays **10**, so CI runners keep today's concurrency
+  against the lifecycle cases' time bounds.
+- Expected on an idle host: full tooling about 23 s, the whole full route
+  about 30 s, under the 35 s aim.
+
+**Tests** (`tools/test_tooling_tests.py`):
+- `test_budget_caps_total_children_and_rejects_malformed_values`: unset gives
+  10, `16` gives 16, `999` gives 16; the malformed values still fail.
+- `test_fast_preserves_native_inventory_and_module_fixtures`: the fixture
+  grows from two modules to **four nonempty modules**, so module-preserving
+  partitioning can launch four workers. It keeps its native-inventory
+  comparison, the expected-failure and fast-omitted lifecycle cases, and the
+  per-module `setUpModule`/`setUpClass` single-process checks. Budgets `10`
+  and `1` expect 4 and 1 children.
+- A new full-route coordinator test: a fixture with four remainder modules and
+  two lifecycle cases, budget `10`. Every case ID runs exactly once in full
+  mode; each remainder module's cases and fixtures share one process; each
+  lifecycle case runs in a process of its own; the remainder uses four
+  processes. At budget `1` the same IDs run in one child.
+
+**AGENTS.md, Gates:** fast tooling runs "with two children" becomes four, and
+"Full tooling defaults to ten children total" names the 16 ceiling for a
+granted budget and the module-bucketed remainder.
 
 **Rejected alternatives.**
 - Raising the 45 s limit: it hides the growth that caused both incidents.
 - Omitting more modules from the fast tier: no module is slow, and every
   omission moves coverage to pre-push.
-- Six or more children: measured slower than four.
+- Six or more fast children, or six remainder buckets: measured no faster than
+  four.
+- Lifecycle cases first: measured slower, since the remainder then queues.
+- Raising the unset default to 16: it changes CI's concurrency for no hook
+  gain, and the lifecycle cases are time-bounded.
 
 ## 4. Verification
 
-1. The coordinator test is updated, and the fast route is checked at the
-   one-child budget too: `NEXTEST_TEST_THREADS=1` still runs the same inventory
-   sequentially.
-2. Three staged commits through the real hook on the idle host, fast route,
-   each under 30 s.
-3. `tt-latency verify material-5094f2 --after <remedy commit time>` on the host the breach names
-   exits 0 once three qualifying runs exist (`[verify] min_runs = 3`). Its
-   output goes in the `tasks done` message.
+Acceptance, on the idle host, warm:
+1. `just test-one` on the changed coordinator tests, and the tooling suite in
+   both modes, pass. Full tooling's case IDs and verdicts match sequential
+   native discovery (the AGENTS.md reference command).
+2. **Full route:** median of three `just check-full` runs **≤ 35 s**
+   (required ≤ 45 s). At least one real full-route hook commit (the
+   implementation commit touches `tools/tooling_tests.py`, which routes full)
+   records under 35 s.
+3. **Fast route:** median of three `just check` runs ≤ 30 s, and three staged
+   fast-route commits through the real hook, each under 30 s.
+4. `tt-latency verify material-5094f2 --after <remedy commit time>` on the
+   host the breach names, exits 0 once three qualifying runs exist
+   (`[verify] min_runs = 3`). Its output goes in the `tasks done` message.
+   Items 2 and 3 stand beside it: verify judges the mixed median, which
+   fast-only runs can pass while the full route still regresses.
 
 ## 5. Out of scope
 
-A standing check that the fast route stays under its target is ops tooling
-(`tt-latency` judges one limit per target). It would have caught this creep.
-It is filed as feedback to ops, not built here.
+A standing check per route (fast ≤ 35 s, full ≤ 45 s) is ops tooling:
+`tt-latency` judges one limit per target. It would have caught both creeps.
+Filed as ops-6cff48, not built here.
