@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-07T10:10:01Z
+updated: 2026-10-07T10:11:31Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -79,3 +79,6 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-07T09:59:47Z (material-3fcba2): owner's look: lattice visible at scale 8 (white reads blocky); no deferral — reshape scale > 1 on this branch per plan Task 6
 - 2026-10-07T10:06:58Z (material-3fcba2): review: spec round 3 — verdict: accept; findings: P3 4; reviewer: claude-code/claude-opus-5-5
 - 2026-10-07T10:10:01Z (material-3fcba2): lattice reshaped to cubic B-spline over 4x4 points (spec §4 amended, round 3 accept); in-process: 28 noise tests pass, new lattice-visibility test measures 0.55-1.57 of mean (Hermite 0.10 at white scale 2); x2-sum and coefficient mutations caught. Smoke and cost captures must rerun on an idle host.
+- 2026-10-07T10:11:20Z (material-3fcba2): attached: 2026-10-07-lattice-reshape-prototype.png (670249 bytes): Offline numpy prototype, not a capture: Hermite lattice (gold, what the owner saw) against the cubic B-spline reshape, white and fine at scale 2/4/8
+- 2026-10-07T10:11:31Z (material-3fcba2): parked (waiting on user, quiet; headless, 45 min): Lattice reshaped to B-spline at e5edd631; material-41d052 holds the idle-host smoke and cost reruns, then the owner's second look, gate, review, merge, prism refresh
+  provenance: {"harness_session":"claude-code:a7493e94-8545-442f-9657-208ac2609950","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

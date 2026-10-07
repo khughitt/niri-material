@@ -6,7 +6,7 @@
 run found one pixel of single-node lightness glass one code off the baseline;
 `558bfa02` fixes it and the rerun is byte-exact.
 
-Owner's look (2026-10-07): the lattice shows at scale 8 — "scale-8 white grain reads blocky". Per §7.1 this reshapes `scale > 1` before the merge; the sheet above is superseded by the reshaped lattice's.
+Owner's look (2026-10-07): the lattice shows at scale 8 — "scale-8 white grain reads blocky". Per §7.1 this reshapes `scale > 1` before the merge; the contact sheet below shows the Hermite lattice and is superseded once the smoke reruns on the B-spline (e5edd631).
 
 ## Pinned revisions and artifacts
 
