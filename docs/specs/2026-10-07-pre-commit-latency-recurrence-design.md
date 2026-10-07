@@ -57,7 +57,9 @@ module as a floor, and each extra child pays interpreter start and discovery.
 
 **Fast route: four children.** In `tools/tooling_tests.py`, the fast limit
 becomes `min(4, limit)`, still capped by `NEXTEST_TEST_THREADS`, and the
-module-bucket partition is unchanged. The coordinator test asserts four.
+module-bucket partition is unchanged. The coordinator test asserts four,
+and AGENTS.md's Gates section, which says fast tooling runs "with two
+children", says four.
 The hook runs under `host-budget run`, which granted `NEXTEST_TEST_THREADS=16`
 on the idle host, so the cap of four is what applies; a loaded host's smaller
 grant still wins.
