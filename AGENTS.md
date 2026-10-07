@@ -66,7 +66,7 @@ rendering design assumes.
   `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1`.
   Raw discovery inherits exported `NIRI_TOOLING_FAST=1` and skips DriverCleanupTests
   and VtLibTests; only unset, `0` and `1` are valid. Repository commands set their mode.
-  Fast tooling uses `python3 -m tools.tooling_tests --fast` with two children and
+  Fast tooling uses `python3 -m tools.tooling_tests --fast` with four children and
   keeps whole modules in one worker. Full tooling defaults to ten children total;
   both routes are capped by `NEXTEST_TEST_THREADS` when
   set; the cap must be a positive ASCII decimal integer.

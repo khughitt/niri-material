@@ -107,11 +107,13 @@ class Cases(unittest.TestCase):
 class DriverCleanupTests(unittest.TestCase):
     def test_slow(self): self.fail('must be omitted in fast mode')
 ''', 'test_beta.py')
+        self.fixture(body, 'test_gamma.py')
+        self.fixture(body, 'test_delta.py')
         native = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tools'],
                                 cwd=self.root, env=dict(self.env, NIRI_TOOLING_FAST='1'),
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(native.returncode, 0, native.stdout + native.stderr)
-        self.assertIn('Ran 6 tests', native.stderr)
+        self.assertIn('Ran 10 tests', native.stderr)
         self.assertIn('skipped=1, expected failures=1', native.stderr)
         native_seen = {path.name: [line.rsplit(':', 1)[0] for line in path.read_text().splitlines()]
                        for path in self.root.glob('*.seen')}
@@ -119,21 +121,23 @@ class DriverCleanupTests(unittest.TestCase):
             'test_alpha.Cases.test_known', 'test_alpha.Cases.test_one', 'test_alpha.Cases.test_two',
             'test_beta.Cases.test_one', 'test_beta.Cases.test_two',
             'test_beta.DriverCleanupTests.test_slow',
+            'test_gamma.Cases.test_one', 'test_gamma.Cases.test_two',
+            'test_delta.Cases.test_one', 'test_delta.Cases.test_two',
         }
         self.command = [sys.executable, '-m', 'tools.tooling_tests', '--fast']
-        for budget, children in (('10', 2), ('1', 1)):
+        for budget, children in (('10', 4), ('1', 1)):
             with self.subTest(budget=budget):
                 for suffix in ('seen', 'class', 'module'):
                     for path in self.root.glob('*.' + suffix):
                         path.unlink()
                 run = self.run_suite(NIRI_TOOLING_FAST='0', NEXTEST_TEST_THREADS=budget)
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-                self.assertIn(f'Fast tooling: 6 cases, {children} children', run.stdout)
+                self.assertIn(f'Fast tooling: 10 cases, {children} children', run.stdout)
                 self.assertIn('OK (skipped=1, expected failures=1)', run.stdout)
                 ids = [line[5:].rsplit(': ', 1)[0] for line in run.stdout.splitlines()
                        if line.startswith('case ')]
                 self.assertEqual(set(ids), expected)
-                self.assertEqual(len(ids), 6)
+                self.assertEqual(len(ids), 10)
                 pids = set()
                 for path in self.root.glob('*.seen'):
                     lines = path.read_text().splitlines()
