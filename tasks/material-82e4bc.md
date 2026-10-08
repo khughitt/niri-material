@@ -1,19 +1,21 @@
 ---
 id: material-82e4bc
 title: Establish safe culling and damage boundaries for material tiles
-status: doing
+status: done
 priority: 1
 size: m
 complexity: high
 process: direct
-owner: materials-26.04
+owner: culling-boundaries
 created: 2026-10-06T20:11:17Z
-updated: 2026-10-08T14:43:59Z
+updated: 2026-10-08T14:54:52Z
 started: 2026-10-08T14:43:59Z
+completed: 2026-10-08T14:54:52Z
 depends: []
 parent: material-5d6b2c
 tags: [performance, rendering]
 source: docs/notes/2026-09-29-resource-aware-rendering-brief.md
+model: claude-opus-5-5
 agent: codex
 ---
 
@@ -30,4 +32,11 @@ Ideas it wakes: On completion, run tasks note on material-7afc31 and material-7f
 ## Notes
 
 - 2026-10-08T14:43:59Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:a61b50cf-5bb1-48ac-96f6-2e5b5694ce13","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T14:44:11Z (culling-boundaries): resumed
+  provenance: {"harness_session":"claude-code:a61b50cf-5bb1-48ac-96f6-2e5b5694ce13","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T14:54:47Z (culling-boundaries): Two parallel read-only code traces (culling path; element damage/opacity), key claims re-verified in source: tile.rs:2316/2332/1913, signal.rs slab_in_view, niri.rs:4404, scrolling.rs:399/2973, main.frag:11/228/235, offscreen.rs:106-162. Found overview mis-scope of the visibility predicate -> filed material-2e97ff.
+- 2026-10-08T14:54:52Z (culling-boundaries): done
+  provenance: {"harness_session":"claude-code:a61b50cf-5bb1-48ac-96f6-2e5b5694ce13","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T14:54:52Z (culling-boundaries): Source audit landed in docs/materials/2026-10-08-culling-damage-boundaries-audit.md: path-backed safe/conditional/unknown tables for pre-render culling and final-draw damage/opacity, recommendation (overview-correct predicate first, then direct view culling; coverage/opaque/damage forwarding need a reviewed design after measurement), and the covered sustained-optic capture spec. Filed material-2e97ff, material-d21ff0, material-46b23d; woke material-7afc31 and material-7f6d0e; brief and performance.md updated.
   provenance: {"harness_session":"claude-code:a61b50cf-5bb1-48ac-96f6-2e5b5694ce13","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
