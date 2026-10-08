@@ -7,7 +7,7 @@ complexity: mid
 process: direct
 owner: material-3fcba2
 created: 2026-10-06T10:17:17Z
-updated: 2026-10-08T04:20:15Z
+updated: 2026-10-08T04:26:39Z
 started: 2026-10-07T09:59:42Z
 depends: []
 parent: material-3fcba2
@@ -42,3 +42,5 @@ step: "Task 6: Owner's look, gate, whole-branch review, merge, prism hand-off, c
 - 2026-10-08T03:43:57Z (material-3fcba2): run: 10 min (est 11, headless); preflight 1, build 3, cases 6; passed: a/b noise-layers-ab-stream-1791430389 with the scaled path streamed (no arrays): none a 0.2652/0.2662 vs b 0.2294/0.2294 — no change, so lattice-array register pressure is not the cause
 - 2026-10-08T03:55:20Z (material-3fcba2): run: 10 min (est 11, headless); preflight 1, build 3, cases 6; passed: a/b noise-layers-ab-hermite-rebuild-1791431057: this tree with 558bfa02's noise.frag rebuilt today equals the kept 558bfa02 binary (none 0.2294 both; one-fine-1 0.3011 vs 0.3021) -> the +0.035 ms comes from the B-spline noise.frag, not build drift
 - 2026-10-08T04:20:15Z (material-3fcba2): run: 10 min (est 11, headless); preflight 1, build 3, cases 6; passed: a/b noise-layers-ab-loop-1791432546 with glass/film layers in a slot loop (constant bound 4, break past the last active slot) on the streamed path: none a 0.2488 vs b 0.2294 (idle tax halved), one-fine-1 a 0.3594/0.3604 vs b 0.3021 (worse than unrolled 0.3400). Mixed; experiments stopped, shader reverted to e5edd631
+- 2026-10-08T04:26:38Z (material-3fcba2): review: impl round 2 — verdict: accept; findings: Minor 5; reviewer: claude-code/claude-opus-5-5 (scoped 1d9e8ddb..3585885c)
+- 2026-10-08T04:26:38Z (material-3fcba2): round 2 minors fixed in place: scaled-case exception, 0.039 ms/13% with one layer, loop cuts idle ~40%, variants attached to material-03fdf3, A/B spread in Limitations

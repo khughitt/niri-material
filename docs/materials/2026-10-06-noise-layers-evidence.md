@@ -13,7 +13,8 @@ Owner's look (2026-10-07): the lattice shows at scale 8 — "scale-8 white grain
 sheet below is regenerated from that run, and a before/after sheet sets the
 two lattices side by side. Four fine layers at scale 8 now cost 1.19 ms per
 damaged frame (Hermite 0.65 ms). The B-spline shader also costs every
-material draw about 0.034 ms (15 %) with noise off; same-session A/B runs
+material draw about 0.034 ms (15 %) with noise off, 0.039 ms (13 %) with
+one fine layer; same-session A/B runs
 pin it to `noise.frag` (see Cost).
 
 Owner's second look (B-spline sheets): pending.
@@ -211,7 +212,8 @@ cadence as the Hermite run below:
 Hash counts are spec §4's at `e5edd631`: 9 per fine layer at scale 1, 36
 above it (one 6×6 block).
 
-Every case runs 13–15 % above the Hermite run, `none` included. The grain
+Every case without a scaled material layer (all but four fine, scale 8)
+runs 13–15 % above the Hermite run, `none` included. The grain
 pass (`Grain::render`, the effect program, a far smaller program that
 inlines the same scaled path four times) moved only 0.5 % at scale 1, so
 the shift is not the host. Same-session A/B runs settle
@@ -226,15 +228,17 @@ alternating a, b, a, b; material draw medians in ms):
 | `noise-layers-ab-loop-1791432546` | that, glass and film layers in a slot loop | 0.2488 ×2 / 0.2294 ×2 | 0.3594, 0.3604 / 0.3021 ×2 |
 
 b is always `558bfa02`'s kept `niri-tracy`. **The B-spline `noise.frag` costs
-every material draw about 0.034 ms (15 %), with noise or without.** The
+every material draw: 0.034 ms (15 %) with noise off, 0.039 ms (13 %) with
+one fine layer.** The
 rebuild row rules out build drift. Streaming the lattice through a few
 vec4s instead of `g[16]`/`h[36]`/`r[24]` changes nothing, so it is not those
 arrays. Looping the layers (two inlined copies of the scaled path instead
-of eight) halves the idle cost but makes an active layer dearer, so neither
+of eight) cuts the idle cost by about 40 % (to 0.019 ms) but makes an
+active layer dearer, so neither
 is kept; the shader stays at `e5edd631`. The likeliest cause is the larger
 scaled path inlined eight times into the material program weighing on its
 register allocation, but no ISA or register count was read. Recovering the
-idle cost is filed as its own task. Settled glass renders no frames, so the
+idle cost is material-03fdf3, which carries both variants as patches. Settled glass renders no frames, so the
 cost lands on damaged frames only.
 
 With that, four fine layers at scale 8 add 0.923 ms over `none` against
@@ -287,7 +291,8 @@ uncommitted) measured within 1 % of these.
 
 ## Limitations
 
-- One run per configuration on one host; no spread is measured.
+- One run per configuration on one host; no spread is measured, except the
+  A/B rows: two rounds per binary each, within 0.001 ms.
 - The identity fix pins the baseline's arithmetic for one layer only. A
   stacked config has no baseline to match, and its lightness layers can
   still differ by a code from an algebraically equal single-layer form.
