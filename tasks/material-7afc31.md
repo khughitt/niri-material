@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: offview-cull
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-08T16:00:46Z
+updated: 2026-10-08T16:06:37Z
 started: 2026-10-08T15:50:29Z
 completed: 2026-10-08T16:00:46Z
 depends: []
@@ -40,3 +40,4 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
   provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-08T16:00:46Z (offview-cull): Tile::render skips the material window body (effect-buffer prepare, offscreen pass, dynamics, element) for a tile whose slab band, bob-offset band and buffer bbox are outside the output's screen view; Output target only, never under open/alpha/resize. In-process tests cover off-view cull, screen-capture and overview retention, and the first revealed frame after six culled commits. Hidden-window matrix rerun not run.
   provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T16:06:37Z (offview-cull): review: impl round 1 — verdict: revise; findings: minor 2; reviewer: claude-code/claude-opus-5-5
