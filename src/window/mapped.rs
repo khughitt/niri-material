@@ -677,6 +677,11 @@ impl LayoutElement for Mapped {
         Point::from((0, 0)) - self.window.geometry().loc
     }
 
+    fn buf_bbox(&self) -> Rectangle<i32, Logical> {
+        let bbox = self.window.bbox();
+        Rectangle::new(bbox.loc - self.window.geometry().loc, bbox.size)
+    }
+
     fn is_in_input_region(&self, point: Point<f64, Logical>) -> bool {
         let surface_local = point + self.window.geometry().loc.to_f64();
         self.window.is_in_input_region(&surface_local)

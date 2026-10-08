@@ -1,15 +1,16 @@
 ---
 id: material-7afc31
 title: Skip material rendering for windows that are not visible
-status: doing
+status: done
 priority: 1
 size: m
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: offview-cull
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-08T15:50:32Z
+updated: 2026-10-08T16:00:46Z
 started: 2026-10-08T15:50:29Z
+completed: 2026-10-08T16:00:46Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
@@ -32,4 +33,10 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-10-08T14:54:47Z (culling-boundaries): Woken by material-82e4bc (docs/materials/2026-10-08-culling-damage-boundaries-audit.md §2, §4): skipping the material preparation for out-of-view tiles is conditionally safe (reveal repaints from current surface state; frame callbacks unchanged; tile renders only on its own monitor). Conditions: overview-correct view first (material-2e97ff), extent = slab band ∪ Window::bbox() ∪ bob/open/resize areas, never inside render_snapshot or the open/alpha (0,0) call, same predicate as signal_render_visible (else the beam never ends). Direct with the audit as spec; saving is the ~1 Hz offscreen residue. Covered-tile culling is unknown: no coverage exists before render.
 - 2026-10-08T15:50:29Z (materials-26.04): scope: todo, direct, m/mid. Spec = culling audit §2 boundary A row 1 (docs/materials/2026-10-08-culling-damage-boundaries-audit.md); prerequisite material-2e97ff landed (workspace_screen_view). Scope is off-view tiles only; covered-tile culling stays with material-7f6d0e. Verification is the audit's in-process checks, so the quiet need is removed; quantitative cost belongs to material-31074f.
 - 2026-10-08T15:50:29Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T15:50:41Z (offview-cull): resumed
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T16:00:46Z (offview-cull): done
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T16:00:46Z (offview-cull): Tile::render skips the material window body (effect-buffer prepare, offscreen pass, dynamics, element) for a tile whose slab band, bob-offset band and buffer bbox are outside the output's screen view; Output target only, never under open/alpha/resize. In-process tests cover off-view cull, screen-capture and overview retention, and the first revealed frame after six culled commits. Hidden-window matrix rerun not run.
   provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

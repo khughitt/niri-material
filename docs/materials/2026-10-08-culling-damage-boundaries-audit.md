@@ -160,6 +160,23 @@ effect buffers, never tiles behind it (`render-pipeline.md` §1).
 | Skipping changes frame callbacks for an offscreen column | **Safe (no change)** | — | Hidden-window matrix rerun: `offscreen-column` client fps stays 1.0 |
 | Culling must consider a second output | **Safe (not needed) by source** | A tile renders only on its own monitor; interactive move only on `move_.output` | Two-output lane (`material-1af3c6` host) shows a tile drawn on a monitor that does not own it |
 
+**Landed (`material-7afc31`, 2026-10-08): off-view culling.** On an
+`Output` render, `Tile::render` skips the window body (both effect-buffer
+`prepare` calls, `material.offscreen.render`, the dynamics, the fingerprint and
+the element) when `Tile::material_out_of_view` holds against the screen view
+on `RenderCtx::signal_ticks`. The extent is the slab band at `location` and
+at the bob offset, plus `LayoutElement::buf_bbox` (smithay `Window::bbox()`,
+popups excluded, relative to the window geometry); a culled body therefore
+never has its band in view, which keeps the beam condition. Open, alpha and
+resize animations are excluded rather than bounded, and snapshots and other
+targets carry no sink, so they never cull. Popups, border, focus ring, shadow
+and the background effect are still pushed. In-process checks in
+`src/tests/signal.rs`: the off-view column draws no material element on the
+output, still draws on a screen capture and in the overview, and after six
+culled commits shows the last one on the first revealed frame. The
+hidden-window matrix rerun (offscreen-column fps stays 1.0) was not run; the
+source claim above is unchanged.
+
 ## 3. Boundary B: final-draw damage and opacity
 
 ### What the element depends on

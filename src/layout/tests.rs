@@ -172,6 +172,10 @@ impl LayoutElement for TestWindow {
         (0, 0).into()
     }
 
+    fn buf_bbox(&self) -> Rectangle<i32, Logical> {
+        Rectangle::from_size(self.0.bbox.get().size)
+    }
+
     fn is_in_input_region(&self, _point: Point<f64, Logical>) -> bool {
         false
     }
