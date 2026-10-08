@@ -175,7 +175,13 @@ targets carry no sink, so they never cull. Popups, border, focus ring, shadow
 and the background effect are still pushed. In-process checks in
 `src/tests/signal.rs`: the off-view column draws no material element on the
 output, still draws on a screen capture and in the overview, and after six
-culled commits shows the last one on the first revealed frame. The
+culled commits shows the last one on the first revealed frame.
+`material-a9a574` adds: a floating window at the screen-edge clamp still
+draws; a floating window dragged off the output is culled and redrawn when
+dragged back (a tiled drag goes through the alpha offscreen and never
+culls); mid workspace switch both workspaces draw while a column outside the
+incoming view stays culled; and a client shadow reaching into the view keeps
+an otherwise off-view column drawn. The
 hidden-window matrix rerun (offscreen-column fps stays 1.0) was not run; the
 source claim above is unchanged.
 
