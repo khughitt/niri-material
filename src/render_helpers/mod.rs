@@ -62,7 +62,6 @@ pub mod xray;
 #[derive(Debug, Default)]
 pub struct SignalTicks {
     pub next: Cell<Option<Duration>>,
-    pub view: Cell<Rectangle<f64, Logical>>,
 }
 
 impl SignalTicks {
@@ -76,6 +75,16 @@ impl SignalTicks {
     }
 }
 
+/// Where tiles below this point of the render report their deadlines, and
+/// the part of the output they can reach, in the coordinates they render in.
+/// Each coordinate change on the way down (a workspace's overview zoom and
+/// place on the output, the interactive move's zoom) passes its own view.
+#[derive(Debug, Clone)]
+pub struct SignalTickSink {
+    pub ticks: Rc<SignalTicks>,
+    pub view: Rectangle<f64, Logical>,
+}
+
 /// A rendering context.
 ///
 /// Bundles together things needed by most rendering code.
@@ -83,7 +92,7 @@ pub struct RenderCtx<'a, R> {
     pub renderer: &'a mut R,
     pub target: RenderTarget,
     pub xray: Option<&'a Xray>,
-    pub signal_ticks: Option<Rc<SignalTicks>>,
+    pub signal_ticks: Option<SignalTickSink>,
 }
 
 impl<'a, R> RenderCtx<'a, R> {
