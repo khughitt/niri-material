@@ -12,6 +12,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use niri_config::{Action, Config};
+use smithay::output::Output;
 use smithay::wayland::session_lock::SessionLockHandler;
 
 use super::fixture::Fixture;
@@ -279,6 +280,11 @@ fn optic_settling_idle_inhibitor_does_not_resume_the_timeline() {
 /// output's optic/signal timer is armed afterwards.
 fn output_pass(f: &mut Fixture) -> bool {
     let output = f.niri_output(1);
+    output_pass_on(f, &output)
+}
+
+fn output_pass_on(f: &mut Fixture, output: &Output) -> bool {
+    let output = output.clone();
     let crate::niri::State { backend, niri } = f.niri_state();
     niri.update_render_elements(Some(&output));
     backend
@@ -354,4 +360,116 @@ fn optic_settling_edges_queue_a_redraw_and_drop_then_rearm_the_optic_timer() {
     f.niri().notified_activity_this_iteration = false;
     f.niri().notify_activity();
     assert!(all_redraws(&mut f, false), "repeated input queued a redraw");
+}
+
+fn output_named(f: &mut Fixture, name: &str) -> Output {
+    f.niri()
+        .global_space
+        .outputs()
+        .find(|output| output.name() == name)
+        .unwrap()
+        .clone()
+}
+
+fn frame_sequence(f: &mut Fixture, output: &Output) -> u32 {
+    f.niri().output_state[output].frame_callback_sequence
+}
+
+/// Spec §6, "one output removed/disabled; another lit", and the Outputs/DPMS
+/// row of §8's capture matrix, which no capture host with two outputs could
+/// drive: the shared timeline follows global input state alone.
+#[test]
+fn optic_settling_removing_one_of_two_outputs_keeps_the_shared_timeline() {
+    let (mut f, _id) = aurora_fixture(true);
+    f.add_output(2, (1280, 720));
+    // Edges below come from threshold reloads and `notify_activity`, as in
+    // the edge test above.
+    f.niri().set_input_idle_threshold(Duration::from_secs(10));
+    f.state.server.dispatch();
+    let lit = output_named(&mut f, "headless-1");
+    let removed = output_named(&mut f, "headless-2");
+    assert_eq!(
+        f.niri().layout.windows_for_output(&lit).count(),
+        1,
+        "the Aurora tile is on the output that stays lit"
+    );
+
+    // (a) Active: removal leaves the timeline running and the lit output on
+    // its cadence. The optic timer fires and the output draws again.
+    let before = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(before.running);
+    f.niri().remove_output(&removed);
+    assert!(!f.niri().output_state.contains_key(&removed));
+    let after = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(after.running, "removing an output paused the timeline");
+    assert_eq!(after.logical_anchor, before.logical_anchor);
+    assert!(
+        output_pass_on(&mut f, &lit),
+        "the lit output lost its cadence"
+    );
+    settle_redraws(&mut f);
+    let sequence = frame_sequence(&mut f, &lit);
+    let deadline = f.niri().output_state[&lit].signal_ticks.next.get().unwrap();
+    sleep(deadline.saturating_sub(get_monotonic_time()) + Duration::from_millis(20));
+    f.state.server.dispatch();
+    assert_ne!(
+        frame_sequence(&mut f, &lit),
+        sequence,
+        "the optic timer did not redraw the lit output"
+    );
+
+    // Re-add while active: still running on the same anchor, cadence kept.
+    f.add_output(2, (1280, 720));
+    let readded = output_named(&mut f, "headless-2");
+    let active = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(active.running);
+    assert_eq!(active.logical_anchor, before.logical_anchor);
+    assert!(output_pass_on(&mut f, &lit));
+
+    // (b) Idle: the edge holds the timeline, then removal changes nothing.
+    sleep(Duration::from_millis(20));
+    f.niri().set_input_idle_threshold(Duration::from_millis(10));
+    let held = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!held.running);
+    assert!(!output_pass_on(&mut f, &lit));
+    assert!(!output_pass_on(&mut f, &readded));
+    settle_redraws(&mut f);
+    f.niri().remove_output(&readded);
+    assert!(!f.niri().output_state.contains_key(&readded));
+    assert_eq!(f.niri().output_state.len(), 1);
+    assert!(
+        all_redraws(&mut f, false),
+        "removing an output while idle queued a redraw"
+    );
+    assert!(f.niri().input_activity.is_idle());
+    // The lit output's next frame samples the held instant and arms nothing.
+    sleep(Duration::from_millis(20));
+    assert!(
+        !output_pass_on(&mut f, &lit),
+        "the held pass armed a deadline"
+    );
+    let still = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!still.running);
+    assert_eq!(
+        still.logical_now, held.logical_now,
+        "the phase moved while idle"
+    );
+
+    // Re-add while idle: still held, and no output arms an optic deadline.
+    f.add_output(2, (1280, 720));
+    let readded = output_named(&mut f, "headless-2");
+    let still = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(!still.running);
+    assert_eq!(still.logical_now, held.logical_now);
+    assert!(!output_pass_on(&mut f, &lit));
+    assert!(!output_pass_on(&mut f, &readded));
+    assert!(f.niri().output_state[&readded].signal_timer.is_none());
+
+    // Resume picks up from the held instant on both outputs.
+    f.niri().notified_activity_this_iteration = false;
+    f.niri().notify_activity();
+    let resumed = f.niri().clock.optic_time(get_monotonic_time());
+    assert!(resumed.running);
+    assert_eq!(resumed.logical_anchor, held.logical_now);
+    assert!(output_pass_on(&mut f, &lit));
 }
