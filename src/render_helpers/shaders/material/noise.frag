@@ -29,6 +29,20 @@ vec4 noiseBspline(float t) {
     return vec4(s * s * s, 3.0 * t3 - 6.0 * t2 + 4.0, -3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0, t3) / 6.0;
 }
 
+// One block row of six hashes at lattice row py, columns base.x - 2 to
+// base.x + 3, folded into the running sum: wm weighs its middle four hashes
+// and ws its four sums of three, and c is added to every column.
+vec4 noiseRow(vec4 acc, vec2 base, float py, float wm, float ws, float c) {
+    float h0 = hash12(vec2(base.x - 2.0, py));
+    float h1 = hash12(vec2(base.x - 1.0, py));
+    float h2 = hash12(vec2(base.x, py));
+    float h3 = hash12(vec2(base.x + 1.0, py));
+    float h4 = hash12(vec2(base.x + 2.0, py));
+    float h5 = hash12(vec2(base.x + 3.0, py));
+    vec4 sums = vec4(h0 + h1 + h2, h1 + h2 + h3, h2 + h3 + h4, h3 + h4 + h5);
+    return acc + wm * vec4(h1, h2, h3, h4) - ws * sums + c;
+}
+
 // One layer's signed grain before its amount. White is hash12 - 0.5; fine
 // and lightness use fineGrain's high-pass. At scale 1 and below, the
 // original per-pixel hash. Above it, lattice values reconstructed with the
@@ -42,6 +56,17 @@ vec4 noiseBspline(float t) {
 // that correlation times the number of offsets sharing it. Hermite corners
 // went flat at the lattice points and read as a grid of squares at scale 8
 // (owner's look, 2026-10-07).
+//
+// Both types read the 6x6 block of hashes around the cell, block row j at
+// lattice row base.y + j - 2, so value (x, y) is block (x + 1, y + 1). A
+// fine value row v is (9 m - the s of block rows v to v + 2) k, with m the
+// middle four hashes of block row v + 1 and s its sums of three; a white
+// value row is m - 0.5 (white leaves the outer ring unused). Weighting value
+// row v by by[v] gives each block row the weights passed to noiseRow, so
+// every row folds into one vec4 as it is hashed. The material program
+// inlines this path at eight call sites, and lattice values held as arrays
+// set its register count for every draw, noise or not: 128 registers
+// against 96 before the B-spline, +0.034 ms per material draw (material-03fdf3).
 float noiseValue(vec2 fragCoord, float type, float scale, vec2 offset) {
     if (scale <= 1.0)
         return type < 0.5 ? hash12(fragCoord + offset) - 0.5 : fineGrain(fragCoord + offset);
@@ -52,33 +77,19 @@ float noiseValue(vec2 fragCoord, float type, float scale, vec2 offset) {
     vec4 by = noiseBspline(t.y);
     float x0 = dot(bx, bx);
     float y0 = dot(by, by);
-    float g[16];
-    float norm;
-    if (type < 0.5) {
-        // Value (x, y) is the lattice point base + (x - 1, y - 1).
-        for (int y = 0; y < 4; y++)
-            for (int x = 0; x < 4; x++)
-                g[y * 4 + x] = hash12(base + vec2(float(x) - 1.0, float(y) - 1.0)) - 0.5;
-        norm = x0 * y0;
-    } else {
-        // The 6x6 block of hashes around the cell: block (x, y) is the
-        // lattice point base + (x - 2, y - 2), so value (x, y) is block
-        // (x + 1, y + 1) and its 3x3 neighbourhood lies in the block. A
-        // value is (9 h - its 3x3 sum) / 8, scaled as fineGrain scales; the
-        // 3x3 sums go through row sums of three.
-        float h[36];
-        for (int y = 0; y < 6; y++)
-            for (int x = 0; x < 6; x++)
-                h[y * 6 + x] = hash12(base + vec2(float(x) - 2.0, float(y) - 2.0));
-        float r[24];
-        for (int y = 0; y < 6; y++)
-            for (int x = 0; x < 4; x++)
-                r[y * 4 + x] = h[y * 6 + x] + h[y * 6 + x + 1] + h[y * 6 + x + 2];
-        float k = 0.94280904 / 8.0;
-        for (int y = 0; y < 4; y++)
-            for (int x = 0; x < 4; x++)
-                g[y * 4 + x] = (9.0 * h[(y + 1) * 6 + x + 1]
-                                - (r[y * 4 + x] + r[(y + 1) * 4 + x] + r[(y + 2) * 4 + x])) * k;
+    bool white = type < 0.5;
+    float k = white ? 0.0 : 0.94280904 / 8.0;
+    float wm = white ? 1.0 : 9.0 * k;
+    float c = white ? -0.5 : 0.0;
+    vec4 acc = vec4(0.0);
+    acc = noiseRow(acc, base, base.y - 2.0, 0.0, k * by.x, 0.0);
+    acc = noiseRow(acc, base, base.y - 1.0, wm * by.x, k * (by.x + by.y), c * by.x);
+    acc = noiseRow(acc, base, base.y, wm * by.y, k * (by.x + by.y + by.z), c * by.y);
+    acc = noiseRow(acc, base, base.y + 1.0, wm * by.z, k * (by.y + by.z + by.w), c * by.z);
+    acc = noiseRow(acc, base, base.y + 2.0, wm * by.w, k * (by.z + by.w), c * by.w);
+    acc = noiseRow(acc, base, base.y + 3.0, 0.0, k * by.w, 0.0);
+    float norm = x0 * y0;
+    if (!white) {
         float x1 = bx.x * bx.y + bx.y * bx.z + bx.z * bx.w;
         float y1 = by.x * by.y + by.y * by.z + by.z * by.w;
         float x2 = bx.x * bx.z + bx.y * bx.w;
@@ -87,11 +98,7 @@ float noiseValue(vec2 fragCoord, float type, float scale, vec2 offset) {
              + 0.08333333 * (x2 * y0 + x0 * y2) + 0.11111111 * (x2 * y1 + x1 * y2)
              + 0.05555556 * x2 * y2;
     }
-    vec4 rows = vec4(dot(bx, vec4(g[0], g[1], g[2], g[3])),
-                     dot(bx, vec4(g[4], g[5], g[6], g[7])),
-                     dot(bx, vec4(g[8], g[9], g[10], g[11])),
-                     dot(bx, vec4(g[12], g[13], g[14], g[15])));
-    return dot(by, rows) / sqrt(norm);
+    return dot(bx, acc) / sqrt(norm);
 }
 
 // Lightness grain on an encoded colour: Oklab L of the clamped colour moves

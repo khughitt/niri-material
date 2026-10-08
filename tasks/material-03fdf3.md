@@ -1,13 +1,15 @@
 ---
 id: material-03fdf3
 title: Recover the B-spline grain's idle cost on every material draw
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: high
 process: direct
+owner: noise-followups
 created: 2026-10-08T04:20:53Z
-updated: 2026-10-08T04:26:21Z
+updated: 2026-10-08T09:47:10Z
+started: 2026-10-08T09:47:10Z
 depends: [material-3fcba2]
 parent: material-5d6b2c
 tags: [performance, noise]
@@ -21,3 +23,5 @@ e5edd631's B-spline noise.frag costs every material draw ~0.034 ms (+15%) with n
 - 2026-10-08T04:26:19Z (material-3fcba2): review: impl round 2 note — experiment variants attached (streamed lattice, slot loop) so they can be rerun
 - 2026-10-08T04:26:19Z (material-3fcba2): attached: noise-frag-streamed.diff (4143 bytes): A/B variant 'scaled path without arrays' (noise-layers-ab-stream-1791430389): patch against e5edd631's noise.frag; no idle-cost change
 - 2026-10-08T04:26:19Z (material-3fcba2): attached: noise-frag-streamed-slot-loop.diff (7116 bytes): A/B variant 'slot loop' (noise-layers-ab-loop-1791432546): patch against e5edd631's noise.frag (streamed lattice plus glass/film layers in a loop); idle 0.249 ms, one active layer 0.360 ms
+- 2026-10-08T09:47:10Z (noise-followups): started
+  provenance: {"harness_session":"claude-code:895d792f-a7ab-466b-afa7-8d313f21a46d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
