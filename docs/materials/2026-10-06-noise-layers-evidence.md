@@ -17,7 +17,7 @@ material draw about 0.034 ms (15 %) with noise off, 0.039 ms (13 %) with
 one fine layer; same-session A/B runs
 pin it to `noise.frag` (see Cost).
 
-Owner's second look (B-spline sheets): pending.
+Owner's second look (2026-10-08, B-spline sheets): "scale 8 looks better"; merge now, with the idle cost left to material-03fdf3 on the owner's word.
 
 ## Pinned revisions and artifacts
 
