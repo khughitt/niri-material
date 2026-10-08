@@ -1,17 +1,19 @@
 ---
 id: material-41d052
 title: "Noise layers: owner's look, gate, review, merge, prism hand-off, close"
-status: doing
+status: done
 priority: 2
 complexity: mid
 process: direct
 owner: material-3fcba2
 created: 2026-10-06T10:17:17Z
-updated: 2026-10-08T09:02:55Z
+updated: 2026-10-08T09:10:59Z
 started: 2026-10-07T09:59:42Z
+completed: 2026-10-08T09:10:59Z
 depends: []
 parent: material-3fcba2
 tags: []
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 plan: docs/plans/2026-10-06-noise-layers.md
 step: "Task 6: Owner's look, gate, whole-branch review, merge, prism hand-off, close"
@@ -47,4 +49,8 @@ step: "Task 6: Owner's look, gate, whole-branch review, merge, prism hand-off, c
 - 2026-10-08T04:27:32Z (material-3fcba2): parked (waiting on user, review): Owner: look at tasks/files/material-3fcba2/2026-10-07-noise-layers-lattice-sheet.png in .worktrees/material-3fcba2 (Hermite control vs B-spline; is scale 8 still blocky? name tiles A2-D8) and decide whether the merge waits on material-03fdf3 (B-spline costs every damaged material draw +0.034 ms / 15% even with noise off; recommendation: merge now, fix in 03fdf3). Then agent: record the verdict in the evidence doc's 'Owner's second look' line, merge into materials-26.04 (just gate passed at 1d9e8ddb; later commits are docs/scripts/tasks only; impl reviews round 1 revise -> round 2 accept), refresh prism's vendored schema, close material-41d052 and material-3fcba2.
   provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-08T09:02:55Z (material-3fcba2): resumed
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T09:10:59Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T09:10:59Z (materials-26.04): Owner's second look recorded (scale 8 looks better), gate green, impl reviews accepted (scoped round 2), merged at 1ae20983, prism schema refreshed (prism fc129ec); B-spline idle cost filed as material-03fdf3
   provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
