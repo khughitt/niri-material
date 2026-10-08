@@ -6,15 +6,16 @@ priority: 1
 size: s
 complexity: high
 process: planned
-owner: materials-26.04
+owner: capture-host-conditions
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-08T20:40:22Z
+updated: 2026-10-08T20:49:50Z
 started: 2026-10-08T20:40:22Z
 depends: []
 parent: material-2834d7
 tags: [capture]
 source: "docs/notes/2026-10-06-capture-lifecycle-brief.md#renderer-aware-capture"
 agent: codex
+spec: docs/specs/2026-10-08-capture-host-conditions-design.md
 ---
 
 Why: material-6bd4a3 records a desktop-up preflight pass, but later per-case settles remain sensitive to desktop activity. The only named software-rendered consumer, glass-view-tilt-smoke.sh (material-cd0e1d), exists only on the dropped material-77db8a branch and passed under the existing GPU gates on 2026-09-24, so material-925518 is shelved and no software lane is in scope. Existing deterministic pixel fixtures already avoid quiet-host measurements; removing GPU checks from timed or hardware evidence requires a distinct, verified contract.
@@ -28,3 +29,6 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 - 2026-10-06T21:17:04Z (materials-26.04): Narrowed in review: the only named llvmpipe consumer (glass-view-tilt-smoke.sh, material-cd0e1d) is on the dropped material-77db8a branch and passed under the GPU gates on 2026-09-24; software lane out of scope, material-925518 shelved. Stale 'record absent' claim removed (cd0e1d is present since 9ad1a716).
 - 2026-10-08T20:40:22Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T20:40:35Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T20:49:49Z (capture-host-conditions): spec drafted: docs/specs/2026-10-08-capture-host-conditions-design.md — four routes (frozen, nested pixels via new --lane pixels + begin, nested measurements, dedicated); pixels skip GPU sampling and partial-hold timers/services; measurement routes verify the nested renderer names the sampled GPU; desktop-idle for nested measurements decided by a two-run noise-layers-cost pilot against retained TTY medians; thresholds unchanged
