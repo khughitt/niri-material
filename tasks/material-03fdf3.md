@@ -7,9 +7,9 @@ size: s
 complexity: high
 process: direct
 created: 2026-10-08T04:20:53Z
-updated: 2026-10-08T04:20:53Z
-depends: []
-parent: material-3fcba2
+updated: 2026-10-08T04:21:39Z
+depends: [material-3fcba2]
+parent: material-5d6b2c
 tags: [performance, noise]
 agent: claude-code/claude-opus-5-5
 ---
