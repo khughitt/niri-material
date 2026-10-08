@@ -99,7 +99,8 @@
       "reads": [
         "noise",
         "noise type=",
-        "noise site="
+        "noise site=",
+        "noise scale="
       ],
       "responses": [],
       "optic": {
@@ -296,12 +297,14 @@
       "owns": [
         "noise",
         "noise type=",
-        "noise site="
+        "noise site=",
+        "noise scale="
       ],
       "reads": [
         "noise",
         "noise type=",
         "noise site=",
+        "noise scale=",
         "blur noise",
         "backdrop-blur"
       ],
@@ -510,7 +513,8 @@
       "reads": [
         "noise",
         "noise type=",
-        "noise site="
+        "noise site=",
+        "noise scale="
       ],
       "responses": [],
       "optic": {

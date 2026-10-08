@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-289 paths differ: 52 class B (seam), 199 class A (fork-only), 38 class C (scaffolding).
+299 paths differ: 52 class B (seam), 209 class A (fork-only), 38 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -72,7 +72,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `justfile` | C | A | +123/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1751/-127 |
+| `niri-config/src/lib.rs` | B | M | +1918/-127 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -97,20 +97,20 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layout/monitor.rs` | B | M | +136/-25 |
 | `src/layout/scrolling.rs` | B | M | +53/-7 |
 | `src/layout/tests.rs` | B | M | +304/-4 |
-| `src/layout/tile.rs` | B | M | +2710/-78 |
+| `src/layout/tile.rs` | B | M | +2724/-78 |
 | `src/layout/workspace.rs` | B | M | +34/-5 |
 | `src/lib.rs` | B | M | +1/-0 |
 | `src/niri.rs` | B | M | +310/-0 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
-| `src/render_helpers/effect_buffer.rs` | B | M | +647/-15 |
+| `src/render_helpers/effect_buffer.rs` | B | M | +635/-15 |
 | `src/render_helpers/mod.rs` | B | M | +28/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +469/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +470/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
 | `src/tests/client.rs` | B | M | +142/-0 |
 | `src/tests/fixture.rs` | B | M | +3/-1 |
-| `src/tests/mod.rs` | B | M | +9/-0 |
+| `src/tests/mod.rs` | B | M | +10/-0 |
 | `src/window/mapped.rs` | B | M | +43/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +1268/-0 |
@@ -129,7 +129,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_gates.py` | C | A | +278/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +753/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
-| `tools/test_noise_placement_cost.py` | C | A | +100/-0 |
+| `tools/test_noise_placement_cost.py` | C | A | +102/-0 |
 | `tools/test_optic_settling.py` | C | A | +1253/-0 |
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +375/-0 |

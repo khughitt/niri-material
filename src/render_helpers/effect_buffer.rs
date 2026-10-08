@@ -856,10 +856,7 @@ mod tests {
     fn grain_options_change_publishes_only_with_an_offscreen_and_never_for_equal_options() {
         let mut buffer = EffectBuffer::new();
         let before = buffer.commit();
-        let grain = Some(GrainOptions {
-            amount: 0.3,
-            kind: NoiseType::Fine,
-        });
+        let grain = Some(GrainOptions::one(0.3, NoiseType::Fine));
         buffer.update_grain_options(grain);
         assert_eq!(
             buffer.commit(),
@@ -877,19 +874,13 @@ mod tests {
             let mut buffer = EffectBuffer::new();
             buffer.update_size((8, 8).into(), Scale::from(1.));
             buffer.elements();
-            buffer.update_grain_options(Some(GrainOptions {
-                amount: 0.3,
-                kind: NoiseType::Fine,
-            }));
+            buffer.update_grain_options(Some(GrainOptions::one(0.3, NoiseType::Fine)));
             assert!(buffer.prepare(renderer, false));
             crate::render_helpers::grain::tests::delete_program(
                 renderer,
                 buffer.grain_program.as_ref().unwrap(),
             );
-            buffer.update_grain_options(Some(GrainOptions {
-                amount: 0.4,
-                kind: NoiseType::Fine,
-            }));
+            buffer.update_grain_options(Some(GrainOptions::one(0.4, NoiseType::Fine)));
             assert!(buffer.prepare(renderer, false));
             let offscreen = buffer.offscreen.as_ref().unwrap();
             assert_eq!(offscreen.grain, GrainStatus::Failed);
@@ -902,10 +893,7 @@ mod tests {
                 buffer.offscreen.as_ref().unwrap().grain,
                 GrainStatus::Failed
             );
-            buffer.update_grain_options(Some(GrainOptions {
-                amount: 0.5,
-                kind: NoiseType::Fine,
-            }));
+            buffer.update_grain_options(Some(GrainOptions::one(0.5, NoiseType::Fine)));
             assert_eq!(buffer.offscreen.as_ref().unwrap().grain, GrainStatus::Dirty);
         });
     }

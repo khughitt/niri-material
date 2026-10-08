@@ -59,7 +59,8 @@ pub use crate::material::optics::aurora::{Aurora, ResolvedAurora};
 pub use crate::material::optics::edge_highlight::{EdgeHighlight, ResolvedEdgeHighlight};
 pub use crate::material::optics::iridescence::{Iridescence, ResolvedIridescence};
 pub use crate::material::optics::noise::{
-    BackdropGrain, Noise, NoiseSite, NoiseType, ResolvedNoise,
+    BackdropGrain, BackdropLayer, Noise, NoiseSite, NoiseType, ResolvedNoise, ResolvedNoiseLayer,
+    NOISE_LAYERS,
 };
 pub use crate::material::optics::reflection::{Reflection, ResolvedReflection};
 pub use crate::material::optics::saturation::ResolvedSaturation;
@@ -1586,36 +1587,6 @@ mod tests {
     }
 
     #[test]
-    fn glass_noise_and_saturation_parse_as_written() {
-        let parsed = do_parse(
-            r##"
-            material "frost" {
-                glass {
-                    noise 0.02
-                    saturation 0.85
-                }
-            }
-            "##,
-        );
-        let glass = parsed.materials[0].resolve().glass;
-        assert_eq!(glass.noise.amount, Some(0.02));
-        assert_eq!(glass.saturation.amount, Some(0.85));
-    }
-
-    #[test]
-    fn glass_noise_and_saturation_resolve_independently() {
-        let noise_only = do_parse(r##"material "frost" { glass { noise 0.5; }; }"##);
-        let glass = noise_only.materials[0].resolve().glass;
-        assert_eq!(glass.noise.amount, Some(0.5));
-        assert_eq!(glass.saturation.amount, None);
-
-        let saturation_only = do_parse(r##"material "frost" { glass { saturation 0; }; }"##);
-        let glass = saturation_only.materials[0].resolve().glass;
-        assert_eq!(glass.noise.amount, None);
-        assert_eq!(glass.saturation.amount, Some(0.));
-    }
-
-    #[test]
     fn saturation_resolves_through_its_optic() {
         let written = do_parse(r##"material "frost" { glass { saturation 0.85; }; }"##);
         assert_eq!(
@@ -1628,26 +1599,6 @@ mod tests {
             ResolvedSaturation::default()
         );
         assert_eq!(ResolvedSaturation::default().amount, None);
-    }
-
-    #[test]
-    fn noise_resolves_through_its_optic() {
-        let written = do_parse(r##"material "frost" { glass { noise 0.5 type="fine"; }; }"##);
-        assert_eq!(
-            written.materials[0].resolve().glass.noise,
-            ResolvedNoise {
-                amount: Some(0.5),
-                kind: NoiseType::Fine,
-                site: NoiseSite::Glass,
-            }
-        );
-        let omitted = do_parse(r##"material "frost" { glass {}; }"##);
-        assert_eq!(
-            omitted.materials[0].resolve().glass.noise,
-            ResolvedNoise::default()
-        );
-        assert_eq!(ResolvedNoise::default().kind, NoiseType::White);
-        assert_eq!(ResolvedNoise::default().amount, None);
     }
 
     #[test]
@@ -1821,13 +1772,6 @@ mod tests {
     }
 
     #[test]
-    fn glass_noise_and_saturation_default_to_inherit() {
-        let d = ResolvedGlass::default();
-        assert_eq!(d.noise.amount, None);
-        assert_eq!(d.saturation.amount, None);
-    }
-
-    #[test]
     fn glass_noise_rejects_values_outside_zero_and_one() {
         for value in ["-0.01", "1.01"] {
             let err = do_parse_err(&format!(
@@ -1848,22 +1792,6 @@ mod tests {
     }
 
     #[test]
-    fn glass_noise_type_parses_each_value() {
-        for (written, expected) in [
-            ("white", NoiseType::White),
-            ("fine", NoiseType::Fine),
-            ("lightness", NoiseType::Lightness),
-        ] {
-            let parsed = do_parse(&format!(
-                "material \"frost\" {{ glass {{ noise 0.02 type=\"{written}\"; }}; }}\n"
-            ));
-            let glass = parsed.materials[0].resolve().glass;
-            assert_eq!(glass.noise.amount, Some(0.02), "{written}");
-            assert_eq!(glass.noise.kind, expected, "{written}");
-        }
-    }
-
-    #[test]
     fn glass_noise_type_rejects_an_unknown_value() {
         let err = do_parse_err("material \"frost\" { glass { noise 0.02 type=\"blue\"; }; }\n");
         assert!(err.contains("unknown NoiseType value: blue"), "{err}");
@@ -1876,6 +1804,74 @@ mod tests {
     }
 
     #[test]
+    fn glass_noise_and_saturation_parse_as_written() {
+        let parsed = do_parse(
+            r##"
+            material "frost" {
+                glass {
+                    noise 0.02
+                    saturation 0.85
+                }
+            }
+            "##,
+        );
+        let glass = parsed.materials[0].resolve().glass;
+        assert_eq!(glass.noise.layers[0].map(|l| l.amount), Some(0.02));
+        assert_eq!(glass.saturation.amount, Some(0.85));
+    }
+
+    #[test]
+    fn glass_noise_and_saturation_resolve_independently() {
+        let noise_only = do_parse(r##"material "frost" { glass { noise 0.5; }; }"##);
+        let glass = noise_only.materials[0].resolve().glass;
+        assert_eq!(glass.noise.layers[0].map(|l| l.amount), Some(0.5));
+        assert_eq!(glass.saturation.amount, None);
+
+        let saturation_only = do_parse(r##"material "frost" { glass { saturation 0; }; }"##);
+        let glass = saturation_only.materials[0].resolve().glass;
+        assert!(glass.noise.is_omitted());
+        assert_eq!(glass.saturation.amount, Some(0.));
+    }
+
+    #[test]
+    fn noise_resolves_through_its_optic() {
+        let written = do_parse(r##"material "frost" { glass { noise 0.5 type="fine"; }; }"##);
+        assert_eq!(
+            written.materials[0].resolve().glass.noise,
+            ResolvedNoise::single(0.5, NoiseType::Fine, NoiseSite::Glass)
+        );
+        let omitted = do_parse(r##"material "frost" { glass {}; }"##);
+        assert_eq!(
+            omitted.materials[0].resolve().glass.noise,
+            ResolvedNoise::default()
+        );
+        assert!(ResolvedNoise::default().is_omitted());
+    }
+
+    #[test]
+    fn glass_noise_and_saturation_default_to_inherit() {
+        let d = ResolvedGlass::default();
+        assert!(d.noise.is_omitted());
+        assert_eq!(d.saturation.amount, None);
+    }
+
+    #[test]
+    fn glass_noise_type_parses_each_value() {
+        for (written, expected) in [
+            ("white", NoiseType::White),
+            ("fine", NoiseType::Fine),
+            ("lightness", NoiseType::Lightness),
+        ] {
+            let parsed = do_parse(&format!(
+                "material \"frost\" {{ glass {{ noise 0.02 type=\"{written}\"; }}; }}\n"
+            ));
+            let layer = parsed.materials[0].resolve().glass.noise.layers[0].unwrap();
+            assert_eq!(layer.amount, 0.02, "{written}");
+            assert_eq!(layer.kind, expected, "{written}");
+        }
+    }
+
+    #[test]
     fn glass_noise_site_parses_each_value_and_defaults_to_glass() {
         for (written, expected) in [
             ("glass", NoiseSite::Glass),
@@ -1885,14 +1881,16 @@ mod tests {
             let parsed = do_parse(&format!(
                 "material \"frost\" {{ glass {{ noise 0.3 type=\"fine\" site=\"{written}\"; }}; }}\n"
             ));
-            let noise = parsed.materials[0].resolve().glass.noise;
-            assert_eq!(noise.site, expected, "{written}");
-            assert_eq!(noise.amount, Some(0.3), "{written}");
-            assert_eq!(noise.kind, NoiseType::Fine, "{written}");
+            let layer = parsed.materials[0].resolve().glass.noise.layers[0].unwrap();
+            assert_eq!(layer.site, expected, "{written}");
+            assert_eq!(layer.amount, 0.3, "{written}");
+            assert_eq!(layer.kind, NoiseType::Fine, "{written}");
         }
         let parsed = do_parse("material \"frost\" { glass { noise 0.3; }; }\n");
         assert_eq!(
-            parsed.materials[0].resolve().glass.noise.site,
+            parsed.materials[0].resolve().glass.noise.layers[0]
+                .unwrap()
+                .site,
             NoiseSite::Glass
         );
         let parsed = do_parse("material \"frost\" { glass { }; }\n");
@@ -1900,34 +1898,67 @@ mod tests {
             parsed.materials[0].resolve().glass.noise,
             ResolvedNoise::default()
         );
-        assert_eq!(ResolvedNoise::default().site, NoiseSite::Glass);
     }
 
     #[test]
-    fn glass_noise_site_rejects_an_unknown_value() {
-        let err = do_parse_err("material \"frost\" { glass { noise 0.3 site=\"roof\"; }; }\n");
-        assert!(err.contains("unknown NoiseSite value: roof"), "{err}");
+    fn an_omitted_noise_type_resolves_to_white_and_keeps_the_amount_rule() {
+        let written = do_parse(r##"material "frost" { glass { noise 0.5; }; }"##);
+        let layer = written.materials[0].resolve().glass.noise.layers[0].unwrap();
+        assert_eq!(layer.amount, 0.5);
+        assert_eq!(layer.kind, NoiseType::White);
+
+        let omitted = do_parse(r##"material "frost" { glass {}; }"##);
+        assert!(omitted.materials[0].resolve().glass.noise.is_omitted());
+        assert!(ResolvedGlass::default().noise.is_omitted());
+    }
+
+    fn backdrop(amount: f64, kind: NoiseType, scale: f64) -> Option<BackdropLayer> {
+        Some(BackdropLayer {
+            amount,
+            kind,
+            scale,
+        })
+    }
+
+    /// One material, parsed alone so that two disagreeing ones can meet in
+    /// `backdrop_grain` without the config refusing them first.
+    fn material(text: &str) -> Material {
+        do_parse(text).materials.remove(0)
     }
 
     #[test]
     fn backdrop_grain_disagreement_names_both_materials() {
+        let a =
+            material("material \"a\" { glass { noise 0.3 type=\"fine\" site=\"backdrop\"; }; }\n");
+        let b =
+            material("material \"b\" { glass { noise 0.1 type=\"fine\" site=\"backdrop\"; }; }\n");
+        assert_eq!(
+            crate::material::optics::noise::backdrop_grain(&[a.clone(), b]),
+            Err(String::from(
+                "materials \"a\" and \"b\" place different noise at the backdrop \
+                 ([0.3 fine], [0.1 fine]); backdrop grain is one setting per output"
+            ))
+        );
+        let c =
+            material("material \"c\" { glass { noise 0.3 type=\"white\" site=\"backdrop\"; }; }\n");
+        assert_eq!(
+            crate::material::optics::noise::backdrop_grain(&[a, c]),
+            Err(String::from(
+                "materials \"a\" and \"c\" place different noise at the backdrop \
+                 ([0.3 fine], [0.3 white]); backdrop grain is one setting per output"
+            ))
+        );
+        // The decoded config refuses the pair; miette wraps long messages,
+        // so only a short fragment is asserted here.
         let err = do_parse_err(
             "material \"a\" { glass { noise 0.3 type=\"fine\" site=\"backdrop\"; }; }\n\
              material \"b\" { glass { noise 0.1 type=\"fine\" site=\"backdrop\"; }; }\n",
         );
         assert!(
-            err.contains(
-                "materials \"a\" and \"b\" both place noise at the backdrop with different"
-            ) && err.contains(
-                "settings (0.3 fine, 0.1 fine); backdrop grain is one setting per output"
-            ),
+            err.contains("place different noise")
+                && err.contains("backdrop grain is one setting per output"),
             "{err}"
         );
-        let err = do_parse_err(
-            "material \"a\" { glass { noise 0.3 type=\"fine\" site=\"backdrop\"; }; }\n\
-             material \"b\" { glass { noise 0.3 type=\"white\" site=\"backdrop\"; }; }\n",
-        );
-        assert!(err.contains("(0.3 fine, 0.3 white)"), "{err}");
     }
 
     #[test]
@@ -1943,8 +1974,7 @@ mod tests {
             assert_eq!(
                 parsed.backdrop_grain(),
                 Some(BackdropGrain {
-                    amount: 0.3,
-                    kind: NoiseType::Fine
+                    layers: [backdrop(0.3, NoiseType::Fine, 1.), None, None, None],
                 }),
                 "{order:?}"
             );
@@ -1954,17 +1984,154 @@ mod tests {
     }
 
     #[test]
-    fn an_omitted_noise_type_resolves_to_white_and_keeps_the_amount_rule() {
-        let written = do_parse(r##"material "frost" { glass { noise 0.5; }; }"##);
-        let glass = written.materials[0].resolve().glass;
-        assert_eq!(glass.noise.amount, Some(0.5));
-        assert_eq!(glass.noise.kind, NoiseType::White);
+    fn glass_noise_layers_parse_in_order_with_their_scale() {
+        let parsed = do_parse(
+            "material \"film-stock\" { glass {\n\
+                 noise 0.04 type=\"lightness\"\n\
+                 noise 0.03 type=\"white\" scale=4\n\
+                 noise 0.02 type=\"fine\" site=\"film\" scale=2.5\n\
+             }; }\n",
+        );
+        let noise = parsed.materials[0].resolve().glass.noise;
+        let layer = |amount, kind, site, scale| {
+            Some(ResolvedNoiseLayer {
+                amount,
+                kind,
+                site,
+                scale,
+            })
+        };
+        assert_eq!(
+            noise.layers,
+            [
+                layer(0.04, NoiseType::Lightness, NoiseSite::Glass, 1.),
+                layer(0.03, NoiseType::White, NoiseSite::Glass, 4.),
+                layer(0.02, NoiseType::Fine, NoiseSite::Film, 2.5),
+                None,
+            ]
+        );
+        assert!(!noise.is_omitted());
+    }
 
-        let omitted = do_parse(r##"material "frost" { glass {}; }"##);
-        let glass = omitted.materials[0].resolve().glass;
-        assert_eq!(glass.noise.amount, None);
-        assert_eq!(glass.noise.kind, NoiseType::White);
-        assert_eq!(ResolvedGlass::default().noise.kind, NoiseType::White);
+    #[test]
+    fn four_noise_layers_parse() {
+        let parsed =
+            do_parse("material \"m\" { glass { noise 0.1; noise 0.1; noise 0.1; noise 0.1; }; }\n");
+        assert!(parsed.materials[0].resolve().glass.noise.layers[3].is_some());
+    }
+
+    #[test]
+    fn five_noise_layers_refuse_the_config_without_a_panic() {
+        // The invalid material is still pushed into the table and reaches
+        // the post-include backdrop check, which resolves it.
+        let err = do_parse_err(
+            "material \"film-stock\" { glass {\n\
+                 noise 0.1 site=\"backdrop\"\nnoise 0.1\nnoise 0.1\nnoise 0.1\nnoise 0.1\n\
+             }; }\n",
+        );
+        assert!(err.contains("at most 4 noise layers, found 5"), "{err}");
+        assert_eq!(
+            Material {
+                name: String::from("film-stock"),
+                glass: material(
+                    "material \"film-stock\" { glass { noise 0.1; noise 0.1; noise 0.1; noise 0.1; }; }\n"
+                )
+                .glass,
+                responses: Vec::new(),
+            }
+            .validate(),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn glass_noise_scale_is_bounded_and_defaults_to_one() {
+        for value in ["0.5", "16.01", "17"] {
+            let err = do_parse_err(&format!(
+                "material \"frost\" {{ glass {{ noise 0.3 scale={value}; }}; }}\n"
+            ));
+            assert!(
+                err.contains("value must be between 1 and 16"),
+                "{value}: {err}"
+            );
+        }
+        for (written, expected) in [("1", 1.), ("16", 16.), ("2.5", 2.5)] {
+            let parsed = do_parse(&format!(
+                "material \"frost\" {{ glass {{ noise 0.3 scale={written}; }}; }}\n"
+            ));
+            let layer = parsed.materials[0].resolve().glass.noise.layers[0].unwrap();
+            assert_eq!(layer.scale, expected, "{written}");
+        }
+        let parsed = do_parse("material \"frost\" { glass { noise 0.3; }; }\n");
+        assert_eq!(
+            parsed.materials[0].resolve().glass.noise.layers[0]
+                .unwrap()
+                .scale,
+            1.
+        );
+    }
+
+    #[test]
+    fn amount_zero_layers_keep_their_slots() {
+        let parsed = do_parse("material \"m\" { glass { noise 0; noise 0.3 type=\"fine\"; }; }\n");
+        let noise = parsed.materials[0].resolve().glass.noise;
+        assert_eq!(noise.layers[0].unwrap().amount, 0.);
+        assert_eq!(noise.layers[1].unwrap().amount, 0.3);
+        assert!(!noise.is_omitted());
+    }
+
+    #[test]
+    fn backdrop_agreement_compares_ordered_backdrop_lists() {
+        let a = "material \"a\" { glass { noise 0.3 type=\"fine\" site=\"backdrop\"; \
+                 noise 0.1 type=\"white\" site=\"backdrop\" scale=4; }; }\n";
+        // The same backdrop list between other sites' layers agrees.
+        let parsed = do_parse(&format!(
+            "{a}material \"b\" {{ glass {{ noise 0.5 site=\"film\"; \
+             noise 0.3 type=\"fine\" site=\"backdrop\"; noise 0.2; \
+             noise 0.1 type=\"white\" site=\"backdrop\" scale=4; }}; }}\n"
+        ));
+        assert_eq!(
+            parsed.backdrop_grain(),
+            Some(BackdropGrain {
+                layers: [
+                    backdrop(0.3, NoiseType::Fine, 1.),
+                    backdrop(0.1, NoiseType::White, 4.),
+                    None,
+                    None,
+                ],
+            })
+        );
+        // Length, order and scale each disagree.
+        for (b, listed) in [
+            ("noise 0.3 type=\"fine\" site=\"backdrop\"", "[0.3 fine]"),
+            (
+                "noise 0.1 type=\"white\" site=\"backdrop\" scale=4; \
+                 noise 0.3 type=\"fine\" site=\"backdrop\"",
+                "[0.1 white scale 4, 0.3 fine]",
+            ),
+            (
+                "noise 0.3 type=\"fine\" site=\"backdrop\"; \
+                 noise 0.1 type=\"white\" site=\"backdrop\" scale=8",
+                "[0.3 fine, 0.1 white scale 8]",
+            ),
+        ] {
+            let b = material(&format!("material \"b\" {{ glass {{ {b}; }}; }}\n"));
+            assert_eq!(
+                crate::material::optics::noise::backdrop_grain(&[material(a), b]),
+                Err(format!(
+                    "materials \"a\" and \"b\" place different noise at the backdrop \
+                     ([0.3 fine, 0.1 white scale 4], {listed}); backdrop grain is \
+                     one setting per output"
+                )),
+                "{listed}"
+            );
+        }
+    }
+
+    #[test]
+    fn glass_noise_site_rejects_an_unknown_value() {
+        let err = do_parse_err("material \"frost\" { glass { noise 0.3 site=\"roof\"; }; }\n");
+        assert!(err.contains("unknown NoiseSite value: roof"), "{err}");
     }
 
     #[test]

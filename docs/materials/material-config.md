@@ -59,6 +59,7 @@ lengths are logical pixels.
 | `noise` | float | inherit | 0–1 | — |
 | `noise` `type=` | `white` / `fine` / `lightness` | `white` | — | — |
 | `noise` `site=` | `glass` / `backdrop` / `film` | `glass` | — | — |
+| `noise` `scale=` | float | 1 | 1–16 | px |
 | `aurora` | float | 0 | 0–1 | — |
 | `aurora` `drift-hz` | float | 4 | 0–30 | Hz |
 | `aurora` `color` | color | `#3dffb0` | any color | — |
@@ -159,12 +160,29 @@ type has no inheritance and an omitted type is `white`.
 `noise` also accepts `site="glass"` (default), `"backdrop"`, or `"film"`.
 `backdrop` grains the output's shared backdrop buffers before the Kawase
 blur and roughness pyramids. Every material placing noise there must agree on
-one amount and one type; disagreement refuses the config and names both
-materials (`materials "a" and "b" both place noise at the backdrop with different
-settings ...`). Grain applies even with `blur { off }`; a window asking for a
-blurred `background-effect` also samples it. `film` grains the finished encoded
-glass after ring, aurora, glint and sweeps, on glass coverage only. The site's
+the ordered list of its backdrop layers (amount, type, scale); disagreement
+refuses the config and names both materials and both lists (`materials "a" and
+"b" place different noise at the backdrop ([0.3 fine], [0.1 fine]) ...`).
+Grain applies even with `blur { off }`; a window asking for a blurred
+`background-effect` also samples it. `film` grains the finished encoded glass
+after ring, aurora, glint and sweeps, on glass coverage only. The site's
 softening under blur is measured in `2026-10-05-noise-placement-evidence.md`.
+
+A material may write `noise` up to four times; each node is a layer with its
+own amount, `type=`, `site=` and `scale=`, and a fifth node refuses the
+config. Each site applies its layers in the order written; sites run backdrop,
+glass, film. `scale=` is the grain's cell size in physical output pixels, 1
+(the default, per-pixel grain) to 16; above 1 the grain is smooth value noise
+normalised so an amount means the same strength at every size. A layer's
+grain pattern follows its position: glass and film layers their position among
+the material's nodes, backdrop layers theirs among the backdrop layers. Layers
+in different positions get different patterns; the k-th backdrop layer shares
+its pattern with a glass or film layer in position k, which blur and
+refraction decorrelate.
+Independent white or fine layers of one type and size at one site, with
+nothing clipping, have the variance of one layer of amount `sqrt(a² + b²)` but
+not its distribution, so they are close to redundant: layers are for
+different types, sites or sizes.
 
 `anisotropic-blur` instead smears the refraction itself along one axis.
 
@@ -204,10 +222,12 @@ resolves to 1 otherwise.
 
 Stage 3b (`behind`) at `site="glass"`; a source grain pass at
 `site="backdrop"`; stage 9 (`post`) at `site="film"`.
-`noise <amount> type=<type> site=<site>` grains the selected carrier; `white`, `fine`, and `lightness` are
-described above. Its explicit neutral is amount 0. An omitted amount inherits the global `blur`
-block's `noise` while backdrop blur is effective and resolves to 0 otherwise;
-the type and site never inherit.
+`noise <amount> type=<type> site=<site> scale=<px>`, up to four nodes, grains
+the selected carrier; `white`, `fine`, and `lightness` are described above.
+Its explicit neutral is amount 0, which keeps the node's slot. When no node is
+written, the amount inherits the global `blur` block's `noise` while backdrop
+blur is effective and resolves to 0 otherwise, as white grain at the glass
+site; a written node never inherits, and type, site and scale never do.
 
 ### iridescence
 
