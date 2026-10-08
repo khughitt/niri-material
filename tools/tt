@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tt version 4
+# tt version 5
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
@@ -15,12 +15,13 @@ import os
 import pathlib
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import time
 import tomllib
 
-VERSION = 4
+VERSION = 5
 FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source", "selection"]
 
 PYTEST_WORD = r"(?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?|rerun)"
@@ -126,9 +127,10 @@ def fail(message):
     sys.exit(1)
 
 
-def project_of(cwd):
-    """(root, prefix) of the nearest tasks/.config.toml above cwd, else (None, None).
-    A config that does not parse is an error: the wrapper must not guess a project."""
+def project_of(cwd, env=os.environ):
+    """(root, prefix, linked): walk for a config first, then ask tasks where.
+    A malformed config or resolver answer is fatal; an absent or unexecutable CLI
+    means no registry is available (CI and fresh clones)."""
     for directory in [cwd, *cwd.parents]:
         config = directory / "tasks" / ".config.toml"
         if config.is_file():
@@ -136,8 +138,35 @@ def project_of(cwd):
                 prefix = tomllib.loads(config.read_text())["prefix"]
             except (tomllib.TOMLDecodeError, KeyError) as error:
                 fail(f"cannot read {config}: {error}")
-            return directory, prefix
-    return None, None
+            return directory, prefix, False
+    binary = shutil.which("tasks", path=env.get("PATH") or "")
+    if binary is None:
+        return None, None, False
+    try:
+        result = subprocess.run([binary, "where", str(cwd), "--json"], capture_output=True,
+                                text=True, env=dict(env), timeout=10)
+    except OSError:
+        return None, None, False
+    except subprocess.SubprocessError as error:
+        fail(f"cannot tell which project {cwd} is in: {error}")
+    try:
+        answer = json.loads(result.stdout if result.returncode == 0 else result.stderr)
+        if not isinstance(answer, dict):
+            raise ValueError("expected a JSON object")
+        if result.returncode != 0 or "error" in answer:
+            envelope = answer.get("error")
+            detail = (f"{envelope.get('kind', 'unknown')}: {envelope.get('detail', '')}"
+                      if isinstance(envelope, dict) else f"exit {result.returncode}")
+            fail(f"cannot tell which project {cwd} is in: {detail}")
+        project = answer["project"]
+        if project is None:
+            return None, None, False
+        root, prefix, linked = project["root"], project["prefix"], project["linked"]
+        if not isinstance(root, str) or not root or not isinstance(prefix, str) or not prefix or not isinstance(linked, bool):
+            raise ValueError("invalid project fields")
+        return pathlib.Path(root), prefix, linked
+    except (ValueError, KeyError, TypeError) as error:
+        fail(f"cannot tell which project {cwd} is in: {error}")
 
 
 def _git(cwd, *args):
@@ -201,14 +230,15 @@ def _writable(path):
         return False
 
 
-def choose_log(cwd, root, env):
+def choose_log(cwd, root, env, linked=False):
     """The first writable log location and the warning to print when it is a fallback.
-    Checked before the command runs; exits 1 when nothing is writable."""
+    Checked before the command runs; exits 1 when nothing is writable. Linked
+    projects fall back only to the records root, never to the code checkout."""
     shared = shared_log(env)
     if _writable(shared):
         return shared, None
     candidates = []
-    main = main_checkout(cwd)
+    main = None if linked else main_checkout(cwd)
     if main:
         candidates.append(main / ".tt" / "runs.jsonl")
     if root and (main is None or root.resolve() != main):
@@ -295,8 +325,8 @@ def main(argv, env, cwd):
         sys.stderr.write("usage: tt <target> -- <command> [args...]\n")
         return 2
     target, command = argv[0], argv[2:]
-    root, prefix = project_of(cwd)
-    log, warning = choose_log(cwd, root, env)
+    root, prefix, linked = project_of(cwd, env)
+    log, warning = choose_log(cwd, root, env, linked=linked)
     if warning:
         sys.stderr.write(warning + "\n")
     rev, dirty = git_info(cwd)
