@@ -1098,11 +1098,15 @@ impl<W: LayoutElement> Tile<W> {
         self.signal_render_visible = false;
     }
 
+    /// `screen_view` is the output's area in this tile's coordinates, `None`
+    /// for a hidden tile; `view_rect` is the workspace view, which gradients
+    /// are relative to. They differ in the overview and during a workspace
+    /// switch.
     pub fn update_render_elements(
         &mut self,
         is_active: bool,
         input_active: bool,
-        visible: bool,
+        screen_view: Option<Rectangle<f64, Logical>>,
         view_rect: Rectangle<f64, Logical>,
     ) {
         self.input_active = input_active;
@@ -1146,15 +1150,16 @@ impl<W: LayoutElement> Tile<W> {
             .as_ref()
             .and_then(|response| self.signal_for_frame(response));
         *self.signal_frame_cache.get_mut() = signal;
-        self.signal_render_visible = visible
-            && self.material.as_ref().is_some_and(|material| {
+        self.signal_render_visible = screen_view.is_some_and(|screen_view| {
+            self.material.as_ref().is_some_and(|material| {
                 crate::render_helpers::signal::slab_in_view(
                     Point::default(),
                     self.tile_size(),
                     material.material().glass.bevel,
-                    view_rect,
+                    screen_view,
                 )
-            });
+            })
+        });
 
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
@@ -2313,11 +2318,11 @@ impl<W: LayoutElement> Tile<W> {
     ) {
         let _span = tracy_client::span!("Tile::render");
 
-        if let Some(ticks) = &ctx.signal_ticks {
+        if let Some(sink) = &ctx.signal_ticks {
             if let Some(deadline) =
-                self.tick_deadline(location, ticks.view.get(), self.clock.now_unadjusted())
+                self.tick_deadline(location, sink.view, self.clock.now_unadjusted())
             {
-                ticks.report(deadline);
+                sink.ticks.report(deadline);
             }
         }
 
@@ -3096,7 +3101,7 @@ mod tests {
         // The attenuation color a render at `at` uploads.
         let mut upload = |tile: &mut Tile<TestWindow>, at: Duration| {
             clock.set_unadjusted(at);
-            tile.update_render_elements(true, true, true, view);
+            tile.update_render_elements(true, true, Some(view), view);
             render_dynamics(tile, 1280., 720.)
                 .glass_signal
                 .attenuation_color
@@ -3212,7 +3217,7 @@ mod tests {
         let view = Rectangle::from_size(Size::from((1280., 720.)));
 
         for is_active in [true, false, true] {
-            tile.update_render_elements(is_active, true, true, view);
+            tile.update_render_elements(is_active, true, Some(view), view);
             assert!(tile.focus_crossfade.is_none(), "active {is_active}");
             assert!(!tile.are_transitions_ongoing(), "active {is_active}");
         }
@@ -3227,7 +3232,7 @@ mod tests {
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::None, clock);
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(false, true, true, view);
+        tile.update_render_elements(false, true, Some(view), view);
         assert!(tile.signal_frame_cache.borrow().is_none());
         assert_eq!(
             tile.tick_deadline(Point::default(), view, Duration::ZERO),
@@ -3251,7 +3256,7 @@ mod tests {
         };
         let mut tile = material_tile(lit.clone(), niri_config::FocusResponse::None, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(false, true, true, view);
+        tile.update_render_elements(false, true, Some(view), view);
         assert!(!tile.active);
         assert!(tile.signal_frame_cache.borrow().is_none());
         assert!(
@@ -3305,7 +3310,7 @@ mod tests {
             ..Default::default()
         };
         let mut tile = material_tile(pinned, niri_config::FocusResponse::None, clock);
-        tile.update_render_elements(false, true, true, view);
+        tile.update_render_elements(false, true, Some(view), view);
         assert!(
             !tile.activity_gated(),
             "a pinned optic needs no edge redraw"
@@ -3426,7 +3431,7 @@ mod tests {
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
         tile.active = true;
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert!(tile.focus_crossfade.is_none());
         assert_eq!(beam_of(&tile), None, "no change of focus, no beam");
         assert!(tile.signal_frame_cache.borrow().is_some());
@@ -3443,11 +3448,11 @@ mod tests {
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
 
-        tile.update_render_elements(false, true, true, view);
+        tile.update_render_elements(false, true, Some(view), view);
         assert_eq!(beam_of(&tile), None);
 
         clock.set_unadjusted(Duration::from_millis(100));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert_eq!(
             beam_of(&tile),
             Some((Duration::from_millis(100), 300., false))
@@ -3457,8 +3462,8 @@ mod tests {
         // A second gain a second later (another tile took focus, then this
         // one got it back) starts a fresh beam at the new instant.
         clock.set_unadjusted(Duration::from_millis(1100));
-        tile.update_render_elements(false, true, true, view);
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(false, true, Some(view), view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert_eq!(
             beam_of(&tile),
             Some((Duration::from_millis(1100), 300., false))
@@ -3466,7 +3471,7 @@ mod tests {
 
         // Loss ends it.
         clock.set_unadjusted(Duration::from_millis(1500));
-        tile.update_render_elements(false, true, true, view);
+        tile.update_render_elements(false, true, Some(view), view);
         assert_eq!(beam_of(&tile), None);
     }
 
@@ -3475,7 +3480,7 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let (_, p, l) = geometry_of(&tile, 400., 300.);
         // slab 412 × 312, chamfer 12, gap 8: a 372 × 272 line
         assert_eq!((p, l), (1288., 322.));
@@ -3486,7 +3491,7 @@ mod tests {
         assert_eq!(beam_uniforms(&first), [0., 0., 1.], "launch: head at 0");
 
         clock.set_unadjusted(secs(run - 0.1));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let near_end = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!(tile.are_animations_ongoing());
@@ -3497,7 +3502,7 @@ mod tests {
         clock.set_unadjusted(secs(run + 0.1));
         tile.advance_animations();
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let ended = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.], "rest uniforms");
@@ -3508,7 +3513,7 @@ mod tests {
         // Settled: the same fingerprint later, and no deadline.
         clock.set_unadjusted(secs(run + 5.));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let later = render_dynamics(&tile, 400., 300.);
         assert_eq!(later.signal_fingerprint, ended.signal_fingerprint);
         assert_eq!(beam_uniforms(&later), [0., 0., 0.]);
@@ -3523,7 +3528,7 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let (_, p1, l1) = geometry_of(&tile, 400., 300.);
         let (_, p2, l2) = geometry_of(&tile, 800., 600.);
         assert!(p2 + l2 > p1 + l1 + 200.);
@@ -3535,7 +3540,7 @@ mod tests {
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
         assert!(beam_of(&tile).is_some());
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let grown = render_dynamics(&tile, 800., 600.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!((beam_uniforms(&grown)[0] - (300. * t) as f32).abs() < 1e-2);
@@ -3547,7 +3552,7 @@ mod tests {
         assert!(300. * t < p2 + l2);
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let still = render_dynamics(&tile, 800., 600.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!((beam_uniforms(&still)[0] - (300. * t) as f32).abs() < 1e-2);
@@ -3563,7 +3568,7 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let (_, p1, l1) = geometry_of(&tile, 400., 300.);
         let (_, p2, l2) = geometry_of(&tile, 800., 600.);
         render_dynamics(&tile, 400., 300.);
@@ -3571,7 +3576,7 @@ mod tests {
         // Mid-drain on the small face: the head is past P₁, env is 0.
         let t = (p1 + 50.) / 300.;
         clock.set_unadjusted(secs(t));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let draining = render_dynamics(&tile, 400., 300.);
         assert_eq!(
             beam_uniforms(&draining)[1],
@@ -3589,7 +3594,7 @@ mod tests {
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
         assert!(beam_of(&tile).is_some());
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let grown = render_dynamics(&tile, 800., 600.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!((beam_uniforms(&grown)[0] - (300. * t) as f32).abs() < 1e-2);
@@ -3599,7 +3604,7 @@ mod tests {
         let t = (p2 + l2) / 300. + 0.1;
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let ended = render_dynamics(&tile, 800., 600.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
@@ -3612,12 +3617,12 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert!(beam_of(&tile).is_some());
 
         clock.set_unadjusted(ring::BEAM_MAX_RUN - Duration::from_secs(1));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert!(beam_of(&tile).is_some());
         assert!(!tile.focus_beam.as_ref().unwrap().rendered.get());
         assert!(tile.are_animations_ongoing());
@@ -3649,11 +3654,11 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = slow_tile(clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert_eq!(beam_of(&tile), Some((Duration::ZERO, 50., false)));
 
         clock.set_unadjusted(secs(10.));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let early = render_dynamics(&tile, 1800., 1200.);
         assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
         assert_eq!(beam_uniforms(&early), [500., 1., 1.]);
@@ -3661,7 +3666,7 @@ mod tests {
         for t in [60., 119.] {
             clock.set_unadjusted(secs(t));
             tile.advance_animations();
-            tile.update_render_elements(true, true, true, view);
+            tile.update_render_elements(true, true, Some(view), view);
             let mid = render_dynamics(&tile, 1800., 1200.);
             assert_eq!(beam_uniforms(&mid)[0], (50. * t) as f32);
             assert!(beam_of(&tile).is_some());
@@ -3672,7 +3677,7 @@ mod tests {
         clock.set_unadjusted(secs(121.));
         tile.advance_animations();
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let draining = render_dynamics(&tile, 1800., 1200.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert_eq!(beam_uniforms(&draining), [6050., 0., 1.]);
@@ -3680,7 +3685,7 @@ mod tests {
 
         clock.set_unadjusted(secs(122.));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let later = render_dynamics(&tile, 1800., 1200.);
         assert_ne!(
             later.signal_fingerprint, draining.signal_fingerprint,
@@ -3691,7 +3696,7 @@ mod tests {
         clock.set_unadjusted(secs(144.));
         tile.advance_animations();
         assert!(beam_of(&tile).is_some());
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let ended = render_dynamics(&tile, 1800., 1200.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
@@ -3704,10 +3709,10 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = slow_tile(clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
 
         clock.set_unadjusted(secs(10.));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         render_dynamics(&tile, 1800., 1200.);
         assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
 
@@ -3716,14 +3721,14 @@ mod tests {
         for t in [30., 121.] {
             clock.set_unadjusted(secs(t));
             tile.advance_animations();
-            tile.update_render_elements(true, true, false, view);
+            tile.update_render_elements(true, true, None, view);
             assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
             assert!(tile.focus_beam.as_ref().unwrap().rendered.get());
             assert!(!tile.are_animations_ongoing(), "hidden at {t} s");
         }
 
         // Revealed at 121 s: the tail is draining.
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert!(tile.are_animations_ongoing());
         let revealed = render_dynamics(&tile, 1800., 1200.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
@@ -3733,11 +3738,11 @@ mod tests {
         // the beam and the frame returns rest.
         clock.set_unadjusted(secs(130.));
         tile.advance_animations();
-        tile.update_render_elements(true, true, false, view);
+        tile.update_render_elements(true, true, None, view);
         clock.set_unadjusted(secs(150.));
         tile.advance_animations();
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let ended = render_dynamics(&tile, 1800., 1200.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
@@ -3765,11 +3770,11 @@ mod tests {
             options.signal.motion = policy;
             options.animations.off = animations_off;
             tile.options = Rc::new(options);
-            tile.update_render_elements(true, true, true, view);
+            tile.update_render_elements(true, true, Some(view), view);
             let label = format!("{policy:?} animations_off={animations_off} speed={speed}");
             assert_eq!(beam_of(&tile), None, "{label}");
             clock.set_unadjusted(secs(1.));
-            tile.update_render_elements(true, true, true, view);
+            tile.update_render_elements(true, true, Some(view), view);
             let dynamics = render_dynamics(&tile, 400., 300.);
             assert_eq!(beam_uniforms(&dynamics), [0., 0., 0.], "{label}");
         }
@@ -3821,7 +3826,7 @@ mod tests {
             }));
         let view = Rectangle::from_size(Size::from((1280., 720.)));
 
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let (eff, _) = tile.signal_frame_cache.borrow().clone().unwrap();
         assert_eq!(eff.motion, niri_ipc::SignalMotion::Pulse);
         assert!(tile
@@ -3839,7 +3844,7 @@ mod tests {
                 sources: vec![String::from("demo")],
                 impulses: vec![],
             }));
-        tile.update_render_elements(true, false, true, view);
+        tile.update_render_elements(true, false, Some(view), view);
         assert!(
             beam_of(&tile).is_some(),
             "the beam is finite and not gated on idle"
@@ -3858,12 +3863,12 @@ mod tests {
         );
         clock.set_optic_active(false, Duration::ZERO);
         clock.set_unadjusted(secs(1.));
-        tile.update_render_elements(true, false, true, view);
+        tile.update_render_elements(true, false, Some(view), view);
         let dynamics = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "the beam runs");
         clock.set_unadjusted(secs(30.));
         tile.advance_animations();
-        tile.update_render_elements(true, false, true, view);
+        tile.update_render_elements(true, false, Some(view), view);
         assert_eq!(
             beam_uniforms(&render_dynamics(&tile, 400., 300.)),
             [0., 0., 0.]
@@ -3889,7 +3894,7 @@ mod tests {
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         let size = Size::from((1280., 720.));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert_eq!(beam_of(&tile).map(|b| b.1), Some(300.));
 
         // A reload that changes `ring-beam-speed` leaves the running beam on
@@ -3911,9 +3916,9 @@ mod tests {
 
         // ...and with zero configured, the next gain starts nothing.
         clock.set_unadjusted(Duration::from_millis(2000));
-        tile.update_render_elements(false, true, true, view);
+        tile.update_render_elements(false, true, Some(view), view);
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert_eq!(beam_of(&tile), None);
 
         // A reload to `focus "none"` cuts a running beam at once.
@@ -3921,7 +3926,7 @@ mod tests {
             niri_config::FocusResponse::RingLight,
             Clock::with_time(Duration::ZERO),
         );
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert!(beam_of(&tile).is_some());
         let lights_off = niri_config::ResolvedResponse {
             focus: niri_config::FocusResponse::None,
@@ -3935,7 +3940,7 @@ mod tests {
             niri_config::FocusResponse::RingLight,
             Clock::with_time(Duration::ZERO),
         );
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert!(beam_of(&tile).is_some());
         let mut options = (*tile.options).clone();
         options.signal.motion = niri_config::SignalMotionPolicy::Reduced;
@@ -3948,7 +3953,7 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let (_, p, l) = geometry_of(&tile, 400., 300.);
         render_dynamics(&tile, 400., 300.);
 
@@ -3956,7 +3961,7 @@ mod tests {
         assert!(t + 0.1 < (p + l) / 300., "still within the drain");
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let drain = render_dynamics(&tile, 400., 300.);
         let [head, env, decay] = beam_uniforms(&drain);
         assert_eq!(env, 0.);
@@ -3967,7 +3972,7 @@ mod tests {
 
         clock.set_unadjusted(secs(t + 0.1));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let next = render_dynamics(&tile, 400., 300.);
         let [head2, env2, _] = beam_uniforms(&next);
         assert_eq!(env2, 0.);
@@ -3992,9 +3997,9 @@ mod tests {
         assert_eq!(face.half, [200., 150.], "the face is the slab");
         assert_eq!(p, 4. * (192. + 142.));
 
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         clock.set_unadjusted(secs(1.));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let dynamics = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_uniforms(&dynamics), [300., 1., 1.], "a live beam");
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
@@ -4011,7 +4016,7 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = beam_tile(flat_glass(), response, clock.clone());
         let (_, p, l) = geometry_of(&tile, 400., 300.);
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
 
         // Through the plateau the head amplitude leaves 1, while the head
         // position and the shared decay stay exactly where they were.
@@ -4019,7 +4024,7 @@ mod tests {
         let mut t = 0.4;
         while t < (p / 300.) - 0.4 {
             clock.set_unadjusted(secs(t));
-            tile.update_render_elements(true, true, true, view);
+            tile.update_render_elements(true, true, Some(view), view);
             let [head, env, decay] = beam_uniforms(&render_dynamics(&tile, 400., 300.));
             assert!((head - (300. * t) as f32).abs() < 1e-2, "head at {t}");
             assert_eq!(decay, 1., "plateau decay at {t}");
@@ -4033,11 +4038,11 @@ mod tests {
         // drains, and the settled frame is the rest uniform: the wander
         // never puts the quiet ring back on a clock.
         clock.set_unadjusted(secs((p / 300.) + 0.5));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert_eq!(beam_uniforms(&render_dynamics(&tile, 400., 300.))[1], 0.);
         clock.set_unadjusted(secs(((p + l) / 300.) + 0.5));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert_eq!(
             beam_uniforms(&render_dynamics(&tile, 400., 300.)),
             [0., 0., 0.]
@@ -4066,12 +4071,12 @@ mod tests {
             options.signal.motion = policy;
             options.animations.off = animations_off;
             tile.options = Rc::new(options);
-            tile.update_render_elements(true, true, true, view);
+            tile.update_render_elements(true, true, Some(view), view);
             let label = format!("{policy:?} animations_off={animations_off}");
             assert_eq!(beam_of(&tile), None, "{label}");
             for t in [0.1, 0.5, 1., 2.] {
                 clock.set_unadjusted(secs(t));
-                tile.update_render_elements(true, true, true, view);
+                tile.update_render_elements(true, true, Some(view), view);
                 let dynamics = render_dynamics(&tile, 400., 300.);
                 assert_eq!(beam_uniforms(&dynamics), [0., 0., 0.], "{label} at {t}");
             }
@@ -4089,12 +4094,12 @@ mod tests {
         let mut tile = beam_tile(flat_glass(), response, clock.clone());
         let (_, p, _) = geometry_of(&tile, 400., 300.);
         assert!(p > 600., "the decay must fall inside the lap: P = {p}");
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         render_dynamics(&tile, 400., 300.);
 
         // Halfway to dark: a quarter of the brightness, the head on its path.
         clock.set_unadjusted(secs(1.));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let [head, _, decay] = beam_uniforms(&render_dynamics(&tile, 400., 300.));
         assert!((head - 300.).abs() < 1e-2);
         assert!((decay - 0.25).abs() < 1e-6, "decay {decay}");
@@ -4103,7 +4108,7 @@ mod tests {
         // 600 px at 300 px/s is dark at 2 s, long before the lap closes:
         // the first frame past it ends the run, so the redraws stop there.
         clock.set_unadjusted(secs(2.1));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let ended = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.], "rest uniforms");
@@ -4114,7 +4119,7 @@ mod tests {
         // The resting ring is the same constant it is without the knob.
         clock.set_unadjusted(secs(10.));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let later = render_dynamics(&tile, 400., 300.);
         assert_eq!(later.signal_fingerprint, ended.signal_fingerprint);
         assert_eq!(tile.tick_deadline(Point::default(), view, secs(10.)), None);
@@ -4127,14 +4132,14 @@ mod tests {
         let mut clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let (_, p, l) = geometry_of(&tile, 400., 300.);
         render_dynamics(&tile, 400., 300.);
 
         // Mid-run, the focus crossfade long settled.
         clock.set_unadjusted(secs(2.));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         assert!(tile.focus_crossfade.is_none());
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!(tile.are_animations_ongoing(), "the beam wants frames");
@@ -4146,7 +4151,7 @@ mod tests {
         // At rest, neither.
         clock.set_unadjusted(secs((p + l) / 300. + 0.1));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert!(!tile.are_animations_ongoing());
@@ -4162,7 +4167,7 @@ mod tests {
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock.clone());
         let view = Rectangle::from_size(Size::from((1280., 720.)));
         let size = Size::from((1280., 720.));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let (_, p1, l1) = geometry_of(&tile, 400., 300.);
         render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile), Some((Duration::ZERO, 300., false)));
@@ -4182,7 +4187,7 @@ mod tests {
         let t = (p2 + l2 - 50.) / 300.;
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let running = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
         assert!((beam_uniforms(&running)[0] - (300. * t) as f32).abs() < 1e-2);
@@ -4194,7 +4199,7 @@ mod tests {
         clock.set_unadjusted(secs(t));
         tile.advance_animations();
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(false));
-        tile.update_render_elements(true, true, true, view);
+        tile.update_render_elements(true, true, Some(view), view);
         let ended = render_dynamics(&tile, 400., 300.);
         assert_eq!(beam_of(&tile).map(|b| b.2), Some(true));
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);

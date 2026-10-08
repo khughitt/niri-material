@@ -656,3 +656,97 @@ fn arm_signal_timer_follows_the_accumulator() {
         "reset removes the timer"
     );
 }
+
+/// Three 1000 px columns on a 1920 px output, the first ("offscreen") outside
+/// the normal view. Only it carries a sustained optic (Aurora drift), so it
+/// alone can report a deadline. In the overview (zoom 0.5) the workspace
+/// spans 3840 px around the output's centre and the column is on screen.
+/// Each test checks the closed-overview baseline first, so a layout default
+/// that brings the column into the normal view fails loudly.
+fn overview_fixture() -> (Fixture, ClientId) {
+    let mut f = Fixture::with_config(config(
+        r#"
+        overview { zoom 0.5; }
+        material "tg" { glass {}; }
+        material "aurora" { glass { aurora 0.5 { drift-hz 4; }; }; }
+        window-rule { material "tg"; }
+        window-rule {
+            match title="offscreen"
+            material "aurora"
+        }
+        "#,
+    ));
+    f.niri_state().backend.headless().add_renderer().unwrap();
+    f.add_output(1, (1920, 1080));
+    let client = f.add_client();
+    for title in ["offscreen", "middle", "visible"] {
+        let surface = open_window(&mut f, client, title);
+        let window = f.client(client).window(&surface);
+        window.set_size(1000, 800);
+        window.ack_last_and_commit();
+        f.double_roundtrip(client);
+    }
+    f.niri_complete_animations();
+    (f, client)
+}
+
+/// One output frame through `Niri::render`, then the deadline its tiles
+/// reported.
+fn rendered_deadline(f: &mut Fixture) -> Option<Duration> {
+    let output = f.niri_output(1);
+    let crate::niri::State { backend, niri } = f.niri_state();
+    niri.update_render_elements(Some(&output));
+    backend
+        .with_primary_renderer(|renderer| {
+            let ctx = crate::render_helpers::RenderCtx {
+                renderer,
+                target: crate::render_helpers::RenderTarget::Output,
+                xray: None,
+                signal_ticks: None,
+            };
+            niri.render_to_vec(ctx, &output, false);
+        })
+        .unwrap();
+    niri.output_state[&output].signal_ticks.next.get()
+}
+
+#[test]
+fn overview_column_outside_the_normal_view_reports_its_optic_deadline() {
+    let (mut f, _client) = overview_fixture();
+    assert_eq!(
+        rendered_deadline(&mut f),
+        None,
+        "outside the normal view the column reports no deadline"
+    );
+
+    f.niri().layout.open_overview();
+    f.niri_complete_animations();
+    assert!(
+        rendered_deadline(&mut f).is_some(),
+        "the overview shows the column, so its Aurora drift must report a deadline"
+    );
+
+    f.niri().layout.close_overview();
+    f.niri_complete_animations();
+    assert_eq!(rendered_deadline(&mut f), None);
+}
+
+#[test]
+fn overview_column_outside_the_normal_view_animates_its_signal_transition() {
+    let (mut f, _client) = overview_fixture();
+    let offscreen = window_id(&mut f, "offscreen");
+    trigger_signal_transition(&mut f, offscreen);
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        !f.niri().layout.are_animations_ongoing(None),
+        "outside the normal view the column's transition does not animate"
+    );
+
+    f.niri().layout.open_overview();
+    f.niri_complete_animations();
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        f.niri().layout.are_animations_ongoing(None),
+        "the overview shows the column, so its live transition must animate"
+    );
+}

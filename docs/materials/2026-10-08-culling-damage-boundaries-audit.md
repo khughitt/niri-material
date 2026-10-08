@@ -109,6 +109,16 @@ holds; the beam stops reporting its animation. Not observed on screen yet:
 and fixes it. During a workspace switch the same mismatch over-reports, which
 costs redraws but loses nothing.
 
+**Fixed (`material-2e97ff`, 2026-10-08).** Both predicates now test against
+`workspace_screen_view` (`src/layout/monitor.rs`): the output mapped into the
+workspace's coordinates through the overview zoom and `geo.loc`, carried to
+`Tile::render` on `RenderCtx::signal_ticks` and to
+`Tile::update_render_elements` as `screen_view`. The interactive move maps the
+output through its own zoom the same way. The view ignores the vertical crop
+of overview cards, so it can over-report but never under-report. The two
+`overview_column_outside_the_normal_view_*` tests in `src/tests/signal.rs`
+failed before the fix.
+
 ### Extent a cull must cover
 
 The material element's geometry is `frame.area`: the window texture

@@ -396,7 +396,13 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             || !self.closing_windows.is_empty()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, input_active: bool) {
+    /// `screen_view` is the output's area in workspace coordinates.
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        input_active: bool,
+        screen_view: Rectangle<f64, Logical>,
+    ) {
         let view_pos = Point::from((self.view_pos(), 0.));
         let view_size = self.view_size;
         let active_idx = self.active_column_idx;
@@ -405,7 +411,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             let col_off = Point::from((col_x, 0.));
             let col_pos = view_pos - col_off - col.render_offset();
             let view_rect = Rectangle::new(col_pos, view_size);
-            col.update_render_elements(is_active, input_active, view_rect);
+            let col_screen_view = Rectangle::new(screen_view.loc + col_pos, screen_view.size);
+            col.update_render_elements(is_active, input_active, view_rect, col_screen_view);
         }
     }
 
@@ -4131,6 +4138,7 @@ impl<W: LayoutElement> Column<W> {
         is_active: bool,
         input_active: bool,
         view_rect: Rectangle<f64, Logical>,
+        screen_view: Rectangle<f64, Logical>,
     ) {
         let active_idx = self.active_tile_idx;
         let display_mode = self.display_mode;
@@ -4140,9 +4148,15 @@ impl<W: LayoutElement> Column<W> {
                 || display_mode != ColumnDisplay::Tabbed
                 || tile.alpha_animation.is_some();
 
+            let tile_off = tile_off + tile.render_offset();
             let mut tile_view_rect = view_rect;
-            tile_view_rect.loc -= tile_off + tile.render_offset();
-            tile.update_render_elements(is_active, input_active, visible, tile_view_rect);
+            tile_view_rect.loc -= tile_off;
+            let tile_screen_view = visible.then(|| {
+                let mut rect = screen_view;
+                rect.loc -= tile_off;
+                rect
+            });
+            tile.update_render_elements(is_active, input_active, tile_screen_view, tile_view_rect);
         }
 
         let config = self.tab_indicator.config();

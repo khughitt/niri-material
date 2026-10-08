@@ -2866,9 +2866,11 @@ impl<W: LayoutElement> Layout<W> {
                     Rectangle::new(pos_within_output.upscale(-1.), output_size(&move_.output))
                         .downscale(zoom);
 
+                // The view rect is the output in tile coordinates, so it is
+                // also the screen view.
                 move_
                     .tile
-                    .update_render_elements(true, input_active, true, view_rect);
+                    .update_render_elements(true, input_active, Some(view_rect), view_rect);
             }
         }
 
@@ -4757,7 +4759,7 @@ impl<W: LayoutElement> Layout<W> {
                         .downscale(zoom);
                 move_
                     .tile
-                    .update_render_elements(false, true, false, view_rect);
+                    .update_render_elements(false, true, None, view_rect);
 
                 let motion_residual = move_.unmap_snapshot_motion_residual();
                 move_.tile.store_unmap_snapshot_if_empty(
@@ -4918,6 +4920,17 @@ impl<W: LayoutElement> Layout<W> {
         let zoom = self.overview_zoom();
         let pos_in_backdrop = move_.tile_render_location(zoom);
         let xray_pos = XrayPos::new(pos_in_backdrop, zoom);
+
+        // The tile renders at `pos_in_backdrop` and is zoomed about it, so the
+        // output in its render coordinates is `update_render_elements`'s
+        // view rect moved to that position.
+        let mut ctx = ctx;
+        if let Some(sink) = &mut ctx.signal_ticks {
+            let mut view =
+                Rectangle::new(pos_in_backdrop.upscale(-1.), output_size(output)).downscale(zoom);
+            view.loc += pos_in_backdrop;
+            sink.view = view;
+        }
 
         move_.tile.render(
             ctx,

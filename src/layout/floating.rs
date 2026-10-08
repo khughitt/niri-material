@@ -265,11 +265,13 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.iter().any(Tile::are_transitions_ongoing) || !self.closing_windows.is_empty()
     }
 
+    /// `screen_view` is the output's area in workspace coordinates, `None`
+    /// when the floating layer is hidden.
     pub fn update_render_elements(
         &mut self,
         is_active: bool,
         input_active: bool,
-        visible: bool,
+        screen_view: Option<Rectangle<f64, Logical>>,
         view_rect: Rectangle<f64, Logical>,
     ) {
         let active = self.active_window_id.clone();
@@ -277,9 +279,14 @@ impl<W: LayoutElement> FloatingSpace<W> {
             let id = tile.window().id();
             let is_active = is_active && Some(id) == active.as_ref();
 
+            let tile_off = offset + tile.render_offset();
             let mut tile_view_rect = view_rect;
-            tile_view_rect.loc -= offset + tile.render_offset();
-            tile.update_render_elements(is_active, input_active, visible, tile_view_rect);
+            tile_view_rect.loc -= tile_off;
+            let tile_screen_view = screen_view.map(|mut rect| {
+                rect.loc -= tile_off;
+                rect
+            });
+            tile.update_render_elements(is_active, input_active, tile_screen_view, tile_view_rect);
         }
     }
 
