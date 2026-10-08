@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tt version 5
+# tt version 6
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
@@ -10,19 +10,24 @@ docs/specs/2026-09-04-test-ci-audit-design.md.
 import contextlib
 import datetime
 import fcntl
+import hashlib
 import json
+import math
 import os
 import pathlib
 import re
 import signal
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
+from xml.etree import ElementTree
 
-VERSION = 5
-FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source", "selection"]
+VERSION = 6
+FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source", "selection", "content", "slowest"]
 
 PYTEST_WORD = r"(?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?|rerun)"
 
@@ -122,6 +127,136 @@ def parse_selection(lines):
     return widest
 
 
+# Per-test durations (spec 2026-10-08 §4). JUnit files come from TT_JUNIT_DIR; unittest,
+# which writes none, prints exact per-test totals under --durations.
+SLOWEST_KEEP = 5
+JUNIT_RUNNERS = ("pytest", "vitest", "node", "playwright")
+JUNIT_MAX_BYTES = 64 * 1024 * 1024
+IDENTITY_MAX = 300
+UNITTEST_DURATIONS_HEADER = "Slowest test durations"
+UNITTEST_DURATION = re.compile(r"^(\d+(?:\.\d+)?)s\s+.*\(([^()]+)\)\s*$")
+
+
+def _duration(text):
+    """A finite, non-negative number of seconds, else None: the only durations a line may
+    carry (§6.2)."""
+    try:
+        value = float(text)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value >= 0 else None
+
+
+def capped_identity(identity):
+    """At most IDENTITY_MAX characters; a cut one keeps a hash of the whole, so two long
+    identities never collide (§4.2)."""
+    if len(identity) <= IDENTITY_MAX:
+        return identity
+    return identity[:283] + "…#" + hashlib.sha256(identity.encode()).hexdigest()[:8]
+
+
+def parse_unittest_durations(lines, warn):
+    """[(dotted id, seconds)] from unittest's --durations block; [] for a block with no
+    entries; None when no block was printed. A duration that is not a finite number is
+    skipped with one line."""
+    found = None
+    for raw in lines:
+        line = ANSI.sub("", raw)
+        if line.strip() == UNITTEST_DURATIONS_HEADER:
+            found = found if found is not None else []
+            continue
+        if found is not None and (match := UNITTEST_DURATION.match(line)):
+            seconds = _duration(match[1])
+            if seconds is None:
+                warn(f"tt: skipped unittest duration for {match[2]}: not a finite number")
+                continue
+            found.append((capped_identity(match[2]), seconds))
+    return found
+
+
+class JunitSkipped(Exception):
+    """A JUnit file not read, with the reason for its stderr line."""
+
+
+def junit_identity(runner, case, suites, root):
+    """The identity of one <testcase> (§4.2). `suites` holds the attributes of its
+    enclosing <testsuite> elements, outermost first."""
+    name, classname = case.get("name", ""), case.get("classname", "")
+    if runner in ("pytest", "vitest"):
+        parts = [classname, name]
+    elif runner == "node":
+        file = case.get("file", "")
+        if file and root is not None:
+            with contextlib.suppress(ValueError):
+                file = str(pathlib.Path(file).resolve().relative_to(root.resolve()))
+        parts = [file, *(suite.get("name", "") for suite in suites), name]
+    else:  # playwright writes the project in its <testsuite>'s hostname
+        parts = [classname, suites[-1].get("hostname", "") if suites else "", name]
+    return capped_identity(" › ".join(parts))
+
+
+def read_junit(path, runner, root):
+    """{identity: seconds} for one file. Cases with one identity are one test and are
+    summed: pytest splits a test whose call and teardown both fail (§4.1). Anything that
+    stops the file being read whole raises JunitSkipped, so the run is still recorded.
+    The one stat is inside the try: Path.is_file() raises PermissionError on 3.12/3.13."""
+    totals, suites = {}, []
+    try:
+        info = path.stat()
+        if not stat.S_ISREG(info.st_mode):
+            raise JunitSkipped("not a regular file")
+        if info.st_size > JUNIT_MAX_BYTES:
+            raise JunitSkipped(f"larger than {JUNIT_MAX_BYTES // (1024 * 1024)} MB")
+        for event, element in ElementTree.iterparse(path, events=("start", "end")):
+            if element.tag == "testsuite":
+                if event == "start":
+                    suites.append(dict(element.attrib))
+                else:
+                    suites.pop()
+                    element.clear()
+            elif element.tag == "testcase" and event == "end":
+                if element.get("time") is not None and element.find("skipped") is None:
+                    seconds = _duration(element.get("time"))
+                    if seconds is None:
+                        raise JunitSkipped(f"invalid time {element.get('time')!r}")
+                    identity = junit_identity(runner, element.attrib, suites, root)
+                    totals[identity] = totals.get(identity, 0.0) + seconds
+                element.clear()
+    except (ElementTree.ParseError, LookupError, ValueError) as error:  # LookupError/ValueError: the encoding declaration
+        raise JunitSkipped(f"does not parse ({error})") from None
+    except OSError as error:
+        raise JunitSkipped(f"cannot be read ({error.strerror or error})") from None
+    if not all(math.isfinite(total) for total in totals.values()):
+        raise JunitSkipped("time total is not finite")
+    return totals
+
+
+def read_junit_dir(directory, root, warn):
+    """[(identity, seconds)] from every JUnit file in directory, or None when none was
+    read. Each file's cases stay separate from another file's (§4.1)."""
+    found = None
+    for path in sorted(pathlib.Path(directory).glob("*.xml")):
+        runner = path.stem.split("-", 1)[0]
+        try:
+            if runner not in JUNIT_RUNNERS:
+                raise JunitSkipped(f"unknown runner {runner!r}; expected one of {', '.join(JUNIT_RUNNERS)}")
+            totals = read_junit(path, runner, root)
+        except JunitSkipped as error:
+            warn(f"tt: skipped JUnit file {path.name}: {error}")
+            continue
+        found = (found or []) + list(totals.items())
+    return found
+
+
+def slowest_of(*sources):
+    """The SLOWEST_KEEP longest candidates, slowest first; None when no source was read."""
+    present = [source for source in sources if source is not None]
+    if not present:
+        return None
+    pooled = sorted((item for source in present for item in source), key=lambda item: (-item[1], item[0]))
+    return [{"test": identity, "seconds": round(seconds, 3)} for identity, seconds in pooled[:SLOWEST_KEEP]]
+
+
 def fail(message):
     sys.stderr.write(f"tt: {message}\n")
     sys.exit(1)
@@ -169,9 +304,15 @@ def project_of(cwd, env=os.environ):
         fail(f"cannot tell which project {cwd} is in: {error}")
 
 
+def _git_env():
+    """The environment of every git call tt makes. Optional locks off, so `status` never
+    refreshes and rewrites the index: several checkouts keep .git in a synced folder."""
+    return {**os.environ, "GIT_OPTIONAL_LOCKS": "0"}
+
+
 def _git(cwd, *args):
     try:
-        result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+        result = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, env=_git_env())
     except FileNotFoundError:
         return None
     return result.stdout.strip() if result.returncode == 0 else None
@@ -185,6 +326,143 @@ def git_info(cwd):
     return rev, bool(status) if status is not None else None
 
 
+# The content identity's limits (spec 2026-10-08 §3.3). Read at call time, so a test can
+# lower them.
+CONTENT_MAX_PATHS = 5000
+CONTENT_MAX_SECONDS = 5.0
+
+
+class ContentSkipped(Exception):
+    """The identity was not computed, for a reason worth one stderr line."""
+
+
+class _Budget:
+    """The time and path limits one identity computation shares with its submodules."""
+
+    def __init__(self, clock, seconds, max_paths):
+        self.clock, self.seconds, self.max_paths = clock, seconds, max_paths
+        self.deadline = clock() + seconds
+        self.paths = 0
+        self.local_env_names = None  # asked of git once, when the first submodule needs it
+
+    def remaining(self):
+        left = self.deadline - self.clock()
+        if left <= 0:
+            raise ContentSkipped(f"took more than {self.seconds:g} s")
+        return left
+
+    def count(self, paths):
+        self.paths += paths
+        if self.paths > self.max_paths:
+            raise ContentSkipped(f"more than {self.max_paths} changed paths")
+
+
+def _git_bytes(cwd, args, budget, env, stdin=None):
+    """Raw stdout of one git call, or None when git fails."""
+    try:
+        result = subprocess.run(["git", "-C", str(cwd), *args], input=stdin, capture_output=True,
+                                env=env, timeout=budget.remaining())
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        raise ContentSkipped(f"took more than {budget.seconds:g} s") from None
+    return result.stdout if result.returncode == 0 else None
+
+
+def content_identity(cwd, clock=time.monotonic, seconds=None, max_paths=None):
+    """The identity of the working tree containing cwd: 16 hex digits, or None outside git
+    or when a git call fails. Raises ContentSkipped past a limit. Spec 2026-10-08 §3."""
+    budget = _Budget(clock, CONTENT_MAX_SECONDS if seconds is None else seconds,
+                     CONTENT_MAX_PATHS if max_paths is None else max_paths)
+    env = _git_env()
+    top = _git_bytes(cwd, ["rev-parse", "--show-toplevel"], budget, env)
+    if top is None:
+        return None
+    return _tree_identity(pathlib.Path(os.fsdecode(top.rstrip(b"\n"))), budget, env)
+
+
+_C_ESCAPES = {7: b"\\a", 8: b"\\b", 9: b"\\t", 10: b"\\n", 11: b"\\v", 12: b"\\f", 13: b"\\r", 34: b'\\"', 92: b"\\\\"}
+
+
+def _stdin_path(path):
+    """A path as one line of `git hash-object --stdin-paths`, which unquotes any line that
+    starts with a double quote: C-quoted when the path starts with one, or holds a
+    backslash or a control character (a newline would end the line), else as it is."""
+    if not (path.startswith(b'"') or any(b < 32 or b == 127 or b == 92 for b in path)):
+        return path
+    return b'"' + b"".join(_C_ESCAPES.get(b) or (b"\\%03o" % b if b < 32 or b == 127 else bytes([b])) for b in path) + b'"'
+
+
+def _tree_identity(top, budget, env):
+    entries = {}  # path bytes -> (mode, object id or nested identity)
+    if _git_bytes(top, ["rev-parse", "--verify", "-q", "HEAD"], budget, env) is not None:
+        listing = _git_bytes(top, ["ls-tree", "-r", "-z", "--full-tree", "HEAD"], budget, env)
+        if listing is None:
+            return None
+        for record in filter(None, listing.split(b"\0")):
+            meta, path = record.split(b"\t", 1)
+            mode, _kind, oid = meta.split(b" ")
+            entries[path] = (mode.decode(), oid.decode())
+    status = _git_bytes(top, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames",
+                              "--ignore-submodules=none"], budget, env)
+    if status is None:
+        return None
+    listed = [record[3:].rstrip(b"/") for record in filter(None, status.split(b"\0"))]
+    budget.count(len(listed))
+    files = []
+    for path in listed:
+        full = top / os.fsdecode(path)
+        if not os.path.lexists(full):
+            entries.pop(path, None)
+        elif full.is_symlink():
+            oid = _git_bytes(top, ["hash-object", "--stdin", "--no-filters"], budget, env, stdin=os.fsencode(os.readlink(full)))
+            if oid is None:
+                return None
+            entries[path] = ("120000", oid.decode().strip())
+        elif full.is_dir():
+            if entries.get(path, ("",))[0] == "160000" or (full / ".git").exists():
+                entries[path] = ("160000", "")  # a submodule or nested repository, resolved below
+            else:
+                # A tracked file replaced by a directory: status lists the deleted file,
+                # and the directory's files are listed on their own.
+                entries.pop(path, None)
+        else:
+            files.append(path)
+    if files:
+        hashed = _git_bytes(top, ["hash-object", "--stdin-paths"], budget, env,
+                            stdin=b"".join(_stdin_path(p) + b"\n" for p in files))
+        if hashed is None:
+            return None
+        for path, oid in zip(files, hashed.decode().split()):
+            executable = os.stat(top / os.fsdecode(path)).st_mode & stat.S_IXUSR
+            entries[path] = ("100755" if executable else "100644", oid)
+    # Every submodule by its files, listed or not, so committing the pointer in the parent
+    # never changes the identity (§3.2 step 4).
+    for path, (mode, _oid) in list(entries.items()):
+        if mode != "160000":
+            continue
+        sub = top / os.fsdecode(path)
+        if not (sub / ".git").exists():
+            entries[path] = (mode, "absent")
+            continue
+        if budget.local_env_names is None:
+            names = _git_bytes(top, ["rev-parse", "--local-env-vars"], budget, env)
+            if names is None:
+                return None
+            budget.local_env_names = set(names.decode().split())
+        # As git does when it recurses into a submodule: the parent's repository-local
+        # variables (GIT_INDEX_FILE, GIT_DIR, ...) must not reach the submodule's git calls.
+        nested = _tree_identity(sub, budget, {k: v for k, v in env.items() if k not in budget.local_env_names})
+        if nested is None:
+            return None
+        entries[path] = (mode, nested)
+    digest = hashlib.sha256()
+    for path in sorted(entries):
+        mode, value = entries[path]
+        digest.update(f"{mode} {value} ".encode() + path + b"\0")
+    return digest.hexdigest()[:16]
+
+
 def main_checkout(cwd):
     """The main working tree of the repository containing cwd, from the common git dir."""
     common = _git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -193,11 +471,18 @@ def main_checkout(cwd):
     return pathlib.Path(common).parent.resolve()
 
 
+def repo_root(cwd):
+    """The top of the working tree containing cwd, or None outside git."""
+    top = _git(cwd, "rev-parse", "--show-toplevel")
+    return pathlib.Path(top) if top else None
+
+
 def agent_of(env):
     if env.get("CLAUDECODE"):
         return "claude", env.get("CLAUDE_CODE_SESSION_ID") or None
     if env.get("CODEX_CI") == "1":
-        return "codex", env.get("CODEX_SESSION_ID") or None
+        # The tasks CLI's provenance rule: the thread id when present (ops-8c83ba).
+        return "codex", env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID") or None
     return None, None
 
 
@@ -281,7 +566,7 @@ def record(path, line):
             handle.flush()
 
 
-def run(command, capture):
+def run(command, capture, env):
     """Runs the command with stdio passed through. When `capture`, stdout is teed so the
     summary lines can be parsed; the caller still sees every byte. Returns (exit, lines).
 
@@ -295,7 +580,7 @@ def run(command, capture):
         signal.signal(signal.SIGINT, lambda signum, frame: None)
     try:
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE if capture else None)
+            process = subprocess.Popen(command, stdout=subprocess.PIPE if capture else None, env=env)
         except FileNotFoundError:
             sys.stderr.write(f"tt: {command[0]}: command not found\n")
             return 127, []
@@ -330,11 +615,27 @@ def main(argv, env, cwd):
     if warning:
         sys.stderr.write(warning + "\n")
     rev, dirty = git_info(cwd)
+    try:
+        content = content_identity(cwd)
+    except ContentSkipped as error:
+        sys.stderr.write(f"tt: content identity skipped: {error}\n")
+        content = None
     agent, session = agent_of(env)
-    started_at = now()
-    started = time.monotonic()
-    status, lines = run(command, capture=not sys.stdout.isatty())
-    seconds = round(time.monotonic() - started, 3)
+    junit_dir = pathlib.Path(tempfile.mkdtemp(prefix="tt-junit-"))
+    try:
+        started_at = now()
+        started = time.monotonic()
+        status, lines = run(command, capture=not sys.stdout.isatty(), env={**env, "TT_JUNIT_DIR": str(junit_dir)})
+        seconds = round(time.monotonic() - started, 3)
+        junit = read_junit_dir(junit_dir, repo_root(cwd), lambda message: sys.stderr.write(message + "\n")) \
+            if junit_dir.is_dir() else None
+    finally:
+        try:
+            shutil.rmtree(junit_dir)
+        except FileNotFoundError:
+            pass  # the command removed it; nothing was left to read
+        except OSError as error:
+            sys.stderr.write(f"tt: could not remove {junit_dir}: {error}\n")
     record(log, {
         "at": started_at,
         "project": prefix,
@@ -350,6 +651,8 @@ def main(argv, env, cwd):
         "session": session,
         "source": "wrapper",
         "selection": parse_selection(lines),
+        "content": content,
+        "slowest": slowest_of(junit, parse_unittest_durations(lines, lambda message: sys.stderr.write(message + "\n"))),
     })
     return status
 

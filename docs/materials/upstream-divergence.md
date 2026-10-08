@@ -140,7 +140,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
 | `tools/test_warp_calibration.py` | C | A | +87/-0 |
 | `tools/tooling_tests.py` | C | A | +541/-0 |
-| `tools/tt` | C | A | +358/-0 |
+| `tools/tt` | C | A | +661/-0 |
 | `tools/upstream-report` | C | A | +738/-0 |
 
 Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can. Task records under `tasks/` are not counted.
