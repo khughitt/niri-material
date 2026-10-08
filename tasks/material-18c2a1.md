@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-host-conditions
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-08T20:49:50Z
+updated: 2026-10-08T22:47:22Z
 started: 2026-10-08T20:40:22Z
 depends: []
 parent: material-2834d7
@@ -32,3 +32,10 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 - 2026-10-08T20:40:35Z (capture-host-conditions): resumed
   provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-08T20:49:49Z (capture-host-conditions): spec drafted: docs/specs/2026-10-08-capture-host-conditions-design.md — four routes (frozen, nested pixels via new --lane pixels + begin, nested measurements, dedicated); pixels skip GPU sampling and partial-hold timers/services; measurement routes verify the nested renderer names the sampled GPU; desktop-idle for nested measurements decided by a two-run noise-layers-cost pilot against retained TTY medians; thresholds unchanged
+- 2026-10-08T20:50:01Z (capture-host-conditions): parked (waiting on user, review): Owner reviews the spec .worktrees/capture-host-conditions/docs/specs/2026-10-08-capture-host-conditions-design.md; on approval the agent records the review round and writes the implementation plan in the same worktree
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T22:40:52Z (capture-host-conditions): review: spec round 1 — verdict: revise; findings: P1 2, P2 3; reviewer: codex
+- 2026-10-08T22:40:52Z (capture-host-conditions): Spec review findings: P1 §6.3 must enable niri renderer logging and parse actual Weston GL renderer format; P1 §6.2–6.3 must cover independent clip launchers and optic-settling start_drm, not only smoke-lib start_nested; P2 §5.4/§7 must check live desktop and GPU clients before hold, since session_reasons only checks environment; P2 §6.3 must persist per-launch renderer observations/failure before finish so rejected open sub-runs retain evidence, and define how renderer.weston is written; P2 §8.2 must pin baseline hashes/run IDs, define numeric comparison and handle missing per-case TTY repeat spread (retained same-binary A/B repeats cover none and one-fine-1 only), with an explicit retained-binary invocation. Read-only review of code and retained logs; no captures or tests run.
+- 2026-10-08T22:43:08Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T22:47:22Z (capture-host-conditions): spec revised for review round 1: renderer check moves into capture-meta as a 'renderer' verb (RUST_LOG gles=info, ANSI-stripped niri 'GL Renderer: "…"' and Weston 'GL renderer:' formats, written to the open sub-run at check time, release refuses unverified measurement sub-runs); all six launchers listed incl. clip start_nested, optic and idle-budget start_drm, plus a static coverage scan; dedicated checks desktop socket and GPU clients before the hold; desktop-idle pilot pinned to three retained TTY A/B runs (b cb21ad03…, configs aa09f751…/bc488733…) with I_c = [min−w−q, max+w+q], q = 0.001024 ms
