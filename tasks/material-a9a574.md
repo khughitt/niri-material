@@ -1,15 +1,16 @@
 ---
 id: material-a9a574
 title: "Cover floating, interactive-move, workspace-switch and CSD extents in the off-view cull tests"
-status: doing
+status: done
 priority: 3
 size: s
 complexity: low
 process: direct
-owner: materials-26.04
+owner: cull-tests
 created: 2026-10-08T16:27:08Z
-updated: 2026-10-08T16:28:11Z
+updated: 2026-10-08T16:37:34Z
 started: 2026-10-08T16:28:11Z
+completed: 2026-10-08T16:37:33Z
 depends: []
 parent: material-5d6b2c
 tags: [testing, performance]
@@ -22,4 +23,11 @@ The off-view cull (material-7afc31) is tested only for a scrolling column and th
 
 - 2026-10-08T16:27:08Z (materials-26.04): concerns: material-7afc31 extension — test coverage for placements and the buffer-extent arm the landed tests do not reach
 - 2026-10-08T16:28:11Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T16:28:17Z (cull-tests): resumed
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T16:37:33Z (cull-tests): scope: a floating window cannot leave the output in the normal view (placement keeps 10-75 px on screen), so the floating case tests the edge clamp stays drawn; the off-output floating case is the interactive move. A tiled drag holds a 0.75 alpha animation and never culls; its material id is nested in the alpha offscreen, so it is not asserted.
+- 2026-10-08T16:37:33Z (cull-tests): done
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T16:37:33Z (cull-tests): Four in-process cull tests in src/tests/signal.rs: floating window at the edge clamp draws; floating interactive move culls off the output and redraws on return (screen capture always draws); mid workspace switch draws both workspaces and keeps an off-view column culled; a CSD shadow reaching into view keeps an off-view column drawn (new test-client set_geometry). RED-checked with the cull off and with the buffer arm removed.
   provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
