@@ -3,7 +3,8 @@
 **Status:** draft for owner review (2026-10-08). Revised after spec review
 round 1, which covered renderer logging, launchers outside the lib, pre-hold
 dedicated checks, renderer evidence on rejected launches, and the pilot's
-reference interval.
+reference interval, and after round 2, which covered the release check for
+settled sub-runs that were never finished.
 **Task:** `material-18c2a1`, under `material-2834d7` (evidence instruments).
 **Extends:** [capture protocol design](2026-09-11-material-capture-protocol-design.md)
 (`tools/capture-meta`) and [disturber hold design](2026-10-04-capture-disturber-hold-design.md).
@@ -287,10 +288,18 @@ and the sub-run is never finished.
 | 1 | On a measurement lane, an overall verdict other than `verified`. The launcher fails the fixture. |
 | 0 | `verified`. On `pixels`, also any verdict: nothing is required, there is no `expected` when `environment.gpu` is absent, and the per-compositor verdict there is `recorded` or `missing`. |
 
-**Coverage at release.** On `headless` and `dedicated`, `release` exits 1 when
-any finished sub-run lacks `renderer.verdict == "verified"`, naming those
-sub-runs, after the hold is restored. This works the same way as a disturbed
-run. A launcher that never calls `renderer`, in this repository or in
+**Coverage at release.** On `headless` and `dedicated`, `release` restores the
+hold first. It then exits 1 when any sub-run entry with `verdict: "settled"`
+lacks `renderer.verdict == "verified"`, naming those entries. That covers
+finished and open entries alike. Entries whose settle was refused are
+excluded: nothing launched after them.
+
+The check does not depend on `finish`. Retained dedicated runs show why: the
+idle-budget power run `power-full-20260929T221618` has 48 settled entries and
+none finished, and the `optic-settling-smoke.sh` dedicated pilots finish none
+either. That missing finish boundary is `material-282edc`'s to resolve.
+
+This works the same way as a disturbed run. A launcher that never calls `renderer`, in this repository or in
 niri-experiments, therefore cannot produce a clean measurement run. `show`
 prints each sub-run's renderer verdict.
 
@@ -359,7 +368,7 @@ The sampling-time client checks stay, for clients that appear after this point.
 | `settle` on `pixels`, or `begin` on another lane | the verb | at call | 2 |
 | A lib timing helper under `pixels` | the lib | at call; the fixture fails | fixture failure |
 | Nested or DRM renderer is not the sampled GPU, or not logged | `renderer` | after launch, before any stimulus; recorded on the open sub-run | 1, fixture failure |
-| A finished measurement sub-run with no verified renderer | `release` | after the hold is restored | 1 |
+| A settled measurement sub-run, finished or open, with no verified renderer | `release` | after the hold is restored | 1 |
 | A disturber fires, or a held monitor wakes | journal scan and guard | at release; the run is disturbed (existing) | 1 |
 
 A pre-hold refusal writes `preflight.verdict: "refused"` with its reasons and
@@ -409,9 +418,15 @@ use.
 
   A rejected verdict is written to the open sub-run before exit 1, and it
   survives a `finish` that never comes.
-- **`release`:** exits 1 on a `headless` run with one finished sub-run that
-  lacks a verified renderer, naming it, and exits 0 on a `pixels` run with
-  `recorded` renderers.
+- **`release`** restores the hold, then:
+  - exits 1 on a `headless` run with one finished, unverified settled entry,
+    naming it;
+  - exits 1 on a `dedicated` run with one **open** (never finished),
+    unverified settled entry, naming it;
+  - exits 0 when the only unverified entry is a refused settle;
+  - exits 0 on a `pixels` run with `recorded` renderers.
+
+  Every failing case leaves the fake host fully restored and the lock released.
 - **`show`:** renders a pixels record ("GPU not sampled: pixels lane") and
   per-sub-run renderer verdicts. `show --field run.lane` prints the lane.
 - **`host_condition`:** recorded as `tty` and as `desktop` from fake session

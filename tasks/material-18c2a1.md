@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-host-conditions
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-08T22:47:22Z
+updated: 2026-10-08T23:16:23Z
 started: 2026-10-08T20:40:22Z
 depends: []
 parent: material-2834d7
@@ -39,3 +39,8 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 - 2026-10-08T22:43:08Z (capture-host-conditions): resumed
   provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-08T22:47:22Z (capture-host-conditions): spec revised for review round 1: renderer check moves into capture-meta as a 'renderer' verb (RUST_LOG gles=info, ANSI-stripped niri 'GL Renderer: "…"' and Weston 'GL renderer:' formats, written to the open sub-run at check time, release refuses unverified measurement sub-runs); all six launchers listed incl. clip start_nested, optic and idle-budget start_drm, plus a static coverage scan; dedicated checks desktop socket and GPU clients before the hold; desktop-idle pilot pinned to three retained TTY A/B runs (b cb21ad03…, configs aa09f751…/bc488733…) with I_c = [min−w−q, max+w+q], q = 0.001024 ms
+- 2026-10-08T22:47:27Z (capture-host-conditions): parked (waiting on user, review): Owner reviews the revised spec .worktrees/capture-host-conditions/docs/specs/2026-10-08-capture-host-conditions-design.md (round 2); on approval the agent records the round and writes the implementation plan in the same worktree
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T23:10:57Z (capture-host-conditions): review: spec round 2 — verdict: revise; findings: P1 1; reviewer: codex
+- 2026-10-08T23:10:57Z (capture-host-conditions): Round 2: original logging, launcher inventory, pre-hold checks, immediate renderer recording, and pinned pilot comparison are addressed; independently verified all three reference run identities, b config hashes, medians, and interval arithmetic. Remaining P1 at §6.3 coverage-at-release (lines 290–294): filtering only finished sub-runs misses settled but unfinished launches, including the retained idle-budget power shape (48 settled, zero finished; finish boundary still tracked by material-282edc/material-a9a455). Require renderer verification for every settled measurement entry irrespective of finished, skip refused settles, restore hold before reporting failure, and test an unfinished unverified entry. No live captures or test suite run; current external experiments checkout unavailable, retained fixture and record inspected.
+- 2026-10-08T23:16:23Z (capture-host-conditions): spec revised for review round 2: release now requires a verified renderer on every settled entry, finished or open (retained dedicated runs finish none: power-full-20260929T221618 has 48 settled, 0 finished), excludes refused settles, restores the hold first; tests cover an open unverified dedicated entry
