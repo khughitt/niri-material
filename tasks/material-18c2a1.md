@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-host-conditions
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-08T23:16:23Z
+updated: 2026-10-08T23:27:01Z
 started: 2026-10-08T20:40:22Z
 depends: []
 parent: material-2834d7
@@ -16,6 +16,7 @@ tags: [capture]
 source: "docs/notes/2026-10-06-capture-lifecycle-brief.md#renderer-aware-capture"
 agent: codex
 spec: docs/specs/2026-10-08-capture-host-conditions-design.md
+plan: docs/plans/2026-10-08-capture-host-conditions.md
 ---
 
 Why: material-6bd4a3 records a desktop-up preflight pass, but later per-case settles remain sensitive to desktop activity. The only named software-rendered consumer, glass-view-tilt-smoke.sh (material-cd0e1d), exists only on the dropped material-77db8a branch and passed under the existing GPU gates on 2026-09-24, so material-925518 is shelved and no software lane is in scope. Existing deterministic pixel fixtures already avoid quiet-host measurements; removing GPU checks from timed or hardware evidence requires a distinct, verified contract.
@@ -44,3 +45,10 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 - 2026-10-08T23:10:57Z (capture-host-conditions): review: spec round 2 — verdict: revise; findings: P1 1; reviewer: codex
 - 2026-10-08T23:10:57Z (capture-host-conditions): Round 2: original logging, launcher inventory, pre-hold checks, immediate renderer recording, and pinned pilot comparison are addressed; independently verified all three reference run identities, b config hashes, medians, and interval arithmetic. Remaining P1 at §6.3 coverage-at-release (lines 290–294): filtering only finished sub-runs misses settled but unfinished launches, including the retained idle-budget power shape (48 settled, zero finished; finish boundary still tracked by material-282edc/material-a9a455). Require renderer verification for every settled measurement entry irrespective of finished, skip refused settles, restore hold before reporting failure, and test an unfinished unverified entry. No live captures or test suite run; current external experiments checkout unavailable, retained fixture and record inspected.
 - 2026-10-08T23:16:23Z (capture-host-conditions): spec revised for review round 2: release now requires a verified renderer on every settled entry, finished or open (retained dedicated runs finish none: power-full-20260929T221618 has 48 settled, 0 finished), excludes refused settles, restores the hold first; tests cover an open unverified dedicated entry
+- 2026-10-08T23:16:28Z (capture-host-conditions): parked (waiting on user, review): Owner reviews the revised spec .worktrees/capture-host-conditions/docs/specs/2026-10-08-capture-host-conditions-design.md (round 3); on approval the agent records the round and writes the implementation plan in the same worktree
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T23:17:08Z (capture-host-conditions): review: spec round 3 — verdict: accept; findings: P3 1; reviewer: codex
+- 2026-10-08T23:17:08Z (capture-host-conditions): Round 3 accepted for planning: c358a6ce closes the open settled-entry gap, excludes refused settles, and requires restoration and lock release before coverage failure. Checked the revised contract and offline cases against the existing release lifecycle; no blocking findings. Minor wording cleanup: decision 7 still says finished sub-run; align it with settled sub-run, finished or open, in §6.3. No implementation or live captures reviewed; no tests run.
+- 2026-10-08T23:17:52Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T23:27:01Z (capture-host-conditions): plan drafted: docs/plans/2026-10-08-capture-host-conditions.md, seven steps filed as children (material-1828a0 … material-538f53), chained in order
