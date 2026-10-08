@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency-2
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-08T02:12:30Z
+updated: 2026-10-08T02:16:43Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -77,3 +77,9 @@ Process: planned
   provenance: {"harness_session":"codex:01a1161e-2078-71f3-b1ac-74000dd2b0b4","harness_session_source":"CODEX_THREAD_ID"}
 - 2026-10-07T14:42:19Z (materials-26.04): halt override: attempted material-f5b371 by 044e7cb1-1b19-4001-a38a-95fd6d1ec424: halt work (material-bea903) needs an idle host; desktop up with load ~2.7 and other agent sessions, so it cannot run now
 - 2026-10-08T02:12:30Z (fix/pre-commit-latency-2): accept: check-full median 27.8 s, check median 18.3 s, full hooks 27.9/28.0/27.7 s (Task 2 commit 35.884 s, contended: load 5.13; idle reruns 27.7-28.0 s), fast hooks 18.3/18.2/18.3 s; verify --dry-run exit 0, median 27.8 s, 8 runs
+- 2026-10-08T02:16:21Z (fix/pre-commit-latency-2): review: impl round 1 — verdict: accept; findings: Minor 2; reviewer: claude-code/claude-opus-5-5
+- 2026-10-08T02:16:21Z (fix/pre-commit-latency-2): Ruling: Task 2's own full-route commit hook (35.884 s) misses the < 35 s commit criterion; satisfied instead by three idle staged full-route hook runs 27.7-28.0 s, waived as contention (load 5.13, refused preflight a minute later). Recorded in the spec results.
+- 2026-10-08T02:16:21Z (fix/pre-commit-latency-2): minor (deferred): no test pins module_buckets dropping empty buckets (tools/tooling_tests.py:63) though the plan's Review Focus says the two-module full-route test does; no such test exists. Effect: only extra empty workers on small suites. Fix: unit test one module, count=4 -> one bucket; correct the plan wording.
+- 2026-10-08T02:16:21Z (fix/pre-commit-latency-2): minor (deferred): the 'N children' banner (tools/tooling_tests.py:248) prints the pool size, not workers started; predates this branch
+- 2026-10-08T02:16:43Z (fix/pre-commit-latency-2): resumed
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
