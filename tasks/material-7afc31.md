@@ -1,11 +1,15 @@
 ---
 id: material-7afc31
 title: Skip material rendering for windows that are not visible
-status: idea
+status: doing
 priority: 1
-needs: [quiet]
+size: m
+complexity: mid
+process: direct
+owner: materials-26.04
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-08T14:54:47Z
+updated: 2026-10-08T15:50:32Z
+started: 2026-10-08T15:50:29Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
@@ -26,3 +30,6 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-10-06T15:07:38Z (material-233295): From material-233295: Tile::tick_deadline rejects only windows out of view, not covered ones, so a sustained optic under an opaque cover may still schedule redraws (unmeasured); include that case in the visibility matrix.
 - 2026-10-06T20:11:16Z (materials-26.04): scope: briefed; measured hidden tiles draw no material but offscreen preparation persists; safe culling and covered-optic scheduling need one shared boundary audit before implementation; brief: docs/notes/2026-09-29-resource-aware-rendering-brief.md
 - 2026-10-08T14:54:47Z (culling-boundaries): Woken by material-82e4bc (docs/materials/2026-10-08-culling-damage-boundaries-audit.md §2, §4): skipping the material preparation for out-of-view tiles is conditionally safe (reveal repaints from current surface state; frame callbacks unchanged; tile renders only on its own monitor). Conditions: overview-correct view first (material-2e97ff), extent = slab band ∪ Window::bbox() ∪ bob/open/resize areas, never inside render_snapshot or the open/alpha (0,0) call, same predicate as signal_render_visible (else the beam never ends). Direct with the audit as spec; saving is the ~1 Hz offscreen residue. Covered-tile culling is unknown: no coverage exists before render.
+- 2026-10-08T15:50:29Z (materials-26.04): scope: todo, direct, m/mid. Spec = culling audit §2 boundary A row 1 (docs/materials/2026-10-08-culling-damage-boundaries-audit.md); prerequisite material-2e97ff landed (workspace_screen_view). Scope is off-view tiles only; covered-tile culling stays with material-7f6d0e. Verification is the audit's in-process checks, so the quiet need is removed; quantitative cost belongs to material-31074f.
+- 2026-10-08T15:50:29Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
