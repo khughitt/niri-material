@@ -1,6 +1,6 @@
 # Per-route host conditions for capture evidence
 
-**Status:** draft for owner review (2026-10-08). Revised after spec review
+**Status:** accepted for planning (spec review round 3, 2026-10-08). Revised after spec review
 round 1, which covered renderer logging, launchers outside the lib, pre-hold
 dedicated checks, renderer evidence on rejected launches, and the pilot's
 reference interval, and after round 2, which covered the release check for
@@ -135,7 +135,7 @@ belongs to frozen-clock fixtures, as the
 | 4 | Do pixel runs sample the GPU? | No. Their records hold no `baseline` and no GPU fields, and sub-runs open with a new `begin` verb instead of `settle` (§6.2). | Sampling recorded but not judged: numbers no check reads, needing a sampler the route does not use on a non-NVIDIA host. |
 | 5 | Nested measurements with the desktop idle | `tty` stays the queue condition until the §8.2 pilot passes. Preflight does not refuse a present desktop: every settle is judged, so a desktop that cannot stay quiet costs a refused run, never a wrong number. | Admitting `desktop-idle` now: there is no post-hold evidence. Refusing a desktop in `capture-meta`: that hard-codes the answer the pilot is meant to find. |
 | 6 | Rename the `headless` lane to `nested` | Not in this change. Condition and topology get distinct words in this document and in `show`. | Renaming: a schema change in records, plus two niri-experiments fixtures, for a word. File it if the collision costs a real mistake. |
-| 7 | Where the renderer check lives | In `capture-meta`, as a `renderer` verb that parses the launch's logs, judges them, and writes the result to the open sub-run at once (§6.3). Every launcher calls it, and `release` refuses a measurement run with a finished sub-run that was never verified. | Lib-only shell checks: five of six launchers live outside the lib, and a shell check records nothing. Recording through `finish`: a rejected launch is never finished, so its evidence would be lost. |
+| 7 | Where the renderer check lives | In `capture-meta`, as a `renderer` verb that parses the launch's logs, judges them, and writes the result to the open sub-run at once (§6.3). Every launcher calls it, and `release` refuses a measurement run with a settled sub-run, finished or open, that was never verified. | Lib-only shell checks: five of six launchers live outside the lib, and a shell check records nothing. Recording through `finish`: a rejected launch is never finished, so its evidence would be lost. |
 | 8 | Which GPU a renderer must name | The sampled GPU: every renderer line from niri and Weston must contain `environment.gpu.name`. | Asserting `NVIDIA`, as `hidden-window-attribution.sh` does: that names a vendor, not the GPU that was sampled. |
 | 9 | When fixtures build | Before preflight, followed by a bounded load wait, so the hold window and the baseline exclude the build. | Building after preflight, as today: a build's tail refused the first settle in `hidden-window-attribution.sh`, which is why it grew `await_load`. |
 
