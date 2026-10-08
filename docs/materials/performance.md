@@ -186,7 +186,10 @@ elements, before smithay's damage and occlusion pass decides what to draw
 (*code*). Only culling the tile before `render_inner` avoids that work. A
 sustained optic under an opaque cover is unmeasured; *code*:
 `Tile::tick_deadline` stops scheduling only for windows out of view, not
-covered ones.
+covered ones. A window under an opaque *glass* window still draws and gets
+full-rate frame callbacks, because no material element declares an opaque
+region (*code*, unmeasured). What a cull or an opaque region would need is in
+the [culling and damage audit](2026-10-08-culling-damage-boundaries-audit.md).
 
 ## 7. Parameters by cost
 
