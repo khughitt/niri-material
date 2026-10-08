@@ -1,18 +1,20 @@
 ---
 id: material-3fcba2
 title: "Glass noise layers: N stacked grain generators with gain, type, and seed scale each"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-08T09:03:05Z
+updated: 2026-10-08T09:10:59Z
 started: 2026-10-06T09:08:29Z
+completed: 2026-10-08T09:10:59Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
 tags: [material, noise]
+model: claude-opus-5-5
 spec: docs/specs/2026-10-06-noise-layers-design.md
 plan: docs/plans/2026-10-06-noise-layers.md
 ---
@@ -95,3 +97,7 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-08T09:02:55Z (material-3fcba2): resumed
   provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-08T09:03:05Z (material-3fcba2): owner's look (second, B-spline sheets): "scale 8 looks better"; owner: "Merge now" — the +0.034 ms idle cost ships, fixed in material-03fdf3
+- 2026-10-08T09:10:59Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T09:10:59Z (materials-26.04): Up to four noise layers per material with type, site and scale= (B-spline lattice above scale 1); evidence and costs in docs/materials/2026-10-06-noise-layers-evidence.md
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

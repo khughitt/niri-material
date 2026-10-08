@@ -1,6 +1,8 @@
 # Noise layers: up to four grain generators per material, each with a size
 
-**Status:** amended 2026-10-07 after the owner's look: §4's lattice is
+**Status:** implemented 2026-10-08 (merged at 1ae20983; owner's second look:
+"scale 8 looks better"; the B-spline's idle cost on every material draw is
+material-03fdf3). Amended 2026-10-07 after the owner's look: §4's lattice is
 reshaped from Hermite to cubic B-spline, with cost, §8's correlation test
 and a lattice-visibility check to match (amendment review round 3, claude:
 accept, four wording fixes applied).
