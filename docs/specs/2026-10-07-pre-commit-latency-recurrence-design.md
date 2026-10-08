@@ -1,6 +1,6 @@
 # Pre-commit latency recurrence
 
-Status: accepted for planning, round 2 (material-5094f2).
+Status: Implemented (material-5094f2).
 
 ## 1. Incident
 
@@ -159,6 +159,19 @@ Acceptance, on the idle host, warm:
    (`[verify] min_runs = 3`). Its output goes in the `tasks done` message.
    Items 2 and 3 stand beside it: verify judges the mixed median, which
    fast-only runs can pass while the full route still regresses.
+
+**Results** (2026-10-08, the breach host, idle, from a TTY, warm after one
+untimed `check-full`): `just check-full` 27.8/27.6/27.8 s, median 27.8 s;
+`just check` 18.3/18.3/18.3 s, median 18.3 s. Staged hook runs through
+`.githooks/pre-commit`: fast route 18.3/18.2/18.3 s, full route
+27.9/28.0/27.7 s, all exit 0. Task 2's own full-route commit hook took
+35.884 s at 11:41Z under the load (5.13, competing browser tests) that
+refused the acceptance preflight a minute later; the same route measures
+27.7–28.0 s idle, so that miss is contention, not the change.
+`tt-latency verify material-5094f2 --after 2026-10-07T11:41:28Z --dry-run`
+exits 0: met, median 27.8 s over 8 runs, limit 45 s. The 8 include one
+contended 100.3 s fast-route run from another checkout at pre-remedy
+`e93bbf61`.
 
 ## 5. Out of scope
 
