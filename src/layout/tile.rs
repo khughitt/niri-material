@@ -2488,9 +2488,11 @@ impl<W: LayoutElement> Tile<W> {
     /// Whether the material body at `location` lies wholly outside `view`. The extent is the
     /// slab band that `tick_deadline` and `signal_render_visible` test, also at the bob offset,
     /// and the window's buffers (CSD shadows, subsurfaces), which the material footprint
-    /// covers. A body out of view therefore never has its band in view, so a focus beam on it
-    /// cannot hold the animation loop while it goes undrawn. A tile without a material is never
-    /// out of view here.
+    /// covers. The view is grown by two physical pixels: the drawn slab rounds its inset and
+    /// offset to physical pixels (up to about one past the band), and `signal_render_visible`
+    /// tests an unrounded position (up to half a pixel from `location`). A body out of view
+    /// therefore never has its band in view, so a focus beam on it cannot hold the animation
+    /// loop while it goes undrawn. A tile without a material is never out of view here.
     fn material_out_of_view(
         &self,
         location: Point<f64, Logical>,
@@ -2501,6 +2503,11 @@ impl<W: LayoutElement> Tile<W> {
         let Some(material) = &self.material else {
             return false;
         };
+        let margin = 2. / self.scale;
+        let view = Rectangle::new(
+            view.loc - Point::from((margin, margin)),
+            Size::from((view.size.w + 2. * margin, view.size.h + 2. * margin)),
+        );
         let bevel = material.material().glass.bevel;
         let size = self.tile_size();
         let bobbed = location + self.bob_offset();
@@ -3260,14 +3267,16 @@ mod tests {
 
         // Left of the view: the band reaches `bevel` past the tile's right
         // edge, so the body is out of view only once that edge is too.
+        // Two physical pixels of margin (scale 1) cover the slab's rounding.
         let left = |gap: f64| Point::from((-(w + bevel + gap), 0.));
         assert!(!tile.material_out_of_view(left(-1.), view));
-        assert!(tile.material_out_of_view(left(1.), view));
+        assert!(!tile.material_out_of_view(left(1.5), view));
+        assert!(tile.material_out_of_view(left(2.5), view));
         assert!(!tile.material_out_of_view(Point::default(), view));
         // Whatever is out of view has no band in view, so no deadline and
         // no signal visibility hold frames for an undrawn body.
         assert!(!crate::render_helpers::signal::slab_in_view(
-            left(1.),
+            left(2.5),
             tile.tile_size(),
             bevel,
             view
