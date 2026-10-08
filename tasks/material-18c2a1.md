@@ -1,13 +1,15 @@
 ---
 id: material-18c2a1
 title: Design per-lane host conditions for capture preflight and settle evidence
-status: todo
+status: doing
 priority: 1
 size: s
 complexity: high
 process: planned
+owner: materials-26.04
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-06T21:17:05Z
+updated: 2026-10-08T20:40:22Z
+started: 2026-10-08T20:40:22Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -24,3 +26,5 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 ## Notes
 
 - 2026-10-06T21:17:04Z (materials-26.04): Narrowed in review: the only named llvmpipe consumer (glass-view-tilt-smoke.sh, material-cd0e1d) is on the dropped material-77db8a branch and passed under the GPU gates on 2026-09-24; software lane out of scope, material-925518 shelved. Stale 'record absent' claim removed (cd0e1d is present since 9ad1a716).
+- 2026-10-08T20:40:22Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
