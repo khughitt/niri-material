@@ -79,7 +79,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `niri-visual-tests/src/cases/layout.rs` | B | M | +1/-0 |
 | `niri-visual-tests/src/cases/tile.rs` | B | M | +12/-8 |
 | `niri-visual-tests/src/cases/window.rs` | B | M | +1/-0 |
-| `niri-visual-tests/src/test_window.rs` | B | M | +5/-0 |
+| `niri-visual-tests/src/test_window.rs` | B | M | +15/-1 |
 | `packaging/arch/.gitignore` | C | A | +6/-0 |
 | `packaging/arch/PKGBUILD` | C | A | +96/-0 |
 | `src/animation/clock.rs` | B | M | +95/-0 |
@@ -93,11 +93,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
 | `src/layout/floating.rs` | B | M | +24/-6 |
-| `src/layout/mod.rs` | B | M | +117/-9 |
+| `src/layout/mod.rs` | B | M | +123/-9 |
 | `src/layout/monitor.rs` | B | M | +200/-25 |
 | `src/layout/scrolling.rs` | B | M | +68/-8 |
-| `src/layout/tests.rs` | B | M | +304/-4 |
-| `src/layout/tile.rs` | B | M | +2729/-78 |
+| `src/layout/tests.rs` | B | M | +308/-4 |
+| `src/layout/tile.rs` | B | M | +2807/-80 |
 | `src/layout/workspace.rs` | B | M | +44/-6 |
 | `src/lib.rs` | B | M | +1/-0 |
 | `src/niri.rs` | B | M | +311/-1 |
@@ -111,7 +111,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/tests/client.rs` | B | M | +142/-0 |
 | `src/tests/fixture.rs` | B | M | +3/-1 |
 | `src/tests/mod.rs` | B | M | +10/-0 |
-| `src/window/mapped.rs` | B | M | +43/-0 |
+| `src/window/mapped.rs` | B | M | +48/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/capture-meta` | C | A | +1268/-0 |
 | `tools/capture_hold.py` | C | A | +577/-0 |

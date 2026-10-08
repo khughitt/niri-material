@@ -153,6 +153,12 @@ pub trait LayoutElement {
     /// I.e. if the element has CSD shadows, its buffer location will have negative coordinates.
     fn buf_loc(&self) -> Point<i32, Logical>;
 
+    /// Returns the bounding box of the element's buffers, popups excluded, relative to the
+    /// element's visual geometry.
+    ///
+    /// I.e. it covers CSD shadows and subsurfaces outside the visual geometry.
+    fn buf_bbox(&self) -> Rectangle<i32, Logical>;
+
     /// Checks whether a point is in the element's input region.
     ///
     /// The point is relative to the element's visual geometry.
