@@ -3,6 +3,8 @@ use std::time::Duration;
 use niri_config::Config;
 use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
 
+use wayland_client::protocol::wl_surface::WlSurface;
+
 use super::client::ClientId;
 use super::*;
 use crate::layout::LayoutElement as _;
@@ -14,11 +16,7 @@ fn config(text: &str) -> Config {
     Config::parse_mem(text).unwrap()
 }
 
-fn open_window(
-    f: &mut Fixture,
-    id: ClientId,
-    title: &str,
-) -> wayland_client::protocol::wl_surface::WlSurface {
+fn open_window(f: &mut Fixture, id: ClientId, title: &str) -> WlSurface {
     let window = f.client(id).create_window();
     let surface = window.surface.clone();
     window.set_title(title);
@@ -662,8 +660,9 @@ fn arm_signal_timer_follows_the_accumulator() {
 /// alone can report a deadline. In the overview (zoom 0.5) the workspace
 /// spans 3840 px around the output's centre and the column is on screen.
 /// Each test checks the closed-overview baseline first, so a layout default
-/// that brings the column into the normal view fails loudly.
-fn overview_fixture() -> (Fixture, ClientId) {
+/// that brings the column into the normal view fails loudly. Returns the
+/// windows' surfaces in that order.
+fn overview_fixture() -> (Fixture, ClientId, Vec<WlSurface>) {
     let mut f = Fixture::with_config(config(
         r#"
         overview { zoom 0.5; }
@@ -679,15 +678,17 @@ fn overview_fixture() -> (Fixture, ClientId) {
     f.niri_state().backend.headless().add_renderer().unwrap();
     f.add_output(1, (1920, 1080));
     let client = f.add_client();
+    let mut surfaces = Vec::new();
     for title in ["offscreen", "middle", "visible"] {
         let surface = open_window(&mut f, client, title);
         let window = f.client(client).window(&surface);
         window.set_size(1000, 800);
         window.ack_last_and_commit();
         f.double_roundtrip(client);
+        surfaces.push(surface);
     }
     f.niri_complete_animations();
-    (f, client)
+    (f, client, surfaces)
 }
 
 /// One output frame through `Niri::render`, then the deadline its tiles
@@ -712,7 +713,7 @@ fn rendered_deadline(f: &mut Fixture) -> Option<Duration> {
 
 #[test]
 fn overview_column_outside_the_normal_view_reports_its_optic_deadline() {
-    let (mut f, _client) = overview_fixture();
+    let (mut f, _client, _) = overview_fixture();
     assert_eq!(
         rendered_deadline(&mut f),
         None,
@@ -733,7 +734,7 @@ fn overview_column_outside_the_normal_view_reports_its_optic_deadline() {
 
 #[test]
 fn overview_column_outside_the_normal_view_animates_its_signal_transition() {
-    let (mut f, _client) = overview_fixture();
+    let (mut f, _client, _) = overview_fixture();
     let offscreen = window_id(&mut f, "offscreen");
     trigger_signal_transition(&mut f, offscreen);
     f.niri().layout.update_render_elements(None);
@@ -748,5 +749,161 @@ fn overview_column_outside_the_normal_view_animates_its_signal_transition() {
     assert!(
         f.niri().layout.are_animations_ongoing(None),
         "the overview shows the column, so its live transition must animate"
+    );
+}
+
+/// The ids of the elements one frame of `target` draws.
+fn rendered_ids(
+    f: &mut Fixture,
+    target: crate::render_helpers::RenderTarget,
+) -> std::collections::HashSet<smithay::backend::renderer::element::Id> {
+    use smithay::backend::renderer::element::Element as _;
+
+    let output = f.niri_output(1);
+    let crate::niri::State { backend, niri } = f.niri_state();
+    niri.update_render_elements(Some(&output));
+    backend
+        .with_primary_renderer(|renderer| {
+            let ctx = crate::render_helpers::RenderCtx {
+                renderer,
+                target,
+                xray: None,
+                signal_ticks: None,
+            };
+            niri.render_to_vec(ctx, &output, false)
+                .iter()
+                .map(|elem| elem.id().clone())
+                .collect()
+        })
+        .unwrap()
+}
+
+/// The id of the material element the window titled `title` draws.
+fn material_id(f: &mut Fixture, title: &str) -> smithay::backend::renderer::element::Id {
+    let id = window_id(f, title);
+    f.niri()
+        .layout
+        .workspaces()
+        .flat_map(|(_, _, ws)| ws.tiles())
+        .find(|tile| tile.window().id().get() == id)
+        .and_then(|tile| tile.material())
+        .unwrap()
+        .id()
+        .clone()
+}
+
+#[test]
+fn output_render_culls_the_material_of_a_column_outside_the_view() {
+    use crate::render_helpers::RenderTarget;
+
+    let (mut f, _client, _) = overview_fixture();
+    let offscreen = material_id(&mut f, "offscreen");
+    let visible = material_id(&mut f, "visible");
+
+    let ids = rendered_ids(&mut f, RenderTarget::Output);
+    assert!(ids.contains(&visible), "the column in view draws its glass");
+    assert!(
+        !ids.contains(&offscreen),
+        "the column outside the view skips its material work"
+    );
+    assert!(
+        rendered_ids(&mut f, RenderTarget::ScreenCapture).contains(&offscreen),
+        "targets other than the output keep rendering every tile"
+    );
+
+    f.niri().layout.open_overview();
+    f.niri_complete_animations();
+    assert!(
+        rendered_ids(&mut f, RenderTarget::Output).contains(&offscreen),
+        "the overview shows the column, so it draws its glass"
+    );
+
+    f.niri().layout.close_overview();
+    f.niri_complete_animations();
+    assert!(!rendered_ids(&mut f, RenderTarget::Output).contains(&offscreen));
+}
+
+#[test]
+fn culled_column_shows_its_latest_commit_on_the_first_revealed_frame() {
+    use smithay::backend::allocator::Fourcc;
+    use smithay::backend::renderer::element::Element as _;
+    use smithay::utils::{Scale, Transform};
+
+    use crate::render_helpers::{render_to_vec, RenderCtx, RenderTarget};
+
+    const BLUE: u32 = 0xff00_00ff;
+    const RED: u32 = 0xffff_0000;
+
+    let (mut f, client, surfaces) = overview_fixture();
+    let offscreen = window_id(&mut f, "offscreen");
+    let offscreen_material = material_id(&mut f, "offscreen");
+    let surface = surfaces[0].clone();
+    let commit = |f: &mut Fixture, argb: u32| {
+        let window = f.client(client).window(&surface);
+        window.attach_new_shm_buffer(argb);
+        window.commit();
+        f.double_roundtrip(client);
+    };
+
+    // The overview shows the column, so its offscreen holds blue.
+    commit(&mut f, BLUE);
+    f.niri().layout.open_overview();
+    f.niri_complete_animations();
+    assert!(rendered_ids(&mut f, RenderTarget::Output).contains(&offscreen_material));
+    f.niri().layout.close_overview();
+    f.niri_complete_animations();
+
+    // More commits than the surface damage history keeps, each followed by
+    // a culled frame; the last is red.
+    for argb in [BLUE, BLUE, BLUE, BLUE, BLUE, RED] {
+        commit(&mut f, argb);
+        assert!(!rendered_ids(&mut f, RenderTarget::Output).contains(&offscreen_material));
+    }
+
+    f.niri().layout.focus_column_first();
+    f.niri_complete_animations();
+
+    let output = f.niri_output(1);
+    let size = output.current_mode().unwrap().size;
+    let (tile, pos, _) = f
+        .niri()
+        .layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_render_positions()
+        .find(|(tile, _, _)| tile.window().id().get() == offscreen)
+        .unwrap();
+    let centre = pos + tile.window_loc() + tile.window_size().downscale(2.).to_point();
+    let crate::niri::State { backend, niri } = f.niri_state();
+    niri.update_render_elements(Some(&output));
+    let pixels = backend
+        .with_primary_renderer(|renderer| {
+            let ctx = RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+                signal_ticks: None,
+            };
+            let elements = niri.render_to_vec(ctx, &output, false);
+            assert!(
+                elements.iter().any(|elem| elem.id() == &offscreen_material),
+                "the revealed column draws its glass"
+            );
+            render_to_vec(
+                renderer,
+                size,
+                Scale::from(1.),
+                Transform::Normal,
+                Fourcc::Abgr8888,
+                elements.iter().rev(),
+            )
+            .unwrap()
+        })
+        .unwrap();
+    let i = (centre.y as usize * size.w as usize + centre.x as usize) * 4;
+    assert_eq!(
+        &pixels[i..i + 4],
+        &[255, 0, 0, 255],
+        "the first frame in view shows the commit made while culled"
     );
 }
