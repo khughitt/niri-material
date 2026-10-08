@@ -661,9 +661,12 @@ fn arm_signal_timer_follows_the_accumulator() {
 /// the normal view. Only it carries a sustained optic (Aurora drift), so it
 /// alone can report a deadline. In the overview (zoom 0.5) the workspace
 /// spans 3840 px around the output's centre and the column is on screen.
+/// Each test checks the closed-overview baseline first, so a layout default
+/// that brings the column into the normal view fails loudly.
 fn overview_fixture() -> (Fixture, ClientId) {
     let mut f = Fixture::with_config(config(
         r#"
+        overview { zoom 0.5; }
         material "tg" { glass {}; }
         material "aurora" { glass { aurora 0.5 { drift-hz 4; }; }; }
         window-rule { material "tg"; }
@@ -732,12 +735,15 @@ fn overview_column_outside_the_normal_view_reports_its_optic_deadline() {
 fn overview_column_outside_the_normal_view_animates_its_signal_transition() {
     let (mut f, _client) = overview_fixture();
     let offscreen = window_id(&mut f, "offscreen");
+    trigger_signal_transition(&mut f, offscreen);
+    f.niri().layout.update_render_elements(None);
+    assert!(
+        !f.niri().layout.are_animations_ongoing(None),
+        "outside the normal view the column's transition does not animate"
+    );
+
     f.niri().layout.open_overview();
     f.niri_complete_animations();
-    f.niri().layout.update_render_elements(None);
-    assert!(!f.niri().layout.are_animations_ongoing(None));
-
-    trigger_signal_transition(&mut f, offscreen);
     f.niri().layout.update_render_elements(None);
     assert!(
         f.niri().layout.are_animations_ongoing(None),
