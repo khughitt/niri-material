@@ -120,11 +120,24 @@ separate from the capture. No global cost threshold is established.
 - Where can visibility/coverage be known before offscreen preparation and
   deadline collection without dropping visible popups, slab bands, animations,
   snapshots or another render target? What reveal and frame-callback state must
-  survive a skip? `material-82e4bc` answers from source and specifies the
-  covered-optic capture; it does not claim new measurements.
+  survive a skip? Answered from source by `material-82e4bc`
+  ([audit](../materials/2026-10-08-culling-damage-boundaries-audit.md) §2).
+  View culling of the material preparation is safe under stated conditions:
+  reveal repaints from current surface state, frame callbacks are unchanged,
+  and a tile renders only on its own monitor. It must reuse the
+  `signal_render_visible` predicate, or a beam never ends. That predicate and
+  `tick_deadline` ignore overview zoom, so they miss columns visible only in
+  overview (`material-2e97ff`, a fix that comes first). Coverage is computed
+  nowhere before render, so covered-tile culling is unknown until designed.
 - Can client-only damage and proven opaque content survive offscreen wrapping,
   fractional scale and resize/jelly transforms? Which input changes require
-  full damage? `material-82e4bc` audits these facts separately from early culling.
+  full damage? Answered conditionally by the same audit (§3). Window damage
+  maps one-to-one into the element, since the glass never reads window texels.
+  Every other fingerprint input, the unfingerprinted frame rects and an
+  offscreen reallocation (which restarts its counter under the same id) need
+  full damage. A glass element at opacity 1 is opaque over its whole slab
+  interior, not only over client-opaque pixels. A window under glass therefore
+  keeps full-rate callbacks and draws today (unmeasured).
 - Should a cost threshold block an optic? Current recommendation: retain visual
   and capture-preflight verdicts, record cost deltas, and defer numeric gates
   until `material-31074f` establishes repeatability and a budget is accepted.
@@ -140,10 +153,14 @@ separate from the capture. No global cost threshold is established.
 
 - `material-d09741` — completed hidden-window attribution; its findings woke
   `material-7afc31`. Keep its measured residue and unmeasured cases distinct.
-- `material-82e4bc` — P1, medium, high complexity, direct source audit of safe
-  culling and damage/opacity boundaries; wakes `material-7afc31` and
-  `material-7f6d0e` with findings in the same commit. No live capture or renderer
-  patch; a reviewed design follows only if the audit establishes that need.
+- `material-82e4bc` — completed source audit of the culling and damage/opacity
+  boundaries ([audit](../materials/2026-10-08-culling-damage-boundaries-audit.md));
+  its findings woke `material-7afc31` and `material-7f6d0e`. It filed
+  `material-2e97ff` (overview-correct visibility, first), `material-d21ff0`
+  (covered-optic fixture preparation) and `material-46b23d` (its quiet
+  capture). View culling is direct with the audit as its specification;
+  coverage culling, opaque regions and damage forwarding need a reviewed
+  design, justified only by the capture's numbers.
 - `material-f6e284` — scoped P2, small, low complexity, direct documentation:
   a cost-entry template and one existing-evidence example in the optic recipe.
   Matched baselines, provenance, units, repeatability and shared-pass attribution
