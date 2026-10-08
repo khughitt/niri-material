@@ -40,12 +40,27 @@ def fast_mode() -> bool:
 
 
 def worker_limit() -> int:
+    # Unset (CI, raw runs) keeps 10; a host-budget grant may use up to 16.
     raw = os.environ.get('NEXTEST_TEST_THREADS')
     if raw is None:
         return 10
     if re.fullmatch(r'[0-9]+', raw) is None or int(raw) < 1:
         raise ValueError('NEXTEST_TEST_THREADS must be a positive decimal integer')
-    return min(10, int(raw))
+    return min(16, int(raw))
+
+
+MODULE_BUCKETS = 4
+
+
+def module_buckets(cases: Sequence[unittest.TestCase], count: int) -> list[list[str]]:
+    """Whole modules per bucket, largest first into the emptiest; no empty buckets."""
+    modules = {}
+    for case in cases:
+        modules.setdefault(type(case).__module__, []).append(case.id())
+    buckets = [[] for _ in range(count)]
+    for ids in sorted(modules.values(), key=len, reverse=True):
+        min(buckets, key=len).extend(ids)
+    return [bucket for bucket in buckets if bucket]
 
 
 def flatten(suite: unittest.TestSuite) -> list[unittest.TestCase]:
@@ -201,8 +216,9 @@ def run_job(ids: list[str], mode: str) -> dict[str, object]:
 def run_tooling(ci: bool = False, fast: bool = False) -> int:
     global _result_dir
     limit = worker_limit()  # fail before discovery or spawning
+    buckets = min(MODULE_BUCKETS, limit)
     if fast:
-        limit = min(2, limit)
+        limit = buckets
     mode = '1' if fast else '0'
     os.environ['NIRI_TOOLING_FAST'] = mode
     loader = unittest.defaultTestLoader
@@ -217,17 +233,12 @@ def run_tooling(ci: bool = False, fast: bool = False) -> int:
                 if getattr(subject, '__unittest_skip__', False) and case.id() not in OPTIONAL_SKIPS:
                     raise ValueError(f'unexpected CI skip: {case.id()}: {subject.__unittest_skip_why__}')
     if fast:
-        modules = {}
-        for case in inventory:
-            modules.setdefault(type(case).__module__, []).append(case.id())
-        buckets = [[] for _ in range(limit)]
-        for ids in sorted(modules.values(), key=len, reverse=True):
-            min(buckets, key=len).extend(ids)
-        jobs = [bucket for bucket in buckets if bucket]
+        jobs = module_buckets(inventory, buckets)
     else:
+        # Remainder buckets go first so they never queue behind the slow lifecycle cases.
         lifecycle = [case.id() for case in inventory if type(case).__name__ in LIFECYCLE_CLASSES]
-        remainder = [case.id() for case in inventory if type(case).__name__ not in LIFECYCLE_CLASSES]
-        jobs = ([remainder] if remainder else []) + [[case_id] for case_id in lifecycle]
+        remainder = [case for case in inventory if type(case).__name__ not in LIFECYCLE_CLASSES]
+        jobs = module_buckets(remainder, buckets) + [[case_id] for case_id in lifecycle]
     expected = {case.id() for case in inventory}
     assigned = [case_id for job in jobs for case_id in job]
     if len(assigned) != len(expected) or set(assigned) != expected:
