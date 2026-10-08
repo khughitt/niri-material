@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-07T10:11:31Z
+updated: 2026-10-08T03:04:12Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -82,3 +82,7 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-07T10:11:20Z (material-3fcba2): attached: 2026-10-07-lattice-reshape-prototype.png (670249 bytes): Offline numpy prototype, not a capture: Hermite lattice (gold, what the owner saw) against the cubic B-spline reshape, white and fine at scale 2/4/8
 - 2026-10-07T10:11:31Z (material-3fcba2): parked (waiting on user, quiet; headless, 45 min): Lattice reshaped to B-spline at e5edd631; material-41d052 holds the idle-host smoke and cost reruns, then the owner's second look, gate, review, merge, prism refresh
   provenance: {"harness_session":"claude-code:a7493e94-8545-442f-9657-208ac2609950","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T03:04:10Z (material-3fcba2): resumed
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T03:04:10Z (material-3fcba2): attached: 2026-10-08-noise-layers-lattice-sheet.png (669253 bytes): Scaled grain before (Hermite, 558bfa02, bordered control) and after (B-spline, e5edd631): is the lattice still visible at scale 8? Tiles A2-D8
+- 2026-10-08T03:04:10Z (material-3fcba2): attached: 2026-10-08-noise-layers-sheet-bspline.png (1121026 bytes): Noise layers contact sheet regenerated at e5edd631 (B-spline lattice): scales, kinds, stacks, four-at-0.15 against one-at-0.3
