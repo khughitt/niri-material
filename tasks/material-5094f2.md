@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/pre-commit-latency-2
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-07T14:42:19Z
+updated: 2026-10-08T02:12:30Z
 started: 2026-10-07T03:20:52Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -76,3 +76,4 @@ Process: planned
 - 2026-10-07T11:42:53Z (fix/pre-commit-latency-2): parked (waiting on user, quiet; idle, 15 min): Agent: resume material-bea903 in .worktrees/material-5094f2 on an idle host; complete acceptance and resolve the Task 2 hook 35.884 s miss, then dispatch final branch review, record tt-latency verification and close the parent
   provenance: {"harness_session":"codex:01a1161e-2078-71f3-b1ac-74000dd2b0b4","harness_session_source":"CODEX_THREAD_ID"}
 - 2026-10-07T14:42:19Z (materials-26.04): halt override: attempted material-f5b371 by 044e7cb1-1b19-4001-a38a-95fd6d1ec424: halt work (material-bea903) needs an idle host; desktop up with load ~2.7 and other agent sessions, so it cannot run now
+- 2026-10-08T02:12:30Z (fix/pre-commit-latency-2): accept: check-full median 27.8 s, check median 18.3 s, full hooks 27.9/28.0/27.7 s (Task 2 commit 35.884 s, contended: load 5.13; idle reruns 27.7-28.0 s), fast hooks 18.3/18.2/18.3 s; verify --dry-run exit 0, median 27.8 s, 8 runs
