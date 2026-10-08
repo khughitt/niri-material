@@ -1786,6 +1786,7 @@ impl<W: LayoutElement> Tile<W> {
         mut xray_pos: XrayPos,
         focus_ring: bool,
         motion_residual: Point<f64, Logical>,
+        cull_body: bool,
         push: &mut dyn FnMut(TileRenderElement<R>),
     ) {
         let _span = tracy_client::span!("Tile::render_inner");
@@ -2054,9 +2055,9 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
 
-        // If we're not resizing, render the window itself.
+        // If we're not resizing, render the window itself, unless it is culled.
         let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
-        if !pushed_resize {
+        if !pushed_resize && !cull_body {
             let mut pushed_material = false;
             if material_ready {
                 let material = self.material.as_ref().unwrap();
@@ -2333,6 +2334,19 @@ impl<W: LayoutElement> Tile<W> {
             .as_ref()
             .map_or(1., |alpha| alpha.anim.clamped_value()) as f32;
 
+        // A material tile whose whole body is outside the output skips its window body: the
+        // effect-buffer prepare, the offscreen pass, the dynamics and the element. Only for the
+        // output, and never inside the open or alpha animation's offscreen or during a resize,
+        // whose areas the extent does not bound (culling audit 2026-10-08 §2). The cleared
+        // offscreen data reads as not presented, as for a hidden tab.
+        let cull_body = self.open_animation.is_none()
+            && self.alpha_animation.is_none()
+            && self.resize_animation.is_none()
+            && ctx
+                .signal_ticks
+                .as_ref()
+                .is_some_and(|sink| self.material_out_of_view(location, sink.view));
+
         let mut pushed = false;
         self.window().set_offscreen_data(None);
 
@@ -2345,6 +2359,7 @@ impl<W: LayoutElement> Tile<W> {
                 xray_pos,
                 focus_ring,
                 motion_residual,
+                false,
                 &mut |elem| elements.push(elem),
             );
             match open.render(
@@ -2373,6 +2388,7 @@ impl<W: LayoutElement> Tile<W> {
                 xray_pos,
                 focus_ring,
                 motion_residual,
+                false,
                 &mut |elem| elements.push(elem),
             );
             match alpha.offscreen.render(ctx.renderer, scale, &elements) {
@@ -2397,6 +2413,7 @@ impl<W: LayoutElement> Tile<W> {
                 xray_pos,
                 focus_ring,
                 motion_residual,
+                cull_body,
                 &mut |elem| push(elem),
             );
         }
@@ -2466,6 +2483,32 @@ impl<W: LayoutElement> Tile<W> {
             (Some(a), Some(b)) => Some(a.min(b)),
             (a, b) => a.or(b),
         }
+    }
+
+    /// Whether the material body at `location` lies wholly outside `view`. The extent is the
+    /// slab band that `tick_deadline` and `signal_render_visible` test, also at the bob offset,
+    /// and the window's buffers (CSD shadows, subsurfaces), which the material footprint
+    /// covers. A body out of view therefore never has its band in view, so a focus beam on it
+    /// cannot hold the animation loop while it goes undrawn. A tile without a material is never
+    /// out of view here.
+    fn material_out_of_view(
+        &self,
+        location: Point<f64, Logical>,
+        view: Rectangle<f64, Logical>,
+    ) -> bool {
+        use crate::render_helpers::signal::slab_in_view;
+
+        let Some(material) = &self.material else {
+            return false;
+        };
+        let bevel = material.material().glass.bevel;
+        let size = self.tile_size();
+        let bobbed = location + self.bob_offset();
+        let bbox = self.window.buf_bbox().to_f64();
+        let buffers = Rectangle::new(bobbed + self.window_loc() + bbox.loc, bbox.size);
+        !(slab_in_view(location, size, bevel, view)
+            || slab_in_view(bobbed, size, bevel, view)
+            || buffers.overlaps(view))
     }
 
     pub fn store_unmap_snapshot_if_empty(
@@ -3205,6 +3248,30 @@ mod tests {
 
     fn focus_tile(focus: niri_config::FocusResponse, clock: Clock) -> Tile<TestWindow> {
         material_tile(niri_config::ResolvedGlass::default(), focus, clock)
+    }
+
+    #[test]
+    fn material_out_of_view_waits_for_the_whole_slab_band() {
+        let clock = Clock::with_time(Duration::ZERO);
+        let tile = focus_tile(niri_config::FocusResponse::None, clock);
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let bevel = tile.material.as_ref().unwrap().material().glass.bevel;
+        let w = tile.tile_size().w;
+
+        // Left of the view: the band reaches `bevel` past the tile's right
+        // edge, so the body is out of view only once that edge is too.
+        let left = |gap: f64| Point::from((-(w + bevel + gap), 0.));
+        assert!(!tile.material_out_of_view(left(-1.), view));
+        assert!(tile.material_out_of_view(left(1.), view));
+        assert!(!tile.material_out_of_view(Point::default(), view));
+        // Whatever is out of view has no band in view, so no deadline and
+        // no signal visibility hold frames for an undrawn body.
+        assert!(!crate::render_helpers::signal::slab_in_view(
+            left(1.),
+            tile.tile_size(),
+            bevel,
+            view
+        ));
     }
 
     #[test]

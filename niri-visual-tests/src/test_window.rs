@@ -16,7 +16,7 @@ use niri::window::ResolvedWindowRules;
 use smithay::backend::renderer::element::Kind;
 use smithay::output::{self, Output};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Scale, Serial, Size, Transform};
+use smithay::utils::{Logical, Point, Rectangle, Scale, Serial, Size, Transform};
 
 #[derive(Debug)]
 struct TestWindowInner {
@@ -144,6 +144,15 @@ impl LayoutElement for TestWindow {
 
     fn buf_loc(&self) -> Point<i32, Logical> {
         (0, 0).into()
+    }
+
+    fn buf_bbox(&self) -> Rectangle<i32, Logical> {
+        let inner = self.inner.borrow();
+        let w = inner.csd_shadow_width;
+        Rectangle::new(
+            Point::from((-w, -w)),
+            Size::from((inner.size.w + 2 * w, inner.size.h + 2 * w)),
+        )
     }
 
     fn is_in_input_region(&self, _point: Point<f64, Logical>) -> bool {
