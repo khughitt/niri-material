@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-287 paths differ: 52 class B (seam), 197 class A (fork-only), 38 class C (scaffolding).
+289 paths differ: 52 class B (seam), 199 class A (fork-only), 38 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -64,7 +64,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +25/-2 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +88/-0 |
+| `AGENTS.md` | C | A | +90/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
@@ -134,12 +134,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_package_pin.py` | C | A | +117/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +375/-0 |
 | `tools/test_target_dir_check.py` | C | A | +180/-0 |
-| `tools/test_tooling_tests.py` | C | A | +372/-0 |
+| `tools/test_tooling_tests.py` | C | A | +411/-0 |
 | `tools/test_upstream_report.py` | C | A | +954/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
 | `tools/test_warp_calibration.py` | C | A | +87/-0 |
-| `tools/tooling_tests.py` | C | A | +530/-0 |
+| `tools/tooling_tests.py` | C | A | +541/-0 |
 | `tools/tt` | C | A | +328/-0 |
 | `tools/upstream-report` | C | A | +738/-0 |
 

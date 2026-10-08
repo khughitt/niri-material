@@ -28,7 +28,7 @@ class ModeTests(unittest.TestCase):
                     fast_mode()
 
     def test_budget_caps_total_children_and_rejects_malformed_values(self):
-        for value, expected in ((None, 10), ('1', 1), ('10', 10), ('999', 10)):
+        for value, expected in ((None, 10), ('1', 1), ('10', 10), ('12', 12), ('16', 16), ('999', 16)):
             with self.subTest(value=value), mock.patch.dict(os.environ, {}, clear=True):
                 if value is not None:
                     os.environ['NEXTEST_TEST_THREADS'] = value
@@ -87,6 +87,41 @@ class DriverCleanupTests(Remainder):
             'test_probe.DriverCleanupTests.test_first:0'})
         self.assertEqual(len(lines), 3)
 
+    def test_full_buckets_remainder_modules_and_isolates_lifecycle_cases(self):
+        cases = '''    def record(self):
+        with open(self.id() + '.pid', 'a') as out:
+            out.write(os.environ['NIRI_TOOLING_FAST'] + ':' + str(os.getpid()) + '\\n')
+    def test_one(self): self.record()
+    def test_two(self): self.record()
+'''
+        modules = ('alpha', 'beta', 'gamma', 'delta')
+        for name in modules:
+            self.fixture('class Cases(unittest.TestCase):\n' + cases, f'test_{name}.py')
+        self.fixture('class DriverCleanupTests(unittest.TestCase):\n' + cases, 'test_life.py')
+        lifecycle = ['test_life.DriverCleanupTests.test_one', 'test_life.DriverCleanupTests.test_two']
+        expected = {f'test_{name}.Cases.test_{case}' for name in modules for case in ('one', 'two')}
+        expected.update(lifecycle)
+        for budget, children, remainder_processes in (('10', 10, 4), ('1', 1, 1)):
+            with self.subTest(budget=budget):
+                for path in self.root.glob('*.pid'):
+                    path.unlink()
+                run = self.run_suite(NEXTEST_TEST_THREADS=budget)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertIn(f'Full tooling: 10 cases, {children} children', run.stdout)
+                self.assertIn('Ran 10 tests', run.stdout)
+                runs = {path.name.removesuffix('.pid'): path.read_text().splitlines()
+                        for path in self.root.glob('*.pid')}
+                self.assertEqual(set(runs), expected)
+                self.assertTrue(all(len(lines) == 1 for lines in runs.values()), runs)
+                pid = {case_id: lines[0].split(':')[1] for case_id, lines in runs.items()}
+                self.assertEqual({lines[0].split(':')[0] for lines in runs.values()}, {'0'})
+                for name in modules:
+                    self.assertEqual(pid[f'test_{name}.Cases.test_one'], pid[f'test_{name}.Cases.test_two'])
+                remainder = {pid[case_id] for case_id in expected if '.Cases.' in case_id}
+                self.assertEqual(len(remainder), remainder_processes)
+                self.assertEqual(len({pid[case_id] for case_id in lifecycle}), 2)
+                self.assertFalse(remainder & {pid[case_id] for case_id in lifecycle})
+
     def test_fast_preserves_native_inventory_and_module_fixtures(self):
         body = '''def setUpModule():
     with open(__name__ + '.module', 'a') as out: out.write(str(os.getpid()) + '\\n')
@@ -107,11 +142,13 @@ class Cases(unittest.TestCase):
 class DriverCleanupTests(unittest.TestCase):
     def test_slow(self): self.fail('must be omitted in fast mode')
 ''', 'test_beta.py')
+        self.fixture(body, 'test_gamma.py')
+        self.fixture(body, 'test_delta.py')
         native = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tools'],
                                 cwd=self.root, env=dict(self.env, NIRI_TOOLING_FAST='1'),
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(native.returncode, 0, native.stdout + native.stderr)
-        self.assertIn('Ran 6 tests', native.stderr)
+        self.assertIn('Ran 10 tests', native.stderr)
         self.assertIn('skipped=1, expected failures=1', native.stderr)
         native_seen = {path.name: [line.rsplit(':', 1)[0] for line in path.read_text().splitlines()]
                        for path in self.root.glob('*.seen')}
@@ -119,21 +156,23 @@ class DriverCleanupTests(unittest.TestCase):
             'test_alpha.Cases.test_known', 'test_alpha.Cases.test_one', 'test_alpha.Cases.test_two',
             'test_beta.Cases.test_one', 'test_beta.Cases.test_two',
             'test_beta.DriverCleanupTests.test_slow',
+            'test_gamma.Cases.test_one', 'test_gamma.Cases.test_two',
+            'test_delta.Cases.test_one', 'test_delta.Cases.test_two',
         }
         self.command = [sys.executable, '-m', 'tools.tooling_tests', '--fast']
-        for budget, children in (('10', 2), ('1', 1)):
+        for budget, children in (('10', 4), ('1', 1)):
             with self.subTest(budget=budget):
                 for suffix in ('seen', 'class', 'module'):
                     for path in self.root.glob('*.' + suffix):
                         path.unlink()
                 run = self.run_suite(NIRI_TOOLING_FAST='0', NEXTEST_TEST_THREADS=budget)
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-                self.assertIn(f'Fast tooling: 6 cases, {children} children', run.stdout)
+                self.assertIn(f'Fast tooling: 10 cases, {children} children', run.stdout)
                 self.assertIn('OK (skipped=1, expected failures=1)', run.stdout)
                 ids = [line[5:].rsplit(': ', 1)[0] for line in run.stdout.splitlines()
                        if line.startswith('case ')]
                 self.assertEqual(set(ids), expected)
-                self.assertEqual(len(ids), 6)
+                self.assertEqual(len(ids), 10)
                 pids = set()
                 for path in self.root.glob('*.seen'):
                     lines = path.read_text().splitlines()
