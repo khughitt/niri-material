@@ -5,16 +5,27 @@
 # Each case replaces the wallpaper DAMAGE_STEPS times at 1 Hz; every
 # replacement damages the backdrop, which re-renders the glass and reruns the
 # grain pass. NOISE_LAYERS_COST_PILOT=1 runs three steps per case.
+# NOISE_LAYERS_COST_AB=<niri-tracy binary> instead compares that binary (b)
+# with this tree's (a) in one session: `none` and `one-fine-1` alternate
+# a, b, a, b, so a shift between sessions cannot pass for a shift between
+# binaries.
 set -eu
 PILOT=${NOISE_LAYERS_COST_PILOT:-0}
 case "$PILOT" in 0|1) ;; *) echo "NOISE_LAYERS_COST_PILOT must be 0 or 1" >&2; exit 2 ;; esac
+AB=${NOISE_LAYERS_COST_AB:-}
+[ -z "$AB" ] || [ -x "$AB" ] || { echo "NOISE_LAYERS_COST_AB must name an executable" >&2; exit 2; }
 source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 trap cleanup_cost EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 capture_preflight headless
 build_binaries
-capture_identity --config "pilot=$PILOT"
+if [ -n "$AB" ]; then
+    cp "$AB" "$OUT/niri-tracy-b"
+    capture_identity --binary "$OUT/niri-tracy-b" --config "pilot=$PILOT" --config ab=1
+else
+    capture_identity --config "pilot=$PILOT"
+fi
 reserve_tracy_port
 tools_ready
 DAMAGE_STEPS=20
@@ -29,6 +40,17 @@ declare -A CASES=(
     [backdrop-fine-8]='noise 0.3 type="fine" site="backdrop" scale=8'
 )
 ORDER=(none one-fine-1 four-fine-1 four-fine-8 backdrop-fine-1 backdrop-fine-8)
+declare -A BIN=()
+for name in "${ORDER[@]}"; do BIN[$name]=$NIRI_TRACY; done
+if [ -n "$AB" ]; then
+    ORDER=()
+    for base in none one-fine-1; do for round in 1 2; do for side in a b; do
+        CASES[$base-$side$round]=${CASES[$base]}
+        BIN[$base-$side$round]=$NIRI_TRACY
+        [ "$side" = a ] || BIN[$base-$side$round]=$OUT/niri-tracy-b
+        ORDER+=("$base-$side$round")
+    done; done; done
+fi
 write_cost_config() {   # $1 path, $2 glass noise lines
     GLASS_EXTRA=$'ior 1\nattenuation-color "#ffffff"\nsaturation 1\n'"$2" \
         TOP_EXTRA='blur { passes 3; offset 3; noise 0; saturation 1; }' write_config "$1.tmp"
@@ -40,7 +62,7 @@ calibrate_probe_rect "$NIRI" 0
 for name in "${ORDER[@]}"; do
     cfg=$OUT/$name.kdl
     write_cost_config "$cfg" "${CASES[$name]}"
-    start_nested "$NIRI_TRACY" "$cfg"
+    start_nested "${BIN[$name]}" "$cfg"
     capture_bg "$name"; capture_ready "$name"
     start_wall "$WALL"
     sleep 0.5
@@ -89,7 +111,7 @@ for span in ['MaterialRenderElement::draw', 'Grain::render']:
 print(f'{name}_glass_area_px={area}')
 PYREPORT
 done
-python3 - "$OUT/metrics.txt" <<'PYDELTA' >> "$OUT/metrics.txt"
+[ -n "$AB" ] || python3 - "$OUT/metrics.txt" <<'PYDELTA' >> "$OUT/metrics.txt"
 import sys
 m = dict(line.strip().split('=', 1) for line in open(sys.argv[1]) if '=' in line)
 none = float(m['none_MaterialRenderElement::draw_median_ms'])
@@ -99,4 +121,4 @@ for name in ['one-fine-1', 'four-fine-1', 'four-fine-8', 'backdrop-fine-1', 'bac
     print(f'{name}_material_ns_per_px_over_none={(median - none) * 1e6 / area:.4f}')
 PYDELTA
 finish
-printf 'PASS: noise layers cost (pilot=%s)\n' "$PILOT"
+printf 'PASS: noise layers cost (pilot=%s%s)\n' "$PILOT" "${AB:+, a/b}"

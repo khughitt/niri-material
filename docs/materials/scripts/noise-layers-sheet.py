@@ -86,6 +86,12 @@ def grid(run, rev, out):
 
 
 def lattice(before, before_rev, after, after_rev, out):
+    # Centre crops cover the same face region only when the faces match.
+    for kind in ('white', 'fine'):
+        for s in (2, 4, 8):
+            sizes = {Image.open(os.path.join(run, f's{s}-{kind}-face.png')).size for run in (before, after)}
+            if len(sizes) != 1:
+                sys.exit(f's{s}-{kind}-face.png differs in size between the runs: {sorted(sizes)}')
     def row(run, kind, label, control):
         return [(run, f's{s}-{kind}', f'{label}{s}: {kind}, scale {s}', control) for s in (2, 4, 8)]
     render('Scaled grain: is the lattice still visible at scale 8?', [
