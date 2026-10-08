@@ -166,8 +166,10 @@ untimed `check-full`): `just check-full` 27.8/27.6/27.8 s, median 27.8 s;
 `.githooks/pre-commit`: fast route 18.3/18.2/18.3 s, full route
 27.9/28.0/27.7 s, all exit 0. Task 2's own full-route commit hook took
 35.884 s at 11:41Z under the load (5.13, competing browser tests) that
-refused the acceptance preflight a minute later; the same route measures
-27.7–28.0 s idle, so that miss is contention, not the change.
+refused the acceptance preflight a minute later. Ruling: item 2's commit
+criterion is not met by that commit itself; it is satisfied by the three
+idle staged full-route hook runs (27.7–28.0 s) and the miss is waived as
+contention, not the change.
 `tt-latency verify material-5094f2 --after 2026-10-07T11:41:28Z --dry-run`
 exits 0: met, median 27.8 s over 8 runs, limit 45 s. The 8 include one
 contended 100.3 s fast-route run from another checkout at pre-remedy
