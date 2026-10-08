@@ -1,18 +1,20 @@
 ---
 id: material-5094f2
 title: "Test latency over limit: hook-pre-commit 45.425 s against 45 s"
-status: doing
+status: done
 priority: 0
 size: m
 complexity: high
 process: planned
-owner: fix/pre-commit-latency-2
+owner: materials-26.04
 created: 2026-10-07T03:05:29Z
-updated: 2026-10-08T02:16:43Z
+updated: 2026-10-08T02:17:23Z
 started: 2026-10-07T03:20:52Z
+completed: 2026-10-08T02:17:23Z
 depends: []
 tags: [halt, test-latency, testing]
 source: "tt-latency:titan:2026-10-07T03:05:28Z"
+model: claude-opus-5-5
 spec: docs/specs/2026-10-07-pre-commit-latency-recurrence-design.md
 plan: docs/plans/2026-10-07-pre-commit-latency-recurrence-plan.md
 ---
@@ -82,4 +84,11 @@ Process: planned
 - 2026-10-08T02:16:21Z (fix/pre-commit-latency-2): minor (deferred): no test pins module_buckets dropping empty buckets (tools/tooling_tests.py:63) though the plan's Review Focus says the two-module full-route test does; no such test exists. Effect: only extra empty workers on small suites. Fix: unit test one module, count=4 -> one bucket; correct the plan wording.
 - 2026-10-08T02:16:21Z (fix/pre-commit-latency-2): minor (deferred): the 'N children' banner (tools/tooling_tests.py:248) prints the pool size, not workers started; predates this branch
 - 2026-10-08T02:16:43Z (fix/pre-commit-latency-2): resumed
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T02:17:05Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T02:17:06Z (materials-26.04): verified: titan after 2026-10-07T11:41:28Z: hook-pre-commit median 27.708 s, limit 45 s, 9 runs
+- 2026-10-08T02:17:23Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T02:17:23Z (materials-26.04): tt-latency verify material-5094f2 --after 2026-10-07T11:41:28Z exit 0: titan     hook-pre-commit     met (median 27.7 s, 9 runs, limit 45 s) | noted: verified: titan after 2026-10-07T11:41:28Z: hook-pre-commit median 27.708 s, limit 45 s, 9 runs | verified: every obligation is met
   provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
