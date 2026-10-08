@@ -8,7 +8,7 @@ complexity: high
 process: direct
 owner: noise-followups
 created: 2026-10-08T04:20:53Z
-updated: 2026-10-08T10:21:13Z
+updated: 2026-10-08T10:21:54Z
 started: 2026-10-08T09:47:10Z
 depends: [material-3fcba2]
 parent: material-5d6b2c
@@ -33,3 +33,5 @@ e5edd631's B-spline noise.frag costs every material draw ~0.034 ms (+15%) with n
 - 2026-10-08T10:19:58Z (noise-followups): attached: swap.py (240 bytes): regs.sh helper: replaces the noise optic section of a material source.
 - 2026-10-08T10:21:12Z (noise-followups): detached: regs.sh: replaced by a version without host paths
 - 2026-10-08T10:21:12Z (noise-followups): attached: regs.sh (2084 bytes): Register/instruction count of the material program for a given noise.frag: swaps it into BASE, compiles through the ignored probe test (program_probe.rs) in WT with NVIDIA's disk cache on, decompresses the SASS and reads it with nvdisasm.
+- 2026-10-08T10:21:54Z (noise-followups): parked (waiting on user, quiet; headless, 40 min): Quiet A/B (headless lane, desktop stopped) from .worktrees/noise-followups, W=$NIRI_MATERIAL_WORK_ROOT/noise-idle-variants, AB=$W/niri-tracy-bspline:$W/niri-tracy-hermite:$W/niri-tracy-unified. Pilot: CAPTURE_TASK=material-03fdf3 OUT=$NIRI_MATERIAL_WORK_ROOT/noise-idle-ab-pilot-$(date +%s) NOISE_LAYERS_COST_PILOT=1 NOISE_LAYERS_COST_AB=$AB NOISE_LAYERS_COST_AB_CASES=none docs/materials/scripts/noise-layers-cost.sh (build 5, 8 sub-runs 4). Then full: same with PILOT=0, OUT=...noise-idle-ab-full-..., AB_CASES='none one-fine-1 four-fine-8' (24 sub-runs, ~30). a = candidate (127bce2d, 72 regs), b1 = current B-spline, b2 = Hermite on HEAD, b3 = unified (96 regs). Then: land a if it beats b1 on none and is not dearer on one-fine-1/four-fine-8 (else unified if it is), write the Cost entry in docs/materials/2026-10-06-noise-layers-evidence.md, done, merge noise-followups. Rehearsal passed with CAPTURE_META stubbed; no real-preflight attempt yet.
+  provenance: {"harness_session":"claude-code:895d792f-a7ab-466b-afa7-8d313f21a46d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
