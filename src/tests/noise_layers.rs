@@ -344,6 +344,32 @@ fn grain_deviation_holds_across_scales_and_cell_positions() {
     }
 }
 
+/// The backdrop pass grains the effect buffer through its own program and
+/// uniforms (`GrainOptions::uniforms`), so the glass site's scale tests above
+/// do not reach it: a backdrop layer that dropped its scale would stay at
+/// scale 1 with every other test passing. Its 8-bit storage adds under half a
+/// code of rounding, well inside the tolerance at this amount.
+#[test]
+fn backdrop_grain_coarsens_with_scale_and_keeps_its_deviation() {
+    let mut f = fixture();
+    let (g1, face) = grain_of(&mut f, "noise 0.3 type=\"fine\" site=\"backdrop\"");
+    let (g4, _) = grain_of(&mut f, "noise 0.3 type=\"fine\" scale=4 site=\"backdrop\"");
+    let (base, sd4) = (grain_sd(&g1), grain_sd(&g4));
+    assert!(base > 5., "backdrop grain is present: sd {base:.2}");
+    assert!(
+        (sd4 / base - 1.).abs() < 0.10,
+        "backdrop scale 4: sd {sd4:.2} vs scale 1 {base:.2}"
+    );
+    let (r1, r4) = (
+        low_frequency_ratio(&g1, face),
+        low_frequency_ratio(&g4, face),
+    );
+    assert!(
+        r4 > r1 + 0.2,
+        "backdrop scale 4: low-frequency ratio {r4:.3} did not rise from {r1:.3}"
+    );
+}
+
 /// Mean and maximum absolute RGB difference over the face, in codes.
 fn face_diff(a: &[u8], b: &[u8], face: Rectangle<i32, Logical>) -> (f64, u8) {
     let w = usize::from(OUT_W);
