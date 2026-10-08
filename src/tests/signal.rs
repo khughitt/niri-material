@@ -907,3 +907,205 @@ fn culled_column_shows_its_latest_commit_on_the_first_revealed_frame() {
         "the first frame in view shows the commit made while culled"
     );
 }
+
+/// A material fixture with a renderer, so `rendered_ids` draws real glass.
+fn rendered_material_fixture() -> (Fixture, ClientId) {
+    let (mut f, client) = material_fixture();
+    f.niri_state().backend.headless().add_renderer().unwrap();
+    (f, client)
+}
+
+fn open_sized_window(f: &mut Fixture, client: ClientId, title: &str, w: u16, h: u16) -> WlSurface {
+    let surface = open_window(f, client, title);
+    let window = f.client(client).window(&surface);
+    window.set_size(w, h);
+    window.ack_last_and_commit();
+    f.double_roundtrip(client);
+    surface
+}
+
+/// The render position and size of the tile titled `title` on the active
+/// workspace.
+fn tile_rect(
+    f: &mut Fixture,
+    title: &str,
+) -> smithay::utils::Rectangle<f64, smithay::utils::Logical> {
+    let id = window_id(f, title);
+    f.niri()
+        .layout
+        .active_workspace()
+        .unwrap()
+        .tiles_with_render_positions()
+        .find(|(tile, _, _)| tile.window().id().get() == id)
+        .map(|(tile, pos, _)| smithay::utils::Rectangle::new(pos, tile.tile_size()))
+        .unwrap()
+}
+
+#[test]
+fn floating_window_at_the_screen_edge_keeps_its_glass() {
+    use niri_ipc::PositionChange;
+
+    use crate::render_helpers::RenderTarget;
+
+    let (mut f, client) = rendered_material_fixture();
+    open_sized_window(&mut f, client, "tiled", 800, 600);
+    open_sized_window(&mut f, client, "floating", 800, 600);
+    f.niri().layout.toggle_window_floating(None);
+    f.niri().layout.move_floating_window(
+        None,
+        PositionChange::SetFixed(-5000.),
+        PositionChange::SetFixed(-5000.),
+        false,
+    );
+    f.niri_complete_animations();
+    let floating = material_id(&mut f, "floating");
+
+    // Floating placement keeps a corner on screen (at most 75 px each way);
+    // the cull must see it in the same coordinates as the render.
+    let rect = tile_rect(&mut f, "floating");
+    assert!(
+        rect.loc.x + rect.size.w <= 75. && rect.loc.y + rect.size.h <= 75.,
+        "the window must sit at the top-left clamp: {rect:?}"
+    );
+    assert!(rendered_ids(&mut f, RenderTarget::Output).contains(&floating));
+}
+
+/// Drags the window titled `title` with the pointer at each of `pointers`
+/// in turn, and reports after each whether the output and a screen capture
+/// draw its glass.
+fn drag_drawn(f: &mut Fixture, title: &str, pointers: &[(f64, f64)]) -> Vec<(bool, bool)> {
+    use smithay::utils::Point;
+
+    use crate::render_helpers::RenderTarget;
+
+    let material = material_id(f, title);
+    let id = window_id(f, title);
+    let window = f
+        .niri()
+        .layout
+        .windows()
+        .find(|(_, m)| m.id().get() == id)
+        .map(|(_, m)| m.window.clone())
+        .unwrap();
+    let output = f.niri_output(1);
+    assert!(f.niri().layout.interactive_move_begin(
+        window.clone(),
+        &output,
+        Point::from((960., 540.))
+    ));
+    pointers
+        .iter()
+        .map(|&pointer| {
+            assert!(f.niri().layout.interactive_move_update(
+                &window,
+                Point::from((1000., 0.)),
+                output.clone(),
+                Point::from(pointer),
+            ));
+            f.niri_complete_animations();
+            (
+                rendered_ids(f, RenderTarget::Output).contains(&material),
+                rendered_ids(f, RenderTarget::ScreenCapture).contains(&material),
+            )
+        })
+        .collect()
+}
+
+/// A pointer far past the left edge drags the whole tile off the output.
+const DRAG_CENTRE: (f64, f64) = (960., 540.);
+const DRAG_OFF: (f64, f64) = (-4000., 540.);
+
+/// Floating, because a tiled tile is dragged at reduced opacity through the
+/// alpha animation's offscreen, which never culls and hides the material
+/// element's id inside its own.
+#[test]
+fn interactive_move_culls_a_floating_tile_only_while_it_is_off_the_output() {
+    let (mut f, client) = rendered_material_fixture();
+    open_sized_window(&mut f, client, "other", 800, 600);
+    open_sized_window(&mut f, client, "moving", 800, 600);
+    f.niri().layout.toggle_window_floating(None);
+    f.niri_complete_animations();
+
+    // Output then screen capture at each pointer: the capture never culls.
+    assert_eq!(
+        drag_drawn(&mut f, "moving", &[DRAG_CENTRE, DRAG_OFF, DRAG_CENTRE]),
+        [(true, true), (false, true), (true, true)]
+    );
+}
+
+#[test]
+fn workspace_switch_draws_both_workspaces_and_culls_columns_beyond_the_view() {
+    use crate::render_helpers::RenderTarget;
+
+    let (mut f, client) = rendered_material_fixture();
+    open_sized_window(&mut f, client, "upper", 800, 600);
+    // The lower workspace holds a column outside its view and one in it.
+    open_sized_window(&mut f, client, "lower-offscreen", 1000, 800);
+    f.niri().layout.move_to_workspace_down(true);
+    for title in ["lower-middle", "lower-visible"] {
+        open_sized_window(&mut f, client, title, 1000, 800);
+    }
+    f.niri_complete_animations();
+    let lower_visible = material_id(&mut f, "lower-visible");
+    let lower_offscreen = material_id(&mut f, "lower-offscreen");
+    let upper = material_id(&mut f, "upper");
+    let rect = tile_rect(&mut f, "lower-offscreen");
+    assert!(
+        rect.loc.x + rect.size.w < -50.,
+        "the column must be outside the lower workspace's view: {rect:?}"
+    );
+
+    f.niri().layout.switch_workspace_up();
+    f.niri_complete_animations();
+    let ids = rendered_ids(&mut f, RenderTarget::Output);
+    assert!(ids.contains(&upper) && !ids.contains(&lower_visible));
+
+    // Halfway down: both workspaces are on screen.
+    let output = f.niri_output(1);
+    f.niri()
+        .layout
+        .workspace_switch_gesture_begin(&output, false);
+    f.niri()
+        .layout
+        .workspace_switch_gesture_update(548., Duration::from_millis(10), false);
+    let ids = rendered_ids(&mut f, RenderTarget::Output);
+    assert!(ids.contains(&upper), "the outgoing workspace draws");
+    assert!(ids.contains(&lower_visible), "the incoming workspace draws");
+    assert!(
+        !ids.contains(&lower_offscreen),
+        "a column outside the incoming workspace's view stays culled"
+    );
+}
+
+#[test]
+fn client_shadow_on_screen_keeps_the_glass_of_a_column_outside_the_view() {
+    use crate::render_helpers::RenderTarget;
+
+    // A shadow wider than any column offset: the visual window and its slab
+    // band are off screen, but its buffer reaches into the view.
+    const SHADOW: i32 = 1500;
+
+    let (mut f, client) = rendered_material_fixture();
+    let surface = open_window(&mut f, client, "shadowed");
+    let window = f.client(client).window(&surface);
+    window.set_size(1000 + 2 * SHADOW as u16, 800);
+    window.set_geometry(SHADOW, 0, 1000, 800);
+    window.ack_last_and_commit();
+    f.double_roundtrip(client);
+    for title in ["middle", "visible"] {
+        open_sized_window(&mut f, client, title, 1000, 800);
+    }
+    f.niri_complete_animations();
+    let shadowed = material_id(&mut f, "shadowed");
+
+    let rect = tile_rect(&mut f, "shadowed");
+    let right = rect.loc.x + rect.size.w;
+    assert!(
+        right + 50. < 0. && right + f64::from(SHADOW) > 0.,
+        "band off screen, shadow on screen: {rect:?}"
+    );
+    assert!(
+        rendered_ids(&mut f, RenderTarget::Output).contains(&shadowed),
+        "the buffer extent keeps a visible shadow drawn"
+    );
+}
