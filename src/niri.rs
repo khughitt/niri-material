@@ -162,7 +162,7 @@ use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::{
     encompassing_geo, render_to_dmabuf, render_to_encompassing_texture, render_to_shm,
-    render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget,
+    render_to_texture, render_to_vec, shaders, RenderCtx, RenderTarget, SignalTickSink,
 };
 #[cfg(feature = "xdp-gnome-screencast")]
 use crate::screencasting::Screencasting;
@@ -4401,10 +4401,10 @@ impl Niri {
         if ctx.target == RenderTarget::Output && ctx.signal_ticks.is_none() {
             let ticks = self.output_state.get(output).unwrap().signal_ticks.clone();
             ticks.reset();
-            ticks
-                .view
-                .set(Rectangle::new(Point::from((0., 0.)), output_size(output)));
-            ctx.signal_ticks = Some(ticks);
+            ctx.signal_ticks = Some(SignalTickSink {
+                ticks,
+                view: Rectangle::from_size(output_size(output)),
+            });
         }
 
         if ctx.target == RenderTarget::Output {

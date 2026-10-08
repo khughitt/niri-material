@@ -375,15 +375,24 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.are_transitions_ongoing() || self.floating.are_transitions_ongoing()
     }
 
-    pub fn update_render_elements(&mut self, is_active: bool, input_active: bool) {
-        self.scrolling
-            .update_render_elements(is_active && !self.floating_is_active.get(), input_active);
+    /// `screen_view` is the output's area in this workspace's coordinates.
+    pub fn update_render_elements(
+        &mut self,
+        is_active: bool,
+        input_active: bool,
+        screen_view: Rectangle<f64, Logical>,
+    ) {
+        self.scrolling.update_render_elements(
+            is_active && !self.floating_is_active.get(),
+            input_active,
+            screen_view,
+        );
 
         let view_rect = Rectangle::from_size(self.view_size);
         self.floating.update_render_elements(
             is_active && self.floating_is_active.get(),
             input_active,
-            self.is_floating_visible(),
+            self.is_floating_visible().then_some(screen_view),
             view_rect,
         );
 
@@ -1724,7 +1733,7 @@ impl<W: LayoutElement> Workspace<W> {
                 let view_rect = Rectangle::new(view_pos, view_size);
                 // An unmapping tile computes no attention motion, so the
                 // input-activity value is inert here.
-                tile.update_render_elements(false, true, false, view_rect);
+                tile.update_render_elements(false, true, None, view_rect);
                 let xray_pos = xray_pos.offset(tile_pos);
                 tile.store_unmap_snapshot_if_empty(
                     renderer,

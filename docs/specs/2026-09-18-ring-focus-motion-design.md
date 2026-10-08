@@ -22,7 +22,9 @@ Attention motion is separate: an IPC-set `motion` (`breathe`, `pulse`,
 `flash`) on a window signal drives `signal::breath` on the same kind of
 bucketed clock, and `Tile::tick_deadline` reports the next bucket boundary
 through one timer per output. Both clocks are gated on the slab band being in
-view (`slab_in_view`) and on the tile being rendered at all: deadlines are
+view (`slab_in_view`, against the output mapped into the workspace's
+coordinates through the overview zoom: `workspace_screen_view`) and on the
+tile being rendered at all: deadlines are
 reported from `Tile::render` on an `Output` target, so a tile on a hidden
 workspace never ticks, and `Niri::redraw` skips rendering while monitors are
 inactive, so a DPMS-off output stops ticking after its last armed timer

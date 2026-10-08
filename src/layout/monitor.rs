@@ -1100,8 +1100,11 @@ impl<W: LayoutElement> Monitor<W> {
             tile.clear_signal_render_visibility();
         }
 
+        let output_size = self.view_size;
+        let zoom = self.overview_zoom();
         for (ws, geo) in self.workspaces_with_render_geo_mut(true) {
-            ws.update_render_elements(is_active, input_active);
+            let screen_view = workspace_screen_view(output_size, geo, zoom);
+            ws.update_render_elements(is_active, input_active, screen_view);
 
             if Some(ws.id()) == insert_hint_ws_id {
                 insert_hint_ws_geo = Some(geo);
@@ -1728,6 +1731,11 @@ impl<W: LayoutElement> Monitor<W> {
 
             let xray_pos = XrayPos::new(geo.loc, zoom);
 
+            let mut ctx = ctx.r();
+            if let Some(sink) = &mut ctx.signal_ticks {
+                sink.view = workspace_screen_view(self.view_size, geo, zoom);
+            }
+
             ws.render_floating(ctx.r(), xray_pos, focus_ring, push!());
 
             if let Some(loc) = insert_hint_render_loc {
@@ -2157,6 +2165,21 @@ impl<W: LayoutElement> Monitor<W> {
     }
 }
 
+/// The output's area in a workspace's own coordinates: the inverse of the
+/// zoom about the workspace origin and the move to `geo.loc` that
+/// `render_workspaces` applies. Tiles test their slab band against it, for
+/// deadlines in render and for signal visibility in `update_render_elements`,
+/// so both see what the overview or a workspace switch puts on screen. It
+/// ignores `workspace_crop_bounds`, which only trims: a superset of what the
+/// workspace shows, whose over-report costs redraws and loses nothing.
+fn workspace_screen_view(
+    output_size: Size<f64, Logical>,
+    geo: Rectangle<f64, Logical>,
+    zoom: f64,
+) -> Rectangle<f64, Logical> {
+    Rectangle::new(geo.loc.upscale(-1.), output_size).downscale(zoom)
+}
+
 /// Crop bounds for one workspace's render elements, in workspace-local
 /// physical coordinates.
 ///
@@ -2273,5 +2296,46 @@ mod crop_bounds_tests {
             assert_eq!(b.loc.x, -i32::MAX / 2);
             assert_eq!(b.size.w, i32::MAX);
         }
+    }
+}
+
+#[cfg(test)]
+mod screen_view_tests {
+    use super::*;
+
+    fn output() -> Size<f64, Logical> {
+        Size::from((1920., 1080.))
+    }
+
+    fn rect(x: f64, y: f64, w: f64, h: f64) -> Rectangle<f64, Logical> {
+        Rectangle::new(Point::from((x, y)), Size::from((w, h)))
+    }
+
+    #[test]
+    fn unzoomed_current_workspace_sees_the_output() {
+        let geo = rect(0., 0., 1920., 1080.);
+        assert_eq!(
+            workspace_screen_view(output(), geo, 1.),
+            rect(0., 0., 1920., 1080.)
+        );
+    }
+
+    #[test]
+    fn overview_widens_the_view_around_the_centred_card() {
+        let geo = rect(480., 270., 960., 540.);
+        assert_eq!(
+            workspace_screen_view(output(), geo, 0.5),
+            rect(-960., -540., 3840., 2160.)
+        );
+    }
+
+    #[test]
+    fn switch_moves_the_view_with_the_workspace() {
+        // The next workspace halfway into view from below.
+        let geo = rect(0., 540., 1920., 1080.);
+        assert_eq!(
+            workspace_screen_view(output(), geo, 1.),
+            rect(0., -540., 1920., 1080.)
+        );
     }
 }
