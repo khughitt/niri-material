@@ -166,8 +166,10 @@ effect buffers, never tiles behind it (`render-pipeline.md` §1).
 the element) when `Tile::material_out_of_view` holds against the screen view
 on `RenderCtx::signal_ticks`. The extent is the slab band at `location` and
 at the bob offset, plus `LayoutElement::buf_bbox` (smithay `Window::bbox()`,
-popups excluded, relative to the window geometry); a culled body therefore
-never has its band in view, which keeps the beam condition. Open, alpha and
+popups excluded, relative to the window geometry), tested against the view
+grown by two physical pixels for the slab's pixel rounding and the unrounded
+position `signal_render_visible` uses; a culled body therefore never has its
+band in view, which keeps the beam condition. Open, alpha and
 resize animations are excluded rather than bounded, and snapshots and other
 targets carry no sink, so they never cull. Popups, border, focus ring, shadow
 and the background effect are still pushed. In-process checks in
