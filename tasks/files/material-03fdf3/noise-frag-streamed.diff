@@ -1,0 +1,84 @@
+--- a/src/render_helpers/shaders/material/noise.frag
++++ b/src/render_helpers/shaders/material/noise.frag
+@@ -52,33 +52,46 @@
+     vec4 by = noiseBspline(t.y);
+     float x0 = dot(bx, bx);
+     float y0 = dot(by, by);
+-    float g[16];
++    // The rows stream through a few vec4s: lattice arrays live across the
++    // material program's eight inlined call sites cost every material draw
++    // registers, noise or not (+0.033 ms per draw, material-41d052).
++    float sum = 0.0;
+     float norm;
+     if (type < 0.5) {
+-        // Value (x, y) is the lattice point base + (x - 1, y - 1).
+-        for (int y = 0; y < 4; y++)
+-            for (int x = 0; x < 4; x++)
+-                g[y * 4 + x] = hash12(base + vec2(float(x) - 1.0, float(y) - 1.0)) - 0.5;
++        // Row y holds the lattice points base + (-1 to 2, y - 1).
++        for (int y = 0; y < 4; y++) {
++            float py = base.y + float(y) - 1.0;
++            vec4 row = vec4(hash12(vec2(base.x - 1.0, py)), hash12(vec2(base.x, py)),
++                            hash12(vec2(base.x + 1.0, py)), hash12(vec2(base.x + 2.0, py))) - 0.5;
++            sum += by[y] * dot(bx, row);
++        }
+         norm = x0 * y0;
+     } else {
+-        // The 6x6 block of hashes around the cell: block (x, y) is the
+-        // lattice point base + (x - 2, y - 2), so value (x, y) is block
+-        // (x + 1, y + 1) and its 3x3 neighbourhood lies in the block. A
+-        // value is (9 h - its 3x3 sum) / 8, scaled as fineGrain scales; the
+-        // 3x3 sums go through row sums of three.
+-        float h[36];
+-        for (int y = 0; y < 6; y++)
+-            for (int x = 0; x < 6; x++)
+-                h[y * 6 + x] = hash12(base + vec2(float(x) - 2.0, float(y) - 2.0));
+-        float r[24];
+-        for (int y = 0; y < 6; y++)
+-            for (int x = 0; x < 4; x++)
+-                r[y * 4 + x] = h[y * 6 + x] + h[y * 6 + x + 1] + h[y * 6 + x + 2];
++        // The 6x6 block of hashes around the cell, one row at a time: block
++        // row y holds the lattice points base + (-2 to 3, y - 2), so value
++        // (x, y) is block (x + 1, y + 1) and its 3x3 neighbourhood lies in
++        // block rows y to y + 2. Each block row gives its middle four hashes
++        // m and its four sums of three s. A value row is (9 m - the three
++        // rows' s) / 8, scaled as fineGrain scales.
+         float k = 0.94280904 / 8.0;
+-        for (int y = 0; y < 4; y++)
+-            for (int x = 0; x < 4; x++)
+-                g[y * 4 + x] = (9.0 * h[(y + 1) * 6 + x + 1]
+-                                - (r[y * 4 + x] + r[(y + 1) * 4 + x] + r[(y + 2) * 4 + x])) * k;
++        vec4 s0 = vec4(0.0);
++        vec4 s1 = vec4(0.0);
++        vec4 m1 = vec4(0.0);
++        for (int y = 0; y < 6; y++) {
++            float py = base.y + float(y) - 2.0;
++            float h0 = hash12(vec2(base.x - 2.0, py));
++            float h1 = hash12(vec2(base.x - 1.0, py));
++            float h2 = hash12(vec2(base.x, py));
++            float h3 = hash12(vec2(base.x + 1.0, py));
++            float h4 = hash12(vec2(base.x + 2.0, py));
++            float h5 = hash12(vec2(base.x + 3.0, py));
++            vec4 s2 = vec4(h0 + h1 + h2, h1 + h2 + h3, h2 + h3 + h4, h3 + h4 + h5);
++            if (y >= 2)
++                sum += by[y - 2] * dot(bx, (9.0 * m1 - (s0 + s1 + s2)) * k);
++            s0 = s1;
++            s1 = s2;
++            m1 = vec4(h1, h2, h3, h4);
++        }
+         float x1 = bx.x * bx.y + bx.y * bx.z + bx.z * bx.w;
+         float y1 = by.x * by.y + by.y * by.z + by.z * by.w;
+         float x2 = bx.x * bx.z + bx.y * bx.w;
+@@ -87,11 +100,7 @@
+              + 0.08333333 * (x2 * y0 + x0 * y2) + 0.11111111 * (x2 * y1 + x1 * y2)
+              + 0.05555556 * x2 * y2;
+     }
+-    vec4 rows = vec4(dot(bx, vec4(g[0], g[1], g[2], g[3])),
+-                     dot(bx, vec4(g[4], g[5], g[6], g[7])),
+-                     dot(bx, vec4(g[8], g[9], g[10], g[11])),
+-                     dot(bx, vec4(g[12], g[13], g[14], g[15])));
+-    return dot(by, rows) / sqrt(norm);
++    return sum / sqrt(norm);
+ }
+ 
+ // Lightness grain on an encoded colour: Oklab L of the clamped colour moves
