@@ -1,13 +1,15 @@
 ---
 id: material-a9a574
 title: "Cover floating, interactive-move, workspace-switch and CSD extents in the off-view cull tests"
-status: todo
+status: doing
 priority: 3
 size: s
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-10-08T16:27:08Z
-updated: 2026-10-08T16:27:09Z
+updated: 2026-10-08T16:28:11Z
+started: 2026-10-08T16:28:11Z
 depends: []
 parent: material-5d6b2c
 tags: [testing, performance]
@@ -19,3 +21,5 @@ The off-view cull (material-7afc31) is tested only for a scrolling column and th
 ## Notes
 
 - 2026-10-08T16:27:08Z (materials-26.04): concerns: material-7afc31 extension — test coverage for placements and the buffer-extent arm the landed tests do not reach
+- 2026-10-08T16:28:11Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:42335930-7fe4-4735-bd08-c7d1e56a5390","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
