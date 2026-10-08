@@ -6,26 +6,68 @@
 use std::rc::Rc;
 
 use anyhow::{ensure, Context as _};
-use niri_config::{BackdropGrain, NoiseType};
+use niri_config::{BackdropGrain, NoiseType, NOISE_LAYERS};
 use smithay::backend::renderer::gles::{ffi, link_program, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{ContextId, Renderer as _, Texture as _};
 use smithay::gpu_span_location;
 
 use crate::render_helpers::shaders::grain_source;
 
-/// The agreed backdrop grain, as the pass needs it.
+/// One backdrop layer, as the pass needs it.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct GrainOptions {
+pub struct GrainLayer {
     pub amount: f32,
     pub kind: NoiseType,
+    pub scale: f32,
+}
+
+/// The agreed backdrop layers, in backdrop-list order (slot `k` seeds with
+/// `NOISE_SEED_k`). Equality over the whole array is the effect buffer's
+/// change detection.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct GrainOptions {
+    pub layers: [Option<GrainLayer>; NOISE_LAYERS],
 }
 
 impl From<BackdropGrain> for GrainOptions {
     fn from(grain: BackdropGrain) -> Self {
         Self {
-            amount: grain.amount as f32,
-            kind: grain.kind,
+            layers: grain.layers.map(|layer| {
+                layer.map(|layer| GrainLayer {
+                    amount: layer.amount as f32,
+                    kind: layer.kind,
+                    scale: layer.scale as f32,
+                })
+            }),
         }
+    }
+}
+
+impl GrainOptions {
+    /// Amounts, kinds and scales, one vec4 component per slot; an empty
+    /// slot is amount 0 and scale 1, which `noise_source` skips.
+    pub fn uniforms(&self) -> [[f32; 4]; 3] {
+        let mut out = [[0.; 4], [0.; 4], [1.; 4]];
+        for (k, layer) in self.layers.iter().enumerate() {
+            if let Some(layer) = layer {
+                out[0][k] = layer.amount;
+                out[1][k] = layer.kind as u8 as f32;
+                out[2][k] = layer.scale;
+            }
+        }
+        out
+    }
+
+    /// One layer at scale 1, for tests.
+    #[cfg(test)]
+    pub(crate) fn one(amount: f32, kind: NoiseType) -> Self {
+        let mut layers = [None; NOISE_LAYERS];
+        layers[0] = Some(GrainLayer {
+            amount,
+            kind,
+            scale: 1.,
+        });
+        Self { layers }
     }
 }
 
@@ -38,6 +80,7 @@ struct GrainProgramInner {
     uniform_tex: ffi::types::GLint,
     uniform_amount: ffi::types::GLint,
     uniform_kind: ffi::types::GLint,
+    uniform_scale: ffi::types::GLint,
     attrib_vert: ffi::types::GLint,
     context_id: ContextId<GlesTexture>,
 }
@@ -62,6 +105,7 @@ impl GrainProgram {
                     uniform_tex: gl.GetUniformLocation(program, c"tex".as_ptr()),
                     uniform_amount: gl.GetUniformLocation(program, c"mat_noise".as_ptr()),
                     uniform_kind: gl.GetUniformLocation(program, c"mat_noise_type".as_ptr()),
+                    uniform_scale: gl.GetUniformLocation(program, c"mat_noise_scale".as_ptr()),
                     attrib_vert: gl.GetAttribLocation(program, c"vert".as_ptr()),
                     context_id,
                 })))
@@ -122,8 +166,10 @@ impl GrainProgram {
 
                 gl.UseProgram(p.program);
                 gl.Uniform1i(p.uniform_tex, 0);
-                gl.Uniform1f(p.uniform_amount, options.amount);
-                gl.Uniform1f(p.uniform_kind, options.kind as u8 as f32);
+                let [amount, kind, scale] = options.uniforms();
+                gl.Uniform4f(p.uniform_amount, amount[0], amount[1], amount[2], amount[3]);
+                gl.Uniform4f(p.uniform_kind, kind[0], kind[1], kind[2], kind[3]);
+                gl.Uniform4f(p.uniform_scale, scale[0], scale[1], scale[2], scale[3]);
 
                 let vertices: [f32; 12] =
                     [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0];
@@ -233,10 +279,7 @@ pub(crate) mod tests {
                 renderer,
                 &source,
                 &target,
-                GrainOptions {
-                    amount: 0.3,
-                    kind: NoiseType::Fine,
-                },
+                GrainOptions::one(0.3, NoiseType::Fine),
             );
             assert!(
                 result.is_err(),
@@ -274,10 +317,7 @@ pub(crate) mod tests {
                         renderer,
                         &source,
                         &target,
-                        GrainOptions {
-                            amount: 0.3,
-                            kind: NoiseType::Fine,
-                        }
+                        GrainOptions::one(0.3, NoiseType::Fine)
                     )
                     .is_err(),
                 "a failed GL draw must reach the sharp-source fallback"
@@ -316,5 +356,41 @@ pub(crate) mod tests {
                 "a fresh context owns its own program"
             );
         });
+    }
+    #[test]
+    fn options_pack_backdrop_layers_in_order_with_neutral_empty_slots() {
+        let grain = niri_config::BackdropGrain {
+            layers: [
+                Some(niri_config::BackdropLayer {
+                    amount: 0.3,
+                    kind: NoiseType::Fine,
+                    scale: 1.,
+                }),
+                Some(niri_config::BackdropLayer {
+                    amount: 0.1,
+                    kind: NoiseType::White,
+                    scale: 4.,
+                }),
+                None,
+                None,
+            ],
+        };
+        assert_eq!(
+            GrainOptions::from(grain).uniforms(),
+            [[0.3, 0.1, 0., 0.], [1., 0., 0., 0.], [1., 4., 1., 1.]]
+        );
+    }
+
+    #[test]
+    fn options_differ_when_any_slot_differs() {
+        let mut a = GrainOptions::one(0.3, NoiseType::Fine);
+        let b = a;
+        assert_eq!(a, b);
+        a.layers[1] = Some(GrainLayer {
+            amount: 0.1,
+            kind: NoiseType::White,
+            scale: 4.,
+        });
+        assert_ne!(a, b);
     }
 }

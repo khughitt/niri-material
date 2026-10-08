@@ -9,6 +9,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "docs/materials/scripts/noise-placement-cost.sh"
+LIB = ROOT / "docs/materials/scripts/glass-optic-smoke-lib.sh"
 
 
 def report_source():
@@ -17,7 +18,8 @@ def report_source():
 
 class NoisePlacementCostTests(unittest.TestCase):
     def test_failure_cleanup_reaps_owned_wallpaper_and_preserves_exit_status(self):
-        source = SCRIPT.read_text()
+        source = LIB.read_text()
+        self.assertIn("trap cleanup_cost EXIT", SCRIPT.read_text())
         stop = source.split("stop_walls() {", 1)[1].split("\n}\n", 1)[0]
         cleanup = source.split("cleanup_cost() {", 1)[1].split("\n}\n", 1)[0]
         for code in (0, 23):

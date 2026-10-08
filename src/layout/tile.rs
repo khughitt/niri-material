@@ -2705,6 +2705,17 @@ mod tests {
         optics::values(&resolved.material.glass, &frame)
     }
 
+    /// Slot 0 of a four-slot optic uniform (the noise layers).
+    fn uniform_slot0(
+        uniforms: &[smithay::backend::renderer::gles::Uniform<'static>],
+        name: &str,
+    ) -> f32 {
+        match uniforms.iter().find(|u| u.name == name).unwrap().value {
+            smithay::backend::renderer::gles::UniformValue::_4f(x, _, _, _) => x,
+            ref other => panic!("{name}: {other:?}"),
+        }
+    }
+
     fn uniform_f32(
         uniforms: &[smithay::backend::renderer::gles::Uniform<'static>],
         name: &str,
@@ -2764,7 +2775,7 @@ mod tests {
             let uniforms = post_uniforms(&options);
             assert_eq!(
                 (
-                    uniform_f32(&uniforms, "mat_noise"),
+                    uniform_slot0(&uniforms, "mat_noise"),
                     uniform_f32(&uniforms, "mat_saturation")
                 ),
                 expected
@@ -2805,10 +2816,13 @@ mod tests {
         ] {
             let options = options_for(
                 niri_config::ResolvedGlass {
-                    noise: niri_config::ResolvedNoise {
-                        amount: noise,
-                        ..Default::default()
-                    },
+                    noise: noise.map_or_else(niri_config::ResolvedNoise::default, |amount| {
+                        niri_config::ResolvedNoise::single(
+                            amount,
+                            niri_config::NoiseType::White,
+                            niri_config::NoiseSite::Glass,
+                        )
+                    }),
                     saturation: niri_config::ResolvedSaturation { amount: saturation },
                     backdrop_blur,
                     ..Default::default()
@@ -2818,7 +2832,7 @@ mod tests {
             let uniforms = post_uniforms(&options);
             assert_eq!(
                 (
-                    uniform_f32(&uniforms, "mat_noise"),
+                    uniform_slot0(&uniforms, "mat_noise"),
                     uniform_f32(&uniforms, "mat_saturation")
                 ),
                 expected,
@@ -2849,11 +2863,11 @@ mod tests {
         ] {
             let options = options_for(
                 niri_config::ResolvedGlass {
-                    noise: niri_config::ResolvedNoise {
-                        amount: Some(0.3),
-                        kind: noise_type,
-                        site: niri_config::NoiseSite::Glass,
-                    },
+                    noise: niri_config::ResolvedNoise::single(
+                        0.3,
+                        noise_type,
+                        niri_config::NoiseSite::Glass,
+                    ),
                     backdrop_blur,
                     ..Default::default()
                 },
@@ -2861,10 +2875,10 @@ mod tests {
             );
             let uniforms = post_uniforms(&options);
             assert_eq!(
-                uniform_f32(&uniforms, "mat_noise_type"),
+                uniform_slot0(&uniforms, "mat_noise_type"),
                 noise_type as u8 as f32
             );
-            assert_eq!(uniform_f32(&uniforms, "mat_noise"), 0.3);
+            assert_eq!(uniform_slot0(&uniforms, "mat_noise"), 0.3);
         }
     }
 

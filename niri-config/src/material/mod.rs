@@ -524,8 +524,8 @@ pub struct Glass {
     pub edge_highlight: Option<optics::edge_highlight::EdgeHighlight>,
     #[knuffel(child)]
     pub aurora: Option<optics::aurora::Aurora>,
-    #[knuffel(child)]
-    pub noise: Option<optics::noise::Noise>,
+    #[knuffel(children(name = "noise"))]
+    pub noise: Vec<optics::noise::Noise>,
     #[knuffel(child, unwrap(argument))]
     pub saturation: Option<optics::saturation::Saturation>,
     #[knuffel(child, unwrap(argument))]
@@ -810,7 +810,7 @@ impl Material {
                 bevel_profile: g.bevel_profile.map_or(d.bevel_profile, |x| x.0),
                 offset_x: g.offset_x.map_or(d.offset_x, |x| x.0),
                 offset_y: g.offset_y.map_or(d.offset_y, |x| x.0),
-                noise: optics::noise::resolve(g.noise),
+                noise: optics::noise::resolve(&g.noise),
                 saturation: optics::saturation::resolve(g.saturation),
                 light_ior: g.light_ior.map_or(d.light_ior, |x| x.0),
             },
@@ -829,6 +829,8 @@ impl Material {
         if let Some(aurora) = &self.glass.aurora {
             aurora.validate()?;
         }
+        optics::noise::validate(&self.glass.noise)
+            .map_err(|message| format!("material {}: {message}", self.name))?;
         let d = ResolvedGlass::default();
         let bevel = self.glass.bevel.map_or(d.bevel, |x| x.0);
         let offset_x = self.glass.offset_x.map_or(d.offset_x, |x| x.0);

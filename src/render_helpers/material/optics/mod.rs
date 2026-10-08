@@ -139,7 +139,9 @@ pub(crate) fn next_change(
 mod tests {
     use super::*;
     use crate::animation::Clock;
-    use niri_config::{ResolvedIridescence, ResolvedNoise, ResolvedSaturation};
+    use niri_config::{
+        NoiseSite, NoiseType, ResolvedIridescence, ResolvedNoise, ResolvedSaturation,
+    };
 
     #[test]
     fn optic_settling_translates_deadline_and_suppresses_it_while_paused() {
@@ -210,10 +212,7 @@ mod tests {
                 ..Default::default()
             },
             saturation: ResolvedSaturation { amount: Some(0.7) },
-            noise: ResolvedNoise {
-                amount: Some(0.2),
-                ..Default::default()
-            },
+            noise: ResolvedNoise::single(0.2, NoiseType::White, NoiseSite::Glass),
             iridescence: ResolvedIridescence { amount: 0.8 },
             ..Default::default()
         };

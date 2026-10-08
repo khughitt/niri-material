@@ -13,6 +13,7 @@ mod fullscreen;
 mod glass_edge;
 mod layer_shell;
 mod material;
+mod noise_layers;
 mod noise_site;
 mod remove_output;
 mod ring_look;
