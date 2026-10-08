@@ -8,7 +8,7 @@ complexity: mid
 process: planned
 owner: material-3fcba2
 created: 2026-09-09T03:03:30Z
-updated: 2026-10-08T03:57:31Z
+updated: 2026-10-08T04:27:32Z
 started: 2026-10-06T09:08:29Z
 depends: [material-cf32e5]
 parent: material-3aa1f2
@@ -90,3 +90,5 @@ Prism goal prism-85f63a wants several noise devices stacked on one material. Ext
 - 2026-10-08T03:57:28Z (material-3fcba2): attached: 2026-10-07-noise-layers-lattice-sheet.png (669253 bytes): Scaled grain before (Hermite, 558bfa02, bordered control) and after (B-spline, e5edd631): is the lattice still visible at scale 8? Tiles A2-D8
 - 2026-10-08T03:57:28Z (material-3fcba2): detached: 2026-10-08-noise-layers-sheet-bspline.png: renamed to the capture's local date (review M2)
 - 2026-10-08T03:57:28Z (material-3fcba2): attached: 2026-10-07-noise-layers-sheet-bspline.png (1121026 bytes): Noise layers contact sheet regenerated at e5edd631 (B-spline lattice): scales, kinds, stacks, four-at-0.15 against one-at-0.3
+- 2026-10-08T04:27:32Z (material-3fcba2): parked (waiting on user, review): material-41d052 holds the owner's second look and the merge decision; then merge, prism refresh, close
+  provenance: {"harness_session":"claude-code:0a5d985e-3544-4780-b427-a957c8940292","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
