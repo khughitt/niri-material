@@ -8,11 +8,13 @@ run found one pixel of single-node lightness glass one code off the baseline;
 
 Owner's look (2026-10-07): the lattice shows at scale 8 — "scale-8 white grain reads blocky". Per §7.1 this reshapes `scale > 1` before the merge: `e5edd631` reconstructs scaled grain with a cubic B-spline over 4×4 lattice points instead of Hermite over 2×2.
 
-**B-spline rerun (2026-10-08):** the smoke passes all six assertions again at
+**B-spline rerun (2026-10-07, evening, local time):** the smoke passes all six assertions again at
 `e5edd631`, every identity still byte-exact against `4a8b2072`; the contact
 sheet below is regenerated from that run, and a before/after sheet sets the
 two lattices side by side. Four fine layers at scale 8 now cost 1.19 ms per
-damaged frame (Hermite 0.65 ms).
+damaged frame (Hermite 0.65 ms). The B-spline shader also costs every
+material draw about 0.034 ms (15 %) with noise off; same-session A/B runs
+pin it to `noise.frag` (see Cost).
 
 Owner's second look (B-spline sheets): pending.
 
@@ -36,8 +38,9 @@ evidence root.
 | `noise-layers-bspline-cost-pilot-1791427673` | `372581d9` (`e5edd631` code) | passed (3 damage steps per case) |
 | `noise-layers-bspline-cost-full-1791428043` | `372581d9` (`e5edd631` code) | **passed**; clean release |
 
-The B-spline runs record their source dirty only in task records. Their
-binaries: niri
+The B-spline runs were built from `e5edd631`'s code at `372581d9`, whose
+working tree differed only in task records; the binaries' SHA-256s are the
+pin: niri
 `54e05f55b00cbc73840d5c92a851f858030e32e057872448fb6306668a84b5fb`, niri-tracy
 `edca1d1adfbc14d5b2e57785495fe1dc824a7d6281043286ba6eef940d241a09`, the same
 baseline. Binaries of the `558bfa02` runs: niri
@@ -179,9 +182,9 @@ the B-spline run: `scripts/noise-layers-sheet.py grid
 <run dir> e5edd631 <out>`. The Hermite version is in git history at
 `a1d0c330`.
 
-![Scaled grain before and after the B-spline lattice](2026-10-08-noise-layers-lattice-sheet.png)
+![Scaled grain before and after the B-spline lattice](2026-10-07-noise-layers-lattice-sheet.png)
 
-`2026-10-08-noise-layers-lattice-sheet.png`: the scale 2/4/8 white and fine
+`2026-10-07-noise-layers-lattice-sheet.png`: the scale 2/4/8 white and fine
 tiles of the Hermite run (`noise-layers-full2-1791341162`, bordered as the
 control) above the same tiles of the B-spline run, ids A2–D8;
 `scripts/noise-layers-sheet.py lattice <before dir> 558bfa02 <after dir>
@@ -208,12 +211,36 @@ cadence as the Hermite run below:
 Hash counts are spec §4's at `e5edd631`: 9 per fine layer at scale 1, 36
 above it (one 6×6 block).
 
-Every case without a scaled layer, `none` included, runs 13–15 % above the
-Hermite run. That shift is common to cases whose shader path `e5edd631` does
-not touch, so it is the host or driver state of the night, not the change.
-Four fine layers at scale 8 add 0.923 ms over `none` against Hermite's
-0.424 ms, a ratio of 2.18, close to the hash ratio 144/64 = 2.25. The draws
-are bimodal as before: split at 0.6 × the case median, four fine at scale 8
+Every case runs 13–15 % above the Hermite run, `none` included. The grain
+pass (`Grain::render`, the effect program, a far smaller program that
+inlines the same scaled path four times) moved only 0.5 % at scale 1, so
+the shift is not the host. Same-session A/B runs settle
+it (`NOISE_LAYERS_COST_AB`: this tree's `niri-tracy` against a kept one,
+alternating a, b, a, b; material draw medians in ms):
+
+| Run | a | `none` a / b | one fine, scale 1, a / b |
+| --- | --- | ---: | ---: |
+| `noise-layers-ab-full-1791429717` | `e5edd631` | 0.2627, 0.2632 / 0.2294, 0.2294 | 0.3400, 0.3400 / 0.3011, 0.3011 |
+| `noise-layers-ab-hermite-rebuild-1791431057` | `558bfa02`'s `noise.frag` built today | 0.2294 ×2 / 0.2294 ×2 | 0.3011, 0.3011 / 0.3021, 0.3021 |
+| `noise-layers-ab-stream-1791430389` | `e5edd631`, scaled path without arrays | 0.2652, 0.2662 / 0.2294 ×2 | 0.3400, 0.3410 / 0.3016, 0.3011 |
+| `noise-layers-ab-loop-1791432546` | that, glass and film layers in a slot loop | 0.2488 ×2 / 0.2294 ×2 | 0.3594, 0.3604 / 0.3021 ×2 |
+
+b is always `558bfa02`'s kept `niri-tracy`. **The B-spline `noise.frag` costs
+every material draw about 0.034 ms (15 %), with noise or without.** The
+rebuild row rules out build drift. Streaming the lattice through a few
+vec4s instead of `g[16]`/`h[36]`/`r[24]` changes nothing, so it is not those
+arrays. Looping the layers (two inlined copies of the scaled path instead
+of eight) halves the idle cost but makes an active layer dearer, so neither
+is kept; the shader stays at `e5edd631`. The likeliest cause is the larger
+scaled path inlined eight times into the material program weighing on its
+register allocation, but no ISA or register count was read. Recovering the
+idle cost is filed as its own task. Settled glass renders no frames, so the
+cost lands on damaged frames only.
+
+With that, four fine layers at scale 8 add 0.923 ms over `none` against
+Hermite's 0.424 ms; the ratio 2.18 is close to the hash ratio 144/64 = 2.25,
+since both runs' `none` carries its own build's idle cost. The draws are
+bimodal as before: split at 0.6 × the case median, four fine at scale 8
 has 16 early draws at 0.140 ms and 68 later at 1.188 ms.
 
 ### Hermite lattice (`558bfa02`)
@@ -265,4 +292,4 @@ uncommitted) measured within 1 % of these.
   stacked config has no baseline to match, and its lightness layers can
   still differ by a code from an algebraically equal single-layer form.
 - The cost cases measure fine grain only; white is one hash per layer at
-  scale 1 and four above it, and was not timed.
+  scale 1 and sixteen above it, and was not timed.
