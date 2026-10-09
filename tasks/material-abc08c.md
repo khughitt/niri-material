@@ -9,7 +9,7 @@ process: planned
 needs: [owner]
 owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T20:43:19Z
+updated: 2026-10-09T21:42:35Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
@@ -17,6 +17,7 @@ tags: [rendering, camera, dynamics]
 source: docs/notes/2026-10-06-transient-depth-brief.md
 agent: claude-code/claude-opus-5-5
 spec: docs/specs/2026-10-09-transient-rigid-tilt-design.md
+plan: docs/plans/2026-10-09-transient-rigid-tilt.md
 ---
 
 Design one transient rigid tilt in which window content and glass move as one body and settle to exactly face-on, from docs/notes/2026-10-06-transient-depth-brief.md, after the owner's verdict on the spike stills (material-89fb6b). First trigger: focus gain, reusing the swing curve and focus origin from the unmerged branch material-77db8a (render_helpers/material/view.rs, layout/focus_origin.rs). Move, resize and open come later, possibly with different motions.
@@ -68,3 +69,4 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-09T20:42:02Z (material-abc08c): review: spec round 4 — verdict: accept; findings: minor 1; reviewer: codex/gpt-6.1-sol
 - 2026-10-09T20:43:19Z (material-abc08c): spec accepted (round 4); minor r.z wording fixed; §9 follow-ups filed: material-98beac, material-df50f2, prism-2a8fea; brief result section written; next: writing-plans
+- 2026-10-09T21:42:34Z (material-abc08c): plan written: docs/plans/2026-10-09-transient-rigid-tilt.md, 15 tasks filed under material-6901e0 (material-1971fd … material-c5f9d0), each blocked on this task; material-6901e0 promoted to todo as the implementation goal

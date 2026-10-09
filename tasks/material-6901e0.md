@@ -1,10 +1,10 @@
 ---
 id: material-6901e0
 title: "View tilt: a geometric tilt that moves window content and glass together"
-status: idea
+status: todo
 priority: 1
 created: 2026-09-22T23:46:32Z
-updated: 2026-10-09T20:43:19Z
+updated: 2026-10-09T21:41:32Z
 depends: [material-77db8a]
 parent: material-53f873
 tags: [rendering, camera]
