@@ -164,7 +164,11 @@
         "jelly-flex",
         "thickness"
       ],
-      "responses": [],
+      "responses": [
+        "view-tilt",
+        "view-tilt-settle",
+        "view-distance"
+      ],
       "animated": true
     },
     {
