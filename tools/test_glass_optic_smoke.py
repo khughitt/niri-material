@@ -62,7 +62,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             (Path(out) / 'A.kdl').write_text('glass')
             script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\ngpu_cooldown() { :; }\n' +
                       self.function('settle_before_launch') +
-                      '\nOUT=$1; settle_before_launch "$OUT/A.kdl"; cat "$OUT/call"; settle_before_launch "$OUT/A.kdl" A-move-1; cat "$OUT/call"')
+                      '\nOUT=$1; CAPTURE_LANE=headless; settle_before_launch "$OUT/A.kdl"; cat "$OUT/call"; settle_before_launch "$OUT/A.kdl" A-move-1; cat "$OUT/call"')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
             lines = result.stdout.splitlines()
@@ -73,7 +73,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as out:
             script = ('capture_meta() { printf "%s\\n" "$*" >> "$OUT/calls"; }\ngpu_cooldown() { :; }\n' +
                       self.function('settle_before_launch') + '\n' + self.function('finish_sub_run') +
-                      '\nOUT=$1; SUB_RUN=; finish_sub_run; settle_before_launch "$OUT/A.kdl" A-move-1; '
+                      '\nOUT=$1; CAPTURE_LANE=headless; SUB_RUN=; finish_sub_run; settle_before_launch "$OUT/A.kdl" A-move-1; '
                       'finish_sub_run; finish_sub_run; cat "$OUT/calls"')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -91,7 +91,8 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
                         'echo $((n + 1)) > "$STATES.n"\nsed -n "${n}p" "$STATES" | grep . || tail -n1 "$STATES"\n')
         fake.chmod(0o755)
         (Path(out) / 'states').write_text('\n'.join(pstates) + '\n')
-        script = ('fail() { echo "FAIL: $*" >&2; exit 1; }\nsleep() { :; }\n' + self.function('gpu_cooldown') +
+        script = ('fail() { echo "FAIL: $*" >&2; exit 1; }\nsleep() { :; }\n' + self.function('no_timing_on_pixels') +
+                  '\n' + self.function('gpu_cooldown') +
                   '\nOUT=$1; gpu_cooldown A; cat "$OUT/cooldown.txt"')
         return subprocess.run(['bash', '-eu', '-c', script, 'test', out], text=True, capture_output=True,
                               env={**os.environ, 'PATH': f'{bin_dir}:{os.environ["PATH"]}',
@@ -100,10 +101,85 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
     def test_settle_before_launch_skips_the_cooldown_under_a_capture_meta_stub(self):
         with tempfile.TemporaryDirectory() as out:
             script = ('capture_meta() { :; }\ngpu_cooldown() { echo cooled; }\n' + self.function('settle_before_launch') +
-                      '\nOUT=$1; CAPTURE_META=: settle_before_launch "$OUT/A.kdl"; CAPTURE_META= settle_before_launch "$OUT/A.kdl"')
+                      '\nOUT=$1; CAPTURE_LANE=headless; CAPTURE_META=: settle_before_launch "$OUT/A.kdl"; CAPTURE_META= settle_before_launch "$OUT/A.kdl"')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.splitlines(), ['cooled'])
+
+    def test_pixels_lane_begins_instead_of_settling(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\ngpu_cooldown() { echo cooled; }\n' +
+                      self.function('settle_before_launch') +
+                      '\nOUT=$1; CAPTURE_LANE=pixels; settle_before_launch "$OUT/A.kdl"; cat "$OUT/call"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.splitlines(), [f'begin {out} --sub-run A --input {out}/A.kdl'])
+
+    def test_settle_before_launch_refuses_without_a_preflight_lane(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { :; }\ngpu_cooldown() { :; }\n' + self.function('settle_before_launch') +
+                      '\nOUT=$1; unset CAPTURE_LANE; settle_before_launch "$OUT/A.kdl"')
+            result = self.run_bash(script, out)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('capture_preflight has not run', result.stderr)
+
+    def test_capture_preflight_sets_the_lane(self):
+        with tempfile.TemporaryDirectory() as out:
+            script = ('capture_meta() { :; }\nfail() { exit 1; }\n' + self.function('capture_preflight') +
+                      '\nOUT=$1; CAPTURE_TASK=t; capture_preflight pixels; echo "$CAPTURE_LANE"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.stdout.strip(), 'pixels', result.stderr)
+
+    def test_timing_helpers_fail_on_the_pixels_lane(self):
+        for helper in ('gpu_cooldown', 'capture_bg', 'trace_run', 'gpu_median_ns'):
+            with self.subTest(helper=helper), tempfile.TemporaryDirectory() as out:
+                script = ('fail() { echo "FAIL: $*" >&2; exit 1; }\n' + self.function('no_timing_on_pixels') + '\n' +
+                          self.function(helper) + f'\nOUT=$1; CAPTURE_LANE=pixels; {helper} x')
+                result = self.run_bash(script, out)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(f'{helper} records timing', result.stderr)
+
+    def test_verify_renderer_reads_only_this_launchs_bytes(self):
+        with tempfile.TemporaryDirectory() as out:
+            o = Path(out)
+            (o / 'niri.log').write_text('GL Renderer: "llvmpipe"\n')
+            (o / 'weston.log').write_text('[0] GL renderer: llvmpipe\n')
+            script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\nfail() { exit 1; }\n' +
+                      self.function('log_size') + '\n' + self.function('verify_renderer') +
+                      '\nOUT=$1; n=$(log_size "$OUT/niri.log"); w=$(log_size "$OUT/weston.log")\n'
+                      'echo \'GL Renderer: "NVIDIA"\' >> "$OUT/niri.log"; echo \'[1] GL renderer: NVIDIA\' >> "$OUT/weston.log"\n'
+                      'verify_renderer A-1 "$OUT/niri.log" "$n" "$OUT/weston.log" "$w"; cat "$OUT/call"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((o / 'A-1.niri.renderer.log').read_text(), 'GL Renderer: "NVIDIA"\n')
+            self.assertEqual((o / 'A-1.weston.renderer.log').read_text(), '[1] GL renderer: NVIDIA\n')
+            self.assertEqual(result.stdout.strip(),
+                             f'renderer {out} --sub-run A-1 --niri-log {out}/A-1.niri.renderer.log '
+                             f'--weston-log {out}/A-1.weston.renderer.log')
+
+    def test_verify_renderer_without_weston_for_drm(self):
+        with tempfile.TemporaryDirectory() as out:
+            (Path(out) / 'niri.log').write_text('')
+            script = ('capture_meta() { printf "%s\\n" "$*" > "$OUT/call"; }\nfail() { exit 1; }\n' +
+                      self.function('verify_renderer') + '\nOUT=$1; verify_renderer d-1 "$OUT/niri.log" 0; cat "$OUT/call"')
+            result = self.run_bash(script, out)
+            self.assertEqual(result.stdout.strip(), f'renderer {out} --sub-run d-1 --niri-log {out}/d-1.niri.renderer.log')
+
+    def test_start_nested_logs_and_verifies_the_renderer_after_the_compositor_settles(self):
+        body = self.function('start_nested')
+        self.assertIn('RUST_LOG=$NIRI_RENDERER_LOG', body)
+        self.assertIn("NIRI_RENDERER_LOG='niri=debug,smithay::backend::renderer::gles=info'", self.LIB)
+        lines = [l.strip() for l in body.splitlines()]
+        self.assertLess(lines.index('sleep 1'), next(i for i, l in enumerate(lines) if l.startswith('verify_renderer')))
+        self.assertLess(next(i for i, l in enumerate(lines) if 'niri_from=' in l),
+                        next(i for i, l in enumerate(lines) if l.startswith('weston ')))
+
+    def test_await_load_lives_in_the_lib_and_hidden_window_uses_it(self):
+        self.assertIn('await_load', self.LIB)
+        hwa = (Path(__file__).resolve().parents[1] / 'docs/materials/scripts/hidden-window-attribution.sh').read_text()
+        self.assertNotRegex(hwa, r'^await_load\(\)', 'hidden-window keeps no copy')
+        self.assertNotIn("rg -q 'GL Renderer:.*NVIDIA'", hwa)
+        self.assertNotIn('export RUST_LOG=', hwa)
 
     def test_gpu_cooldown_waits_for_six_consecutive_p8_polls(self):
         with tempfile.TemporaryDirectory() as out:
