@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** draft, revised after plan review rounds 1–3 (2026-10-09). Design task `material-abc08c`; implementation goal `material-6901e0`.
+**Status:** accepted at plan review round 4 (2026-10-09). Design task `material-abc08c`; implementation goal `material-6901e0`.
 
 **Goal:** On focus gain, swing the pane once in depth and settle it back to exactly face-on, with window content and glass moving as one rigid body whose rounded edge and side wall show while it turns, and with today's pixels and code path at rest.
 
