@@ -9,7 +9,7 @@ process: planned
 needs: [owner]
 owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T22:28:46Z
+updated: 2026-10-09T22:29:09Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
@@ -81,3 +81,6 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 - 2026-10-09T22:28:45Z (material-abc08c): resumed
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-09T22:28:45Z (material-abc08c): review: plan round 2 — verdict: revise; findings: must 1, should 1; reviewer: codex
+- 2026-10-09T22:29:08Z (material-abc08c): plan round 2 fixes: certify's chord neighbours built lazily (then, not then_some) with a known-function control for miss, thin-dip hit, start hit and tangent; contingency splits the uniform lists and retargets the_view_uniforms_are_declared to the view program, with the converse for the rest program
+- 2026-10-09T22:29:08Z (material-abc08c): parked (waiting on user, review): owner or a fresh reviewer reviews .worktrees/material-abc08c/docs/plans/2026-10-09-transient-rigid-tilt.md as plan round 3 and picks the execution method; on approval the agent closes material-abc08c and starts material-1971fd in .worktrees/material-abc08c
+  provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
