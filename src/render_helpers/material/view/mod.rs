@@ -14,6 +14,8 @@ use glam::{DVec2, DVec3};
 
 use super::ring::hash01;
 
+pub mod solid;
+
 /// The peak of g(u) = (1 − u)² sin 2πu over [0, 1], at u = 0.190381.
 pub const SWING_PEAK: f64 = 0.610_028_508_853_155_6;
 /// Centres closer than this give no direction to swing along.
@@ -238,6 +240,16 @@ pub fn footprint(camera: &Camera, slab: Bounds, tex: Bounds, thickness: f64) -> 
         }
     }
     (lo, hi)
+}
+
+/// Whether a wall with in-plane outward normal `n0`, `h` px from the pivot, faces the camera
+/// under `pose` (§2.1): D sin|θ| (n₀ · ŝ) > h, with D = κE / w and ŝ = sign(θ) dir.
+pub fn wall_faces_camera(pose: &ViewPose, extent: f64, n0: DVec2, h: f64) -> bool {
+    if pose.theta == 0. {
+        return false;
+    }
+    let s_hat = pose.dir * pose.theta.signum();
+    pose.kappa * extent / pose.weight * pose.theta.abs().sin() * n0.dot(s_hat) > h
 }
 
 #[cfg(test)]
