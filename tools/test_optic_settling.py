@@ -5,6 +5,7 @@ import hashlib
 import json
 import io
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -771,12 +772,23 @@ def alive(pid):
         return False
 
 
+SMOKE = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/optic-settling-smoke.sh'
+
+
 class LifecycleCoverageTests(unittest.TestCase):
     def test_subject_paths_are_full_routed(self):
         root = Path(__file__).resolve().parents[1]
         patterns = subprocess.check_output(['just', '--evaluate', 'tooling_full_paths'],
                                           cwd=root, text=True).split()
         assert_static_coverage(root, patterns)
+
+    def test_start_drm_logs_and_verifies_the_drm_renderer(self):
+        body = re.search(r'^start_drm\(\) \{.*?^}', SMOKE.read_text(), re.S | re.M).group()
+        self.assertIn('RUST_LOG="$NIRI_RENDERER_LOG"', body)
+        lines = [l.strip() for l in body.splitlines()]
+        self.assertLess(lines.index('sleep 1'), next(i for i, l in enumerate(lines) if l.startswith('verify_renderer')))
+        self.assertIn('verify_renderer "$SUB_RUN" "$OUT/niri.log" "$niri_from"', body)
+        self.assertNotIn('--weston-log', body)
 
 
 class JournalSignalTests(unittest.TestCase):
