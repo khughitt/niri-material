@@ -9,7 +9,7 @@ process: planned
 needs: [owner]
 owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T20:21:46Z
+updated: 2026-10-09T20:43:19Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
@@ -64,3 +64,7 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 - 2026-10-09T20:21:35Z (material-abc08c): spec round 3 fixes: §4.5 corner bound widened to 1/2 px for any swing and thickness incl. 0 (dense-grid model worst 0.32 px; reviewer's T0 point reproduced), §8.1 corner grid reaches r+1.5 px; §6 view crop uses SignalTickSink.view shifted by origin−location, sink-less offscreens exempt; §8.2 alpha-animation crop case
 - 2026-10-09T20:21:46Z (material-abc08c): parked (waiting on user, review): owner or a fresh reviewer reviews .worktrees/material-abc08c/docs/specs/2026-10-09-transient-rigid-tilt-design.md as spec round 4; on approval the agent runs writing-plans in .worktrees/material-abc08c
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T20:42:02Z (material-abc08c): resumed
+  provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T20:42:02Z (material-abc08c): review: spec round 4 — verdict: accept; findings: minor 1; reviewer: codex/gpt-6.1-sol
+- 2026-10-09T20:43:19Z (material-abc08c): spec accepted (round 4); minor r.z wording fixed; §9 follow-ups filed: material-98beac, material-df50f2, prism-2a8fea; brief result section written; next: writing-plans

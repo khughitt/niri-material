@@ -188,6 +188,37 @@ the task, and the reproduction command is in its notes.
   is in review, so the tilt's slab model should build on that profile rather
   than a separate one.
 
+## Design result (`material-abc08c`)
+
+Accepted at spec review round 4 (2026-10-09):
+[transient rigid tilt design](../specs/2026-10-09-transient-rigid-tilt-design.md).
+Its implementation plan comes next, and no renderer code before that plan is
+reviewed.
+
+- **Motion.** On focus gain, the pane swings once about the in-plane axis
+  perpendicular to the focus direction, through its centre on the front face.
+  The curve `(1 − u)² sin 2πu` starts at zero with a struck-body velocity,
+  overshoots once and ends bit-exact at rest. A pane refocused mid-swing
+  finishes the swing it has.
+- **Camera.** The camera distance scales with the angle (`D = κE/w`), so
+  perspective appears only while the pane is turned and rest is today's
+  orthographic path, byte-identical. The static by-position perspective is
+  dropped.
+- **Slab.** The tilted slab is a ray-traced convex solid built on
+  `material-be611b`'s height-field edge profile, so its rounded edge and side
+  wall show during a swing. The advancing wall shows on every moving frame
+  of a horizontal swing when `sin θp > 1/(2κ)`.
+- **What tilts.** Window body, subsurfaces, slab, optics, ring and grain tilt.
+  The shadow and popups stay flat. A swing does not start while border or
+  focus ring are on or the background effect is not neutral, which the live
+  config meets.
+- **Keys.** `view-tilt` (default 0, off), `view-tilt-settle` and
+  `view-distance`, in the response block. Defaults follow the owner stills and
+  the clip.
+- **Follow-ups.** Decorations drawn inside the material pass
+  (`material-98beac`), other triggers (`material-df50f2`), and the Prism keys
+  (`prism-2a8fea`).
+
 ## Unanswered questions
 
 - **Does it read as 3D glass?** Answered 2026-10-06 by the spike result
@@ -197,14 +228,15 @@ the task, and the reproduction command is in its notes.
   frozen stills of the spike task below. The verdict covers only that
   planar projection: a negative result does not show that a rigid tilt
   needs particles or a richer interior.
-- **What tilts with the pane?** Border, shadow, the separate focus ring and
+- **What tilts with the pane?** Answered 2026-10-09 by the design result
+  above. Border, shadow, the separate focus ring and
   popups. Subsurfaces already follow the window texture. The spike
   inventories them; the design decides.
 - **Which transitions, and what motion each?** The lean is focus gain first,
   reusing 77db8a's curve and focus origin, then move, resize and open. The
   owner chooses the later ones after the first is seen.
 - **The pivot.** A rotation about the pane centre, or a door-like hinge facing
-  the focus origin. Settled in the design.
+  the focus origin. Settled in the design: the pane centre, on its front face.
 - **What is missing, if it does not read as glass?** Answered 2026-10-06:
   side walls first, interior detail second. Two gaps are recorded
   separately:

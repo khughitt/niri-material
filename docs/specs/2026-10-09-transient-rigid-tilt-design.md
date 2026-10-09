@@ -1,8 +1,7 @@
 # Transient rigid tilt of window and glass
 
-**Status:** draft, revised after spec review rounds 1, 2 and 3 (2026-10-09), for the
-owner's review. No renderer code before this spec and its implementation
-plan are reviewed.
+**Status:** accepted at spec review round 4 (2026-10-09). No renderer code
+before its implementation plan is reviewed.
 **Task:** `material-abc08c`, lane `material-53f873`.
 **Brief:** [transient-depth brief](../notes/2026-10-06-transient-depth-brief.md),
 alternative 1, and its spike result (`material-89fb6b`).
@@ -703,7 +702,9 @@ static perspective do not port.
     and positive; θp 20° at κ 1.5, plus smaller angles. Directions are
     horizontal, vertical and diagonal `d`. Minimisers lie at a piece's
     start, end and interior.
-- No configured range gives `r.z ≥ 0`.
+- No configured range gives `r.z ≥ 0` on a ray through the slab's
+  footprint. Decal rays beyond it may, and the near clip of section 4.1
+  removes them: they have no plane hit and show no decal.
 
 ### 8.2 Frozen renders (headless, no host)
 
