@@ -34,7 +34,6 @@ esac
 cd "$(git rev-parse --show-toplevel)"
 if [ "${HWA_REHEARSAL:-0}" = 1 ]; then CAPTURE_META=true; echo "REHEARSAL: no capture record; counts are not evidence" >&2; fi
 . docs/materials/scripts/glass-optic-smoke-lib.sh
-capture_preflight headless
 
 PROBE=org.freedesktop.weston.simple-egl
 IDLE='printf "\033[?25l"; exec sleep 1800'
@@ -224,6 +223,7 @@ verdict() {   # case -> assert the gated expectations on its row
 }
 
 build_tracy
+capture_preflight headless
 capture_identity
 tools_ready; reserve_tracy_port
 write_scene "$OUT/scene.kdl"

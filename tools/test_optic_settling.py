@@ -978,6 +978,30 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertEqual(json.loads((self.out / 'capture.json').read_text()), {'refused': 'load'})
         self.assertTrue((self.out / 'SHA256SUMS').is_file())
 
+    def test_client_builds_precede_the_preflight_and_prepare_stays_offline(self):
+        # Stub compiler and scanner: cc logs into meta.log beside the capture-meta verbs.
+        for name, body in (('bin/cc', 'echo "cc $*" >> "$STUB_DIR/meta.log"\n'
+                                      'while [ "$1" != -o ]; do shift; done\n: > "$2"\n'),
+                           ('bin/wayland-scanner', ': > "$3"\n')):
+            path = self.stubs / name
+            path.write_text('#!/bin/sh\n' + body)
+            path.chmod(0o755)
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        prepare = subprocess.run(['bash', str(script), 'prepare'], cwd=self.root,
+                                 env=dict(self.env, CASES='idle-inhibitor'),
+                                 capture_output=True, text=True, timeout=60)
+        self.assertEqual(prepare.returncode, 0, prepare.stderr)
+        verbs = [line.split()[0] for line in (self.stubs / 'meta.log').read_text().splitlines()]
+        self.assertEqual(verbs, ['release'])                 # on_exit releases on every exit
+        (self.stubs / 'meta.log').unlink()
+        shutil.rmtree(self.out)
+        driver = self.start('idle-inhibitor', STUB_REFUSE='1')
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 1, stderr)
+        verbs = [line.split()[0] for line in (self.stubs / 'meta.log').read_text().splitlines()]
+        self.assertEqual(verbs, ['cc', 'preflight', 'release'])
+        self.assertEqual(self.pids(), [])                     # nothing was launched
+
     def test_stub_tools_need_a_stub_capture_record(self):
         env = dict(self.env)
         env.pop('CAPTURE_META')

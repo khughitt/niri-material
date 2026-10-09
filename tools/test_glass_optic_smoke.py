@@ -236,15 +236,34 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
         self.assertNotIn('capture-meta preflight', code)
 
 
-    def test_smokes_preflight_after_sourcing_and_identify_after_build(self):
-        for smoke in ('glass-aurora-smoke.sh', 'glass-iridescence-smoke.sh',
-                      'glass-render-order-smoke.sh'):
-            text = (Path(__file__).resolve().parents[1] / 'docs/materials/scripts' / smoke).read_text()
-            source = text.index('glass-optic-smoke-lib.sh')
-            pre = text.index('capture_preflight headless')
-            build = text.index('build_binaries')
-            ident = text.index('capture_identity')
-            self.assertTrue(source < pre < build < ident, smoke)
+    def test_lib_fixtures_build_wait_then_preflight_then_identify(self):
+        measured = {'glass-aurora-smoke.sh': 'build_binaries', 'glass-iridescence-smoke.sh': 'build_binaries',
+                    'glass-noise-site-smoke.sh': 'build_binaries', 'noise-layers-cost.sh': 'build_binaries',
+                    'noise-placement-cost.sh': 'build_binaries', 'glass-render-order-smoke.sh': '\nselect_binaries\n',
+                    'hidden-window-attribution.sh': '\nbuild_tracy\n'}
+        for smoke, build in measured.items():
+            with self.subTest(smoke=smoke):
+                text = (self.SCRIPTS / smoke).read_text()
+                order = [text.index('glass-optic-smoke-lib.sh'), text.index(build),
+                         text.index('\nawait_load') if smoke != 'hidden-window-attribution.sh' else text.index(build),
+                         text.index('capture_preflight headless'),
+                         re.search(r'^ *capture_identity\b', text, re.M).start()]
+                self.assertEqual(order, sorted(order), smoke)
+        for smoke in ('glass-edge-sheet.sh', 'glass-noise-layers-smoke.sh'):
+            with self.subTest(smoke=smoke):
+                text = (self.SCRIPTS / smoke).read_text()
+                self.assertNotIn('capture_preflight headless', text)
+                order = [text.index('glass-optic-smoke-lib.sh'), text.index('build_binaries'),
+                         text.index('capture_preflight pixels'), text.index('capture_identity')]
+                self.assertEqual(order, sorted(order), smoke)
+
+    def test_clip_fixtures_build_wait_then_preflight(self):
+        for name in ('ring-motion-clips.sh', 'drag-lag-clips.sh', 'focus-swap-clips.sh'):
+            with self.subTest(script=name):
+                text = (self.SCRIPTS / name).read_text()
+                order = [text.index('cargo build --release'), text.index('load1 did not fall below 1.0'),
+                         text.index('capture_meta preflight'), text.index('capture_meta identity')]
+                self.assertEqual(order, sorted(order), name)
 
     def test_preflight_and_identity_pass_complete_capture_arguments(self):
         with tempfile.TemporaryDirectory() as out:

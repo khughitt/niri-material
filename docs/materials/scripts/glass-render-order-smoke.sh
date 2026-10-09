@@ -19,7 +19,6 @@ validate_scope() {
 validate_scope || exit $?
 HERE=$(dirname "$(readlink -f "$0")")
 . "$HERE/glass-optic-smoke-lib.sh"
-capture_preflight headless
 
 select_binaries() {
     if [ "$MODE" = red ]; then
@@ -37,6 +36,8 @@ select_binaries() {
     fi
 }
 select_binaries
+await_load
+capture_preflight headless
 IDENTITY_EXTRA=()
 if [ -n "${CANDIDATE_BUILD_RECORD:-}" ]; then
     IDENTITY_EXTRA+=(--input "$CANDIDATE_BUILD_RECORD" \

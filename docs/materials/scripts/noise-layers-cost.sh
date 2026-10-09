@@ -18,8 +18,9 @@ source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 trap cleanup_cost EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-capture_preflight headless
 build_binaries
+await_load
+capture_preflight headless
 if [ -n "$AB" ]; then
     cp "$AB" "$OUT/niri-tracy-b"
     capture_identity --binary "$OUT/niri-tracy-b" --config "pilot=$PILOT" --config ab=1

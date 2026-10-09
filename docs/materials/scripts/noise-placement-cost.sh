@@ -10,8 +10,9 @@ source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 trap cleanup_cost EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-capture_preflight headless
 build_binaries
+await_load
+capture_preflight headless
 capture_identity --config "pilot=$PILOT"
 reserve_tracy_port
 tools_ready

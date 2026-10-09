@@ -175,13 +175,6 @@ if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
     [ -z "${VT_LOGINCTL:-}" ] || fail 'VT_LOGINCTL needs OPTIC_SETTLING_STUB_TOOLS'
     [ "$VT_ACTIVE_FILE" = /sys/class/tty/tty0/active ] || fail 'VT_ACTIVE_FILE needs OPTIC_SETTLING_STUB_TOOLS'
 fi
-[ "$MODE" = prepare ] || capture_preflight "$LANE"
-if [ "$MODE" != prepare ] && [ "$LANE" = dedicated ]; then
-    dedicated_prerequisites
-    vt_record_home
-    VT_SPARE=$(vt_spare) || fail "no spare VT without a logind session"
-    printf '{"home": %s, "spare": %s}\n' "$VT_HOME" "$VT_SPARE" > "$OUT/vt.json"
-fi
 cp "$NIRI_BIN" "$OUT/binary"
 cp "$NIRI_BIN.identity.json" "$OUT/binary.identity.json"
 NIRI=$OUT/binary
@@ -449,6 +442,16 @@ elif selected unlock; then
     LOCK_BIN=$OUT/clients/session-lock-client
 fi
 if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
+# The client builds' tail would refuse the first settle (spec §6.5); prepare
+# exits above, before any build, wait or preflight.
+await_load
+capture_preflight "$LANE"
+if [ "$LANE" = dedicated ]; then
+    dedicated_prerequisites
+    vt_record_home
+    VT_SPARE=$(vt_spare) || fail "no spare VT without a logind session"
+    printf '{"home": %s, "spare": %s}\n' "$VT_HOME" "$VT_SPARE" > "$OUT/vt.json"
+fi
 capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" --config lane="$LANE" \
     ${DRM_OUTPUT:+--config drm-output="$DRM_OUTPUT"} ${DRM_MODE:+--config drm-mode="$DRM_MODE"} \
     "${IDENTITY_EXTRA[@]}"
