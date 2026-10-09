@@ -16,13 +16,13 @@ Every launcher (the smoke lib's `start_nested`, the three clip fixtures' own `st
 
 **Spec:** [docs/specs/2026-10-08-capture-host-conditions-design.md](../specs/2026-10-08-capture-host-conditions-design.md) (accepted, spec review round 3).
 
-**Status:** draft for owner review (2026-10-08).
+**Status:** revised after plan review round 1 (2026-10-08): hold discovery is gated by kind, `optic-settling-smoke.sh` builds before it preflights, and every `plan_hold` caller migrates.
 
 ## Global Constraints
 
 - **Lanes:** `pixels`, `headless`, `dedicated`. `MEASURED_LANES = ("headless", "dedicated")`.
 - **Thresholds:** `DEFAULT_THRESHOLDS` stays unchanged.
-- **Pixel hold kinds:** `("timer", "service")`. The full hold uses `("timer", "service", "idle", "monitors")`.
+- **Pixel hold kinds:** `("timer", "service")`. The full hold uses `("timer", "service", "idle", "monitors")`. `plan_hold` discovers only the kinds it is given: a pixel hold never queries noctalia or the monitor connectors, so neither can refuse a pixel run.
 - **`hold_settle`:** defaults to 0 on `pixels` and stays 10 on the other lanes.
 - **Pixel preflight section:** `{"verdict": "unsampled", "at", "lock", "host_condition"}`.
 - **Pixel sub-run entry:** `{"name", "started", "inputs", "verdict": "begun"}`.
@@ -49,7 +49,7 @@ Every launcher (the smoke lib's `start_nested`, the three clip fixtures' own `st
 - **Commits:**
   - conventional commits, no AI attribution trailers;
   - `tasks start <step id>` before the step's first change, and `tasks done <step id> "<what landed>"` in the step's commit;
-  - `tasks check` before every commit.
+  - before every step commit, the all-tooling `test-fast` run above passes, and then `tasks check`.
 - **Live runs:** none in this plan. Captures are the pilot tasks Task 7 files.
 
 ## Review Focus
@@ -80,7 +80,7 @@ Every launcher (the smoke lib's `start_nested`, the three clip fixtures' own `st
 **Files:**
 - Modify: `tools/capture_hold.py` (`plan_hold`)
 - Modify: `tools/capture-meta` (`client_reasons`, `judge_quiet`, `judge_settled`, `preflight`, new `pre_hold_reasons`, new `host_condition`)
-- Test: `tools/test_capture_meta.py`, `tools/test_capture_hold.py`
+- Test: `tools/test_capture_meta.py` (new tests; `LifecycleTests.hold_without_preflight` migrates), `tools/test_capture_hold.py`
 
 **Interfaces:**
 - Produces:
@@ -174,30 +174,48 @@ Before relying on it, check that `FakeHost` exposes `live` as a set. It is
 assigned `self.live = set(live)` in `__init__`. Also check that `run()` of
 `niri msg version` fails for a socket that is not in `live`.
 
-In `tools/test_capture_hold.py`, update every `ch.plan_hold(host)` call to
-`ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)`, and add:
+Migrate every existing caller to the new signature. There are two sets:
+
+- every `ch.plan_hold(host)` and `ch.plan_hold(self.host_)` call in
+  `tools/test_capture_hold.py`, which becomes
+  `ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)`;
+- `LifecycleTests.hold_without_preflight` in `tools/test_capture_meta.py`,
+  which recovery cases use. Its `cm.ch.plan_hold(self.host)` becomes
+  `cm.ch.plan_hold(self.host, cm.ch.desktop_socket(self.host), cm.ch.HOLD_KINDS)`.
+
+When done, `grep -n 'plan_hold(' tools/` must show no one-argument call. Then
+add to `PlanTests` in `tools/test_capture_hold.py`:
 
 ```python
-    def test_plan_keeps_only_the_requested_kinds(self):
-        host = self.desktop_host()   # use the existing helper that builds a host with a timer, a service and a live desktop
-        plan = ch.plan_hold(host, ch.desktop_socket(host), ("timer", "service"))
-        self.assertEqual({i["kind"] for i in plan["items"]}, {"timer", "service"})
-        self.assertEqual(plan["desktop"], "present")
+    def test_a_timers_and_services_plan_never_probes_idle_or_monitors(self):
+        # A desktop whose noctalia status fails and whose connector cannot be read:
+        # the full hold refuses on either; a pixel hold must not query them.
+        def host():
+            h = self.host(timers=["wali-rotate.timer"], sockets=["niri.w.1.sock"], live=["niri.w.1.sock"],
+                          connectors=LIT)
+            h.fail[("noctalia", "msg", "status")] = "noctalia: no shell running"
+            (h.sysfs / "card1-DP-1" / "enabled").unlink()
+            return h
+        full = host()
+        with self.assertRaises(ch.CannotRun):
+            ch.plan_hold(full, ch.desktop_socket(full), ch.HOLD_KINDS)
+        pixel = host()
+        plan = ch.plan_hold(pixel, ch.desktop_socket(pixel), ("timer", "service"))
+        self.assertEqual([i["kind"] for i in plan["items"]], ["timer"])
+        self.assertEqual((plan["desktop"], plan["not_held"]), ("present", []))
+        self.assertNotIn(("noctalia", "msg", "status"), pixel.calls)
 ```
 
-If `test_capture_hold.py` has no host builder with a timer, a declared service
-and a live socket, construct one inline. Use the same arguments as
-`LifecycleTests.setUp` in `test_capture_meta.py`: `timers=["wali-rotate.timer"]`,
-`units={"dropbox.service": {"ActiveState": "active"}}`, `sockets` and `live`
-naming `niri.w.1.sock`, and a `card1-DP-1` connector. Write `dropbox.service`
-to `host.config`.
+The control half (`full`) proves the probes would refuse: `checked` raises
+`CannotRun` for the failed status, before the unreadable connector is reached.
 
 - [ ] **Step 2: Run the tests and check that they fail**
 
 Run: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_capture_meta tools.test_capture_hold`
 Expected: the new tests fail. The dedicated desktop case reaches the hold and
 calls `systemctl --user stop`; `host_condition` raises `KeyError`; and
-`plan_hold` rejects its extra arguments with a `TypeError`.
+`plan_hold` rejects its extra arguments with a `TypeError`, in the migrated
+callers and in the new probe test.
 
 - [ ] **Step 3: Implement**
 
@@ -208,12 +226,33 @@ HOLD_KINDS = ("timer", "service", "idle", "monitors")
 ```
 
 Change `def plan_hold(host):` to `def plan_hold(host, socket, kinds):`.
-Delete its line `socket = desktop_socket(host)`. Before the `return`, filter:
+Delete its line `socket = desktop_socket(host)`.
+
+Gate discovery itself by kind. Filtering the items afterwards is not enough:
+by then the noctalia status call and `lit_connectors` have already run, and
+either can raise `CannotRun`. Timers and services are discovered as before:
+both hold kinds include them, and the wake scan needs `timer_map` on every
+lane. Replace the `if socket:` block with:
 
 ```python
-    items = [i for i in items if i["kind"] in kinds]
-    not_held = [n for n in not_held if n["kind"] in kinds]
+    if socket and "idle" in kinds:
+        if host.has("noctalia"):
+            try:
+                locked = json.loads(checked(host, "noctalia", "msg", "status")).get("locked")
+            except (json.JSONDecodeError, AttributeError) as error:
+                raise CannotRun(f"noctalia msg status: unexpected output: {error}") from error
+            items.append({"kind": "idle", "action": "caffeine-enabled", "prior": "unknown", "locked": locked,
+                          "socket": socket, "restore": "noctalia msg caffeine-disable"})
+        else:
+            not_held.append({"kind": "idle", "reason": "noctalia not on PATH"})
+    if socket and "monitors" in kinds:
+        items.append({"kind": "monitors", "action": "powered-off", "socket": socket,
+                      "connectors": lit_connectors(host),
+                      "restore": f"NIRI_SOCKET={socket} niri msg action power-on-monitors"})
 ```
+
+Update the docstring to `"""Discover what to hold, probing only the kinds
+asked for. Changes nothing on the host."""`.
 
 In `tools/capture-meta`, beside `HOST_LOAD_KEYS`:
 
@@ -290,6 +329,7 @@ text.
 - [ ] **Step 5: Commit**
 
 ```bash
+just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 tasks check
 git add tools/capture_hold.py tools/capture-meta tools/test_capture_meta.py tools/test_capture_hold.py tasks/
 git commit -m "feat(capture-meta): refuse lane mismatches before the hold and record the host condition"
@@ -331,6 +371,15 @@ Add to `LifecycleTests`:
         self.assertNotIn("thresholds", record["preflight"])
         self.assertEqual(cm.main(["release", str(self.run)]), 0)
         self.assertEqual(self.host.snapshot(), self.before)
+
+    def test_pixel_preflight_never_probes_idle_or_monitors(self):
+        # Either probe refuses a measured hold; a pixel run must not reach them.
+        self.host.fail[("noctalia", "msg", "status")] = "noctalia: no shell running"
+        (self.host.sysfs / "card1-DP-1" / "enabled").unlink()
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        self.assertEqual(cm.load_record(self.run)["preflight"]["verdict"], "unsampled")
+        self.assertNotIn(("noctalia", "msg", "status"), [tuple(c) for c in self.host.calls])
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
 
     def test_pixel_preflight_records_the_gpu_when_one_is_present(self):
         self.lane_preflight("pixels", gpu=FakeGpu([]), env={"XDG_SESSION_TYPE": "wayland"})
@@ -526,6 +575,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
+just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 tasks check
 git add tools/capture-meta tools/test_capture_meta.py tasks/
 git commit -m "feat(capture-meta): add the pixels lane with a partial hold and begin"
@@ -864,6 +914,7 @@ loosen the check.
 - [ ] **Step 6: Commit**
 
 ```bash
+just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 tasks check
 git add tools/capture-meta tools/test_capture_meta.py tools/testdata/renderer tasks/
 git commit -m "feat(capture-meta): verify and record each launch's compositor renderers"
@@ -1087,6 +1138,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
+just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 tasks check
 git add docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/hidden-window-attribution.sh tools/test_glass_optic_smoke.py tasks/
 git commit -m "feat(capture): lane-aware launches verify their renderer in the smoke lib"
@@ -1237,6 +1289,7 @@ Expected: PASS, including the existing offline rehearsals in
 - [ ] **Step 6: Commit**
 
 ```bash
+just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 tasks check
 git add docs/materials/scripts/focus-swap-clips.sh docs/materials/scripts/drag-lag-clips.sh docs/materials/scripts/ring-motion-clips.sh docs/materials/scripts/optic-settling-smoke.sh tools/test_glass_optic_smoke.py tools/test_optic_settling.py tasks/
 git commit -m "feat(capture): clip and DRM launchers verify their renderer"
@@ -1250,7 +1303,8 @@ git commit -m "feat(capture): clip and DRM launchers verify their renderer"
 - Modify: `docs/materials/scripts/glass-edge-sheet.sh`, `glass-noise-layers-smoke.sh` (to `pixels`)
 - Modify: `docs/materials/scripts/glass-iridescence-smoke.sh`, `glass-aurora-smoke.sh`, `glass-noise-site-smoke.sh`, `noise-layers-cost.sh`, `noise-placement-cost.sh`, `glass-render-order-smoke.sh`, `hidden-window-attribution.sh` (build, `await_load`, preflight)
 - Modify: `docs/materials/scripts/focus-swap-clips.sh`, `drag-lag-clips.sh`, `ring-motion-clips.sh` (build, inline load wait, preflight)
-- Test: `tools/test_glass_optic_smoke.py`
+- Modify: `docs/materials/scripts/optic-settling-smoke.sh` (client builds, `await_load`, preflight, then the dedicated-lane checks)
+- Test: `tools/test_glass_optic_smoke.py`, `tools/test_optic_settling.py`
 
 **Interfaces:**
 - Consumes: `capture_preflight pixels` and `await_load` (Task 4)
@@ -1293,10 +1347,47 @@ Replace `test_smokes_preflight_after_sourcing_and_identify_after_build` with:
 its order list repeats the build index for the wait. Every other fixture
 calls `await_load` on its own line.
 
+`optic-settling-smoke.sh` takes a prebuilt `NIRI_BIN`. Its own builds are the
+per-run Wayland clients (`build_client`, about 30 lines above
+`capture_identity`), which compile only for selected cases, and today they run
+after the preflight. Its check is behavioural, on the existing stub driver. Add
+to `DriverCleanupTests` in `tools/test_optic_settling.py`:
+
+```python
+    def test_client_builds_precede_the_preflight_and_prepare_stays_offline(self):
+        # Stub compiler and scanner: cc logs into meta.log beside the capture-meta verbs.
+        for name, body in (('bin/cc', 'echo "cc $*" >> "$STUB_DIR/meta.log"\n'
+                                      'while [ "$1" != -o ]; do shift; done\n: > "$2"\n'),
+                           ('bin/wayland-scanner', ': > "$3"\n')):
+            path = self.stubs / name
+            path.write_text('#!/bin/sh\n' + body)
+            path.chmod(0o755)
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        prepare = subprocess.run(['bash', str(script), 'prepare'], cwd=self.root,
+                                 env=dict(self.env, CASES='idle-inhibitor'),
+                                 capture_output=True, text=True, timeout=60)
+        self.assertEqual(prepare.returncode, 0, prepare.stderr)
+        verbs = [line.split()[0] for line in (self.stubs / 'meta.log').read_text().splitlines()]
+        self.assertEqual(verbs, ['release'])                 # on_exit releases on every exit
+        (self.stubs / 'meta.log').unlink()
+        shutil.rmtree(self.out)
+        driver = self.start('idle-inhibitor', STUB_REFUSE='1')
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 1, stderr)
+        verbs = [line.split()[0] for line in (self.stubs / 'meta.log').read_text().splitlines()]
+        self.assertEqual(verbs, ['cc', 'preflight', 'release'])
+        self.assertEqual(self.pids(), [])                     # nothing was launched
+```
+
+`idle-inhibitor` is a headless case that builds one client, so a refused
+preflight leaves exactly that order. `prepare` runs on the same stubs (the
+stub `niri` answers `validate`) and logs only `on_exit`'s `release`.
+
 - [ ] **Step 2: Run the tests and check that they fail**
 
-Run: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_glass_optic_smoke`
-Expected: FAIL. Preflight precedes the build in every fixture.
+Run: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_glass_optic_smoke tools.test_optic_settling`
+Expected: FAIL. Preflight precedes the build in every fixture, and the
+optic-settling stub run logs `['preflight', 'release']` with no `cc`.
 
 - [ ] **Step 3: Reorder the lib fixtures**
 
@@ -1360,18 +1451,65 @@ compositor. `niri validate` is not a launch. `ring-motion-clips.sh`'s
 fixture launches anything in that span, stop and record it in a task note
 instead of moving the preflight past it.
 
-- [ ] **Step 5: Run the tests and check that they pass**
+- [ ] **Step 5: Reorder `optic-settling-smoke.sh`**
 
-Run: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_glass_optic_smoke tools.test_optic_settling`
-Expected: PASS. Then run the full tooling suite:
-`just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`
-Expected: PASS.
+Its `prepare` mode exits (`[ "$MODE" = prepare ] && exit 0`) before any
+build, and it must stay offline: no build, no load wait, no preflight.
+Today the order is:
 
-- [ ] **Step 6: Commit**
+1. `[ "$MODE" = prepare ] || capture_preflight "$LANE"`, then the
+   `if [ "$MODE" != prepare ] && [ "$LANE" = dedicated ]` block
+   (`dedicated_prerequisites`, `vt_record_home`, `vt_spare`, `vt.json`);
+2. configs, the manifest and the matrix check;
+3. the `prepare` exit;
+4. `tools_ready`, `reserve_tracy_port`, then the `build_client` calls;
+5. `capture_identity`.
+
+Move the preflight and its dedicated block together to immediately before
+`capture_identity`, after the last client build, with `await_load` in front.
+Drop their `prepare` guards: the `prepare` exit now precedes them.
 
 ```bash
+if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
+# The client builds' tail would refuse the first settle (spec §6.5).
+await_load
+capture_preflight "$LANE"
+if [ "$LANE" = dedicated ]; then
+    dedicated_prerequisites
+    vt_record_home
+    VT_SPARE=$(vt_spare) || fail "no spare VT without a logind session"
+    printf '{"home": %s, "spare": %s}\n' "$VT_HOME" "$VT_SPARE" > "$OUT/vt.json"
+fi
+capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" --config lane="$LANE" \
+    ...
+```
+
+The dedicated checks stay after the preflight, as they are now: the lock and
+stale-run recovery come first, and the existing dedicated stub tests expect
+that order.
+
+Check that nothing between the old and the new position launches a
+compositor or reads `VT_SPARE`, `VT_HOME` or `vt.json`. These are not
+launches: `cp "$NIRI_BIN"`, `niri validate` inside the configs, `tools_ready`
+and `reserve_tracy_port`. If something does launch, stop and note it on the
+task instead of moving past it.
+
+A failure that now lands before the preflight (a client that does not
+compile) still runs `on_exit`. Its `capture_meta release` returns without a
+record, as it already does for the identity-sidecar check above the old
+preflight.
+
+- [ ] **Step 6: Run the tests and check that they pass**
+
+Run: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_glass_optic_smoke tools.test_optic_settling`
+Expected: PASS.
+
+- [ ] **Step 7: Commit**
+
+```bash
+just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 tasks check
-git add docs/materials/scripts/*.sh tools/test_glass_optic_smoke.py tasks/
+git add docs/materials/scripts/*.sh tools/test_glass_optic_smoke.py tools/test_optic_settling.py tasks/
 git commit -m "feat(capture): static pixel fixtures take the pixels lane; fixtures build before preflight"
 ```
 
@@ -1462,6 +1600,7 @@ consumer.
 - [ ] **Step 5: Commit**
 
 ```bash
+just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast
 tasks check
 git add docs/ tasks/
 git commit -m "docs(capture): record host-conditions follow-ups, pilots and amendments"
