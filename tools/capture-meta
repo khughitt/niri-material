@@ -518,6 +518,9 @@ def validate_record(record, path=RECORD):
         if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
                or not isinstance(item.get("verdict"), str) for item in sub_runs):
             raise CannotRun(f"{path}: sub_runs entries need string name and verdict")
+        if any("renderer" in item and (not isinstance(item["renderer"], dict)
+                                       or not isinstance(item["renderer"].get("verdict"), str)) for item in sub_runs):
+            raise CannotRun(f"{path}: sub_runs renderer needs a verdict")
 
 
 def save_record(run_dir, record):
@@ -1112,6 +1115,80 @@ def cmd_finish(args):
     finish_sub_run(args.run_dir, args.sub_run)
 
 
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+RENDERER_LINE = {"niri": re.compile(r'GL Renderer: "(.+)"'), "weston": re.compile(r"\] GL renderer: (.+)$")}
+SOFTWARE = re.compile(r"llvmpipe|software rasterizer", re.I)
+
+
+def renderer_lines(path, compositor):
+    try:
+        text = pathlib.Path(path).read_text(errors="replace")
+    except OSError as error:
+        raise CannotRun(f"cannot read {compositor} log {path}: {error}") from error
+    pattern = RENDERER_LINE[compositor]
+    return [m.group(1).strip() for line in ANSI.sub("", text).splitlines() if (m := pattern.search(line))]
+
+
+def judge_renderer(lines, expected):
+    """expected None: the pixels lane records without requiring."""
+    if not lines:
+        return "missing"
+    if expected is None:
+        return "recorded"
+    if any(expected not in line or SOFTWARE.search(line) for line in lines):
+        return "mismatch"
+    return "verified"
+
+
+def renderer(run_dir, sub_run, niri_log, weston_log):
+    """Judges and records one launch's compositor renderers before any stimulus (spec §6.3)."""
+    run_dir = pathlib.Path(run_dir)
+    record = load_record(run_dir)
+    lane = record.get("run", {}).get("lane")
+    if lane == "dedicated" and weston_log is not None:
+        raise CannotRun("the dedicated lane runs no Weston; drop --weston-log")
+    if lane in ("headless", "pixels") and weston_log is None:
+        raise CannotRun(f"the {lane} lane runs niri under Weston; pass --weston-log")
+    measured = lane in MEASURED_LANES
+    expected = record.get("environment", {}).get("gpu", {}).get("name")
+    if measured and not expected:
+        raise CannotRun(f"{RECORD} has no environment.gpu.name to verify against")
+    logs = {"niri": niri_log, **({"weston": weston_log} if weston_log is not None else {})}
+    result = {"at": now_rfc3339()}
+    if measured:
+        result["expected"] = expected
+    for compositor, path in logs.items():
+        lines = renderer_lines(path, compositor)
+        result[compositor] = {"verdict": judge_renderer(lines, expected if measured else None), "lines": lines}
+    verdicts = [result[c]["verdict"] for c in logs]
+    result["verdict"] = ("verified" if all(v == "verified" for v in verdicts) else "refused") if measured else "recorded"
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        entry = next((e for e in reversed(record.get("sub_runs", [])) if e["name"] == sub_run
+                      and e["verdict"] in ("settled", "begun") and "finished" not in e), None)
+        if entry is None:
+            raise CannotRun(f"{RECORD} has no open sub-run {sub_run!r} to check")
+        if "renderer" in entry:
+            raise CannotRun(f"sub-run {sub_run!r} already has its renderer checked; one launch per sub-run")
+        entry["renderer"] = result
+        save_record(run_dir, record)
+    if measured and result["verdict"] != "verified":
+        found = "; ".join(f"{c} {result[c]['verdict']} {result[c]['lines']}" for c in logs)
+        raise Refused(f"{sub_run}: renderer is not {expected}: {found}")
+
+
+def cmd_renderer(args):
+    renderer(args.run_dir, args.sub_run, args.niri_log, args.weston_log)
+
+
+def unverified_launches(record):
+    """Settled measurement launches without a verified renderer, finished or open (spec §6.3)."""
+    if record.get("run", {}).get("lane") not in MEASURED_LANES:
+        return []
+    return [e["name"] for e in record.get("sub_runs", [])
+            if e["verdict"] == "settled" and e.get("renderer", {}).get("verdict") != "verified"]
+
+
 def stamp_finish(record, by):
     """Stamps the run's end once, naming who stamped it. A recoverer's time is when it
     restored the hold, not when the fixture died: about a second late from the guard,
@@ -1160,6 +1237,9 @@ def release(run_dir, record, run):
         finish_leftovers(lock_file, run_dir, run, record)
     if end is not None:
         exit_for(end)
+        missing = unverified_launches(load_record(run_dir))
+        if missing:
+            raise Refused(f"launches without a verified renderer: {', '.join(missing)}")
         return
     owner = record.get("preflight", {}).get("lock", {}).get("owner_pid")
     if owner is None:
@@ -1262,7 +1342,8 @@ def render(record):
                 span = f"  {entry.get('started')} to {entry['finished']} ({entry.get('duration_s')} s)"
             elif "started" in entry and entry["verdict"] in ("settled", "begun"):
                 span = f"  {entry['started']}, never finished"
-            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}")
+            checked = f"  renderer {entry['renderer']['verdict']}" if "renderer" in entry else ""
+            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{checked}")
     return "\n".join(lines) + "\n"
 
 
@@ -1312,6 +1393,12 @@ def build_parser():
     fin.add_argument("run_dir")
     fin.add_argument("--sub-run", required=True)
     fin.set_defaults(func=cmd_finish)
+    rnd = subs.add_parser("renderer")
+    rnd.add_argument("run_dir")
+    rnd.add_argument("--sub-run", required=True)
+    rnd.add_argument("--niri-log", required=True, type=pathlib.Path)
+    rnd.add_argument("--weston-log", type=pathlib.Path, default=None)
+    rnd.set_defaults(func=cmd_renderer)
     rel = subs.add_parser("release")
     rel.add_argument("run_dir")
     rel.set_defaults(func=cmd_release)

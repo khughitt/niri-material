@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-302 paths differ: 52 class B (seam), 212 class A (fork-only), 38 class C (scaffolding).
+306 paths differ: 52 class B (seam), 212 class A (fork-only), 42 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -113,7 +113,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/tests/mod.rs` | B | M | +10/-0 |
 | `src/window/mapped.rs` | B | M | +48/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
-| `tools/capture-meta` | C | A | +1341/-0 |
+| `tools/capture-meta` | C | A | +1428/-0 |
 | `tools/capture_hold.py` | C | A | +580/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
@@ -125,7 +125,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_hold.py` | C | A | +463/-0 |
-| `tools/test_capture_meta.py` | C | A | +1564/-0 |
+| `tools/test_capture_meta.py` | C | A | +1702/-0 |
 | `tools/test_gates.py` | C | A | +278/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +753/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
@@ -139,6 +139,10 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
 | `tools/test_warp_calibration.py` | C | A | +87/-0 |
+| `tools/testdata/renderer/niri-default.log` | C | A | +1/-0 |
+| `tools/testdata/renderer/niri-llvmpipe.log` | C | A | +1/-0 |
+| `tools/testdata/renderer/niri-nvidia.log` | C | A | +2/-0 |
+| `tools/testdata/renderer/weston-nvidia.log` | C | A | +3/-0 |
 | `tools/tooling_tests.py` | C | A | +541/-0 |
 | `tools/tt` | C | A | +661/-0 |
 | `tools/upstream-report` | C | A | +738/-0 |
