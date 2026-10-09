@@ -22,11 +22,29 @@ class TempHost(unittest.TestCase):
 
 
 class PlanTests(TempHost):
+    def test_a_timers_and_services_plan_never_probes_idle_or_monitors(self):
+        # A desktop whose noctalia status fails and whose connector cannot be read:
+        # the full hold refuses on either; a pixel hold must not query them.
+        def host():
+            h = self.host(timers=["wali-rotate.timer"], sockets=["niri.w.1.sock"], live=["niri.w.1.sock"],
+                          connectors=LIT)
+            h.fail[("noctalia", "msg", "status")] = "noctalia: no shell running"
+            (h.sysfs / "card1-DP-1" / "enabled").unlink()
+            return h
+        full = host()
+        with self.assertRaises(ch.CannotRun):
+            ch.plan_hold(full, ch.desktop_socket(full), ch.HOLD_KINDS)
+        pixel = host()
+        plan = ch.plan_hold(pixel, ch.desktop_socket(pixel), ("timer", "service"))
+        self.assertEqual([i["kind"] for i in plan["items"]], ["timer"])
+        self.assertEqual((plan["desktop"], plan["not_held"]), ("present", []))
+        self.assertNotIn(("noctalia", "msg", "status"), pixel.calls)
+
     def test_holds_active_non_transient_user_timers_and_maps_both_managers(self):
         host = self.host(timers=["wali-rotate.timer", "familiar-reap.timer"], system_timers=["man-db.timer"])
         host.add_timer("run-r1.timer", transient="yes")
         host.add_timer("idle.timer", active=False)
-        plan = ch.plan_hold(host)
+        plan = ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
         self.assertEqual([i["unit"] for i in plan["items"]], ["familiar-reap.timer", "wali-rotate.timer"])
         self.assertEqual(plan["items"][0]["restore"], "systemctl --user start familiar-reap.timer")
         self.assertEqual(plan["not_held"], [{"kind": "timer", "unit": "run-r1.timer", "reason": "transient"}])
@@ -39,7 +57,7 @@ class PlanTests(TempHost):
     def test_records_invocations_and_services_running_at_hold(self):
         host = self.host(timers=["familiar-reap.timer"])
         host.units[("user", "familiar-reap.service")].update(ActiveState="active", InvocationID="abc")
-        plan = ch.plan_hold(host)
+        plan = ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
         self.assertEqual(plan["invocations"], {"user": {"familiar-reap.service": "abc"}})
         self.assertEqual(plan["active_at_hold"], [{"manager": "user", "unit": "familiar-reap.service"}])
 
@@ -48,7 +66,7 @@ class PlanTests(TempHost):
                                 "syncthing.service": {"ActiveState": "inactive"}})
         host.config.parent.mkdir(parents=True)
         host.config.write_text("# crash-loops without a compositor\ndropbox.service\n\nsyncthing.service  # idle\n")
-        plan = ch.plan_hold(host)
+        plan = ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
         self.assertEqual([(i["kind"], i["unit"]) for i in plan["items"]], [("service", "dropbox.service")])
         self.assertEqual(plan["not_held"], [{"kind": "service", "unit": "syncthing.service", "reason": "not_running"}])
         self.assertEqual(plan["config"], str(host.config))
@@ -57,12 +75,12 @@ class PlanTests(TempHost):
         host = self.host()
         host.config.parent.mkdir(parents=True); host.config.write_text("dropbx.service\n")
         with self.assertRaisesRegex(ch.CannotRun, "dropbx.service, which does not exist"):
-            ch.plan_hold(host)
+            ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
 
     def test_desktop_adds_idle_then_monitors_and_records_lock_state(self):
         host = self.host(sockets=["niri.wayland-1.5.sock"], live=["niri.wayland-1.5.sock"], locked=True,
                          connectors=LIT)
-        plan = ch.plan_hold(host)
+        plan = ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
         socket = str(host.runtime / "niri.wayland-1.5.sock")
         self.assertEqual(plan["desktop"], "present")
         self.assertEqual(plan["socket"], socket)
@@ -87,7 +105,7 @@ class PlanTests(TempHost):
 
     def test_desktop_without_noctalia_holds_monitors_and_records_the_gap(self):
         host = self.host(sockets=["niri.w.1.sock"], live=["niri.w.1.sock"], noctalia=False, connectors=LIT)
-        plan = ch.plan_hold(host)
+        plan = ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
         self.assertEqual([i["kind"] for i in plan["items"]], ["monitors"])
         self.assertEqual(plan["not_held"], [{"kind": "idle", "reason": "noctalia not on PATH"}])
 
@@ -95,14 +113,14 @@ class PlanTests(TempHost):
         host = self.host(sockets=["niri.w.1.sock"], live=["niri.w.1.sock"], connectors=LIT)
         (host.sysfs / "card1-DP-1" / "enabled").unlink()
         with self.assertRaisesRegex(ch.CannotRun, "cannot tell whether card1-DP-1 is a lit monitor"):
-            ch.plan_hold(host)
+            ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
 
     def test_unreachable_user_manager_changes_nothing(self):
         host = self.host(timers=["wali-rotate.timer"])
         host.fail[("systemctl", "--user", "list-timers", "--output=json", "--no-pager")] = "Failed to connect to bus"
         before = host.snapshot()
         with self.assertRaisesRegex(ch.CannotRun, "Failed to connect to bus"):
-            ch.plan_hold(host)
+            ch.plan_hold(host, ch.desktop_socket(host), ch.HOLD_KINDS)
         self.assertEqual(host.snapshot(), before)
 
 
@@ -116,7 +134,7 @@ class HoldFileTests(TempHost):
         self.run_dir = self.host_.runtime.parent / "runs" / "pilot-1"; self.run_dir.mkdir(parents=True)
 
     def hold(self):
-        plan = ch.plan_hold(self.host_)
+        plan = ch.plan_hold(self.host_, ch.desktop_socket(self.host_), ch.HOLD_KINDS)
         ch.create_hold(self.lock, "pilot-1", self.run_dir, 4242, plan, self.host_.now_us())
         return plan
 

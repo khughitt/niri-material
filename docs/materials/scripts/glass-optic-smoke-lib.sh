@@ -14,9 +14,11 @@
 # 0.13.1 tools under material-roughness-b220152d/tools).
 # Every run records provenance and machine quietness through tools/capture-meta
 # (docs/specs/2026-09-11-material-capture-protocol-design.md). The entry script
-# calls `capture_preflight headless` right after sourcing this lib and
-# `capture_identity` after build_binaries; start_nested settles before every
-# launch. This lib never preflights on its own: idle-budget sources it in a
+# builds, waits out the build's load (await_load) and calls
+# `capture_preflight headless` (or `pixels`, for static-pixel evidence:
+# docs/specs/2026-10-08-capture-host-conditions-design.md), then
+# `capture_identity`; start_nested settles (or begins) before every launch and
+# verifies the launch's renderer. This lib never preflights on its own: idle-budget sources it in a
 # mode that must stay offline.
 # Requires: weston, kitty, swaybg, jq, rg, flock, ss, ImageMagick 7 with
 # Oklab, cargo.
@@ -70,12 +72,20 @@ trap cleanup EXIT
 # --- capture record ---------------------------------------------------------
 # CAPTURE_META lets a test substitute a recording stub; unset, it is the tool.
 capture_meta() { ${CAPTURE_META:-python3 "$ROOT/tools/capture-meta"} "$@"; }
-# Entry scripts call this first thing after sourcing. The fixture name is the
-# calling script; the task id comes from CAPTURE_TASK, which every smoke sets.
+# Entry scripts call this after building. The fixture name is the calling
+# script; the task id comes from CAPTURE_TASK, which every smoke sets.
+# niri logs its GL renderer only with the GLES target at info; every launch
+# needs the line for capture-meta's renderer check.
+NIRI_RENDERER_LOG='niri=debug,smithay::backend::renderer::gles=info'
 capture_preflight() {
+    CAPTURE_LANE=$1
     capture_meta preflight "$OUT" --lane "$1" --task "${CAPTURE_TASK:?task id authorizing this run}" \
         --fixture "$(basename "$0")" --owner-pid $$ --tool weston --tool kitty --tool "tracy=0.13.1" \
         || fail "preflight refused; see $OUT/capture.json"
+}
+# Timing helpers refuse on the pixels lane, which claims no time or cost.
+no_timing_on_pixels() {
+    [ "${CAPTURE_LANE:-}" != pixels ] || fail "$1 records timing; the pixels lane claims none (docs/specs/2026-10-08-capture-host-conditions-design.md)"
 }
 # After build_binaries: both binaries, this lib, and the calling script are the
 # static inputs. Extra --input/--config arguments pass through.
@@ -92,6 +102,7 @@ capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the insta
 # Skipped when CAPTURE_META substitutes the tool (tests, rehearsals on a busy
 # or non-NVIDIA host), which then settles nothing either.
 gpu_cooldown() {   # $1 sub-run name
+    no_timing_on_pixels gpu_cooldown
     local polls=0 run=0
     while [ "$run" -lt 6 ]; do
         [ "$polls" -lt 120 ] || fail "GPU not back at P8 within 120 polls before $1"
@@ -107,8 +118,13 @@ gpu_cooldown() {   # $1 sub-run name
 settle_before_launch() {
     local cfg=$1 name=${2:-}
     [ -n "$name" ] || name=$(basename "$cfg" .kdl)
-    [ -n "${CAPTURE_META:-}" ] || gpu_cooldown "$name"
-    capture_meta settle "$OUT" --sub-run "$name" --input "$cfg" || fail "settle refused before $name; see $OUT/capture.json"
+    case ${CAPTURE_LANE:?capture_preflight has not run} in
+        pixels)
+            capture_meta begin "$OUT" --sub-run "$name" --input "$cfg" || fail "begin refused before $name; see $OUT/capture.json" ;;
+        *)
+            [ -n "${CAPTURE_META:-}" ] || gpu_cooldown "$name"
+            capture_meta settle "$OUT" --sub-run "$name" --input "$cfg" || fail "settle refused before $name; see $OUT/capture.json" ;;
+    esac
     SUB_RUN=$name
 }
 # A sub-run cut short by a failure is never finished: cleanup stops processes
@@ -117,6 +133,29 @@ finish_sub_run() {
     [ -n "$SUB_RUN" ] || return 0
     capture_meta finish "$OUT" --sub-run "$SUB_RUN" || fail "finish refused for $SUB_RUN; see $OUT/capture.json"
     SUB_RUN=
+}
+log_size() { if [ -e "$1" ]; then wc -c < "$1"; else echo 0; fi; }
+# One launch's renderer lines: the logs are appended across launches, so read
+# from the offsets taken before this launch started (spec §6.3).
+verify_renderer() {   # $1 sub-run, $2 niri log, $3 its offset, [$4 weston log, $5 its offset]
+    tail -c "+$(($3 + 1))" "$2" > "$OUT/$1.niri.renderer.log"
+    local weston=()
+    if [ $# -ge 5 ]; then
+        tail -c "+$(($5 + 1))" "$4" > "$OUT/$1.weston.renderer.log"
+        weston=(--weston-log "$OUT/$1.weston.renderer.log")
+    fi
+    capture_meta renderer "$OUT" --sub-run "$1" --niri-log "$OUT/$1.niri.renderer.log" "${weston[@]}" \
+        || fail "$1: renderer check refused; see $OUT/capture.json"
+}
+# A build's tail refuses the first settle; measurement fixtures wait for it
+# after building and before capture_preflight. Skipped under a CAPTURE_META stub.
+await_load() {
+    [ -z "${CAPTURE_META:-}" ] || return 0
+    for _ in $(seq 60); do
+        awk '{ exit !($1 < 1.0) }' /proc/loadavg && return 0
+        sleep 5
+    done
+    fail 'load1 did not fall below 1.0 within 5 min of the build'
 }
 
 # --- binaries ---------------------------------------------------------------
@@ -248,6 +287,8 @@ KDL
 # --- nested host ------------------------------------------------------------
 start_nested() {   # $1 niri, $2 config, $3 sub-run name (defaults to the config's basename)
     settle_before_launch "$2" "${3-}"
+    local niri_from weston_from
+    niri_from=$(log_size "$OUT/niri.log"); weston_from=$(log_size "$OUT/weston.log")
     weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
         --width=1280 --height=720 --socket="$HOST" >> "$OUT/weston.log" 2>&1 &
     WESTON_PID=$!
@@ -259,12 +300,13 @@ start_nested() {   # $1 niri, $2 config, $3 sub-run name (defaults to the config
     [ -S "$XDG_RUNTIME_DIR/$HOST" ] || fail "no Weston socket (see $OUT/weston.log)"
     ln -sf "$XDG_RUNTIME_DIR/$HOST" "$RT/$HOST"
     "$1" validate -c "$2" || fail "config $2 does not validate with $1"
-    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$HOST "$1" -c "$2" >> "$OUT/niri.log" 2>&1 &
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$HOST RUST_LOG=$NIRI_RENDERER_LOG "$1" -c "$2" >> "$OUT/niri.log" 2>&1 &
     NIRI_PID=$!
     for _ in $(seq 100); do ls "$RT"/niri.*.sock >/dev/null 2>&1 && break; sleep 0.1; done
     NIRI_SOCKET=$(ls -t "$RT"/niri.*.sock | head -1) || fail "no niri socket"
     export NIRI_SOCKET
     sleep 1
+    verify_renderer "$SUB_RUN" "$OUT/niri.log" "$niri_from" "$OUT/weston.log" "$weston_from"
 }
 stop_nested() {
     kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; NIRI_PID=
@@ -442,6 +484,7 @@ tools_ready() {
 EOF
 }
 capture_bg() {
+    no_timing_on_pixels capture_bg
     : > "$OUT/$1.capture.log"
     timeout 90 "$TOOLS/tracy-capture" -o "$OUT/$1.tracy" -a 127.0.0.1 -p "$TRACY_PORT" -s 30 \
         > "$OUT/$1.capture.log" 2>&1 & CAP_PID=$!
@@ -495,6 +538,7 @@ count_last20() {
         'NR>1 && $1=="Niri::redraw" { t=$c+0; if (t>=end-20e9) n++ } END { printf "%d", n+0 }' "$OUT/$1.csv"
 }
 gpu_median_ns() {
+    no_timing_on_pixels gpu_median_ns
     local csv=${1%.tracy}.gpu.csv
     csvexport --gpu "$1" "$csv"
     local ct ce; ct=$(col "$csv" "Time from start of program"); ce=$(col "$csv" "GPU execution time")
@@ -508,6 +552,7 @@ median3() {
     sort -n "$1" | sed -n 2p
 }
 trace_run() {
+    no_timing_on_pixels trace_run
     write_config "$OUT/$1.kdl"
     start_nested "$NIRI_TRACY" "$OUT/$1.kdl"
     # IPC goes through the plain binary: niri-tracy's msg client spends about

@@ -175,13 +175,6 @@ if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
     [ -z "${VT_LOGINCTL:-}" ] || fail 'VT_LOGINCTL needs OPTIC_SETTLING_STUB_TOOLS'
     [ "$VT_ACTIVE_FILE" = /sys/class/tty/tty0/active ] || fail 'VT_ACTIVE_FILE needs OPTIC_SETTLING_STUB_TOOLS'
 fi
-[ "$MODE" = prepare ] || capture_preflight "$LANE"
-if [ "$MODE" != prepare ] && [ "$LANE" = dedicated ]; then
-    dedicated_prerequisites
-    vt_record_home
-    VT_SPARE=$(vt_spare) || fail "no spare VT without a logind session"
-    printf '{"home": %s, "spare": %s}\n' "$VT_HOME" "$VT_SPARE" > "$OUT/vt.json"
-fi
 cp "$NIRI_BIN" "$OUT/binary"
 cp "$NIRI_BIN.identity.json" "$OUT/binary.identity.json"
 NIRI=$OUT/binary
@@ -449,6 +442,16 @@ elif selected unlock; then
     LOCK_BIN=$OUT/clients/session-lock-client
 fi
 if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
+# The client builds' tail would refuse the first settle (spec §6.5); prepare
+# exits above, before any build, wait or preflight.
+await_load
+capture_preflight "$LANE"
+if [ "$LANE" = dedicated ]; then
+    dedicated_prerequisites
+    vt_record_home
+    VT_SPARE=$(vt_spare) || fail "no spare VT without a logind session"
+    printf '{"home": %s, "spare": %s}\n' "$VT_HOME" "$VT_SPARE" > "$OUT/vt.json"
+fi
 capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" --config lane="$LANE" \
     ${DRM_OUTPUT:+--config drm-output="$DRM_OUTPUT"} ${DRM_MODE:+--config drm-mode="$DRM_MODE"} \
     "${IDENTITY_EXTRA[@]}"
@@ -457,13 +460,14 @@ capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" --c
 # session bus so no compositor interface reaches the user's bus.
 start_drm() {   # $1 niri, $2 config, $3 sub-run name
     settle_before_launch "$2" "${3-}"
+    local niri_from; niri_from=$(log_size "$OUT/niri.log")
     "$1" validate -c "$2" || fail "config $2 does not validate with $1"
     dbus-daemon --session --nofork --address="unix:path=$RT/bus" >> "$OUT/dbus.log" 2>&1 &
     BUS_PID=$!
     for _ in $(seq 50); do [ -S "$RT/bus" ] && break; sleep 0.1; done
     [ -S "$RT/bus" ] || fail "no private session bus (see $OUT/dbus.log)"
     env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u DISPLAY -u NIRI_SOCKET \
-        XDG_RUNTIME_DIR="$RT" DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" \
+        XDG_RUNTIME_DIR="$RT" RUST_LOG="$NIRI_RENDERER_LOG" DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" \
         PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$1" -c "$2" >> "$OUT/niri.log" 2>&1 &
     NIRI_PID=$!
     for _ in $(seq 100); do
@@ -477,6 +481,7 @@ start_drm() {   # $1 niri, $2 config, $3 sub-run name
     [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ] || cmp -s "$1" "/proc/$NIRI_PID/exe" \
         || fail 'running executable differs from the snapshot'
     sleep 1
+    verify_renderer "$SUB_RUN" "$OUT/niri.log" "$niri_from"
 }
 stop_drm() {
     # A niri that ignores TERM holds the device and the VT: KILL after reap's bound.

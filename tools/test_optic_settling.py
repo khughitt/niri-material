@@ -5,6 +5,7 @@ import hashlib
 import json
 import io
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -771,12 +772,23 @@ def alive(pid):
         return False
 
 
+SMOKE = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/optic-settling-smoke.sh'
+
+
 class LifecycleCoverageTests(unittest.TestCase):
     def test_subject_paths_are_full_routed(self):
         root = Path(__file__).resolve().parents[1]
         patterns = subprocess.check_output(['just', '--evaluate', 'tooling_full_paths'],
                                           cwd=root, text=True).split()
         assert_static_coverage(root, patterns)
+
+    def test_start_drm_logs_and_verifies_the_drm_renderer(self):
+        body = re.search(r'^start_drm\(\) \{.*?^}', SMOKE.read_text(), re.S | re.M).group()
+        self.assertIn('RUST_LOG="$NIRI_RENDERER_LOG"', body)
+        lines = [l.strip() for l in body.splitlines()]
+        self.assertLess(lines.index('sleep 1'), next(i for i, l in enumerate(lines) if l.startswith('verify_renderer')))
+        self.assertIn('verify_renderer "$SUB_RUN" "$OUT/niri.log" "$niri_from"', body)
+        self.assertNotIn('--weston-log', body)
 
 
 class JournalSignalTests(unittest.TestCase):
@@ -965,6 +977,30 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertEqual([line.split()[0] for line in meta], ['preflight', 'release'])
         self.assertEqual(json.loads((self.out / 'capture.json').read_text()), {'refused': 'load'})
         self.assertTrue((self.out / 'SHA256SUMS').is_file())
+
+    def test_client_builds_precede_the_preflight_and_prepare_stays_offline(self):
+        # Stub compiler and scanner: cc logs into meta.log beside the capture-meta verbs.
+        for name, body in (('bin/cc', 'echo "cc $*" >> "$STUB_DIR/meta.log"\n'
+                                      'while [ "$1" != -o ]; do shift; done\n: > "$2"\n'),
+                           ('bin/wayland-scanner', ': > "$3"\n')):
+            path = self.stubs / name
+            path.write_text('#!/bin/sh\n' + body)
+            path.chmod(0o755)
+        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        prepare = subprocess.run(['bash', str(script), 'prepare'], cwd=self.root,
+                                 env=dict(self.env, CASES='idle-inhibitor'),
+                                 capture_output=True, text=True, timeout=60)
+        self.assertEqual(prepare.returncode, 0, prepare.stderr)
+        verbs = [line.split()[0] for line in (self.stubs / 'meta.log').read_text().splitlines()]
+        self.assertEqual(verbs, ['release'])                 # on_exit releases on every exit
+        (self.stubs / 'meta.log').unlink()
+        shutil.rmtree(self.out)
+        driver = self.start('idle-inhibitor', STUB_REFUSE='1')
+        _, stderr = driver.communicate(timeout=60)
+        self.assertEqual(driver.returncode, 1, stderr)
+        verbs = [line.split()[0] for line in (self.stubs / 'meta.log').read_text().splitlines()]
+        self.assertEqual(verbs, ['cc', 'preflight', 'release'])
+        self.assertEqual(self.pids(), [])                     # nothing was launched
 
     def test_stub_tools_need_a_stub_capture_record(self):
         env = dict(self.env)

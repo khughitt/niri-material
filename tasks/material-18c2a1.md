@@ -1,20 +1,24 @@
 ---
 id: material-18c2a1
 title: Design per-lane host conditions for capture preflight and settle evidence
-status: doing
+status: done
 priority: 1
 size: s
 complexity: high
 process: planned
-owner: materials-26.04
+owner: capture-host-conditions
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-08T20:40:22Z
+updated: 2026-10-09T01:40:36Z
 started: 2026-10-08T20:40:22Z
+completed: 2026-10-09T01:40:36Z
 depends: []
 parent: material-2834d7
 tags: [capture]
 source: "docs/notes/2026-10-06-capture-lifecycle-brief.md#renderer-aware-capture"
+model: claude-opus-5-5
 agent: codex
+spec: docs/specs/2026-10-08-capture-host-conditions-design.md
+plan: docs/plans/2026-10-08-capture-host-conditions.md
 ---
 
 Why: material-6bd4a3 records a desktop-up preflight pass, but later per-case settles remain sensitive to desktop activity. The only named software-rendered consumer, glass-view-tilt-smoke.sh (material-cd0e1d), exists only on the dropped material-77db8a branch and passed under the existing GPU gates on 2026-09-24, so material-925518 is shelved and no software lane is in scope. Existing deterministic pixel fixtures already avoid quiet-host measurements; removing GPU checks from timed or hardware evidence requires a distinct, verified contract.
@@ -27,4 +31,41 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 
 - 2026-10-06T21:17:04Z (materials-26.04): Narrowed in review: the only named llvmpipe consumer (glass-view-tilt-smoke.sh, material-cd0e1d) is on the dropped material-77db8a branch and passed under the GPU gates on 2026-09-24; software lane out of scope, material-925518 shelved. Stale 'record absent' claim removed (cd0e1d is present since 9ad1a716).
 - 2026-10-08T20:40:22Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T20:40:35Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T20:49:49Z (capture-host-conditions): spec drafted: docs/specs/2026-10-08-capture-host-conditions-design.md — four routes (frozen, nested pixels via new --lane pixels + begin, nested measurements, dedicated); pixels skip GPU sampling and partial-hold timers/services; measurement routes verify the nested renderer names the sampled GPU; desktop-idle for nested measurements decided by a two-run noise-layers-cost pilot against retained TTY medians; thresholds unchanged
+- 2026-10-08T20:50:01Z (capture-host-conditions): parked (waiting on user, review): Owner reviews the spec .worktrees/capture-host-conditions/docs/specs/2026-10-08-capture-host-conditions-design.md; on approval the agent records the review round and writes the implementation plan in the same worktree
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T22:40:52Z (capture-host-conditions): review: spec round 1 — verdict: revise; findings: P1 2, P2 3; reviewer: codex
+- 2026-10-08T22:40:52Z (capture-host-conditions): Spec review findings: P1 §6.3 must enable niri renderer logging and parse actual Weston GL renderer format; P1 §6.2–6.3 must cover independent clip launchers and optic-settling start_drm, not only smoke-lib start_nested; P2 §5.4/§7 must check live desktop and GPU clients before hold, since session_reasons only checks environment; P2 §6.3 must persist per-launch renderer observations/failure before finish so rejected open sub-runs retain evidence, and define how renderer.weston is written; P2 §8.2 must pin baseline hashes/run IDs, define numeric comparison and handle missing per-case TTY repeat spread (retained same-binary A/B repeats cover none and one-fine-1 only), with an explicit retained-binary invocation. Read-only review of code and retained logs; no captures or tests run.
+- 2026-10-08T22:43:08Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T22:47:22Z (capture-host-conditions): spec revised for review round 1: renderer check moves into capture-meta as a 'renderer' verb (RUST_LOG gles=info, ANSI-stripped niri 'GL Renderer: "…"' and Weston 'GL renderer:' formats, written to the open sub-run at check time, release refuses unverified measurement sub-runs); all six launchers listed incl. clip start_nested, optic and idle-budget start_drm, plus a static coverage scan; dedicated checks desktop socket and GPU clients before the hold; desktop-idle pilot pinned to three retained TTY A/B runs (b cb21ad03…, configs aa09f751…/bc488733…) with I_c = [min−w−q, max+w+q], q = 0.001024 ms
+- 2026-10-08T22:47:27Z (capture-host-conditions): parked (waiting on user, review): Owner reviews the revised spec .worktrees/capture-host-conditions/docs/specs/2026-10-08-capture-host-conditions-design.md (round 2); on approval the agent records the round and writes the implementation plan in the same worktree
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T23:10:57Z (capture-host-conditions): review: spec round 2 — verdict: revise; findings: P1 1; reviewer: codex
+- 2026-10-08T23:10:57Z (capture-host-conditions): Round 2: original logging, launcher inventory, pre-hold checks, immediate renderer recording, and pinned pilot comparison are addressed; independently verified all three reference run identities, b config hashes, medians, and interval arithmetic. Remaining P1 at §6.3 coverage-at-release (lines 290–294): filtering only finished sub-runs misses settled but unfinished launches, including the retained idle-budget power shape (48 settled, zero finished; finish boundary still tracked by material-282edc/material-a9a455). Require renderer verification for every settled measurement entry irrespective of finished, skip refused settles, restore hold before reporting failure, and test an unfinished unverified entry. No live captures or test suite run; current external experiments checkout unavailable, retained fixture and record inspected.
+- 2026-10-08T23:16:23Z (capture-host-conditions): spec revised for review round 2: release now requires a verified renderer on every settled entry, finished or open (retained dedicated runs finish none: power-full-20260929T221618 has 48 settled, 0 finished), excludes refused settles, restores the hold first; tests cover an open unverified dedicated entry
+- 2026-10-08T23:16:28Z (capture-host-conditions): parked (waiting on user, review): Owner reviews the revised spec .worktrees/capture-host-conditions/docs/specs/2026-10-08-capture-host-conditions-design.md (round 3); on approval the agent records the round and writes the implementation plan in the same worktree
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T23:17:08Z (capture-host-conditions): review: spec round 3 — verdict: accept; findings: P3 1; reviewer: codex
+- 2026-10-08T23:17:08Z (capture-host-conditions): Round 3 accepted for planning: c358a6ce closes the open settled-entry gap, excludes refused settles, and requires restoration and lock release before coverage failure. Checked the revised contract and offline cases against the existing release lifecycle; no blocking findings. Minor wording cleanup: decision 7 still says finished sub-run; align it with settled sub-run, finished or open, in §6.3. No implementation or live captures reviewed; no tests run.
+- 2026-10-08T23:17:52Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T23:27:01Z (capture-host-conditions): plan drafted: docs/plans/2026-10-08-capture-host-conditions.md, seven steps filed as children (material-1828a0 … material-538f53), chained in order
+- 2026-10-08T23:27:06Z (capture-host-conditions): parked (waiting on user, review): Owner reviews the plan .worktrees/capture-host-conditions/docs/plans/2026-10-08-capture-host-conditions.md and picks an execution method; then the agent records the plan review round and runs the steps material-1828a0 … material-538f53 in this worktree
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-08T23:37:36Z (capture-host-conditions): review: plan round 1 — verdict: revise; findings: P1 1, P2 2; reviewer: codex
+- 2026-10-08T23:37:36Z (capture-host-conditions): Plan 29d0ec0a review: P1 Task 1 lines 210–215 filters excluded idle/monitor items only after discovery; fake-host reproduction shows pixels still refused by a failed noctalia msg status or missing connector enabled file. Gate idle and monitor discovery by kinds, and prove pixels never query either. P2 Task 6 omits optic-settling-smoke.sh build/wait/preflight reorder: preflight at line 178 still precedes Wayland client builds at 440–449; include selected-client builds, await_load, and a behavioral ordering check while keeping prepare offline. P2 Task 1 signature migration misses tools/test_capture_meta.py::LifecycleTests.hold_without_preflight (old one-argument plan_hold at line 1308), breaking recovery cases in the focused suite; update every caller. Execution choice: inline under executing-plans with one fresh whole-branch reviewer and corrective re-review rounds as required. Also carry the repository-required tooling test-fast gate before each step commit into the global constraints. Read-only review and in-memory fake-host reproduction; no suite or live capture run.
+- 2026-10-09T00:33:05Z (capture-host-conditions): plan round 1 revised: plan_hold gates idle/monitor discovery by kind (Task 1 + pixel preflight test in Task 2); optic-settling-smoke.sh moves preflight and its dedicated checks after the client builds with await_load, prepare stays offline, stub-driver order test (Task 6 Step 5); hold_without_preflight migrates with the other plan_hold callers; test-fast gate before every step commit
+- 2026-10-09T00:33:15Z (capture-host-conditions): parked (waiting on user, review): Owner runs plan review round 2 on .worktrees/capture-host-conditions/docs/plans/2026-10-08-capture-host-conditions.md (revision 219c0f53); on accept the agent executes material-1828a0 … material-538f53 inline (executing-plans) with one fresh whole-branch reviewer at the end
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T00:34:41Z (capture-host-conditions): review: plan round 2 — verdict: accept; findings: none; reviewer: codex
+- 2026-10-09T00:34:41Z (capture-host-conditions): Plan 219c0f53 accepted for inline execution with a fresh whole-branch reviewer. All round-1 findings addressed: idle/monitor discovery is gated before probing with planner and pixel-preflight regressions; optic-settling client builds precede await_load/preflight, prepare remains offline, and stub-driver ordering is checked; the recovery helper migrates with all plan_hold callers. Every step commit includes full tooling test-fast then tasks check. Checked revised snippets against current helpers and driver setup; tasks check passed. No code changes, suite execution or live captures during this review.
+- 2026-10-09T00:38:25Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T01:40:36Z (capture-host-conditions): done
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T01:40:36Z (capture-host-conditions): Per-route host conditions implemented (spec docs/specs/2026-10-08-capture-host-conditions-design.md, plan docs/plans/2026-10-08-capture-host-conditions.md): pixels lane with begin and a timers+services hold, pre-hold lane checks, observed host_condition, per-launch renderer verification on every launcher with release refusing unverified settled launches, build-before-preflight ordering. Final review: one Important fixed plus one re-graded test gap, two scoped re-reviews, clean. Pilots material-52dc6e (pixels) and material-3d48b0 (desktop-idle) filed; niri-experiments adoption material-9cf378.
   provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
