@@ -65,8 +65,9 @@ These follow-ups need no host capture; later measured execution declares
 
 - Which remaining consumer needs software-rendered timing? Answered in review:
   none. The view-tilt smoke was the only one named, and it left with
-  `material-77db8a`. `material-18c2a1` now frames per-lane host conditions for
-  the hardware routes; a software lane waits for a demonstrated consumer.
+  `material-77db8a`. The hardware routes' host conditions are settled in the
+  [per-route host conditions design](../specs/2026-10-08-capture-host-conditions-design.md);
+  a software lane waits for a demonstrated consumer.
 - Is the external idle-budget DRM consumer still supported, and where should
   normal completion call `finish_sub_run`? `material-282edc` checks the actual code.
 - Which outcome can be recorded truthfully after hold restoration and checksum
@@ -77,9 +78,16 @@ These follow-ups need no host capture; later measured execution declares
 
 ### Renderer-aware capture
 
-- `material-6bd4a3`: **briefed**, waiting on `material-18c2a1` (P1, small,
-  high complexity, planned): reviewed per-lane host-condition design for
-  preflight and settle evidence, then a reviewed implementation plan.
+- `material-6bd4a3`: **briefed**, waiting on `material-3d48b0` (P1, small,
+  mid complexity, direct, needs quiet): the desktop-idle pilot of nested
+  measurements against the pinned TTY reference. Until it passes, nested
+  measurements stay on a TTY.
+- `material-18c2a1`: **implemented**. The
+  [per-route host conditions design](../specs/2026-10-08-capture-host-conditions-design.md)
+  adds the `pixels` lane, pre-hold lane checks, the observed `host_condition`,
+  per-launch renderer verification, and build-before-preflight ordering. The
+  pixels-lane pilot is `material-52dc6e`; the niri-experiments fixtures adopt
+  it under `material-9cf378`.
 - `material-925518`: **shelved** in review, with no consumer. Unshelve when a
   new fixture needs software-rendered timing.
 

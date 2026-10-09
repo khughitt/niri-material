@@ -79,6 +79,9 @@ itself is ops's `display-dim` (`ops-a1715a`).
   documents the command list.
 - Runs that need an idle host start from a TTY login with the desktop
   stopped (`tasks quiet`, `--needs headless`).
+- The pixels lane (`docs/specs/2026-10-08-capture-host-conditions-design.md`)
+  needs no idle host and no `nvidia-smi`; it holds user timers and the
+  declared services only.
 
 ## Disturber hold
 
