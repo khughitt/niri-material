@@ -1,7 +1,9 @@
 """Unit tests for tools/capture-meta."""
+import contextlib
 import importlib.machinery
 import importlib.util
 import json
+import io
 import itertools
 import os
 import pathlib
@@ -1226,12 +1228,17 @@ class LifecycleTests(unittest.TestCase):
                 else: os.environ[key] = value
 
     def cli_preflight_without_nvidia_smi(self, lane):
-        empty = self.root / "empty-path"; empty.mkdir(exist_ok=True)
+        # Everything a measured preflight needs except nvidia-smi: the sampler alone must refuse.
+        bins = self.root / "no-nvidia-smi"; bins.mkdir(exist_ok=True)
+        (bins / "host-load").write_text("#!/bin/sh\nexit 0\n"); (bins / "host-load").chmod(0o755)
         saved = {k: os.environ.get(k) for k in ("PATH", "XDG_SESSION_TYPE")}
-        os.environ.update({"PATH": str(empty), "XDG_SESSION_TYPE": "wayland"})
+        os.environ.update({"PATH": str(bins), "XDG_SESSION_TYPE": "wayland"})
+        stderr = io.StringIO()
         try:
-            return cm.main(["preflight", str(self.run), "--lane", lane, "--task", "material-18c2a1",
-                            "--fixture", "t.sh", "--owner-pid", "4242"])
+            with contextlib.redirect_stderr(stderr):
+                code = cm.main(["preflight", str(self.run), "--lane", lane, "--task", "material-18c2a1",
+                                "--fixture", "t.sh", "--owner-pid", "4242"])
+            return code, stderr.getvalue()
         finally:
             for key, value in saved.items():
                 if value is None: os.environ.pop(key, None)
@@ -1240,13 +1247,17 @@ class LifecycleTests(unittest.TestCase):
     def test_measured_lanes_without_nvidia_smi_refuse_before_touching_the_host(self):
         for lane in ("headless", "dedicated"):
             with self.subTest(lane=lane):
-                self.assertEqual(self.cli_preflight_without_nvidia_smi(lane), 2)
+                code, stderr = self.cli_preflight_without_nvidia_smi(lane)
+                self.assertEqual(code, 2, stderr)
+                self.assertIn("nvidia-smi not found", stderr)
+                self.assertFalse((self.run / cm.RECORD).exists())   # refused before the run section and the lock
                 self.assertEqual(self.host.calls, [])
                 self.assertIsNone(cm.read_lock(self.lock))
                 self.assertFalse((self.lock.with_name(cm.ch.HOLD_NAME)).exists())
 
     def test_pixels_without_nvidia_smi_holds_and_records_no_gpu(self):
-        self.assertEqual(self.cli_preflight_without_nvidia_smi("pixels"), 0)
+        code, stderr = self.cli_preflight_without_nvidia_smi("pixels")
+        self.assertEqual(code, 0, stderr)
         record = cm.load_record(self.run)
         self.assertEqual(record["preflight"]["verdict"], "unsampled")
         self.assertNotIn("gpu", record["environment"])
