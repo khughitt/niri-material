@@ -7,15 +7,16 @@ size: m
 complexity: high
 process: planned
 needs: [owner]
-owner: materials-26.04
+owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T12:24:44Z
+updated: 2026-10-09T12:38:16Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
 tags: [rendering, camera, dynamics]
 source: docs/notes/2026-10-06-transient-depth-brief.md
 agent: claude-code/claude-opus-5-5
+spec: docs/specs/2026-10-09-transient-rigid-tilt-design.md
 ---
 
 Design one transient rigid tilt in which window content and glass move as one body and settle to exactly face-on, from docs/notes/2026-10-06-transient-depth-brief.md, after the owner's verdict on the spike stills (material-89fb6b). First trigger: focus gain, reusing the swing curve and focus origin from the unmerged branch material-77db8a (render_helpers/material/view.rs, layout/focus_origin.rs). Move, resize and open come later, possibly with different motions.
@@ -40,3 +41,6 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 - 2026-10-06T22:10:40Z (materials-26.04): From the spike verdict (material-89fb6b): scope the design to side walls first, interior detail second. Build the walls on material-be611b's height-field edge profile so the resting and tilted glass share one slab model (be611b is parked on owner review of its sheet; this design depends on its accepted profile). Judge stills on a lighter look beside the accepted dark one: the dark terminal fill hides the glass. Reusable: spike/material-89fb6b (camera ray, quad mapping, fixture, sheet script).
 - 2026-10-09T12:24:44Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T12:25:01Z (material-abc08c): resumed
+  provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T12:38:15Z (material-abc08c): spec drafted: docs/specs/2026-10-09-transient-rigid-tilt-design.md. Finding: a centred camera hides outer walls until tan(theta) > E/(2D); spike camera (D 2000) shows none below 11-22 deg, active-slab wall is 1-4 px at 10-14 deg. Design: camera distance relative to pane extent (view-distance), perspective weight |theta|/peak so rest optics return continuously, impulse curve starting at 0 (77db8a's starts at its peak), true ray-slab march with height-field top and side walls, wall lit by beam spill, slab-anchored grain seeds, owner still sweep (angle x distance) before defaults
