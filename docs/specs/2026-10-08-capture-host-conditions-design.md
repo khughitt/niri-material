@@ -1,6 +1,8 @@
 # Per-route host conditions for capture evidence
 
-**Status:** accepted for planning (spec review round 3, 2026-10-08). Revised after spec review
+**Status:** implemented on `capture-host-conditions` (plan
+`docs/plans/2026-10-08-capture-host-conditions.md`); pilots pending (§8.2).
+Accepted for planning at spec review round 3 (2026-10-08). Revised after spec review
 round 1, which covered renderer logging, launchers outside the lib, pre-hold
 dedicated checks, renderer evidence on rejected launches, and the pilot's
 reference interval, and after round 2, which covered the release check for
@@ -217,8 +219,8 @@ as `settle` does and appends `{"name", "started", "inputs", "verdict": "begun"}`
 
 The lib's `settle_before_launch` takes its verb from the run's lane: on
 `headless`, `gpu_cooldown` then `settle`; on `pixels`, `begin`. It reads the
-lane through `capture-meta show --field run.lane`, a small read-only addition
-to `show`.
+lane from `CAPTURE_LANE`, which `capture_preflight` sets;
+`settle_before_launch` refuses when it is unset.
 
 The lib's timing helpers (`gpu_cooldown`, `capture_bg`, `trace_run`,
 `gpu_median_ns`) fail at once under a `pixels` run, naming the helper and the
@@ -232,8 +234,9 @@ tools/capture-meta renderer <run-dir> --sub-run NAME --niri-log PATH [--weston-l
 ```
 
 A launcher calls `renderer` once per launch, after the compositor is up and
-before any stimulus. The log paths hold only this launch's output. The lib
-already tracks `LOG_OFFSET` into its appended `niri.log`. Every launcher slices
+before any stimulus. The log paths hold only this launch's output. The
+launcher takes both logs' byte sizes before the launch and slices from them
+(`log_size`, `verify_renderer`). Every launcher slices
 its logs from the launch's start into `$OUT/<sub-run>.niri.renderer.log` and
 `$OUT/<sub-run>.weston.renderer.log`, and those slices are retained in the run.
 
@@ -428,7 +431,7 @@ use.
 
   Every failing case leaves the fake host fully restored and the lock released.
 - **`show`:** renders a pixels record ("GPU not sampled: pixels lane") and
-  per-sub-run renderer verdicts. `show --field run.lane` prints the lane.
+  per-sub-run renderer verdicts.
 - **`host_condition`:** recorded as `tty` and as `desktop` from fake session
   states.
 - **Schema:** stays 1. Every addition is optional, and old records still

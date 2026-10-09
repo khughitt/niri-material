@@ -315,6 +315,10 @@ of its own to release. The smoke then calls `build_binaries` and `identity` with
 both binaries, the lib, and the calling smoke script — no case config exists
 yet.
 
+> Since `material-18c2a1`, fixtures build before `capture_preflight` and wait
+> for the build's load to pass, and static-pixel fixtures preflight on the
+> `pixels` lane: see [per-route host conditions](2026-10-08-capture-host-conditions-design.md).
+
 `settle` is not called from the smokes at all: it goes into the lib's
 `start_nested`, which every nested launch passes through with its config path in
 hand — `calibrate_probe_rect`'s geometry launch, the pixel `capture` functions,
