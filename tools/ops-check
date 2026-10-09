@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 7
+# ops-check version 8
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -27,6 +27,11 @@ exits 2 when it cannot run at all.
   `tasks/*.md` is exempt (records are written only by tasks). A repository whose content is
   host configuration by design lists the path prefixes that may carry the layout under
   `layout_allowed` in a root `.ops-check.toml`; a malformed file exits 2.
+- Adopted copies: a tracked `tools/` copy of an adopted contract (cli.toml, cli_surface.py,
+  keys.toml) must be, as the working tree holds it, a version ops's default branch has
+  landed: a change to the contract lands in ops first and the project then runs `vendored
+  adopt`. Ops is found through the tasks registry; where it is not registered (CI, another
+  host) the rule does not apply, and a registered ops without origin/HEAD exits 2.
 """
 import os
 import pathlib
@@ -56,6 +61,8 @@ WORD = re.compile(r"\w[\w-]*$")
 TASK_RECORD = re.compile(r"^tasks/[^/]+\.md$")
 PROJECT_CONFIG = ".ops-check.toml"
 LAYOUT_LINES = 10
+# Adopted contracts under tools/ -> their source in ops (ops bin/vendored's ADOPTED).
+ADOPTED = {"cli.toml": "cli.toml", "cli_surface.py": "bin/cli_surface.py", "keys.toml": "keys.toml"}
 # A hostname that names no machine in particular is not layout.
 GENERIC_HOSTNAMES = ("localhost",)
 
@@ -152,6 +159,42 @@ def layout_findings(root, files, values):
                 yield path, number, f"machine layout: {value} ({values[value]})"
         if reported > LAYOUT_LINES:
             yield path, 0, f"{reported - LAYOUT_LINES} more lines carry machine layout"
+
+
+def landed_blobs(ops, source):
+    """Every blob of `source` that ops's default branch has carried: each commit's change to
+    it (a merge's against its first parent) and the tip's."""
+    head = git(ops, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
+    if head is None:
+        fail(f"{ops}: origin/HEAD is not set, so ops's default branch is unknown;"
+             " run `git remote set-head origin --auto` there")
+    default = head.strip().removeprefix("origin/")
+    log = git(ops, "log", "--full-history", "--no-renames", "--raw", "--no-abbrev",
+              "--diff-merges=first-parent", "--format=", f"refs/heads/{default}", "--", source)
+    tip = git(ops, "ls-tree", f"refs/heads/{default}", "--", source)
+    if log is None or tip is None:
+        fail(f"{ops}: cannot read the history of {source} on {default}")
+    blobs = {line.split()[3] for line in log.splitlines() if line.startswith(":")}
+    blobs.update(line.split()[2] for line in tip.splitlines())
+    return default, blobs
+
+
+def adopted_findings(root, files, projects):
+    """(path, 0, message) for each tracked adopted copy no landed version of its source matches."""
+    ops = projects.get("ops")
+    if ops is None or ops.resolve() == root.resolve():
+        return
+    for name, source in ADOPTED.items():
+        path = f"tools/{name}"
+        if path not in files:
+            continue
+        default, blobs = landed_blobs(ops, source)
+        blob = git(root, "hash-object", "--", path)
+        if blob is None:
+            fail(f"cannot hash {path}")
+        if blob.strip() not in blobs:
+            yield path, 0, (f"matches no version of ops {source} landed on {default} (edited in place?);"
+                            f" land the change in ops first, then run `vendored adopt {name}` here")
 
 
 def tracked(root):
@@ -254,6 +297,7 @@ def findings(root, projects, values):
         if path.startswith(".agents/") or "/.agents/" in path:
             yield path, 0, "agent scratch under .agents/ is tracked"
     yield from layout_findings(root, files, values)
+    yield from adopted_findings(root, set(files), projects)
 
 
 def main():
