@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** draft for plan review, 2026-10-09. Design task `material-abc08c`; implementation goal `material-6901e0`.
+**Status:** draft, revised after plan review round 1 (2026-10-09). Design task `material-abc08c`; implementation goal `material-6901e0`.
 
 **Goal:** On focus gain, swing the pane once in depth and settle it back to exactly face-on, with window content and glass moving as one rigid body whose rounded edge and side wall show while it turns, and with today's pixels and code path at rest.
 
@@ -65,6 +65,9 @@ Each task is a child of `material-6901e0` filed with this plan's step heading, a
 - **Each piece evaluates `Ψ` with its own quadrant's radius**, chosen from the piece's midpoint, rather than from the sign of each sample. That makes every piece exactly the single-radius convex function of §4.1 up to and including its ends, so a minimiser at a seam end belongs to its piece. At the identity no seam is crossed and the midpoint is the pixel itself, so the radius is today's.
 - **Top or wall** is decided by `Ψ` at the rim depth as well as by the entry depth: a hit is a wall hit when its entry lies below the rim and the ray is outside at the rim depth. At the identity `Ψ` at the rim depth is exactly `σ`, so a covered pixel is never a wall hit there, whatever the bisection's last step. A ray whose pieces all stay above 0 shades at its minimiser, classified the same way, so a miss inside the coverage band takes the colour of the surface it nearly hit.
 - **A sure miss skips the bracketing**: since `σ` is 1-Lipschitz and the bevel term is non-negative, `Ψ(q(t)) ≥ σ(h₀) − T·|ρ.xy|`; when that bound is positive the ray misses with coverage exactly 0. §6 asks that bracketing run only near the outline; this is the test that makes it so. At the identity the bound is `σ(s)`, today's coverage gate.
+- **A face hit near the outline takes the outline coverage** (§4.1 step 4, §4.5): the flat-face shortcut keeps the shading at `h₀`, but within 4 physical px of the face plane's cross-section it traces the ray for `m`. With bevel 0 the face reaches the silhouette, and the slab-local coverage there errs past the side bound (plan review round 1: 0.087 px at a 100 px slab, 20°, κ 1.5). At the identity the traced `m` is exactly `σ`, so the rest pixels are today's.
+- **The swing's visibility uses its footprint** (§5.1 "Hidden panes"): the run is reported ongoing while the resting slab or the swing's footprint is in view, so a lifted wall that alone reaches the view keeps its frames.
+- **The intersection reference is certified** (§8.1 "Bracketing"): from Ψ's convexity, a sample at or below 0 proves a hit and chord extensions that stay above 0 prove a miss; what neither proves is reported unresolved, never counted as a miss. Closed-form entries (a planar chamfer, a box) control both the mirror and the reference.
 - **The background effect's neutrality** (§5) is read from the window's surface state at its last render (`BackgroundEffect::is_visible`), through a new `LayoutElement::background_effect_visible`, rather than from the rule alone: a client's blur region turns an unset rule visible.
 - **The grain seed's framebuffer orientation** (§4.4) is the sign pattern of the frame's projection, uploaded per draw as `mat_view_seed`. smithay's projection is a signed permutation scaled to NDC, so its signs are the framebuffer's axes.
 - **The wall spill** (§4.3) is on, at gain 1, and `mat_view.w` carries the gain so the still sheet can turn it off through a test hook. The owner's pick (§8.3) then fixes it; no key is added.
@@ -945,7 +948,7 @@ git commit -m "feat(material): rigid tilt camera and footprint"
 - Modify: `src/render_helpers/material/view/mod.rs` (`pub mod solid;`, `wall_faces_camera`)
 
 **Interfaces:**
-- Consumes: `Camera`, `ViewPose`, `VIEW_NEAR_CLIP` (Task 3); `bevel::{corner_radius, Radii, BEVEL_PROFILE_EPS}`, `bevel::Slab` (tests), `ring::fit_radii` (tests).
+- Consumes: `Camera`, `ViewPose`, `VIEW_NEAR_CLIP` (Task 3); `bevel::{corner_radius, Radii, BEVEL_PROFILE_EPS}`, `bevel::Slab` (tests), `ring::fit_radii` (tests). The tests' reference, `certified_entry`, proves a hit or a miss from Ψ's convexity, or reports the ray unresolved.
 - Produces: `solid::{VIEW_GOLDEN, VIEW_GOLDEN_STEPS, VIEW_BISECT_STEPS}`; `solid::Solid { center: DVec2, half: DVec2, outer_r: Radii, chamfer: f64, thickness: f64, profile: f64 }` with `rise()`, `sigma(xy, sel)`, `sigma_grad(xy, sel)`, `psi(q: DVec3, sel: DVec2)`, `psi_dz(q)`; `solid::Segment { r, h0, h0_shift, rho, tau0 }` with `Segment::new(&Camera, s: DVec2) -> Option<Segment>` and `point(t, thickness) -> DVec3`; `solid::Trace { hit: bool, wall: bool, t: f64, psi_min: f64, min_t: f64, min_plane: DVec3, min_sel: DVec2 }`; `solid::trace(&Solid, &Segment) -> Trace`; `view::wall_faces_camera(pose: &ViewPose, extent: f64, n0: DVec2, h: f64) -> bool`.
 
 - [ ] **Step 1: Write the module with its tests, the trace stubbed**
@@ -1284,36 +1287,108 @@ pub(super) mod tests {
         u * lo
     }
 
-    /// The first entry by dense sampling and 60-step refinement: the exact reference.
-    pub(in crate::render_helpers::material::view) fn dense_entry(
+    /// What the certified reference says of one ray.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub(in crate::render_helpers::material::view) enum Certified {
+        /// The entry's depth parameter, bisected to 1e-15 of the piece.
+        Hit(f64),
+        Miss,
+        /// Neither proved within the refinement budget: a ray tangent to the solid.
+        Unresolved,
+    }
+
+    /// The first entry, certified by convexity rather than by sampling alone. Ψ is convex on
+    /// each piece (`bracketing_matches_the_certified_intersection` asserts it), so:
+    /// - a sample at or below 0 proves a hit, and the entry lies between it and the last
+    ///   positive sample before it (the sublevel set of a convex function is an interval);
+    /// - on an interval between samples, the chords through the two samples on either side,
+    ///   extended across it, bound a convex function from below; where both stay above 0
+    ///   the interval holds no hit.
+    /// Intervals neither cleared nor hit are halved, up to 48 times; what is left is
+    /// unresolved. A thin dip between two samples is therefore found or reported, never
+    /// passed over.
+    pub(in crate::render_helpers::material::view) fn certified_entry(
         solid: &Solid,
         seg: &Segment,
-    ) -> Option<f64> {
+    ) -> Certified {
         for piece in pieces(solid, seg) {
             let f = |t: f64| solid.psi(seg.point(t, solid.thickness), piece.sel);
-            if f(piece.a) <= 0. {
-                return Some(piece.a);
-            }
-            let n = 1500;
-            let mut prev = piece.a;
-            for i in 1..=n {
-                let t = piece.a + (piece.b - piece.a) * i as f64 / n as f64;
-                if f(t) <= 0. {
-                    let (mut lo, mut hi) = (prev, t);
-                    for _ in 0..60 {
-                        let mid = 0.5 * (lo + hi);
-                        if f(mid) <= 0. {
-                            hi = mid;
-                        } else {
-                            lo = mid;
-                        }
-                    }
-                    return Some(hi);
-                }
-                prev = t;
+            match certify(&f, piece.a, piece.b) {
+                Certified::Miss => continue,
+                other => return other,
             }
         }
-        None
+        Certified::Miss
+    }
+
+    fn certify(f: &impl Fn(f64) -> f64, a: f64, b: f64) -> Certified {
+        let mut pts: Vec<(f64, f64)> = (0..=64)
+            .map(|i| a + (b - a) * f64::from(i) / 64.)
+            .map(|t| (t, f(t)))
+            .collect();
+        for _ in 0..48 {
+            if let Some(i) = pts.iter().position(|&(_, v)| v <= 0.) {
+                if i == 0 {
+                    return Certified::Hit(a);
+                }
+                let (mut lo, mut hi) = (pts[i - 1].0, pts[i].0);
+                for _ in 0..80 {
+                    let mid = 0.5 * (lo + hi);
+                    if f(mid) <= 0. {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                return Certified::Hit(hi);
+            }
+            let chord = |i: usize, j: usize, t: f64| {
+                let ((ti, fi), (tj, fj)) = (pts[i], pts[j]);
+                fi + (fj - fi) * (t - ti) / (tj - ti)
+            };
+            let mut next = vec![pts[0]];
+            let mut open = false;
+            for i in 0..pts.len() - 1 {
+                let (l, r) = (pts[i].0, pts[i + 1].0);
+                let left = (i >= 1).then_some((i - 1, i));
+                let right = (i + 2 < pts.len()).then_some((i + 1, i + 2));
+                let bound = |t: f64| {
+                    let mut v = f64::NEG_INFINITY;
+                    if let Some((p, q)) = left {
+                        v = v.max(chord(p, q, t));
+                    }
+                    if let Some((p, q)) = right {
+                        v = v.max(chord(p, q, t));
+                    }
+                    v
+                };
+                // The max of two lines is lowest at an end or where they cross.
+                let mut low = bound(l).min(bound(r));
+                if let (Some((p, q)), Some((u, w))) = (left, right) {
+                    let (s1, s2) = (
+                        (pts[q].1 - pts[p].1) / (pts[q].0 - pts[p].0),
+                        (pts[w].1 - pts[u].1) / (pts[w].0 - pts[u].0),
+                    );
+                    if s1 != s2 {
+                        let t = (pts[u].1 - s2 * pts[u].0 - pts[p].1 + s1 * pts[p].0) / (s1 - s2);
+                        if t > l && t < r {
+                            low = low.min(bound(t));
+                        }
+                    }
+                }
+                if low <= 0. {
+                    open = true;
+                    let mid = 0.5 * (l + r);
+                    next.push((mid, f(mid)));
+                }
+                next.push(pts[i + 1]);
+            }
+            if !open {
+                return Certified::Miss;
+            }
+            pts = next;
+        }
+        Certified::Unresolved
     }
 
     /// A random slab, look and frame from the configured ranges.
@@ -1375,7 +1450,7 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn bracketing_matches_a_dense_exact_intersection() {
+    fn bracketing_matches_the_certified_intersection() {
         let mut rnd = uniforms(11);
         let (mut rays, mut later, mut skipped) = (0, 0, 0);
         for _ in 0..120 {
@@ -1396,11 +1471,14 @@ pub(super) mod tests {
                 }
                 let got = trace(&solid, &seg);
                 assert!(got.psi_min.is_finite() && got.t.is_finite(), "NaN at {s}");
-                let exact = dense_entry(&solid, &seg);
-                if got.psi_min.abs() < 1e-9 {
-                    skipped += 1;
-                    continue;
-                }
+                let exact = match certified_entry(&solid, &seg) {
+                    Certified::Unresolved => {
+                        skipped += 1;
+                        continue;
+                    }
+                    Certified::Hit(t) => Some(t),
+                    Certified::Miss => None,
+                };
                 rays += 1;
                 assert_eq!(got.hit, exact.is_some(), "hit or miss at {s}: {got:?}");
                 if let Some(t) = exact {
@@ -1412,7 +1490,7 @@ pub(super) mod tests {
                 }
             }
         }
-        assert!(skipped * 100 < rays, "{skipped} tangent rays of {rays}");
+        assert!(skipped * 100 < rays, "{skipped} unresolved (tangent) rays of {rays}");
         assert!(later > 0, "no ray's first hit lay in a later piece");
     }
 
@@ -1433,7 +1511,11 @@ pub(super) mod tests {
             let seg = Segment::new(&camera, s).unwrap();
             let ps = pieces(&solid, &seg);
             let got = trace(&solid, &seg);
-            let exact = dense_entry(&solid, &seg);
+            let exact = match certified_entry(&solid, &seg) {
+                Certified::Unresolved => continue,
+                Certified::Hit(t) => Some(t),
+                Certified::Miss => None,
+            };
             assert_eq!(got.hit, exact.is_some(), "at {s}");
             if let Some(t) = exact {
                 assert!((got.t - t).abs() * solid.thickness <= 1. / 128., "at {s}");
@@ -1460,10 +1542,66 @@ pub(super) mod tests {
                     assert_eq!(got.hit, sigma <= 0.);
                     assert_eq!((got.t, got.wall), (0., false), "a plane has no wall");
                 } else {
-                    assert_eq!(got.hit, dense_entry(&solid, &seg).is_some(), "box at {s}");
+                    match certified_entry(&solid, &seg) {
+                        Certified::Hit(_) => assert!(got.hit, "box at {s}"),
+                        Certified::Miss => assert!(!got.hit, "box at {s}"),
+                        Certified::Unresolved => {}
+                    }
                 }
             }
         }
+    }
+
+    /// The entry of an affine Ψ(t) = a + b t on [lo, hi], if any.
+    fn affine_entry(a: f64, b: f64, lo: f64, hi: f64) -> Option<f64> {
+        let at = |t: f64| a + b * t;
+        if at(lo) <= 0. {
+            Some(lo)
+        } else if b < 0. && at(hi) <= 0. {
+            Some(-a / b)
+        } else {
+            None
+        }
+    }
+
+    #[test]
+    fn analytic_entries_match_closed_form() {
+        // Profile 1 is a planar chamfer, X(y) = y: along the row through a straight side's
+        // middle, σ = x − half.x and the bevel term are both affine in t, with one kink at the
+        // rim depth, so the entry has a closed form. Bevel 0 is a box. Both are analytic
+        // controls for the mirror and for the certified reference.
+        let mut checked = 0;
+        for (chamfer, thickness, deg, kappa) in [(12., 31.2, 10., 6.), (0., 31.2, 14., 2.5), (20., 10., 20., 1.5), (12., 31.2, -10., 6.)] {
+            let pose = ViewPose { theta: f64::to_radians(deg), ..peak(10., DVec2::X, kappa) };
+            let (solid, camera) = setup(DVec2::new(400., 300.), chamfer, [0.; 4], thickness, 1., &pose);
+            let rise = solid.rise();
+            for i in 0..4000 {
+                let s = DVec2::new(370. + f64::from(i) * 0.015, 0.);
+                let seg = Segment::new(&camera, s).unwrap();
+                // x(t) = h0.x + ρ.x T t; above the rim the bevel adds c (1 − T t / rise).
+                let (x0, dx) = (seg.h0.x - solid.half.x, seg.rho.x * thickness);
+                let rim = if rise > 0. { (rise / thickness).min(1.) } else { 0. };
+                let exact = if rise > 0. {
+                    affine_entry(x0 + chamfer, dx - chamfer * thickness / rise, 0., rim)
+                } else {
+                    None
+                }
+                .or_else(|| affine_entry(x0, dx, rim, 1.));
+                let got = trace(&solid, &seg);
+                assert_eq!(got.hit, exact.is_some(), "{chamfer} {thickness} {deg}° at {s}: {got:?}");
+                if let Some(t) = exact {
+                    assert!((got.t - t).abs() * thickness <= 1. / 128., "{deg}° at {s}: {} vs {t}", got.t);
+                    match certified_entry(&solid, &seg) {
+                        Certified::Hit(c) => assert!((c - t).abs() * thickness <= 1e-9, "the reference at {s}"),
+                        other => panic!("the reference says {other:?} at {s}"),
+                    }
+                    checked += 1;
+                } else {
+                    assert!(!matches!(certified_entry(&solid, &seg), Certified::Hit(_)), "the reference hits at {s}");
+                }
+            }
+        }
+        assert!(checked > 1000, "{checked} analytic hits");
     }
 
     #[test]
@@ -1641,7 +1779,7 @@ Expected: every `view::` test PASS. If `the_wall_rule_agrees_with_the_ray_cast` 
 ```bash
 just test-fast
 cargo fmt --all
-tasks done material-d74c02 "traced slab, bracketing, wall-reveal rule; matches dense exact intersection"
+tasks done material-d74c02 "traced slab, bracketing, wall-reveal rule; matches the certified intersection and the closed forms"
 tasks check
 git add src/render_helpers/material/view/ tasks/
 python3 tools/upstream-report && git add docs/materials/upstream-divergence.md
@@ -2130,7 +2268,15 @@ Add at the end of the `tests` module of `src/layout/tile.rs`:
 
     /// `beam_tile` with the focus ring off, which a swing needs (design 2026-10-09 §5).
     fn swing_tile(response: niri_config::ResolvedResponse, clock: Clock) -> Tile<TestWindow> {
-        let mut tile = beam_tile(flat_glass(), response, clock);
+        swing_tile_with(flat_glass(), response, clock)
+    }
+
+    fn swing_tile_with(
+        glass: niri_config::ResolvedGlass,
+        response: niri_config::ResolvedResponse,
+        clock: Clock,
+    ) -> Tile<TestWindow> {
+        let mut tile = beam_tile(glass, response, clock);
         let mut options = (*tile.options).clone();
         options.layout.focus_ring.off = true;
         tile.update_config(tile.view_size, tile.scale, Rc::new(options));
@@ -2596,13 +2742,13 @@ git commit -m "feat(layout): rigid tilt swing on focus gain"
 **Files:**
 - Modify: `src/render_helpers/material/mod.rs` (`MaterialFrame.slab`, `.tex`; `ElementView`; `drawn_area`; `view_quad`; `seed_basis`; `view_uniforms`; `InputFingerprint.view`; `MaterialState::element`; `MaterialRenderElement`; `geometry`; `draw`; tests)
 - Modify: `src/render_helpers/material/view/mod.rs` (`wall_spill`, `quad_grow`, the `GROW` and `WALL_SPILL` hooks)
-- Modify: `src/layout/tile.rs` (both element sites, `Tile::render`'s offscreen paths, `material_out_of_view`, a test)
+- Modify: `src/layout/tile.rs` (both element sites, `Tile::render`'s offscreen paths, `swing_footprint`, `material_out_of_view`, the swing's visibility in `update_render_elements` and `are_animations_ongoing`, tests)
 - Modify: `src/render_helpers/shaders/material/prelude.frag` (the view uniforms), `main.frag` (the quad remap)
 - Modify: `src/render_helpers/shaders/mod.rs` (uniform names, a test)
 
 **Interfaces:**
 - Consumes: `Camera`, `footprint`, `ViewPose` (Tasks 2–3); `Tile::view_pose`, `MaterialDynamics.view` (Task 6).
-- Produces: `material::ElementView { pose: ViewPose, crop: Option<Rectangle<f64, Logical>>, wall_spill: f32, grow: f64 }`; `material::drawn_area(frame: &MaterialFrame, view: Option<&ElementView>, thickness: f64, scale: f64) -> Rectangle<f64, Logical>`; `material::view_quad(area, drawn, scale: f64) -> [f32; 4]`; `material::seed_basis(projection: &[f32; 9], scale: f64) -> [f32; 4]`; `InputFingerprint.view: Option<ElementView>`; `MaterialState::element(.., optics, view: Option<ElementView>, scale, ..)`; GLSL `uniform int mat_view_on; uniform vec4 mat_view; uniform vec2 mat_view_dir; uniform vec4 mat_view_quad; uniform vec4 mat_view_seed;`.
+- Produces: `Tile::swing_footprint(&self, location: Point<f64, Logical>, pose: ViewPose) -> Option<Rectangle<f64, Logical>>` and the field `Tile::view_swing_visible: bool`, which gates the swing in `are_animations_ongoing`; `material::ElementView { pose: ViewPose, crop: Option<Rectangle<f64, Logical>>, wall_spill: f32, grow: f64 }`; `material::drawn_area(frame: &MaterialFrame, view: Option<&ElementView>, thickness: f64, scale: f64) -> Rectangle<f64, Logical>`; `material::view_quad(area, drawn, scale: f64) -> [f32; 4]`; `material::seed_basis(projection: &[f32; 9], scale: f64) -> [f32; 4]`; `InputFingerprint.view: Option<ElementView>`; `MaterialState::element(.., optics, view: Option<ElementView>, scale, ..)`; GLSL `uniform int mat_view_on; uniform vec4 mat_view; uniform vec2 mat_view_dir; uniform vec4 mat_view_quad; uniform vec4 mat_view_seed;`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -2756,6 +2902,49 @@ In the `fingerprint` helper of the same module, add `view: None,` to the literal
         let culled = tile.material_out_of_view(Point::from((x, 100.)), view);
         hooks::POSE.with(|hook| hook.set(None));
         assert!(!culled, "the swing's footprint reaches into the view");
+    }
+```
+
+and, after it:
+
+```rust
+    #[test]
+    fn a_swing_whose_wall_alone_is_in_view_keeps_animating() {
+        // Plan review round 1: a 100 px pane with bevel 0 and thickness 200 at 20°, κ 6. Its
+        // resting right edge sits 10 px left of the view; the lifted wall reaches 29.8 px into
+        // it. The swing must keep requesting frames while only the wall is visible.
+        let glass = niri_config::ResolvedGlass {
+            bevel: 0.,
+            offset_x: 0.,
+            offset_y: 0.,
+            thickness: 200.,
+            ..Default::default()
+        };
+        let response = niri_config::ResolvedResponse {
+            view_tilt: 20.,
+            view_distance: 6.,
+            ..swing_response()
+        };
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile_with(glass, response, clock.clone());
+        let size = tile.tile_size();
+        assert_eq!(size.w, 100., "the case's pane");
+        let view = Rectangle::new(Point::from((size.w + 10., 0.)), Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, Some(view), view);
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        clock.set_unadjusted(secs(0.9 * 0.190381));
+        tile.update_render_elements(true, true, Some(view), view);
+        let pose = tile.view_pose().unwrap();
+        let reach = tile.swing_footprint(Point::default(), pose).unwrap();
+        let into = reach.loc.x + reach.size.w - view.loc.x;
+        assert!(into > 29., "the case: the wall reaches {into} px into the view");
+        assert!(!tile.signal_render_visible, "the case: the resting slab is out of view");
+        assert!(tile.are_animations_ongoing(), "the swing stopped scheduling frames");
+        // At rest the same tile is out of view and schedules nothing.
+        clock.set_unadjusted(secs(1.));
+        tile.update_render_elements(true, true, Some(view), view);
+        tile.advance_animations();
+        assert!(!tile.are_animations_ongoing());
     }
 ```
 
@@ -3066,30 +3255,81 @@ add `view,` to the `InputFingerprint` literal and pass `view` after `dynamics.op
             }
 ```
 
-In `material_out_of_view`, after `let buffers = ...;`:
+Add, next to `material_out_of_view`:
 
 ```rust
+    /// The swing's drawn area for a tile at `location` (design 2026-10-09 §6), from the
+    /// window's buffers, as `material_out_of_view` bounds the resting body. `None` without a
+    /// material.
+    fn swing_footprint(
+        &self,
+        location: Point<f64, Logical>,
+        pose: ViewPose,
+    ) -> Option<Rectangle<f64, Logical>> {
+        let material = self.material.as_ref()?;
+        let bobbed = location + self.bob_offset();
+        let bbox = self.window.buf_bbox().to_f64();
+        let buffers = Rectangle::new(bobbed + self.window_loc() + bbox.loc, bbox.size);
+        let win = Rectangle::new(bobbed + self.window_loc(), self.animated_window_size());
+        let glass = &material.material().glass;
+        let frame = material_frame(win, buffers, glass, self.scale);
+        let view = ElementView {
+            pose,
+            crop: None,
+            wall_spill: 1.,
+            grow: 0.,
+        };
+        Some(drawn_area(&frame, Some(&view), glass.thickness, self.scale))
+    }
+```
+
+In `material_out_of_view`, after the margin-grown `view` is computed:
+
+```rust
+        // A swing draws its footprint, which contains the buffers (design 2026-10-09 §6).
         if let Some(pose) = self.view_pose() {
-            // A swing draws its footprint, which contains the buffers (design 2026-10-09 §6).
-            let win = Rectangle::new(bobbed + self.window_loc(), self.animated_window_size());
-            let glass = &material.material().glass;
-            let frame = material_frame(win, buffers, glass, self.scale);
-            let view_of = ElementView {
-                pose,
-                crop: None,
-                wall_spill: 1.,
-                grow: 0.,
-            };
-            let drawn = drawn_area(&frame, Some(&view_of), glass.thickness, self.scale);
-            return !drawn.overlaps(view);
+            return !self
+                .swing_footprint(location, pose)
+                .is_some_and(|drawn| drawn.overlaps(view));
         }
 ```
+
+Add the field `view_swing_visible: bool,` to `struct Tile` after `signal_render_visible` (`false` in `Tile::new`), and in `update_render_elements`, right after `self.signal_render_visible = ...;`:
+
+```rust
+        // A swing draws its footprint, which can reach the view while the resting slab does
+        // not: the lifted wall of a pane just off the edge (design 2026-10-09 §5.1 "Hidden
+        // panes"). The resting test still covers the swing's first frame, whose pose is rest.
+        self.view_swing_visible = self.signal_render_visible
+            || screen_view.is_some_and(|view| {
+                self.view_pose()
+                    .and_then(|pose| self.swing_footprint(Point::default(), pose))
+                    .is_some_and(|drawn| drawn.overlaps(view))
+            });
+```
+
+In `are_animations_ongoing`, move the swing out of the `signal_render_visible` group of Task 6 into a term of its own:
+
+```rust
+            || self.signal_render_visible
+                && self
+                    .focus_beam
+                    .as_ref()
+                    .is_some_and(|beam| !beam.is_done(&self.clock))
+            || self.view_swing_visible
+                && self
+                    .view_swing
+                    .as_ref()
+                    .is_some_and(|swing| !swing.is_done(&self.clock))
+```
+
+and in `clear_signal_render_visibility` also set `self.view_swing_visible = false;`.
 
 importing `drawn_area` and `material_frame` from `crate::render_helpers::material` where they are not yet imported.
 
 - [ ] **Step 5: Run the tests**
 
-Run: `just test-one -p niri material::tests`, `just test-one -p niri culling_uses_the_footprint`, `just test-one -p niri the_view_uniforms_are_declared`, `just test-one -p niri material_source`, then the offline validation of Global Constraints.
+Run: `just test-one -p niri material::tests`, `just test-one -p niri culling_uses_the_footprint`, `just test-one -p niri a_swing_whose_wall_alone`, `just test-one -p niri the_view_uniforms_are_declared`, `just test-one -p niri material_source`, then the offline validation of Global Constraints.
 Expected: all PASS; both programs validate. Then `just test-one -p niri ring_` and `just test-one -p niri glass_edge`: the frozen renders are unchanged, since no tile swings and every uniform is its rest value.
 
 - [ ] **Step 6: Commit**
@@ -3118,7 +3358,7 @@ This task makes the view branch tilt the window plane and route every sample thr
 
 **Interfaces:**
 - Consumes: the five view uniforms (Task 7); `view::hooks::POSE` (Task 6); `ring_pair::{render_at, set_time, diff}`, `glass_edge::renderer_name`.
-- Produces: GLSL `bool g_view_on; vec3 g_ray; vec3 g_view; vec3 g_r; vec3 g_h0; vec2 g_h0_shift; vec3 g_rho; float g_tau0; bool g_plane_ok; bool g_decal_ok; vec2 g_seed_glide;`, `void slabFrame(out float chamfer)`, `vec3 viewUnrotateDelta(vec3)`, `vec3 viewRotateDelta(vec3)`, `vec2 viewScreenShift(vec3 q)`, `void viewBegin(vec2 p)`, `vec2 viewHit(vec2 p)`, `Surface.view`; Rust test harness `view_tilt::{Scene, renders, PoseHook, GAIN, REST}`.
+- Produces: Rust test helpers `view_tilt::{set_nodes, bevel0, thickness0}`; GLSL `bool g_view_on; vec3 g_ray; vec3 g_view; vec3 g_r; vec3 g_h0; vec2 g_h0_shift; vec3 g_rho; float g_tau0; bool g_plane_ok; bool g_decal_ok; vec2 g_seed_glide;`, `void slabFrame(out float chamfer)`, `vec3 viewUnrotateDelta(vec3)`, `vec3 viewRotateDelta(vec3)`, `vec2 viewScreenShift(vec3 q)`, `void viewBegin(vec2 p)`, `vec2 viewHit(vec2 p)`, `Surface.view`; Rust test harness `view_tilt::{Scene, renders, PoseHook, GAIN, REST}`.
 
 - [ ] **Step 1: Write the identity test**
 
@@ -3318,6 +3558,31 @@ pub(super) fn dump(name: &str, pixels: &[u8], (w, h): (u16, u16)) {
     crate::utils::write_png_rgba8(file, w.into(), h.into(), pixels).unwrap();
 }
 
+/// `glass` with each of `nodes` in place of the line naming the same node, or appended. KDL
+/// rejects a repeated single node, so a variant cannot simply append `bevel 0` to a look
+/// that already sets `bevel`. Only for single nodes: `noise` may repeat and is not replaced.
+pub(super) fn set_nodes(glass: &str, nodes: &[&str]) -> String {
+    let key = |line: &str| line.split_whitespace().next().unwrap_or("").to_owned();
+    let mut lines: Vec<String> = glass.lines().map(str::to_owned).collect();
+    for node in nodes {
+        let line = format!("                {node}");
+        match lines.iter_mut().find(|l| key(l) == key(node)) {
+            Some(existing) => *existing = line,
+            None => lines.push(line),
+        }
+    }
+    lines.join("\n")
+}
+
+/// No bevel and no offset (the offsets may not exceed the bevel).
+pub(super) fn bevel0(glass: &str) -> String {
+    set_nodes(glass, &["bevel 0", "offset-x 0", "offset-y 0"])
+}
+
+pub(super) fn thickness0(glass: &str) -> String {
+    set_nodes(glass, &["thickness 0"])
+}
+
 /// The identity cases of §8.2: the beam, aberration, reflection and grain on, and again for
 /// bevel 0, thickness 0 and asymmetric corner radii, on translucent, clear and opaque content.
 fn identity_scenes() -> Vec<(String, Scene)> {
@@ -3326,8 +3591,8 @@ fn identity_scenes() -> Vec<(String, Scene)> {
         for (content, px) in [("translucent", TRANSLUCENT), ("clear", CLEAR), ("opaque", OPAQUE)] {
             out.push((format!("{look}-{content}"), Scene { content: px, ..Scene::new(glass, BEAM) }));
         }
-        out.push((format!("{look}-bevel0"), Scene::new(&format!("{glass}\n                bevel 0\n                offset-x 0\n                offset-y 0"), BEAM)));
-        out.push((format!("{look}-thickness0"), Scene::new(&format!("{glass}\n                thickness 0"), BEAM)));
+        out.push((format!("{look}-bevel0"), Scene::new(&bevel0(glass), BEAM)));
+        out.push((format!("{look}-thickness0"), Scene::new(&thickness0(glass), BEAM)));
         out.push((
             format!("{look}-radii"),
             Scene {
@@ -3345,6 +3610,18 @@ fn identity_scenes() -> Vec<(String, Scene)> {
         ));
     }
     out
+}
+
+#[test]
+fn every_identity_scene_parses_and_replaces_its_nodes() {
+    for (name, scene) in identity_scenes() {
+        for node in ["bevel", "thickness", "offset-x", "offset-y"] {
+            let count = scene.glass.lines().filter(|l| l.split_whitespace().next() == Some(node)).count();
+            assert!(count <= 1, "{name}: {count} `{node}` nodes");
+        }
+        let _ = config(&scene);
+    }
+    assert!(bevel0(STOCK).contains("bevel 0") && !bevel0(STOCK).contains("bevel 12"));
 }
 
 #[test]
@@ -3373,8 +3650,8 @@ In `src/tests/mod.rs`, add `mod view_tilt;` after `mod transactions;`. In `src/t
 
 - [ ] **Step 2: Run it to see what it shows before the shader changes**
 
-Run: `just test-one -p niri view_tilt::the_view_branch_at_the_identity`
-Expected: PASS already: Task 7's branch only remaps `v` by the identity quad. Record the printed renderer string in the task's notes (`tasks note material-a0e3fb "renderer: <string>"`). This run is the control for Step 5.
+Run: `just test-one -p niri view_tilt::every_identity_scene_parses`, then `just test-one -p niri view_tilt::the_view_branch_at_the_identity`
+Expected: both PASS already: Task 7's branch only remaps `v` by the identity quad. Record the printed renderer string in the task's notes (`tasks note material-a0e3fb "renderer: <string>"`). This run is the control for Step 5.
 
 - [ ] **Step 3: Write the shader**
 
@@ -3629,7 +3906,7 @@ git commit -m "feat(material): rigid tilt view branch in the shader"
 
 **Interfaces:**
 - Consumes: the Task 8 globals and helpers; `solid::{Solid, Segment, trace, outline}` (Tasks 4–5).
-- Produces: GLSL `float g_rise; float g_chamfer; bool g_wall; bool g_face_hit; float g_hit_z; float g_view_coverage;`, `viewSigmaR`, `viewSigma`, `viewSigmaGrad`, `viewPsi`, `viewPsiDz`, `viewPoint`, `viewMinimise`, `viewTrace`, `viewOutline`; Rust `solid::sure_miss(&Solid, &Segment) -> bool`.
+- Produces: GLSL `float g_rise; float g_chamfer; bool g_wall; bool g_face_hit; bool g_face_near; float g_hit_z; float g_view_coverage;`, `viewSigmaR`, `viewSigma`, `viewSigmaGrad`, `viewPsi`, `viewPsiDz`, `viewPoint`, `viewMinimise`, `viewTrace`, `viewOutline`; Rust `solid::sure_miss(&Solid, &Segment) -> bool`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3709,6 +3986,7 @@ and to its `tests` module:
             "vec3 jx = scale * (ux - g_r * (dot(n, ux) / dot(n, g_r)));",
             "return g_psi_min + g_psi_min * (length(g0) - len) / len;",
             "if (viewSigmaR(g_h0.xy, rMin) - mat_thickness * length(g_rho.xy) > 0.0)",
+            "if (viewSigma(g_h0.xy, g_h0.xy - g_center) + g_chamfer > -4.0 * aa) {",
         ] {
             assert!(frag.contains(line), "prelude.frag lacks `{line}`");
         }
@@ -3737,8 +4015,8 @@ fn black(pixels: &[u8]) -> usize {
 #[test]
 fn a_swing_with_zero_rise_draws_no_nan() {
     for (name, glass) in [
-        ("bevel0", format!("{STOCK}\n                bevel 0\n                offset-x 0\n                offset-y 0")),
-        ("thickness0", format!("{STOCK}\n                thickness 0")),
+        ("bevel0", bevel0(STOCK)),
+        ("thickness0", thickness0(STOCK)),
     ] {
         let scene = Scene::new(&glass, "view-tilt 14\n                view-distance 2.5");
         let frames = renders(&scene, None, &swing_frames());
@@ -3771,7 +4049,8 @@ const int VIEW_BISECT_STEPS = 24;
 float g_rise;          // min(chamfer, thickness): the bevel's height
 float g_chamfer;       // the chamfer drawn
 bool g_wall;           // shade this fragment as the wall
-bool g_face_hit;       // the window-plane hit is on the flat face: today's coverage holds
+bool g_face_hit;       // the window-plane hit is on the flat face: it is shaded there
+bool g_face_near;      // and lies near the outline, so its coverage is the outline's
 float g_hit_z;         // the shading point's depth
 float g_view_coverage; // the outline coverage (§4.5)
 float g_psi_min;       // Ψmin over the segment, where, on which plane, in which quadrant
@@ -3987,12 +4266,26 @@ float viewOutline() {
 vec2 viewHit(vec2 p) {
     g_wall = false;
     g_face_hit = false;
+    g_face_near = false;
     g_view_coverage = 0.0;
     g_hit_z = 0.0;
     if (!g_plane_ok)
         return vec2(0.0);
+    float aa = 1.0 / niri_scale;
     if (sdRoundedBox(g_h0.xy - g_face_center, g_face_half, g_face_r) < 0.0) {
         g_face_hit = true;
+        // Far from the outline the coverage is 1 either way. Within 4 physical px of the
+        // face plane's cross-section (sigma + chamfer), the projected outline can be nearer
+        // than the slab-local one: with bevel 0 the face reaches the silhouette, and a
+        // slab-local coverage errs past the side bound there (plan review round 1). The
+        // plane-to-screen map shrinks no distance by more than 2x over the configured
+        // ranges, so 4 px slab-local is at least 2 px on screen.
+        if (viewSigma(g_h0.xy, g_h0.xy - g_center) + g_chamfer > -4.0 * aa) {
+            g_face_near = true;
+            viewTrace();
+            g_wall = false;
+            g_view_coverage = 1.0 - smoothstep(-aa, 0.0, viewOutline());
+        }
         return g_h0_shift;
     }
     // A sure miss (design 2026-10-09 §6): coverage exactly 0, no bracketing.
@@ -4000,7 +4293,6 @@ vec2 viewHit(vec2 p) {
     if (viewSigmaR(g_h0.xy, rMin) - mat_thickness * length(g_rho.xy) > 0.0)
         return g_h0_shift;
     viewTrace();
-    float aa = 1.0 / niri_scale;
     g_view_coverage = 1.0 - smoothstep(-aa, 0.0, viewOutline());
     g_hit_z = -g_trace_t * mat_thickness;
     return g_h0_shift + g_rho.xy * (g_trace_t * mat_thickness);
@@ -4019,9 +4311,11 @@ In `main.frag`, in the `mat_view_on == 1` block of Task 8, after `slabFrame(fram
 Remove Task 8's `if (g_view_on && !g_plane_ok) coverage = 0.0;` and put after `slabSurface(...)`:
 
 ```glsl
-    // The outline coverage and the wall (§4.3, §4.5). A face hit keeps today's coverage.
-    if (g_view_on && !g_face_hit) {
+    // The outline coverage and the wall (§4.3, §4.5). A face hit far from the outline keeps
+    // the coverage slabSurface gave it, which is 1 there.
+    if (g_view_on && (!g_face_hit || g_face_near))
         coverage = g_view_coverage;
+    if (g_view_on && !g_face_hit) {
         if (g_wall) {
             vec2 gOut = softOuterGrad(p - g_center, g_half, g_outer_r);
             if (gOut == vec2(0.0))
@@ -4042,6 +4336,8 @@ In the beam block, after the `spill = ... * (1.0 - bevelAcross);` statement's cl
                 if (g_wall)
                     spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * mat_view.w;
 ```
+
+The face shortcut's coverage near the outline is checked against the mirror by Task 11's `the_face_coverage_matches_the_mirror_at_bevel_0`, which needs Task 11's coverage probe.
 
 - [ ] **Step 5: Validate and run**
 
@@ -4503,10 +4799,15 @@ pub(super) fn mirror(frame: &MaterialFrame, glass: &niri_config::ResolvedGlass, 
 /// Renders the pane under `pose` with the probe `gain` (−1 walls, −2 coverage), clear content
 /// over a black backdrop and no second window.
 fn probe(look: &str, pose: ViewPose, gain: f32) -> (Vec<u8>, MaterialFrame, niri_config::ResolvedGlass) {
+    probe_sized(look, (640, 480), pose, gain)
+}
+
+fn probe_sized(look: &str, size: (u16, u16), pose: ViewPose, gain: f32) -> (Vec<u8>, MaterialFrame, niri_config::ResolvedGlass) {
     let scene = Scene {
         content: CLEAR,
         backdrop: "#000000",
         second: false,
+        size,
         ..Scene::new(look, "")
     };
     let _hook = PoseHook::set(Some(pose));
@@ -4599,6 +4900,37 @@ fn a_diagonal_swing_shows_the_corner_wall_where_the_mirror_does() {
     }
     assert!(predicted > 0, "the case must show a corner wall");
     assert!(rendered.abs_diff(predicted) * 10 <= predicted.max(10), "{rendered} rendered, {predicted} predicted");
+}
+
+#[test]
+fn the_face_coverage_matches_the_mirror_at_bevel_0() {
+    // Plan review round 1: with bevel 0 the flat face reaches the silhouette, so face hits sit
+    // on the outline. A 100 px slab at 20°, κ 1.5: at x = 52.5 the slab-local distance is
+    // −0.4436 px against the projected −0.5305 px. The rendered coverage must follow the mirror
+    // within the side bound (1/16 px of outline distance, times the smoothstep's slope 1.5).
+    for glass in [thickness0(&bevel0(STOCK)), bevel0(STOCK)] {
+        let pose = ViewPose { theta: 20f64.to_radians(), dir: DVec2::X, weight: 1., kappa: 1.5 };
+        let (pixels, frame, glass_r) = probe_sized(&glass, (100, 100), pose, -2.);
+        let (solid, camera) = mirror(&frame, &glass_r, &pose);
+        let y = solid.center.y as i32;
+        let coverage = |m: f64| {
+            let x = (m + 1.).clamp(0., 1.);
+            1. - x * x * (3. - 2. * x)
+        };
+        for sign in [1., -1.] {
+            let edge = camera.to_screen((solid.center + DVec2::new(sign * solid.half.x, 0.)).extend(0.)).x as i32;
+            for x in edge - 4..edge + 4 {
+                let s = DVec2::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
+                let Some(seg) = Segment::new(&camera, s) else { continue };
+                let want = coverage(outline(&solid, &camera, &seg, &trace(&solid, &seg)));
+                let got = f64::from(px(&pixels, x, y)[0]) / 255.;
+                assert!(
+                    (got - want).abs() <= 1.5 / 16. + 2. / 255.,
+                    "side {sign} x {x}: rendered coverage {got}, mirror {want}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -4840,7 +5172,7 @@ diff base.list head.list && while read -r f; do cmp -s "base/$f" "head/$f" || ec
 wc -l < compare.txt
 ```
 
-Expected: identical file lists and `0` lines in `compare.txt`. Any `DIFFERS` line fails the spec's rest identity (§8.2): stop, report the files, and do not continue to Step 3. A difference there with `view-tilt` unset means the rest path changed; the usual cause is an expression moved out of its rest form (Global Constraints), and the fix is in the shader, not in the comparison.
+Expected: identical file lists and `0` lines in `compare.txt`. Keep `$EV` (its `base/` dumps are Task 14's reference if the contingency there splits the program) and record its path in the task's done note. Any `DIFFERS` line fails the spec's rest identity (§8.2): stop, report the files, and do not continue to Step 3. A difference there with `view-tilt` unset means the rest path changed; the usual cause is an expression moved out of its rest form (Global Constraints), and the fix is in the shader, not in the comparison.
 
 - [ ] **Step 3: Remove the base worktree**
 
@@ -4943,7 +5275,7 @@ This task ends at a gate: the owner picks the peak angle, the camera distance an
 - Modify: `docs/materials/2026-10-<dd>-rigid-tilt-evidence.md` (the *Stills* section)
 
 **Interfaces:**
-- Consumes: the harness of Tasks 8–11; `ring_look::ACCEPTED`; the test-client helpers ported in Task 10; `view::hooks::{POSE, WALL_SPILL}`.
+- Consumes: the harness of Tasks 8–11 (`pane_swing` from Task 11); `ring_look::ACCEPTED`; the test-client helpers ported in Task 10; `view::hooks::{POSE, WALL_SPILL}`.
 - Produces: `VIEW_TILT_DUMP/sheet/*.png` and `sheet/geometry.json`; `view-tilt-sheet.py <dump dir> <out dir>` writing `sheet.png`, `crops.png`, `filmstrip.png`.
 
 - [ ] **Step 1: Write the sheet render**
@@ -5064,14 +5396,19 @@ fn still_sheet_frames() {
     for ms in (0..=900).step_by(50) {
         dump(&format!("sheet/film-{ms:03}"), &sheet_frame(false, &swing(10., 6.), None, 1., ms), SHEET_OUT);
     }
-    let mut f = sheet_fixture(&sheet_material(false, ""));
+    // The cells' swing direction: the positive lobe lifts the edge along it, which is the
+    // advancing edge the crops show.
+    let mut f = sheet_fixture(&sheet_material(false, &swing(10., 6.)));
+    gain(&mut f);
+    render_at(&mut f, GAIN);
+    let (_, advancing) = pane_swing(&mut f).expect("the gain starts a swing");
     let pane = pane_rect(&mut f);
     let dir = std::env::var_os("VIEW_TILT_DUMP").unwrap();
     std::fs::write(
         std::path::Path::new(&dir).join("sheet/geometry.json"),
         format!(
-            r#"{{"size": [{}, {}], "pane": [{}, {}, {}, {}]}}"#,
-            SHEET_OUT.0, SHEET_OUT.1, pane.loc.x, pane.loc.y, pane.size.w, pane.size.h
+            r#"{{"size": [{}, {}], "pane": [{}, {}, {}, {}], "advancing": [{}, {}]}}"#,
+            SHEET_OUT.0, SHEET_OUT.1, pane.loc.x, pane.loc.y, pane.size.w, pane.size.h, advancing[0], advancing[1]
         ),
     )
     .unwrap();
@@ -5165,22 +5502,32 @@ def main(dump, out):
     draw.text((MARGIN, H - MARGIN - 26), 'Reply with a cell id (A1–C3), the spill (S1 or S2), and anything that reads wrong.', TEXT, font(19, True))
     sheet.save(os.path.join(out, 'sheet.png'))
 
+    # The positive lobe lifts the edge along the swing's direction: the advancing edge.
+    if geo['advancing'][0] < 0:
+        edge = (x - 100, y + h / 2 - 160, x + 220, y + h / 2 + 160)
+        text = (x + 120, y + 60, x + 520, y + 260)
+    else:
+        edge = (x + w - 220, y + h / 2 - 160, x + w + 100, y + h / 2 + 160)
+        text = (x + w - 520, y + 60, x + w - 120, y + 260)
+    # The diagonal crop's pose lifts the corner along (0.6, 0.8): bottom right.
+    corner = (x + w - 200, y + h - 200, x + w + 100, y + h + 100)
     crops = [
-        ('advancing edge, B2 dark', 'cell-t10-k6-dark', (x + w - 220, y + h / 2 - 160, x + w + 100, y + h / 2 + 160)),
-        ('advancing edge, B2 light', 'cell-t10-k6-light', (x + w - 220, y + h / 2 - 160, x + w + 100, y + h / 2 + 160)),
-        ('text near the advancing edge, B2 dark', 'cell-t10-k6-dark', (x + w - 520, y + 60, x + w - 120, y + 260)),
-        ('text at rest', 'rest-dark', (x + w - 520, y + 60, x + w - 120, y + 260)),
-        ('corner, diagonal swing, dark', 'diagonal-dark', (x + w - 200, y + h - 200, x + w + 100, y + h + 100)),
-        ('corner, diagonal swing, light', 'diagonal-light', (x + w - 200, y + h - 200, x + w + 100, y + h + 100)),
+        ('advancing edge, B2 dark', 'cell-t10-k6-dark', edge),
+        ('advancing edge, B2 light', 'cell-t10-k6-light', edge),
+        ('text near the advancing edge, B2 dark', 'cell-t10-k6-dark', text),
+        ('the same text at rest', 'rest-dark', text),
+        ('corner, diagonal swing, dark', 'diagonal-dark', corner),
+        ('corner, diagonal swing, light', 'diagonal-light', corner),
     ]
     tiles = [(label, Image.open(os.path.join(d, f'{name}.png')).convert('RGB').crop(tuple(int(v) for v in rect))) for label, name, rect in crops]
-    CW = MARGIN * 2 + sum(t.width for _, t in tiles[:2]) + GAP
-    CH = MARGIN * 2 + 60 + sum(max(a.height, b.height) + 40 for (_, a), (_, b) in zip(tiles[::2], tiles[1::2]))
+    rows = list(zip(tiles[::2], tiles[1::2]))
+    CW = MARGIN * 2 + max(a.width + GAP + b.width for (_, a), (_, b) in rows)
+    CH = MARGIN * 2 + 60 + sum(max(a.height, b.height) + 40 for (_, a), (_, b) in rows)
     page = Image.new('RGB', (CW, CH), BG)
     draw = ImageDraw.Draw(page)
     draw.text((MARGIN, MARGIN), 'Native-resolution crops (1:1) at the peak', TEXT, font(24, True))
     yy = MARGIN + 50
-    for (la, a), (lb, b) in zip(tiles[::2], tiles[1::2]):
+    for (la, a), (lb, b) in rows:
         page.paste(a, (MARGIN, yy))
         page.paste(b, (MARGIN + a.width + GAP, yy))
         draw.text((MARGIN, yy + a.height + 6), la, DIM, font(15))
@@ -5221,7 +5568,7 @@ Expected: the test passes; `sheet.png`, `crops.png` and `filmstrip.png` exist un
 
 - [ ] **Step 4: Look at the sheets before handing them over**
 
-Open each PNG at the size the owner will see it (Read tool on the file). Check that the title, the row and column labels, every cell id and the legend are legible, that the control carries its gold border and label, and that the crops show the edge, text and corner rather than backdrop. Fix the script's offsets or scale and rerun Step 3 until they do.
+Open each PNG at the size the owner will see it (Read tool on the file). Check that the title, the row and column labels, every cell id and the legend are legible, that the control carries its gold border and label, that the edge crop shows the lifted edge with its wall (the side `geometry.json`'s `advancing` names), and that both text crops show whole lines, uncut at the canvas edge. Fix the script's offsets or scale and rerun Step 3 until they do.
 
 - [ ] **Step 5: Record and stop for the owner**
 
@@ -5450,11 +5797,43 @@ The same command with `VIEW_TILT_COST_PILOT=0` (about 20 minutes). Record its `r
 
 Per §6 "Contingency": the rest program is built from today's source and the view variant is bound only while a swing runs.
 
-1. In `prelude.frag`, `main.frag`, `noise.frag`, `reflection.frag`, `edge_highlight.frag` and `common.frag`, wrap every view-only line (the declarations and helpers of Tasks 7–9 and each `if (g_view_on ...)`/`if (mat_view_on == 1)` block) in `#if MATERIAL_VIEW` … `#endif`. With `MATERIAL_VIEW` 0 the text compiles to today's.
-2. In `src/render_helpers/shaders/mod.rs`, add `material_view_source()` that prepends `#define MATERIAL_VIEW 1\n` after the precision line, have `material_source()` prepend `#define MATERIAL_VIEW 0\n`, compile both, and add `ProgramType::MaterialView` beside `ProgramType::Material` (the view uniform names only in the view program's `material_uniform_names`).
-3. In `MaterialRenderElement::draw`, pick `ProgramType::MaterialView` and append the view uniforms only when `self.view.is_some()`; at rest bind `ProgramType::Material` with today's uniform list.
-4. Retarget `the_view_branch_at_the_identity_is_byte_identical_to_rest` to compare the two programs (the forced identity pose binds the view variant), run every `view_tilt` and `material_source` test, and validate both variants offline with `glslangValidator` (the Global Constraints command once with `#define MATERIAL_VIEW 1` inserted after the precision line).
-5. Commit as `perf(material): rigid tilt view path as a second program variant`, then rerun Steps 2–3.
+1. Guard the view path with `#ifdef MATERIAL_VIEW` (`#ifdef`, not `#if`: the grain program defines nothing, and GLSL ES leaves an undefined macro in `#if` an error). Two kinds of lines:
+   - **Added lines** (the view uniforms and globals, `slabFrame`'s callers in the view block, `viewUnrotateDelta` through `viewHit`, every `if (g_view_on ...)` and `if (mat_view_on == 1)` statement, the probes, the wall spill line, `Surface.view`): inside `#ifdef MATERIAL_VIEW … #endif`.
+   - **Changed rest lines**: `#ifdef MATERIAL_VIEW <the branch's line> #else <the line as it reads at the branch's base> #endif`, taking the base text from `git show <BASE>:<file>`. These are, by file:
+     - `main.frag`: the window sample (`if (hasDecal && inRect(winV, ...))` and its `wv` line, base: `if (inRect(v, mat_geo_rect))` and `vec2 wv = (v - mat_geo_rect.xy) / mat_geo_rect.zw;`); the two `hash12(seed + ...)` jitter lines (base: `gl_FragCoord.xy`); `saturation_behind`, `noise_behind`, `noise_post` (base: `gl_FragCoord.xy`); the `Surface surf = Surface(...)` constructor (base: without `g_view`); and the coverage line moved by Task 9 if its text differs from the base.
+     - `prelude.frag`: `slabSurface`'s opening (base: the lines Task 8 moved into `slabFrame`, verbatim), with `slabFrame` itself inside `#ifdef`; `tap`'s body if its text differs from the base (Task 8 kept the base lines and only added branches; check with `git diff <BASE> -- prelude.frag`).
+     - `reflection.frag`: the `vec2 at` lines (base: `vec3 scene = srgbToLinear(sampleBackground(s.v + dir * reach / mat_area_size));`).
+     - `noise.frag`: `vec2 p = (fragCoord + g_seed_glide) / scale;` (base: `vec2 p = fragCoord / scale;`); `common.frag`'s `g_seed_glide` inside `#ifdef`.
+   Then check that the rest variant is the base text (no `#ifdef` nests inside another in these files):
+   ```bash
+   BASE=<the base commit in Task 12's done note>
+   rm -rf target/rest-variant target/base-shaders && mkdir -p target/rest-variant target/base-shaders
+   git archive "$BASE" src/render_helpers/shaders/material | tar -x -C target/base-shaders
+   python3 - <<'PY'
+   import pathlib
+   src, out = pathlib.Path('src/render_helpers/shaders/material'), pathlib.Path('target/rest-variant')
+   for f in src.glob('*.frag'):
+       keep, state = [], 'rest'
+       for line in f.read_text().splitlines():
+           t = line.strip()
+           if t == '#ifdef MATERIAL_VIEW':
+               state = 'view'; continue
+           if t == '#else' and state == 'view':
+               state = 'else'; continue
+           if t == '#endif' and state != 'rest':
+               state = 'rest'; continue
+           if state != 'view':
+               keep.append(line)
+       (out / f.name).write_text('\n'.join(keep) + '\n')
+   PY
+   diff -r target/base-shaders/src/render_helpers/shaders/material target/rest-variant
+   ```
+   Expected: no output. Any difference is a rest line that changed; put the base text under `#else`.
+2. In `src/render_helpers/shaders/mod.rs`, add `material_view_source()` that inserts `#define MATERIAL_VIEW\n` after the precision line, leave `material_source()` without it, compile both, and add `ProgramType::MaterialView` beside `ProgramType::Material` (the view uniform names only in the view program's `material_uniform_names`).
+3. In `MaterialRenderElement::draw`, pick `ProgramType::MaterialView` and append the view uniforms only when `self.view.is_some()`; at rest bind `ProgramType::Material` with the base's uniform list.
+4. Retarget `the_view_branch_at_the_identity_is_byte_identical_to_rest` to compare the two programs (the forced identity pose binds the view variant), run every `view_tilt` and `material_source` test, and validate both variants offline with `glslangValidator` (the Global Constraints command, and again with `#define MATERIAL_VIEW` inserted after the precision line).
+5. Repeat Task 12's pinned comparison: dump `glass_edge` and `ring_look` at the new head into `$EV_HEAD2` and compare them byte for byte against the base dumps Task 12 kept (`$EV/base` of its run; Task 12 Step 2's `cmp` loop with `head` replaced by the new directory). Expected: no `DIFFERS` line. Record it in the evidence document's *Rest identity* section as a second row.
+6. Commit as `perf(material): rigid tilt view path as a second program variant`, then rerun Steps 2–3.
 
 - [ ] **Step 5: Commit**
 
