@@ -1,6 +1,6 @@
 # Transient rigid tilt of window and glass
 
-**Status:** draft, revised after spec review rounds 1 and 2 (2026-10-09), for the
+**Status:** draft, revised after spec review rounds 1, 2 and 3 (2026-10-09), for the
 owner's review. No renderer code before this spec and its implementation
 plan are reviewed.
 **Task:** `material-abc08c`, lane `material-53f873`.
@@ -433,6 +433,12 @@ with the same inside-biased band of one physical pixel.
   - **At a piece end.** This is the back plane, the face plane, or a centre
     line of section 4.1. As `s` moves, the minimiser stays on that end, so
     `∂q/∂s` is taken along the end's plane rather than at fixed `t`.
+  - **Ties.** A tie between an end and the interior resolves to the end.
+    At zero thickness the segment is one point, which is on the face plane
+    by definition. On the bevel's deep plateau, where `X = 1`, `Ψ` is flat
+    along the ray and either choice gives the same value. Resolving a
+    zero-thickness tie to the interior applies the fixed-`t` form and errs
+    by 0.26 px.
 
   Round 1 of this spec used the fixed-`t` form everywhere, which is wrong at
   ends. The model below shows it erring by 0.26–0.47 px at corners whose
@@ -440,27 +446,41 @@ with the same inside-biased band of one physical pixel.
 - **Error bound.** Within one physical pixel of the outline, `m` is compared
   with the exact signed distance to the hit/miss boundary, found by search
   in the Rust mirror. It must be within:
-  - 1/16 physical px on straight sides, and at any corner for a horizontal
-    or vertical swing;
-  - 1/8 physical px at corners on a diagonal swing.
+  - 1/16 physical px on straight sides;
+  - 1/2 physical px at corners, for any swing direction and any thickness,
+    zero included. A corner here is the region within `r + 1.5` px of the
+    projection of a corner arc's centre, `r` being that arc's outer radius,
+    on the face plane or the back plane.
 
   A Python model applied the end-correct analytic gradient to a 100 px slab
-  at θ 20° and κ 1.5, the strongest configured perspective. Corners of
-  radius 0 and 0.8 px were tested, bevel 0 and 0.8, thickness 2 to 31.2,
-  minimisers interior and at both ends. The worst errors:
-  - axis-aligned swings, every corner: 0.003 px;
-  - diagonal `d` (0.6, 0.8), sharp corner: 0.065 px, and 0.019 px at 6°;
-  - diagonal, 0.8 px corner: 0.091 px.
+  at θ 20° and κ 1.5, the strongest configured perspective. It tested corners
+  of radius 0 and 0.8 px, bevel 0 and 0.8, and thickness 0, 0.01, 2, 31.2
+  and 200, with minimisers interior and at both ends. Corners were sampled
+  on dense screen grids around the projected arc centres, since sampling
+  along the outline missed the worst points (section 8.1). The worst errors:
+  - straight sides, every case: 0.003 px;
+  - horizontal swing, corner 0.8 px, thickness 0: 0.14 px. The model
+    reproduces the round 3 reviewer's point there (`m` −0.969 px against
+    an exact −0.886 px);
+  - diagonal `d` (0.6, 0.8), thickness 0: 0.12 px; thickness 0.01: 0.10 px;
+  - diagonal, sharp corner, thickness 31.2 or 200: 0.30–0.32 px. This is the
+    worst case found. A 0.8 px corner at the same thickness: 0.13 px.
 
-  The diagonal error comes from the slanted side that the ray's sweep adds
-  to the outline at a corner, which a single gradient does not see.
+  At a corner the ray's sweep adds a slanted side to the outline, and two
+  sides are nearly equidistant there. A single gradient sees only one of
+  them. Earlier versions of this spec claimed 1/16 px, then 1/8 px, at
+  corners; each failed at points the model had not sampled. The bound of
+  1/2 px sits above the worst found with a margin of about 1.6×, and the
+  section 8.1 test samples at 1/32 px, finer than the model's 0.15 px.
   Rejected: refining `m` by Newton projection onto the outline. Two steps
-  left the diagonal corner at 0.05–0.12 px in the same model, it costs two
+  left the diagonal corner at 0.05–0.29 px in the same model, it costs two
   more bracketings per outline pixel, and its correction is not exactly zero
-  at identity, which would break the byte-identity test. A 1/8 px shift of a
-  one-pixel ramp, at a corner, on frames in motion, stays well inside the
-  pixel, and the still sheet's corner crops (section 8.3) show it to the
-  owner.
+  at identity, which would break the byte-identity test. Also rejected: an
+  exact corner distance. The round 3 review did not require one to keep the
+  earlier tolerance, and here the tolerance is widened instead. The
+  consequence of the bound is that, at a corner, on frames in motion, the
+  one-pixel AA ramp can shift by up to half a pixel. It does not open holes
+  (below). The still sheet's corner crops (section 8.3) show it to the owner.
   - **Exception.** Where a corner radius exceeds its half-extent, the
     outline itself steps at a centre line. The (88, 12, 12, 12) case steps
     8.6 px at the top seam, already at rest. Within one physical px of such
@@ -562,17 +582,35 @@ design is accepted.
   as a convex polygon. The kept vertices are the corners at or below the
   plane, plus each edge's crossing of it. The element's geometry for that
   frame is the resting area merged with the bounding box of all the clipped
-  vertices' projections. That is intersected with the output's logical rect
-  grown by one physical pixel, then rounded out to physical pixels. Within
+  vertices' projections. During a swing, that box is then intersected with
+  the render view grown by one physical pixel (the view crop below), and
+  rounded out to physical pixels. Within
   the clip, the projection's denominator is at least 1/4, so it keeps convex
   sets convex. The clipped slab therefore lies within its projected hull and
   the clipped decal within its polygon, and the bound is conservative. It is
-  also finite: no point is magnified more than 4× about the pivot. The output
-  intersection applies only during a swing. Projecting the slab alone is not enough: with a 100 px slab
+  also finite: no point is magnified more than 4× about the pivot.
+  Projecting the slab alone is not enough: with a 100 px slab
   at 10° and κ = 6, a texture corner at (250, 250) from the pivot projects to
   about (265, 269), outside the slab's box and the resting area. The quad's
   UV maps back to the resting area through a 4-vector, as on the spike. At
   rest the geometry is `frame.area`, exactly today's.
+- **View crop.** The crop rect is the render view in the coordinates the
+  tile is drawn in at that moment. It is never the output rect taken as
+  given. Several renders draw the tile somewhere other than its place on
+  the output, and an output-space crop there would cut away visible glass:
+  - The alpha animation renders the tile at (0, 0) into its offscreen and
+    moves the result to `location` afterwards.
+  - The open animation renders the same way, though no swing starts during
+    it (section 5).
+  - The close snapshot and the screencast and blocked-out renders draw at
+    (0, 0) with no view at all (`signal_ticks: None`).
+
+  The crop therefore takes `SignalTickSink.view`, which the monitor,
+  workspace and interactive-move paths already move into the tile's render
+  coordinates. Where `Tile::render` draws through an offscreen at an origin
+  other than `location`, it shifts that view by `origin − location` before
+  passing it to `render_inner`. A render with no sink is not cropped. Its
+  geometry is bounded by the near clip alone, which is finite.
 - **Commit.** The view state (θ, axis, `w`, κ) joins `InputFingerprint`, so
   every swing frame commits. At rest the state is `None`, and the
   fingerprint and commit sequence are today's.
@@ -653,10 +691,18 @@ static perspective do not port.
   - bevel 0 and thickness 0, alone and together, where the mirror must
     produce no NaN and the solid is the box or the plane of section 4.1.
 - The outline distance `m` meets section 4.5's bound against the exact
-  signed distance to the hit/miss boundary. The cases cover straight sides,
-  corners, and the smallest corners: outer radius 0 (bevel 0, corner radius
-  0) and 0.8 px. They include θp 20° at κ 1.5, diagonal `d`, minimisers at a
-  piece's start, end and interior, and bevel 0 or thickness 0.
+  signed distance to the hit/miss boundary.
+  - **Corners.** A dense screen-space grid at 1/32 px spacing, reaching
+    `r + 1.5` px from the centre, is centred on the projection of each
+    corner arc's centre on the face plane and on the back plane. A search along the outline or along a screen
+    diagonal misses the worst points: those lie inside, near the arc centre,
+    where two sides are equally near.
+  - **Sides.** Lines across each straight side.
+  - **Cases.** The smallest corners, outer radius 0 (bevel 0, corner radius
+    0) and 0.8 px, and radius 2; thickness 0, 0.01, 2, 31.2 and 200; bevel 0
+    and positive; θp 20° at κ 1.5, plus smaller angles. Directions are
+    horizontal, vertical and diagonal `d`. Minimisers lie at a piece's
+    start, end and interior.
 - No configured range gives `r.z ≥ 0`.
 
 ### 8.2 Frozen renders (headless, no host)
@@ -687,6 +733,13 @@ aberration, reflection and grain on:
   projected pixels must all be drawn. A second case puts the subsurface past
   the near clip, at 20° and κ = 1.5. It is drawn up to the clip and nowhere
   past it, and the geometry stays within the output.
+- **View crop.** A swing runs during an alpha animation on a tile well away
+  from the output edges. The bevel band on the tile's top and left edges,
+  which lies at negative coordinates inside the offscreen, is drawn in
+  full. With the animation's alpha held at 1, the composited frame matches
+  the same swing frame rendered directly, to within one 8-bit level. A swing on a tile partly off the
+  output's left edge is cropped there and nowhere else. A close snapshot
+  taken mid-swing (no view) keeps the whole posed footprint.
 - **Walls.** Frames are taken at the peak, at a small-angle frame (2° of a
   10° swing, κ = 6) and in the overshoot lobe. Each edge shows wall coverage
   exactly where the mirror predicts, with widths to ±1 px. At the peak, the

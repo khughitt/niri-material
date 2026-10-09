@@ -9,7 +9,7 @@ process: planned
 needs: [owner]
 owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T18:03:44Z
+updated: 2026-10-09T20:21:35Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
@@ -58,3 +58,7 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 - 2026-10-09T18:03:43Z (material-abc08c): spec round 2 addressed in 04cfd744: seam split, zero-rise geometry, near clip zeta<=3/4 + output clip, end-correct outline gradient; coverage bound set to 1/16 px (1/8 at diagonal corners) from a model, Newton refinement rejected
 - 2026-10-09T18:03:43Z (material-abc08c): parked (waiting on user, review): Owner (or a fresh reviewer) reviews the revised docs/specs/2026-10-09-transient-rigid-tilt-design.md in .worktrees/material-abc08c as spec round 3; on approval the agent runs writing-plans there
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T18:13:42Z (material-abc08c): resumed
+  provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T18:13:42Z (material-abc08c): review: spec round 3 — verdict: revise; findings: must 2; reviewer: unknown
+- 2026-10-09T20:21:35Z (material-abc08c): spec round 3 fixes: §4.5 corner bound widened to 1/2 px for any swing and thickness incl. 0 (dense-grid model worst 0.32 px; reviewer's T0 point reproduced), §8.1 corner grid reaches r+1.5 px; §6 view crop uses SignalTickSink.view shifted by origin−location, sink-less offscreens exempt; §8.2 alpha-animation crop case
