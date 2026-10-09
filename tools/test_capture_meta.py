@@ -358,6 +358,22 @@ class ShowTests(unittest.TestCase):
                                           "started": "now", "host": "h"})
             self.assertEqual(cm.main(["show", directory]), 0)
 
+    def test_show_renders_old_and_pixel_records(self):
+        old = {"schema": 1, "run": {"id": "old", "lane": "headless", "started": STARTED},
+               "preflight": {"verdict": "quiet"},
+               "sub_runs": [{"name": "A", "verdict": "settled", "started": STARTED}]}
+        self.assertIn("A: settled", cm.render(old))
+        pixel = {"schema": 1, "run": {"id": "px", "lane": "pixels", "started": STARTED},
+                 "environment": {"kernel": "k", "cpu": "c", "cpu_threads": 1, "memory_total_kib": 1,
+                                 "session": {"type": "wayland", "display": "w"}, "tools": {}},
+                 "preflight": {"verdict": "unsampled", "at": STARTED, "host_condition": "desktop"},
+                 "sub_runs": [{"name": "cell-1", "verdict": "begun", "started": STARTED}]}
+        cm.validate_record(pixel)
+        text = cm.render(pixel)
+        for needle in ("GPU not sampled: pixels lane", "preflight unsampled", "host desktop",
+                       "cell-1: begun", "never finished"):
+            self.assertIn(needle, text)
+
 
 class FakeProc:
     def __init__(self, ticks, load1=0.5, available_kib=80_000, total_kib=100_000):
@@ -1132,6 +1148,55 @@ class LifecycleTests(unittest.TestCase):
     def test_host_condition_is_desktop_whenever_a_desktop_is_live(self):
         self.lane_preflight("headless", env={"XDG_SESSION_TYPE": "tty"})
         self.assertEqual(cm.load_record(self.run)["preflight"]["host_condition"], "desktop")
+
+    def test_pixel_preflight_holds_timers_and_services_only_and_samples_nothing(self):
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        record = cm.load_record(self.run)
+        self.assertEqual([i.get("unit", i["kind"]) for i in record["hold"]["items"]],
+                         ["wali-rotate.timer", "dropbox.service"])
+        self.assertNotIn(("noctalia", "msg", "caffeine-enable"), [tuple(c) for c in self.host.calls])
+        self.assertFalse([c for c in self.host.calls if "power-off-monitors" in c])
+        self.assertNotIn("baseline", record)
+        self.assertNotIn("gpu", record["environment"])
+        self.assertEqual(record["preflight"]["verdict"], "unsampled")
+        self.assertEqual(record["preflight"]["host_condition"], "desktop")
+        self.assertNotIn("thresholds", record["preflight"])
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual(self.host.snapshot(), self.before)
+
+    def test_pixel_preflight_never_probes_idle_or_monitors(self):
+        # Either probe refuses a measured hold; a pixel run must not reach them.
+        self.host.fail[("noctalia", "msg", "status")] = "noctalia: no shell running"
+        (self.host.sysfs / "card1-DP-1" / "enabled").unlink()
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        self.assertEqual(cm.load_record(self.run)["preflight"]["verdict"], "unsampled")
+        self.assertNotIn(("noctalia", "msg", "status"), [tuple(c) for c in self.host.calls])
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+
+    def test_pixel_preflight_records_the_gpu_when_one_is_present(self):
+        self.lane_preflight("pixels", gpu=FakeGpu([]), env={"XDG_SESSION_TYPE": "wayland"})
+        self.assertEqual(cm.load_record(self.run)["environment"]["gpu"]["name"], "NVIDIA test")
+
+    def test_begin_opens_a_pixel_sub_run_and_finish_closes_it(self):
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        (self.run / "A.kdl").write_text("glass")
+        cm.begin(self.run, "A", [self.run / "A.kdl"], lock=lambda: self.lock)
+        entry = cm.load_record(self.run)["sub_runs"][-1]
+        self.assertEqual((entry["name"], entry["verdict"]), ("A", "begun"))
+        self.assertEqual(entry["inputs"][0]["name"], "A.kdl")
+        cm.finish_sub_run(self.run, "A")
+        self.assertIn("finished", cm.load_record(self.run)["sub_runs"][-1])
+
+    def test_settle_refuses_a_pixel_run_and_begin_refuses_a_measured_run(self):
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        with self.assertRaisesRegex(cm.CannotRun, "pixels run opens sub-runs with begin"):
+            cm.settle(self.run, "A", [], 3, FakeProc([(i * 2, i * 100) for i in range(9)]),
+                      FakeGpu([QUIET] * 3), sleep=lambda s: None, lock=lambda: self.lock)
+        other = self.root / "runs" / "measured"; other.mkdir()
+        PreflightTests("test_quiet_headless_writes_run_environment_baseline_preflight").run_preflight(
+            other, lock=lambda: other / "lock")
+        with self.assertRaisesRegex(cm.CannotRun, "begin is for pixels runs"):
+            cm.begin(other, "A", [], lock=lambda: other / "lock")
 
     def test_quiet_preflight_holds_then_release_restores_and_is_clean(self):
         self.preflight()
