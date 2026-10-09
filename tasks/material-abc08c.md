@@ -9,7 +9,7 @@ process: planned
 needs: [owner]
 owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T22:12:41Z
+updated: 2026-10-09T22:17:25Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
@@ -75,3 +75,6 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 - 2026-10-09T22:12:40Z (material-abc08c): resumed
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-09T22:12:40Z (material-abc08c): review: plan round 1 — verdict: revise; findings: must 4, should 2; reviewer: codex/gpt-6.1-sol
+- 2026-10-09T22:17:24Z (material-abc08c): plan round 1 fixes: swing visibility uses the footprint (Task 7, review case test); face hits near the outline take the traced coverage (Task 9) with a bevel-0 shader coverage check (Task 11); identity variants replace nodes via set_nodes (Task 8, 9); certified convexity reference + closed-form controls replace dense sampling (Task 4); stills crops follow the swing direction and the canvas fits (Task 13); contingency keeps base lines under #else and repeats the pinned comparison (Task 14)
+- 2026-10-09T22:17:24Z (material-abc08c): parked (waiting on user, review): owner or a fresh reviewer reviews .worktrees/material-abc08c/docs/plans/2026-10-09-transient-rigid-tilt.md as plan round 2 and picks the execution method; on approval the agent closes material-abc08c and starts material-1971fd in .worktrees/material-abc08c
+  provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
