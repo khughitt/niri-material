@@ -9,7 +9,7 @@ process: planned
 needs: [owner]
 owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T22:36:31Z
+updated: 2026-10-09T22:36:35Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
@@ -87,3 +87,5 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 - 2026-10-09T22:36:30Z (material-abc08c): resumed
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-09T22:36:30Z (material-abc08c): review: plan round 3 — verdict: revise; findings: must 1; reviewer: codex
+- 2026-10-09T22:36:35Z (material-abc08c): parked (waiting on user, review): owner or a fresh reviewer reviews .worktrees/material-abc08c/docs/plans/2026-10-09-transient-rigid-tilt.md as plan round 4 and picks the execution method; on approval the agent closes material-abc08c and starts material-1971fd in .worktrees/material-abc08c
+  provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
