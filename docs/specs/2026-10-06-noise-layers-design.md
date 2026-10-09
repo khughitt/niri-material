@@ -322,6 +322,10 @@ low-frequency ratio, determinism).
 2. Byte identity against a baseline binary built from `4a8b2072`, same
    config, absolute error 0: one node of each kind at each site, no
    `scale=`; and no node at all with `blur { noise }` inheriting.
+   Since the merge (`1ae20983`) the baseline is its first parent, `37de154e`:
+   glass edges (material-be611b) landed beside this work and change bevel
+   pixels by design, so a `4a8b2072` build no longer matches the merged
+   branch (material-a8232f).
 3. `scale=1` written equals `scale` omitted (absolute error 0).
 4. Independence: two fine layers at amount 0.2 each, scale 1, give a grain
    `sd` within 5 % of `sqrt(2)` times one such layer's.

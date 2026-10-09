@@ -38,6 +38,18 @@ evidence root.
 | `noise-layers-bspline-full-1791426646` | `372581d9` (`e5edd631` code) | **passed**, strict; 45 sub-runs settled; clean release |
 | `noise-layers-bspline-cost-pilot-1791427673` | `372581d9` (`e5edd631` code) | passed (3 damage steps per case) |
 | `noise-layers-bspline-cost-full-1791428043` | `372581d9` (`e5edd631` code) | **passed**; clean release |
+| `noise-layers-pixels-pilot-1791520292` | `8e0f06c2` (merged branch) | pixels lane; failed assertion 2: fine glass vs the `4a8b2072` baseline, AE 8.3 |
+| `noise-layers-pixels-pilot-1791542879` | `efe44dec` + the re-pin, uncommitted | pixels lane; **passed** against the `37de154e` baseline; clean release |
+
+The two pixels-lane pilots (material-52dc6e) ran on the desktop in use, after
+the noise merge `1ae20983`. Against `4a8b2072`, the merged branch's frame
+differs by one code value in the bevel band and just outside the window, the
+face ROI identical: glass edges (material-be611b) landed beside this work and
+change the bevel by design. The smoke now pins the merge's first parent
+`37de154e` (release niri
+`23f7fe0f740bfd0a74e54bc46c2b70da08acc54dd928e19325592a39bd2732bf`), against
+which every identity holds; the passing pilot's `metrics.txt` equals
+`noise-layers-bspline-pilot-1791425925`'s line for line (material-a8232f).
 
 The B-spline runs were built from `e5edd631`'s code at `372581d9`, whose
 working tree differed only in task records; the binaries' SHA-256s are the
