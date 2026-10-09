@@ -181,6 +181,39 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
         self.assertNotIn("rg -q 'GL Renderer:.*NVIDIA'", hwa)
         self.assertNotIn('export RUST_LOG=', hwa)
 
+    SCRIPTS = Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+
+    def script_function(self, script, name):
+        return re.search(r'^' + name + r'\(\) \{.*?^}', (self.SCRIPTS / script).read_text(), re.S | re.M).group()
+
+    def test_clip_launchers_log_and_verify_both_renderers(self):
+        for name in ('ring-motion-clips.sh', 'drag-lag-clips.sh', 'focus-swap-clips.sh'):
+            with self.subTest(script=name):
+                body = self.script_function(name, 'start_nested')
+                self.assertIn('RUST_LOG=niri=debug,smithay::backend::renderer::gles=info', body)
+                self.assertIn('StandardOutput=append:', body)
+                lines = [l.strip() for l in body.splitlines()]
+                kitty = next(i for i, l in enumerate(lines) if l in ('wait_kitty 1', 'wait_app kitty'))
+                check = next(i for i, l in enumerate(lines) if 'capture_meta renderer "$OUT" --sub-run "$2"' in l)
+                self.assertLess(kitty, check)
+                self.assertIn('--weston-log', lines[check] + (lines[check + 1] if check + 1 < len(lines) else ''))
+
+    def test_every_launching_script_verifies_its_renderer(self):
+        launch = re.compile(r'capture_meta (settle|begin)\b|settle_before_launch\b')
+        for path in sorted(self.SCRIPTS.glob('*.sh')):
+            text = path.read_text()
+            if not launch.search(text):
+                continue
+            with self.subTest(script=path.name):
+                self.assertRegex(text, r'capture_meta renderer\b|verify_renderer\b')
+                self.assertRegex(text, r'gles=info|NIRI_RENDERER_LOG')
+
+    def test_coverage_scan_catches_a_launcher_that_skips_the_check(self):
+        launch = re.compile(r'capture_meta (settle|begin)\b|settle_before_launch\b')
+        synthetic = 'start_nested() {\n    capture_meta settle "$OUT" --sub-run "$2"\n}\n'
+        self.assertTrue(launch.search(synthetic))
+        self.assertNotRegex(synthetic, r'capture_meta renderer\b|verify_renderer\b')
+
     def test_gpu_cooldown_waits_for_six_consecutive_p8_polls(self):
         with tempfile.TemporaryDirectory() as out:
             result = self.gpu_cooldown(out, ['P5', 'P8', 'P8', 'P5', 'P8', 'P8', 'P8', 'P8', 'P8', 'P8'])

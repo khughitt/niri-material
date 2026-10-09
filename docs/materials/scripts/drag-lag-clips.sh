@@ -122,15 +122,21 @@ capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" --input "$0" --in
 NESTED_WAYLAND=
 start_nested() {   # $1 = config, $2 = sub-run name; sets NIRI_SOCKET and NESTED_WAYLAND
     capture_meta settle "$OUT" --sub-run "$2" --input "$1" || fail "settle refused before $2; see $OUT/capture.json"
+    local niri_from weston_from
+    niri_from=$( [ -e "$OUT/niri.log" ] && wc -c < "$OUT/niri.log" || echo 0 )
+    weston_from=$( [ -e "$OUT/weston.log" ] && wc -c < "$OUT/weston.log" || echo 0 )
     HOST_SEQ=$((HOST_SEQ + 1))
     local host=$RUN-h$HOST_SEQ
     UNIT=$host-weston; HOST_SOCKET=$XDG_RUNTIME_DIR/$host
-    systemd-run --user --unit="$UNIT" --collect weston --backend=headless --renderer=gl \
+    systemd-run --user --unit="$UNIT" --collect \
+        --property=StandardOutput=append:"$OUT/weston.log" --property=StandardError=append:"$OUT/weston.log" \
+        weston --backend=headless --renderer=gl \
         --shell=kiosk-shell.so --width=1280 --height=720 --socket="$host" >/dev/null 2>&1
     for _ in $(seq 100); do [ -S "$HOST_SOCKET" ] && break; sleep 0.1; done
     [ -S "$HOST_SOCKET" ] || fail "Weston socket never appeared at $HOST_SOCKET"
     ln -s "$HOST_SOCKET" "$RT/$host"
-    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$host "$NIRI" -c "$1" >> "$OUT/niri.log" 2>&1 &
+    XDG_RUNTIME_DIR=$RT WAYLAND_DISPLAY=$host RUST_LOG=niri=debug,smithay::backend::renderer::gles=info \
+        "$NIRI" -c "$1" >> "$OUT/niri.log" 2>&1 &
     NIRI_PID=$!
     for _ in $(seq 100); do ls "$RT"/niri.*.sock >/dev/null 2>&1 && break; sleep 0.1; done
     NIRI_SOCKET=
@@ -143,6 +149,11 @@ start_nested() {   # $1 = config, $2 = sub-run name; sets NIRI_SOCKET and NESTED
     for f in "$RT"/wayland-*; do [ -S "$f" ] && NESTED_WAYLAND=$f; done
     [ -S "$NESTED_WAYLAND" ] || fail "nested Wayland socket not found under $RT"
     wait_app kitty
+    # This launch's renderer lines only: both logs are appended across launches.
+    tail -c "+$((niri_from + 1))" "$OUT/niri.log" > "$OUT/$2.niri.renderer.log"
+    tail -c "+$((weston_from + 1))" "$OUT/weston.log" > "$OUT/$2.weston.renderer.log"
+    capture_meta renderer "$OUT" --sub-run "$2" --niri-log "$OUT/$2.niri.renderer.log" \
+        --weston-log "$OUT/$2.weston.renderer.log" || fail "$2: renderer check refused; see $OUT/capture.json"
 }
 shot_request() { rm -f "$1"; msg action screenshot-screen --write-to-disk true --show-pointer false --path "$1"; }
 shot_wait() { for _ in $(seq 200); do [ -s "$1" ] && magick identify "$1" >/dev/null 2>&1 && return; sleep 0.05; done; fail "shot $1"; }

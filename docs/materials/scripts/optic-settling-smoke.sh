@@ -457,13 +457,14 @@ capture_identity --config threshold-ms=5000 --config cases="${RUN_CASES[*]}" --c
 # session bus so no compositor interface reaches the user's bus.
 start_drm() {   # $1 niri, $2 config, $3 sub-run name
     settle_before_launch "$2" "${3-}"
+    local niri_from; niri_from=$(log_size "$OUT/niri.log")
     "$1" validate -c "$2" || fail "config $2 does not validate with $1"
     dbus-daemon --session --nofork --address="unix:path=$RT/bus" >> "$OUT/dbus.log" 2>&1 &
     BUS_PID=$!
     for _ in $(seq 50); do [ -S "$RT/bus" ] && break; sleep 0.1; done
     [ -S "$RT/bus" ] || fail "no private session bus (see $OUT/dbus.log)"
     env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u DISPLAY -u NIRI_SOCKET \
-        XDG_RUNTIME_DIR="$RT" DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" \
+        XDG_RUNTIME_DIR="$RT" RUST_LOG="$NIRI_RENDERER_LOG" DBUS_SESSION_BUS_ADDRESS="unix:path=$RT/bus" \
         PIPEWIRE_RUNTIME_DIR="$XDG_RUNTIME_DIR" "$1" -c "$2" >> "$OUT/niri.log" 2>&1 &
     NIRI_PID=$!
     for _ in $(seq 100); do
@@ -477,6 +478,7 @@ start_drm() {   # $1 niri, $2 config, $3 sub-run name
     [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ] || cmp -s "$1" "/proc/$NIRI_PID/exe" \
         || fail 'running executable differs from the snapshot'
     sleep 1
+    verify_renderer "$SUB_RUN" "$OUT/niri.log" "$niri_from"
 }
 stop_drm() {
     # A niri that ignores TERM holds the device and the VT: KILL after reap's bound.
