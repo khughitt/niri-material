@@ -239,7 +239,8 @@ fn bisect(f: &impl Fn(f64) -> f64, lo: f64, hi: f64) -> f64 {
 pub struct Trace {
     pub hit: bool,
     /// Shade the point as the wall: the entry (or, on a miss, the minimiser) lies below the rim
-    /// and the ray is outside at the rim depth.
+    /// and the ray is outside at the rim depth, Ψ there taken in the quadrant of the piece that
+    /// holds the rim depth (the earlier piece when the rim falls on a seam).
     pub wall: bool,
     /// The shading point's depth parameter: the entry on a hit, the minimiser on a miss.
     pub t: f64,
@@ -263,8 +264,17 @@ pub fn trace(solid: &Solid, seg: &Segment) -> Trace {
         min_plane: DVec3::Z,
         min_sel: DVec2::ZERO,
     };
+    let rim = if thickness > 0. {
+        (solid.rise() / thickness).min(1.)
+    } else {
+        0.
+    };
     let mut entry = None;
+    let mut rim_sel = None;
     for piece in pieces(solid, seg) {
+        if rim_sel.is_none() && rim <= piece.b {
+            rim_sel = Some(piece.sel);
+        }
         let f = |t: f64| solid.psi(seg.point(t, thickness), piece.sel);
         let (t, psi, end) = minimise(&f, piece.a, piece.b);
         if psi < best.psi_min {
@@ -283,18 +293,13 @@ pub fn trace(solid: &Solid, seg: &Segment) -> Trace {
             } else {
                 bisect(&f, piece.a, t)
             };
-            entry = Some((at, piece.sel));
+            entry = Some(at);
         }
     }
+    let rim_sel = rim_sel.expect("the last piece ends at t = 1 ≥ rim");
     best.hit = entry.is_some();
-    let (t, sel) = entry.unwrap_or((best.min_t, best.min_sel));
-    let rim = if thickness > 0. {
-        (solid.rise() / thickness).min(1.)
-    } else {
-        0.
-    };
-    best.wall = t > rim && solid.psi(seg.point(rim, thickness), sel) > 0.;
-    best.t = t;
+    best.t = entry.unwrap_or(best.min_t);
+    best.wall = best.t > rim && solid.psi(seg.point(rim, thickness), rim_sel) > 0.;
     best
 }
 
@@ -631,7 +636,10 @@ pub(super) mod tests {
             ..peak(10., DVec2::X, 6.)
         };
         let (solid, camera) = setup(DVec2::splat(50.), 0., [88., 12., 12., 12.], 31.2, 2., &pose);
-        let mut found = 0;
+        // Bevel 0: the rim is the face plane, so every entry below it is a wall hit (§4.1
+        // "Kinds of hit"), the ones through the x = 0 seam included.
+        let rim = solid.rise() / solid.thickness;
+        let (mut found, mut walls) = (0, 0);
         for i in 0..4000 {
             let s = DVec2::new(-8. + i as f64 * 0.002, -49.);
             let seg = Segment::new(&camera, s).unwrap();
@@ -651,15 +659,24 @@ pub(super) mod tests {
                 if ps.len() > 1 && t >= ps[1].a {
                     found += 1;
                 }
+                if t > rim {
+                    assert!(
+                        got.wall,
+                        "an entry below the rim is a wall hit at {s}: {got:?}"
+                    );
+                    walls += 1;
+                }
             }
         }
         assert!(found > 0, "no ray entered through the second piece");
+        assert!(walls > 0, "no ray entered below the rim");
     }
 
     #[test]
     fn zero_rise_is_the_box_or_the_plane() {
         let mut rnd = uniforms(12);
         for (chamfer, thickness) in [(0., 31.2), (12., 0.), (0., 0.)] {
+            let (mut resolved, mut skipped, mut hits) = (0, 0, 0);
             let (solid, camera) = setup(
                 DVec2::new(200., 150.),
                 chamfer,
@@ -681,10 +698,24 @@ pub(super) mod tests {
                     match certified_entry(&solid, &seg) {
                         Certified::Hit(_) => assert!(got.hit, "box at {s}"),
                         Certified::Miss => assert!(!got.hit, "box at {s}"),
-                        Certified::Unresolved => {}
+                        Certified::Unresolved => {
+                            skipped += 1;
+                            continue;
+                        }
                     }
                 }
+                resolved += 1;
+                hits += usize::from(got.hit);
             }
+            let case = format!("bevel {chamfer} thickness {thickness}");
+            assert!(
+                skipped * 100 < resolved,
+                "{case}: {skipped} unresolved of {resolved}"
+            );
+            assert!(
+                hits > 0 && hits < resolved,
+                "{case}: {hits} hits of {resolved}"
+            );
         }
     }
 
