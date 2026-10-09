@@ -4,7 +4,7 @@ title: "Embed the ring in the glass: refraction, scatter and noise interaction"
 status: idea
 priority: 2
 created: 2026-10-02T00:08:50Z
-updated: 2026-10-06T18:28:46Z
+updated: 2026-10-09T23:29:33Z
 depends: [material-be611b]
 parent: material-6062fd
 tags: [rendering, material]
@@ -18,3 +18,4 @@ Scope context (2026-10-06): The current ring already uses a refracted landing po
 ## Notes
 
 - 2026-10-06T18:28:46Z (materials-26.04): scope: briefed; refraction, scatter and moving-beam spill already exist; establish the residual visual gap via material-f4143a; brief: docs/notes/2026-10-06-glass-optics-brief.md
+- 2026-10-09T23:29:33Z (materials-26.04): 2026-10-09: one concrete residual gap identified from the owner's crop: at rest the ring's bevel spill is zero (beam-only), so the line never touches the edge. Filed as material-58a1a1, gated on spike material-ac926f.
