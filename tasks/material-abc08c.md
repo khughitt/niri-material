@@ -9,7 +9,7 @@ process: planned
 needs: [owner]
 owner: material-abc08c
 created: 2026-10-06T21:03:34Z
-updated: 2026-10-09T12:38:16Z
+updated: 2026-10-09T12:38:25Z
 started: 2026-10-09T12:24:44Z
 depends: [material-89fb6b, material-be611b]
 parent: material-53f873
@@ -44,3 +44,5 @@ On the design result, update the brief and run tasks note on material-6901e0 in 
 - 2026-10-09T12:25:01Z (material-abc08c): resumed
   provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-09T12:38:15Z (material-abc08c): spec drafted: docs/specs/2026-10-09-transient-rigid-tilt-design.md. Finding: a centred camera hides outer walls until tan(theta) > E/(2D); spike camera (D 2000) shows none below 11-22 deg, active-slab wall is 1-4 px at 10-14 deg. Design: camera distance relative to pane extent (view-distance), perspective weight |theta|/peak so rest optics return continuously, impulse curve starting at 0 (77db8a's starts at its peak), true ray-slab march with height-field top and side walls, wall lit by beam spill, slab-anchored grain seeds, owner still sweep (angle x distance) before defaults
+- 2026-10-09T12:38:25Z (material-abc08c): parked (waiting on user, review): Owner reviews docs/specs/2026-10-09-transient-rigid-tilt-design.md in .worktrees/material-abc08c; on approval the agent runs writing-plans there
+  provenance: {"harness_session":"claude-code:57713fd6-fddd-42ac-ae02-f19ef0c69b5d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
