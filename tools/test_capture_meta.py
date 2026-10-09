@@ -1072,6 +1072,67 @@ class LifecycleTests(unittest.TestCase):
                             host_load=FakeHostLoad(), host=self.host, sleep=lambda s: None,
                             lock=lambda: self.lock, hold_settle=10, launch_guard=launch_guard)
 
+    def lane_preflight(self, lane, gpu="quiet", env=None):   # gpu=None: no sampler (pixels lane)
+        saved = {k: os.environ.get(k) for k in ("XDG_SESSION_TYPE", "DISPLAY", "WAYLAND_DISPLAY")}
+        for key in ("DISPLAY", "WAYLAND_DISPLAY"):
+            os.environ.pop(key, None)
+        os.environ.update(env or {"XDG_SESSION_TYPE": "tty"})
+        try:
+            return cm.preflight(self.run, lane=lane, task="material-18c2a1", fixture="t.sh", seconds=3,
+                                owner_pid=4242, thresholds=cm.DEFAULT_THRESHOLDS, tools=["tracy=0.13.1"],
+                                proc=FakeProc([(i * 2, i * 100) for i in range(30)]),
+                                gpu=FakeGpu([QUIET] * 30) if gpu == "quiet" else gpu,
+                                host_load=FakeHostLoad(), host=self.host, sleep=lambda s: None,
+                                lock=lambda: self.lock, hold_settle=0)
+        finally:
+            for key, value in saved.items():
+                if value is None: os.environ.pop(key, None)
+                else: os.environ[key] = value
+
+    def test_dedicated_refuses_a_live_desktop_before_holding(self):
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("dedicated")
+        preflight = cm.load_record(self.run)["preflight"]
+        self.assertEqual(preflight["verdict"], "refused")
+        self.assertIn("a desktop niri is running", " ".join(preflight["reasons"]))
+        self.assertEqual(preflight["host_condition"], "desktop")
+        self.assertEqual(hold_actions(self.host), [])
+        self.assertIsNone(cm.read_lock(self.lock))
+        self.assertNotIn("baseline", cm.load_record(self.run))
+
+    def test_dedicated_refuses_a_graphics_client_before_holding(self):
+        self.host.live.clear()
+        gpu = FakeGpu([QUIET] * 30, clients={"compute": [], "graphics": ["niri"]})
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("dedicated", gpu=gpu)
+        self.assertIn("gpu_clients present on the dedicated lane: niri",
+                      cm.load_record(self.run)["preflight"]["reasons"])
+        self.assertEqual(hold_actions(self.host), [])
+
+    def test_dedicated_refuses_display_variables_before_holding(self):
+        self.host.live.clear()
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("dedicated", env={"XDG_SESSION_TYPE": "tty", "WAYLAND_DISPLAY": "wayland-1"})
+        self.assertEqual(hold_actions(self.host), [])
+
+    def test_headless_refuses_a_compute_client_before_holding(self):
+        gpu = FakeGpu([QUIET] * 30, clients={"compute": ["python3"], "graphics": []})
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("headless", gpu=gpu, env={"XDG_SESSION_TYPE": "wayland"})
+        self.assertIn("compute clients present: python3", cm.load_record(self.run)["preflight"]["reasons"])
+        self.assertEqual(hold_actions(self.host), [])
+
+    def test_dedicated_ignores_a_dead_desktop_socket(self):
+        self.host.live.clear()   # the socket file stays; niri msg version fails against it
+        self.lane_preflight("dedicated", gpu=FakeGpu([QUIET] * 30, clients={"compute": [], "graphics": []}))
+        preflight = cm.load_record(self.run)["preflight"]
+        self.assertEqual((preflight["verdict"], preflight["host_condition"]), ("quiet", "tty"))
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+
+    def test_host_condition_is_desktop_whenever_a_desktop_is_live(self):
+        self.lane_preflight("headless", env={"XDG_SESSION_TYPE": "tty"})
+        self.assertEqual(cm.load_record(self.run)["preflight"]["host_condition"], "desktop")
+
     def test_quiet_preflight_holds_then_release_restores_and_is_clean(self):
         self.preflight()
         record = cm.load_record(self.run)
@@ -1305,7 +1366,7 @@ class LifecycleTests(unittest.TestCase):
         `run`, a hold file, a guard and the lock."""
         cm.write_section(self.run, "run", {"id": self.run.name, "started": STARTED})
         cm.acquire_lock(self.lock, 4242, self.run.name, run_dir=self.run)
-        plan = cm.ch.plan_hold(self.host)
+        plan = cm.ch.plan_hold(self.host, cm.ch.desktop_socket(self.host), cm.ch.HOLD_KINDS)
         hold = cm.ch.create_hold(self.lock, self.run.name, self.run, 4242, plan, self.host.now_us())
         cm.start_guard(self.host, hold)
         cm.ch.apply_hold(self.host, self.lock, self.run.name, self.run, plan)
@@ -1424,6 +1485,14 @@ class LifecycleTests(unittest.TestCase):
 
 def ch_hold_name():
     return cm.ch.HOLD_NAME
+
+
+HOLD_ACTIONS = (("systemd-run",), ("systemctl", "--user", "stop"), ("noctalia", "msg", "caffeine-enable"),
+                ("niri", "msg", "action", "power-off-monitors"))
+
+
+def hold_actions(host):
+    return [c for c in host.calls if any(tuple(c[:len(a)]) == a for a in HOLD_ACTIONS)]
 
 
 if __name__ == "__main__":
