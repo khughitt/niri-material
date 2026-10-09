@@ -90,9 +90,6 @@ trap cleanup EXIT
 trap 'exit 130' INT TERM
 
 # --- capture protocol -------------------------------------------------------
-capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \
-    --owner-pid $$ --tool weston --tool kitty || fail "preflight refused; see $OUT/capture.json"
-
 TARGET=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
 if [ -z "${NIRI:-}" ]; then
     cargo build --release
@@ -148,6 +145,12 @@ write_config "$OUT/seed.kdl" seed-a seed-b \
 write_config "$OUT/beam.kdl" terminal-glass terminal-glass-inactive \
     "terminal-glass|$ACTIVE_GLASS $AURORA_OFF|3200" "terminal-glass-inactive|$INACTIVE_GLASS $AURORA_OFF|3200"
 
+# A build's tail refuses the first settle: wait for it before the preflight
+# (docs/specs/2026-10-08-capture-host-conditions-design.md §6.5).
+for _ in $(seq 60); do awk '{ exit !($1 < 1.0) }' /proc/loadavg && break; sleep 5; done
+awk '{ exit !($1 < 1.0) }' /proc/loadavg || fail 'load1 did not fall below 1.0 within 5 min of the build'
+capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \
+    --owner-pid $$ --tool weston --tool kitty || fail "preflight refused; see $OUT/capture.json"
 capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" --input "$0" \
     --input "$OUT/pair.kdl" --input "$OUT/same.kdl" --input "$OUT/seed.kdl" \
     --input "$OUT/beam.kdl" || fail "identity refused"

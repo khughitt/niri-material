@@ -15,8 +15,9 @@ set -eu
 : "${CAPTURE_TASK:?task id authorizing this run}"
 HERE=$(dirname "$(readlink -f "$0")")
 . "$HERE/glass-optic-smoke-lib.sh"
-capture_preflight headless
 build_binaries
+await_load
+capture_preflight headless
 capture_identity --config preset=iridescence --config output=1280x720 --config scale=1 --config vrr=off
 calibrate_probe_rect "$NIRI" 0
 

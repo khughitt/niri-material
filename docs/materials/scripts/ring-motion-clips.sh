@@ -90,9 +90,6 @@ cleanup() {
 trap cleanup EXIT
 
 # --- capture protocol -------------------------------------------------------
-capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \
-    --owner-pid $$ --tool weston --tool kitty || fail "preflight refused; see $OUT/capture.json"
-
 TARGET=$(cargo metadata --format-version 1 --no-deps | jq -r .target_directory)
 if [ -z "${NIRI:-}" ]; then
     cargo build --release
@@ -169,6 +166,12 @@ if wants_scratch beam-splash; then
     BINARIES+=(--binary "$NIRI_SPLASH")
 fi
 
+# A build's tail refuses the first settle: wait for it before the preflight
+# (docs/specs/2026-10-08-capture-host-conditions-design.md §6.5).
+for _ in $(seq 60); do awk '{ exit !($1 < 1.0) }' /proc/loadavg && break; sleep 5; done
+awk '{ exit !($1 < 1.0) }' /proc/loadavg || fail 'load1 did not fall below 1.0 within 5 min of the build'
+capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \
+    --owner-pid $$ --tool weston --tool kitty || fail "preflight refused; see $OUT/capture.json"
 capture_meta identity "$OUT" --source "$ROOT" "${BINARIES[@]}" --input "$0" \
     --input "$OUT/beam.kdl" --input "$OUT/beam-gap16.kdl" --input "$OUT/beam-fast.kdl" \
     --input "$OUT/beam-wander.kdl" --input "$OUT/beam-decay.kdl" --input "$OUT/beam-bevel0.kdl" || fail "identity refused"
