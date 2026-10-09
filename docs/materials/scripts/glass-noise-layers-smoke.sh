@@ -2,7 +2,8 @@
 # Noise layers smoke (design 2026-10-06-noise-layers-design.md §7.1, §7.2).
 # Default: the full matrix and the contact sheet. NOISE_LAYERS_PILOT=1 keeps
 # fine grain and scale 8, still exercising all six assertions and the sheet.
-# OUT must be fresh; BASE_NIRI pins the 4a8b2072 release binary;
+# OUT must be fresh; BASE_NIRI pins the 37de154e release binary (the noise
+# merge's first parent: 4a8b2072 plus what merged beside it, glass edges included);
 # CAPTURE_TASK and NIRI_MATERIAL_WORK_ROOT are required.
 set -eu
 BASE_NIRI=${BASE_NIRI:?baseline release binary}
@@ -15,7 +16,7 @@ build_binaries
 cp "$BASE_NIRI" "$OUT/niri-baseline"
 BASE_NIRI=$OUT/niri-baseline
 capture_preflight pixels
-capture_identity --binary "$BASE_NIRI" --config "pilot=$PILOT" --config baseline=4a8b2072
+capture_identity --binary "$BASE_NIRI" --config "pilot=$PILOT" --config baseline=37de154e
 magick -size 1280x720 xc:'rgb(140,115,90)' \
     \( -size 400x300 -seed 11 plasma:fractal \) -gravity southeast -composite "$WALL"
 KINDS=(white fine lightness); SITES=(glass backdrop film); SCALE_KINDS=(white fine); SCALES=(2 4 8)
