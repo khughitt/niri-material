@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Status:** draft, revised after plan review round 1 (2026-10-09). Design task `material-abc08c`; implementation goal `material-6901e0`.
+**Status:** draft, revised after plan review rounds 1 and 2 (2026-10-09). Design task `material-abc08c`; implementation goal `material-6901e0`.
 
 **Goal:** On focus gain, swing the pane once in depth and settle it back to exactly face-on, with window content and glass moving as one rigid body whose rounded edge and side wall show while it turns, and with today's pixels and code path at rest.
 
@@ -1350,8 +1350,9 @@ pub(super) mod tests {
             let mut open = false;
             for i in 0..pts.len() - 1 {
                 let (l, r) = (pts[i].0, pts[i + 1].0);
-                let left = (i >= 1).then_some((i - 1, i));
-                let right = (i + 2 < pts.len()).then_some((i + 1, i + 2));
+                // Lazy: `then_some` would evaluate `i - 1` at i = 0 and underflow.
+                let left = (i >= 1).then(|| (i - 1, i));
+                let right = (i + 2 < pts.len()).then(|| (i + 1, i + 2));
                 let bound = |t: f64| {
                     let mut v = f64::NEG_INFINITY;
                     if let Some((p, q)) = left {
@@ -1389,6 +1390,23 @@ pub(super) mod tests {
             pts = next;
         }
         Certified::Unresolved
+    }
+
+    #[test]
+    fn the_certifier_proves_misses_and_hits_on_known_functions() {
+        // Plan review round 2: a function positive everywhere reaches the chord bounds on the
+        // first pass, so a miss must come back certified, not panic.
+        assert_eq!(certify(&|t: f64| 1. + t * t, 0., 1.), Certified::Miss);
+        assert_eq!(certify(&|t: f64| (t - 0.5).powi(2) + 1e-3, 0., 1.), Certified::Miss);
+        // A dip below 0 narrower than the first sample spacing (1/64): found, and bisected.
+        let dip = |t: f64| (t - 0.5004).abs() - 1e-4;
+        match certify(&dip, 0., 1.) {
+            Certified::Hit(t) => assert!((t - 0.5003).abs() < 1e-12, "entry {t}"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(certify(&|t: f64| t - 0.25, 0., 1.), Certified::Hit(0.), "inside at the start");
+        // Tangent to 0: neither proved.
+        assert_eq!(certify(&|t: f64| (t - 0.3).powi(2), 0., 1.), Certified::Unresolved);
     }
 
     /// A random slab, look and frame from the configured ranges.
@@ -5829,9 +5847,10 @@ Per §6 "Contingency": the rest program is built from today's source and the vie
    diff -r target/base-shaders/src/render_helpers/shaders/material target/rest-variant
    ```
    Expected: no output. Any difference is a rest line that changed; put the base text under `#else`.
-2. In `src/render_helpers/shaders/mod.rs`, add `material_view_source()` that inserts `#define MATERIAL_VIEW\n` after the precision line, leave `material_source()` without it, compile both, and add `ProgramType::MaterialView` beside `ProgramType::Material` (the view uniform names only in the view program's `material_uniform_names`).
+2. In `src/render_helpers/shaders/mod.rs`, add `material_view_source()` that inserts `#define MATERIAL_VIEW\n` after the precision line, leave `material_source()` without it, compile both, and add `ProgramType::MaterialView` beside `ProgramType::Material`. Split the uniform list: `material_uniform_names()` returns the base's list (no `mat_view*`), and `material_view_uniform_names()` returns it followed by the five view uniforms of Task 7; the view program compiles with the second.
+   Retarget Task 7's `the_view_uniforms_are_declared` to the view program: it reads `material_view_source()` and `material_view_uniform_names()`, and gains the converse for the rest program: `material_source()` contains no `uniform int mat_view_on;` and `material_uniform_names()` names no `mat_view*` uniform. Any other test that asserts on view lines in `material_source()` (Task 8's `Surface` pin, Task 9's prelude pins in `view::solid::tests`) reads the files, not the assembled rest source, and stays as it is; check with `just test-one -p niri material_source` and `just test-one -p niri the_view_uniforms_are_declared`.
 3. In `MaterialRenderElement::draw`, pick `ProgramType::MaterialView` and append the view uniforms only when `self.view.is_some()`; at rest bind `ProgramType::Material` with the base's uniform list.
-4. Retarget `the_view_branch_at_the_identity_is_byte_identical_to_rest` to compare the two programs (the forced identity pose binds the view variant), run every `view_tilt` and `material_source` test, and validate both variants offline with `glslangValidator` (the Global Constraints command, and again with `#define MATERIAL_VIEW` inserted after the precision line).
+4. Retarget `the_view_branch_at_the_identity_is_byte_identical_to_rest` to compare the two programs (the forced identity pose binds the view variant), run every `view_tilt`, `material_source` and `the_view_uniforms_are_declared` test, then `just test-fast`, and validate both variants offline with `glslangValidator` (the Global Constraints command, and again with `#define MATERIAL_VIEW` inserted after the precision line).
 5. Repeat Task 12's pinned comparison: dump `glass_edge` and `ring_look` at the new head into `$EV_HEAD2` and compare them byte for byte against the base dumps Task 12 kept (`$EV/base` of its run; Task 12 Step 2's `cmp` loop with `head` replaced by the new directory). Expected: no `DIFFERS` line. Record it in the evidence document's *Rest identity* section as a second row.
 6. Commit as `perf(material): rigid tilt view path as a second program variant`, then rerun Steps 2–3.
 
