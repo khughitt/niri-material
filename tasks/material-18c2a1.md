@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-host-conditions
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-09T00:33:15Z
+updated: 2026-10-09T00:38:25Z
 started: 2026-10-08T20:40:22Z
 depends: []
 parent: material-2834d7
@@ -58,4 +58,8 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 - 2026-10-08T23:37:36Z (capture-host-conditions): Plan 29d0ec0a review: P1 Task 1 lines 210–215 filters excluded idle/monitor items only after discovery; fake-host reproduction shows pixels still refused by a failed noctalia msg status or missing connector enabled file. Gate idle and monitor discovery by kinds, and prove pixels never query either. P2 Task 6 omits optic-settling-smoke.sh build/wait/preflight reorder: preflight at line 178 still precedes Wayland client builds at 440–449; include selected-client builds, await_load, and a behavioral ordering check while keeping prepare offline. P2 Task 1 signature migration misses tools/test_capture_meta.py::LifecycleTests.hold_without_preflight (old one-argument plan_hold at line 1308), breaking recovery cases in the focused suite; update every caller. Execution choice: inline under executing-plans with one fresh whole-branch reviewer and corrective re-review rounds as required. Also carry the repository-required tooling test-fast gate before each step commit into the global constraints. Read-only review and in-memory fake-host reproduction; no suite or live capture run.
 - 2026-10-09T00:33:05Z (capture-host-conditions): plan round 1 revised: plan_hold gates idle/monitor discovery by kind (Task 1 + pixel preflight test in Task 2); optic-settling-smoke.sh moves preflight and its dedicated checks after the client builds with await_load, prepare stays offline, stub-driver order test (Task 6 Step 5); hold_without_preflight migrates with the other plan_hold callers; test-fast gate before every step commit
 - 2026-10-09T00:33:15Z (capture-host-conditions): parked (waiting on user, review): Owner runs plan review round 2 on .worktrees/capture-host-conditions/docs/plans/2026-10-08-capture-host-conditions.md (revision 219c0f53); on accept the agent executes material-1828a0 … material-538f53 inline (executing-plans) with one fresh whole-branch reviewer at the end
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T00:34:41Z (capture-host-conditions): review: plan round 2 — verdict: accept; findings: none; reviewer: codex
+- 2026-10-09T00:34:41Z (capture-host-conditions): Plan 219c0f53 accepted for inline execution with a fresh whole-branch reviewer. All round-1 findings addressed: idle/monitor discovery is gated before probing with planner and pixel-preflight regressions; optic-settling client builds precede await_load/preflight, prepare remains offline, and stub-driver ordering is checked; the recovery helper migrates with all plan_hold callers. Every step commit includes full tooling test-fast then tasks check. Checked revised snippets against current helpers and driver setup; tasks check passed. No code changes, suite execution or live captures during this review.
+- 2026-10-09T00:38:25Z (capture-host-conditions): resumed
   provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
