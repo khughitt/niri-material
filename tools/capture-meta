@@ -386,12 +386,12 @@ def parse_thresholds(pairs):
     return result
 
 
-def client_reasons(samples, lane):
+def client_reasons(inventories, lane):
     reasons = []
-    compute = sorted({c for s in samples for c in s.gpu_clients["compute"]})
+    compute = sorted({c for inv in inventories for c in inv["compute"]})
     if compute: reasons.append(f"compute clients present: {', '.join(compute)}")
     if lane == "dedicated":
-        graphics = sorted({c for s in samples for c in s.gpu_clients["graphics"]})
+        graphics = sorted({c for inv in inventories for c in inv["graphics"]})
         if graphics: reasons.append(f"gpu_clients present on the dedicated lane: {', '.join(graphics)}")
     return reasons
 
@@ -404,10 +404,11 @@ def judge_quiet(summary, samples, thresholds, lane):
     if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples): reasons.append(f"mem_available_pct below {floor}")
     if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]: reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
     if summary["gpu_power_iqr_w"] > thresholds["gpu_power_iqr_w"]: reasons.append(f"gpu_power_iqr_w {summary['gpu_power_iqr_w']} exceeds {thresholds['gpu_power_iqr_w']}")
-    return reasons + client_reasons(samples, lane)
+    return reasons + client_reasons([s.gpu_clients for s in samples], lane)
 
 
 HOST_LOAD_KEYS = ("cpu_busy_pct", "load1")
+MEASURED_LANES = ("headless", "dedicated")
 
 
 def describe_process(p):
@@ -430,7 +431,7 @@ def judge_settled(summary, samples, baseline, thresholds, lane):
     floor = thresholds["mem_available_pct_min"]
     if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples): reasons.append(f"mem_available_pct below floor {floor}")
     if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]: reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
-    return reasons + client_reasons(samples, lane)
+    return reasons + client_reasons([s.gpu_clients for s in samples], lane)
 
 
 def load_record(run_dir):
@@ -765,6 +766,21 @@ def session_reasons(lane):
     return reasons
 
 
+def host_condition(socket):
+    """Observed, never declared: whether someone is working at a live desktop is not visible here."""
+    return "tty" if os.environ.get("XDG_SESSION_TYPE") == "tty" and not socket else "desktop"
+
+
+def pre_hold_reasons(lane, socket, gpu):
+    """Everything that can refuse before the hold changes the host (spec §7)."""
+    reasons = session_reasons(lane)
+    if lane == "dedicated" and socket:
+        reasons.append(f"a desktop niri is running at {socket}; the dedicated lane needs the desktop stopped")
+    if lane in MEASURED_LANES:
+        reasons += client_reasons([gpu.clients()], lane)
+    return reasons
+
+
 def hold_section(hold, plan, recovered):
     return {"started": ch.rfc3339(hold["started_us"]), "started_us": hold["started_us"], "items": hold["items"],
             "not_held": plan["not_held"], "socket": plan["socket"], "config": plan["config"],
@@ -924,7 +940,15 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
     try:
         # guarded() is per open file: every hold step takes it after acquire_lock has returned, never inside it.
         recovered = recover_stale(host, lock_file)
-        plan = ch.plan_hold(host)
+        socket = ch.desktop_socket(host)
+        condition = host_condition(socket)
+        early = pre_hold_reasons(lane, socket, gpu)
+        if early:
+            write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": early,
+                                                 "thresholds": thresholds, "lock": lock_info,
+                                                 "host_condition": condition})
+            raise Refused("; ".join(early))
+        plan = ch.plan_hold(host, socket, ch.HOLD_KINDS)
         hold = ch.create_hold(lock_file, run["id"], run_dir, owner_pid, plan, host.now_us())
         held = True
         (launch_guard or start_guard)(host, hold)
@@ -932,13 +956,13 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         write_section(run_dir, "hold", hold_section(hold, plan, recovered))
         sleep(hold_settle)
         write_section(run_dir, "environment", environment(gpu, tools, proc))
-        reasons = session_reasons(lane)
         samples = sample_stream(proc, gpu, seconds, sleep)
         summary = summarize(samples)
         write_section(run_dir, "baseline", {"seconds": seconds, **summary})
-        reasons += judge_quiet(summary, samples, thresholds, lane)
+        reasons = judge_quiet(summary, samples, thresholds, lane)
         section = {"verdict": "quiet" if not reasons else "refused", "at": now_rfc3339(),
-                   "reasons": reasons, "thresholds": thresholds, "lock": lock_info}
+                   "reasons": reasons, "thresholds": thresholds, "lock": lock_info,
+                   "host_condition": condition}
         message = "; ".join(reasons)
         if any(summary[key] > thresholds[key] for key in HOST_LOAD_KEYS):
             try:

@@ -174,8 +174,11 @@ def unit_item(kind, unit):
     return {"kind": kind, "unit": unit, "action": "stopped", "restore": f"systemctl --user start {unit}"}
 
 
-def plan_hold(host):
-    """Discover what to hold. Changes nothing on the host."""
+HOLD_KINDS = ("timer", "service", "idle", "monitors")
+
+
+def plan_hold(host, socket, kinds):
+    """Discover what to hold, probing only the kinds asked for. Changes nothing on the host."""
     active = list_timers(host, "user", all_=False)
     timer_map = {"user": list_timers(host, "user", all_=True), "system": list_timers(host, "system", all_=True)}
     items, not_held, active_at_hold, invocations = [], [], [], {}
@@ -200,8 +203,7 @@ def plan_hold(host):
             items.append(unit_item("service", unit))
         else:
             not_held.append({"kind": "service", "unit": unit, "reason": "not_running"})
-    socket = desktop_socket(host)
-    if socket:
+    if socket and "idle" in kinds:
         if host.has("noctalia"):
             try:
                 locked = json.loads(checked(host, "noctalia", "msg", "status")).get("locked")
@@ -211,6 +213,7 @@ def plan_hold(host):
                           "socket": socket, "restore": "noctalia msg caffeine-disable"})
         else:
             not_held.append({"kind": "idle", "reason": "noctalia not on PATH"})
+    if socket and "monitors" in kinds:
         items.append({"kind": "monitors", "action": "powered-off", "socket": socket,
                       "connectors": lit_connectors(host),
                       "restore": f"NIRI_SOCKET={socket} niri msg action power-on-monitors"})
