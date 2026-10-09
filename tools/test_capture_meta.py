@@ -358,6 +358,21 @@ class ShowTests(unittest.TestCase):
                                           "started": "now", "host": "h"})
             self.assertEqual(cm.main(["show", directory]), 0)
 
+    def test_show_marks_unchecked_measured_launches(self):
+        record = {"schema": 1, "run": {"id": "drm", "lane": "dedicated", "started": STARTED},
+                  "sub_runs": [{"name": "drm-a", "verdict": "settled", "started": STARTED},
+                               {"name": "drm-b", "verdict": "settled", "started": STARTED,
+                                "renderer": {"verdict": "verified"}},
+                               {"name": "drm-c", "verdict": "refused", "reason": "gpu busy"}]}
+        lines = cm.render(record).splitlines()
+        line = lambda name: next(l for l in lines if l.strip().startswith(f"{name}:"))
+        self.assertTrue(line("drm-a").endswith("renderer unchecked"), line("drm-a"))
+        self.assertTrue(line("drm-b").endswith("renderer verified"), line("drm-b"))
+        self.assertNotIn("renderer", line("drm-c"))
+        pixel = {"schema": 1, "run": {"id": "px", "lane": "pixels", "started": STARTED},
+                 "sub_runs": [{"name": "cell-1", "verdict": "begun", "started": STARTED}]}
+        self.assertNotIn("renderer", cm.render(pixel))
+
     def test_show_renders_old_and_pixel_records(self):
         old = {"schema": 1, "run": {"id": "old", "lane": "headless", "started": STARTED},
                "preflight": {"verdict": "quiet"},
@@ -1209,6 +1224,36 @@ class LifecycleTests(unittest.TestCase):
             for key, value in saved.items():
                 if value is None: os.environ.pop(key, None)
                 else: os.environ[key] = value
+
+    def cli_preflight_without_nvidia_smi(self, lane):
+        empty = self.root / "empty-path"; empty.mkdir(exist_ok=True)
+        saved = {k: os.environ.get(k) for k in ("PATH", "XDG_SESSION_TYPE")}
+        os.environ.update({"PATH": str(empty), "XDG_SESSION_TYPE": "wayland"})
+        try:
+            return cm.main(["preflight", str(self.run), "--lane", lane, "--task", "material-18c2a1",
+                            "--fixture", "t.sh", "--owner-pid", "4242"])
+        finally:
+            for key, value in saved.items():
+                if value is None: os.environ.pop(key, None)
+                else: os.environ[key] = value
+
+    def test_measured_lanes_without_nvidia_smi_refuse_before_touching_the_host(self):
+        for lane in ("headless", "dedicated"):
+            with self.subTest(lane=lane):
+                self.assertEqual(self.cli_preflight_without_nvidia_smi(lane), 2)
+                self.assertEqual(self.host.calls, [])
+                self.assertIsNone(cm.read_lock(self.lock))
+                self.assertFalse((self.lock.with_name(cm.ch.HOLD_NAME)).exists())
+
+    def test_pixels_without_nvidia_smi_holds_and_records_no_gpu(self):
+        self.assertEqual(self.cli_preflight_without_nvidia_smi("pixels"), 0)
+        record = cm.load_record(self.run)
+        self.assertEqual(record["preflight"]["verdict"], "unsampled")
+        self.assertNotIn("gpu", record["environment"])
+        self.assertEqual([i.get("unit", i["kind"]) for i in record["hold"]["items"]],
+                         ["wali-rotate.timer", "dropbox.service"])
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual(self.host.snapshot(), self.before)
 
     def test_dedicated_refuses_a_live_desktop_before_holding(self):
         with self.assertRaises(cm.Refused):

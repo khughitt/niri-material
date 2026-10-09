@@ -1342,7 +1342,11 @@ def render(record):
                 span = f"  {entry.get('started')} to {entry['finished']} ({entry.get('duration_s')} s)"
             elif "started" in entry and entry["verdict"] in ("settled", "begun"):
                 span = f"  {entry['started']}, never finished"
-            checked = f"  renderer {entry['renderer']['verdict']}" if "renderer" in entry else ""
+            checked = ""
+            if "renderer" in entry:
+                checked = f"  renderer {entry['renderer']['verdict']}"
+            elif entry["verdict"] == "settled" and run.get("lane") in MEASURED_LANES:
+                checked = "  renderer unchecked"   # release refuses this run (spec §6.3)
             lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{checked}")
     return "\n".join(lines) + "\n"
 
