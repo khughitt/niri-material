@@ -1,19 +1,21 @@
 ---
 id: material-18c2a1
 title: Design per-lane host conditions for capture preflight and settle evidence
-status: doing
+status: done
 priority: 1
 size: s
 complexity: high
 process: planned
 owner: capture-host-conditions
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-09T00:38:25Z
+updated: 2026-10-09T01:40:36Z
 started: 2026-10-08T20:40:22Z
+completed: 2026-10-09T01:40:36Z
 depends: []
 parent: material-2834d7
 tags: [capture]
 source: "docs/notes/2026-10-06-capture-lifecycle-brief.md#renderer-aware-capture"
+model: claude-opus-5-5
 agent: codex
 spec: docs/specs/2026-10-08-capture-host-conditions-design.md
 plan: docs/plans/2026-10-08-capture-host-conditions.md
@@ -62,4 +64,8 @@ Ideas it wakes: On completion, run tasks note on material-6bd4a3 with the review
 - 2026-10-09T00:34:41Z (capture-host-conditions): review: plan round 2 — verdict: accept; findings: none; reviewer: codex
 - 2026-10-09T00:34:41Z (capture-host-conditions): Plan 219c0f53 accepted for inline execution with a fresh whole-branch reviewer. All round-1 findings addressed: idle/monitor discovery is gated before probing with planner and pixel-preflight regressions; optic-settling client builds precede await_load/preflight, prepare remains offline, and stub-driver ordering is checked; the recovery helper migrates with all plan_hold callers. Every step commit includes full tooling test-fast then tasks check. Checked revised snippets against current helpers and driver setup; tasks check passed. No code changes, suite execution or live captures during this review.
 - 2026-10-09T00:38:25Z (capture-host-conditions): resumed
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T01:40:36Z (capture-host-conditions): done
+  provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-09T01:40:36Z (capture-host-conditions): Per-route host conditions implemented (spec docs/specs/2026-10-08-capture-host-conditions-design.md, plan docs/plans/2026-10-08-capture-host-conditions.md): pixels lane with begin and a timers+services hold, pre-hold lane checks, observed host_condition, per-launch renderer verification on every launcher with release refusing unverified settled launches, build-before-preflight ordering. Final review: one Important fixed plus one re-graded test gap, two scoped re-reviews, clean. Pilots material-52dc6e (pixels) and material-3d48b0 (desktop-idle) filed; niri-experiments adoption material-9cf378.
   provenance: {"harness_session":"claude-code:b6f2497c-748f-44b4-8e1c-9de00d2b47e1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
