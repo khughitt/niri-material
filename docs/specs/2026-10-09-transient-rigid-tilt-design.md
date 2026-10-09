@@ -1,6 +1,6 @@
 # Transient rigid tilt of window and glass
 
-**Status:** draft, revised after spec review round 1 (2026-10-09), for the
+**Status:** draft, revised after spec review rounds 1 and 2 (2026-10-09), for the
 owner's review. No renderer code before this spec and its implementation
 plan are reviewed.
 **Task:** `material-abc08c`, lane `material-53f873`.
@@ -268,18 +268,43 @@ For screen pixel `s` (at `z = 0`), with `R` the rotation and `P` the pivot:
      ```
      `X` inverts today's `bevelProfile`, so `Ψ ≤ 0` is the same set as
      `z ≤ height − thickness`. For `bevel-profile` k in its range [1, 8],
-     `X` is concave and `σ` is convex, so `Ψ` is convex in `(p, z)`, and
-     convex along any ray.
-   - **Bracketing.** Because `Ψ` is convex along the segment, a
-     golden-section search finds its minimum `Ψmin`, taken also over the
-     segment's back end. If `Ψmin > 0` the ray misses. Otherwise bisection
-     on `[segment start, minimiser]` finds the entry, and that bracket always
-     holds a sign change. Neither step can step over a thin intersection.
-     The plan fixes the iteration counts from the longest segment within the
-     configured ranges, so that the entry depth is within 1/64 physical px.
-     A Python model of this solid, 28 golden and 24 bisection steps, matched
-     a dense exact intersection on every one of 3 435 rays across both edges
-     of the case above. The worst entry-depth error was 0.002 px.
+     `X` is concave.
+   - **Zero rise.** `bevel` and `thickness` both allow 0, and then
+     `rise = min(c, thickness)` is 0 and `X(−z / rise)` is undefined. The
+     bevel term is therefore taken only when `rise > 0`, by a uniform test
+     on the same clamped chamfer and thickness the shader uses today. With
+     `rise = 0`, `Ψ = σ`:
+     - Zero chamfer, positive thickness: an unbevelled slab, a box with a
+       vertical wall from the face down to the back plane. That is today's
+       resting geometry for it (the bevel branch is skipped at `c = 0`).
+       This includes the tiny-slab guard, which clamps `c` to 0.
+     - Zero thickness: the segment is the single point `h₀`, which is a hit
+       when `σ(h₀) ≤ 0` and has no wall. Glass and decal lie in one plane.
+   - **Quadrant seams.** `σ` is not convex everywhere. `sdRoundedBox`
+     takes each quadrant's corner radius by the sign of `p` relative to the
+     centre, so with unequal radii `σ` jumps across the two centre lines. With
+     half-size (50, 50) and fitted radii (88, 12, 12, 12), it steps from
+     −1.236 to −10 across `x = 0` at `y = −40`. Within one quadrant, `σ` is
+     the rounded-box distance for a single radius, which is convex over the
+     whole plane (it is nondecreasing and convex in `|p|`). So the ray's
+     segment is split where its `xy` crosses a centre line: at most two
+     points, three pieces. On each piece `Ψ` is convex along the ray.
+   - **Bracketing.** The pieces are taken in ray order. On each, a
+     golden-section search finds the minimum of `Ψ`, taken also over the
+     piece's two ends. The first piece whose minimum is `≤ 0` holds the
+     entry. If `Ψ` is already `≤ 0` at the piece's start, that start is the
+     entry. Otherwise bisection on `[piece start, minimiser]` finds it, and
+     that bracket always holds a sign change. A ray whose pieces all stay
+     above 0 misses. No step can pass over a thin intersection, and a hit in
+     a later piece is never discarded by an earlier one. `Ψmin`, used by
+     section 4.5, is the minimum over all pieces. The plan fixes the
+     iteration counts per piece from the longest piece within the configured
+     ranges, so that the entry depth is within 1/64 physical px. A ray in
+     the bevel band crosses a centre line only near the middle of a side, so
+     most rays have one piece. A Python model of the uniform-radius solid,
+     28 golden and 24 bisection steps, matched a dense exact intersection on
+     every one of 3 435 rays across both edges of the case above. The worst
+     entry-depth error was 0.002 px.
    - **Jelly.** Jelly moves the face box against the silhouette, which
      breaks the inset relation above. So jelly shapes the shading at the hit
      (section 4.2), not the traced solid. The silhouette and the wall are
@@ -300,8 +325,25 @@ intermediate value therefore equals today's: `h₀ = s`, the hit's `xy` is `s`,
 `toScreen(q) = q.xy`, and the outline distance is `outerDist` (section 4.5). That identity is a test (section 8.2), not just a
 limit. It is what makes the last moving frame and the first rest frame agree.
 
-If `r.z ≥ 0` the pixel is transparent, as on the spike. This cannot happen
-within the configured ranges; a test asserts that.
+**Near clip.** A point's projection factor is `f = 1 / (1 − ζ)` with
+`ζ = e.z · w / (κE)`, its depth toward the camera as a fraction of the
+camera distance. At `ζ = 1` it reaches the camera plane, and the factor is
+unbounded before that. The slab itself never comes near this. Its highest
+point is a front corner on the lifting side, at
+`ζ ≤ sin θp / (2κ) ≤ 0.114` over the configured ranges. The window texture,
+though, can extend far past the slab (section 4.3). For a 100 px slab at
+20° and κ = 1.5, a texture reaching past `x ≈ 438.6` from the pivot crosses
+the camera plane. So every point drawn during a swing must satisfy
+`ζ ≤ 3/4`, i.e. at most 4× magnification.
+
+- The decal is sampled only where its plane hit `h₀` meets this. A pixel
+  with `r.z ≥ 0` has no plane hit.
+- Either pixel shows no decal there. The glass is unaffected, since the
+  slab never reaches the clip.
+- The footprint (section 6) clips against the same plane, so the CPU and
+  the shader agree.
+- At `w = 0`, `ζ = 0` everywhere, so the clip has no effect at rest or at
+  identity.
 
 ### 4.2 Top hits
 
@@ -382,18 +424,52 @@ signed screen-space distance to the projected outline of the solid. `m` is
 negative inside. Coverage uses today's formula, `1 − smoothstep(−aa, 0, m)`,
 with the same inside-biased band of one physical pixel.
 
-- **The distance.** `m = Ψmin / |∂Ψmin / ∂s|`. The gradient comes
-  analytically from `∇Ψ` at the minimiser, by the envelope theorem
-  (`∂Ψmin/∂s = ∇Ψ(q*) · ∂q/∂s` at fixed `t`). No screen derivatives are
-  used, since `fwidth` is undefined inside the branch's loops.
-- **Error bound.** Within one physical pixel of the outline, `m` must be
-  within 1/16 physical px of the exact signed distance. The exact distance
-  is found by bisecting the hit/miss boundary across `s` in the Rust mirror.
-  This holds over the configured ranges, for straight sides and corners, on
-  the rim graze and on the wall's back edge. The Python model's worst error
-  on the two edges of the 800 px case was under 1e-4 px. A ray misclassified
-  within that bound has `m` near 0, and so coverage near 0 either way. The
-  outline therefore cannot open holes or flicker between frames.
+- **The distance.** `m = Ψmin / |∂Ψmin / ∂s|`. The gradient is analytic. No
+  screen derivatives are used, since `fwidth` is undefined inside the
+  branch's loops. Which form it takes depends on where the minimiser `q*`
+  lies:
+  - **Interior of a piece.** `∂Ψmin/∂s = ∇Ψ(q*) · ∂q/∂s` at fixed `t`, by
+    the envelope theorem.
+  - **At a piece end.** This is the back plane, the face plane, or a centre
+    line of section 4.1. As `s` moves, the minimiser stays on that end, so
+    `∂q/∂s` is taken along the end's plane rather than at fixed `t`.
+
+  Round 1 of this spec used the fixed-`t` form everywhere, which is wrong at
+  ends. The model below shows it erring by 0.26–0.47 px at corners whose
+  minimiser sits on the face or back plane.
+- **Error bound.** Within one physical pixel of the outline, `m` is compared
+  with the exact signed distance to the hit/miss boundary, found by search
+  in the Rust mirror. It must be within:
+  - 1/16 physical px on straight sides, and at any corner for a horizontal
+    or vertical swing;
+  - 1/8 physical px at corners on a diagonal swing.
+
+  A Python model applied the end-correct analytic gradient to a 100 px slab
+  at θ 20° and κ 1.5, the strongest configured perspective. Corners of
+  radius 0 and 0.8 px were tested, bevel 0 and 0.8, thickness 2 to 31.2,
+  minimisers interior and at both ends. The worst errors:
+  - axis-aligned swings, every corner: 0.003 px;
+  - diagonal `d` (0.6, 0.8), sharp corner: 0.065 px, and 0.019 px at 6°;
+  - diagonal, 0.8 px corner: 0.091 px.
+
+  The diagonal error comes from the slanted side that the ray's sweep adds
+  to the outline at a corner, which a single gradient does not see.
+  Rejected: refining `m` by Newton projection onto the outline. Two steps
+  left the diagonal corner at 0.05–0.12 px in the same model, it costs two
+  more bracketings per outline pixel, and its correction is not exactly zero
+  at identity, which would break the byte-identity test. A 1/8 px shift of a
+  one-pixel ramp, at a corner, on frames in motion, stays well inside the
+  pixel, and the still sheet's corner crops (section 8.3) show it to the
+  owner.
+  - **Exception.** Where a corner radius exceeds its half-extent, the
+    outline itself steps at a centre line. The (88, 12, 12, 12) case steps
+    8.6 px at the top seam, already at rest. Within one physical px of such
+    a step, the coverage follows the piece holding the minimiser, as today's
+    per-quadrant coverage does. The test there checks that coverage stays
+    in [0, 1] and is continuous within each piece.
+  - A ray misclassified within the bound has `m` near 0, and so coverage
+    near 0 either way. The outline therefore cannot open holes or flicker
+    between frames.
 - **Identity.** On the vertical ray, `xy = s` along the whole segment, and
   `X = 1` exactly on its deep part, which the back end always reaches. So
   `Ψmin = σ(s)` exactly, when evaluated as `σ + c · (1 − X)`. The
@@ -481,11 +557,18 @@ design is accepted.
   - the slab box's eight (front at `z = 0`, back at `z = −thickness`);
   - the texture rect's four, on `z = 0`.
 
-  The element's geometry for that frame is the resting area merged with the
-  bounding box of all twelve, rounded out to physical pixels. Projection
-  keeps convex sets convex, so the slab solid lies within its box's
-  projected hull and the decal within its quad. The bound is therefore
-  conservative. Projecting the slab alone is not enough: with a 100 px slab
+  Each set is first clipped against the near plane `ζ = 3/4` of section
+  4.1. The slab box is clipped as a convex polyhedron and the texture rect
+  as a convex polygon. The kept vertices are the corners at or below the
+  plane, plus each edge's crossing of it. The element's geometry for that
+  frame is the resting area merged with the bounding box of all the clipped
+  vertices' projections. That is intersected with the output's logical rect
+  grown by one physical pixel, then rounded out to physical pixels. Within
+  the clip, the projection's denominator is at least 1/4, so it keeps convex
+  sets convex. The clipped slab therefore lies within its projected hull and
+  the clipped decal within its polygon, and the bound is conservative. It is
+  also finite: no point is magnified more than 4× about the pivot. The output
+  intersection applies only during a swing. Projecting the slab alone is not enough: with a 100 px slab
   at 10° and κ = 6, a texture corner at (250, 250) from the pivot projects to
   about (265, 269), outside the slab's box and the resting area. The quad's
   UV maps back to the resting area through a 4-vector, as on the spike. At
@@ -546,7 +629,12 @@ static perspective do not port.
 - The footprint contains every projected slab point and every projected
   point of the texture rect, sampled densely, at θp ∈ {2, 10, 20}° and
   κ ∈ {1.5, 6, 50}. That includes a texture rect reaching 150 px past the
-  slab on every side, and the (250, 250) corner of a 100 px slab.
+  slab on every side, and the (250, 250) corner of a 100 px slab. A texture
+  reaching `x = 500` from the pivot of a 100 px slab at 20°, κ = 1.5 crosses
+  the near clip. Its footprint is finite and within the output, and contains
+  every point the shader draws, i.e. every point with `ζ ≤ 3/4`.
+- The slab never reaches the near clip: `ζ ≤ sin θp / (2κ)` over the
+  configured ranges, thickness 0–200 included.
 - The wall-reveal rule of section 2.1 agrees with a mirror ray cast. The
   cases are frame by frame through whole swings: horizontal, vertical and
   diagonal `d` (including (0.6, 0.8)), on straight sides and on corners. A
@@ -557,10 +645,18 @@ static perspective do not port.
   entry depth to 1/64 physical px. It is run over randomised rays across
   the configured ranges (profile 1–8, bevel, thickness, θp, κ). Those rays
   are concentrated within one pixel of the outline and include the
-  rim-graze case of section 4.1. The convexity of `Ψ` along each sampled ray
-  is asserted.
-- The outline distance `m` meets section 4.5's bound against the bisected
-  outline, on straight sides and on corners.
+  rim-graze case of section 4.1. The convexity of `Ψ` along each sampled
+  piece is asserted. The cases include:
+  - asymmetric radii, (88, 12, 12, 12) on a 100 px slab and others drawn at
+    random from the fitted range, with rays whose first hit lies in a later
+    piece;
+  - bevel 0 and thickness 0, alone and together, where the mirror must
+    produce no NaN and the solid is the box or the plane of section 4.1.
+- The outline distance `m` meets section 4.5's bound against the exact
+  signed distance to the hit/miss boundary. The cases cover straight sides,
+  corners, and the smallest corners: outer radius 0 (bevel 0, corner radius
+  0) and 0.8 px. They include θp 20° at κ 1.5, diagonal `d`, minimisers at a
+  piece's start, end and interior, and bevel 0 or thickness 0.
 - No configured range gives `r.z ≥ 0`.
 
 ### 8.2 Frozen renders (headless, no host)
@@ -570,7 +666,11 @@ aberration, reflection and grain on:
 
 - **Identity at tilt 0.** A test hook forces the view branch on, with θ = 0
   and `w = 0`. Its output is byte-identical to the rest path's, frame for
-  frame, mid-beam included.
+  frame, mid-beam included. This is repeated for bevel 0, for thickness 0,
+  and for asymmetric corner radii.
+- **Zero rise in motion.** A swing with bevel 0 and one with thickness 0 run
+  through the sequence below. No NaN reaches a pixel, and coverage stays in
+  [0, 1].
 - **Rest identity.** With `view-tilt 0`, and again one frame after a swing
   has ended, renders are byte-identical to the pinned pre-change baseline.
   That covers opaque client pixels and translucent glass.
@@ -584,16 +684,20 @@ aberration, reflection and grain on:
 - **Containment.** A test hook draws the quad oversized at the peak. No
   nonzero pixel falls outside the computed geometry. This runs with a client
   whose unclipped subsurface lies outside the slab, and the subsurface's
-  projected pixels must all be drawn.
+  projected pixels must all be drawn. A second case puts the subsurface past
+  the near clip, at 20° and κ = 1.5. It is drawn up to the clip and nowhere
+  past it, and the geometry stays within the output.
 - **Walls.** Frames are taken at the peak, at a small-angle frame (2° of a
   10° swing, κ = 6) and in the overshoot lobe. Each edge shows wall coverage
   exactly where the mirror predicts, with widths to ±1 px. At the peak, the
   receding edge shows none. A swing with `θp ≤ 1 / (2κ)` shows no wall on any
   frame. One diagonal swing checks the corner.
 - **Grazing edges.** Across a slow sweep of θ, the frames' coverage along the
-  receding rim and the advancing wall's back edge changes smoothly. Each
-  outline pixel's coverage changes by at most the outline's own motion over
-  the step, plus 1/16. No pixel inside the outline has zero coverage.
+  receding rim and the advancing wall's back edge changes smoothly. Between
+  frames, each outline pixel's coverage changes by no more than the
+  smoothstep's steepest slope (1.5 per px) times the outline's motion plus
+  twice the section 4.5 bound. No pixel inside the outline has zero
+  coverage.
 - **Sequences.** Focus loss mid-swing (the cut, then the finish), refocus
   mid-swing (no restart), resize mid-swing, policy cut, animations off, an
   ineligible tile (border on, fullscreen, opening), and close mid-swing (the
@@ -609,7 +713,8 @@ A self-explaining sheet, per the review-sheet rule:
 - **Grid.** Rows θp ∈ {6, 10, 14}°. Columns κ ∈ {2.5, 6, 10}. Each cell is
   the peak frame of the accepted dark look and, beside it, a lighter look.
 - **Extra row.** The wall spill off and on at the middle cell.
-- **Crops.** Native-resolution crops of the advancing edge and of text.
+- **Crops.** Native-resolution crops of the advancing edge, of text, and
+  of a corner at the peak of a diagonal swing.
 - **Labels.** Each cell has a stable id. The legend names the wall, the rim
   and the keystone.
 - **Control.** The spike's 4° at `D` = 2000 px, marked as the control.
