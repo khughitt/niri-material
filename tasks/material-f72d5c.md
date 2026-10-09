@@ -7,7 +7,7 @@ size: m
 complexity: mid
 process: planned
 created: 2026-10-09T23:29:33Z
-updated: 2026-10-09T23:32:49Z
+updated: 2026-10-09T23:50:32Z
 depends: [material-ac926f]
 parent: material-6062fd
 tags: [rendering, material]
@@ -20,3 +20,4 @@ Stage 4 attenuates along h / -t.z. That is physically right: a ray entering the 
 ## Notes
 
 - 2026-10-09T23:32:48Z (materials-26.04): 2026-10-09 correction before the spike: the side-exit path idea was wrong physics (the refracted ray bends inward, never out the side wall); retitled and rebodied as an edge-light term. The spike (material-ac926f) probes this form.
+- 2026-10-09T23:50:32Z (materials-26.04): From the spike: the reflection stage's schema reads must add attenuation-color, attenuation-distance and bevel (pipeline_optic_glsl_reads_are_declared), pipeline.json regenerated; the scene tap needs averaging along the edge (5 taps over +-thickness worked) or the corner fans a sharp backdrop into spokes.
