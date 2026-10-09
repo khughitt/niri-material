@@ -947,6 +947,12 @@ class EndToEndTest(unittest.TestCase):
             code, _, stderr = cm_run("settle", str(run), "--sub-run", "A-1", "--input", str(root / "A.kdl"),
                                      "--seconds", "1", sampling=True)
             self.assertEqual(code, 0, stderr)
+            gpu_name = "NVIDIA test"   # the fake nvidia-smi's --query-gpu=name answer
+            (root / "niri.slice").write_text(f'INFO smithay::backend::renderer::gles: GL Renderer: "{gpu_name}/PCIe/SSE2"\n')
+            (root / "weston.slice").write_text(f"[00:00:00.000] GL renderer: {gpu_name}/PCIe/SSE2\n")
+            code, _, stderr = cm_run("renderer", str(run), "--sub-run", "A-1", "--niri-log", str(root / "niri.slice"),
+                                     "--weston-log", str(root / "weston.slice"))
+            self.assertEqual(code, 0, stderr)
             code, _, stderr = cm_run("finish", str(run), "--sub-run", "A-1")
             self.assertEqual(code, 0, stderr)
             code, _, stderr = cm_run("release", str(run))
@@ -977,6 +983,105 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("host-load not found on PATH", result.stderr)
             self.assertFalse(bare.exists())
+
+
+DATA = pathlib.Path(__file__).with_name("testdata") / "renderer"
+
+
+class RendererTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.root = pathlib.Path(temp.name)
+
+    def measured(self, lane="headless", gpu_name="NVIDIA GeForce RTX 3070", name=None):
+        run = self.root / (name or f"{lane}-run"); run.mkdir()
+        cm.write_section(run, "run", {"id": run.name, "lane": lane, "started": STARTED})
+        cm.write_section(run, "environment", {"gpu": {"name": gpu_name}, "session": {}, "tools": {}})
+        cm.append_sub_run(run, {"name": "A", "verdict": "settled", "started": STARTED})
+        return run
+
+    def weston(self, text=None):
+        path = self.root / "weston.slice"
+        path.write_text(text if text is not None else (DATA / "weston-nvidia.log").read_text())
+        return path
+
+    def test_both_compositors_on_the_sampled_gpu_verify(self):
+        run = self.measured()
+        cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        r = cm.load_record(run)["sub_runs"][-1]["renderer"]
+        self.assertEqual((r["verdict"], r["niri"]["verdict"], r["weston"]["verdict"]),
+                         ("verified", "verified", "verified"))
+        self.assertEqual(r["niri"]["lines"], ["NVIDIA GeForce RTX 3070/PCIe/SSE2"])
+        self.assertEqual(r["expected"], "NVIDIA GeForce RTX 3070")
+
+    def test_default_filter_llvmpipe_and_other_gpu_are_recorded_then_refused(self):
+        for i, (log, gpu, niri_verdict) in enumerate(((DATA / "niri-default.log", "NVIDIA GeForce RTX 3070", "missing"),
+                                                      (DATA / "niri-llvmpipe.log", "NVIDIA GeForce RTX 3070", "mismatch"),
+                                                      (DATA / "niri-nvidia.log", "NVIDIA GeForce RTX 4090", "mismatch"))):
+            with self.subTest(log=log.name, gpu=gpu):
+                run = self.measured(gpu_name=gpu, name=f"case-{i}")
+                with self.assertRaises(cm.Refused):
+                    cm.renderer(run, "A", log, self.weston())
+                entry = cm.load_record(run)["sub_runs"][-1]
+                self.assertNotIn("finished", entry)
+                self.assertEqual(entry["renderer"]["niri"]["verdict"], niri_verdict)
+                self.assertNotEqual(entry["renderer"]["verdict"], "verified")
+
+    def test_weston_spelled_like_niri_is_missing(self):
+        run = self.measured()
+        with self.assertRaises(cm.Refused):
+            cm.renderer(run, "A", DATA / "niri-nvidia.log",
+                        self.weston("[21:51:39.332] GL Renderer: NVIDIA GeForce RTX 3070/PCIe/SSE2\n"))
+        self.assertEqual(cm.load_record(run)["sub_runs"][-1]["renderer"]["weston"]["verdict"], "missing")
+
+    def test_weston_log_is_required_nested_and_refused_on_drm(self):
+        with self.assertRaisesRegex(cm.CannotRun, "--weston-log"):
+            cm.renderer(self.measured(), "A", DATA / "niri-nvidia.log", None)
+        with self.assertRaisesRegex(cm.CannotRun, "no Weston"):
+            cm.renderer(self.measured("dedicated"), "A", DATA / "niri-nvidia.log", self.weston())
+        drm = self.measured("dedicated", name="drm-ok")
+        cm.renderer(drm, "A", DATA / "niri-nvidia.log", None)
+        self.assertNotIn("weston", cm.load_record(drm)["sub_runs"][-1]["renderer"])
+
+    def test_second_call_and_no_open_entry_cannot_run(self):
+        run = self.measured()
+        cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        with self.assertRaisesRegex(cm.CannotRun, "already"):
+            cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        with self.assertRaisesRegex(cm.CannotRun, "no open sub-run"):
+            cm.renderer(run, "B", DATA / "niri-nvidia.log", self.weston())
+
+    def test_renderer_attaches_to_the_latest_open_entry(self):
+        run = self.measured()
+        cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        cm.finish_sub_run(run, "A")
+        cm.append_sub_run(run, {"name": "A", "verdict": "settled", "started": STARTED})
+        with self.assertRaises(cm.Refused):
+            cm.renderer(run, "A", DATA / "niri-llvmpipe.log", self.weston())
+        first, second = cm.load_record(run)["sub_runs"]
+        self.assertEqual((first["renderer"]["verdict"], second["renderer"]["niri"]["verdict"]),
+                         ("verified", "mismatch"))
+
+    def test_pixels_records_without_requiring(self):
+        run = self.root / "px"; run.mkdir()
+        cm.write_section(run, "run", {"id": "px", "lane": "pixels", "started": STARTED})
+        cm.write_section(run, "environment", {"session": {}, "tools": {}})
+        cm.append_sub_run(run, {"name": "A", "verdict": "begun", "started": STARTED})
+        cm.renderer(run, "A", DATA / "niri-default.log", self.weston())
+        r = cm.load_record(run)["sub_runs"][-1]["renderer"]
+        self.assertEqual((r["verdict"], r["niri"]["verdict"], r["weston"]["verdict"]),
+                         ("recorded", "missing", "recorded"))
+        self.assertNotIn("expected", r)
+
+    def test_unverified_launches_counts_settled_entries_finished_or_open(self):
+        record = {"run": {"lane": "dedicated"}, "sub_runs": [
+            {"name": "open", "verdict": "settled"},
+            {"name": "done", "verdict": "settled", "finished": STARTED},
+            {"name": "ok", "verdict": "settled", "renderer": {"verdict": "verified"}},
+            {"name": "refused", "verdict": "refused"}]}
+        self.assertEqual(cm.unverified_launches(record), ["open", "done"])
+        record["run"]["lane"] = "pixels"
+        self.assertEqual(cm.unverified_launches(record), [])
 
 
 class HoldRecordTests(unittest.TestCase):
@@ -1197,6 +1302,39 @@ class LifecycleTests(unittest.TestCase):
             other, lock=lambda: other / "lock")
         with self.assertRaisesRegex(cm.CannotRun, "begin is for pixels runs"):
             cm.begin(other, "A", [], lock=lambda: other / "lock")
+
+    def settle_one(self, name, clients=None):
+        (self.run / "A.kdl").write_text("glass")
+        cm.settle(self.run, name, [self.run / "A.kdl"], 3, FakeProc([(i * 2, i * 100) for i in range(9)]),
+                  FakeGpu([QUIET] * 3, clients=clients), sleep=lambda s: None, lock=lambda: self.lock)
+
+    def test_release_refuses_an_unverified_finished_launch_after_restoring(self):
+        self.preflight()
+        self.settle_one("A"); cm.finish_sub_run(self.run, "A")
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        self.assertEqual(self.host.snapshot(), self.before)
+        self.assertIsNone(cm.read_lock(self.lock))
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)   # repeats
+
+    def test_release_refuses_an_open_unverified_dedicated_launch(self):
+        self.host.live.clear()
+        self.lane_preflight("dedicated", gpu=FakeGpu([QUIET] * 30, clients={"compute": [], "graphics": []}))
+        # FakeGpu reports a graphics client by default, which the dedicated lane refuses.
+        self.settle_one("drm-aurora", clients={"compute": [], "graphics": []})   # never finished, as idle-budget power entries are today
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        self.assertIsNone(cm.read_lock(self.lock))
+
+    def test_release_passes_a_verified_launch_and_ignores_a_refused_settle(self):
+        self.preflight()
+        self.settle_one("A")
+        weston = self.root / "w.log"; weston.write_text((DATA / "weston-nvidia.log").read_text())
+        # FakeGpu's static name is "NVIDIA test"; the fixture names a real GPU, so pin the expected name.
+        record = cm.load_record(self.run); record["environment"]["gpu"]["name"] = "NVIDIA GeForce RTX 3070"
+        cm.save_record(self.run, record)
+        cm.renderer(self.run, "A", DATA / "niri-nvidia.log", weston)
+        cm.finish_sub_run(self.run, "A")
+        cm.append_sub_run(self.run, {"name": "B", "verdict": "refused", "reason": "gpu busy"})
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
 
     def test_quiet_preflight_holds_then_release_restores_and_is_clean(self):
         self.preflight()
