@@ -15,8 +15,8 @@ set -eu
 HERE=$(dirname "$(readlink -f "$0")")
 . "$HERE/glass-optic-smoke-lib.sh"
 [ -r "$SHEET_WALL" ] || fail "SHEET_WALL is not a readable file: $SHEET_WALL"
-capture_preflight headless
 build_binaries
+capture_preflight pixels
 capture_identity --input "$SHEET_WALL" --config preset=glass-edge-sheet --config output=1280x720 --config scale=1 --config vrr=off
 calibrate_probe_rect "$NIRI" 0
 WALL=$OUT/wall.png

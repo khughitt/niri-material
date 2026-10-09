@@ -1,7 +1,9 @@
 """Unit tests for tools/capture-meta."""
+import contextlib
 import importlib.machinery
 import importlib.util
 import json
+import io
 import itertools
 import os
 import pathlib
@@ -357,6 +359,37 @@ class ShowTests(unittest.TestCase):
             cm.write_section(run, "run", {"id": "x", "task": "t", "fixture": "f", "lane": "headless",
                                           "started": "now", "host": "h"})
             self.assertEqual(cm.main(["show", directory]), 0)
+
+    def test_show_marks_unchecked_measured_launches(self):
+        record = {"schema": 1, "run": {"id": "drm", "lane": "dedicated", "started": STARTED},
+                  "sub_runs": [{"name": "drm-a", "verdict": "settled", "started": STARTED},
+                               {"name": "drm-b", "verdict": "settled", "started": STARTED,
+                                "renderer": {"verdict": "verified"}},
+                               {"name": "drm-c", "verdict": "refused", "reason": "gpu busy"}]}
+        lines = cm.render(record).splitlines()
+        line = lambda name: next(l for l in lines if l.strip().startswith(f"{name}:"))
+        self.assertTrue(line("drm-a").endswith("renderer unchecked"), line("drm-a"))
+        self.assertTrue(line("drm-b").endswith("renderer verified"), line("drm-b"))
+        self.assertNotIn("renderer", line("drm-c"))
+        pixel = {"schema": 1, "run": {"id": "px", "lane": "pixels", "started": STARTED},
+                 "sub_runs": [{"name": "cell-1", "verdict": "begun", "started": STARTED}]}
+        self.assertNotIn("renderer", cm.render(pixel))
+
+    def test_show_renders_old_and_pixel_records(self):
+        old = {"schema": 1, "run": {"id": "old", "lane": "headless", "started": STARTED},
+               "preflight": {"verdict": "quiet"},
+               "sub_runs": [{"name": "A", "verdict": "settled", "started": STARTED}]}
+        self.assertIn("A: settled", cm.render(old))
+        pixel = {"schema": 1, "run": {"id": "px", "lane": "pixels", "started": STARTED},
+                 "environment": {"kernel": "k", "cpu": "c", "cpu_threads": 1, "memory_total_kib": 1,
+                                 "session": {"type": "wayland", "display": "w"}, "tools": {}},
+                 "preflight": {"verdict": "unsampled", "at": STARTED, "host_condition": "desktop"},
+                 "sub_runs": [{"name": "cell-1", "verdict": "begun", "started": STARTED}]}
+        cm.validate_record(pixel)
+        text = cm.render(pixel)
+        for needle in ("GPU not sampled: pixels lane", "preflight unsampled", "host desktop",
+                       "cell-1: begun", "never finished"):
+            self.assertIn(needle, text)
 
 
 class FakeProc:
@@ -931,6 +964,12 @@ class EndToEndTest(unittest.TestCase):
             code, _, stderr = cm_run("settle", str(run), "--sub-run", "A-1", "--input", str(root / "A.kdl"),
                                      "--seconds", "1", sampling=True)
             self.assertEqual(code, 0, stderr)
+            gpu_name = "NVIDIA test"   # the fake nvidia-smi's --query-gpu=name answer
+            (root / "niri.slice").write_text(f'INFO smithay::backend::renderer::gles: GL Renderer: "{gpu_name}/PCIe/SSE2"\n')
+            (root / "weston.slice").write_text(f"[00:00:00.000] GL renderer: {gpu_name}/PCIe/SSE2\n")
+            code, _, stderr = cm_run("renderer", str(run), "--sub-run", "A-1", "--niri-log", str(root / "niri.slice"),
+                                     "--weston-log", str(root / "weston.slice"))
+            self.assertEqual(code, 0, stderr)
             code, _, stderr = cm_run("finish", str(run), "--sub-run", "A-1")
             self.assertEqual(code, 0, stderr)
             code, _, stderr = cm_run("release", str(run))
@@ -961,6 +1000,105 @@ class EndToEndTest(unittest.TestCase):
             self.assertEqual(result.returncode, 2, result.stderr)
             self.assertIn("host-load not found on PATH", result.stderr)
             self.assertFalse(bare.exists())
+
+
+DATA = pathlib.Path(__file__).with_name("testdata") / "renderer"
+
+
+class RendererTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
+        self.root = pathlib.Path(temp.name)
+
+    def measured(self, lane="headless", gpu_name="NVIDIA GeForce RTX 3070", name=None):
+        run = self.root / (name or f"{lane}-run"); run.mkdir()
+        cm.write_section(run, "run", {"id": run.name, "lane": lane, "started": STARTED})
+        cm.write_section(run, "environment", {"gpu": {"name": gpu_name}, "session": {}, "tools": {}})
+        cm.append_sub_run(run, {"name": "A", "verdict": "settled", "started": STARTED})
+        return run
+
+    def weston(self, text=None):
+        path = self.root / "weston.slice"
+        path.write_text(text if text is not None else (DATA / "weston-nvidia.log").read_text())
+        return path
+
+    def test_both_compositors_on_the_sampled_gpu_verify(self):
+        run = self.measured()
+        cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        r = cm.load_record(run)["sub_runs"][-1]["renderer"]
+        self.assertEqual((r["verdict"], r["niri"]["verdict"], r["weston"]["verdict"]),
+                         ("verified", "verified", "verified"))
+        self.assertEqual(r["niri"]["lines"], ["NVIDIA GeForce RTX 3070/PCIe/SSE2"])
+        self.assertEqual(r["expected"], "NVIDIA GeForce RTX 3070")
+
+    def test_default_filter_llvmpipe_and_other_gpu_are_recorded_then_refused(self):
+        for i, (log, gpu, niri_verdict) in enumerate(((DATA / "niri-default.log", "NVIDIA GeForce RTX 3070", "missing"),
+                                                      (DATA / "niri-llvmpipe.log", "NVIDIA GeForce RTX 3070", "mismatch"),
+                                                      (DATA / "niri-nvidia.log", "NVIDIA GeForce RTX 4090", "mismatch"))):
+            with self.subTest(log=log.name, gpu=gpu):
+                run = self.measured(gpu_name=gpu, name=f"case-{i}")
+                with self.assertRaises(cm.Refused):
+                    cm.renderer(run, "A", log, self.weston())
+                entry = cm.load_record(run)["sub_runs"][-1]
+                self.assertNotIn("finished", entry)
+                self.assertEqual(entry["renderer"]["niri"]["verdict"], niri_verdict)
+                self.assertNotEqual(entry["renderer"]["verdict"], "verified")
+
+    def test_weston_spelled_like_niri_is_missing(self):
+        run = self.measured()
+        with self.assertRaises(cm.Refused):
+            cm.renderer(run, "A", DATA / "niri-nvidia.log",
+                        self.weston("[21:51:39.332] GL Renderer: NVIDIA GeForce RTX 3070/PCIe/SSE2\n"))
+        self.assertEqual(cm.load_record(run)["sub_runs"][-1]["renderer"]["weston"]["verdict"], "missing")
+
+    def test_weston_log_is_required_nested_and_refused_on_drm(self):
+        with self.assertRaisesRegex(cm.CannotRun, "--weston-log"):
+            cm.renderer(self.measured(), "A", DATA / "niri-nvidia.log", None)
+        with self.assertRaisesRegex(cm.CannotRun, "no Weston"):
+            cm.renderer(self.measured("dedicated"), "A", DATA / "niri-nvidia.log", self.weston())
+        drm = self.measured("dedicated", name="drm-ok")
+        cm.renderer(drm, "A", DATA / "niri-nvidia.log", None)
+        self.assertNotIn("weston", cm.load_record(drm)["sub_runs"][-1]["renderer"])
+
+    def test_second_call_and_no_open_entry_cannot_run(self):
+        run = self.measured()
+        cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        with self.assertRaisesRegex(cm.CannotRun, "already"):
+            cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        with self.assertRaisesRegex(cm.CannotRun, "no open sub-run"):
+            cm.renderer(run, "B", DATA / "niri-nvidia.log", self.weston())
+
+    def test_renderer_attaches_to_the_latest_open_entry(self):
+        run = self.measured()
+        cm.renderer(run, "A", DATA / "niri-nvidia.log", self.weston())
+        cm.finish_sub_run(run, "A")
+        cm.append_sub_run(run, {"name": "A", "verdict": "settled", "started": STARTED})
+        with self.assertRaises(cm.Refused):
+            cm.renderer(run, "A", DATA / "niri-llvmpipe.log", self.weston())
+        first, second = cm.load_record(run)["sub_runs"]
+        self.assertEqual((first["renderer"]["verdict"], second["renderer"]["niri"]["verdict"]),
+                         ("verified", "mismatch"))
+
+    def test_pixels_records_without_requiring(self):
+        run = self.root / "px"; run.mkdir()
+        cm.write_section(run, "run", {"id": "px", "lane": "pixels", "started": STARTED})
+        cm.write_section(run, "environment", {"session": {}, "tools": {}})
+        cm.append_sub_run(run, {"name": "A", "verdict": "begun", "started": STARTED})
+        cm.renderer(run, "A", DATA / "niri-default.log", self.weston())
+        r = cm.load_record(run)["sub_runs"][-1]["renderer"]
+        self.assertEqual((r["verdict"], r["niri"]["verdict"], r["weston"]["verdict"]),
+                         ("recorded", "missing", "recorded"))
+        self.assertNotIn("expected", r)
+
+    def test_unverified_launches_counts_settled_entries_finished_or_open(self):
+        record = {"run": {"lane": "dedicated"}, "sub_runs": [
+            {"name": "open", "verdict": "settled"},
+            {"name": "done", "verdict": "settled", "finished": STARTED},
+            {"name": "ok", "verdict": "settled", "renderer": {"verdict": "verified"}},
+            {"name": "refused", "verdict": "refused"}]}
+        self.assertEqual(cm.unverified_launches(record), ["open", "done"])
+        record["run"]["lane"] = "pixels"
+        self.assertEqual(cm.unverified_launches(record), [])
 
 
 class HoldRecordTests(unittest.TestCase):
@@ -1071,6 +1209,188 @@ class LifecycleTests(unittest.TestCase):
                             proc=FakeProc([(i * 2, i * 100) for i in range(30)]), gpu=gpu or FakeGpu([QUIET] * 30),
                             host_load=FakeHostLoad(), host=self.host, sleep=lambda s: None,
                             lock=lambda: self.lock, hold_settle=10, launch_guard=launch_guard)
+
+    def lane_preflight(self, lane, gpu="quiet", env=None):   # gpu=None: no sampler (pixels lane)
+        saved = {k: os.environ.get(k) for k in ("XDG_SESSION_TYPE", "DISPLAY", "WAYLAND_DISPLAY")}
+        for key in ("DISPLAY", "WAYLAND_DISPLAY"):
+            os.environ.pop(key, None)
+        os.environ.update(env or {"XDG_SESSION_TYPE": "tty"})
+        try:
+            return cm.preflight(self.run, lane=lane, task="material-18c2a1", fixture="t.sh", seconds=3,
+                                owner_pid=4242, thresholds=cm.DEFAULT_THRESHOLDS, tools=["tracy=0.13.1"],
+                                proc=FakeProc([(i * 2, i * 100) for i in range(30)]),
+                                gpu=FakeGpu([QUIET] * 30) if gpu == "quiet" else gpu,
+                                host_load=FakeHostLoad(), host=self.host, sleep=lambda s: None,
+                                lock=lambda: self.lock, hold_settle=0)
+        finally:
+            for key, value in saved.items():
+                if value is None: os.environ.pop(key, None)
+                else: os.environ[key] = value
+
+    def cli_preflight_without_nvidia_smi(self, lane):
+        # Everything a measured preflight needs except nvidia-smi: the sampler alone must refuse.
+        bins = self.root / "no-nvidia-smi"; bins.mkdir(exist_ok=True)
+        (bins / "host-load").write_text("#!/bin/sh\nexit 0\n"); (bins / "host-load").chmod(0o755)
+        saved = {k: os.environ.get(k) for k in ("PATH", "XDG_SESSION_TYPE")}
+        os.environ.update({"PATH": str(bins), "XDG_SESSION_TYPE": "wayland"})
+        stderr = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(stderr):
+                code = cm.main(["preflight", str(self.run), "--lane", lane, "--task", "material-18c2a1",
+                                "--fixture", "t.sh", "--owner-pid", "4242"])
+            return code, stderr.getvalue()
+        finally:
+            for key, value in saved.items():
+                if value is None: os.environ.pop(key, None)
+                else: os.environ[key] = value
+
+    def test_measured_lanes_without_nvidia_smi_refuse_before_touching_the_host(self):
+        for lane in ("headless", "dedicated"):
+            with self.subTest(lane=lane):
+                code, stderr = self.cli_preflight_without_nvidia_smi(lane)
+                self.assertEqual(code, 2, stderr)
+                self.assertIn("nvidia-smi not found", stderr)
+                self.assertFalse((self.run / cm.RECORD).exists())   # refused before the run section and the lock
+                self.assertEqual(self.host.calls, [])
+                self.assertIsNone(cm.read_lock(self.lock))
+                self.assertFalse((self.lock.with_name(cm.ch.HOLD_NAME)).exists())
+
+    def test_pixels_without_nvidia_smi_holds_and_records_no_gpu(self):
+        code, stderr = self.cli_preflight_without_nvidia_smi("pixels")
+        self.assertEqual(code, 0, stderr)
+        record = cm.load_record(self.run)
+        self.assertEqual(record["preflight"]["verdict"], "unsampled")
+        self.assertNotIn("gpu", record["environment"])
+        self.assertEqual([i.get("unit", i["kind"]) for i in record["hold"]["items"]],
+                         ["wali-rotate.timer", "dropbox.service"])
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual(self.host.snapshot(), self.before)
+
+    def test_dedicated_refuses_a_live_desktop_before_holding(self):
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("dedicated")
+        preflight = cm.load_record(self.run)["preflight"]
+        self.assertEqual(preflight["verdict"], "refused")
+        self.assertIn("a desktop niri is running", " ".join(preflight["reasons"]))
+        self.assertEqual(preflight["host_condition"], "desktop")
+        self.assertEqual(hold_actions(self.host), [])
+        self.assertIsNone(cm.read_lock(self.lock))
+        self.assertNotIn("baseline", cm.load_record(self.run))
+
+    def test_dedicated_refuses_a_graphics_client_before_holding(self):
+        self.host.live.clear()
+        gpu = FakeGpu([QUIET] * 30, clients={"compute": [], "graphics": ["niri"]})
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("dedicated", gpu=gpu)
+        self.assertIn("gpu_clients present on the dedicated lane: niri",
+                      cm.load_record(self.run)["preflight"]["reasons"])
+        self.assertEqual(hold_actions(self.host), [])
+
+    def test_dedicated_refuses_display_variables_before_holding(self):
+        self.host.live.clear()
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("dedicated", env={"XDG_SESSION_TYPE": "tty", "WAYLAND_DISPLAY": "wayland-1"})
+        self.assertEqual(hold_actions(self.host), [])
+
+    def test_headless_refuses_a_compute_client_before_holding(self):
+        gpu = FakeGpu([QUIET] * 30, clients={"compute": ["python3"], "graphics": []})
+        with self.assertRaises(cm.Refused):
+            self.lane_preflight("headless", gpu=gpu, env={"XDG_SESSION_TYPE": "wayland"})
+        self.assertIn("compute clients present: python3", cm.load_record(self.run)["preflight"]["reasons"])
+        self.assertEqual(hold_actions(self.host), [])
+
+    def test_dedicated_ignores_a_dead_desktop_socket(self):
+        self.host.live.clear()   # the socket file stays; niri msg version fails against it
+        self.lane_preflight("dedicated", gpu=FakeGpu([QUIET] * 30, clients={"compute": [], "graphics": []}))
+        preflight = cm.load_record(self.run)["preflight"]
+        self.assertEqual((preflight["verdict"], preflight["host_condition"]), ("quiet", "tty"))
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+
+    def test_host_condition_is_desktop_whenever_a_desktop_is_live(self):
+        self.lane_preflight("headless", env={"XDG_SESSION_TYPE": "tty"})
+        self.assertEqual(cm.load_record(self.run)["preflight"]["host_condition"], "desktop")
+
+    def test_pixel_preflight_holds_timers_and_services_only_and_samples_nothing(self):
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        record = cm.load_record(self.run)
+        self.assertEqual([i.get("unit", i["kind"]) for i in record["hold"]["items"]],
+                         ["wali-rotate.timer", "dropbox.service"])
+        self.assertNotIn(("noctalia", "msg", "caffeine-enable"), [tuple(c) for c in self.host.calls])
+        self.assertFalse([c for c in self.host.calls if "power-off-monitors" in c])
+        self.assertNotIn("baseline", record)
+        self.assertNotIn("gpu", record["environment"])
+        self.assertEqual(record["preflight"]["verdict"], "unsampled")
+        self.assertEqual(record["preflight"]["host_condition"], "desktop")
+        self.assertNotIn("thresholds", record["preflight"])
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        self.assertEqual(self.host.snapshot(), self.before)
+
+    def test_pixel_preflight_never_probes_idle_or_monitors(self):
+        # Either probe refuses a measured hold; a pixel run must not reach them.
+        self.host.fail[("noctalia", "msg", "status")] = "noctalia: no shell running"
+        (self.host.sysfs / "card1-DP-1" / "enabled").unlink()
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        self.assertEqual(cm.load_record(self.run)["preflight"]["verdict"], "unsampled")
+        self.assertNotIn(("noctalia", "msg", "status"), [tuple(c) for c in self.host.calls])
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
+
+    def test_pixel_preflight_records_the_gpu_when_one_is_present(self):
+        self.lane_preflight("pixels", gpu=FakeGpu([]), env={"XDG_SESSION_TYPE": "wayland"})
+        self.assertEqual(cm.load_record(self.run)["environment"]["gpu"]["name"], "NVIDIA test")
+
+    def test_begin_opens_a_pixel_sub_run_and_finish_closes_it(self):
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        (self.run / "A.kdl").write_text("glass")
+        cm.begin(self.run, "A", [self.run / "A.kdl"], lock=lambda: self.lock)
+        entry = cm.load_record(self.run)["sub_runs"][-1]
+        self.assertEqual((entry["name"], entry["verdict"]), ("A", "begun"))
+        self.assertEqual(entry["inputs"][0]["name"], "A.kdl")
+        cm.finish_sub_run(self.run, "A")
+        self.assertIn("finished", cm.load_record(self.run)["sub_runs"][-1])
+
+    def test_settle_refuses_a_pixel_run_and_begin_refuses_a_measured_run(self):
+        self.lane_preflight("pixels", gpu=None, env={"XDG_SESSION_TYPE": "wayland"})
+        with self.assertRaisesRegex(cm.CannotRun, "pixels run opens sub-runs with begin"):
+            cm.settle(self.run, "A", [], 3, FakeProc([(i * 2, i * 100) for i in range(9)]),
+                      FakeGpu([QUIET] * 3), sleep=lambda s: None, lock=lambda: self.lock)
+        other = self.root / "runs" / "measured"; other.mkdir()
+        PreflightTests("test_quiet_headless_writes_run_environment_baseline_preflight").run_preflight(
+            other, lock=lambda: other / "lock")
+        with self.assertRaisesRegex(cm.CannotRun, "begin is for pixels runs"):
+            cm.begin(other, "A", [], lock=lambda: other / "lock")
+
+    def settle_one(self, name, clients=None):
+        (self.run / "A.kdl").write_text("glass")
+        cm.settle(self.run, name, [self.run / "A.kdl"], 3, FakeProc([(i * 2, i * 100) for i in range(9)]),
+                  FakeGpu([QUIET] * 3, clients=clients), sleep=lambda s: None, lock=lambda: self.lock)
+
+    def test_release_refuses_an_unverified_finished_launch_after_restoring(self):
+        self.preflight()
+        self.settle_one("A"); cm.finish_sub_run(self.run, "A")
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        self.assertEqual(self.host.snapshot(), self.before)
+        self.assertIsNone(cm.read_lock(self.lock))
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)   # repeats
+
+    def test_release_refuses_an_open_unverified_dedicated_launch(self):
+        self.host.live.clear()
+        self.lane_preflight("dedicated", gpu=FakeGpu([QUIET] * 30, clients={"compute": [], "graphics": []}))
+        # FakeGpu reports a graphics client by default, which the dedicated lane refuses.
+        self.settle_one("drm-aurora", clients={"compute": [], "graphics": []})   # never finished, as idle-budget power entries are today
+        self.assertEqual(cm.main(["release", str(self.run)]), 1)
+        self.assertIsNone(cm.read_lock(self.lock))
+
+    def test_release_passes_a_verified_launch_and_ignores_a_refused_settle(self):
+        self.preflight()
+        self.settle_one("A")
+        weston = self.root / "w.log"; weston.write_text((DATA / "weston-nvidia.log").read_text())
+        # FakeGpu's static name is "NVIDIA test"; the fixture names a real GPU, so pin the expected name.
+        record = cm.load_record(self.run); record["environment"]["gpu"]["name"] = "NVIDIA GeForce RTX 3070"
+        cm.save_record(self.run, record)
+        cm.renderer(self.run, "A", DATA / "niri-nvidia.log", weston)
+        cm.finish_sub_run(self.run, "A")
+        cm.append_sub_run(self.run, {"name": "B", "verdict": "refused", "reason": "gpu busy"})
+        self.assertEqual(cm.main(["release", str(self.run)]), 0)
 
     def test_quiet_preflight_holds_then_release_restores_and_is_clean(self):
         self.preflight()
@@ -1305,7 +1625,7 @@ class LifecycleTests(unittest.TestCase):
         `run`, a hold file, a guard and the lock."""
         cm.write_section(self.run, "run", {"id": self.run.name, "started": STARTED})
         cm.acquire_lock(self.lock, 4242, self.run.name, run_dir=self.run)
-        plan = cm.ch.plan_hold(self.host)
+        plan = cm.ch.plan_hold(self.host, cm.ch.desktop_socket(self.host), cm.ch.HOLD_KINDS)
         hold = cm.ch.create_hold(self.lock, self.run.name, self.run, 4242, plan, self.host.now_us())
         cm.start_guard(self.host, hold)
         cm.ch.apply_hold(self.host, self.lock, self.run.name, self.run, plan)
@@ -1424,6 +1744,14 @@ class LifecycleTests(unittest.TestCase):
 
 def ch_hold_name():
     return cm.ch.HOLD_NAME
+
+
+HOLD_ACTIONS = (("systemd-run",), ("systemctl", "--user", "stop"), ("noctalia", "msg", "caffeine-enable"),
+                ("niri", "msg", "action", "power-off-monitors"))
+
+
+def hold_actions(host):
+    return [c for c in host.calls if any(tuple(c[:len(a)]) == a for a in HOLD_ACTIONS)]
 
 
 if __name__ == "__main__":

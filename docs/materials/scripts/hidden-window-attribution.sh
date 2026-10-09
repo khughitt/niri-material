@@ -34,12 +34,10 @@ esac
 cd "$(git rev-parse --show-toplevel)"
 if [ "${HWA_REHEARSAL:-0}" = 1 ]; then CAPTURE_META=true; echo "REHEARSAL: no capture record; counts are not evidence" >&2; fi
 . docs/materials/scripts/glass-optic-smoke-lib.sh
-capture_preflight headless
 
 PROBE=org.freedesktop.weston.simple-egl
 IDLE='printf "\033[?25l"; exec sleep 1800'
 GLASS_EXTRA='roughness 0.3'
-export RUST_LOG=niri=debug,smithay::backend::renderer::gles=info
 
 build_tracy() {
     local target
@@ -48,14 +46,6 @@ build_tracy() {
     cp "$target/release/niri" "$OUT/niri-tracy"
     NIRI=$OUT/niri-tracy; NIRI_TRACY=
     await_load   # a build's tail refuses the first settle
-}
-await_load() {
-    [ "${HWA_REHEARSAL:-0}" != 1 ] || return 0
-    for _ in $(seq 60); do
-        awk '{ exit !($1 < 1.0) }' /proc/loadavg && return 0
-        sleep 5
-    done
-    fail 'load1 did not fall below 1.0 within 5 min of the build'
 }
 
 # The lib's write_config matches gos-probe; this scene needs the probe rule on
@@ -154,11 +144,12 @@ cover() {
 }
 setup_overview() { msg "$NIRI" action focus-window --id "$OTHER"; msg "$NIRI" action open-overview; }
 
-check_renderer() {
+# The renderer itself is capture-meta's check (start_nested); this one reads
+# the case's niri log for material failures.
+check_material_log() {
     tail -c "+$((LOG_OFFSET + 1))" "$OUT/niri.log" > "$OUT/$1.renderer.log"
-    rg -q 'GL Renderer:.*NVIDIA' "$OUT/$1.renderer.log" || fail "$1: missing NVIDIA compositor renderer identity"
-    if rg -qi 'llvmpipe|software rasterizer|error compiling material shader|material.*fallback|panic' "$OUT/$1.renderer.log"; then
-        fail "$1: renderer failure"
+    if rg -qi 'error compiling material shader|material.*fallback|panic' "$OUT/$1.renderer.log"; then
+        fail "$1: material failure in the niri log"
     fi
 }
 
@@ -174,7 +165,7 @@ run_case() {
     msg "$NIRI" -j windows > "$OUT/$name.windows.json"
     shot "$NIRI" "$name"
     capture_bg "$name"; capture_ready "$name"; capture_wait
-    check_renderer "$name"
+    check_material_log "$name"
     stop_nested
     await_gpu_rest
 }
@@ -232,6 +223,7 @@ verdict() {   # case -> assert the gated expectations on its row
 }
 
 build_tracy
+capture_preflight headless
 capture_identity
 tools_ready; reserve_tracy_port
 write_scene "$OUT/scene.kdl"

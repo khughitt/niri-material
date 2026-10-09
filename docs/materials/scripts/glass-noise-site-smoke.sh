@@ -10,10 +10,11 @@ case "$PILOT" in 0|1) ;; *) echo "NOISE_SITE_PILOT must be 0 or 1" >&2; exit 2 ;
 source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 trap 'exit 130' INT
 trap 'exit 143' TERM
-capture_preflight headless
 build_binaries
 cp "$BASE_NIRI" "$OUT/niri-baseline"
 BASE_NIRI=$OUT/niri-baseline
+await_load
+capture_preflight headless
 capture_identity --binary "$BASE_NIRI" --config "pilot=$PILOT" --config baseline=b261ad1a
 magick -size 1280x720 xc:'rgb(140,115,90)' \
     \( -size 400x300 -seed 11 plasma:fractal \) -gravity southeast -composite "$WALL"
