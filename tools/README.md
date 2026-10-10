@@ -3,8 +3,8 @@
 Some files in this directory are maintained in the ops repository,
 https://github.com/khughitt/ops (private for now; planned public), and copied here
 unchanged. ops holds the shared tooling and vocabularies that a family of projects run in
-the same way. This project holds only some of the files below; any file in this
-directory that the table does not name belongs to this project itself.
+the same way. This project holds only some of the files below; apart from this README,
+any file in this directory that the table does not name belongs to this project itself.
 
 | File | What it is | How this project uses it | Source in ops |
 |---|---|---|---|
