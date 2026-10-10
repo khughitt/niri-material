@@ -1066,9 +1066,11 @@ pub(crate) mod tests {
     /// distance are both positive renders the same whatever m's error, and no sign can flip
     /// there. That exempts the outer half of the band, where m does exceed the bound: past an
     /// edge-on wall (thickness 200 at 20°, κ 1.5, on the lifting side) the face end takes the
-    /// minimiser, and m measures to the face edge's projection, up to 0.93 px off.
+    /// minimiser, and m measures to the face edge's projection, up to 0.93 px off. Coverage
+    /// depends on m unless both are proven > 0, so a NaN is never exempt: it falls through to the
+    /// bound assertion and fails it.
     fn coverage_depends_on(m: f64, exact: f64) -> bool {
-        m <= 0. || exact <= 0.
+        !(m > 0. && exact > 0.)
     }
 
     #[test]
