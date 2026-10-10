@@ -4,7 +4,7 @@ title: Narrowed damage and opaque regions for the material element
 status: idea
 priority: 2
 created: 2026-10-06T15:07:38Z
-updated: 2026-10-08T14:54:47Z
+updated: 2026-10-10T13:46:24Z
 depends: []
 parent: material-5d6b2c
 tags: [performance, rendering]
@@ -18,3 +18,4 @@ MaterialRenderElement (src/render_helpers/material/mod.rs) keeps smithay's defau
 - 2026-10-06T16:44:06Z (material-832caf): Review of material-233295 corrected this idea's scope: opaque regions cannot skip a covered tile's offscreen render (prepared in render_inner before occlusion); that part moves to material-7afc31.
 - 2026-10-06T20:11:16Z (materials-26.04): scope: briefed; damage and opacity affect the final draw, not eager offscreen preparation; audit per-target damage history, geometry and trustworthy opacity before choosing an implementation; brief: docs/notes/2026-09-29-resource-aware-rendering-brief.md
 - 2026-10-08T14:54:47Z (culling-boundaries): Woken by material-82e4bc (audit §3, §4): client-only damage forwarding is conditionally truthful (glass never reads niri_tex_win off-pixel; needs a material-owned DamageBag, footprint translation + 1 px dilation, full damage on every other fingerprint input, on unfingerprinted geo/slab/win rects and chamfer, and on offscreen reallocation, whose DamageBag restarts under the same Id). Opaque region = slab interior (eroded, minus corners) ∪ client-opaque area, only at niri_alpha 1 and when glass actually draws; the offscreen drops client opaque regions today. Needs a reviewed design; first measure via material-46b23d (incl. optional glass-cover case: window under glass keeps full-rate callbacks/draws by source).
+- 2026-10-10T13:46:24Z (materials-26.04): scope: briefed; no change: evidence matches the 82e4bc audit note; material-46b23d (via material-d21ff0) is the measurement that wakes it and already names it; the design follows only if that capture shows the whole-slab redraw cost matters; brief: docs/notes/2026-09-29-resource-aware-rendering-brief.md
