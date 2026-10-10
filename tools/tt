@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# tt version 6
+# tt version 7
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
-describing the run to the log. Source of truth: the ops repository, bin/tt. Projects carry
-a byte-identical copy at tools/tt. Standard library only. Design: ops
-docs/specs/2026-09-04-test-ci-audit-design.md.
+describing the run to the log. Projects carry a byte-identical copy at tools/tt.
+Vendored from https://github.com/khughitt/ops (bin/tt); never edit the copy, see tools/README.md.
+Standard library only. Design: ops docs/specs/2026-09-04-test-ci-audit-design.md.
 """
 import contextlib
 import datetime

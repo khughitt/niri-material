@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-# ops-check version 9
+# ops-check version 10
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
-command, so the pre-commit hook, `just check`, and CI all run it. Standard library only.
+command, so the pre-commit hook, `just check`, and CI all run it.
+Vendored from https://github.com/khughitt/ops (bin/ops-check); never edit the copy, see tools/README.md.
+Standard library only.
 Prints one `path:line: message` per finding on stderr and exits 1 when there are any;
 exits 2 when it cannot run at all.
 

@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-306 paths differ: 52 class B (seam), 212 class A (fork-only), 42 class C (scaffolding).
+307 paths differ: 52 class B (seam), 212 class A (fork-only), 43 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -113,11 +113,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/tests/mod.rs` | B | M | +10/-0 |
 | `src/window/mapped.rs` | B | M | +48/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
+| `tools/README.md` | C | A | +29/-0 |
 | `tools/capture-meta` | C | A | +1432/-0 |
 | `tools/capture_hold.py` | C | A | +580/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
-| `tools/ops-check` | C | A | +324/-0 |
+| `tools/ops-check` | C | A | +326/-0 |
 | `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/screencast_consumer.py` | C | A | +331/-0 |
