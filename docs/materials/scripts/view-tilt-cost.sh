@@ -8,6 +8,8 @@
 # b's or 0.002 ms, whichever is larger; a/a or b/b repeats further apart than that make the
 # case inconclusive. The swing case (a only) repeats focus gains at 10°, κ 6 and records the
 # swing frames' draws beside the rest median, and the extra GPU time per swing: no bound.
+# Cost: ~8 min cold build (release plus Tracy), then await_load waits up to 5 min for load1 < 1.0.
+# Needs OUT (a fresh dir), CAPTURE_TASK and NIRI_MATERIAL_WORK_ROOT in the environment.
 # VIEW_TILT_COST_AB=<baseline niri-tracy> is required; VIEW_TILT_COST_PILOT=1 runs three
 # damage steps per case and two gains.
 set -eu
@@ -24,10 +26,10 @@ build_binaries
 await_load
 capture_preflight headless
 cp "$AB" "$OUT/niri-tracy-b"
-capture_identity --binary "$OUT/niri-tracy-b" --config "pilot=$PILOT" --config ab=1
+capture_identity --binary "$OUT/niri-tracy-b" --input "$HERE/view_tilt_cost_zones.py" --config "pilot=$PILOT" --config ab=1
 reserve_tracy_port
 tools_ready
-DAMAGE_STEPS=20; GAINS=8
+DAMAGE_STEPS=20; GAINS=6
 [ "$PILOT" = 0 ] || { DAMAGE_STEPS=3; GAINS=2; }
 LIVE=$'ior 1.28\nthickness 31.2\nattenuation-color "#0D1D1E"\nattenuation-distance 11\nchromatic-aberration 0.36\nroughness 0.24\nbevel 12\nbevel-profile 2\noffset-x -6\noffset-y -5'
 declare -A GLASS=([tilt0]="$LIVE" [tilt10]="$LIVE" [fine]="$LIVE"$'\nnoise 0.3 type="fine"')
@@ -117,12 +119,15 @@ probe=$(msg "$NIRI" -j windows | jq -r '.[] | select(.app_id=="gos-probe") | .id
 other=$(msg "$NIRI" -j windows | jq -r '.[] | select(.app_id=="gos-other") | .id')
 sleep 1.5
 reload_marker "$cfg"
+# Six gains at 3 s end near 23 s of the 30 s trace; a gain that overruns fails here.
+start=$(now_ns)
 for i in $(seq 1 "$GAINS"); do
+    t0=$((start + (i - 1) * 3000000000))
     reload_marker "$cfg"
     msg "$NIRI" action focus-window --id "$probe"
-    sleep 1.5
+    sleep_until "$((t0 + 1500000000))" 500000000
     msg "$NIRI" action focus-window --id "$other"
-    sleep 1.5
+    sleep_until "$((t0 + 3000000000))" 500000000
 done
 capture_wait
 stop_walls; stop_nested
