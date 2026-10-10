@@ -40,7 +40,7 @@ const REST_LATER: Duration = Duration::from_secs(5);
 /// (premultiplied). Opaque pixels would bypass the slab.
 const CONTENT: u32 = 0x990a_0c0e;
 
-const ACCEPTED: &str = r##"
+pub(super) const ACCEPTED: &str = r##"
 material "terminal-glass" {
     glass {
         ior 1.28

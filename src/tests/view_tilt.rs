@@ -10,10 +10,12 @@ use std::time::Duration;
 use glam::{DVec2, DVec3};
 use niri_config::{Config, ResolvedGlass};
 use smithay::backend::renderer::element::Element as _;
+use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer;
+use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Anchor;
 use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use wayland_client::protocol::wl_surface::WlSurface;
 
-use super::client::ClientId;
+use super::client::{ClientId, LayerConfigureProps};
 use super::glass_edge::{self, renderer_name, BACKDROP};
 pub(super) use super::glass_edge::{CLEAR, OPAQUE, OUT_H, OUT_W, TRANSLUCENT};
 pub(super) use super::ring_look::gain;
@@ -1582,4 +1584,280 @@ fn interaction_sequences_finish_at_rest() {
     }
 
     assert!(black_frames.is_empty(), "black pixels in {black_frames:?}");
+}
+
+// The owner's still sheet (§8.3). The backdrop, the content and their colours are the
+// spike's (69431712:src/tests/tilt_spike.rs), verbatim.
+
+/// The window fill: the ring_look content, a dark fill at 0.6 opacity,
+/// premultiplied.
+const FILL: u32 = 0x990a_0c0e;
+const GLYPH: u32 = 0xffd8_dcc8;
+
+/// A 64 px two-tone checker with a light 2 px grid every 256 px.
+fn backdrop() -> Vec<u32> {
+    let (w, h) = (usize::from(SHEET_OUT.0), usize::from(SHEET_OUT.1));
+    let mut px = vec![0; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            px[y * w + x] = if x % 256 < 2 || y % 256 < 2 {
+                0xffe8_e0d0
+            } else if (x / 64 + y / 64) % 2 == 0 {
+                0xff8c_735a
+            } else {
+                0xff4a_5a6e
+            };
+        }
+    }
+    px
+}
+
+/// Deterministic hash for the glyph pattern.
+fn hash(a: usize, b: usize) -> u32 {
+    let mut x = (a as u32).wrapping_mul(0x9e37_79b9) ^ (b as u32).wrapping_mul(0x85eb_ca6b);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x2c1b_3c6d);
+    x ^= x >> 12;
+    x
+}
+
+/// Terminal-like content: rows of 10×20 px cells, each a pseudo-glyph of
+/// 1 px opaque strokes, over the translucent fill. Lines vary in length;
+/// every fifth line is bold (2 px strokes).
+fn glyphs(w: u16, h: u16) -> Vec<u32> {
+    let (w, h) = (usize::from(w), usize::from(h));
+    let mut px = vec![FILL; w * h];
+    let (cw, ch, margin) = (10, 20, 16);
+    let cols = (w - 2 * margin) / cw;
+    let rows = (h - 2 * margin) / ch;
+    for row in 0..rows {
+        let len = (hash(row, 7) as usize % cols).max(cols / 5);
+        let bold = row % 5 == 4;
+        for col in 0..len {
+            let bits = hash(row, col);
+            if bits % 7 == 0 {
+                continue; // a space
+            }
+            let (x0, y0) = (margin + col * cw, margin + row * ch);
+            let mut put = |x: usize, y: usize| {
+                px[(y0 + y) * w + x0 + x] = GLYPH;
+                if bold {
+                    px[(y0 + y) * w + x0 + x + 1] = GLYPH;
+                }
+            };
+            // Stems at x 2 and 6, bars at y 5, 10 and 15, a diagonal.
+            if bits & 1 != 0 {
+                (5..16).for_each(|y| put(2, y));
+            }
+            if bits & 2 != 0 {
+                (5..16).for_each(|y| put(6, y));
+            }
+            for (bit, y) in [(4, 5), (8, 10), (16, 15)] {
+                if bits & bit != 0 {
+                    (2..7).for_each(|x| put(x, y));
+                }
+            }
+            if bits & 32 != 0 {
+                (0..5).for_each(|i| put(2 + i, 15 - 2 * i));
+            }
+        }
+    }
+    px
+}
+
+const SHEET_OUT: (u16, u16) = (2560, 1440);
+/// The pane, and the second window that holds focus until the gain: as tall as the pane, so
+/// the two tile centres share a row and the gain's swing is horizontal.
+const SHEET_PANE: (u16, u16) = (1400, 900);
+const SHEET_SECOND: (u16, u16) = (400, 900);
+
+/// The accepted dark material pair (ring_look.rs, with its is-active rules) with `extra` in
+/// every response, or the lighter look beside it: the active glass with the stock smokes'
+/// light attenuation.
+fn sheet_material(light: bool, extra: &str) -> String {
+    let m = super::ring_look::ACCEPTED.replace(
+        "ring-glow 1.2\n",
+        &format!("ring-glow 1.2\n        {extra}\n"),
+    );
+    if light {
+        m.replace(
+            r##"attenuation-color "#0D1D1E""##,
+            r##"attenuation-color "#dfe8ff""##,
+        )
+        .replace("attenuation-distance 11", "attenuation-distance 60")
+    } else {
+        m
+    }
+}
+
+/// The sheet's fixture over the patterned backdrop, and the pane's window id.
+fn sheet_fixture(material: &str) -> (Fixture, MappedId) {
+    let config = Config::parse_mem(&format!(
+        r##"
+        hotkey-overlay {{ skip-at-startup; }}
+        layout {{
+            gaps 31
+            focus-ring {{ off; }}
+            border {{ off; }}
+            shadow {{ off; }}
+        }}
+        {material}
+        "##
+    ))
+    .unwrap();
+    // ACCEPTED carries its own is-active rules with a neutral background effect.
+    let mut f = Fixture::with_config(config);
+    f.niri_state().backend.headless().add_renderer().unwrap();
+    f.add_output(1, SHEET_OUT);
+    // The patterned Background layer, so refraction and the wall's reflection show.
+    let bg = f.add_client();
+    let layer = f.client(bg).create_layer(None, Layer::Background, "");
+    let surface = layer.surface.clone();
+    layer.set_configure_props(LayerConfigureProps {
+        anchor: Some(Anchor::Top | Anchor::Left | Anchor::Right | Anchor::Bottom),
+        exclusive_zone: Some(-1),
+        ..Default::default()
+    });
+    layer.commit();
+    f.roundtrip(bg);
+    let layer = f.client(bg).layer(&surface);
+    layer.attach_new_shm_pixels(i32::from(SHEET_OUT.0), i32::from(SHEET_OUT.1), &backdrop());
+    layer.ack_last_and_commit();
+    f.double_roundtrip(bg);
+    let id = f.add_client();
+    let mut ids = Vec::new();
+    for (size, pixels) in [
+        (SHEET_PANE, glyphs(SHEET_PANE.0, SHEET_PANE.1)),
+        (
+            SHEET_SECOND,
+            vec![FILL; usize::from(SHEET_SECOND.0) * usize::from(SHEET_SECOND.1)],
+        ),
+    ] {
+        let before = window_ids(&mut f);
+        let window = f.client(id).create_window();
+        let s = window.surface.clone();
+        window.commit();
+        f.roundtrip(id);
+        let window = f.client(id).window(&s);
+        window.attach_new_shm_pixels(i32::from(size.0), i32::from(size.1), &pixels);
+        window.ack_last_and_commit();
+        f.double_roundtrip(id);
+        let mut new = window_ids(&mut f)
+            .into_iter()
+            .filter(|w| !before.contains(w));
+        ids.push(new.next().expect("the window mapped"));
+        assert_eq!(new.next(), None, "one window mapped");
+    }
+    f.niri_state().update_keyboard_focus();
+    f.niri().refresh_window_rules();
+    set_time(&mut f, Duration::ZERO);
+    f.niri_complete_animations();
+    (f, ids[0])
+}
+
+/// One frame of the sheet: a gain at `GAIN`, rendered `ms` after it, under the hooks given.
+fn sheet_frame(light: bool, extra: &str, pose: Option<ViewPose>, spill: f32, ms: u64) -> Vec<u8> {
+    let _hook = PoseHook::set(pose);
+    let _spill = SpillHook::set(spill);
+    let (mut f, _) = sheet_fixture(&sheet_material(light, extra));
+    gain(&mut f);
+    render_at(&mut f, GAIN);
+    render_at(&mut f, GAIN + Duration::from_millis(ms))
+}
+
+/// The peak of a 900 ms swing.
+const PEAK_MS: u64 = 171;
+
+#[test]
+#[ignore = "the owner's still sheet (§8.3): run with VIEW_TILT_DUMP set, then view-tilt-sheet.py"]
+fn still_sheet_frames() {
+    assert!(
+        std::env::var_os("VIEW_TILT_DUMP").is_some(),
+        "set VIEW_TILT_DUMP"
+    );
+    let swing = |t: f64, k: f64| format!("view-tilt {t}\n        view-distance {k}");
+    for light in [false, true] {
+        let look = if light { "light" } else { "dark" };
+        for t in [6., 10., 14.] {
+            for k in [2.5, 6., 10.] {
+                let pixels = sheet_frame(light, &swing(t, k), None, 1., PEAK_MS);
+                dump(&format!("sheet/cell-t{t}-k{k}-{look}"), &pixels, SHEET_OUT);
+            }
+        }
+        let middle = swing(10., 6.);
+        dump(
+            &format!("sheet/spill-off-{look}"),
+            &sheet_frame(light, &middle, None, 0., PEAK_MS),
+            SHEET_OUT,
+        );
+        let diagonal = ViewPose {
+            theta: 10f64.to_radians(),
+            dir: DVec2::new(0.6, 0.8),
+            weight: 1.,
+            kappa: 6.,
+        };
+        dump(
+            &format!("sheet/diagonal-{look}"),
+            &sheet_frame(light, &middle, Some(diagonal), 1., PEAK_MS),
+            SHEET_OUT,
+        );
+        // The spike's control: 4° about the vertical axis with the camera at 2000 px from the
+        // pane's slab.
+        let (mut f, pane) = sheet_fixture(&sheet_material(light, ""));
+        let glass = pane_glass(&mut f, pane);
+        let slab = slab_frame(&mut f, pane, &glass, None).slab;
+        let control = ViewPose {
+            theta: 4f64.to_radians(),
+            dir: DVec2::X,
+            weight: 1.,
+            kappa: 2000. / slab.size.w,
+        };
+        dump(
+            &format!("sheet/control-{look}"),
+            &sheet_frame(light, "", Some(control), 1., PEAK_MS),
+            SHEET_OUT,
+        );
+        dump(
+            &format!("sheet/rest-{look}"),
+            &sheet_frame(light, &middle, None, 1., 2000),
+            SHEET_OUT,
+        );
+    }
+    for ms in (0..=900).step_by(50) {
+        dump(
+            &format!("sheet/film-{ms:03}"),
+            &sheet_frame(false, &swing(10., 6.), None, 1., ms),
+            SHEET_OUT,
+        );
+    }
+    // The cells' swing direction: the positive lobe lifts the edge along it, which is the
+    // advancing edge the crops show.
+    let (mut f, pane) = sheet_fixture(&sheet_material(false, &swing(10., 6.)));
+    gain(&mut f);
+    render_at(&mut f, GAIN);
+    let (_, advancing) = pane_tile(f.niri(), pane)
+        .0
+        .view_swing_start()
+        .expect("the gain starts a swing");
+    assert!(
+        advancing[1].abs() < 1e-9,
+        "the cells must swing horizontally: {advancing:?}"
+    );
+    let rect = pane_rect(&mut f, pane);
+    let dir = std::env::var_os("VIEW_TILT_DUMP").unwrap();
+    std::fs::write(
+        std::path::Path::new(&dir).join("sheet/geometry.json"),
+        format!(
+            r#"{{"size": [{}, {}], "pane": [{}, {}, {}, {}], "advancing": [{}, {}]}}"#,
+            SHEET_OUT.0,
+            SHEET_OUT.1,
+            rect.loc.x,
+            rect.loc.y,
+            rect.size.w,
+            rect.size.h,
+            advancing[0],
+            advancing[1]
+        ),
+    )
+    .unwrap();
 }

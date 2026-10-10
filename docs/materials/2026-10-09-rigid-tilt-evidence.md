@@ -55,3 +55,19 @@ statement in the spec, which stays as accepted.
    out-of-range coverage with a sentinel. A non-finite m that smoothstep
    clamps to coverage 1 where the mirror predicts 1 is not flagged, since it
    renders the right pixel. Commit c0e7589b.
+
+## Stills
+
+Sheet, crops and filmstrip: `$EV` = `stills-20261010T0009` (`sheet.png`,
+`crops.png`, `filmstrip.png`), rendered by `view_tilt::still_sheet_frames` on
+`NVIDIA GeForce RTX 3070/PCIe/SSE2` and assembled by
+`docs/materials/scripts/view-tilt-sheet.py`. Cells A1–C3 are θp ∈ {6, 10, 14}°
+by κ ∈ {2.5, 6, 10}; S1/S2 the wall spill off and on at B2; K the spike's
+control (4° with the camera at 2000 px, κ = 2000 / 1408 px slab width).
+
+The second window is 400 × 900, as tall as the pane, so the gain's swing is
+horizontal: `geometry.json` records the direction (−1, 0), and the left edge
+advances. At B2 the spill changes one 152 × 40 px patch of the top wall
+under the beam, by up to 20 levels; crops I and J show it at 4×.
+
+Owner's verdict: pending.
