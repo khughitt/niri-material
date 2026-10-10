@@ -5,12 +5,27 @@ void main() {
         v = mat_view_quad.xy + niri_v_coords * mat_view_quad.zw;
     vec2 p = v * mat_area_size;
 
+    // The rigid tilt (spec 2026-10-09 §4.1): the slab-local ray and its window-plane hit. The
+    // decal is sampled there, and the glass is shaded at the hit; every shift is exactly zero
+    // at the identity, and the seed stays on the pixel lattice (§4.4).
+    vec2 winV = v;
+    bool hasDecal = true;
+    vec2 seed = gl_FragCoord.xy;
+    if (mat_view_on == 1) {
+        g_view_on = true;
+        float frameChamfer;
+        slabFrame(frameChamfer);
+        viewBegin(p);
+        winV = v + g_h0_shift / mat_area_size;
+        hasDecal = g_decal_ok;
+    }
+
     // Window sample: zero outside the texture footprint. Corner clipping
     // already happened when the window elements rendered into the
     // offscreen, so the texture is final window content.
     vec4 win = vec4(0.0);
-    if (inRect(v, mat_geo_rect)) {
-        vec2 wv = (v - mat_geo_rect.xy) / mat_geo_rect.zw;
+    if (hasDecal && inRect(winV, mat_geo_rect)) {
+        vec2 wv = (winV - mat_geo_rect.xy) / mat_geo_rect.zw;
         win = texture2D(niri_tex_win, mat_win_rect.xy + wv * mat_win_rect.zw);
     }
     if (win.a == 1.0) {
@@ -26,8 +41,19 @@ void main() {
     float surfaceHeight;
     float bevelAcross;
     vec2 acrossDir;
+    if (g_view_on) {
+        vec2 hitShift = viewHit();
+        p = p + hitShift;
+        v = v + hitShift / mat_area_size;
+        vec2 fb = vec2(dot(mat_view_seed.xy, hitShift), dot(mat_view_seed.zw, hitShift));
+        vec2 whole = floor(fb + 0.5);
+        seed = gl_FragCoord.xy + whole;
+        g_seed_glide = fb - whole;
+    }
     slabSurface(p, coverage, surfaceNormal, slabDist, innerDist, slabChamfer,
                 surfaceHeight, bevelAcross, acrossDir);
+    if (g_view_on && !g_plane_ok)
+        coverage = 0.0;
 
     vec4 glassed = vec4(0.0);
     if (coverage > 0.0) {
@@ -66,8 +92,8 @@ void main() {
                 float fi = float(i);
                 if (fi >= count)
                     break;
-                float r1 = hash12(gl_FragCoord.xy + fi * 17.0);
-                float r2 = hash12(gl_FragCoord.xy + fi * 71.0 + 3.7);
+                float r1 = hash12(seed + fi * 17.0);
+                float r2 = hash12(seed + fi * 71.0 + 3.7);
                 // Today's smear rule applied to the local height.
                 float t = surfaceHeight * (1.0 + mat_anisotropic_blur * (fi + r1) / count);
                 if (mat_chromatic_aberration > 0.0) {
@@ -84,14 +110,18 @@ void main() {
         }
 
         // Behind hooks act once on the averaged linear backdrop.
-        sampled = saturation_behind(sampled, gl_FragCoord.xy);
-        sampled = noise_behind(sampled, gl_FragCoord.xy);
+        sampled = saturation_behind(sampled, seed);
+        sampled = noise_behind(sampled, seed);
 
         // Beer-Lambert along the structural ray to the backdrop plane
         // (spec §3.1): the face path is the thickness exactly; on the bevel
         // the glass thins. Distortion moves taps but does not lengthen it.
         float surfaceCosine = clamp(surfaceNormal.z, 0.0, 1.0);
+        if (g_view_on)
+            surfaceCosine = clamp(dot(g_view, surfaceNormal), 0.0, 1.0);
         vec3 structuralRay = refract(vec3(0.0, 0.0, -1.0), surfaceNormal, 1.0 / mat_ior);
+        if (g_view_on)
+            structuralRay = refract(g_ray, surfaceNormal, 1.0 / mat_ior);
         float opticalDistance = rayPath(structuralRay, surfaceHeight);
         vec3 att = pow(clamp(mat_attenuation_color.rgb, vec3(0.001), vec3(1.0)),
                        vec3(opticalDistance / mat_attenuation_distance));
@@ -197,7 +227,7 @@ void main() {
             facing = max(dot(normalize(surfaceNormal.xy),
                              normalize(mat_sig_light.xy)), 0.0);
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
-        Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist);
+        Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist, g_view);
         // Specular hooks, in OPTICS order (render-pipeline.md stage 6).
         specular = reflection_specular(specular, surf);
         specular = edge_highlight_specular(specular, surf);
@@ -227,7 +257,7 @@ void main() {
         vec3 glassColor = linearToSrgb(transmitted + within + specular + emissive);
         // Post hooks, in OPTICS order (render-pipeline.md stage 9): film grain
         // over the finished, encoded glass.
-        glassColor = noise_post(glassColor, gl_FragCoord.xy);
+        glassColor = noise_post(glassColor, seed);
         glassed = vec4(glassColor, 1.0) * coverage;
     }
 

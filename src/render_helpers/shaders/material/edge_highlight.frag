@@ -19,6 +19,8 @@ vec3 edge_highlight_specular(vec3 specular, Surface s) {
         return specular;
     vec3 l = normalize(vec3(normalize(mat_sig_light.xy), 1.0));
     vec3 h = normalize(l + vec3(0.0, 0.0, 1.0));
+    if (g_view_on)
+        h = normalize(l + s.view);
     float tilt = smoothstep(0.0, 1.0, (1.0 - s.structural.z) / (1.0 - h.z));
     float lobe = ggxPeakRatio(max(dot(s.perturbed, h), 0.0), mat_edge_highlight_alpha);
     return specular + vec3(mat_edge_highlight * tilt * lobe);

@@ -27,19 +27,19 @@ use super::client::{ClientId, LayerConfigureProps};
 use super::ring_pair::{diff, render_at, set_time};
 use super::*;
 
-const OUT_W: u16 = 1280;
-const OUT_H: u16 = 720;
+pub(super) const OUT_W: u16 = 1280;
+pub(super) const OUT_H: u16 = 720;
 const W: u16 = 640;
 const H: u16 = 360;
 const REST: Duration = Duration::from_secs(2);
 /// The smokes' warm-mid backdrop, rgb(140, 115, 90).
-const BACKDROP: &str = "#8c735a";
+pub(super) const BACKDROP: &str = "#8c735a";
 /// Fully transparent content: every pixel shows the glass.
-const CLEAR: u32 = 0x0000_0000;
+pub(super) const CLEAR: u32 = 0x0000_0000;
 /// Kitty-like content at 0.6 opacity (premultiplied).
-const TRANSLUCENT: u32 = 0x990a_0c0e;
+pub(super) const TRANSLUCENT: u32 = 0x990a_0c0e;
 /// Opaque content: the shader must pass it through untouched.
-const OPAQUE: u32 = 0xff0a_0c0e;
+pub(super) const OPAQUE: u32 = 0xff0a_0c0e;
 
 /// A pinned glass look and the geometry the evidence regions need.
 #[derive(Clone, Copy)]
@@ -174,7 +174,7 @@ fn config(glass: &str, response: &str, top: &str) -> Config {
     .unwrap()
 }
 
-fn open(f: &mut Fixture, id: ClientId, (w, h): (u16, u16), content: u32) -> WlSurface {
+pub(super) fn open(f: &mut Fixture, id: ClientId, (w, h): (u16, u16), content: u32) -> WlSurface {
     let window = f.client(id).create_window();
     let surface = window.surface.clone();
     window.commit();
@@ -187,7 +187,7 @@ fn open(f: &mut Fixture, id: ClientId, (w, h): (u16, u16), content: u32) -> WlSu
     surface
 }
 
-fn fixture(config: Config) -> Fixture {
+pub(super) fn fixture(config: Config) -> Fixture {
     let mut f = Fixture::with_config(config);
     f.niri_state().backend.headless().add_renderer().unwrap();
     f.add_output(1, (OUT_W, OUT_H));
@@ -223,7 +223,7 @@ fn face_and_slab(look: Look, w: Rectangle<f64, Logical>) -> ([f64; 4], [f64; 4])
     (face, slab)
 }
 
-fn renderer_name(f: &mut Fixture) -> String {
+pub(super) fn renderer_name(f: &mut Fixture) -> String {
     f.niri_state()
         .backend
         .with_primary_renderer(|r| {

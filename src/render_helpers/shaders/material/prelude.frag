@@ -105,6 +105,7 @@ struct Surface {
     float across;      // u: 0 at the face edge, 1 at the silhouette, 0 on the face
     vec2 acrossDir;    // normalize(grad u), outward across the bevel
     float outerDist;   // signed distance to the silhouette, negative inside
+    vec3 view;         // toward the viewer: +z at rest
 };
 
 bool inRect(vec2 v, vec4 rect) {
@@ -324,15 +325,9 @@ float bevelProfileSlope(float u, float k) {
     return pow(a, k - 1.0) * pow(b, 1.0 / k - 1.0);
 }
 
-// The fragment-faked slab at an element-local logical-px position:
-// coverage in [0, 1], the structural normal (y-down, +z toward the viewer),
-// the local height, and the across-bevel coordinate u with its direction.
-// The outer silhouette is the slab back and stays fixed; the face trails
-// the jelly. The bevel is a height field measured against both boundaries
-// (spec 2026-09-30-glass-edge-optics §3.1); bevel.rs mirrors it.
-void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist,
-                 out float innerDist, out float chamferOut, out float height,
-                 out float across, out vec2 acrossDir) {
+// The slab's frame, independent of the fragment: the silhouette and the face that trails the
+// jelly, published for the filament and the traced solid. slabSurface starts with it.
+void slabFrame(out float chamfer) {
     vec2 slab_min = mat_slab_rect.xy * mat_area_size;
     vec2 slab_size = mat_slab_rect.zw * mat_area_size;
     vec2 half_ext = slab_size * 0.5;
@@ -342,7 +337,7 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     // bound collapses to 0 (never below — reversed clamp bounds are
     // undefined in GLSL) and the whole slab renders as front face.
     float max_chamfer = max(min(half_ext.x, half_ext.y) - 1.0, 0.0);
-    float chamfer = clamp(mat_chamfer, 0.0, max_chamfer);
+    chamfer = clamp(mat_chamfer, 0.0, max_chamfer);
 
     vec2 inner_half = (half_ext - vec2(chamfer))
         * (vec2(1.0) + mat_jelly_resize / max(2.0 * half_ext, vec2(1.0)));
@@ -375,7 +370,26 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     g_face_center = inner_center;
     g_face_half = inner_half;
     g_face_r = inner_r;
+}
+
+// The fragment-faked slab at an element-local logical-px position:
+// coverage in [0, 1], the structural normal (y-down, +z toward the viewer),
+// the local height, and the across-bevel coordinate u with its direction.
+// The outer silhouette is the slab back and stays fixed; the face trails
+// the jelly. The bevel is a height field measured against both boundaries
+// (spec 2026-09-30-glass-edge-optics §3.1); bevel.rs mirrors it.
+void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist,
+                 out float innerDist, out float chamferOut, out float height,
+                 out float across, out vec2 acrossDir) {
+    float chamfer;
+    slabFrame(chamfer);
     chamferOut = chamfer;
+    vec2 center = g_center;
+    vec2 half_ext = g_half;
+    vec2 inner_center = g_face_center;
+    vec2 inner_half = g_face_half;
+    vec4 inner_r = g_face_r;
+    vec4 outer_r = g_outer_r;
 
     float d = sdRoundedBox(p - center, half_ext, outer_r);
     outerDist = d;
@@ -416,6 +430,72 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     }
 }
 
+// The view path's state for this fragment (spec 2026-10-09 §4.1). main sets it while
+// mat_view_on is 1. At rest it keeps these initial values, the rest optics' own, and no
+// stage reads it outside a branch on g_view_on.
+bool g_view_on = false;
+vec3 g_ray = vec3(0.0, 0.0, -1.0);   // slab-local incident direction, unit
+vec3 g_view = vec3(0.0, 0.0, 1.0);   // toward the viewer: -g_ray
+vec3 g_r = vec3(0.0, 0.0, -1.0);     // the incident direction, unnormalised
+vec3 g_h0 = vec3(0.0);               // the window-plane hit, z = 0
+vec2 g_h0_shift = vec2(0.0);         // g_h0.xy minus the screen point
+vec3 g_rho = vec3(0.0, 0.0, -1.0);   // g_r / -g_r.z: the step per px of depth
+float g_tau0 = 0.0;                  // the ray parameter at g_h0
+bool g_plane_ok = true;              // the ray points down
+bool g_decal_ok = true;              // and its plane hit lies inside the near clip
+
+// view/mod.rs holds the same value under the same name.
+const float VIEW_NEAR_CLIP = 0.75;
+
+// (R⁻¹ − I) v and (R − I) v: the turn by ∓θ in the (d, z) plane less the identity, exactly
+// zero at θ = 0. view/mod.rs mirrors both.
+vec3 viewUnrotateDelta(vec3 v) {
+    float a = dot(v.xy, mat_view_dir);
+    float da = a * mat_view.x + v.z * mat_view.y;
+    float dz = -a * mat_view.y + v.z * mat_view.x;
+    return vec3(mat_view_dir * da, dz);
+}
+
+vec3 viewRotateDelta(vec3 v) {
+    float a = dot(v.xy, mat_view_dir);
+    float da = a * mat_view.x - v.z * mat_view.y;
+    float dz = a * mat_view.y + v.z * mat_view.x;
+    return vec3(mat_view_dir * da, dz);
+}
+
+// toScreen(q) − q.xy for a slab-local point (§4.1 step 5): into the world, then onto z = 0
+// along its camera ray. Exactly zero at the identity.
+vec2 viewScreenShift(vec3 q) {
+    vec3 dq = viewRotateDelta(q - vec3(g_center, 0.0));
+    vec2 exy = q.xy + dq.xy;
+    float zeta = (q.z + dq.z) * mat_view.z;
+    return dq.xy + (exy - g_center) * (zeta / (1.0 - zeta));
+}
+
+// The camera ray through screen point p, slab-local, and its window-plane hit (§4.1 steps
+// 1–3). slabFrame must have run.
+void viewBegin(vec2 p) {
+    vec2 rel = p - g_center;
+    vec3 oShift = viewUnrotateDelta(vec3(rel, 0.0));
+    vec3 dir = vec3(rel * mat_view.z, -1.0);
+    g_r = dir + viewUnrotateDelta(dir);
+    g_ray = normalize(g_r);
+    g_view = -g_ray;
+    g_plane_ok = g_r.z < 0.0;
+    g_tau0 = g_plane_ok ? -oShift.z / g_r.z : 0.0;
+    g_h0_shift = oShift.xy + g_r.xy * g_tau0;
+    g_h0 = vec3(p + g_h0_shift, 0.0);
+    g_rho = g_plane_ok ? g_r / -g_r.z : vec3(0.0, 0.0, -1.0);
+    g_decal_ok = g_plane_ok
+        && viewRotateDelta(g_h0 - vec3(g_center, 0.0)).z * mat_view.z <= VIEW_NEAR_CLIP;
+}
+
+// The shading point's shift from the screen point viewBegin took. Here the window-plane hit;
+// Task 9 traces the solid.
+vec2 viewHit() {
+    return g_h0_shift;
+}
+
 // The refracted ray's length to the backdrop plane under local height h
 // (spec §3.1 "Ray model"). On the face, t = (0, 0, -1) and L = h.
 float rayPath(vec3 t, float h) {
@@ -434,13 +514,21 @@ vec3 liftTapNormal(vec3 n) {
 // element and the background buffers share the y-down orientation.
 vec3 tap(vec2 v, vec3 n, float ior, float h) {
     vec3 refr = refract(vec3(0.0, 0.0, -1.0), liftTapNormal(n), 1.0 / ior);
+    if (g_view_on)
+        refr = refract(g_ray, liftTapNormal(n), 1.0 / ior);
     vec2 vv = v + (refr.xy * rayPath(refr, h)) / mat_area_size;
+    // Under a tilt the exit point on the back plane goes through toScreen (§4.2).
+    if (g_view_on)
+        vv += viewScreenShift(vec3(v * mat_area_size + refr.xy * rayPath(refr, h), -mat_thickness))
+            / mat_area_size;
     return srgbToLinear(sampleBackground(vv));
 }
 
 // Interior light follows the perturbed normal through the light-path index
 // and lands `depth` px into the slab; this is that in-plane displacement.
 vec2 lightShift(vec3 n, float ior, float depth) {
+    if (g_view_on)
+        return refract(g_ray, n, 1.0 / ior).xy * depth;
     return refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior).xy * depth;
 }
 

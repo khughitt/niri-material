@@ -568,7 +568,7 @@ mod tests {
             .any(|name| name.name == "mat_bevel_profile" && name.type_ == UniformType::_1f));
         assert!(source.contains("struct Surface {"));
         assert!(source.contains("vec3 iridescence_specular(vec3 specular, Surface s)"));
-        assert!(main.contains("Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist);"));
+        assert!(main.contains("Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist, g_view);"));
         assert!(main.contains("specular = reflection_specular(specular, surf);"));
         assert!(main.contains("specular = edge_highlight_specular(specular, surf);"));
         assert!(main.contains("specular = iridescence_specular(specular, surf);"));
@@ -585,7 +585,7 @@ mod tests {
         assert!(!main.contains("saturation_post("));
         let encode = main.find("vec3 glassColor = linearToSrgb(").unwrap();
         let post = main
-            .find("glassColor = noise_post(glassColor, gl_FragCoord.xy);")
+            .find("glassColor = noise_post(glassColor, seed);")
             .unwrap();
         let coverage = main
             .find("glassed = vec4(glassColor, 1.0) * coverage;")

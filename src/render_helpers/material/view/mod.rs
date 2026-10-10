@@ -499,6 +499,33 @@ mod tests {
         assert!(shift.x < 0., "foreshortened toward the pivot: {shift}");
     }
 
+    #[test]
+    fn the_projection_alone_moves_a_raised_point_away_from_the_pivot() {
+        // θ = 0 with w > 0 isolates f − 1 = ζ / (1 − ζ) from the turn: viewScreenShift's last
+        // line, which the solid's shader pin holds to this formula.
+        let (min, size) = slab((0., 0.), (400., 300.));
+        let pose = ViewPose {
+            theta: 0.,
+            dir: DVec2::new(0.6, 0.8),
+            weight: 1.,
+            kappa: 6.,
+        };
+        let camera = Camera::new(&pose, min, size);
+        for xy in [DVec2::new(400., 150.), DVec2::new(10., 290.)] {
+            let out = xy - camera.pivot;
+            let raised = camera.screen_shift(xy.extend(10.));
+            let sunk = camera.screen_shift(xy.extend(-20.));
+            assert!(
+                raised.dot(out) > 0. && raised.perp_dot(out).abs() < 1e-9,
+                "{xy}: {raised}"
+            );
+            assert!(
+                sunk.dot(out) < 0. && sunk.perp_dot(out).abs() < 1e-9,
+                "{xy}: {sunk}"
+            );
+        }
+    }
+
     /// Points on the slab box's faces and on the texture rect, the drawn ones only.
     fn drawn_points(
         camera: &Camera,
