@@ -88,4 +88,4 @@ control (4° with the camera at 2000 px, κ = 2000 / 1408 px slab width ≈ 1.42
   included, so every crop stops at x 1448, short of all the second window draws
   in any frame of the sheet; the render asserts the pane lies wholly left of it.
 
-Owner's verdict: pending.
+Owner's verdict (2026-10-10): B2 (θp 10°, κ 6), S2 (wall spill on). With S2 `view::wall_spill` keeps its value 1; on a horizontal swing at B2 the spill changes no pixel (the beam head never reaches the lifted wall), so it shows only on swings that lift the top or bottom edge.
