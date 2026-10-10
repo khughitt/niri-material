@@ -4,6 +4,7 @@
 //! jelly seed; nextest runs each test in its own process, so dumps compare across commits.
 //! Run through `just test-one`, never `cargo test`.
 
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use glam::{DVec2, DVec3};
@@ -996,6 +997,13 @@ fn px(pixels: &[u8], x: i32, y: i32) -> [u8; 4] {
 }
 
 const MAGENTA: [u8; 4] = [255, 0, 255, 255];
+/// The coverage probe's mark for a coverage outside [0, 1], NaN included.
+const SENTINEL: [u8; 4] = [0, 255, 0, 255];
+
+/// The coverage probe's out-of-range marks among `pixels`.
+fn sentinels(pixels: &[u8]) -> usize {
+    pixels.chunks_exact(4).filter(|p| *p == SENTINEL).count()
+}
 
 /// The coverage probe's tolerance against the mirror: the §4.5 side bound (1/16 px of outline
 /// distance) times the smoothstep's steepest slope, 1.5, plus two 8-bit levels.
@@ -1003,8 +1011,11 @@ const COVERAGE_TOL: f64 = 1.5 / 16. + 2. / 255.;
 
 #[test]
 fn walls_show_where_the_mirror_predicts() {
-    // §8.2 "Walls": at the peak, at 2° of a 10° swing at κ 6, and in the overshoot, the wall's
-    // width along the row through the pivot, on each side edge, against the mirror ±1 px.
+    // §8.2 "Walls": at the peak, at 2° of a 10° swing at κ 6, and in the overshoot, along the
+    // row through the pivot on each side edge: the wall pixels against the mirror's at pixel
+    // centres, at most 1 px apart, and the wall's width against the mirror's ±1 px. The edge
+    // along the lifting side (+x while θ > 0) is the advancing one: the mirror must show a wall
+    // there, at least 1 px of it at the peak.
     let (peak_deg, kappa) = (10f64, 6.);
     for (name, shape) in [("peak", 1.), ("small", 0.2), ("overshoot", -0.1638)] {
         let pose = ViewPose {
@@ -1021,17 +1032,38 @@ fn walls_show_where_the_mirror_predicts() {
             let edge =
                 camera.to_screen((solid.center + DVec2::new(sign * solid.half.x, 0.)).extend(0.));
             let (lo, hi) = (edge.x as i32 - 40, edge.x as i32 + 40);
+            let wall_at = |s: f64| {
+                let seg = Segment::new(&camera, DVec2::new(s, f64::from(y) + 0.5))
+                    .expect("a downward ray");
+                let tr = trace(&solid, &seg);
+                tr.wall && outline(&solid, &camera, &seg, &tr) < 0.
+            };
+            let apart = (lo..hi)
+                .filter(|&x| (px(&pixels, x, y) == MAGENTA) != wall_at(f64::from(x) + 0.5))
+                .count();
+            assert!(
+                apart <= 1,
+                "{name} side {sign}: {apart} px where the render and the mirror disagree"
+            );
             let rendered = (lo..hi).filter(|&x| px(&pixels, x, y) == MAGENTA).count() as f64;
             let mut predicted = 0.;
             let mut s = f64::from(lo);
             while s < f64::from(hi) {
-                if let Some(seg) = Segment::new(&camera, DVec2::new(s, f64::from(y) + 0.5)) {
-                    let tr = trace(&solid, &seg);
-                    if tr.wall && outline(&solid, &camera, &seg, &tr) < 0. {
-                        predicted += 1. / 64.;
-                    }
+                if wall_at(s) {
+                    predicted += 1. / 64.;
                 }
                 s += 1. / 64.;
+            }
+            if sign == shape.signum() {
+                let least = if name == "peak" {
+                    1.
+                } else {
+                    f64::MIN_POSITIVE
+                };
+                assert!(
+                    predicted >= least,
+                    "{name}: the mirror predicts {predicted} px of wall on the advancing edge"
+                );
             }
             assert!(
                 (rendered - predicted).abs() <= 1.,
@@ -1108,33 +1140,35 @@ fn the_face_coverage_matches_the_mirror_at_bevel_0() {
             kappa: 1.5,
         };
         let (pixels, frame, glass_r) = probe_sized(&glass, (100, 100), pose, -2.);
+        // The frame holds the pane alone over the backdrop, so this covers its geometry.
+        assert_eq!(sentinels(&pixels), 0, "coverage outside [0, 1]");
         let (solid, camera) = mirror(&frame, &glass_r, &pose);
         let y = solid.center.y as i32;
         for sign in [1., -1.] {
             let edge = camera
                 .to_screen((solid.center + DVec2::new(sign * solid.half.x, 0.)).extend(0.))
                 .x as i32;
+            let mut band = 0;
             for x in edge - 4..edge + 4 {
                 let s = DVec2::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
-                let Some(seg) = Segment::new(&camera, s) else {
-                    continue;
-                };
+                let seg = Segment::new(&camera, s).expect("a downward ray");
                 let want = coverage(outline(&solid, &camera, &seg, &trace(&solid, &seg)));
+                band += usize::from(want > 0. && want < 1.);
                 let got = f64::from(px(&pixels, x, y)[0]) / 255.;
                 assert!(
                     (got - want).abs() <= COVERAGE_TOL,
                     "side {sign} x {x}: rendered coverage {got}, mirror {want}"
                 );
             }
+            assert!(band >= 1, "side {sign}: no pixel on the outline's ramp");
         }
     }
 }
 
 /// §8.2 "Zero rise in motion", read in the shader: under the coverage probe, a real swing at
-/// bevel 0 and at thickness 0 (chamfer 12, so the rise is 0) draws the mirror's coverage at
-/// every pixel of the pane's geometry where the mirror predicts some, within
-/// `the_face_coverage_matches_the_mirror_at_bevel_0`'s tolerance. A NaN coverage fails: the
-/// render cannot show it as the positive coverage the mirror predicts there.
+/// bevel 0 and at thickness 0 (chamfer 12, so the rise is 0) marks no pixel of the pane's
+/// geometry as a coverage outside [0, 1] (NaN included), and draws the mirror's coverage at
+/// every one of them, within `the_face_coverage_matches_the_mirror_at_bevel_0`'s tolerance.
 #[test]
 fn a_swing_with_zero_rise_draws_the_mirror_coverage() {
     for (name, glass) in [("bevel0", bevel0(STOCK)), ("thickness0", thickness0(STOCK))] {
@@ -1173,18 +1207,17 @@ fn a_swing_with_zero_rise_draws_the_mirror_coverage() {
             moving += 1;
             let (solid, camera) = mirror(&frame, &glass, &pose);
             let rect = pane_geometry(&mut f, pane.window, t, RenderTarget::ScreenCapture);
+            let marked = sentinels(&region(&pixels, (OUT_W, OUT_H), rect));
+            assert_eq!(marked, 0, "{name} frame {i}: coverage outside [0, 1]");
             let (mut band, mut bad) = (0, 0);
-            for y in rect.loc.y.max(0)..(rect.loc.y + rect.size.h).min(i32::from(OUT_H)) {
-                for x in rect.loc.x.max(0)..(rect.loc.x + rect.size.w).min(i32::from(OUT_W)) {
+            for y in rect.loc.y..rect.loc.y + rect.size.h {
+                for x in rect.loc.x..rect.loc.x + rect.size.w {
                     let s = DVec2::new(f64::from(x) + 0.5, f64::from(y) + 0.5);
-                    let Some(seg) = Segment::new(&camera, s) else {
-                        continue;
-                    };
-                    let want = coverage(outline(&solid, &camera, &seg, &trace(&solid, &seg)));
-                    if want <= 0. {
-                        continue;
-                    }
-                    band += usize::from(want < 1.);
+                    // A ray that does not point down hits no plane and takes no glass.
+                    let want = Segment::new(&camera, s).map_or(0., |seg| {
+                        coverage(outline(&solid, &camera, &seg, &trace(&solid, &seg)))
+                    });
+                    band += usize::from(want > 0. && want < 1.);
                     let got = f64::from(px(&pixels, x, y)[0]) / 255.;
                     if !((got - want).abs() <= COVERAGE_TOL) {
                         bad += 1;
@@ -1215,6 +1248,7 @@ fn grazing_edges_change_coverage_smoothly() {
     // more than 1.5 per px of the outline's motion plus twice the side bound (1/16 px), here
     // along rows through the middle of the straight sides.
     let mut prev: Option<(Vec<u8>, ViewPose)> = None;
+    let mut changed = 0;
     for step in 2..=56 {
         let theta = 0.25 * f64::from(step);
         let pose = ViewPose {
@@ -1224,13 +1258,16 @@ fn grazing_edges_change_coverage_smoothly() {
             kappa: 6.,
         };
         let (pixels, frame, glass) = probe(LIVE, pose, -2.);
+        // The frame holds the pane alone over the backdrop, so this covers its geometry.
+        assert_eq!(sentinels(&pixels), 0, "θ {theta}: coverage outside [0, 1]");
         let (solid, camera) = mirror(&frame, &glass, &pose);
         let m_at = |pose: &ViewPose, x: i32, y: i32| {
             let (solid, camera) = mirror(&frame, &glass, pose);
-            Segment::new(&camera, DVec2::new(f64::from(x) + 0.5, f64::from(y) + 0.5))
-                .map(|seg| outline(&solid, &camera, &seg, &trace(&solid, &seg)))
-                .unwrap_or(f64::INFINITY)
+            let seg = Segment::new(&camera, DVec2::new(f64::from(x) + 0.5, f64::from(y) + 0.5))
+                .expect("a downward ray");
+            outline(&solid, &camera, &seg, &trace(&solid, &seg))
         };
+        let mut ramp = 0;
         let rows = (solid.center.y - 0.25 * solid.half.y) as i32
             ..(solid.center.y + 0.25 * solid.half.y) as i32;
         for y in rows.step_by(8) {
@@ -1240,6 +1277,7 @@ fn grazing_edges_change_coverage_smoothly() {
                     .x as i32;
                 for x in edge - 20..edge + 20 {
                     let c = f64::from(px(&pixels, x, y)[0]) / 255.;
+                    ramp += usize::from(c > 0. && c < 1.);
                     let m = m_at(&pose, x, y);
                     if m < -1. {
                         assert!(
@@ -1249,6 +1287,7 @@ fn grazing_edges_change_coverage_smoothly() {
                     }
                     if let Some((before, last)) = &prev {
                         let c0 = f64::from(px(before, x, y)[0]) / 255.;
+                        changed += usize::from(c != c0);
                         let moved = (m - m_at(last, x, y)).abs();
                         assert!(
                             (c - c0).abs() <= 1.5 * moved + 0.125 + 2. / 255.,
@@ -1258,8 +1297,13 @@ fn grazing_edges_change_coverage_smoothly() {
                 }
             }
         }
+        assert!(
+            ramp > 0,
+            "θ {theta}: no sampled pixel on the outline's ramp"
+        );
         prev = Some((pixels, pose));
     }
+    assert!(changed > 0, "no sampled coverage changed across the sweep");
 }
 
 /// An inactive material twice as thick, picked by an is-focused rule after the main one: the
@@ -1302,6 +1346,19 @@ fn flat_second() -> String {
             material "tilt-flat"
         }}"##
     )
+}
+
+/// `Fixture::double_roundtrip` on the frozen clock at `time`. The event loop clears the clock
+/// at the end of every iteration, so the next would read the real monotonic time, and a swing
+/// that started on the frozen clock would end there. Each iteration here starts back at `time`.
+fn double_roundtrip_at(f: &mut Fixture, id: ClientId, time: Duration) {
+    for _ in 0..2 {
+        let data = f.client(id).send_sync();
+        while !data.done.load(Ordering::Relaxed) {
+            f.niri().clock.set_unadjusted(time);
+            f.dispatch();
+        }
+    }
 }
 
 /// A render at `time`, and `window`'s drawn geometry in it.
@@ -1359,6 +1416,11 @@ fn interaction_sequences_finish_at_rest() {
         "the second window swung on its focus"
     );
     frames.extend([ms(300), ms(900), REST].map(|t| shot(&mut f, pane.window, t)));
+    assert_eq!(
+        pane_tile(f.niri(), pane.window).0.view_pose(),
+        None,
+        "a pose after settle"
+    );
     assert!(
         diff(&frames[2].0, &frames[5].0).0 > 0,
         "the swing went on after the loss"
@@ -1418,18 +1480,38 @@ fn interaction_sequences_finish_at_rest() {
         shot(&mut f, pane.window, ms(0)),
         shot(&mut f, pane.window, ms(100)),
     ];
+    let started = swing_of(&mut f, pane.window).expect("the gain started a swing");
     let window = f.client(pane.client).window(&pane.surface);
     window.set_size(560, 420);
     window.ack_last_and_commit();
-    f.double_roundtrip(pane.client);
+    double_roundtrip_at(&mut f, pane.client, ms(100));
+    assert_eq!(
+        swing_of(&mut f, pane.window),
+        Some(started),
+        "the resize changed the swing"
+    );
+    frames.push(shot(&mut f, pane.window, ms(171)));
+    assert_eq!(
+        swing_of(&mut f, pane.window),
+        Some(started),
+        "the resize changed the swing"
+    );
     frames.extend(
-        [ms(171), ms(600), REST, REST + Duration::from_secs(1)]
-            .map(|t| shot(&mut f, pane.window, t)),
+        [ms(600), REST, REST + Duration::from_secs(1)].map(|t| shot(&mut f, pane.window, t)),
+    );
+    assert_eq!(
+        pane_tile(f.niri(), pane.window).0.view_pose(),
+        None,
+        "a pose after settle"
     );
     assert_eq!(
         pane_rect(&mut f, pane.window).size,
         Size::from((560., 420.)),
         "the pane did not resize"
+    );
+    assert!(
+        diff(&frames[2].0, &frames[4].0).0 > 0,
+        "the swing did not run through the resize"
     );
     assert_eq!(
         diff(&frames[4].0, &frames[5].0),

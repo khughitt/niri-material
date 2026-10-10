@@ -71,13 +71,17 @@ void main() {
         }
     }
     // The frozen renders' probes (src/tests/view_tilt.rs): a spill gain of -1 paints wall hits
-    // magenta and leaves the rest clear; -2 writes the coverage as grey. Only the test hook
-    // uploads a negative gain.
+    // magenta and leaves the rest clear; -2 writes the coverage as grey, and a coverage outside
+    // [0, 1], NaN included, as green. Only the test hook uploads a negative gain.
     if (g_view_on && mat_view.w < 0.0) {
-        if (mat_view.w < -1.5)
-            gl_FragColor = vec4(coverage);
-        else
+        if (mat_view.w < -1.5) {
+            if (!(coverage >= 0.0 && coverage <= 1.0))
+                gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+            else
+                gl_FragColor = vec4(coverage);
+        } else {
             gl_FragColor = g_wall && coverage > 0.0 ? vec4(1.0, 0.0, 1.0, 1.0) : vec4(0.0);
+        }
         return;
     }
 
