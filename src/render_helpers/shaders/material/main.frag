@@ -15,6 +15,8 @@ void main() {
         g_view_on = true;
         float frameChamfer;
         slabFrame(frameChamfer);
+        g_chamfer = frameChamfer;
+        g_rise = min(frameChamfer, mat_thickness);
         viewBegin(p);
         winV = v + g_h0_shift / mat_area_size;
         hasDecal = g_decal_ok;
@@ -52,8 +54,22 @@ void main() {
     }
     slabSurface(p, coverage, surfaceNormal, slabDist, innerDist, slabChamfer,
                 surfaceHeight, bevelAcross, acrossDir);
-    if (g_view_on && !g_plane_ok)
-        coverage = 0.0;
+    // The outline coverage and the wall (§4.3, §4.5). A face hit far from the outline keeps
+    // the coverage slabSurface gave it, which is 1 there.
+    if (g_view_on && (!g_face_hit || g_face_near))
+        coverage = g_view_coverage;
+    if (g_view_on && !g_face_hit) {
+        if (g_wall) {
+            vec2 gOut = softOuterGrad(p - g_center, g_half, g_outer_r);
+            if (gOut == vec2(0.0))
+                gOut = sdRoundedBoxGrad(p - g_center, g_half, g_outer_r);
+            surfaceNormal = vec3(gOut, 0.0);
+            surfaceHeight = g_hit_z + mat_thickness;
+            bevelAcross = 1.0;
+            acrossDir = gOut;
+            slabDist = 0.0;
+        }
+    }
 
     vec4 glassed = vec4(0.0);
     if (coverage > 0.0) {
@@ -78,6 +94,11 @@ void main() {
                 0.0);
             n = normalize(n + mat_jelly_activity * mat_jelly_ripple * ripple);
         }
+
+        // The wall takes its normal as both normals (spec 2026-10-09 §4.3 "Specular"):
+        // distortion and ripple do not bend it.
+        if (g_view_on && g_wall)
+            n = surfaceNormal;
 
         // Neutral effects make every tap identical: skip the loop and
         // jitter entirely. Config validation keeps both non-negative, so
@@ -205,6 +226,9 @@ void main() {
                 if (slabChamfer > 0.0 && innerDist > 0.0) {
                     spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - bevelAcross);
                 }
+                // Guided light leaves the slab at the wall at the face-edge strength (§4.3).
+                if (g_wall)
+                    spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * mat_view.w;
             }
             float glow = (accentGlow * presence + focusGlow) * (1.0 + 2.0 * mat_jelly_activity);
             vec3 color = showAccent

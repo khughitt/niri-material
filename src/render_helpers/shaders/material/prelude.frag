@@ -490,10 +490,259 @@ void viewBegin(vec2 p) {
         && viewRotateDelta(g_h0 - vec3(g_center, 0.0)).z * mat_view.z <= VIEW_NEAR_CLIP;
 }
 
-// The shading point's shift from the screen point viewBegin took. Here the window-plane hit;
-// Task 9 traces the solid.
+// The traced slab (spec 2026-10-09 §4.1 step 4, §4.5). view/solid.rs mirrors these line for
+// line under the same names.
+const float VIEW_GOLDEN = 0.618033988749895;
+const int VIEW_GOLDEN_STEPS = 28;
+const int VIEW_BISECT_STEPS = 24;
+
+// The trace's state. Each starts at the value viewHit and viewTrace reset it to, which is what
+// a fragment off the view path keeps: g_wall is read outside a branch on g_view_on.
+float g_rise = 0.0;               // min(chamfer, thickness): the bevel's height
+float g_chamfer = 0.0;            // the chamfer drawn
+bool g_wall = false;              // shade this fragment as the wall
+bool g_face_hit = false;          // the window-plane hit is on the flat face: it is shaded there
+bool g_face_near = false;         // and lies near the outline, so its coverage is the outline's
+float g_hit_z = 0.0;              // the shading point's depth
+float g_view_coverage = 0.0;      // the outline coverage (§4.5)
+float g_psi_min = 1e30;           // Ψmin over the segment, where, on which plane, in which quadrant
+float g_min_t = 0.0;
+vec3 g_min_plane = vec3(0.0, 0.0, 1.0);
+vec2 g_min_sel = vec2(0.0);
+float g_trace_t = 0.0;            // the entry on a hit, the minimiser on a miss
+bool g_trace_hit = false;
+
+// σ for corner radius r: today's box distance about the slab's centre.
+float viewSigmaR(vec2 xy, float r) {
+    return sdRoundedBox(xy - g_center, g_half, vec4(r));
+}
+
+// σ with the radius of the quadrant `sel` (relative to the centre) lies in.
+float viewSigma(vec2 xy, vec2 sel) {
+    return viewSigmaR(xy, cornerRadius(sel, g_outer_r));
+}
+
+// ∇σ in the same quadrant.
+vec2 viewSigmaGrad(vec2 xy, vec2 sel) {
+    float r = cornerRadius(sel, g_outer_r);
+    return sdRoundedBoxGrad(xy - g_center, g_half, vec4(r));
+}
+
+// Ψ (§4.1): <= 0 inside; X inverts bevelProfile. Without a rise Ψ is σ.
+float viewPsi(vec3 q, vec2 sel) {
+    float sigma = viewSigma(q.xy, sel);
+    if (g_rise <= 0.0)
+        return sigma;
+    float y = -q.z / g_rise;
+    float x = y >= 1.0
+        ? 1.0
+        : pow(max(1.0 - pow(max(1.0 - y, 0.0), mat_bevel_profile), 0.0), 1.0 / mat_bevel_profile);
+    return sigma + g_chamfer * (1.0 - x);
+}
+
+// ∂Ψ/∂z = c X'(y) / rise, both bases kept off zero as bevelProfileSlope keeps them.
+float viewPsiDz(vec3 q) {
+    if (g_rise <= 0.0)
+        return 0.0;
+    float y = -q.z / g_rise;
+    if (y >= 1.0)
+        return 0.0;
+    float k = mat_bevel_profile;
+    float b = clamp(1.0 - y, BEVEL_PROFILE_EPS, 1.0);
+    float a = clamp(1.0 - pow(b, k), BEVEL_PROFILE_EPS, 1.0);
+    return g_chamfer * pow(a, 1.0 / k - 1.0) * pow(b, k - 1.0) / g_rise;
+}
+
+// The point t of the way down the segment: z = -t * thickness.
+vec3 viewPoint(float t) {
+    return g_h0 + g_rho * (t * mat_thickness);
+}
+
+// The minimum of Ψ on [a, b], its ends included; a tie goes to an end, the start first
+// (§4.5 "Ties"). `end` is 0 for the interior, 1 at a, 2 at b.
+float viewMinimise(float a, float b, vec2 sel, out float psi, out float end) {
+    float lo = a;
+    float hi = b;
+    float c = hi - VIEW_GOLDEN * (hi - lo);
+    float d = lo + VIEW_GOLDEN * (hi - lo);
+    float fc = viewPsi(viewPoint(c), sel);
+    float fd = viewPsi(viewPoint(d), sel);
+    for (int i = 0; i < VIEW_GOLDEN_STEPS; ++i) {
+        if (fc < fd) {
+            hi = d;
+            d = c;
+            fd = fc;
+            c = hi - VIEW_GOLDEN * (hi - lo);
+            fc = viewPsi(viewPoint(c), sel);
+        } else {
+            lo = c;
+            c = d;
+            fc = fd;
+            d = lo + VIEW_GOLDEN * (hi - lo);
+            fd = viewPsi(viewPoint(d), sel);
+        }
+    }
+    float t = fc < fd ? c : d;
+    psi = fc < fd ? fc : fd;
+    end = 0.0;
+    float fa = viewPsi(viewPoint(a), sel);
+    float fb = viewPsi(viewPoint(b), sel);
+    if (fb <= psi) {
+        t = b;
+        psi = fb;
+        end = 2.0;
+    }
+    if (fa <= psi) {
+        t = a;
+        psi = fa;
+        end = 1.0;
+    }
+    return t;
+}
+
+// Brackets the ray's entry (§4.1 "Bracketing"): the segment split where it crosses the
+// centre lines, each piece minimised in its own quadrant, the first piece that reaches 0
+// bisected. Then top or wall: below the rim and outside at the rim depth is the wall, Ψ there
+// taken in the quadrant of the piece that holds the rim depth (the earlier one on a seam).
+void viewTrace() {
+    float T = mat_thickness;
+    float c1 = 2.0;
+    float c2 = 2.0;
+    vec3 n1 = vec3(1.0, 0.0, 0.0);
+    vec3 n2 = vec3(0.0, 1.0, 0.0);
+    if (T > 0.0 && g_rho.x != 0.0) {
+        float at = (g_center.x - g_h0.x) / (T * g_rho.x);
+        if (at > 0.0 && at < 1.0)
+            c1 = at;
+    }
+    if (T > 0.0 && g_rho.y != 0.0) {
+        float at = (g_center.y - g_h0.y) / (T * g_rho.y);
+        if (at > 0.0 && at < 1.0)
+            c2 = at;
+    }
+    if (c2 < c1) {
+        float s = c1;
+        c1 = c2;
+        c2 = s;
+        vec3 m = n1;
+        n1 = n2;
+        n2 = m;
+    }
+    float e1 = min(c1, 1.0);
+    float e2 = min(c2, 1.0);
+    vec3 m1 = c1 < 1.0 ? n1 : vec3(0.0, 0.0, 1.0);
+    vec3 m2 = c2 < 1.0 ? n2 : vec3(0.0, 0.0, 1.0);
+    g_psi_min = 1e30;
+    g_min_t = 0.0;
+    g_min_plane = vec3(0.0, 0.0, 1.0);
+    g_min_sel = vec2(0.0);
+    g_trace_hit = false;
+    g_trace_t = 0.0;
+    float rim = T > 0.0 ? min(g_rise / T, 1.0) : 0.0;
+    // The last non-empty piece ends at 1 >= rim, so the loop always sets it.
+    vec2 rimSel = vec2(0.0);
+    bool rimFound = false;
+    for (int i = 0; i < 3; ++i) {
+        float a = i == 0 ? 0.0 : i == 1 ? e1 : e2;
+        float b = i == 0 ? e1 : i == 1 ? e2 : 1.0;
+        vec3 na = i == 0 ? vec3(0.0, 0.0, 1.0) : i == 1 ? m1 : m2;
+        vec3 nb = i == 0 ? m1 : i == 1 ? m2 : vec3(0.0, 0.0, 1.0);
+        if (b <= a)
+            continue;
+        vec2 sel = viewPoint(0.5 * (a + b)).xy - g_center;
+        if (!rimFound && rim <= b) {
+            rimFound = true;
+            rimSel = sel;
+        }
+        float psi;
+        float end;
+        float t = viewMinimise(a, b, sel, psi, end);
+        if (psi < g_psi_min) {
+            g_psi_min = psi;
+            g_min_t = t;
+            g_min_sel = sel;
+            g_min_plane = end == 1.0 ? na : end == 2.0 ? nb : vec3(0.0, 0.0, 1.0);
+        }
+        if (!g_trace_hit && psi <= 0.0) {
+            g_trace_hit = true;
+            if (viewPsi(viewPoint(a), sel) <= 0.0) {
+                g_trace_t = a;
+            } else {
+                float lo = a;
+                float hi = t;
+                for (int j = 0; j < VIEW_BISECT_STEPS; ++j) {
+                    float mid = 0.5 * (lo + hi);
+                    if (viewPsi(viewPoint(mid), sel) <= 0.0)
+                        hi = mid;
+                    else
+                        lo = mid;
+                }
+                g_trace_t = hi;
+            }
+        }
+    }
+    if (!g_trace_hit)
+        g_trace_t = g_min_t;
+    g_wall = g_trace_t > rim && viewPsi(viewPoint(rim), rimSel) > 0.0;
+}
+
+// The outline distance m (§4.5): Ψmin over the norm of its screen gradient at the minimiser,
+// held to its plane, as a correction to Ψmin that is exactly zero at the identity.
+float viewOutline() {
+    vec3 q = viewPoint(g_min_t);
+    vec2 g0 = viewSigmaGrad(q.xy, g_min_sel);
+    vec3 gq = vec3(g0, viewPsiDz(q));
+    vec3 n = g_min_plane;
+    float tau = g_tau0 + g_min_t * mat_thickness / -g_r.z;
+    float scale = 1.0 + tau * mat_view.z;
+    vec3 ux = vec3(1.0, 0.0, 0.0) + viewUnrotateDelta(vec3(1.0, 0.0, 0.0));
+    vec3 uy = vec3(0.0, 1.0, 0.0) + viewUnrotateDelta(vec3(0.0, 1.0, 0.0));
+    vec3 jx = scale * (ux - g_r * (dot(n, ux) / dot(n, g_r)));
+    vec3 jy = scale * (uy - g_r * (dot(n, uy) / dot(n, g_r)));
+    vec2 g = vec2(dot(gq, jx), dot(gq, jy));
+    float len = length(g);
+    if (len == 0.0)
+        return g_psi_min;
+    return g_psi_min + g_psi_min * (length(g0) - len) / len;
+}
+
+// The shading point's shift from the screen point viewBegin took (§4.1 step 4): the
+// window-plane hit on the flat face; else, past a sure miss, the traced entry, or on a miss the
+// minimiser. Sets the coverage and whether to shade the wall. slabFrame and viewBegin must have
+// run, and main sets g_chamfer and g_rise.
 vec2 viewHit() {
-    return g_h0_shift;
+    g_wall = false;
+    g_face_hit = false;
+    g_face_near = false;
+    g_view_coverage = 0.0;
+    g_hit_z = 0.0;
+    if (!g_plane_ok)
+        return vec2(0.0);
+    float aa = 1.0 / niri_scale;
+    if (sdRoundedBox(g_h0.xy - g_face_center, g_face_half, g_face_r) < 0.0) {
+        g_face_hit = true;
+        // Far from the outline the coverage is 1 either way. Within 4 physical px of the
+        // face plane's cross-section (sigma + chamfer), the projected outline can be nearer
+        // than the slab-local one: with bevel 0 the face reaches the silhouette, and a
+        // slab-local coverage errs past the side bound there (plan review round 1). The
+        // plane-to-screen map shrinks no distance by more than 2x over the configured
+        // ranges, so 4 px slab-local is at least 2 px on screen.
+        if (viewSigma(g_h0.xy, g_h0.xy - g_center) + g_chamfer > -4.0 * aa) {
+            g_face_near = true;
+            viewTrace();
+            g_wall = false;
+            g_view_coverage = 1.0 - smoothstep(-aa, 0.0, viewOutline());
+        }
+        return g_h0_shift;
+    }
+    // A sure miss (design 2026-10-09 §6): coverage exactly 0, no bracketing.
+    float rMin = min(min(g_outer_r.x, g_outer_r.y), min(g_outer_r.z, g_outer_r.w));
+    if (viewSigmaR(g_h0.xy, rMin) - mat_thickness * length(g_rho.xy) > 0.0)
+        return g_h0_shift;
+    viewTrace();
+    g_view_coverage = 1.0 - smoothstep(-aa, 0.0, viewOutline());
+    g_hit_z = -g_trace_t * mat_thickness;
+    return g_h0_shift + g_rho.xy * (g_trace_t * mat_thickness);
 }
 
 // The refracted ray's length to the backdrop plane under local height h

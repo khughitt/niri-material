@@ -327,6 +327,15 @@ pub fn outline(solid: &Solid, camera: &Camera, seg: &Segment, tr: &Trace) -> f64
     tr.psi_min + tr.psi_min * (g0.length() - len) / len
 }
 
+/// The sure miss of `viewHit` (design 2026-10-09 §6): σ with the smallest radius is 1-Lipschitz
+/// and no larger than any quadrant's σ, and the bevel term is non-negative, so
+/// Ψ(q(t)) ≥ σ_min(h₀) − T·|ρ.xy| on the whole segment. Mirrors the test in `viewHit`.
+pub fn sure_miss(solid: &Solid, seg: &Segment) -> bool {
+    let r_min = solid.outer_r.iter().copied().fold(f64::INFINITY, f64::min);
+    let sigma = sd_rounded_box(seg.h0.truncate() - solid.center, solid.half, [r_min; 4]);
+    sigma - solid.thickness * seg.rho.truncate().length() > 0.
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use std::f64::consts::PI;
@@ -714,6 +723,9 @@ pub(crate) mod tests {
                 let seg = Segment::new(&camera, s).unwrap();
                 let got = trace(&solid, &seg);
                 assert!(got.psi_min.is_finite() && got.t.is_finite(), "NaN at {s}");
+                // §8.2 "Zero rise in motion": coverage stays in [0, 1] (a NaN fails too).
+                let c = coverage(outline(&solid, &camera, &seg, &got));
+                assert!((0. ..=1.).contains(&c), "coverage {c} at {s}");
                 if thickness == 0. {
                     let sigma = solid.sigma(seg.h0.truncate(), seg.h0.truncate());
                     assert_eq!(got.hit, sigma <= 0.);
@@ -1328,5 +1340,78 @@ pub(crate) mod tests {
             }
         }
         eprintln!("{refined} steps refined");
+    }
+
+    #[test]
+    fn a_sure_miss_misses() {
+        let mut rnd = uniforms(30);
+        let mut skipped = 0;
+        for _ in 0..200 {
+            let (solid, camera) = random_case(&mut rnd);
+            for _ in 0..100 {
+                let s = solid.center + DVec2::new(rnd() - 0.5, rnd() - 0.5) * solid.half * 3.;
+                let Some(seg) = Segment::new(&camera, s) else {
+                    continue;
+                };
+                if sure_miss(&solid, &seg) {
+                    skipped += 1;
+                    let got = trace(&solid, &seg);
+                    assert!(
+                        !got.hit && got.psi_min > 0.,
+                        "a sure miss hit at {s}: {got:?}"
+                    );
+                }
+            }
+        }
+        assert!(skipped > 1000, "the bound skipped only {skipped} rays");
+    }
+
+    #[test]
+    fn the_shader_names_the_same_constants_and_formulas() {
+        let frag = include_str!("../../shaders/material/prelude.frag");
+        for (name, literal, value) in [
+            ("VIEW_GOLDEN", "0.618033988749895", VIEW_GOLDEN),
+            ("VIEW_NEAR_CLIP", "0.75", super::super::VIEW_NEAR_CLIP),
+        ] {
+            assert_eq!(literal.parse::<f64>().unwrap(), value, "{name}");
+            let line = format!("const float {name} = {literal};");
+            assert!(frag.contains(&line), "prelude.frag lacks `{line}`");
+        }
+        for (name, value) in [
+            ("VIEW_GOLDEN_STEPS", VIEW_GOLDEN_STEPS),
+            ("VIEW_BISECT_STEPS", VIEW_BISECT_STEPS),
+        ] {
+            let line = format!("const int {name} = {value};");
+            assert!(frag.contains(&line), "prelude.frag lacks `{line}`");
+        }
+        for line in [
+            "float da = a * mat_view.x + v.z * mat_view.y;",
+            "float dz = -a * mat_view.y + v.z * mat_view.x;",
+            "float da = a * mat_view.x - v.z * mat_view.y;",
+            "float dz = a * mat_view.y + v.z * mat_view.x;",
+            "return dq.xy + (exy - g_center) * (zeta / (1.0 - zeta));",
+            "vec3 dir = vec3(rel * mat_view.z, -1.0);",
+            "g_tau0 = g_plane_ok ? -oShift.z / g_r.z : 0.0;",
+            "g_h0_shift = oShift.xy + g_r.xy * g_tau0;",
+            // `Solid::sigma` and `sigma_grad`: today's box distance and gradient for one radius.
+            "return sdRoundedBox(xy - g_center, g_half, vec4(r));",
+            "return sdRoundedBoxGrad(xy - g_center, g_half, vec4(r));",
+            "return sigma + g_chamfer * (1.0 - x);",
+            "return g_chamfer * pow(a, 1.0 / k - 1.0) * pow(b, k - 1.0) / g_rise;",
+            "return g_h0 + g_rho * (t * mat_thickness);",
+            "if (fb <= psi) {",
+            "if (fa <= psi) {",
+            "if (psi < g_psi_min) {",
+            "if (!rimFound && rim <= b) {",
+            "g_wall = g_trace_t > rim && viewPsi(viewPoint(rim), rimSel) > 0.0;",
+            "float tau = g_tau0 + g_min_t * mat_thickness / -g_r.z;",
+            "float scale = 1.0 + tau * mat_view.z;",
+            "vec3 jx = scale * (ux - g_r * (dot(n, ux) / dot(n, g_r)));",
+            "return g_psi_min + g_psi_min * (length(g0) - len) / len;",
+            "if (viewSigmaR(g_h0.xy, rMin) - mat_thickness * length(g_rho.xy) > 0.0)",
+            "if (viewSigma(g_h0.xy, g_h0.xy - g_center) + g_chamfer > -4.0 * aa) {",
+        ] {
+            assert!(frag.contains(line), "prelude.frag lacks `{line}`");
+        }
     }
 }

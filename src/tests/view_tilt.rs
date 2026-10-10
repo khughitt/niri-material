@@ -185,6 +185,25 @@ pub(super) fn thickness0(glass: &str) -> String {
     set_nodes(glass, &["thickness 0"])
 }
 
+/// A real swing through the gain: the moving frames of §8.2's sequence.
+pub(super) const SWING_MS: [u64; 6] = [50, 171, 300, 450, 572, 800];
+
+pub(super) fn swing_frames() -> Vec<Duration> {
+    let mut frames = vec![GAIN];
+    frames.extend(SWING_MS.map(|ms| GAIN + Duration::from_millis(ms)));
+    frames.push(REST);
+    frames
+}
+
+/// Pixels that are pure black: what a NaN reaching the output shows as on llvmpipe, and what
+/// no glass over this backdrop is.
+fn black(pixels: &[u8]) -> usize {
+    pixels
+        .chunks_exact(4)
+        .filter(|p| p[0] == 0 && p[1] == 0 && p[2] == 0)
+        .count()
+}
+
 /// The identity cases of §8.2: the beam, aberration, reflection and grain on, and again for
 /// bevel 0, thickness 0 and asymmetric corner radii, on translucent, clear and opaque content.
 fn identity_scenes() -> Vec<(String, Scene)> {
@@ -267,4 +286,25 @@ fn the_view_branch_at_the_identity_is_byte_identical_to_rest() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// §8.2 "Zero rise in motion": no NaN reaches a pixel, and coverage stays in [0, 1]. The render
+/// shows a NaN in the shading as black, but not a bad coverage: a NaN one fails `coverage > 0`
+/// and drops the glass, and one outside [0, 1] is clamped away over the opaque backdrop. So
+/// `zero_rise_is_the_box_or_the_plane` holds the mirror's coverage in [0, 1] for these solids.
+#[test]
+fn a_swing_with_zero_rise_draws_no_nan() {
+    for (name, glass) in [("bevel0", bevel0(STOCK)), ("thickness0", thickness0(STOCK))] {
+        let scene = Scene::new(&glass, "view-tilt 14\n                view-distance 2.5");
+        let frames = renders(&scene, None, &swing_frames());
+        let rest = frames.last().unwrap();
+        for (i, f) in frames.iter().enumerate() {
+            dump(&format!("zero-rise/{name}-{i}"), f, (OUT_W, OUT_H));
+            assert_eq!(black(f), 0, "{name} frame {i}: black pixels");
+        }
+        assert!(
+            diff(&frames[2], rest).0 > 0,
+            "{name}: the peak frame did not move"
+        );
+    }
 }
