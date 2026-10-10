@@ -330,3 +330,15 @@ pub fn render_for_tile(
         background_effect.render(ctx, ns, params, xray_pos, push);
     });
 }
+
+/// Whether the surface's background effect drew at its last render: its rule and any blur
+/// region the client set, resolved as `render_for_tile` resolves them.
+pub fn surface_effect_visible(surface: &WlSurface) -> bool {
+    with_states(surface, |states| {
+        SurfaceBackgroundEffect::get(states)
+            .0
+            .lock()
+            .unwrap()
+            .is_visible()
+    })
+}

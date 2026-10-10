@@ -252,6 +252,19 @@ pub fn wall_faces_camera(pose: &ViewPose, extent: f64, n0: DVec2, h: f64) -> boo
     pose.kappa * extent / pose.weight * pose.theta.abs().sin() * n0.dot(s_hat) > h
 }
 
+/// Hooks for the frozen renders (`src/tests/view_tilt.rs`); none exists outside tests.
+#[cfg(test)]
+pub mod hooks {
+    use std::cell::Cell;
+
+    use super::ViewPose;
+
+    thread_local! {
+        /// Forces this pose on every glass tile in place of its swing.
+        pub static POSE: Cell<Option<ViewPose>> = const { Cell::new(None) };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

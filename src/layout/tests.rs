@@ -16,6 +16,7 @@ use super::*;
 mod animations;
 mod drag_dynamics;
 mod fullscreen;
+mod view_swing;
 
 impl<W: LayoutElement> Default for Layout<W> {
     fn default() -> Self {
@@ -230,6 +231,10 @@ impl LayoutElement for TestWindow {
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
     fn is_ignoring_opacity_window_rule(&self) -> bool {
+        false
+    }
+
+    fn background_effect_visible(&self) -> bool {
         false
     }
 

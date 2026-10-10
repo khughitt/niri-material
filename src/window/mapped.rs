@@ -1266,6 +1266,12 @@ impl LayoutElement for Mapped {
         self.ignore_opacity_window_rule
     }
 
+    fn background_effect_visible(&self) -> bool {
+        crate::render_helpers::background_effect::surface_effect_visible(
+            self.toplevel().wl_surface(),
+        )
+    }
+
     fn requested_size(&self) -> Option<Size<i32, Logical>> {
         self.toplevel().with_pending_state(|state| state.size)
     }
