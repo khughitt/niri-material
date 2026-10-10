@@ -132,9 +132,12 @@ While a swing runs (`view-tilt`, design `2026-10-09-transient-rigid-tilt`),
 2. The camera ray through the pixel, turned into the slab's frame, meets the
    window plane at `h₀`; the window texture (stage 0) is sampled there, up to
    the near clip.
-3. On the flat face the glass is hit at `h₀`. Elsewhere the ray is traced
-   through the resting slab as a convex solid (golden-section and bisection
-   per quadrant piece). The hit is a top hit, shaded by stages 1–11 at the
+3. A ray whose `h₀` lies on the flat face hits the glass there, and the
+   shortcut shades at `h₀`; it traces only within 4 physical px of the face
+   plane's cross-section, for the outline coverage. A ray that provably
+   misses the solid is a sure miss: coverage 0, no trace. Every other ray is
+   traced through the resting slab as a convex solid (golden-section and
+   bisection per quadrant piece). The hit is a top hit, shaded by stages 1–11 at the
    hit point, or a wall hit below the rim, shaded with the wall's normal,
    Fresnel and, while the beam runs, its spill. Whether the ray reaches the
    wall is decided with the quadrant of the piece that contains the rim
@@ -144,12 +147,16 @@ While a swing runs (`view-tilt`, design `2026-10-09-transient-rigid-tilt`),
 4. Every backdrop sample (stage 3's taps, stage 6's reflection) projects
    its exit point back to the screen. The Fresnel cosine, the iridescence
    angle and the highlight's half-vector use the slab-local view direction.
-   Grain and tap jitter are seeded from the hit, rounded to whole pixels.
+   The seed is the hit rounded to whole pixels: tap jitter and grain at
+   `scale=` 1 or below sit on whole pixels, while grain above `scale=` 1
+   adds the fractional remainder back and so glides with the hit.
    Grain seeds from `gl_FragCoord`, so in an offscreen path (the alpha
    path's view crop, the close snapshot) it moves with the offscreen origin,
    as it does at rest; comparisons across such paths run with grain off.
-5. Coverage (stage 10) is the outline coverage: the signed screen distance
-   to the traced solid's outline.
+5. Coverage (stage 10) is the outline coverage (the signed screen distance
+   to the traced solid's outline) on misses, walls and face hits near the
+   outline. A face hit farther out keeps the resting slab's coverage, which
+   is 1 there.
 
 The swing runs on the unadjusted clock: `animations.slowdown` does not
 stretch it, as it does the ring beam. A slab with no extent along the swing
