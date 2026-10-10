@@ -98,6 +98,11 @@ pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>> {
         UniformName::new("mat_sig_ring_accent", UniformType::_1f),
         UniformName::new("mat_light_ior", UniformType::_1f),
         UniformName::new("mat_bevel_profile", UniformType::_1f),
+        UniformName::new("mat_view_on", UniformType::_1i),
+        UniformName::new("mat_view", UniformType::_4f),
+        UniformName::new("mat_view_dir", UniformType::_2f),
+        UniformName::new("mat_view_quad", UniformType::_4f),
+        UniformName::new("mat_view_seed", UniformType::_4f),
     ];
     names.extend(optics::uniform_names());
     names
@@ -830,5 +835,39 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_view_uniforms_are_declared() {
+        let source = material_source();
+        for (name, glsl, ty) in [
+            ("mat_view_on", "uniform int mat_view_on;", UniformType::_1i),
+            ("mat_view", "uniform vec4 mat_view;", UniformType::_4f),
+            (
+                "mat_view_dir",
+                "uniform vec2 mat_view_dir;",
+                UniformType::_2f,
+            ),
+            (
+                "mat_view_quad",
+                "uniform vec4 mat_view_quad;",
+                UniformType::_4f,
+            ),
+            (
+                "mat_view_seed",
+                "uniform vec4 mat_view_seed;",
+                UniformType::_4f,
+            ),
+        ] {
+            assert!(source.contains(glsl), "{glsl}");
+            assert!(
+                material_uniform_names()
+                    .iter()
+                    .any(|n| n.name == name && n.type_ == ty),
+                "{name}"
+            );
+        }
+        let main = source.split_once("void main()").unwrap().1;
+        assert!(main.contains("if (mat_view_on == 1)\n        v = mat_view_quad.xy + niri_v_coords * mat_view_quad.zw;"));
     }
 }

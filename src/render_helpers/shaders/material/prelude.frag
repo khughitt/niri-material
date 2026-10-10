@@ -62,6 +62,16 @@ uniform vec3 mat_sig_ring_color;
 uniform float mat_sig_ring_accent;
 uniform float mat_light_ior;
 uniform float mat_bevel_profile;
+// The rigid tilt (spec 2026-10-09-transient-rigid-tilt §4): 1 while a swing runs. mat_view
+// carries cos θ − 1, sin θ, λ = w / (κE) and the wall spill gain; mat_view_dir is d;
+// mat_view_quad maps the drawn quad's UV to the resting area's UV (offset, scale);
+// mat_view_seed is framebuffer px per logical px, row-major. At rest: 0, (0, 0, 0, 1),
+// (1, 0), (0, 0, 1, 1).
+uniform int mat_view_on;
+uniform vec4 mat_view;
+uniform vec2 mat_view_dir;
+uniform vec4 mat_view_quad;
+uniform vec4 mat_view_seed;
 
 // Slab geometry published by slabSurface for the focus filament: the outer
 // silhouette and the face (the chamfer's inner edge, jelly included), which

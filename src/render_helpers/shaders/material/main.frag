@@ -1,5 +1,8 @@
 void main() {
     vec2 v = niri_v_coords;
+    // During a swing the drawn quad is the footprint; v stays the resting area's UV.
+    if (mat_view_on == 1)
+        v = mat_view_quad.xy + niri_v_coords * mat_view_quad.zw;
     vec2 p = v * mat_area_size;
 
     // Window sample: zero outside the texture footprint. Corner clipping

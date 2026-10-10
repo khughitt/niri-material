@@ -125,9 +125,21 @@ pub struct Camera {
 /// An axis-aligned box as (min, max).
 pub type Bounds = (DVec2, DVec2);
 
+/// E: a slab's extent along the unit direction `dir`, the length κ is a multiple of (§3.2).
+pub fn extent(dir: DVec2, slab_size: DVec2) -> f64 {
+    dir.x.abs() * slab_size.x + dir.y.abs() * slab_size.y
+}
+
 impl Camera {
+    /// Panics on a slab with no extent along `pose.dir`, whose λ would be infinite or NaN: the
+    /// caller gives such a slab no view (`MaterialFrame::carries`).
     pub fn new(pose: &ViewPose, slab_min: DVec2, slab_size: DVec2) -> Self {
-        let extent = pose.dir.x.abs() * slab_size.x + pose.dir.y.abs() * slab_size.y;
+        let extent = extent(pose.dir, slab_size);
+        assert!(
+            extent > 0.,
+            "a slab of {slab_size} has no extent along the swing {}",
+            pose.dir
+        );
         let half = 0.5 * pose.theta;
         Self {
             cos_m1: -2. * half.sin() * half.sin(),
@@ -262,6 +274,34 @@ pub mod hooks {
     thread_local! {
         /// Forces this pose on every glass tile in place of its swing.
         pub static POSE: Cell<Option<ViewPose>> = const { Cell::new(None) };
+        /// Draws the quad this many logical px past the computed geometry (§8.2 "Containment").
+        pub static GROW: Cell<f64> = const { Cell::new(0.) };
+        /// The wall's beam spill gain (§4.3); the still sheet turns it off (§8.3).
+        pub static WALL_SPILL: Cell<f32> = const { Cell::new(1.) };
+    }
+}
+
+/// The wall's beam spill gain (§4.3): 1, or the still sheet's hook.
+pub fn wall_spill() -> f32 {
+    #[cfg(test)]
+    {
+        hooks::WALL_SPILL.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        1.
+    }
+}
+
+/// How far past the computed geometry the quad is drawn: 0, or the containment test's hook.
+pub fn quad_grow() -> f64 {
+    #[cfg(test)]
+    {
+        hooks::GROW.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        0.
     }
 }
 
@@ -438,6 +478,13 @@ mod tests {
                 assert_eq!(camera.zeta(q), 0.);
             }
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "no extent along the swing")]
+    fn a_slab_with_no_extent_along_the_swing_has_no_camera() {
+        // λ = w / (κE) would be infinite: fail here rather than hand the shader a NaN.
+        Camera::new(&peak(20., DVec2::X, 6.), DVec2::ZERO, DVec2::new(0., 300.));
     }
 
     #[test]
