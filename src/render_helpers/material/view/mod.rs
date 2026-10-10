@@ -279,6 +279,12 @@ pub mod hooks {
         /// The wall's beam spill gain (§4.3); the still sheet turns it off (§8.3).
         pub static WALL_SPILL: Cell<f32> = const { Cell::new(1.) };
     }
+
+    /// Restarts the process-wide jelly seed sequence, so the panes of a fixture built after it
+    /// take the same seeds, and with them the same beam head wander, as any other (§8.3).
+    pub fn reset_jelly_seed() {
+        super::super::JELLY_SEED.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
 }
 
 /// The wall's beam spill gain (§4.3): 1, or the still sheet's hook.

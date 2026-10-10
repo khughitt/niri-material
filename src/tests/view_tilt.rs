@@ -1675,23 +1675,44 @@ const SHEET_SECOND: (u16, u16) = (400, 900);
 /// every response, or the lighter look beside it: the active glass with the stock smokes'
 /// light attenuation.
 fn sheet_material(light: bool, extra: &str) -> String {
-    let m = super::ring_look::ACCEPTED.replace(
+    let replace = |m: &str, from: &str, to: &str, count: usize| {
+        assert_eq!(
+            m.matches(from).count(),
+            count,
+            "`{from}` in the accepted look"
+        );
+        m.replace(from, to)
+    };
+    let m = replace(
+        super::ring_look::ACCEPTED,
         "ring-glow 1.2\n",
         &format!("ring-glow 1.2\n        {extra}\n"),
+        2,
     );
     if light {
-        m.replace(
+        let m = replace(
+            &m,
             r##"attenuation-color "#0D1D1E""##,
             r##"attenuation-color "#dfe8ff""##,
+            1,
+        );
+        replace(
+            &m,
+            "attenuation-distance 11\n",
+            "attenuation-distance 60\n",
+            1,
         )
-        .replace("attenuation-distance 11", "attenuation-distance 60")
     } else {
         m
     }
 }
 
-/// The sheet's fixture over the patterned backdrop, and the pane's window id.
-fn sheet_fixture(material: &str) -> (Fixture, MappedId) {
+/// The sheet's fixture over the patterned backdrop, the pane's window id and the second
+/// window's.
+fn sheet_fixture(material: &str) -> (Fixture, MappedId, MappedId) {
+    // Every frame of the sheet takes the same seeds, so the beam head's wander, which the
+    // accepted look's `ring-beam-noise` seeds from them, is the same in every cell.
+    hooks::reset_jelly_seed();
     let config = Config::parse_mem(&format!(
         r##"
         hotkey-overlay {{ skip-at-startup; }}
@@ -1752,14 +1773,14 @@ fn sheet_fixture(material: &str) -> (Fixture, MappedId) {
     f.niri().refresh_window_rules();
     set_time(&mut f, Duration::ZERO);
     f.niri_complete_animations();
-    (f, ids[0])
+    (f, ids[0], ids[1])
 }
 
 /// One frame of the sheet: a gain at `GAIN`, rendered `ms` after it, under the hooks given.
 fn sheet_frame(light: bool, extra: &str, pose: Option<ViewPose>, spill: f32, ms: u64) -> Vec<u8> {
     let _hook = PoseHook::set(pose);
     let _spill = SpillHook::set(spill);
-    let (mut f, _) = sheet_fixture(&sheet_material(light, extra));
+    let (mut f, _, _) = sheet_fixture(&sheet_material(light, extra));
     gain(&mut f);
     render_at(&mut f, GAIN);
     render_at(&mut f, GAIN + Duration::from_millis(ms))
@@ -1776,45 +1797,44 @@ fn still_sheet_frames() {
         "set VIEW_TILT_DUMP"
     );
     let swing = |t: f64, k: f64| format!("view-tilt {t}\n        view-distance {k}");
+    let middle = swing(10., 6.);
+    // Every frame seeds alike: the same cell twice is the same render.
+    assert_eq!(
+        diff(
+            &sheet_frame(false, &middle, None, 1., PEAK_MS),
+            &sheet_frame(false, &middle, None, 1., PEAK_MS)
+        ),
+        (0, 0),
+        "two renders of one cell differ"
+    );
+    // The diagonal crop's pose, forced through the hook while the beam still starts on the gain.
+    let diagonal = ViewPose {
+        theta: 10f64.to_radians(),
+        dir: DVec2::new(0.6, 0.8),
+        weight: 1.,
+        kappa: 6.,
+    };
     for light in [false, true] {
         let look = if light { "light" } else { "dark" };
         for t in [6., 10., 14.] {
             for k in [2.5, 6., 10.] {
                 let pixels = sheet_frame(light, &swing(t, k), None, 1., PEAK_MS);
                 dump(&format!("sheet/cell-t{t}-k{k}-{look}"), &pixels, SHEET_OUT);
+                if !light {
+                    // The wall probe of the same frame, for the per-cell wall crops.
+                    let walls = sheet_frame(light, &swing(t, k), None, -1., PEAK_MS);
+                    dump(&format!("sheet/walls-t{t}-k{k}"), &walls, SHEET_OUT);
+                }
             }
         }
-        let middle = swing(10., 6.);
-        dump(
-            &format!("sheet/spill-off-{look}"),
-            &sheet_frame(light, &middle, None, 0., PEAK_MS),
-            SHEET_OUT,
-        );
-        let diagonal = ViewPose {
-            theta: 10f64.to_radians(),
-            dir: DVec2::new(0.6, 0.8),
-            weight: 1.,
-            kappa: 6.,
-        };
         dump(
             &format!("sheet/diagonal-{look}"),
             &sheet_frame(light, &middle, Some(diagonal), 1., PEAK_MS),
             SHEET_OUT,
         );
-        // The spike's control: 4° about the vertical axis with the camera at 2000 px from the
-        // pane's slab.
-        let (mut f, pane) = sheet_fixture(&sheet_material(light, ""));
-        let glass = pane_glass(&mut f, pane);
-        let slab = slab_frame(&mut f, pane, &glass, None).slab;
-        let control = ViewPose {
-            theta: 4f64.to_radians(),
-            dir: DVec2::X,
-            weight: 1.,
-            kappa: 2000. / slab.size.w,
-        };
         dump(
             &format!("sheet/control-{look}"),
-            &sheet_frame(light, "", Some(control), 1., PEAK_MS),
+            &sheet_frame(light, "", Some(control_pose()), 1., PEAK_MS),
             SHEET_OUT,
         );
         dump(
@@ -1823,16 +1843,42 @@ fn still_sheet_frames() {
             SHEET_OUT,
         );
     }
+    dump(
+        "sheet/walls-diagonal",
+        &sheet_frame(false, &middle, Some(diagonal), -1., PEAK_MS),
+        SHEET_OUT,
+    );
+
+    // The wall spill at B2. The head starts at the top-left corner and runs along the top
+    // while the left edge lifts, so it comes nearest the lifted wall early in the swing.
+    for (name, pose, ms) in [
+        ("spill", None, SPILL_MS),
+        // A pose the gain does not make, the top edge lifted under the head, to show what the
+        // spill does where the head does cross a wall.
+        ("spill-top", Some(top_lift()), PEAK_MS),
+    ] {
+        let off = sheet_frame(false, &middle, pose, 0., ms);
+        let on = sheet_frame(false, &middle, pose, 1., ms);
+        let walls = sheet_frame(false, &middle, pose, -1., ms);
+        let lit = spill_on_walls_only(&off, &on, &walls);
+        if pose.is_some() {
+            assert!(lit > 0, "{name}: the spill lit no wall under the head");
+        }
+        dump(&format!("sheet/{name}-off"), &off, SHEET_OUT);
+        dump(&format!("sheet/{name}-on"), &on, SHEET_OUT);
+        dump(&format!("sheet/{name}-walls"), &walls, SHEET_OUT);
+    }
+
     for ms in (0..=900).step_by(50) {
         dump(
             &format!("sheet/film-{ms:03}"),
-            &sheet_frame(false, &swing(10., 6.), None, 1., ms),
+            &sheet_frame(false, &middle, None, 1., ms),
             SHEET_OUT,
         );
     }
     // The cells' swing direction: the positive lobe lifts the edge along it, which is the
     // advancing edge the crops show.
-    let (mut f, pane) = sheet_fixture(&sheet_material(false, &swing(10., 6.)));
+    let (mut f, pane, second) = sheet_fixture(&sheet_material(false, &middle));
     gain(&mut f);
     render_at(&mut f, GAIN);
     let (_, advancing) = pane_tile(f.niri(), pane)
@@ -1844,20 +1890,126 @@ fn still_sheet_frames() {
         "the cells must swing horizontally: {advancing:?}"
     );
     let rect = pane_rect(&mut f, pane);
+    let other = pane_rect(&mut f, second);
+    // Where the crops stop: short of everything the second window draws in any frame of the
+    // sheet, since a forced pose tilts it too. The pane must lie wholly left of it.
+    let film: Vec<u64> = (0..=900).step_by(50).collect();
+    let mut frames: Vec<(String, Option<ViewPose>, Vec<u64>)> = vec![
+        (middle.clone(), None, [film, vec![SPILL_MS, 2000]].concat()),
+        (middle.clone(), Some(diagonal), vec![PEAK_MS]),
+        (middle.clone(), Some(top_lift()), vec![PEAK_MS]),
+        (String::new(), Some(control_pose()), vec![PEAK_MS]),
+    ];
+    for t in [6., 10., 14.] {
+        for k in [2.5, 6., 10.] {
+            frames.push((swing(t, k), None, vec![PEAK_MS]));
+        }
+    }
+    let mut cut = i32::MAX;
+    let mut reach = i32::MIN;
+    for (extra, pose, times) in &frames {
+        for [p, s] in sheet_geometry(extra, *pose, times) {
+            cut = cut.min(s.loc.x);
+            reach = reach.max(p.loc.x + p.size.w);
+        }
+    }
+    assert!(
+        reach <= cut,
+        "the pane reaches x {reach}, past the second window at {cut}"
+    );
+    let rect_json = |r: Rectangle<f64, Logical>| {
+        format!("[{}, {}, {}, {}]", r.loc.x, r.loc.y, r.size.w, r.size.h)
+    };
+    let json = [
+        format!(r#""size": [{}, {}]"#, SHEET_OUT.0, SHEET_OUT.1),
+        format!(r#""pane": {}"#, rect_json(rect)),
+        format!(r#""second": {}"#, rect_json(other)),
+        format!(r#""advancing": [{}, {}]"#, advancing[0], advancing[1]),
+        format!(r#""control_kappa": {}"#, control_kappa()),
+        format!(r#""cut": {cut}"#),
+        format!(r#""peak_ms": {PEAK_MS}"#),
+        format!(r#""spill_ms": {SPILL_MS}"#),
+    ]
+    .join(", ");
     let dir = std::env::var_os("VIEW_TILT_DUMP").unwrap();
     std::fs::write(
         std::path::Path::new(&dir).join("sheet/geometry.json"),
-        format!(
-            r#"{{"size": [{}, {}], "pane": [{}, {}, {}, {}], "advancing": [{}, {}]}}"#,
-            SHEET_OUT.0,
-            SHEET_OUT.1,
-            rect.loc.x,
-            rect.loc.y,
-            rect.size.w,
-            rect.size.h,
-            advancing[0],
-            advancing[1]
-        ),
+        format!("{{{json}}}"),
     )
     .unwrap();
+}
+
+/// The frame of the B2 swing where the beam head is nearest the lifted wall: the head runs
+/// along the top from the top-left corner, and the left wall shows from about 30 ms.
+const SPILL_MS: u64 = 30;
+
+/// The drawn geometry of the pane and of the second window at each of `times` after a gain,
+/// under the pose hook `pose`.
+fn sheet_geometry(
+    extra: &str,
+    pose: Option<ViewPose>,
+    times: &[u64],
+) -> Vec<[Rectangle<i32, Physical>; 2]> {
+    let _hook = PoseHook::set(pose);
+    let (mut f, pane, second) = sheet_fixture(&sheet_material(false, extra));
+    gain(&mut f);
+    render_at(&mut f, GAIN);
+    times
+        .iter()
+        .map(|ms| {
+            let at = GAIN + Duration::from_millis(*ms);
+            [pane, second].map(|w| pane_geometry(&mut f, w, at, RenderTarget::ScreenCapture))
+        })
+        .collect()
+}
+
+/// A pose the gain does not make: the top edge lifted under the beam head, 10° at κ 6.
+fn top_lift() -> ViewPose {
+    ViewPose {
+        theta: 10f64.to_radians(),
+        dir: DVec2::new(0., -1.),
+        weight: 1.,
+        kappa: 6.,
+    }
+}
+
+/// The spike's control: 4° about the vertical axis with the camera at 2000 px from the pane's
+/// slab.
+fn control_pose() -> ViewPose {
+    ViewPose {
+        theta: 4f64.to_radians(),
+        dir: DVec2::X,
+        weight: 1.,
+        kappa: control_kappa(),
+    }
+}
+
+/// The control's κ: the spike's 2000 px camera over the pane's slab width.
+fn control_kappa() -> f64 {
+    let (mut f, pane, _) = sheet_fixture(&sheet_material(false, ""));
+    let glass = pane_glass(&mut f, pane);
+    2000. / slab_frame(&mut f, pane, &glass, None).slab.size.w
+}
+
+/// Asserts that `on` (spill 1) differs from `off` (spill 0) only on the wall probe's pixels,
+/// and there by brightening; returns how many pixels it changed.
+fn spill_on_walls_only(off: &[u8], on: &[u8], walls: &[u8]) -> usize {
+    let mut changed = 0;
+    for (i, ((a, b), w)) in off
+        .chunks_exact(4)
+        .zip(on.chunks_exact(4))
+        .zip(walls.chunks_exact(4))
+        .enumerate()
+    {
+        if a == b {
+            continue;
+        }
+        changed += 1;
+        assert_eq!(w, MAGENTA, "the spill changed pixel {i}, off the walls");
+        assert!(
+            (0..3).all(|c| b[c] >= a[c]),
+            "the spill darkened pixel {i}: {a:?} → {b:?}"
+        );
+    }
+    changed
 }

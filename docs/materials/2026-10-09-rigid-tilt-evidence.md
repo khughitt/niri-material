@@ -58,16 +58,34 @@ statement in the spec, which stays as accepted.
 
 ## Stills
 
-Sheet, crops and filmstrip: `$EV` = `stills-20261010T0009` (`sheet.png`,
+Sheet, crops and filmstrip: `$EV` = `stills-20261010T0056` (`sheet.png`,
 `crops.png`, `filmstrip.png`), rendered by `view_tilt::still_sheet_frames` on
 `NVIDIA GeForce RTX 3070/PCIe/SSE2` and assembled by
 `docs/materials/scripts/view-tilt-sheet.py`. Cells A1–C3 are θp ∈ {6, 10, 14}°
 by κ ∈ {2.5, 6, 10}; S1/S2 the wall spill off and on at B2; K the spike's
-control (4° with the camera at 2000 px, κ = 2000 / 1408 px slab width).
+control (4° with the camera at 2000 px, κ = 2000 / 1408 px slab width ≈ 1.42).
 
-The second window is 400 × 900, as tall as the pane, so the gain's swing is
-horizontal: `geometry.json` records the direction (−1, 0), and the left edge
-advances. At B2 the spill changes one 152 × 40 px patch of the top wall
-under the beam, by up to 20 levels; crops I and J show it at 4×.
+- **Seeds.** Each sheet fixture restarts the jelly seed sequence
+  (`view::hooks::reset_jelly_seed`), so the accepted look's beam head wander
+  is the same in every frame; two renders of one cell are byte-identical.
+- **Direction.** The second window is 400 × 900, as tall as the pane, so the
+  gain's swing is horizontal: direction (−1, 0), the left edge advancing.
+- **Walls.** On the pane's middle row at the peak, the left wall is 0, 0, 2 px
+  wide at 6°, 0, 2, 2 px at 10° and 1, 3, 5 px at 14° (κ 2.5, 6, 10), from
+  the wall probe. crops.png shows every cell's edge at 4×.
+- **Spill.** In the B2 swing the head runs along the top from the top-left
+  corner while the left edge lifts, and never lies over a wall. S1 and S2
+  (30 ms, the head nearest the lifted wall) are identical. A scan during the
+  fix round (not part of the test) found spill off and on identical at 10, 30,
+  …, 290 ms and at 300, 320, …, 900 ms. Where the head does
+  cross a wall, under a forced pose that lifts the top edge (10°, κ 6, 171 ms),
+  the spill brightens 1207 wall pixels by up to 11 levels and changes nothing
+  else (crops I, J). The render asserts that the spill changes only wall-probe
+  pixels and only brightens them.
+- **Corner.** Under the forced diagonal pose (10°, κ 6, toward the bottom
+  right) the corner wall is 2 px wide on the bottom edge and 1 px on the right.
+- **Forced poses.** The pose hook tilts every glass tile, the second window
+  included, so every crop stops at x 1448, short of all the second window draws
+  in any frame of the sheet; the render asserts the pane lies wholly left of it.
 
 Owner's verdict: pending.
