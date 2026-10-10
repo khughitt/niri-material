@@ -303,8 +303,32 @@ pub fn trace(solid: &Solid, seg: &Segment) -> Trace {
     best
 }
 
+/// The outline distance m (§4.5): Ψmin over the norm of its screen gradient, taken at the
+/// minimiser on the plane it is held to, and written as a correction to Ψmin that is exactly
+/// zero at the identity. Negative inside. Mirrors `viewOutline`.
+pub fn outline(solid: &Solid, camera: &Camera, seg: &Segment, tr: &Trace) -> f64 {
+    let q = seg.point(tr.min_t, solid.thickness);
+    let g0 = solid.sigma_grad(q.truncate(), tr.min_sel);
+    let gq = g0.extend(solid.psi_dz(q));
+    // ∂q/∂s_j for a minimiser held to the plane of normal n:
+    // (1 + τλ)(R⁻¹e_j − r (n · R⁻¹e_j) / (n · r)), τ the ray parameter at q.
+    let n = tr.min_plane;
+    let tau = seg.tau0 + tr.min_t * solid.thickness / -seg.r.z;
+    let scale = 1. + tau * camera.lambda;
+    let column = |e: DVec3| {
+        let u = e + camera.unrotate_delta(e);
+        scale * (u - seg.r * (n.dot(u) / n.dot(seg.r)))
+    };
+    let g = DVec2::new(gq.dot(column(DVec3::X)), gq.dot(column(DVec3::Y)));
+    let len = g.length();
+    if len == 0. {
+        return tr.psi_min;
+    }
+    tr.psi_min + tr.psi_min * (g0.length() - len) / len
+}
+
 #[cfg(test)]
-pub(super) mod tests {
+pub(crate) mod tests {
     use std::f64::consts::PI;
     use std::time::Duration;
 
@@ -923,5 +947,384 @@ pub(super) mod tests {
                 );
             }
         }
+    }
+
+    /// Today's coverage from the outline distance, `1 − smoothstep(−aa, 0, m)` (§4.5), at
+    /// scale 1, where the band `aa` is one logical px.
+    pub(crate) fn coverage(m: f64) -> f64 {
+        let x = (m + 1.).clamp(0., 1.);
+        1. - x * x * (3. - 2. * x)
+    }
+
+    /// The trace and m at screen point `s`.
+    fn outline_at(solid: &Solid, camera: &Camera, s: DVec2) -> (Trace, f64) {
+        let seg = Segment::new(camera, s).expect("a downward ray");
+        let tr = trace(solid, &seg);
+        let m = outline(solid, camera, &seg, &tr);
+        (tr, m)
+    }
+
+    /// Where Ψmin changes sign between `inside` and `outside`: Illinois regula falsi on the
+    /// segment, to 1e-9 px.
+    fn crossing(solid: &Solid, camera: &Camera, inside: DVec2, outside: DVec2) -> DVec2 {
+        let f = |x: f64| outline_at(solid, camera, inside.lerp(outside, x)).0.psi_min;
+        let (mut a, mut b) = (0., 1.);
+        let (mut fa, mut fb) = (f(a), f(b));
+        assert!(fa <= 0. && fb > 0., "not a bracket: {fa} {fb}");
+        let tol = 1e-9 / (outside - inside).length();
+        let mut side = 0;
+        for _ in 0..100 {
+            let c = (a * fb - b * fa) / (fb - fa);
+            let fc = f(c);
+            if fc <= 0. {
+                (a, fa) = (c, fc);
+                if side == -1 {
+                    fb *= 0.5;
+                }
+                side = -1;
+            } else {
+                (b, fb) = (c, fc);
+                if side == 1 {
+                    fa *= 0.5;
+                }
+                side = 1;
+            }
+            if b - a < tol {
+                break;
+            }
+        }
+        inside.lerp(outside, 0.5 * (a + b))
+    }
+
+    #[test]
+    fn the_outline_distance_is_sigma_at_the_identity() {
+        let mut rnd = uniforms(20);
+        for (chamfer, thickness) in [
+            (12., 31.2),
+            (0., 31.2),
+            (12., 0.),
+            (0., 0.),
+            (0.8, 2.),
+            (15., 200.),
+        ] {
+            for dir in [DVec2::X, DVec2::new(0.6, 0.8)] {
+                let (solid, camera) = setup(
+                    DVec2::new(300., 200.),
+                    chamfer,
+                    [10., 2., 30., 0.],
+                    thickness,
+                    2.5,
+                    &ViewPose::identity(dir, 6.),
+                );
+                for _ in 0..4000 {
+                    let s = DVec2::new(rnd() * 640. - 320., rnd() * 440. - 220.);
+                    let (_, m) = outline_at(&solid, &camera, s);
+                    assert_eq!(m, solid.sigma(s, s), "at {s}");
+                }
+            }
+        }
+    }
+
+    /// The cases of §8.1: outer radius 0 (bevel 0, corner radius 0), 0.8 (bevel 0.8, corner
+    /// radius 0) and 2 (bevel 0.8, corner radius 1.2); thickness 0, 0.01, 2, 31.2 and 200;
+    /// horizontal, vertical and diagonal swings at 20° and κ 1.5, plus the diagonal at 6°, κ 6.
+    fn bound_cases() -> Vec<(String, Solid, Camera)> {
+        let mut out = Vec::new();
+        let swings = [
+            (20., 1.5, DVec2::X),
+            (20., 1.5, DVec2::Y),
+            (20., 1.5, DVec2::new(0.6, 0.8)),
+            (6., 6., DVec2::new(0.6, 0.8)),
+        ];
+        for (outer, chamfer, face_r) in [(0., 0., 0.), (0.8, 0.8, 0.), (2., 0.8, 1.2)] {
+            for thickness in [0., 0.01, 2., 31.2, 200.] {
+                for (i, (peak_deg, kappa, dir)) in swings.into_iter().enumerate() {
+                    if i == 3 && thickness != 31.2 {
+                        continue;
+                    }
+                    let (solid, camera) = setup(
+                        DVec2::splat(50.),
+                        chamfer,
+                        [face_r; 4],
+                        thickness,
+                        2.,
+                        &peak(peak_deg, dir, kappa),
+                    );
+                    out.push((
+                        format!("r {outer} T {thickness} {peak_deg}° κ {kappa} {dir}"),
+                        solid,
+                        camera,
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// Whether the §4.5 bound applies at a point: where coverage depends on m. Coverage,
+    /// `1 − smoothstep(−aa, 0, m)`, is exactly 0 for m ≥ 0, so a point where m and the exact
+    /// distance are both positive renders the same whatever m's error, and no sign can flip
+    /// there. That exempts the outer half of the band, where m does exceed the bound: past an
+    /// edge-on wall (thickness 200 at 20°, κ 1.5, on the lifting side) the face end takes the
+    /// minimiser, and m measures to the face edge's projection, up to 0.93 px off.
+    fn coverage_depends_on(m: f64, exact: f64) -> bool {
+        m <= 0. || exact <= 0.
+    }
+
+    #[test]
+    fn the_outline_distance_meets_its_bound_on_straight_sides() {
+        let (mut asserted, mut exempt, mut worst) = (0, 0, 0f64);
+        for (name, solid, camera) in bound_cases() {
+            let centre = camera.to_screen(solid.center.extend(-0.5 * solid.thickness));
+            for side in [DVec2::X, DVec2::NEG_X, DVec2::Y, DVec2::NEG_Y] {
+                let tangent = side.perp();
+                // Two boundary points 4 px either side of the side's midpoint give its line.
+                let cross = |offset: f64| {
+                    let inside = centre + tangent * offset;
+                    crossing(&solid, &camera, inside, inside + side * 200.)
+                };
+                let (a, b) = (cross(-4.), cross(4.));
+                let normal = (b - a).perp().normalize();
+                let normal = if normal.dot(side) < 0. {
+                    -normal
+                } else {
+                    normal
+                };
+                let mid = cross(0.);
+                for i in -96..=96 {
+                    let s = mid + normal * (i as f64 / 64.);
+                    let (tr, m) = outline_at(&solid, &camera, s);
+                    let exact = (s - a).dot(normal);
+                    let exact = if tr.psi_min <= 0. {
+                        -exact.abs()
+                    } else {
+                        exact.abs()
+                    };
+                    if exact.abs() > 1. {
+                        continue;
+                    }
+                    if !coverage_depends_on(m, exact) {
+                        exempt += 1;
+                        continue;
+                    }
+                    asserted += 1;
+                    worst = worst.max((m - exact).abs());
+                    assert!(
+                        (m - exact).abs() <= 1. / 16.,
+                        "{name} side {side}: m {m} exact {exact} at {s} ({exempt} exempt so far)"
+                    );
+                }
+            }
+        }
+        eprintln!(
+            "worst side error {worst:.5} px (bound 1/16); {asserted} points asserted, {exempt} \
+             exempt (m and exact both > 0)"
+        );
+        assert!(asserted > 10000, "only {asserted} side points asserted");
+    }
+
+    /// The corner check of §8.1: a screen grid at `spacing` over ±(r + 1.5) px around the
+    /// projected arc centre on the face plane and on the back plane, against the signed distance
+    /// to the boundary polyline traced from an interior anchor at `chord` spacing.
+    fn check_corner(
+        name: &str,
+        solid: &Solid,
+        camera: &Camera,
+        corner: DVec2,
+        spacing: f64,
+        chord: f64,
+    ) -> CornerCheck {
+        let r = corner_radius(corner, solid.outer_r);
+        let arc = solid.center + corner * (solid.half - DVec2::splat(r));
+        let reach = r + 1.5;
+        let anchor = camera.to_screen((arc - corner * 3.).extend(-0.5 * solid.thickness));
+        let centres = [
+            camera.to_screen(arc.extend(0.)),
+            camera.to_screen(arc.extend(-solid.thickness)),
+        ];
+        // The boundary, by angle from the anchor, over every grid point's direction.
+        let mut far = 0f64;
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        let base = corner.normalize();
+        for c in centres {
+            for (x, y) in [(-1., -1.), (1., -1.), (1., 1.), (-1., 1.)] {
+                let v = c + DVec2::new(x, y) * reach - anchor;
+                far = far.max(v.length());
+                let a = base.perp_dot(v).atan2(base.dot(v));
+                (lo, hi) = (lo.min(a), hi.max(a));
+            }
+        }
+        let radius = far + 2.;
+        let steps = ((hi - lo + 0.4) * radius / chord).ceil() as usize;
+        let mut boundary = Vec::with_capacity(steps + 1);
+        for i in 0..=steps {
+            let a = lo - 0.2 + (hi - lo + 0.4) * i as f64 / steps as f64;
+            let u = base.rotate(DVec2::new(a.cos(), a.sin()));
+            if outline_at(solid, camera, anchor + u * radius).0.psi_min <= 0. {
+                continue;
+            }
+            boundary.push(crossing(solid, camera, anchor, anchor + u * radius));
+        }
+        // Segments bucketed by cell, so each grid point looks only near itself.
+        let cell = 0.5;
+        let key = |p: DVec2| ((p.x / cell).floor() as i64, (p.y / cell).floor() as i64);
+        let mut buckets: std::collections::HashMap<(i64, i64), Vec<usize>> = Default::default();
+        for i in 1..boundary.len() {
+            buckets
+                .entry(key(0.5 * (boundary[i - 1] + boundary[i])))
+                .or_default()
+                .push(i);
+        }
+        let distance = |p: DVec2| {
+            let (kx, ky) = key(p);
+            let mut best = f64::INFINITY;
+            for dx in -4..=4 {
+                for dy in -4..=4 {
+                    for &i in buckets.get(&(kx + dx, ky + dy)).into_iter().flatten() {
+                        let (a, b) = (boundary[i - 1], boundary[i]);
+                        let t = ((p - a).dot(b - a) / (b - a).length_squared()).clamp(0., 1.);
+                        best = best.min((a + (b - a) * t - p).length());
+                    }
+                }
+            }
+            best
+        };
+        let mut out = CornerCheck::default();
+        let n = (reach / spacing).ceil() as i64;
+        for c in centres {
+            for i in -n..=n {
+                for j in -n..=n {
+                    let s = c + DVec2::new(i as f64, j as f64) * spacing;
+                    let d = distance(s);
+                    if d > 1. {
+                        continue;
+                    }
+                    let (tr, m) = outline_at(solid, camera, s);
+                    let exact = if tr.psi_min <= 0. { -d } else { d };
+                    if !coverage_depends_on(m, exact) {
+                        out.exempt += 1;
+                        continue;
+                    }
+                    out.asserted += 1;
+                    let err = (m - exact).abs();
+                    assert!(
+                        err <= 0.5,
+                        "{name} corner {corner}: m {m} exact {exact} at {s} ({} exempt so far)",
+                        out.exempt
+                    );
+                    out.worst = out.worst.max(err);
+                }
+            }
+        }
+        assert!(
+            out.asserted > 0,
+            "{name} corner {corner}: no point asserted"
+        );
+        out
+    }
+
+    /// What one corner check found: the worst error where coverage depends on m, and how many
+    /// grid points were asserted and exempt.
+    #[derive(Debug, Default)]
+    struct CornerCheck {
+        worst: f64,
+        asserted: usize,
+        exempt: usize,
+    }
+
+    const CORNERS: [DVec2; 4] = [
+        DVec2::new(-1., -1.),
+        DVec2::new(1., -1.),
+        DVec2::new(1., 1.),
+        DVec2::new(-1., 1.),
+    ];
+
+    #[test]
+    fn the_outline_distance_meets_its_bound_at_corners_coarse() {
+        for (name, solid, camera) in bound_cases() {
+            let quick = (name.starts_with("r 0.8 T 0 ") && name.ends_with("[1, 0]"))
+                || (name.starts_with("r 0 T 31.2 20") && name.ends_with("[0.6, 0.8]"))
+                || (name.starts_with("r 0.8 T 200 ") && name.ends_with("[0.6, 0.8]"));
+            if !quick {
+                continue;
+            }
+            for corner in CORNERS {
+                check_corner(&name, &solid, &camera, corner, 1. / 8., 1. / 32.);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "the dense corner grid of §8.1, minutes in a debug build: run with --run-ignored only"]
+    fn the_outline_distance_meets_its_bound_at_corners() {
+        let (mut worst, mut asserted, mut exempt, mut checks) = (0f64, 0, 0, 0);
+        for (name, solid, camera) in bound_cases() {
+            for corner in CORNERS {
+                let c = check_corner(&name, &solid, &camera, corner, 1. / 32., 1. / 64.);
+                eprintln!(
+                    "{name} corner {corner}: worst {:.4} px, {} asserted, {} exempt",
+                    c.worst, c.asserted, c.exempt
+                );
+                worst = worst.max(c.worst);
+                (asserted, exempt, checks) = (asserted + c.asserted, exempt + c.exempt, checks + 1);
+            }
+        }
+        assert_eq!(checks, 192, "every case and corner of §8.1");
+        eprintln!(
+            "worst corner error over every case: {worst:.4} px (bound 0.5); {asserted} points \
+             asserted, {exempt} exempt (m and exact both > 0)"
+        );
+    }
+
+    #[test]
+    fn a_seam_step_keeps_coverage_in_range_and_continuous_within_each_piece() {
+        // §4.5 "Exception": (88, 12, 12, 12) steps 8.6 px at the top seam, already at rest.
+        let (solid, camera) = setup(
+            DVec2::splat(50.),
+            0.8,
+            [88., 12., 12., 12.],
+            31.2,
+            2.,
+            &peak(14., DVec2::X, 2.5),
+        );
+        let at = |s: DVec2| {
+            let (tr, m) = outline_at(&solid, &camera, s);
+            let c = coverage(m);
+            assert!((0. ..=1.).contains(&c), "{c} at {s}");
+            (tr.min_sel.x.signum(), c)
+        };
+        // Continuity by refinement: a 0.01 px step that moves coverage by more than 0.1 is cut
+        // into 1000 sub-steps of 1e-5 px, and none of those may move it by more than 1e-3. A
+        // jump survives the refinement; the steep, continuous ramp beside the seam's step (about
+        // 13 per px at y = −49) does not.
+        let mut refined = 0;
+        for y in [-50.5, -50., -49.5, -49.] {
+            let mut prev: Option<(DVec2, (f64, f64))> = None;
+            for i in 0..4000 {
+                let s = DVec2::new(-20. + i as f64 * 0.01, y);
+                let (piece, c) = at(s);
+                if let Some((ps, (prev_piece, pc))) = prev {
+                    if piece == prev_piece && (c - pc).abs() > 0.1 {
+                        refined += 1;
+                        let mut sub = (prev_piece, pc);
+                        for k in 1..=1000 {
+                            let p = ps.lerp(s, k as f64 / 1000.);
+                            let next = at(p);
+                            if next.0 == sub.0 {
+                                assert!(
+                                    (next.1 - sub.1).abs() <= 1e-3,
+                                    "coverage jumps {} → {} within a piece at {p}",
+                                    sub.1,
+                                    next.1
+                                );
+                            }
+                            sub = next;
+                        }
+                    }
+                }
+                prev = Some((s, (piece, c)));
+            }
+        }
+        eprintln!("{refined} steps refined");
     }
 }
