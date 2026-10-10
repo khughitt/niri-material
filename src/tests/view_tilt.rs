@@ -20,7 +20,7 @@ use super::ring_pair::{diff, render_at, render_through, set_time, with_elements_
 use super::*;
 use crate::layout::tile::Tile;
 use crate::niri::Niri;
-use crate::render_helpers::material::view::{hooks, Camera, ViewPose, VIEW_NEAR_CLIP};
+use crate::render_helpers::material::view::{footprint, hooks, Camera, ViewPose, VIEW_NEAR_CLIP};
 use crate::render_helpers::material::{drawn_area, material_frame, ElementView, MaterialFrame};
 use crate::render_helpers::RenderTarget;
 use crate::window::mapped::MappedId;
@@ -576,7 +576,9 @@ fn after_the_run_nothing_animates_and_the_geometry_returns() {
 #[test]
 fn nothing_draws_outside_the_computed_geometry() {
     // §8.2 "Containment": a subsurface outside the slab, every projected pixel of it drawn; then
-    // a subsurface past the near clip, drawn up to the clip and nowhere past it.
+    // a subsurface past the near clip, drawn up to the clip and nowhere past it. The first lies
+    // beyond the pane on the side that lifts, so its projection leaves both the resting area and
+    // the slab box's own projection (§6: projecting the slab alone is not enough).
     let peak = |deg: f64, kappa: f64| ViewPose {
         theta: deg.to_radians(),
         dir: DVec2::X,
@@ -587,7 +589,7 @@ fn nothing_draws_outside_the_computed_geometry() {
         (
             "subsurface",
             Scene {
-                subsurface: Some([60, 340, 120, 80]),
+                subsurface: Some([420, 100, 120, 80]),
                 size: (400, 300),
                 second: false,
                 ..Scene::new(STOCK, "")
@@ -656,6 +658,25 @@ fn nothing_draws_outside_the_computed_geometry() {
             assert_eq!(
                 past_clip, 0,
                 "the case must keep the subsurface inside the near clip"
+            );
+            let (lo, hi) = corners
+                .map(|c| camera.to_screen(c.extend(0.)))
+                .into_iter()
+                .fold((DVec2::INFINITY, DVec2::NEG_INFINITY), |(lo, hi), s| {
+                    (lo.min(s), hi.max(s))
+                });
+            let projected = Rectangle::from_extremities((lo.x, lo.y), (hi.x, hi.y));
+            let box_ = (
+                DVec2::new(slab.loc.x, slab.loc.y),
+                DVec2::new(slab.loc.x + slab.size.w, slab.loc.y + slab.size.h),
+            );
+            let (lo, hi) = footprint(&camera, box_, box_, glass.thickness);
+            let slab_alone = Rectangle::from_extremities((lo.x, lo.y), (hi.x, hi.y));
+            assert!(
+                !frame.area.contains_rect(projected) && !slab_alone.contains_rect(projected),
+                "the subsurface's projection {projected:?} must leave the resting area {:?} and \
+                 the slab's projection {slab_alone:?}",
+                frame.area
             );
         }
 
