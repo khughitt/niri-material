@@ -188,9 +188,14 @@ pub(super) fn open(f: &mut Fixture, id: ClientId, (w, h): (u16, u16), content: u
 }
 
 pub(super) fn fixture(config: Config) -> Fixture {
+    fixture_on(config, (OUT_W, OUT_H))
+}
+
+/// `fixture` with an output of `size`.
+pub(super) fn fixture_on(config: Config, size: (u16, u16)) -> Fixture {
     let mut f = Fixture::with_config(config);
     f.niri_state().backend.headless().add_renderer().unwrap();
-    f.add_output(1, (OUT_W, OUT_H));
+    f.add_output(1, size);
     f
 }
 

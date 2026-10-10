@@ -13,6 +13,8 @@ use single_pixel_buffer::v1::client::wp_single_pixel_buffer_manager_v1::WpSingle
 use smithay::reexports::wayland_protocols::wp::single_pixel_buffer;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
+use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_popup::{self, XdgPopup};
+use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_positioner::{self, XdgPositioner};
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
@@ -34,6 +36,8 @@ use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::protocol::wl_shm::{self, WlShm};
 use wayland_client::protocol::wl_shm_pool::WlShmPool;
+use wayland_client::protocol::wl_subcompositor::WlSubcompositor;
+use wayland_client::protocol::wl_subsurface::WlSubsurface;
 use wayland_client::protocol::wl_surface::{self, WlSurface};
 use wayland_client::{Connection, Dispatch, Proxy as _, QueueHandle};
 
@@ -59,11 +63,22 @@ pub struct State {
     pub layer_shell: Option<ZwlrLayerShellV1>,
     pub spbm: Option<WpSinglePixelBufferManagerV1>,
     pub shm: Option<WlShm>,
+    pub subcompositor: Option<WlSubcompositor>,
     pub viewporter: Option<WpViewporter>,
     pub virtual_pointer_manager: Option<ZwlrVirtualPointerManagerV1>,
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
+    pub popups: Vec<Popup>,
+}
+
+/// An xdg popup: acked on its first configure by `State::create_popup`'s
+/// caller through `Popup::ack_and_attach`.
+pub struct Popup {
+    pub surface: WlSurface,
+    pub xdg_surface: XdgSurface,
+    pub xdg_popup: XdgPopup,
+    pub last_serial: Option<u32>,
 }
 
 pub struct Window {
@@ -189,10 +204,12 @@ impl Client {
             layer_shell: None,
             spbm: None,
             shm: None,
+            subcompositor: None,
             viewporter: None,
             virtual_pointer_manager: None,
             windows: Vec::new(),
             layers: Vec::new(),
+            popups: Vec::new(),
         };
 
         Self {
@@ -346,6 +363,59 @@ impl State {
             .find(|w| w.surface == *surface)
             .unwrap()
     }
+
+    /// A subsurface of `parent` at `(x, y)`, in sync mode: its state lands
+    /// with the parent's next commit.
+    pub fn create_subsurface(&mut self, parent: &WlSurface, x: i32, y: i32) -> WlSurface {
+        let compositor = self.compositor.as_ref().unwrap();
+        let subcompositor = self.subcompositor.as_ref().unwrap();
+        let surface = compositor.create_surface(&self.qh, ());
+        let subsurface = subcompositor.get_subsurface(&surface, parent, &self.qh, ());
+        subsurface.set_position(x, y);
+        surface
+    }
+
+    /// An xdg popup of `parent`, `w`×`h`, anchored at `(x, y)` in the
+    /// parent's window geometry. Committed without a buffer; roundtrip, then
+    /// `ack_and_attach_popup`.
+    pub fn create_popup(
+        &mut self,
+        parent: &XdgSurface,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+    ) -> WlSurface {
+        let compositor = self.compositor.as_ref().unwrap();
+        let xdg_wm_base = self.xdg_wm_base.as_ref().unwrap();
+        let surface = compositor.create_surface(&self.qh, ());
+        let xdg_surface = xdg_wm_base.get_xdg_surface(&surface, &self.qh, ());
+        let positioner = xdg_wm_base.create_positioner(&self.qh, ());
+        positioner.set_size(w, h);
+        positioner.set_anchor_rect(x, y, 1, 1);
+        positioner.set_anchor(xdg_positioner::Anchor::TopLeft);
+        positioner.set_gravity(xdg_positioner::Gravity::BottomRight);
+        let xdg_popup = xdg_surface.get_popup(Some(parent), &positioner, &self.qh, ());
+        positioner.destroy();
+        surface.commit();
+        self.popups.push(Popup {
+            surface: surface.clone(),
+            xdg_surface,
+            xdg_popup,
+            last_serial: None,
+        });
+        surface
+    }
+
+    /// Acks the popup's last configure and attaches `pixels` (`w`×`h`, ARGB).
+    pub fn ack_and_attach_popup(&mut self, surface: &WlSurface, w: i32, h: i32, pixels: &[u32]) {
+        let shm = self.shm.clone().unwrap();
+        let qh = self.qh.clone();
+        let popup = self.popups.iter().find(|p| p.surface == *surface).unwrap();
+        popup.xdg_surface.ack_configure(popup.last_serial.unwrap());
+        attach_shm_pixels(&shm, &qh, surface, w, h, pixels);
+        surface.commit();
+    }
 }
 
 impl Window {
@@ -389,6 +459,11 @@ impl Window {
 
     pub fn attach_null(&self) {
         self.surface.attach(None, 0, 0);
+    }
+
+    /// A `w`×`h` ARGB8888 shm buffer of `pixels`, damaged in full.
+    pub fn attach_new_shm_pixels(&self, w: i32, h: i32, pixels: &[u32]) {
+        attach_shm_pixels(&self.shm, &self.qh, &self.surface, w, h, pixels);
     }
 
     pub fn set_size(&self, w: u16, h: u16) {
@@ -537,6 +612,11 @@ impl LayerSurface {
         self.surface.attach(None, 0, 0);
     }
 
+    /// A `w`×`h` ARGB8888 shm buffer of `pixels`, damaged in full.
+    pub fn attach_new_shm_pixels(&self, w: i32, h: i32, pixels: &[u32]) {
+        attach_shm_pixels(&self.shm, &self.qh, &self.surface, w, h, pixels);
+    }
+
     pub fn set_size(&self, w: u16, h: u16) {
         self.viewport.set_destination(i32::from(w), i32::from(h));
     }
@@ -557,6 +637,32 @@ impl LayerSurface {
         }
         buf
     }
+}
+
+/// Attaches a `w`×`h` ARGB8888 shm buffer of `pixels` to `surface` and
+/// damages it in full.
+pub fn attach_shm_pixels(
+    shm: &WlShm,
+    qh: &QueueHandle<State>,
+    surface: &WlSurface,
+    w: i32,
+    h: i32,
+    pixels: &[u32],
+) {
+    use std::io::Write as _;
+    use std::os::fd::{AsFd as _, FromRawFd as _, OwnedFd};
+
+    assert_eq!(pixels.len(), (w * h) as usize);
+    let fd = unsafe { libc::memfd_create(c"niri-test-shm".as_ptr(), libc::MFD_CLOEXEC) };
+    assert!(fd >= 0, "memfd_create failed");
+    let mut file = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+    let bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_ne_bytes()).collect();
+    file.write_all(&bytes).unwrap();
+    let pool = shm.create_pool(file.as_fd(), w * h * 4, qh, ());
+    let buffer = pool.create_buffer(0, w, h, w * 4, wl_shm::Format::Argb8888, qh, ());
+    pool.destroy();
+    surface.attach(Some(&buffer), 0, 0);
+    surface.damage_buffer(0, 0, w, h);
 }
 
 impl Dispatch<WlCallback, Arc<SyncData>> for State {
@@ -605,6 +711,9 @@ impl Dispatch<WlRegistry, ()> for State {
                 } else if interface == WlShm::interface().name {
                     let version = min(version, WlShm::interface().version);
                     state.shm = Some(registry.bind(name, version, qh, ()));
+                } else if interface == WlSubcompositor::interface().name {
+                    let version = min(version, WlSubcompositor::interface().version);
+                    state.subcompositor = Some(registry.bind(name, version, qh, ()));
                 } else if interface == WpViewporter::interface().name {
                     let version = min(version, WpViewporter::interface().version);
                     state.viewporter = Some(registry.bind(name, version, qh, ()));
@@ -727,6 +836,14 @@ impl Dispatch<XdgSurface, ()> for State {
     ) {
         match event {
             xdg_surface::Event::Configure { serial } => {
+                if let Some(popup) = state
+                    .popups
+                    .iter_mut()
+                    .find(|p| p.xdg_surface == *xdg_surface)
+                {
+                    popup.last_serial = Some(serial);
+                    return;
+                }
                 let window = state
                     .windows
                     .iter_mut()
@@ -921,5 +1038,62 @@ impl Dispatch<WpViewport, ()> for State {
         _qhandle: &QueueHandle<Self>,
     ) {
         unreachable!()
+    }
+}
+
+impl Dispatch<WlSubcompositor, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlSubcompositor,
+        _event: <WlSubcompositor as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<WlSubsurface, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlSubsurface,
+        _event: <WlSubsurface as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<XdgPositioner, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &XdgPositioner,
+        _event: <XdgPositioner as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<XdgPopup, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &XdgPopup,
+        event: <XdgPopup as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            xdg_popup::Event::Configure { .. }
+            | xdg_popup::Event::PopupDone
+            | xdg_popup::Event::Repositioned { .. } => (),
+            _ => unreachable!(),
+        }
     }
 }

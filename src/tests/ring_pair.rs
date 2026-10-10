@@ -19,11 +19,13 @@ use std::time::Duration;
 use niri_config::Config;
 use niri_ipc::SizeChange;
 use smithay::backend::allocator::Fourcc;
-use smithay::utils::{Logical, Rectangle, Scale, Transform};
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::utils::{Logical, Physical, Rectangle, Scale, Size, Transform};
 use wayland_client::protocol::wl_surface::WlSurface;
 
 use super::client::ClientId;
 use super::*;
+use crate::niri::OutputRenderElements;
 use crate::render_helpers::{render_to_vec, RenderCtx, RenderTarget};
 
 const OUT_W: u16 = 1280;
@@ -182,6 +184,37 @@ fn reload(f: &mut Fixture, glass: &Glass, v: Variant) {
 
 /// The output as a screenshot renders it, at `time`, as RGBA bytes.
 pub(super) fn render_at(f: &mut Fixture, time: Duration) -> Vec<u8> {
+    render_through(f, time, RenderTarget::ScreenCapture)
+}
+
+/// The output rendered through `target` at `time`, as RGBA bytes.
+pub(super) fn render_through(f: &mut Fixture, time: Duration, target: RenderTarget) -> Vec<u8> {
+    with_elements_at(f, time, target, |renderer, elements, size, scale| {
+        render_to_vec(
+            renderer,
+            size,
+            scale,
+            Transform::Normal,
+            Fourcc::Abgr8888,
+            elements.iter().rev(),
+        )
+        .unwrap()
+    })
+}
+
+/// The output's render elements through `target` at `time`, handed to `body` with the
+/// renderer and the output's mode size and scale.
+pub(super) fn with_elements_at<T>(
+    f: &mut Fixture,
+    time: Duration,
+    target: RenderTarget,
+    body: impl FnOnce(
+        &mut GlesRenderer,
+        &[OutputRenderElements<GlesRenderer>],
+        Size<i32, Physical>,
+        Scale<f64>,
+    ) -> T,
+) -> T {
     set_time(f, time);
     f.niri().advance_animations();
     let output = f.niri_output(1);
@@ -193,20 +226,12 @@ pub(super) fn render_at(f: &mut Fixture, time: Duration) -> Vec<u8> {
         .with_primary_renderer(|renderer| {
             let ctx = RenderCtx {
                 renderer,
-                target: RenderTarget::ScreenCapture,
+                target,
                 xray: None,
                 signal_ticks: None,
             };
             let elements = niri.render_to_vec(ctx, &output, false);
-            render_to_vec(
-                renderer,
-                size,
-                scale,
-                Transform::Normal,
-                Fourcc::Abgr8888,
-                elements.iter().rev(),
-            )
-            .unwrap()
+            body(renderer, &elements, size, scale)
         })
         .unwrap()
 }
