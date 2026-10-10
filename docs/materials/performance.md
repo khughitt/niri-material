@@ -146,6 +146,7 @@ Measured:
 | Aurora drift | `drift-hz` while input is active | One flush redraw after `idle-after-ms` (default 30 s), then 0 until input | [optic settling, *Verdict*](2026-09-30-optic-settling-evidence.md#verdict) |
 | Attention (breathe, pulse, flash) | One timer per output; 8–27/s; ten windows cost as one | To static after idle | [signals smoke, *GLES redraw behavior*](2026-09-03-material-signals-smoke.md#gles-redraw-behavior) |
 | Ring beam | Refresh rate for `(perimeter + tail) / ring-beam-speed`, or `ring-beam-decay / ring-beam-speed`: about 16 s for a 1280×720 pane at the default 300 px/s | 0 once the run ends; settled focus costs nothing | [ring beam, *Redraw counts*](2026-09-19-ring-beam-evidence.md#redraw-counts-2026-09-21-and-2026-09-20) |
+| Rigid tilt | Refresh rate for `view-tilt-settle` (900 ms default) after a focus gain, while the slab band is in view; runs on the unadjusted clock, so `animations.slowdown` does not stretch it | 0 once the run ends | [rigid tilt evidence](2026-10-09-rigid-tilt-evidence.md) |
 | Focus and signal crossfades, impulses | Refresh rate for 0.4–1.5 s | 0 | *code*: `tile.rs` |
 | Jelly | No clock; rides move and resize animations | Resting jelly: 0 | [idle budget, *What is established*](2026-09-11-idle-budget-evidence.md#what-is-established) |
 
@@ -205,6 +206,7 @@ the [culling and damage audit](2026-10-08-culling-damage-boundaries-audit.md).
 | `jelly-ripple` | 4 simplex per pixel during motion | Cheap at rest |
 | `aurora` | Redraws at `drift-hz`; close to 1 W in the measured setup | `drift-hz 0`, `aurora 0`, or `signal { motion "off" }`; a shorter `idle-after-ms` |
 | `ring-beam-speed`, `ring-beam-decay` | Refresh-rate run per focus gain | Faster speed or shorter decay; speed 0 or `signal { motion "off" }` removes the run |
+| `view-tilt` | During a swing only: the footprint quad (a few percent larger than the slab) and the traced solid on the bevel band and wall, for `view-tilt-settle` per focus gain; nothing at rest (cost in the evidence document) | 0 |
 | Window transparency, `bevel`, `offset-*` | The area that runs the shader | Opaque content, a narrower band |
 | `reflection` | One prefiltered background read per bevel fragment, two when the prefilter mix is fractional | 0 |
 | `bevel-profile` above 1 | A few operations per bevel fragment (the height field and its normal) | 1, a planar chamfer |
