@@ -1,15 +1,16 @@
 ---
 id: material-ffede2
 title: Record the fast tooling commit route under its own tt target name
-status: doing
+status: done
 priority: 2
 size: xs
 complexity: low
 process: direct
 owner: material-ffede2
 created: 2026-10-08T10:09:29Z
-updated: 2026-10-11T14:59:36Z
+updated: 2026-10-11T15:08:41Z
 started: 2026-10-11T14:49:43Z
+completed: 2026-10-11T15:08:41Z
 depends: [ops-ccb3c4]
 tags: [testing]
 source: ops-6cff48
@@ -35,3 +36,5 @@ Where to look: justfile lines 84-93; .githooks/pre-commit; tools/test_gates.py ~
 - 2026-10-10T14:12:51Z (materials-26.04): scope: scoped; the 2026-10-08 decision fixes the shape (fast route as its own target plus an ops limit row at the 45 s code-commit limit); named hook-pre-commit-fast after hook-pre-push-fast; medians since 2026-10-08 (fast 32.0 s, full 34.1 s) breach nothing on the split; todo P2 xs/low/direct
 - 2026-10-11T14:49:43Z (materials-26.04): started
 - 2026-10-11T14:59:36Z (material-ffede2): resumed
+- 2026-10-11T15:08:41Z (material-ffede2): done
+- 2026-10-11T15:08:41Z (material-ffede2): The fast tooling commit route now records hook-pre-commit-fast (justfile recipe, hook comment, AGENTS.md Gates line, test_gates rename+assertions, superseded-by line on the 2026-10-04 pre-commit design). ops landed first: ops-ccb3c4 added the 45 s limit row and the spec §4 row. Verified with real commits on both routes: fast recorded hook-pre-commit-fast (34.6 s, exit 0), full recorded hook-pre-commit (95.6 s, exit 0).
