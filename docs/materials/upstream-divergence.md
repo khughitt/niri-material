@@ -158,44 +158,54 @@ Generated against a fetched upstream. Refreshed weekly by
 it is. Do not edit by hand; run `just upstream-report --drift`.
 
 <!-- BEGIN GENERATED: drift -->
-As of **2026-09-27**: baseline tree `7b010d1b3ab2`, fork `390dfc3e5fd1`, upstream `upstream/main` at `1f03391ea644`.
+As of **2026-10-11**: baseline tree `7b010d1b3ab2`, fork `afea4c26fa84`, upstream `upstream/main` at `5fe8877926bd`.
 
 This is a three-way merge of final trees. It does not predict a rebase, which replays commits individually, and it says nothing about whether the result compiles or behaves correctly.
 
-**11 conflicting path(s).**
+**12 conflicting path(s).**
 
 | Seam path | Upstream name | Upstream commits since baseline | Upstream status | Conflict | Acknowledged |
 | --- | --- | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | same | 5 | - | - | - |
+| `.github/FUNDING.yml` | same | 0 | - | - | - |
+| `.github/ISSUE_TEMPLATE/bug_report.md` | same | 3 | - | - | - |
+| `.github/ISSUE_TEMPLATE/config.yml` | same | 1 | - | - | - |
+| `.github/dependabot.yml` | same | 0 | - | - | - |
+| `.github/workflows/ci.yml` | same | 6 | - | - | - |
+| `.github/workflows/release.yml` | same | 0 | - | - | - |
 | `.gitignore` | same | 0 | - | - | - |
-| `Cargo.toml` | same | 13 | - | - | - |
+| `Cargo.lock` | same | 13 | - | - | - |
+| `Cargo.toml` | same | 14 | - | - | - |
 | `docs/wiki/IPC.md` | same | 1 | - | - | - |
+| `docs/wiki/Nvidia.md` | same | 0 | - | - | - |
+| `niri-config/Cargo.toml` | same | 2 | - | yes | yes |
 | `niri-config/src/animations.rs` | same | 1 | - | - | - |
 | `niri-config/src/lib.rs` | same | 11 | - | yes | yes |
 | `niri-config/src/window_rule.rs` | same | 3 | - | - | - |
-| `niri-ipc/src/lib.rs` | same | 2 | - | - | - |
+| `niri-ipc/src/lib.rs` | same | 3 | - | - | - |
 | `niri-ipc/src/state.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/layout.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/tile.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/window.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/test_window.rs` | same | 0 | - | - | - |
-| `src/backend/tty.rs` | same | 9 | - | - | - |
+| `src/animation/clock.rs` | same | 0 | - | - | - |
+| `src/backend/tty.rs` | same | 13 | - | - | - |
 | `src/backend/winit.rs` | same | 7 | - | - | - |
 | `src/cli.rs` | same | 1 | - | - | - |
 | `src/handlers/compositor.rs` | same | 2 | - | - | - |
-| `src/handlers/xdg_shell.rs` | same | 4 | - | - | - |
+| `src/handlers/layer_shell.rs` | same | 1 | - | - | - |
+| `src/handlers/xdg_shell.rs` | same | 6 | - | - | - |
 | `src/input/pick_color_grab.rs` | same | 0 | - | - | - |
 | `src/ipc/client.rs` | same | 6 | - | - | - |
 | `src/ipc/server.rs` | same | 2 | - | - | - |
 | `src/layout/floating.rs` | same | 4 | - | yes | yes |
-| `src/layout/mod.rs` | same | 9 | - | - | - |
+| `src/layout/mod.rs` | same | 10 | - | - | - |
 | `src/layout/monitor.rs` | same | 8 | - | yes | yes |
-| `src/layout/scrolling.rs` | same | 12 | - | yes | yes |
+| `src/layout/scrolling.rs` | same | 13 | - | yes | yes |
 | `src/layout/tests.rs` | same | 2 | - | - | - |
 | `src/layout/tile.rs` | same | 2 | - | yes | yes |
-| `src/layout/workspace.rs` | same | 6 | - | yes | yes |
+| `src/layout/workspace.rs` | same | 7 | - | yes | yes |
 | `src/lib.rs` | same | 0 | - | - | - |
-| `src/niri.rs` | same | 18 | - | yes | yes |
+| `src/niri.rs` | same | 25 | - | yes | yes |
 | `src/protocols/foreign_toplevel.rs` | same | 1 | - | yes | yes |
 | `src/render_helpers/blur.rs` | same | 1 | - | yes | yes |
 | `src/render_helpers/effect_buffer.rs` | same | 0 | - | - | - |
@@ -204,12 +214,14 @@ This is a three-way merge of final trees. It does not predict a rebase, which re
 | `src/render_helpers/shaders/mod.rs` | same | 0 | - | - | - |
 | `src/screencasting/mod.rs` | same | 4 | - | - | - |
 | `src/tests/client.rs` | same | 3 | - | yes | yes |
+| `src/tests/fixture.rs` | same | 0 | - | - | - |
 | `src/tests/mod.rs` | same | 2 | - | yes | yes |
 | `src/window/mapped.rs` | same | 0 | - | - | - |
 | `src/window/mod.rs` | same | 3 | - | - | - |
 
 Conflict notices, verbatim and unparsed:
 
+    CONFLICT (content): Merge conflict in niri-config/Cargo.toml
     CONFLICT (content): Merge conflict in niri-config/src/lib.rs
     CONFLICT (content): Merge conflict in src/layout/floating.rs
     CONFLICT (content): Merge conflict in src/layout/monitor.rs

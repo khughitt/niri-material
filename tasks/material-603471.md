@@ -9,10 +9,10 @@ process: direct
 every: 14d
 owner: materials-26.04
 created: 2026-09-19T13:07:46Z
-updated: 2026-09-27T11:31:02Z
+updated: 2026-10-11T14:55:25Z
 started: 2026-09-27T11:30:36Z
-completed: 2026-09-27T11:31:02Z
-last_done: 2026-09-27T11:31:02Z
+completed: 2026-10-11T14:55:24Z
+last_done: 2026-10-11T14:55:24Z
 depends: []
 tags: [upstream]
 model: claude-opus-5-5
@@ -36,3 +36,10 @@ Close with `tasks done` naming the upstream tag checked, the upstream/main commi
   provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-09-27T11:31:02Z (materials-26.04): Checked upstream tag v26.04 (latest; matches the baseline) and upstream/main 1f03391e. No rebase filed: no new release, quarterly due 2026-12-06. Drift refreshed today in 67a4f053 (11 conflicting paths, all acknowledged); a rerun changed only the fork hash, so not recommitted. Canary alive: run 36315887493 passed.
   provenance: {"harness_session":"claude-code:3f4a9869-e47a-4bc9-a90f-ec437ad135a0","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-11T14:48:47Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:01e305c9-f288-43a1-83a4-97aff913d71c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-11T14:55:24Z (materials-26.04): Findings filed: material-182b01 (main CI red: rustfmt+freebsd, unmerged fix on fix/ci-format-freebsd), material-a90bbb (canary 2026-10-05 tooling-test failure; HEAD passes locally).
+- 2026-10-11T14:55:24Z (materials-26.04): completed; next due 2026-10-25
+  provenance: {"harness_session":"claude-code:01e305c9-f288-43a1-83a4-97aff913d71c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-11T14:55:24Z (materials-26.04): Checked upstream tag v26.04 (still latest; matches the baseline) and upstream/main 5fe88779 (24 commits since last sweep). No rebase filed: no new release, quarterly due 2026-12-06. Drift refreshed: 12 conflicting paths; the new one, niri-config/Cargo.toml (our serde lines beside upstream's dependency bumps), acknowledged with its resolution. Canary's last run (2026-10-05) failed in tooling tests: filed material-a90bbb; main CI red filed as material-182b01.
+  provenance: {"harness_session":"claude-code:01e305c9-f288-43a1-83a4-97aff913d71c","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
