@@ -79,12 +79,13 @@ check-full:
 
 gate: check-full test
 
-# What the pre-commit hook runs: the report staged, then `check`'s command,
-# under its own hook target.
+# What the pre-commit hook runs for ordinary code: the report staged, then `check`'s
+# command, recorded under the fast route's own hook target.
 hook-pre-commit:
-    {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_cmd}}'
+    {{tt}} hook-pre-commit-fast -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_cmd}}'
 
-# Lifecycle subjects and wiring use the full coordinator, under the same target.
+# Lifecycle subjects and wiring use the full coordinator, recorded under the shared
+# code-commit target the fast route left behind.
 hook-pre-commit-full:
     {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{stage_report_cmd}} && {{full_check_cmd}}'
 

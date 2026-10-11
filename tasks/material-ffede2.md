@@ -6,9 +6,9 @@ priority: 2
 size: xs
 complexity: low
 process: direct
-owner: materials-26.04
+owner: material-ffede2
 created: 2026-10-08T10:09:29Z
-updated: 2026-10-11T14:56:39Z
+updated: 2026-10-11T14:59:36Z
 started: 2026-10-11T14:49:43Z
 depends: [ops-ccb3c4]
 tags: [testing]
@@ -34,3 +34,4 @@ Where to look: justfile lines 84-93; .githooks/pre-commit; tools/test_gates.py ~
 
 - 2026-10-10T14:12:51Z (materials-26.04): scope: scoped; the 2026-10-08 decision fixes the shape (fast route as its own target plus an ops limit row at the 45 s code-commit limit); named hook-pre-commit-fast after hook-pre-push-fast; medians since 2026-10-08 (fast 32.0 s, full 34.1 s) breach nothing on the split; todo P2 xs/low/direct
 - 2026-10-11T14:49:43Z (materials-26.04): started
+- 2026-10-11T14:59:36Z (material-ffede2): resumed

@@ -227,7 +227,7 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
             del fields[:3 + count]
         return events
 
-    def test_recipe_composition_modes_counts_and_shared_hook_target(self):
+    def test_recipe_composition_modes_counts_and_route_hook_targets(self):
         overrides = self.recipe_fixture()
         cases = [
             ('check', ['before', 'fast', 'after']),
@@ -257,8 +257,9 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
                         self.assertIn('--fast', event['args'])
                 records = [json.loads(line) for line in (self.root / 'timings.jsonl').read_text().splitlines()]
                 if recipe in ('hook-pre-commit', 'hook-pre-commit-full'):
+                    expected_target = 'hook-pre-commit-fast' if recipe == 'hook-pre-commit' else 'hook-pre-commit'
                     self.assertEqual((records[-1]['target'], records[-1]['tests']),
-                                     ('hook-pre-commit', 2 if recipe=='hook-pre-commit' else 3))
+                                     (expected_target, 2 if recipe=='hook-pre-commit' else 3))
                 if recipe == 'hook-pre-commit-docs':
                     self.assertIsNone(records[-1]['tests'])
                 if recipe == 'ci-tooling-test':

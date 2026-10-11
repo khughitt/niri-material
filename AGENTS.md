@@ -76,8 +76,9 @@ rendering design assumes.
   task/report/pin checks; `just check-full` substitutes parallel full tooling.
   Pre-commit uses full tooling for the narrow lifecycle subjects and gate wiring in
   `tooling_full_paths`, fast tooling for other code, and static source plus consistency
-  checks for root guides/tasks/specs/plans/notes. Both code routes record the same
-  `hook-pre-commit` target; every route checks lifecycle source coverage statically.
+  checks for root guides/tasks/specs/plans/notes. The fast route records
+  `hook-pre-commit-fast` and the full route `hook-pre-commit`; every route checks
+  lifecycle source coverage statically.
   Material docs and wiki retain code checks because Rust tests read their inputs.
 - CI runs the full suite (including doctests) for every branch/tag pushed to `origin`.
   Pre-push there runs `check` plus config and IPC tests through nextest;
