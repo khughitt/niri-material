@@ -1,14 +1,16 @@
 ---
 id: material-f386ae
 title: Record GPU clocks in cost captures to explain the bimodal draw times
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: mid
 process: direct
 needs: [quiet]
+owner: materials-26.04
 created: 2026-10-08T09:13:39Z
-updated: 2026-10-10T13:46:21Z
+updated: 2026-10-11T10:34:37Z
+started: 2026-10-11T10:34:37Z
 depends: []
 parent: material-2834d7
 tags: [performance, harness, capture]
@@ -24,3 +26,5 @@ Done when: the evidence doc's Cost section states whether the mode split lines u
 ## Notes
 
 - 2026-10-10T13:46:18Z (materials-26.04): scope: scoped; set todo P2 s/mid/direct, need quiet, parent material-2834d7; body names the sampler, where it hooks in, the done check, and the bearing on material-3d48b0's interval comparison
+- 2026-10-11T10:34:37Z (materials-26.04): started
+  provenance: {"harness_session":"codex:01a12a6b-bf2c-7863-89fb-f5d210c421f0","harness_session_source":"CODEX_THREAD_ID"}
