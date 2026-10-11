@@ -8,9 +8,9 @@ complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-10-08T10:09:29Z
-updated: 2026-10-11T14:49:43Z
+updated: 2026-10-11T14:56:39Z
 started: 2026-10-11T14:49:43Z
-depends: []
+depends: [ops-ccb3c4]
 tags: [testing]
 source: ops-6cff48
 agent: claude-code/claude-opus-5-5
