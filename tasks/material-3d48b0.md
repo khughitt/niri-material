@@ -1,14 +1,16 @@
 ---
 id: material-3d48b0
 title: Pilot nested measurements with the desktop idle against the pinned TTY reference
-status: todo
+status: doing
 priority: 1
 size: s
 complexity: mid
 process: direct
 needs: [quiet]
+owner: materials-26.04
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-09T01:32:32Z
+updated: 2026-10-11T12:04:57Z
+started: 2026-10-11T12:04:57Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -21,3 +23,5 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 ## Notes
 
 - 2026-10-09T01:32:32Z (capture-host-conditions): From the final review of material-18c2a1: await_load needs load1 < 1.0 (preflight allows 2.0) and runs before the hold, with the desktop up. The offline rehearsal and the pilot should show whether it passes on a desktop-idle host before preflight is reached; a timeout there is this check, not a refused preflight.
+- 2026-10-11T12:04:57Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:94bf876f-10c5-43b5-9b79-bbaa31b7031d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
