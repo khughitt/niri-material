@@ -1,14 +1,16 @@
 ---
 id: material-07bac9
 title: Establish terminal event transport and niri window attribution
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: mid
 process: direct
 needs: [nested]
+owner: materials-26.04
 created: 2026-09-29T22:06:56Z
-updated: 2026-10-03T16:48:43Z
+updated: 2026-10-11T09:09:37Z
+started: 2026-10-11T09:09:37Z
 depends: []
 parent: material-9b8bf9
 tags: [signals, sources]
@@ -21,3 +23,8 @@ Where to start: docs/notes/2026-09-29-signal-sources-brief.md; docs/materials/20
 Bound: Read-only inspection plus one minimal opt-in transport demonstration in a nested compositor for a supported terminal. Demonstrate start, successful exit and failed exit in two windows, including two windows belonging to one terminal process if supported; record whether notification/progress events share the interface. No production watcher, PTY proxy, shell/terminal configuration rollout, progress IPC extension or rendering changes. Stop with a documented gap if no safe demonstration is possible.
 Expected result: Record event coverage, window attribution, terminal restart/close behavior and a recommended transport/owning project on this task and in the brief. Show current IPC set-before-pulse and clearing behavior; separate completion from future numeric progress. Use the finding to scope implementation or request design rather than assuming identical terminal hooks.
 Ideas it wakes: On completion, run tasks note on material-d277d0 and material-79d1de with the finding, in the same commit as this result.
+
+## Notes
+
+- 2026-10-11T09:09:37Z (materials-26.04): started
+  provenance: {"harness_session":"codex:01a12a31-1d83-7393-a62a-bfb6585d5fdb","harness_session_source":"CODEX_THREAD_ID"}
