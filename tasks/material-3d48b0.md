@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-11T12:04:57Z
+updated: 2026-10-11T12:08:06Z
 started: 2026-10-11T12:04:57Z
 depends: []
 parent: material-2834d7
@@ -25,3 +25,4 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 - 2026-10-09T01:32:32Z (capture-host-conditions): From the final review of material-18c2a1: await_load needs load1 < 1.0 (preflight allows 2.0) and runs before the hold, with the desktop up. The offline rehearsal and the pilot should show whether it passes on a desktop-idle host before preflight is reached; a timeout there is this check, not a refused preflight.
 - 2026-10-11T12:04:57Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:94bf876f-10c5-43b5-9b79-bbaa31b7031d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-11T12:08:06Z (materials-26.04): Offline config rehearsal on 8a2d7e4f: write_cost_config regenerates none-b*.kdl aa09f751… and one-fine-1-b*.kdl bc488733…, equal to the pinned hashes and to all three reference runs; their niri-tracy-b is cb21ad03…. The pinned reference applies; no fresh TTY runs needed, so the pilot parks --needs idle.
