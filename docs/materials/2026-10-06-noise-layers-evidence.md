@@ -297,6 +297,62 @@ and the 1 Hz cadence fits the constant ratio, but no clock trace was taken.
 The noise placement run's damage-case material draw (0.210 ms,
 `2026-10-05-noise-placement-evidence.md`) sits in the later mode.
 
+### Clock attribution experiment (material-f386ae)
+
+Preparation adds opt-in `CAPTURE_GPU_CLOCKS=1` sampling to the shared Tracy
+capture helper. It launches `nvidia-smi` before Tracy, queries UTC timestamp,
+graphics and memory clocks, pstate and power every 100 ms, and reaps the
+sampler when capture finishes or aborts. Sampling is optional because polling
+may affect power state; existing unsampled captures remain available.
+
+`noise-layers-cost.sh none` runs one case. With sampling enabled it subscribes
+to the private compositor's event stream, consumes the initial config state,
+then brackets the first requested config reload until its `ConfigLoaded`
+event. This matters because the action reply precedes the asynchronous reload.
+The corresponding CPU zone supplies a trace-time anchor. The report keeps a
+wall-time interval for the first material draw and every subsequent draw,
+rather than assuming Tracy's program-relative origin is a wall clock.
+
+Each case retains `<case>.gpu-clocks.csv`, sampler stderr in
+`<case>.gpu-clocks.log`, `<case>.clock-anchor.txt`, and
+`<case>.draw-clocks.csv` beside its Tracy and exported CPU/GPU files. Joined
+rows show the last sampled state preceding the draw's earliest possible wall
+time, with the sample timestamp and both draw-time bounds. They are nearby
+observations, not proof of instantaneous clocks. The report refuses an anchor
+wider than 100 ms, missing draw coverage, or sampling gaps above 250 ms.
+The sampler runs on this host's single GPU; interleaved multi-GPU rows fail
+the strictly increasing timestamp check.
+
+The offline one-case rehearsal reached its report and checksum verdict with
+host/build operations substituted. Tests exercise actual capture cleanup on
+normal completion, trace failure, sampler failure and TERM, plus delayed reload
+completion after the initial event burst. A single real NVIDIA query confirmed
+the timestamp and units, including `TZ=UTC`; it was not a cost measurement.
+
+**Hardware verdict: pending.** No clock-to-mode attribution is established yet.
+In a quiet TTY session with the desktop stopped, from the main checkout:
+
+```sh
+cd .worktrees/material-f386ae
+CAPTURE_TASK=material-f386ae CAPTURE_GPU_CLOCKS=1 \
+  OUT="$NIRI_MATERIAL_WORK_ROOT/gpu-clocks-pilot-$(date +%s)" \
+  NOISE_LAYERS_COST_PILOT=1 docs/materials/scripts/noise-layers-cost.sh none
+```
+
+Read the pilot's `metrics.txt`, sampling trace, joined rows and capture verdict
+before extending it. Then run the same case with `NOISE_LAYERS_COST_PILOT=0`
+and a fresh `OUT` for the full 20-step stimulus; the three-step pilot need not
+reach the later mode. Run an unsampled full case with `CAPTURE_GPU_CLOCKS=0`
+in another fresh directory to check whether polling changes the timing split.
+Record each attempt's `run:` note on the task.
+
+Compare the early/later draw-duration split with the raw graphics-clock and
+pstate transitions using the retained uncertainty. Recommend keeping the later
+mode, locking clocks, or excluding startup draws only from that evidence. If no
+clock transition aligns, state that result and investigate timer-query startup
+or prefilter warm-up next. The quiet run can share material-3d48b0's host session;
+it must not run concurrently with that pilot.
+
 Settled glass renders no frames, so these are costs per damaged frame. A
 superseded full run (`noise-layers-cost-full-1791340265`, same shader
 uncommitted) measured within 1 % of these.
