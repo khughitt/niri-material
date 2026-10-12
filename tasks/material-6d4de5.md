@@ -3,8 +3,9 @@ id: material-6d4de5
 title: "Revisit the dynamics: drag, move, focus, flex, ripple"
 status: idea
 priority: 1
+reviewed: true
 created: 2026-09-06T00:32:54Z
-updated: 2026-10-06T18:41:37Z
+updated: 2026-10-12T18:21:13Z
 depends: [prism-66b025]
 parent: material-53f873
 tags: [rendering, dynamics]

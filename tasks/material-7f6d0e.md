@@ -3,8 +3,9 @@ id: material-7f6d0e
 title: Narrowed damage and opaque regions for the material element
 status: idea
 priority: 2
+reviewed: true
 created: 2026-10-06T15:07:38Z
-updated: 2026-10-10T13:46:24Z
+updated: 2026-10-12T18:21:13Z
 depends: []
 parent: material-5d6b2c
 tags: [performance, rendering]

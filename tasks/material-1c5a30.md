@@ -3,8 +3,9 @@ id: material-1c5a30
 title: "Lighting spike: sunrise, lanterns, fireflies, warm organic light"
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-06T22:07:49Z
-updated: 2026-10-06T18:41:53Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-53f873
 tags: [rendering, lighting, spike]

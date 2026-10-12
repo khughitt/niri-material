@@ -3,8 +3,9 @@ id: material-a0cbb0
 title: Lightweight per-frame render-cost counter exposed over IPC
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-11T23:39:09Z
-updated: 2026-09-29T21:43:51Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-5d6b2c
 tags: [performance, ipc]

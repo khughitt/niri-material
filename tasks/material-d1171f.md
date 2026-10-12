@@ -3,8 +3,9 @@ id: material-d1171f
 title: Does backdrop grain clipping lift dark texels under blur?
 status: idea
 priority: 2
+reviewed: true
 created: 2026-10-06T08:56:17Z
-updated: 2026-10-06T20:44:04Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-7ff4bc
 tags: [material, noise]

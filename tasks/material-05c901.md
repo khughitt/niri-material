@@ -3,8 +3,9 @@ id: material-05c901
 title: Layered 3d texture embedded in the glass
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-11T00:47:47Z
-updated: 2026-10-06T20:03:51Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-3aa1f2
 tags: [quick-add, rendering]

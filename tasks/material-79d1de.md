@@ -4,8 +4,9 @@ title: "Source: OSC 9;4 progress and OSC 9/99 notifications"
 status: idea
 priority: 2
 size: s
+reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-11T09:56:45Z
+updated: 2026-10-12T18:21:13Z
 depends: [material-a54d89, material-07bac9, material-9fb9ec]
 parent: material-9b8bf9
 tags: [signals, sources]
