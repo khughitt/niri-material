@@ -7,7 +7,7 @@ size: s
 complexity: high
 process: planned
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-13T09:18:39Z
+updated: 2026-10-13T09:21:20Z
 depends: [material-282edc]
 parent: material-2834d7
 tags: [capture]
@@ -20,3 +20,7 @@ Where to start: docs/notes/2026-10-06-capture-lifecycle-brief.md; tools/capture-
 Bound: Write a reviewed design, then an implementation plan for review. Recommend the smallest numeric outcome record instead of adding an outcome taxonomy. Decide whether it means fixture work, post-restore cleanup or final shell exit; do not call an early zero release a fixture pass. Define first/final write semantics, optional late outcome after an early release, immutable repeated finalization, conflicting reports, shell-status validation, restoration errors, checksum ordering and killed-run unknowns. Retain the existing release return-code and ownership contract; do not infer SIGKILL/OOM status from a recovery timestamp.
 Done: The recording boundary is unambiguous; planned offline checks distinguish pass, fixture failure, signal exit, disturbed release, post-release cleanup/checksum failure, repeated calls and recovery without an observed status. Existing timing and provenance remain truthful. No implementation, long capture or new status taxonomy in this design task.
 Ideas it wakes: On completion, run tasks note on material-e1ef98 with the reviewed decisions, before this result's branch merges; update the brief.
+
+## Notes
+
+- 2026-10-13T09:21:20Z (materials-26.04): Record-commit rollout (ops-0e9b40): finding-note wording migrated to before-branch-merge; automatic record commits are on.
