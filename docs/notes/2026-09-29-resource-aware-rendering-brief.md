@@ -170,7 +170,7 @@ separate from the capture. No global cost threshold is established.
   `material-f86183` remains open for the acceptance follow-ups above.
 - Reuse `material-31074f` — existing P2 cost study, with a wake-up note for
   `material-2ebf2c`, `material-a0cbb0` and `material-a91346`. Completion records
-  findings on each idea in the same commit so a later scope pass can reconsider it.
+  findings on each idea before the result's branch merges so a later scope pass can reconsider it.
 
 Reuse the existing lane and cost study. The only new follow-up is the bounded
 source audit; both rendering ideas remain ideas until its findings readmit them.

@@ -103,7 +103,7 @@ parent and trigger decision; do not create a second content-stage design.
   lane. Its body already requires written spec/plan review, client sampling
   and alpha order, readability, popup/capture coverage, default opaque-pixel
   identity and a later bounded cost check. Its design result records a
-  finding on `material-987655` and `material-7f5751` in the same commit and
+  finding on `material-987655` and `material-7f5751` before the result's branch merges and
   updates both this brief and the
   [optics brief](2026-10-06-glass-optics-brief.md).
 - `material-987655` remains briefed; no parallel desaturation design or

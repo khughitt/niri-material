@@ -118,7 +118,7 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
   Written spec and plan reviews precede code. Default behavior, termination,
   refocus, policy, visibility and neutral-client checks must be explicit;
   keeping current behavior remains an acceptable verdict. Completion updates
-  this brief and wakes the original idea with a finding note in the same commit.
+  this brief and wakes the original idea with a finding note before the result's branch merges.
   Open/move/resize glints remain in the idea's preserved body, outside this
   first design. No host capture or rendering implementation ran in this pass.
 - Reuse the existing lane; no new goal or animation subsystem. Historical

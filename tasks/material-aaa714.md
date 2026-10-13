@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-06T20:44:05Z
-updated: 2026-10-06T21:17:05Z
+updated: 2026-10-13T09:18:39Z
 depends: []
 parent: material-7ff4bc
 tags: [harness, rendering]
@@ -23,7 +23,7 @@ Bound: One deterministic flat-field study using the existing in-process GLES fix
 
 Expected result: Record signed per-channel means, spread, code-value distributions, repeats and resolution limits, reference assumptions and which cause is supported or remains unknown. Use raw code values as well as grey spread so a DC/channel bias is not called residual grain. Define a check that distinguishes a supported mechanism from blur rounding. Report a recommendation (retain documented 8-bit behavior or scope a format/clamp design) with unknown visual acceptance and memory/driver-support costs explicit; no wider-format implementation is authorized by the measurement. Reuse material-674d4e for owner judgement of the backdrop site's look. Run just test-one -p niri <focused-filter> then just test-fast for fixture changes, and update this task and the brief. This is a pixel/control study, not a quiet-host benchmark.
 
-Ideas it wakes: On completion, run tasks note on material-d1171f with the findings in the same commit as this result.
+Ideas it wakes: On completion, run tasks note on material-d1171f with the findings before this result's branch merges.
 
 ## Notes
 

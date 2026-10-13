@@ -8,7 +8,7 @@ complexity: high
 process: direct
 needs: [nested]
 created: 2026-10-06T20:44:04Z
-updated: 2026-10-06T20:45:00Z
+updated: 2026-10-13T09:18:39Z
 depends: []
 parent: material-7ff4bc
 tags: [harness, rendering]
@@ -24,4 +24,4 @@ Bound: Preserve timestamp/PID/build/error metadata from existing journals, estab
 
 Expected result: Record a minimal reproducer and the GL caller plus invalid arguments/state when established, or a ranked candidate list with what prevented attribution and the next falsifiable check. Include renderer/driver/build provenance and distinguish current-source facts from the installed 310b4e30 label. The old source tree at that label lacks the new grain pass, so do not attribute the installed symptom to that pass without additional binary provenance. Run a focused check through just test-one for any diagnostic fixture, then just test-fast before its code commit. Update this task and the brief; file a fix only when the cause and check are established.
 
-Ideas it wakes: On completion, run tasks note on material-c8732f with the attribution result in the same commit as this result.
+Ideas it wakes: On completion, run tasks note on material-c8732f with the attribution result before this result's branch merges.

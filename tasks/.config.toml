@@ -11,3 +11,6 @@ exclusive = false
 [needs.owner]
 meaning = "The owner supplies or judges an image."
 exclusive = false
+
+[git]
+commit = true
