@@ -4,8 +4,9 @@ title: Explore material treatment for Noctalia bars and panels
 status: idea
 priority: 2
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-12T10:50:31Z
+updated: 2026-10-14T10:42:23Z
 depends: []
+parent: material-55380c
 tags: []
 source: "mindful:thought:d6cae16e5bd867ec390c14ab866e7619"
 agent: codex
