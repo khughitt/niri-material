@@ -1,13 +1,15 @@
 ---
 id: material-8867aa
 title: Aperiodic backdrop for the parameter sweep
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-09-07T00:03:24Z
-updated: 2026-10-06T19:24:25Z
+updated: 2026-10-14T11:09:01Z
+started: 2026-10-14T11:09:01Z
 depends: []
 parent: material-49871a
 tags: [harness, rendering]
@@ -33,3 +35,5 @@ glass-parameter-sweep.sh paints a 20px grid backdrop. material-48dc76's thicknes
 - 2026-10-02T00:54:22Z (materials-26.04): Consumer: src/tests/ring_look.rs (accepted_ring_look) renders over flat gray, so refraction of the backdrop never shows in the accepted-look reference. An aperiodic backdrop there would let it cover edge refraction (material-be611b) too.
 - 2026-10-06T17:27:19Z (material-bb8480): material-bb8480 (2026-10-06): reuse its artifact rather than a separate backdrop. 'warp-calibration.py backdrop <png>' writes the calibrated field (aperiodic-s20260929, 1280x720, seed and octaves in a tEXt chunk); it has no repeat within the 24 px search and reads a 20 px shift exactly, where the grid refuses every pixel. Keep grid20 available by name so earlier sweep tables stay comparable, and record the backdrop name in each run's provenance. Open choice for this task: colour. The PNG is grey because tinting it by the grid's quadrant colours clips the bright quadrants, which the estimator flags as unfittable.
 - 2026-10-06T19:24:24Z (materials-26.04): scope: scoped; adopt the calibrated grayscale backdrop as an explicit sweep option; retain grid20 default and color-sensitive stimulus, preserve table-only provenance and historical tables; P2 small mid direct; brief: docs/notes/2026-09-29-glass-measurement-brief.md
+- 2026-10-14T11:09:01Z (materials-26.04): started
+  provenance: {"harness_session":"codex:01a13a0f-0b09-76c1-9caa-44ef073664ab","harness_session_source":"CODEX_THREAD_ID"}
