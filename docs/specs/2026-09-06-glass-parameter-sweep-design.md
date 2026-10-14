@@ -1,6 +1,6 @@
 # Glass parameter sweep script: design
 
-**Status:** implemented on branch `harness/glass-parameter-sweep`; `ior`
+**Status:** implemented; named backdrops added under `material-8867aa`. `ior`
 evidence in
 [`2026-09-06-glass-parameter-sweep-evidence.md`](../materials/2026-09-06-glass-parameter-sweep-evidence.md).
 
@@ -51,9 +51,14 @@ Env vars, following the model script's style:
 | `BLOCK` | yes | `glass` or `blur` — which KDL block receives the key |
 | `KEY` | yes | KDL key, e.g. `ior`, `thickness`, `noise` |
 | `VALUES` | yes | two or more whitespace-separated values, ascending |
+| `BACKDROP` | no | `grid20` (default) or `aperiodic-s20260929`; ignored by `TABLE_ONLY` |
 | `ROI_BEVEL` | no | override the derived bevel-ring crop |
 | `ROI_FACE` | no | override the derived face-interior crop |
 | `TABLE_ONLY` | no | `1` to recompute the table from captures already in `OUT` |
+
+Capture mode refuses an `OUT` containing `cap-*.png` before overwriting run
+artifacts, so a failed rerun cannot attach new provenance to retained captures.
+Use a fresh directory for another capture run, or `TABLE_ONLY=1` to rebuild a table.
 
 The caller supplies the values rather than a range and a count. Ranges worth
 sweeping are rarely uniform — refraction wants density near 1.4 to 1.7 and a
@@ -107,12 +112,22 @@ different parameters and the table records which was swept.
 
 ### Scene
 
-The backdrop is a generated high-frequency pattern (a grid over color patches),
-not the model script's three flat color bars: a flat field shows a bent ray
-landing on the same color it started from.
+The default `BACKDROP=grid20` preserves the original 20 px grid over color
+patches, including its generator. A flat field shows a bent ray landing on the
+same color it started from. The periodic grid also aliases displacement in
+RMSE: a shift by a whole period can look unchanged. Keep it for comparison
+with historical sweeps and for color-sensitive keys.
 
-The grid is periodic. That is fine for RMSE, which does not care, and wrong for
-template matching, which slides by exactly one period — see the bending note.
+`BACKDROP=aperiodic-s20260929` calls `warp-calibration.py backdrop` with seed
+`20260929` to produce the calibrated 1280x720 grayscale field. See the
+[calibration evidence](../materials/2026-10-06-glass-warp-calibration-evidence.md#backdrop-for-the-sweep).
+It is not colorized: that would clip its bright regions and change the
+calibrated stimulus. Both glass and blur `saturation` sweeps reject this
+grayscale stimulus before capture; use `grid20`. Unknown names also fail before
+launching a compositor.
+
+Removing the grid's period does not make aperiodic RMSE a monotonic measure of
+displacement or proof of bending. It remains regional image change.
 
 Glass values are pinned in the script and recorded in the evidence document.
 They are not derived from a generated `prism.kdl`: that file drifts (`ior` moved
@@ -285,6 +300,13 @@ be recomputed with different metrics without re-running the harness.
 
 Plus the per-value PNGs, both ROI crops, and the configs. `$OUT/SHA256SUMS`, the
 niri version and the pinned baseline are recorded as the model script does.
+`$OUT/backdrop.json` records the selected name, seed (`null` for the grid),
+generator path and source SHA-256, PNG SHA-256, and ImageMagick version.
+It is written with the generated backdrop before the first compositor starts,
+included in `SHA256SUMS`, and displayed above the table without changing its
+TSV columns. `TABLE_ONLY` reads this retained identity without regenerating the
+backdrop or consulting `BACKDROP` in the current environment. Older captures
+without the record display `Backdrop: unrecorded`; they are never relabelled.
 
 ### Failure
 
