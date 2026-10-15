@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: research/material-ffd61f
 created: 2026-10-06T18:41:37Z
-updated: 2026-10-15T22:15:57Z
+updated: 2026-10-15T22:21:44Z
 started: 2026-10-15T22:07:20Z
 completed: 2026-10-15T22:15:57Z
 depends: []
@@ -36,3 +36,4 @@ Ideas it wakes: On completion, run tasks note on material-1c5a30 and material-f3
   provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T22:15:57Z (research/material-ffd61f): Feasibility traced and one experiment proposed in the dynamics brief: finite overcast-to-sun Aurora transition (envelope on amount/colors on in-place definition change) needs a planned design; static warm preset reusable now; weather cycle deferred to the clock decision. Woke material-1c5a30 and material-f3e4e4 with finding notes and readmitted them to scope.
   provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T22:21:44Z (materials-26.04): review: impl round 1 — verdict: revise; findings: should-fix 3; reviewer: unverified (relayed by user)
