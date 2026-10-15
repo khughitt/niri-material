@@ -45,6 +45,23 @@ workspace reinforces the project being worked on.
 - niri renders layers per output in `Niri::render_layer_normal`
   (`src/niri.rs`), where the layout's active workspace for that output is in
   reach. `MappedLayer` holds no signal or accent state.
+- The compositor binding is feasible (`material-6b1c0b`, source trace at
+  `ae238683`). `Monitor::active_window()` returns the active workspace's
+  active window from layout state, independent of keyboard focus and of
+  which monitor is focused, so an open panel or an unfocused second output
+  keeps its hue. `Niri::update_render_elements` already walks each output's
+  layers with mutable access beside `self.layout`, the same per-frame point
+  where a tile advances its accent crossfade (`Tile::signal_for_frame`).
+  Redraws are already requested: every signal write calls
+  `queue_redraw_all`, and focus, active-window and workspace-switch changes
+  redraw their output. What a layer lacks: a crossfade (the tile's
+  `SignalCrossfade` and `CrossfadePoint` are private to
+  `src/layout/tile.rs`), coverage in `MappedLayer::are_animations_ongoing`
+  (today only `baba-is-float`) so frames continue through a fade, and
+  fingerprint-gated damage on whatever draws the hue. The hold rule needs
+  only `Workspace::windows()` and `get_focus_timestamp()`, and
+  `Monitor::workspace_render_idx()` gives the fractional index a switch
+  blend would follow.
 - The installed shell is Noctalia 5.2.1, a native C++ shell with Luau plugins
   (Prism's and wali's panels declare plugin API 22), not the Quickshell
   version. Its palette is generated from the wallpaper (`[theme] source =
@@ -102,15 +119,23 @@ workspace reinforces the project being worked on.
    a reviewed design for surface footprint, client composition and lifecycle.
    The focused hue fits here: the layer's accent binds to its output's active
    window and `accent-tint` and the crossfade carry it, one optical model in
-   one hue. It adds per-layer accent state and damage on focus changes
-   (`material-6b1c0b` traces both).
+   one hue. The binding belongs inside that design rather than a design of
+   its own: it has no consumer without the layer's drawing and shares its
+   damage and lifecycle. Its smallest change set is a pure per-monitor
+   resolver (hold rule, switch blend) with a layout test, one crossfade per
+   output in `OutputState` so every layer on an output shows the same hue
+   (the tile's crossfade types moved to a shared module), the resolved point
+   passed to `MappedLayer::update_render_elements`, the fade counted in
+   `are_animations_ongoing`, and a layer-rule opt-in.
 3. **Client-side imitation of the glass.** Consider only if the required shape
    is unavailable to the compositor; it introduces a separate optical model.
 4. **Plugin-side hue.** A Noctalia plugin widget, or Prism's panel, streams
    niri's events and colors its own elements with the active window's accent.
    This works at plugin API 22 with no niri change, but it cannot reach
    built-in bar chrome or built-in panels, and the hue sits on the shell
-   rather than in its glass.
+   rather than in its glass. If niri later publishes the per-output resolved
+   hue over IPC, plugins would show the same hue and hold rule as the glass
+   instead of re-deriving them from the event stream.
 
 Prefer the bounded comparison before a renderer extension. No visual choice
 or claim of adequate cohesion has been made. For the hue, the lean is 2 if the
@@ -131,9 +156,9 @@ with none; changes crossfade and follow a workspace switch.
 - If a material pass is needed, can it use a known visible panel rectangle and
   preserve shell behaviour? Source tracing answers the feasibility; design
   follows only if the first comparison justifies it.
-- Can niri bind a layer surface's accent to its output's active window
-  (state, crossfade, damage, workspace switch, overview) without a new optical
-  model? `material-6b1c0b` answers from source tracing.
+- Answered by `material-6b1c0b`: niri can bind a layer surface's accent to
+  its output's active window with existing layout state and redraw triggers;
+  the drawing remains the layer-material design's question.
 - What does a workspace show when its active window has no accent: the last
   agent hue, neutral, or strict focus? Hue only, or also the agent's level? And
   which surfaces follow the hue: bar, panels, launcher, OSDs? The owner
@@ -150,9 +175,8 @@ with none; changes crossfade and follow a workspace switch.
   it. Its completion records the finding here and uses `--no-reviewed` to
   readmit that idea before the result branch merges. Its comparison may add a
   hued arm with a fixed familiar hex in a custom scheme, if that is cheap.
-- `material-6b1c0b` traces the compositor hue binding (P2, small, mid
-  complexity, direct). `material-62347d` depends on it and wakes on its
-  finding.
+- `material-6b1c0b` traced the compositor hue binding (done 2026-10-15; see
+  the evidence above) and readmitted `material-62347d` with its finding.
 - File implementation or renderer design only after the findings; do not add
   a general shell-material framework in this scope pass. A plugin-side probe
   (Alternative 4) waits for the owner's semantics answer.
