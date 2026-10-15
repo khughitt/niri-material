@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-15T18:43:28Z
-updated: 2026-10-15T18:43:28Z
+updated: 2026-10-15T18:46:25Z
 depends: []
 parent: material-f8434f
 tags: [rendering, bug]
@@ -19,3 +19,7 @@ Where to start: docs/notes/2026-10-15-frost-drag-brief.md; src/layout/mod.rs:102
 Bound: frozen-pixel renders only, no host and no fix. Over a high-detail backdrop with backdrop-blur on, compare the glass face of a stationary window with (a) a tiled drag, (b) a floating drag (alpha 1) and (c) a tiled drag with the drag alpha forced to 1 on an unmerged branch; measure high-frequency energy in the face. Also log backdrop_rect for the dragged element to settle the probe's early backdrop_rect.x = 0.994 with an empty ws_rect.
 Expected result: record which case loses frost and the measurements on this task and in the brief. If opacity is the cause, list the look options for the owner (brief, Alternatives) with a recommendation; if not, name the next probe. The 2026-09-01 probe patch (niri-experiments 96033b7) no longer applies to HEAD; port only what the bound needs.
 Ideas it wakes: on completion, run tasks note material-e88df7 --no-reviewed "<finding>" before this result's branch merges.
+
+## Notes
+
+- 2026-10-15T18:46:25Z (materials-26.04): owner decision 2026-10-15: if the drag opacity is confirmed as the cause, keep the glass opaque during the drag (brief alternative 1). Implementation lean: material tiles skip INTERACTIVE_MOVE_ALPHA (alpha 1, no alpha offscreen), with the drag jelly as the move cue; content-only fade through the material pass is the rejected alternative unless the owner asks for it. Case (c), the tiled drag at alpha 1, is therefore also the fix candidate: report whether it keeps the frost equal to a stationary window's.
