@@ -101,6 +101,33 @@ const INTERACTIVE_MOVE_START_THRESHOLD: f64 = 256. * 256.;
 /// Opacity of interactively moved tiles targeting the scrolling layout.
 const INTERACTIVE_MOVE_ALPHA: f64 = 0.75;
 
+/// Fades an interactively moved tile as it starts targeting the scrolling layout.
+///
+/// A tile with a material stays opaque instead: below alpha 1 the sharp scene behind it shows
+/// through its frost, and its drag jelly already marks the move.
+fn fade_for_interactive_move<W: LayoutElement>(tile: &mut Tile<W>, config: niri_config::Animation) {
+    if tile.material().is_some() {
+        tile.alpha_animation = None;
+        return;
+    }
+
+    tile.animate_alpha(1., INTERACTIVE_MOVE_ALPHA, config);
+    tile.hold_alpha_animation_after_done();
+}
+
+/// Animates an interactively moved tile back to opaque, if it was faded.
+///
+/// Keyed on the fade itself rather than on the material, which a config reload can change
+/// mid-move.
+fn unfade_after_interactive_move<W: LayoutElement>(
+    tile: &mut Tile<W>,
+    config: niri_config::Animation,
+) {
+    if tile.alpha_animation.is_some() {
+        tile.animate_alpha(INTERACTIVE_MOVE_ALPHA, 1., config);
+    }
+}
+
 /// Amount of touchpad movement to toggle the overview.
 const OVERVIEW_GESTURE_MOVEMENT: f64 = 300.;
 
@@ -3241,9 +3268,8 @@ impl<W: LayoutElement> Layout<W> {
                     win.request_size_once(size, true);
 
                     // Animate the tile back to opaque.
-                    move_.tile.animate_alpha(
-                        INTERACTIVE_MOVE_ALPHA,
-                        1.,
+                    unfade_after_interactive_move(
+                        &mut move_.tile,
                         self.options.animations.window_movement.0,
                     );
 
@@ -3253,12 +3279,10 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 } else {
                     // Animate the tile back to semitransparent.
-                    move_.tile.animate_alpha(
-                        1.,
-                        INTERACTIVE_MOVE_ALPHA,
+                    fade_for_interactive_move(
+                        &mut move_.tile,
                         self.options.animations.window_movement.0,
                     );
-                    move_.tile.hold_alpha_animation_after_done();
                 }
 
                 return;
@@ -4080,12 +4104,7 @@ impl<W: LayoutElement> Layout<W> {
                     }
                 } else {
                     // Animate to semitransparent.
-                    tile.animate_alpha(
-                        1.,
-                        INTERACTIVE_MOVE_ALPHA,
-                        self.options.animations.window_movement.0,
-                    );
-                    tile.hold_alpha_animation_after_done();
+                    fade_for_interactive_move(&mut tile, self.options.animations.window_movement.0);
                 }
 
                 let mut data = InteractiveMoveData {
@@ -4236,9 +4255,8 @@ impl<W: LayoutElement> Layout<W> {
             }
 
             // Also animate the tile back to opaque.
-            move_.tile.animate_alpha(
-                INTERACTIVE_MOVE_ALPHA,
-                1.,
+            unfade_after_interactive_move(
+                &mut move_.tile,
                 self.options.animations.window_movement.0,
             );
         }
@@ -4435,6 +4453,25 @@ impl<W: LayoutElement> Layout<W> {
                 );
             }
         }
+    }
+
+    /// The moving tile's window rectangle on its output, and its drag alpha: `None` when the
+    /// tile carries no alpha animation and so draws directly, without the alpha offscreen.
+    #[cfg(test)]
+    pub fn interactive_move_window_rect(&self) -> Option<(Rectangle<f64, Logical>, Option<f64>)> {
+        let Some(InteractiveMoveState::Moving(move_)) = &self.interactive_move else {
+            return None;
+        };
+        let loc = move_.tile_render_location(1.) + move_.tile.window_loc();
+        let alpha = move_
+            .tile
+            .alpha_animation
+            .as_ref()
+            .map(|a| a.anim.clamped_value());
+        Some((
+            Rectangle::new(loc, move_.tile.animated_window_size()),
+            alpha,
+        ))
     }
 
     pub fn interactive_move_is_moving_above_output(&self, output: &Output) -> bool {

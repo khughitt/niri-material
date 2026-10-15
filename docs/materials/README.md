@@ -131,10 +131,11 @@ physical observations, reproducing every accepted steady-state metric exactly.
 Daily-driver deployment and burn-in passed 2026-08-30 against `52f74f10`, with
 the package, Prism ownership handoff, two cold starts, journal review, and
 operator PASS recorded in `2026-08-28-v1-daily-driver-rollout-design.md`.
-The accepted burn-in also exposed an open cosmetic defect: an interactively
-dragged window loses frost while stationary windows reading the same texture do
-not. The investigation is narrowed to sampling geometry and remains active in
-`2026-08-29-material-backdrop-blur-design.md`.
+The accepted burn-in also exposed a cosmetic defect: an interactively dragged
+window lost its frost while stationary windows reading the same texture did not.
+The cause was the tiled drag's 0.75 opacity, not sampling geometry; a window
+with a material now stays opaque while dragged (`material-e88df7`, recorded in
+`2026-08-29-material-backdrop-blur-design.md`).
 
 Global blur noise and saturation compose in native glass at `7c702e58` when
 backdrop blur is effective. Nested GLES acceptance is recorded in
