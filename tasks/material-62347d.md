@@ -3,9 +3,8 @@ id: material-62347d
 title: Explore material treatment for Noctalia bars and panels
 status: idea
 priority: 2
-reviewed: true
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-15T22:20:43Z
+updated: 2026-10-15T22:26:11Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
@@ -21,3 +20,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 
 - 2026-10-14T10:42:33Z (materials-26.04): scope: briefed; layer rules and MappedLayer have background effects but no material pass at d9914514; representative panel geometry and alpha remain unknown; first compare existing effects before renderer design; waits on material-e27dbc under material-55380c; brief: docs/notes/2026-10-14-noctalia-material-brief.md
 - 2026-10-15T22:20:43Z (materials-26.04): scope: briefed; owner added focused-hue linkage (shell surfaces follow the active agent terminal's familiar accent); evidence: accent already on niri IPC (Window.signal, Workspace.active_window_id), Noctalia 5.2.1 plugins can color their own UI from niri's event stream but cannot write the palette; filed material-6b1c0b for the compositor binding and now wait on it and material-e27dbc; brief: docs/notes/2026-10-14-noctalia-material-brief.md
+- 2026-10-15T22:26:11Z (research/material-6b1c0b): material-6b1c0b finding: niri can bind a layer surface's accent to its output's active window with existing layout state and redraw triggers (Monitor::active_window holds under panel keyboard focus); a layer needs a per-output crossfade, animation coverage and fingerprinted damage; the binding belongs inside a layer-material design. The drawing still waits on material-e27dbc's comparison.
