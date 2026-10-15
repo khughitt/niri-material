@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 10
+# ops-check version 11
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -16,7 +16,9 @@ exits 2 when it cannot run at all.
   since Markdown wraps freely a reference opening a line takes the prefix from the end
   of the line above; a `just recipe` must be a recipe in the justfile. Fenced and indented code is not
   scanned. A destination or an example is written without backticks. A missing path git
-  ignores is still a finding, worded as unbuilt: run `just setup` or its producer first.
+  ignores is still a finding, worded as unbuilt: make `just setup` produce it, or write
+  it without backticks. From a linked worktree, one that only the main checkout has
+  (its .worktrees) is named as such: setup cannot produce it there.
 - Conflicted copies: no tracked path may be a Dropbox conflicted copy.
 - Agent scratch: no tracked path may lie under a `.agents/` directory. The global ignore
   keeps one out of `git add`; only `git add -f` gets past it, and only the index shows that.
@@ -252,6 +254,12 @@ def project_prefix(before, previous):
     return found.group(0) if found else None
 
 
+def main_checkout(root):
+    """The main worktree of the repository at root, resolved; None outside git."""
+    listing = git(root, "worktree", "list", "--porcelain")
+    return pathlib.Path(listing.splitlines()[0].removeprefix("worktree ")).resolve() if listing else None
+
+
 def basenames_of(root):
     return {pathlib.PurePosixPath(f).name for f in tracked(root)}
 
@@ -285,11 +293,16 @@ def references(root, projects, basenames, doc):
                 continue
             if (base / token).exists():
                 continue
-            if git(base, "check-ignore", "-q", token) is not None:
-                yield doc, number, (f"`{token}` is git-ignored{where} and was not produced: "
-                                    "run `just setup` (or its producer) first")
-            else:
+            if git(base, "check-ignore", "-q", token) is None:
                 yield doc, number, f"`{token}` does not exist{where}"
+                continue
+            main = main_checkout(base)
+            if main is not None and main != base.resolve() and (main / token).exists():
+                yield doc, number, (f"`{token}` is git-ignored{where} and exists only in the main checkout,"
+                                    " not this worktree: write it without backticks")
+            else:
+                yield doc, number, (f"`{token}` is git-ignored{where} and was not produced: "
+                                    "make `just setup` produce it, or write it without backticks")
         previous = line
 
 
