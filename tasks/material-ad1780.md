@@ -3,9 +3,11 @@ id: material-ad1780
 title: Focused glass edges render opaque while unfocused edges stay transparent (glass6)
 status: todo
 priority: 2
-size: s
+size: xs
+complexity: low
+process: direct
 created: 2026-10-02T19:21:48Z
-updated: 2026-10-09T23:32:48Z
+updated: 2026-10-15T18:31:40Z
 depends: []
 parent: material-6062fd
 tags: [quick-add]
@@ -13,7 +15,13 @@ source: "mindful:thought:6258221f80b07e869303a0449ee939cc"
 agent: claude-code/claude-opus-5-5
 ---
 
-With the glass6 setting, unfocused window edges look right (transparent, with fringing) but focused edges look opaque. Find the cause (tint distance or color, or something else) and keep the edge's dynamic range when focused. Near: material-be611b (realistic edges), material-48b514 (edge tint).
+Why: the owner's report (mindful thought:6258221f80b07e869303a0449ee939cc, 2026-10-02): with the glass6 setting, unfocused window edges look right (transparent, with fringing) but focused edges look opaque. Asked: what causes it (tint distance or colour, or something else), and how to keep the edge's dynamic range when focused. Near: material-be611b (realistic edges), material-48b514 (edge tint, done).
+
+Established (2026-10-09, notes below; do not re-derive): not a tint colour. Stage 4's attenuation path h / -t.z is physically right (the refracted ray exits the back), but at the active look's thickness/attenuation-distance ratio of about 3.5 the whole bevel transmits about 2e-4, while the inactive look's ratio of about 1.7 still passes light. What real dark glass has and the model lacks is piped light at the rim. The fix is the edge-light term in material-f72d5c (source: this task), which follows the spike material-ac926f.
+
+Remaining: this task is the owner's acceptance of that fix. Once material-f72d5c lands, render the glass6 looks focused and unfocused and have the owner judge whether the focused edge keeps its dynamic range. If material-f72d5c is abandoned or does not restore it, the remaining lever is the active look's thickness/attenuation-distance ratio, which is a Prism look decision for the owner: file it then rather than here.
+
+Done: the owner's verdict recorded on this task, and either the symptom closed or a follow-up filed for the ratio lever.
 
 ## Notes
 
