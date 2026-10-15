@@ -58,10 +58,18 @@ workspace reinforces the project being worked on.
   `SignalCrossfade` and `CrossfadePoint` are private to
   `src/layout/tile.rs`), coverage in `MappedLayer::are_animations_ongoing`
   (today only `baba-is-float`) so frames continue through a fade, and
-  fingerprint-gated damage on whatever draws the hue. The hold rule needs
-  only `Workspace::windows()` and `get_focus_timestamp()`, and
+  fingerprint-gated damage on whatever draws the hue.
   `Monitor::workspace_render_idx()` gives the fractional index a switch
   blend would follow.
+- Focus timestamps cannot carry a hold rule (brief review, 2026-10-15).
+  `get_focus_timestamp()` is the window switcher's recency stamp: on a
+  keyboard focus change it is written only after `recent-windows {
+  debounce-ms }` (default 750) passes without focus moving on, or at once on
+  keyboard input (`src/niri.rs` focus handling, `mru_apply_keyboard_commit`).
+  After agent A, a brief visit to agent B, then a browser, B's stamp is
+  still older than A's, so a timestamp rule holds A's hue; the rule would
+  also shift whenever the switcher's debounce is retuned. A hold needs its
+  own per-workspace record of active-window changes.
 - The installed shell is Noctalia 5.2.1, a native C++ shell with Luau plugins
   (Prism's and wali's panels declare plugin API 22), not the Quickshell
   version. Its palette is generated from the wallpaper (`[theme] source =
@@ -110,41 +118,61 @@ workspace reinforces the project being worked on.
 
 ## Alternatives
 
+Two choices, made separately. The comparison chooses the optical treatment;
+the focused hue needs a delivery route whichever treatment it chooses, so
+"existing effects are sufficient" settles the optics, not the hue.
+
+Optical treatment:
+
 1. **Existing layer effects plus Noctalia styling (current first experiment).**
    Test one panel with matched tint, transparency, blur and geometry. This is
-   the smallest way to find out which cues supply cohesion. It cannot follow a
-   hue: layer effects have no tint and the palette is static.
+   the smallest way to find out which cues supply cohesion. On its own it
+   cannot follow a hue: layer effects have no tint and the palette is static.
 2. **Opt-in material rendering for layer surfaces.** Reuse the window material
    system if the comparison needs its slab, edge or interior optics. This needs
    a reviewed design for surface footprint, client composition and lifecycle.
-   The focused hue fits here: the layer's accent binds to its output's active
-   window and `accent-tint` and the crossfade carry it, one optical model in
-   one hue. The binding belongs inside that design rather than a design of
-   its own: it has no consumer without the layer's drawing and shares its
-   damage and lifecycle. Its smallest change set is a pure per-monitor
-   resolver (hold rule, switch blend) with a layout test, one crossfade per
-   output in `OutputState` so every layer on an output shows the same hue
-   (the tile's crossfade types moved to a shared module), the resolved point
-   passed to `MappedLayer::update_render_elements`, the fade counted in
-   `are_animations_ongoing`, and a layer-rule opt-in.
 3. **Client-side imitation of the glass.** Consider only if the required shape
    is unavailable to the compositor; it introduces a separate optical model.
-4. **Plugin-side hue.** A Noctalia plugin widget, or Prism's panel, streams
-   niri's events and colors its own elements with the active window's accent.
-   This works at plugin API 22 with no niri change, but it cannot reach
-   built-in bar chrome or built-in panels, and the hue sits on the shell
-   rather than in its glass. If niri later publishes the per-output resolved
-   hue over IPC, plugins would show the same hue and hold rule as the glass
-   instead of re-deriving them from the event stream.
+
+Hue delivery:
+
+- **A. Compositor tint under the client.** niri tints the layer's backdrop
+  with the bound accent, beneath the client's translucent background: a tint
+  term beside the existing background effects if 1 wins, `accent-tint` if 2
+  wins. It shows only where the client background is translucent, the same
+  limit as every compositor effect. It is the only route to built-in bar
+  chrome and built-in panels: Noctalia 5.2.1 and 5.3.0 give plugins no
+  palette write. The binding's smallest change set: a pure per-monitor
+  resolver (hold record, switch blend) with a layout test; one crossfade per
+  output in `OutputState`, so every layer on an output shows the same hue
+  (the tile's crossfade types moved to a shared module); the resolved point
+  passed to `MappedLayer::update_render_elements`; the fade counted in
+  `are_animations_ongoing`; and a layer-rule opt-in.
+- **B. Plugin-side hue.** A Noctalia plugin widget, or Prism's panel, streams
+  niri's events and colors its own elements with the active window's accent.
+  This works at plugin API 22 with no niri change, but it cannot reach
+  built-in bar chrome or built-in panels, and the hue sits on the shell
+  rather than in its glass. If niri later publishes the per-output resolved
+  hue over IPC, plugins would show the same hue and hold rule as the glass
+  instead of re-deriving them from the event stream.
+- **C. A Noctalia runtime palette override.** A non-persisted override of the
+  palette roles would recolor built-in chrome client-side. Neither 5.2.1 nor
+  5.3.0 has one; it would be an upstream feature, and proposing it is the
+  owner's action.
 
 Prefer the bounded comparison before a renderer extension. No visual choice
-or claim of adequate cohesion has been made. For the hue, the lean is 2 if the
-comparison justifies a layer material, with 4 as a cheap early look at whether
-a hued shell reads as cohesive. The semantics lean, for the owner to confirm:
-hue only (level, motion and impulses stay on the window); an output shows its
-active workspace's project hue, held while a non-agent window is active there
-(the most recently active window with an accent) and neutral on a workspace
-with none; changes crossfade and follow a workspace switch.
+or claim of adequate cohesion has been made. For the hue, the lean is A,
+carried by whichever optical treatment the comparison picks, with B as a
+cheap early look at whether a hued shell reads as cohesive. The semantics
+lean, for the owner to confirm: hue only (level, motion and impulses stay on
+the window); an output shows its active workspace's project hue; while a
+window without an accent is active there, the workspace holds the hue of
+the last accented window that settled as its active window, and shows
+neutral when it has none; changes crossfade and follow a workspace switch.
+A window settles once it stays active for a dwell the binding owns, not the
+window switcher's debounce, recorded when the workspace's active window
+changes: keyboard navigation through a column on the way elsewhere does not
+recolor the shell.
 
 ## Unanswered questions
 
@@ -152,16 +180,19 @@ with none; changes crossfade and follow a workspace switch.
   expose? The feasibility follow-up answers from Noctalia source/configuration
   and, if available, a nested instance.
 - Do existing effects supply enough cohesion, or are slab optics essential?
-  The owner judges a labelled comparison after that follow-up.
+  The owner judges a labelled comparison after that follow-up. That verdict
+  picks the optical treatment only; hue delivery follows either way.
 - If a material pass is needed, can it use a known visible panel rectangle and
   preserve shell behaviour? Source tracing answers the feasibility; design
   follows only if the first comparison justifies it.
 - Answered by `material-6b1c0b`: niri can bind a layer surface's accent to
   its output's active window with existing layout state and redraw triggers;
-  the drawing remains the layer-material design's question.
+  the hold needs its own record, not focus timestamps. The drawing belongs to
+  the hue-delivery design, whichever optical treatment wins.
 - What does a workspace show when its active window has no accent: the last
-  agent hue, neutral, or strict focus? Hue only, or also the agent's level? And
-  which surfaces follow the hue: bar, panels, launcher, OSDs? The owner
+  agent hue, neutral, or strict focus? Does a brief visit count, or only a
+  window that stays active for a dwell? Hue only, or also the agent's level?
+  And which surfaces follow the hue: bar, panels, launcher, OSDs? The owner
   decides, after the static comparison; the lean is above.
 
 ## Proposed decomposition
@@ -176,7 +207,11 @@ with none; changes crossfade and follow a workspace switch.
   readmit that idea before the result branch merges. Its comparison may add a
   hued arm with a fixed familiar hex in a custom scheme, if that is cheap.
 - `material-6b1c0b` traced the compositor hue binding (done 2026-10-15; see
-  the evidence above) and readmitted `material-62347d` with its finding.
+  the evidence above) and readmitted `material-62347d` with its finding. Its
+  recommendation to fold the binding into a layer-material design is
+  superseded: after the comparison, the hue-delivery design (A plus the
+  binding) follows whichever optical treatment wins, unless the owner drops
+  the hue requirement.
 - File implementation or renderer design only after the findings; do not add
   a general shell-material framework in this scope pass. A plugin-side probe
   (Alternative 4) waits for the owner's semantics answer.
