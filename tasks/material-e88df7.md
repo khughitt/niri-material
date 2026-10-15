@@ -1,14 +1,15 @@
 ---
 id: material-e88df7
 title: Fix frost loss during interactive material-window drag
-status: todo
+status: doing
 priority: 3
 size: s
 complexity: low
 process: direct
-owner: debug/overview-drag-frost
+owner: materials-26.04
 created: 2026-09-01T14:35:48Z
-updated: 2026-10-15T19:05:55Z
+updated: 2026-10-15T19:19:26Z
+started: 2026-10-15T19:19:26Z
 depends: [material-5d92cb]
 parent: material-f8434f
 tags: [migration, bug]
@@ -34,3 +35,5 @@ Obsolete from the 2026-09 acceptance: removing FROSTDBG instrumentation (none re
 - 2026-10-15T18:46:15Z (materials-26.04): owner decision 2026-10-15: if the drag opacity is confirmed as the cause, keep the glass opaque during the drag (brief alternative 1). Implementation lean: material tiles skip INTERACTIVE_MOVE_ALPHA (alpha 1, no alpha offscreen), with the drag jelly as the move cue; content-only fade through the material pass is the rejected alternative unless the owner asks for it.
 - 2026-10-15T19:05:16Z (materials-26.04): finding (material-5d92cb, 2026-10-15): confirmed, the drag opacity is the cause, not a sampling coordinate. A tiled drag composites the tile at 0.75, so a quarter of the sharp scene shows through: face energy 1.15 = 0.25 x bare checker 4.61, against 0.00 for a floating drag, a tiled drag forced to alpha 1, and every stationary window. Sampling and the alpha offscreen are correct (alpha-1 tiled drag byte-identical to a floating drag at the same place). Branch research/material-5d92cb 1c98e1cf; brief result section.
 - 2026-10-15T19:05:55Z (materials-26.04): scope: scoped; research material-5d92cb confirmed the drag opacity (not sampling) and the owner chose opaque glass during drag; body rewritten as the fix (material tiles keep alpha 1 for the whole move, port frost_drag.rs as the regression check, drop the stale known-limitation comment and design-doc conclusion); FROSTDBG removal and probe-patch port dropped as obsolete, live verification replaced by the frozen check; s, low, direct; priority unchanged (P3)
+- 2026-10-15T19:19:26Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:373349ad-abc0-4809-b4f1-5b4a032cb269","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
