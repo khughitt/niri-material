@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-15T18:41:32Z
+updated: 2026-10-15T18:42:09Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
@@ -31,3 +31,4 @@ Ideas it wakes: on completion, run tasks note --no-reviewed on material-2ebf2c, 
 - 2026-09-29T21:44:30Z (materials-26.04): Scope handoff: docs/notes/2026-09-29-resource-aware-rendering-brief.md. Reuse this existing per-element and focused/unfocused measurement task for material-2ebf2c, material-a0cbb0 and material-a91346; no duplicate cost study. Alongside measured cost, record the repeated-capture noise floor, which inactive settings save whole-scene work (including shared blur/prefilter caches), and what quantities a continuous consumer actually needs before recommending GPU queries or quality tiers. Ideas it wakes: On completion, run tasks note on material-2ebf2c, material-a0cbb0 and material-a91346 with the relevant findings, in the same commit as this result, and update the brief.
 - 2026-09-29T22:56:49Z (materials-26.04): Additional scope handoff: docs/notes/2026-09-29-adaptive-materials-brief.md. Reuse the existing interaction measurements for material-0c7eed; report which joint parameter effects are supported by repeatable evidence and which remain unknown. Cost sensitivity does not establish visual preference or an innate good region. Ideas it wakes: On completion, run tasks note on material-0c7eed with the finding in the same commit as this result, alongside the previously named waiting ideas, and update the adaptive-materials brief.
 - 2026-10-02T23:47:23Z (materials-26.04): workstreams: when taken up, split preparation (capture matrix, script, pilot definition; no host) from the quiet measurement run, so the preparation is not held behind the quiet queue. Preset estimates must account for shared blur/prefilter caches and interactions, not sum per-effect prices.
+- 2026-10-15T18:42:09Z (materials-26.04): scope: rescoped; premises checked at 2dd3b9fa: capture protocol, Tracy GPU spans and cost-script pattern hold, no work started, no per-parameter sweep or noise floor measured, no whole-preset estimator design anywhere (only 'not summed per-effect prices'); decomposed per the 2026-10-02 note into material-0df22c (design + no-host prep, planned, high) and material-864f87 (quiet pilot + matrix, quiet+nested); quiet moved to the run; this task is the closeout (s, mid, direct); wake edges added from material-2ebf2c, material-a0cbb0, material-a91346, material-0c7eed; priority unchanged
