@@ -1,15 +1,16 @@
 ---
 id: material-ffd61f
 title: Determine the smallest organic-light experiment using existing optics
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
 process: direct
 owner: research/material-ffd61f-r1
 created: 2026-10-06T18:41:37Z
-updated: 2026-10-15T22:31:53Z
+updated: 2026-10-15T22:32:11Z
 started: 2026-10-15T22:07:20Z
+completed: 2026-10-15T22:32:11Z
 depends: []
 parent: material-53f873
 tags: [lighting]
@@ -42,3 +43,7 @@ Ideas it wakes: On completion, run tasks note on material-1c5a30 and material-f3
   provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T22:29:56Z (research/material-ffd61f-r1): review: impl round 2 — verdict: revise; findings: Important 1, Minor 4; reviewer: claude-code
 - 2026-10-15T22:31:53Z (research/material-ffd61f-r1): review: impl round 3 — verdict: accept; findings: Minor 2; reviewer: claude-code
+- 2026-10-15T22:32:11Z (research/material-ffd61f-r1): done
+  provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T22:32:11Z (research/material-ffd61f-r1): Review rounds 1-3 addressed in the dynamics brief: frame-request (tile are_animations_ongoing) checks for every scene, idle (S6/S7) and motion-policy (S8/S9) scenes with drift-hz 4, D measured from the last trigger, defined overcast/sun controls, and real-time 25 fps clips for judging 3/6/12 s pacing. Recommendation unchanged.
+  provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
