@@ -70,9 +70,11 @@ burn-in.
 
 These apply if the opacity is confirmed as the cause.
 
-1. **Keep the glass opaque during the drag (current lean).** Apply the drag
-   alpha to the window content only, or draw material tiles at alpha 1 and
-   signal the drag another way.
+1. **Keep the glass opaque during the drag (chosen by the owner,
+   2026-10-15).** The implementation lean is that material tiles skip the
+   drag alpha: they are drawn at alpha 1 with no alpha offscreen, and the drag
+   jelly remains the move cue. The rejected alternative fades only the window
+   content, through a new content alpha in the material pass.
    - Gains: the frost is kept, and the glass reads as one object.
    - Costs: the drag cue changes for material windows only.
 2. **Keep 0.75 and accept the see-through glass.** This is today's
@@ -85,13 +87,16 @@ These apply if the opacity is confirmed as the cause.
 
 - **Is the opacity the cause?** `material-5d92cb` answers it with frozen
   renders: a tiled drag, a floating drag, and a tiled drag at alpha 1.
-- **What should a dragged glass window look like?** The owner decides, from
-  the options above, once the cause is confirmed.
+- **What should a dragged glass window look like?** Answered by the owner on
+  2026-10-15: keep the glass opaque during the drag (alternative 1). This
+  applies once `material-5d92cb` confirms the opacity as the cause.
 
 ## Proposed decomposition
 
 - `material-f8434f`: the goal.
 - `material-5d92cb`: the research (P3, direct, no host). It wakes
   `material-e88df7`.
-- `material-e88df7` returns to idea and waits on `material-5d92cb`. It is
-  re-scoped as the fix once the owner has chosen a look.
+- `material-e88df7` returns to idea and waits on `material-5d92cb`. If the
+  research confirms the opacity, it is scoped directly as the fix in
+  alternative 1. Case (c) of the research, a tiled drag at alpha 1, is the
+  fix candidate.
