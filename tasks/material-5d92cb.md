@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-10-15T18:43:28Z
-updated: 2026-10-15T19:03:37Z
+updated: 2026-10-15T19:04:13Z
 started: 2026-10-15T18:50:03Z
 depends: []
 parent: material-f8434f
@@ -28,3 +28,4 @@ Ideas it wakes: on completion, run tasks note material-e88df7 --no-reviewed "<fi
 - 2026-10-15T18:50:03Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:077e797e-8917-4b97-b869-2d1f82fdabfc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T19:03:37Z (materials-26.04): attached: frost-drag-evidence.png (60557 bytes)
+- 2026-10-15T19:04:13Z (materials-26.04): result 2026-10-15: confirmed, the drag opacity is the cause. Frozen headless renders (branch research/material-5d92cb, 1c98e1cf, base c13f470f), two frosted windows over a 16 px checker placed within the backdrop, frost measured as mean |luma - 3x3 mean| inside the face: stationary 0.00 in every case; tiled drag at alpha 0.75 1.15 (bare checker there 4.61, 0.25 x 4.61 = 1.15); floating drag (alpha 1, direct) 0.00; tiled drag forced to alpha 1 (still through the alpha offscreen) 0.00. Pixelwise, tiled = 0.75 x tiled-at-alpha-1 + 0.25 x bare wallpaper to worst 0.5, mean 0.33 of 8 bits; tiled-at-alpha-1 vs floating at the same place is byte-identical. So sampling is right and the alpha offscreen is harmless; only the 0.75 composite lets the sharp scene through. The dragged element's backdrop_rect equals its position over the backdrop size in every frame, including the first (geo 649,191 then 860,380 on 1280x720); the probe's early backdrop_rect.x = 0.994 did not reproduce on a single output and stays unexplained (multi-output or the drag's start point on the host are untested). Reproduce: in .worktrees/material-5d92cb, FROST_DRAG_LOG=1 FROST_DRAG_DUMP=<dir> just test-one -p niri --no-capture drag_opacity_versus_sampling_geometry
