@@ -28,8 +28,34 @@ workspace reinforces the project being worked on.
   noise and saturation, and no tint.
 - Read-only `niri msg --json layers` on 2026-10-14 reported
   `noctalia-bar-default` on the top layer and `noctalia-wallpaper` on the
-  background layer. No Noctalia panel was open; its namespace, surface geometry
-  and transparency are unverified.
+  background layer. No Noctalia panel was open then.
+- Surfaces, from the Noctalia v5.2.1 source and a nested instance
+  (`material-e27dbc`, 2026-10-15):
+
+  | Surface | Namespace, layer | Buffer vs visible body | Background | Blur request |
+  | --- | --- | --- | --- | --- |
+  | Bar | `noctalia-bar-<name>` (`-default` here), top | larger: full width less `margin_ends`, plus shadow pad and corner flare; input is the bar rectangle | `surface` × `[bar.<name>] background_opacity` (live 0.70, a settings override of the config's 0.93) | `ext-background-effect` in the bar's exact shape while `compositor_blur` is on (default) |
+  | Attached panel: control center, wallpaper, session, and plugin panels with `placement = "attached"` (Prism's) | `noctalia-attached-panel`, the bar's layer, exclusive keyboard | padded 26 px each side and 16 px below; overlaps the bar by 1 px; input is the body | `surface` × the **bar's** opacity | always: the body, concave at the bar |
+  | Floating panel: launcher, clipboard, polkit, plugin panels by default | `noctalia-panel`, top or overlay (the launcher is overlay) | padded 14 px, 16 px below; input is the body | `surface` × `[shell.panel] transparency_mode`: solid 1.0, soft 0.80, glass 0.55 (live: glass) | always: the rounded body |
+  | OSD, toasts, dock | `noctalia-osd`, `noctalia-notification`, `noctalia-dock` | card plus padding | own `background_opacity` (defaults 0.97, 0.97, 0.88) | yes: rounded cards |
+
+  Every open panel adds a full-output, transparent
+  `noctalia-panel-click-shield` beneath it. Corners and shadows are drawn
+  client-side, and no surface sets an opaque region. The nested listing
+  matched the source: the bar and the control center (`noctalia-attached-panel`)
+  on top, the launcher (`noctalia-panel`) on overlay.
+- The live niri config already matches these namespaces with
+  `background-effect { xray false; }`, so the bar and panels get real blur in
+  the client's exact shape today. Layer effects can add noise and saturation
+  to it; nothing in them reads as a slab.
+- The nested comparison (`docs/materials/scripts/noctalia-surfaces.sh`; its
+  sheet is attached to `material-e27dbc`) sets the live baseline against a
+  treated case: every panel at 0.55, panel corners at the windows' 20 px, and
+  the glass's noise 0.03 and saturation 0.95 on the shell's blur. Over the
+  dark glass terminal and the wallpaper's dark upper half the change is
+  small: bar pixels move by 5 to 10 levels, while the corners now visibly
+  match the windows. Bevel, refraction, edge light, ring and hue are absent
+  from both.
 - The original capture is
   `mindful:thought:d6cae16e5bd867ec390c14ab866e7619`: use material on bar,
   panel and other Noctalia surfaces for cohesion. It links the `familiar`
@@ -86,10 +112,15 @@ workspace reinforces the project being worked on.
 ## Constraints
 
 - Keep wallpaper and unrelated shell surfaces outside the first treatment.
-- Establish the actual panel's namespace, buffer extent, alpha and background
-  painting before choosing a shader footprint; a surface rectangle may contain
-  empty space around the visible panel. Compositor effects cannot be assumed
-  visible through an opaque client background.
+- Bar and panel buffers carry padding, shadow and flare around the visible
+  body. A shader footprint follows the shape Noctalia already sends through
+  `ext-background-effect`, not the buffer.
+- Anything niri draws under a Noctalia surface (blur, slab or tint) shows
+  through only (1 − opacity) of it: 0.30 behind the bar and attached panels at
+  live settings, 0.45 behind floating glass panels. Built-in panels offer only
+  solid, soft and glass (1.0, 0.80, 0.55), and attached panels follow the bar.
+  On the live desktop the bar's opacity sits in Noctalia's settings layer,
+  which overrides `config.toml`, so a rollout changes it there.
 - Preserve client text, input regions, exclusive zones, popup placement,
   output scaling, capture blocking and damage behaviour. Any renderer design
   must follow `docs/materials/render-pipeline.md`.
@@ -176,15 +207,18 @@ recolor the shell.
 
 ## Unanswered questions
 
-- Which panel offers a small, representative target, and what does its surface
-  expose? The feasibility follow-up answers from Noctalia source/configuration
-  and, if available, a nested instance.
+- Answered by `material-e27dbc`: the control center is the representative
+  panel. It shares `noctalia-attached-panel` with Prism's panel and every
+  attached plugin panel, and takes the bar's opacity, so the bar and attached
+  panels are one treatment; the launcher (`noctalia-panel`) stands for the
+  floating panels.
 - Do existing effects supply enough cohesion, or are slab optics essential?
-  The owner judges a labelled comparison after that follow-up. That verdict
-  picks the optical treatment only; hue delivery follows either way.
-- If a material pass is needed, can it use a known visible panel rectangle and
-  preserve shell behaviour? Source tracing answers the feasibility; design
-  follows only if the first comparison justifies it.
+  The owner judges the attached sheet (cells A1 to B3). That verdict picks the
+  optical treatment only; hue delivery follows either way.
+- Answered by `material-e27dbc`: a material pass can use the visible body.
+  Noctalia sends its exact shape through `ext-background-effect`, and drawing
+  only beneath the client leaves text, input regions, exclusive zones and
+  popups to Noctalia.
 - Answered by `material-6b1c0b`: niri can bind a layer surface's accent to
   its output's active window with existing layout state and redraw triggers;
   the hold needs its own record, not focus timestamps. The drawing belongs to
@@ -201,11 +235,13 @@ recolor the shell.
   surface and an experiment the owner can judge.
 - `material-55380c` is the child goal within the existing material-composition
   lane `material-3aa1f2`.
-- `material-e27dbc` identifies one panel and specifies the smallest comparison
-  (P2, small, mid complexity, direct, `nested`). `material-62347d` depends on
-  it. Its completion records the finding here and uses `--no-reviewed` to
-  readmit that idea before the result branch merges. Its comparison may add a
-  hued arm with a fixed familiar hex in a custom scheme, if that is cheap.
+- `material-e27dbc` identified the panel, ran the comparison nested and
+  attached its sheet (done 2026-10-15; see the evidence above). It added no
+  hued arm: Noctalia's generated palette uses token names (`surface`) while a
+  custom palette takes `mSurface`-style keys, so the arm needed a transcoded
+  palette, and it would only have previewed client-side tinting, not
+  Alternative A. Next, the owner judges the sheet's cells A1 to B3 and answers
+  the hue questions above; the design follows that verdict.
 - `material-6b1c0b` traced the compositor hue binding (done 2026-10-15; see
   the evidence above) and readmitted `material-62347d` with its finding. Its
   recommendation to fold the binding into a layer-material design is
