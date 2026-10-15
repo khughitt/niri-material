@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: research/material-6b1c0b
 created: 2026-10-15T22:20:17Z
-updated: 2026-10-15T22:25:07Z
+updated: 2026-10-15T22:26:06Z
 started: 2026-10-15T22:22:12Z
 depends: []
 parent: material-55380c
@@ -29,3 +29,4 @@ Ideas it wakes: On completion, run `tasks note material-62347d --no-reviewed "<f
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T22:25:07Z (research/material-6b1c0b): resumed
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T22:26:06Z (research/material-6b1c0b): finding: feasible. Monitor::active_window() (active workspace's active window, independent of keyboard and monitor focus) is reachable in Niri::update_render_elements beside each output's layers; signal writes queue_redraw_all and focus/active-window/workspace-switch changes already redraw. A layer needs a crossfade (tile's SignalCrossfade/CrossfadePoint are private to src/layout/tile.rs; one per output in OutputState recommended), coverage in MappedLayer::are_animations_ongoing, and fingerprint-gated damage. Hold rule from Workspace::windows() + get_focus_timestamp(); switch blend from Monitor::workspace_render_idx(). Recommendation: the binding belongs inside the layer-material design, not its own. No headless test: the evidence is structural and the is-focused/is-active split is documented in Configuration:-Window-Rules.md.
