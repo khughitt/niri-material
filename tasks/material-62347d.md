@@ -5,7 +5,7 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-14T10:42:33Z
+updated: 2026-10-15T22:20:33Z
 depends: [material-e27dbc]
 parent: material-55380c
 tags: []
@@ -14,6 +14,8 @@ agent: codex
 ---
 
 Explore applying the existing material treatment to other Noctalia surfaces, including the bar and panels, to improve visual cohesion. Identify suitable surfaces and integration constraints during scoping; the capture asks for cohesion without settling the visual treatment or implementation.
+
+Owner addition (2026-10-15): beyond a static variant of the material, the shell surfaces should follow the hue of the workspace's active coding-agent terminal, the familiar identity hue its glass already carries, so the whole workspace, not only the terminal, reinforces the project being worked on. The brief's "focused hue" material frames the routes and the semantics left for the owner.
 
 ## Notes
 
