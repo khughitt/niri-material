@@ -6,8 +6,9 @@ priority: 2
 size: xs
 complexity: low
 process: direct
+needs: [owner]
 created: 2026-10-02T19:21:48Z
-updated: 2026-10-15T18:31:40Z
+updated: 2026-10-15T18:31:45Z
 depends: []
 parent: material-6062fd
 tags: [quick-add]
