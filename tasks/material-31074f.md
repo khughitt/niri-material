@@ -6,9 +6,8 @@ priority: 2
 size: s
 complexity: mid
 process: direct
-needs: [quiet]
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-15T18:41:27Z
+updated: 2026-10-15T18:41:32Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
