@@ -8,7 +8,7 @@ complexity: low
 process: direct
 needs: [owner]
 created: 2026-10-02T19:21:48Z
-updated: 2026-10-15T18:31:50Z
+updated: 2026-10-15T18:31:55Z
 depends: [material-f72d5c]
 parent: material-6062fd
 tags: [quick-add]
@@ -28,3 +28,4 @@ Done: the owner's verdict recorded on this task, and either the symptom closed o
 
 - 2026-10-09T23:29:33Z (materials-26.04): Cause found 2026-10-09: not a tint colour but the attenuation path on the bevel. rayPath = h / max(-t.z, 0.25) lengthens the path as the structural normal tilts, cancelling the height-field thinning; at the active look's thickness/attenuation-distance ratio 3.5 the whole bevel transmits ~2e-4, while the inactive look's ratio 1.7 still passes light. Fix candidate: clip the attenuation path at the slab's side wall (light near the silhouette exits through the side), which brightens the edge toward the rim without lightening the face. Spiked and then implemented under the sibling tasks filed today.
 - 2026-10-09T23:32:48Z (materials-26.04): Correction 2026-10-09: the path formula is right (the refracted ray exits the back). The real gap is piped light at the rim; the candidate is the edge-light term in material-f72d5c. The thickness/attenuation ratio finding stands.
+- 2026-10-15T18:31:55Z (materials-26.04): scope: rescoped; cause established 2026-10-09 (active look thickness/attenuation ratio ~3.5 vs ~1.7, missing piped rim light), fix owned by material-f72d5c (todo, after spike material-ac926f, doing on spike/material-ac926f); narrowed to the owner's acceptance after f72d5c, dep added; size xs, complexity low, process direct, need owner; priority unchanged
