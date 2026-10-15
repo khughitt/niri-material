@@ -3,17 +3,27 @@ id: material-e88df7
 title: Fix frost loss during interactive material-window drag
 status: todo
 priority: 3
-size: m
-complexity: high
+size: s
+complexity: low
+process: direct
 owner: debug/overview-drag-frost
 created: 2026-09-01T14:35:48Z
-updated: 2026-10-15T19:05:45Z
+updated: 2026-10-15T19:05:50Z
 depends: [material-5d92cb]
 parent: material-f8434f
 tags: [migration, bug]
 ---
 
-Outcome: frosted backdrop sampling remains visually stable while a material window is interactively dragged between workspaces in overview and normal scrolling. Acceptance evidence: remove temporary FROSTDBG instrumentation; add the smallest runnable regression check for the corrected sampling geometry; pass the source-neutral Rust gates; and record a focused live verification showing the dragged and stationary elements retain equivalent frost without fallback, sharp-texture selection, or sampling-coordinate divergence. Sources: docs/materials/2026-08-29-material-backdrop-blur-design.md and the preserved debug/overview-drag-frost five-file diff. Uncertainty: four probe rounds isolate the fault to sampling geometry passed to two elements reading identical blurred textures, but the exact bad coordinate or scale is not yet identified.
+Why: a material window dragged by interactive move loses its frost from the moment the insert hint appears until the drag ends, in overview and the normal view. Established by material-5d92cb (2026-10-15, notes below; do not re-derive): a tiled drag animates the tile to INTERACTIVE_MOVE_ALPHA = 0.75 and composites it through the alpha offscreen, so a quarter of the sharp scene shows through the blurred glass. Sampling and the offscreen are correct; at alpha 1 the dragged glass is byte-identical to a floating drag. The owner chose (2026-10-15) to keep the glass opaque during the drag. Brief: docs/notes/2026-10-15-frost-drag-brief.md (alternative 1).
+
+Done:
+- A tile with a material (Tile::material() is Some, src/layout/tile.rs ~:2694) keeps alpha 1 for the whole interactive move: no drag-alpha animation and no alpha offscreen. The drag jelly remains the move cue. Windows without a material keep 0.75.
+- Every drag-alpha site follows: the tiled move's start (src/layout/mod.rs, the animate_alpha to INTERACTIVE_MOVE_ALPHA after Starting becomes Moving), the floating/tiled target toggles (~:3245, ~:3258) and the drag end (~:4240). Keep the floating-tile invariant check (~:2464) passing.
+- Regression check: port src/tests/frost_drag.rs from branch research/material-5d92cb (1c98e1cf) without its research hooks (FORCE_OPAQUE_DRAG, the mapping log). A tiled drag of a material window renders byte-identical to the same window dragged floating at the same place, and its face carries no checker energy; a window without a material still drags at 0.75. The test fails if the drag alpha returns.
+- Docs: drop the 'Known limitation' paragraph on background_mapping (src/render_helpers/material/mod.rs ~:53-60), and correct the conclusion in docs/materials/2026-08-29-material-backdrop-blur-design.md (~:80, 'the divergence is entirely in the sampling geometry') with a pointer to the brief's result.
+- just test-fast is green.
+
+Obsolete from the 2026-09 acceptance: removing FROSTDBG instrumentation (none remains) and porting the 2026-09-01 probe patch (niri-experiments 96033b7, no longer applies). The frozen regression check replaces the live verification: the cause is a deterministic composite, which the frozen render measures directly.
 
 ## Notes
 
