@@ -1,15 +1,16 @@
 ---
 id: material-e88df7
 title: Fix frost loss during interactive material-window drag
-status: doing
+status: done
 priority: 3
 size: s
 complexity: low
 process: direct
 owner: fix/material-e88df7
 created: 2026-09-01T14:35:48Z
-updated: 2026-10-15T19:19:44Z
+updated: 2026-10-15T19:31:14Z
 started: 2026-10-15T19:19:26Z
+completed: 2026-10-15T19:31:14Z
 depends: [material-5d92cb]
 parent: material-f8434f
 tags: [migration, bug]
@@ -38,4 +39,8 @@ Obsolete from the 2026-09 acceptance: removing FROSTDBG instrumentation (none re
 - 2026-10-15T19:19:26Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:373349ad-abc0-4809-b4f1-5b4a032cb269","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T19:19:44Z (fix/material-e88df7): resumed
+  provenance: {"harness_session":"claude-code:373349ad-abc0-4809-b4f1-5b4a032cb269","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T19:31:14Z (fix/material-e88df7): done
+  provenance: {"harness_session":"claude-code:373349ad-abc0-4809-b4f1-5b4a032cb269","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T19:31:14Z (fix/material-e88df7): Material tiles keep alpha 1 for the whole interactive move (no fade, no alpha offscreen; unfade keyed on the fade so a mid-move reload still lands opaque); non-material windows still drag at 0.75. src/tests/frost_drag.rs: tiled glass drag has no drag alpha, face energy < 0.05 over a > 4 bare checker, byte-identical to a floating drag; plain window drags at 0.75; RED confirmed with the fade restored. Stale known-limitation comment dropped; design doc and materials README corrected. test-fast 548/548, just check green. c805ab6e
   provenance: {"harness_session":"claude-code:373349ad-abc0-4809-b4f1-5b4a032cb269","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
