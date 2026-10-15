@@ -6,9 +6,8 @@ priority: 2
 size: m
 complexity: mid
 process: direct
-needs: [quiet]
 created: 2026-09-06T22:27:52Z
-updated: 2026-10-15T18:40:09Z
+updated: 2026-10-15T18:40:14Z
 depends: [material-397fcb]
 parent: material-3aa1f2
 tags: [material, rendering]
