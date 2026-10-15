@@ -122,13 +122,14 @@ transitions, so it waits on this look and on the clock decision.
   is the only time-varying term. Deterministic checks:
   - Endpoints (S1–S5): the frame before the first trigger equals the overcast
     control, and the frame at the end equals the sun control byte for byte;
-    S4's equals the overcast control. S6–S9 drift, so they compare Aurora
-    amount and color uniforms instead of bytes.
+    S4's equals the overcast control. S6–S9 use `drift-hz 4`, so they compare
+    Aurora amount and color uniforms instead of bytes.
   - Frame requests (every scene, S6 and S7 included): unchanged pixels do not
     prove quiescence, since crossfades request frames through
-    `are_animations_ongoing`, not optic deadlines. That must be true on every
-    visible frame before the end, false from the end on, and false while S5's
-    slab is out of view. A fade whose frames came from optic deadlines would
+    `are_animations_ongoing`, not optic deadlines. The tile's predicate (not
+    the layout's, which S5's reveal switch holds) must be true on every
+    visible frame from the first trigger until the end, false before the
+    trigger and from the end on, and false while S5's slab is out of view. A fade whose frames came from optic deadlines would
     stop requesting them at S6's and S7's idle edge and fail here.
   - Settling (every scene but S8): from the end on, no material deadline arms
     and the fingerprint is constant. S8 keeps input active, so its drift goes
