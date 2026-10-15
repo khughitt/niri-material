@@ -4,7 +4,7 @@ title: Explore material treatment for Noctalia bars and panels
 status: idea
 priority: 2
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-15T22:53:06Z
+updated: 2026-10-15T22:55:01Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
@@ -22,3 +22,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-15T22:20:43Z (materials-26.04): scope: briefed; owner added focused-hue linkage (shell surfaces follow the active agent terminal's familiar accent); evidence: accent already on niri IPC (Window.signal, Workspace.active_window_id), Noctalia 5.2.1 plugins can color their own UI from niri's event stream but cannot write the palette; filed material-6b1c0b for the compositor binding and now wait on it and material-e27dbc; brief: docs/notes/2026-10-14-noctalia-material-brief.md
 - 2026-10-15T22:26:11Z (research/material-6b1c0b): material-6b1c0b finding: niri can bind a layer surface's accent to its output's active window with existing layout state and redraw triggers (Monitor::active_window holds under panel keyboard focus); a layer needs a per-output crossfade, animation coverage and fingerprinted damage; the binding belongs inside a layer-material design. The drawing still waits on material-e27dbc's comparison.
 - 2026-10-15T22:53:06Z (materials-26.04): review: brief round 1 — verdict: revise; findings: should-fix 2; reviewer: unverified (pasted by the owner)
+- 2026-10-15T22:55:01Z (docs/noctalia-brief-review): brief revised after review round 1: optical treatment (comparison) and hue delivery are separate choices; a compositor tint under the client's translucent background is the only route to built-in chrome at Noctalia 5.2.1/5.3.0; the hold uses a per-workspace record of settled active windows, not focus timestamps
