@@ -8,7 +8,7 @@ complexity: high
 reviewed: true
 owner: debug/overview-drag-frost
 created: 2026-09-01T14:35:48Z
-updated: 2026-10-15T18:44:19Z
+updated: 2026-10-15T18:46:15Z
 depends: [material-5d92cb]
 parent: material-f8434f
 tags: [migration, bug]
@@ -22,3 +22,4 @@ Outcome: frosted backdrop sampling remains visually stable while a material wind
 - 2026-09-01T23:39:15Z (materials-26.04): Instrumentation preserved as niri-experiments fixtures/frost-drag-probe.patch (commit 96033b7, branch results/slice3, pushed). Verified to apply cleanly against materials-26.04 aa0a66be with git apply. The debug/overview-drag-frost worktree and branch are retired; resume by applying that patch.
 - 2026-09-12T19:24:33Z (materials-26.04): Complexity high: Four probe rounds isolate per-element sampling geometry but do not identify the bad coordinate or scale. Resolving drag/workspace transforms and proving equivalent sampling remains subtle rendering investigation despite a potentially small fix.
 - 2026-10-15T18:44:19Z (materials-26.04): scope: briefed; premise 'fault in sampling geometry' contested at 2dd3b9fa: no coordinate change since the probes and none visible in code, but a tiled drag alone draws through the alpha offscreen at INTERACTIVE_MOVE_ALPHA 0.75, letting the sharp scene through; probe patch (niri-experiments 96033b7) no longer applies and no FROSTDBG remains; returned to idea under new goal material-f8434f, waits on research material-5d92cb (frozen renders, no host); fix needs the owner's choice of dragged-glass look; brief: docs/notes/2026-10-15-frost-drag-brief.md
+- 2026-10-15T18:46:15Z (materials-26.04): owner decision 2026-10-15: if the drag opacity is confirmed as the cause, keep the glass opaque during the drag (brief alternative 1). Implementation lean: material tiles skip INTERACTIVE_MOVE_ALPHA (alpha 1, no alpha offscreen), with the drag jelly as the move cue; content-only fade through the material pass is the rejected alternative unless the owner asks for it.
