@@ -85,18 +85,46 @@ These apply if the opacity is confirmed as the cause.
 
 ## Unanswered questions
 
-- **Is the opacity the cause?** `material-5d92cb` answers it with frozen
-  renders: a tiled drag, a floating drag, and a tiled drag at alpha 1.
+- **Is the opacity the cause?** Answered on 2026-10-15 by `material-5d92cb`:
+  yes. See the research result below.
 - **What should a dragged glass window look like?** Answered by the owner on
   2026-10-15: keep the glass opaque during the drag (alternative 1). This
   applies once `material-5d92cb` confirms the opacity as the cause.
+
+## Research result (`material-5d92cb`)
+
+The test renders frozen headless frames of two frosted windows over a 16 px
+checker placed within the backdrop, the host's wallpaper setup. One window is
+dragged to the same spot in every case. Frost is measured as high-frequency
+energy inside the glass face (mean |luma − 3×3 mean|). The code is on the
+unmerged branch `research/material-5d92cb` (`1c98e1cf`), and the evidence
+image is attached to the task.
+
+| Case | Dragged face | Stationary face |
+| --- | --- | --- |
+| At rest | 0.00 | 0.00 |
+| Tiled drag, opacity 0.75 | 1.15 | 0.00 |
+| Floating drag, opacity 1 | 0.00 | 0.00 |
+| Tiled drag, opacity forced to 1 | 0.00 | 0.00 |
+| Bare checker at that spot, for reference | 4.61 | — |
+
+- **The opacity is the cause.** 1.15 is 0.25 × 4.61. Pixel by pixel, the
+  tiled drag equals 0.75 × the opacity-1 render plus 0.25 × the bare
+  wallpaper, to within 0.5 of an 8-bit level (mean 0.33).
+- **Sampling and the offscreen are correct.** The opacity-1 tiled drag goes
+  through the alpha offscreen, yet it is byte-identical to the floating drag
+  drawn directly at the same place. The dragged element's `backdrop_rect` is
+  its position divided by the backdrop size in every frame, including the
+  first.
+- **Not reproduced:** the probe's early `backdrop_rect.x` of 0.994 does not
+  occur on a single output. Multiple outputs and the host's drag start point
+  were not tested.
 
 ## Proposed decomposition
 
 - `material-f8434f`: the goal.
 - `material-5d92cb`: the research (P3, direct, no host). It wakes
   `material-e88df7`.
-- `material-e88df7` returns to idea and waits on `material-5d92cb`. If the
-  research confirms the opacity, it is scoped directly as the fix in
-  alternative 1. Case (c) of the research, a tiled drag at alpha 1, is the
-  fix candidate.
+- `material-e88df7` waited on `material-5d92cb`. With the opacity confirmed,
+  it is scoped as the fix in alternative 1: material tiles keep alpha 1 during
+  a drag.
