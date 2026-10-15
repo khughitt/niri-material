@@ -1,13 +1,15 @@
 ---
 id: material-ffd61f
 title: Determine the smallest organic-light experiment using existing optics
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-10-06T18:41:37Z
-updated: 2026-10-13T09:18:39Z
+updated: 2026-10-15T22:07:20Z
+started: 2026-10-15T22:07:20Z
 depends: []
 parent: material-53f873
 tags: [lighting]
@@ -20,3 +22,8 @@ Where to start: docs/notes/2026-09-29-material-dynamics-brief.md; material-1c5a3
 Bound: Trace amount/color/phase and existing response controls end to end. Compare a static warm Aurora preset, one finite event-triggered light transition, and a weather cycle; recommend one smallest experiment and identify its exact missing behavior, if any. Specify trigger, duration, reduced/off motion, hidden/input-idle behavior, pilot scenes and a measured comparison against neutral and static controls. No new renderer, generic animation system, live desktop, capture run, or claim that existing power results price the proposed effect. Do not decide particle geometry or time-of-day transport on behalf of the related ideas.
 Expected result: Record a supported feasibility recommendation and one bounded experiment proposal on this task and in the brief; distinguish a reusable preset from behavior requiring a reviewed design. Leave the chosen look and acceptable ongoing cost to owner judgment at that later artifact review.
 Ideas it wakes: On completion, run tasks note on material-1c5a30 and material-f3e4e4 with the finding, before this result's branch merges.
+
+## Notes
+
+- 2026-10-15T22:07:20Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
