@@ -1,13 +1,13 @@
 ---
 id: material-e88df7
 title: Fix frost loss during interactive material-window drag
-status: idea
+status: todo
 priority: 3
 size: m
 complexity: high
 owner: debug/overview-drag-frost
 created: 2026-09-01T14:35:48Z
-updated: 2026-10-15T19:05:16Z
+updated: 2026-10-15T19:05:45Z
 depends: [material-5d92cb]
 parent: material-f8434f
 tags: [migration, bug]
