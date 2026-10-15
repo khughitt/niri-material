@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: research/material-ffd61f
 created: 2026-10-06T18:41:37Z
-updated: 2026-10-15T22:07:40Z
+updated: 2026-10-15T22:15:04Z
 started: 2026-10-15T22:07:20Z
 depends: []
 parent: material-53f873
@@ -29,3 +29,4 @@ Ideas it wakes: On completion, run tasks note on material-1c5a30 and material-f3
   provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T22:07:40Z (research/material-ffd61f): resumed
   provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T22:15:04Z (research/material-ffd61f): finding: Aurora's amount and colors are per-definition constants (AuroraOptic::values reads ResolvedAurora); only phase moves (fixed ~5 px/s per 600 s lap; drift-hz and reduced motion change step and redraw rate, not speed); no response targets the Aurora stage; in-place edits cut (apply_resolved). A static warm Aurora preset is reusable now (config only); existing finite warm light is the sweep impulse (1.5 s band) and accent-tint (hue only, 400 ms).
