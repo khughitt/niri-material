@@ -1,16 +1,15 @@
 ---
 id: material-ffd61f
 title: Determine the smallest organic-light experiment using existing optics
-status: done
+status: todo
 priority: 2
 size: s
 complexity: mid
 process: direct
 owner: research/material-ffd61f
 created: 2026-10-06T18:41:37Z
-updated: 2026-10-15T22:21:44Z
+updated: 2026-10-15T22:21:49Z
 started: 2026-10-15T22:07:20Z
-completed: 2026-10-15T22:15:57Z
 depends: []
 parent: material-53f873
 tags: [lighting]
