@@ -1,13 +1,15 @@
 ---
 id: material-5d92cb
 title: "Determine whether the drag opacity, not a sampling coordinate, removes the frost from a dragged glass window"
-status: todo
+status: doing
 priority: 3
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-10-15T18:43:28Z
-updated: 2026-10-15T18:46:25Z
+updated: 2026-10-15T18:50:03Z
+started: 2026-10-15T18:50:03Z
 depends: []
 parent: material-f8434f
 tags: [rendering, bug]
@@ -23,3 +25,5 @@ Ideas it wakes: on completion, run tasks note material-e88df7 --no-reviewed "<fi
 ## Notes
 
 - 2026-10-15T18:46:25Z (materials-26.04): owner decision 2026-10-15: if the drag opacity is confirmed as the cause, keep the glass opaque during the drag (brief alternative 1). Implementation lean: material tiles skip INTERACTIVE_MOVE_ALPHA (alpha 1, no alpha offscreen), with the drag jelly as the move cue; content-only fade through the material pass is the rejected alternative unless the owner asks for it. Case (c), the tiled drag at alpha 1, is therefore also the fix candidate: report whether it keeps the frost equal to a stationary window's.
+- 2026-10-15T18:50:03Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:077e797e-8917-4b97-b869-2d1f82fdabfc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
