@@ -5,8 +5,9 @@ status: todo
 priority: 4
 size: xs
 complexity: low
+process: direct
 created: 2026-10-03T11:31:46Z
-updated: 2026-10-03T11:31:46Z
+updated: 2026-10-15T18:31:17Z
 depends: [material-be611b]
 tags: [material]
 agent: claude-code
