@@ -1,4 +1,5 @@
 prefix = "material"
+color = "#d063e5"
 
 [needs.quiet]
 meaning = "An idle host for capture evidence; use a TTY with the desktop stopped when required by the run."
