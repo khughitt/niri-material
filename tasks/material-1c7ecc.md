@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-03T11:31:46Z
-updated: 2026-10-15T18:30:53Z
+updated: 2026-10-15T18:30:58Z
 depends: [material-be611b]
 tags: [rendering, material]
 agent: claude-code
@@ -22,3 +22,7 @@ Open (checked 2026-10-15 against b212c1a0):
 Established, no work: REFLECTION_MOTION_MIN = 38 (calibrated on one GPU) passed on CI's renderer in run 38158694977 (2026-10-11, 477446ff; all 547 niri unit tests ran, 1 ignored, not this one). The rule stands: if a later CI renderer fails it, strengthen the stimulus and recalibrate, never lower the constant.
 
 Done: both renders exist and fail when their effect is removed (profile forced to 1 for item 1; tap displacement zeroed for item 2), GLASS_EDGE_DUMP writes the new cases, just test-fast is green.
+
+## Notes
+
+- 2026-10-15T18:30:58Z (materials-26.04): scope: rescoped; premises checked against b212c1a0: no ring/aurora render at bevel-profile 2 (ring_cap_keeps_one_core at profile 1, k2 cases RING_OFF) and the distorted profile case still on a flat backdrop (patterned_backdrop used only by the reflection test); REFLECTION_MOTION_MIN item answered by CI run 38158694977 (477446ff, passed), kept as a rule; process direct, size/complexity unchanged
