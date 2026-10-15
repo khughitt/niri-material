@@ -93,7 +93,8 @@ transitions, so it waits on this look and on the clock decision.
   impulses (a per-window identity channel; ambient ownership is
   `material-f41c54`'s).
 - **Duration (D):** 6 s on niri's `Animation` (`cubic-bezier 0.42 0 0.58 1`), one
-  `animations` entry and no profile system; the review sheet brackets 3 and 12 s.
+  `animations` entry and no profile system; the review compares 3, 6 and 12 s
+  as timed clips.
 - **Reduced/off motion:** a luminance and hue fade is not motion. Like the
   signal crossfade, it fades under `motion "reduced"` and `"off"`;
   `animations { off }` cuts to the target. The drift keeps its existing table.
@@ -109,15 +110,38 @@ transitions, so it waits on this look and on the clock decision.
   at 0, D/4, D/2, 3D/4, D and D + 1 s. S2: a focused and an unfocused window in
   lockstep beside the resting ring light. S3: an opaque client, bevel band
   only. S4: a reverse change at D/2. S5: a window on another workspace during
-  the change, revealed after D.
-- **Controls and measures:** neutral is `aurora 0` (the accepted look); static
-  is the sun preset. Both arms use `drift-hz 0`, so the transition is the only
-  time-varying term. Deterministic checks: the frame before the trigger equals
-  the overcast control, and the frame at D equals the sun control byte for
-  byte. After D there is no material deadline and the fingerprint is constant.
-  With animations off the first frame is the sun control, and amount 0 at both
-  ends schedules nothing. A later `quiet` run, piloted first and following the
-  cost lane's method, measures material draws and draw time over D against the
+  the change, revealed after D. S6: the change lands while input is already
+  idle. S7: the idle threshold passes at D/2. S8 and S9: S1 under
+  `motion "reduced"` and `"off"`. S6–S9 use `drift-hz 4` at both ends, so the
+  drift's hold and policy are observable beside the fade.
+- **Controls and checks:** neutral is `aurora 0` (the accepted look); static
+  is the sun preset. Outside S6–S9 both arms use `drift-hz 0`, so the
+  transition is the only time-varying term. Deterministic checks:
+  - Endpoints: the frame before the trigger equals the overcast control, and
+    the frame at D equals the sun control byte for byte.
+  - Frame requests: unchanged pixels do not prove quiescence, since crossfades
+    request frames through `are_animations_ongoing`, not optic deadlines.
+    That must be true on every visible frame before D, false from D on, and
+    false while S5's slab is out of view. After D there is also no material
+    deadline and the fingerprint is constant.
+  - Idle: S6 and S7 reach the sun control's amount and colors at D with no
+    input event, and then request nothing. The drift phase holds from the
+    idle edge on and no optic deadline arms. A fade on the paused optic
+    timeline would stay at its start in S6 and fail.
+  - Motion policy: S8's and S9's Aurora amount and color uniforms equal S1's
+    at every sampled time, so both finish at D. The drift steps at half rate
+    in S8 and stays at phase 0 in S9. `animations { off }` reaches the sun
+    control in the first frame and requests no frames.
+  - Neutral: amount 0 at both ends schedules nothing and requests no frames.
+- **Review media:** S1's stills judge appearance only. With one easing curve,
+  frames at the same fractions of D are identical for every D, so pacing is
+  judged on timed clips instead. Each clip renders the deterministic harness
+  at a fixed 30 frames per second of clock time and encodes at 30 fps, so
+  playback runs in real time. There is one clip per D (3, 6 and 12 s), each
+  with 2 s held before and after. The live clip scripts' screenshot bursts,
+  about three a second, are too coarse for this.
+- **Measured cost:** a later `quiet` run, piloted first and following the cost
+  lane's method, measures material draws and draw time over D against the
   static control over the same window. It also checks that settled idle power
   matches the static control within the sham floor. Whether to bucket the
   envelope as `drift-hz` does is a design choice with a measured answer.
