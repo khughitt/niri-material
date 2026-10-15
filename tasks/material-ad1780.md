@@ -8,8 +8,8 @@ complexity: low
 process: direct
 needs: [owner]
 created: 2026-10-02T19:21:48Z
-updated: 2026-10-15T18:31:45Z
-depends: []
+updated: 2026-10-15T18:31:50Z
+depends: [material-f72d5c]
 parent: material-6062fd
 tags: [quick-add]
 source: "mindful:thought:6258221f80b07e869303a0449ee939cc"
