@@ -7,9 +7,9 @@ size: s
 complexity: mid
 process: direct
 needs: [nested]
-owner: materials-26.04
+owner: research/material-e27dbc
 created: 2026-10-14T10:42:18Z
-updated: 2026-10-15T23:26:10Z
+updated: 2026-10-15T23:26:35Z
 started: 2026-10-15T23:26:10Z
 depends: []
 parent: material-55380c
@@ -27,4 +27,6 @@ Ideas it wakes: On completion, run tasks note material-62347d --no-reviewed "<fi
 ## Notes
 
 - 2026-10-15T23:26:10Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T23:26:35Z (research/material-e27dbc): resumed
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
