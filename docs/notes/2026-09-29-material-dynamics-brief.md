@@ -87,14 +87,16 @@ transitions, so it waits on this look and on the clock decision.
   same-named material (config reload, Prism apply). Name swaps keep the
   accepted hard cut (`7f5ee9e2`), `drift-hz` changes cut, and an opening window
   renders resolved values. A change mid-transition starts from the rendered
-  values, as `crossfade_origin` does. Rejected: input resume (it needs dimming
+  values, as `crossfade_origin` does. A change with amount 0 at both ends is
+  invisible and starts nothing. Rejected: input resume (it needs dimming
   at idle, reopening the accepted held phase), focus gain (it competes with the
   ring light, `material-ccda38` and `material-abc08c`), and signal accents or
   impulses (a per-window identity channel; ambient ownership is
   `material-f41c54`'s).
-- **Duration (D):** 6 s on niri's `Animation` (`cubic-bezier 0.42 0 0.58 1`), one
-  `animations` entry and no profile system; the review compares 3, 6 and 12 s
-  as timed clips.
+- **Duration (D):** 6 s from the last trigger on niri's `Animation`
+  (`cubic-bezier 0.42 0 0.58 1`), one `animations` entry and no profile
+  system. The review compares 3, 6 and 12 s as timed clips. "The end" below
+  is D after the last trigger: D in most scenes, 1.5 D in S4.
 - **Reduced/off motion:** a luminance and hue fade is not motion. Like the
   signal crossfade, it fades under `motion "reduced"` and `"off"`;
   `animations { off }` cuts to the target. The drift keeps its existing table.
@@ -114,32 +116,39 @@ transitions, so it waits on this look and on the clock decision.
   idle. S7: the idle threshold passes at D/2. S8 and S9: S1 under
   `motion "reduced"` and `"off"`. S6–S9 use `drift-hz 4` at both ends, so the
   drift's hold and policy are observable beside the fade.
-- **Controls and checks:** neutral is `aurora 0` (the accepted look); static
-  is the sun preset. Outside S6–S9 both arms use `drift-hz 0`, so the
-  transition is the only time-varying term. Deterministic checks:
-  - Endpoints: the frame before the trigger equals the overcast control, and
-    the frame at D equals the sun control byte for byte.
-  - Frame requests: unchanged pixels do not prove quiescence, since crossfades
-    request frames through `are_animations_ongoing`, not optic deadlines.
-    That must be true on every visible frame before D, false from D on, and
-    false while S5's slab is out of view. After D there is also no material
-    deadline and the fingerprint is constant.
-  - Idle: S6 and S7 reach the sun control's amount and colors at D with no
-    input event, and then request nothing. The drift phase holds from the
-    idle edge on and no optic deadline arms. A fade on the paused optic
-    timeline would stay at its start in S6 and fail.
-  - Motion policy: S8's and S9's Aurora amount and color uniforms equal S1's
-    at every sampled time, so both finish at D. The drift steps at half rate
-    in S8 and stays at phase 0 in S9. `animations { off }` reaches the sun
-    control in the first frame and requests no frames.
-  - Neutral: amount 0 at both ends schedules nothing and requests no frames.
+- **Controls and checks:** neutral is `aurora 0` (the accepted look). The
+  overcast and sun controls are the two pilot presets below, rendered with
+  no transition. S1–S5 and the controls use `drift-hz 0`, so the transition
+  is the only time-varying term. Deterministic checks:
+  - Endpoints (S1–S5): the frame before the first trigger equals the overcast
+    control, and the frame at the end equals the sun control byte for byte;
+    S4's equals the overcast control. S6–S9 drift, so they compare Aurora
+    amount and color uniforms instead of bytes.
+  - Frame requests (every scene, S6 and S7 included): unchanged pixels do not
+    prove quiescence, since crossfades request frames through
+    `are_animations_ongoing`, not optic deadlines. That must be true on every
+    visible frame before the end, false from the end on, and false while S5's
+    slab is out of view. A fade whose frames came from optic deadlines would
+    stop requesting them at S6's and S7's idle edge and fail here.
+  - Settling (every scene but S8): from the end on, no material deadline arms
+    and the fingerprint is constant. S8 keeps input active, so its drift goes
+    on stepping at half rate, as accepted.
+  - Idle: S6's and S7's Aurora amount and color uniforms equal S1's at every
+    sampled time, and they reach the sun preset's at the end with no input
+    event. The drift phase holds from the idle edge on. A fade on the paused
+    optic timeline would stay at its start in S6 and fail.
+  - Motion policy: S8's and S9's amount and color uniforms equal S1's at every
+    sampled time. The drift steps at half rate in S8 and stays at phase 0 in
+    S9. `animations { off }` reaches the sun control in the first frame and
+    requests no frames.
+  - Neutral: amount 0 at both ends starts nothing and requests no frames.
 - **Review media:** S1's stills judge appearance only. With one easing curve,
   frames at the same fractions of D are identical for every D, so pacing is
   judged on timed clips instead. Each clip renders the deterministic harness
-  at a fixed 30 frames per second of clock time and encodes at 30 fps, so
-  playback runs in real time. There is one clip per D (3, 6 and 12 s), each
-  with 2 s held before and after. The live clip scripts' screenshot bursts,
-  about three a second, are too coarse for this.
+  at a fixed 25 frames per second of clock time and encodes at 25 fps (an
+  exact 4 cs GIF delay), so playback runs in real time. There is one clip
+  per D (3, 6 and 12 s), each with 2 s held before and after. The live clip
+  scripts' screenshot bursts, about three a second, are too coarse for this.
 - **Measured cost:** a later `quiet` run, piloted first and following the cost
   lane's method, measures material draws and draw time over D against the
   static control over the same window. It also checks that settled idle power
