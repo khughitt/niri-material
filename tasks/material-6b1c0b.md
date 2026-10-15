@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: research/material-6b1c0b
 created: 2026-10-15T22:20:17Z
-updated: 2026-10-15T22:26:16Z
+updated: 2026-10-15T22:54:55Z
 started: 2026-10-15T22:22:12Z
 completed: 2026-10-15T22:26:16Z
 depends: []
@@ -35,3 +35,4 @@ Ideas it wakes: On completion, run `tasks note material-62347d --no-reviewed "<f
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T22:26:16Z (research/material-6b1c0b): Traced the compositor hue binding: feasible with existing layout state and redraw triggers; change set and recommendation recorded in docs/notes/2026-10-14-noctalia-material-brief.md
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-15T22:54:55Z (docs/noctalia-brief-review): correction after brief review round 1: the hold rule cannot use get_focus_timestamp (the MRU stamp, debounced by recent-windows debounce-ms and committed early by keyboard input); it needs its own per-workspace record of active-window changes. The binding's recommendation is superseded: hue delivery (a compositor tint plus this binding) follows whichever optical treatment the comparison picks, not only a layer-material design.
