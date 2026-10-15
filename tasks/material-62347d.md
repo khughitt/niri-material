@@ -5,8 +5,8 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-15T22:20:33Z
-depends: [material-e27dbc]
+updated: 2026-10-15T22:20:38Z
+depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
 source: "mindful:thought:d6cae16e5bd867ec390c14ab866e7619"
