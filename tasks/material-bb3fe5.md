@@ -7,7 +7,7 @@ size: m
 complexity: mid
 process: direct
 created: 2026-09-06T22:27:52Z
-updated: 2026-10-15T18:40:14Z
+updated: 2026-10-15T18:40:19Z
 depends: [material-397fcb]
 parent: material-3aa1f2
 tags: [material, rendering]
@@ -29,3 +29,4 @@ Done when both children are done; this task closes them out.
 
 - 2026-09-11T00:22:25Z (material-f0fc7b): resources/materials/ and its install plumbing landed with material-f0fc7b; ice adds ice.kdl to PKGBUILD package() and both Cargo.toml asset lists
 - 2026-09-12T19:24:31Z (materials-26.04): Complexity mid: Optics design sections 7.1 and 8 define the cracks algorithm, hooks, bounds, preset, and smoke criteria; the optic registry and preset installation pattern exist. Gradient implementation and visual tuning remain bounded choices.
+- 2026-10-15T18:40:19Z (materials-26.04): scope: rescoped; premises checked at 2dd3b9fa: spec §7.1/§8 still open and unsuperseded; changed: PKGBUILD glob (only Cargo.toml lists), specular hook takes Surface, normal hook has no call site yet, pipeline.rs stage + Interaction required, no cellular noise to reuse (~18 hash12), §8 values predate the height-field bevel; decomposed into material-19dd35 (optic+preset, headless, owner sheet) and material-718ec9 (cost smoke, quiet); quiet moved to the cost child; process direct (closeout)
