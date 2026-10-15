@@ -5,10 +5,9 @@ status: idea
 priority: 3
 size: m
 complexity: high
-reviewed: true
 owner: debug/overview-drag-frost
 created: 2026-09-01T14:35:48Z
-updated: 2026-10-15T18:46:15Z
+updated: 2026-10-15T19:05:16Z
 depends: [material-5d92cb]
 parent: material-f8434f
 tags: [migration, bug]
@@ -23,3 +22,4 @@ Outcome: frosted backdrop sampling remains visually stable while a material wind
 - 2026-09-12T19:24:33Z (materials-26.04): Complexity high: Four probe rounds isolate per-element sampling geometry but do not identify the bad coordinate or scale. Resolving drag/workspace transforms and proving equivalent sampling remains subtle rendering investigation despite a potentially small fix.
 - 2026-10-15T18:44:19Z (materials-26.04): scope: briefed; premise 'fault in sampling geometry' contested at 2dd3b9fa: no coordinate change since the probes and none visible in code, but a tiled drag alone draws through the alpha offscreen at INTERACTIVE_MOVE_ALPHA 0.75, letting the sharp scene through; probe patch (niri-experiments 96033b7) no longer applies and no FROSTDBG remains; returned to idea under new goal material-f8434f, waits on research material-5d92cb (frozen renders, no host); fix needs the owner's choice of dragged-glass look; brief: docs/notes/2026-10-15-frost-drag-brief.md
 - 2026-10-15T18:46:15Z (materials-26.04): owner decision 2026-10-15: if the drag opacity is confirmed as the cause, keep the glass opaque during the drag (brief alternative 1). Implementation lean: material tiles skip INTERACTIVE_MOVE_ALPHA (alpha 1, no alpha offscreen), with the drag jelly as the move cue; content-only fade through the material pass is the rejected alternative unless the owner asks for it.
+- 2026-10-15T19:05:16Z (materials-26.04): finding (material-5d92cb, 2026-10-15): confirmed, the drag opacity is the cause, not a sampling coordinate. A tiled drag composites the tile at 0.75, so a quarter of the sharp scene shows through: face energy 1.15 = 0.25 x bare checker 4.61, against 0.00 for a floating drag, a tiled drag forced to alpha 1, and every stationary window. Sampling and the alpha offscreen are correct (alpha-1 tiled drag byte-identical to a floating drag at the same place). Branch research/material-5d92cb 1c98e1cf; brief result section.
