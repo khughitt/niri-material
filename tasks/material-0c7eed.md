@@ -5,8 +5,8 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-12T18:21:13Z
-depends: []
+updated: 2026-10-15T18:42:04Z
+depends: [material-31074f]
 parent: material-0f225e
 tags: [quick-add, adaptive, cross-project]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
