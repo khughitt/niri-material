@@ -1,13 +1,15 @@
 ---
 id: material-5184bf
 title: Rewrite Fixture commit authorship in this repository
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-10-16T20:07:27Z
-updated: 2026-10-16T20:07:38Z
+updated: 2026-10-16T20:07:43Z
+started: 2026-10-16T20:07:43Z
 depends: []
 tags: [git]
 source: git-identity-leak-2026-09-06
@@ -19,3 +21,5 @@ A fixture test written on 2026-09-06 (before tools/test_upstream_report.py gaine
 ## Notes
 
 - 2026-10-16T20:07:38Z (materials-26.04): concerns: ops-5749d9 extension — the t@t inventory searched one identity and missed this repository's repo-local Fixture leak
+- 2026-10-16T20:07:43Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:c27da384-b593-4ec1-ba12-eba1a97de08f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
