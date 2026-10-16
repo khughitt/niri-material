@@ -632,6 +632,11 @@ design is accepted.
     bound only for a tile with a swing running. The identity tests of
     section 8.2 then compare the two variants. The plan carries this as a
     conditional step, not a default.
+  - **Applied (2026-10-16).** The single program cost every rest draw
+    about 0.09 ms (13 %) over the base, so the contingency was applied;
+    with the two variants the rest cases are within the bound
+    ([rigid tilt evidence, Cost](../materials/2026-10-09-rigid-tilt-evidence.md#cost)).
+    The rest program no longer carries the view branch at all.
 - **Cost during a swing.** The general path runs over the enlarged quad for
   at most `settle`. The bracketing runs only on rays that miss the flat
   face, i.e. the bevel band, the wall and the margin around them. Its cost is
