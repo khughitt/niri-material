@@ -1,15 +1,16 @@
 ---
 id: material-03fdf3
 title: Recover the B-spline grain's idle cost on every material draw
-status: doing
+status: done
 priority: 2
 size: s
 complexity: high
 process: direct
 owner: noise-followups
 created: 2026-10-08T04:20:53Z
-updated: 2026-10-08T10:21:54Z
+updated: 2026-10-16T11:44:54Z
 started: 2026-10-08T09:47:10Z
+completed: 2026-10-16T11:44:54Z
 depends: [material-3fcba2]
 parent: material-5d6b2c
 tags: [performance, noise]
@@ -35,3 +36,13 @@ e5edd631's B-spline noise.frag costs every material draw ~0.034 ms (+15%) with n
 - 2026-10-08T10:21:12Z (noise-followups): attached: regs.sh (2084 bytes): Register/instruction count of the material program for a given noise.frag: swaps it into BASE, compiles through the ignored probe test (program_probe.rs) in WT with NVIDIA's disk cache on, decompresses the SASS and reads it with nvdisasm.
 - 2026-10-08T10:21:54Z (noise-followups): parked (waiting on user, quiet; headless, 40 min): Quiet A/B (headless lane, desktop stopped) from .worktrees/noise-followups, W=$NIRI_MATERIAL_WORK_ROOT/noise-idle-variants, AB=$W/niri-tracy-bspline:$W/niri-tracy-hermite:$W/niri-tracy-unified. Pilot: CAPTURE_TASK=material-03fdf3 OUT=$NIRI_MATERIAL_WORK_ROOT/noise-idle-ab-pilot-$(date +%s) NOISE_LAYERS_COST_PILOT=1 NOISE_LAYERS_COST_AB=$AB NOISE_LAYERS_COST_AB_CASES=none docs/materials/scripts/noise-layers-cost.sh (build 5, 8 sub-runs 4). Then full: same with PILOT=0, OUT=...noise-idle-ab-full-..., AB_CASES='none one-fine-1 four-fine-8' (24 sub-runs, ~30). a = candidate (127bce2d, 72 regs), b1 = current B-spline, b2 = Hermite on HEAD, b3 = unified (96 regs). Then: land a if it beats b1 on none and is not dearer on one-fine-1/four-fine-8 (else unified if it is), write the Cost entry in docs/materials/2026-10-06-noise-layers-evidence.md, done, merge noise-followups. Rehearsal passed with CAPTURE_META stubbed; no real-preflight attempt yet.
   provenance: {"harness_session":"claude-code:895d792f-a7ab-466b-afa7-8d313f21a46d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T10:42:54Z (noise-followups): resumed
+  provenance: {"harness_session":"claude-code:45aab597-9132-43ae-af7a-ff9fd44c6248","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T10:53:53Z (noise-followups): run: 10 min (est 9, headless); build 3, load wait 1, preflight 1, sub-runs 9 (geometry + none a/b1/b2/b3 x2) 5; passed (clean release, settles 10.36-10.53 W, display on). Pilot none medians a 0.036352/0.035328, b1 0.040960/0.040960, b2 0.036864/0.037888, b3 0.037888/0.037888 ms. OUT noise-idle-ab-pilot-1792147386. Full next.
+- 2026-10-16T11:01:27Z (noise-followups): run: 4 min (est 30, headless); build 0.5, load wait 0, preflight 1, sub-runs 4 (geometry, none a/b1/b2) 2; refused: settle before none-b3-1, gpu_power_w 17.115 vs baseline 10.39. Idle GPU floor stepped 10.4 -> 17.0 W (P8, 210/405 MHz, no clients, fan held 45% by gpu-fan-curve, which cannot reach nvidia-settings without a Wayland session) and stayed there; same 17 W floor as the 2026-10-07 runs. Completed none medians a 0.2877, b1 0.3246, b2 0.2918 ms (8x the pilot's 0.036: draw mode). OUT noise-idle-ab-full-1792148041. Rerunning with the floor stable at 17 W.
+- 2026-10-16T11:08:33Z (noise-followups): run: 2 min (est 30, headless); build 0.5, preflight 1, sub-runs 2 (geometry, none-a-1) 1; refused: settle before none-b1-1, gpu_power_w 10.39 below baseline 17.125. The idle floor flips between ~10.4 and ~17 W after nested sessions (a 3-min passive sample with no load held 9.7-10.4 W), so a 24-sub-run A/B is unlikely to see one floor throughout; none-a-1 0.2877 ms. OUT noise-idle-ab-full-1792148490. Next: material-f386ae's sampled clocks, then decide.
+- 2026-10-16T11:44:03Z (noise-followups): run: 21 min (est 30, headless); build 0.5, preflight 1, sub-runs 25 19; passed (clean release). none a 0.2867/0.2867, b1 0.3236/0.3246, b2 0.2908/0.2908, b3 0.2918/0.2918; one-fine-1 a 0.3589/0.3594, b1 0.3988/0.3983, b2 0.3676/0.3676, b3 0.3676/0.3676; four-fine-8 a 1.1448/1.1448, b1 1.2513/1.2513, b2 0.7342/0.7347, b3 1.3332/1.3332 ms. a beats b1 on none by 0.037 ms (11.5%) and is cheaper on one-fine-1 and four-fine-8 -> land a (127bce2d). OUT noise-idle-ab-full-1792149757.
+- 2026-10-16T11:44:54Z (noise-followups): done
+  provenance: {"harness_session":"claude-code:45aab597-9132-43ae-af7a-ff9fd44c6248","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T11:44:54Z (noise-followups): Row accumulator 127bce2d lands: same-session A/B noise-idle-ab-full-1792149757 none 0.2867 vs B-spline 0.3241 ms (-11.5%), one-fine-1 0.3592 vs 0.3986, four-fine-8 1.1448 vs 1.2513; Hermite 0.2908/0.3676/0.7345, unified 0.2918/0.3676/1.3332. Cost entry in the noise-layers evidence doc.
+  provenance: {"harness_session":"claude-code:45aab597-9132-43ae-af7a-ff9fd44c6248","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
