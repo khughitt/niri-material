@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: material-f386ae
 created: 2026-10-08T09:13:39Z
-updated: 2026-10-16T11:55:57Z
+updated: 2026-10-16T11:57:19Z
 started: 2026-10-11T10:34:37Z
 completed: 2026-10-16T11:46:10Z
 depends: []
@@ -48,3 +48,4 @@ Done when: the evidence doc's Cost section states whether the mode split lines u
 - 2026-10-16T11:46:10Z (material-f386ae): Mode split is the GPU clock: sampled full run gpu-clocks-full-1792149496 has 16 draws at P0 1815 MHz (0.0410 ms) then 62 at P8 210 MHz (0.3256 ms, ratio 7.9); unsampled control identical (0.324608). Recommend reporting the later mode selected by clock state, not by count; clock locking rejected. Hardware verdict in the noise-layers evidence doc.
   provenance: {"harness_session":"claude-code:45aab597-9132-43ae-af7a-ff9fd44c6248","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-16T11:55:57Z (material-f386ae): review: impl round 1 — verdict: revise; findings: Important 1, Minor 10; reviewer: claude-code
+- 2026-10-16T11:57:19Z (material-f386ae): Round 1 fixes: verdict rewritten (draw cost tracks the graphics clock, ~70k cycles/draw across a 17x memory-clock range; P5 tag is sampling resolution); in-window draw counts throughout (pilot 12, P0 12); control claim narrowed to one timer step with descent effect not ruled out; P0 exit described as observed. Minors 4-10 deferred to material-d2e552.
