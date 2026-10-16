@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-10-16T20:07:27Z
-updated: 2026-10-16T20:07:43Z
+updated: 2026-10-16T20:08:03Z
 started: 2026-10-16T20:07:43Z
 depends: []
 tags: [git]
@@ -23,3 +23,4 @@ A fixture test written on 2026-09-06 (before tools/test_upstream_report.py gaine
 - 2026-10-16T20:07:38Z (materials-26.04): concerns: ops-5749d9 extension — the t@t inventory searched one identity and missed this repository's repo-local Fixture leak
 - 2026-10-16T20:07:43Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:c27da384-b593-4ec1-ba12-eba1a97de08f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T20:08:03Z (materials-26.04): correction: the concerns line above is void — ops-5749d9 is still open, so this is scope added to an open goal, not a concern on closed work
