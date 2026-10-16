@@ -88,4 +88,4 @@ Reuse `forge-e0743c` instead of filing another substrate investigation.
   texture path, recommend one bounded proof and record resource requirements.
   No production optic, asset loader, shared identity vocabulary or live capture.
   Completion updates this brief and adds findings to `material-05c901` and
-  `material-599548` in the same commit. Existing lane and foreign task ownership remain intact.
+  `material-599548` before the result's branch merges. Existing lane and foreign task ownership remain intact.

@@ -3,9 +3,10 @@ id: material-a91346
 title: "Cost-tiered inactive glass: concessions land on unfocused windows first"
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-11T23:39:09Z
-updated: 2026-09-29T21:43:52Z
-depends: []
+updated: 2026-10-15T18:41:59Z
+depends: [material-31074f]
 parent: material-5d6b2c
 tags: [performance, rendering]
 ---

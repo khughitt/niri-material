@@ -3,8 +3,9 @@ id: material-a9a455
 title: "idle-budget fixture: finish its DRM sub-runs in capture.json"
 status: idea
 priority: 2
+reviewed: true
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-06T19:17:33Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-2834d7
 tags: [capture]

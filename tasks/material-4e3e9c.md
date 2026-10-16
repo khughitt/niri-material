@@ -3,8 +3,9 @@ id: material-4e3e9c
 title: "Embed the ring in the glass: refraction, scatter and noise interaction"
 status: idea
 priority: 2
+reviewed: true
 created: 2026-10-02T00:08:50Z
-updated: 2026-10-10T13:42:56Z
+updated: 2026-10-12T18:21:14Z
 depends: [material-be611b]
 parent: material-6062fd
 tags: [rendering, material]

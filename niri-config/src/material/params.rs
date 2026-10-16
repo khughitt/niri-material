@@ -2,10 +2,9 @@
 //!
 //! Design: `docs/specs/2026-09-10-material-optics-design.md` §6.
 
+use super::{Milli, Positive, ResolvedGlass};
 use crate::appearance::Color;
 use crate::FloatOrInt;
-
-use super::{Milli, Positive, ResolvedGlass};
 
 /// The parse-time bounds of a scalar parameter type, as the type declares
 /// them. The docs table and the parser test read these so a range can only
@@ -189,11 +188,10 @@ pub fn all_params() -> Vec<ParamSpec> {
 #[cfg(test)]
 #[allow(clippy::assertions_on_constants)]
 mod tests {
-    use super::*;
     use std::path::Path;
 
-    use crate::material::{Glass, Material};
-    use crate::material::{Milli, Positive};
+    use super::*;
+    use crate::material::{Glass, Material, Milli, Positive};
     use crate::FloatOrInt;
 
     #[test]

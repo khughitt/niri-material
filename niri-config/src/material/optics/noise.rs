@@ -1,5 +1,5 @@
-//! `noise <amount> type=<type> site=<site> scale=<px>`, up to four layers: grain on the shared backdrop,
-//! transmitted backdrop, or encoded glass. Neutral at amount 0.
+//! `noise <amount> type=<type> site=<site> scale=<px>`, up to four layers: grain on the shared
+//! backdrop, transmitted backdrop, or encoded glass. Neutral at amount 0.
 
 use std::str::FromStr;
 

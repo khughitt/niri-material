@@ -3,8 +3,9 @@ id: material-7f5751
 title: "Glue terminal content into the glass: shared film, content depth, halation, sidechain"
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-30T23:27:46Z
-updated: 2026-10-06T18:28:46Z
+updated: 2026-10-12T18:21:14Z
 depends: [material-be611b]
 parent: material-6062fd
 tags: [rendering, material]

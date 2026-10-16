@@ -4,8 +4,9 @@ title: "Glass response: frost-on-idle"
 status: idea
 priority: 2
 size: m
+reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-09-29T21:32:24Z
+updated: 2026-10-12T18:21:14Z
 depends: [material-a54d89]
 parent: material-0a4093
 tags: [signals, rendering]

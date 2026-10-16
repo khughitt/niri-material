@@ -90,8 +90,8 @@ coordinated opt-in content boundary. Keep existing parents and source material.
 
 - `material-f4143a`: P2 / s / mid / direct, child of the existing optics
   lane; depends on the accepted merge of `material-be611b`. It wakes
-  `material-1aa3af` and `material-4e3e9c` with result notes in the same
-  commit. Both remain briefed ideas. Its matched sheet must include the
+  `material-1aa3af` and `material-4e3e9c` with result notes before the result's
+  branch merges. Both remain briefed ideas. Its matched sheet must include the
   live active and inactive looks.
 - `material-ac926f` (spike, parked on the owner) gates `material-f72d5c`
   (edge light, planned) and `material-58a1a1` (resting spill, direct).

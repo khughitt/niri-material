@@ -48,28 +48,28 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-308 paths differ: 52 class B (seam), 212 class A (fork-only), 44 class C (scaffolding).
+313 paths differ: 52 class B (seam), 216 class A (fork-only), 45 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
 | `.githooks/post-checkout` | C | A | +3/-0 |
 | `.githooks/post-commit` | C | A | +3/-0 |
 | `.githooks/post-merge` | C | A | +3/-0 |
-| `.githooks/pre-commit` | C | A | +31/-0 |
+| `.githooks/pre-commit` | C | A | +32/-0 |
 | `.githooks/pre-push` | C | A | +67/-0 |
 | `.github/FUNDING.yml` | B | D | +0/-1 |
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
 | `.github/dependabot.yml` | B | D | +0/-24 |
-| `.github/workflows/ci.yml` | B | M | +25/-2 |
+| `.github/workflows/ci.yml` | B | M | +40/-4 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +90/-0 |
+| `AGENTS.md` | C | A | +94/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
-| `justfile` | C | A | +123/-0 |
+| `justfile` | C | A | +124/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1918/-127 |
@@ -93,24 +93,24 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
 | `src/layout/floating.rs` | B | M | +24/-6 |
-| `src/layout/mod.rs` | B | M | +123/-9 |
+| `src/layout/mod.rs` | B | M | +176/-25 |
 | `src/layout/monitor.rs` | B | M | +200/-25 |
 | `src/layout/scrolling.rs` | B | M | +68/-8 |
-| `src/layout/tests.rs` | B | M | +308/-4 |
+| `src/layout/tests.rs` | B | M | +309/-5 |
 | `src/layout/tile.rs` | B | M | +2807/-80 |
 | `src/layout/workspace.rs` | B | M | +44/-6 |
 | `src/lib.rs` | B | M | +1/-0 |
 | `src/niri.rs` | B | M | +311/-1 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
-| `src/render_helpers/effect_buffer.rs` | B | M | +635/-15 |
+| `src/render_helpers/effect_buffer.rs` | B | M | +636/-15 |
 | `src/render_helpers/mod.rs` | B | M | +37/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
 | `src/render_helpers/shaders/mod.rs` | B | M | +470/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
 | `src/tests/client.rs` | B | M | +148/-0 |
 | `src/tests/fixture.rs` | B | M | +3/-1 |
-| `src/tests/mod.rs` | B | M | +10/-0 |
+| `src/tests/mod.rs` | B | M | +11/-0 |
 | `src/window/mapped.rs` | B | M | +48/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/README.md` | C | A | +29/-0 |
@@ -118,7 +118,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/capture_hold.py` | C | A | +580/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
-| `tools/ops-check` | C | A | +326/-0 |
+| `tools/ops-check` | C | A | +339/-0 |
 | `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/screencast_consumer.py` | C | A | +331/-0 |
@@ -127,8 +127,9 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_hold.py` | C | A | +463/-0 |
 | `tools/test_capture_meta.py` | C | A | +1758/-0 |
-| `tools/test_gates.py` | C | A | +278/-0 |
+| `tools/test_gates.py` | C | A | +279/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +881/-0 |
+| `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
 | `tools/test_gpu_clocks.py` | C | A | +267/-0 |
 | `tools/test_noise_placement_cost.py` | C | A | +102/-0 |
@@ -159,44 +160,54 @@ Generated against a fetched upstream. Refreshed weekly by
 it is. Do not edit by hand; run `just upstream-report --drift`.
 
 <!-- BEGIN GENERATED: drift -->
-As of **2026-09-27**: baseline tree `7b010d1b3ab2`, fork `390dfc3e5fd1`, upstream `upstream/main` at `1f03391ea644`.
+As of **2026-10-11**: baseline tree `7b010d1b3ab2`, fork `afea4c26fa84`, upstream `upstream/main` at `5fe8877926bd`.
 
 This is a three-way merge of final trees. It does not predict a rebase, which replays commits individually, and it says nothing about whether the result compiles or behaves correctly.
 
-**11 conflicting path(s).**
+**12 conflicting path(s).**
 
 | Seam path | Upstream name | Upstream commits since baseline | Upstream status | Conflict | Acknowledged |
 | --- | --- | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | same | 5 | - | - | - |
+| `.github/FUNDING.yml` | same | 0 | - | - | - |
+| `.github/ISSUE_TEMPLATE/bug_report.md` | same | 3 | - | - | - |
+| `.github/ISSUE_TEMPLATE/config.yml` | same | 1 | - | - | - |
+| `.github/dependabot.yml` | same | 0 | - | - | - |
+| `.github/workflows/ci.yml` | same | 6 | - | - | - |
+| `.github/workflows/release.yml` | same | 0 | - | - | - |
 | `.gitignore` | same | 0 | - | - | - |
-| `Cargo.toml` | same | 13 | - | - | - |
+| `Cargo.lock` | same | 13 | - | - | - |
+| `Cargo.toml` | same | 14 | - | - | - |
 | `docs/wiki/IPC.md` | same | 1 | - | - | - |
+| `docs/wiki/Nvidia.md` | same | 0 | - | - | - |
+| `niri-config/Cargo.toml` | same | 2 | - | yes | yes |
 | `niri-config/src/animations.rs` | same | 1 | - | - | - |
 | `niri-config/src/lib.rs` | same | 11 | - | yes | yes |
 | `niri-config/src/window_rule.rs` | same | 3 | - | - | - |
-| `niri-ipc/src/lib.rs` | same | 2 | - | - | - |
+| `niri-ipc/src/lib.rs` | same | 3 | - | - | - |
 | `niri-ipc/src/state.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/layout.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/tile.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/cases/window.rs` | same | 0 | - | - | - |
 | `niri-visual-tests/src/test_window.rs` | same | 0 | - | - | - |
-| `src/backend/tty.rs` | same | 9 | - | - | - |
+| `src/animation/clock.rs` | same | 0 | - | - | - |
+| `src/backend/tty.rs` | same | 13 | - | - | - |
 | `src/backend/winit.rs` | same | 7 | - | - | - |
 | `src/cli.rs` | same | 1 | - | - | - |
 | `src/handlers/compositor.rs` | same | 2 | - | - | - |
-| `src/handlers/xdg_shell.rs` | same | 4 | - | - | - |
+| `src/handlers/layer_shell.rs` | same | 1 | - | - | - |
+| `src/handlers/xdg_shell.rs` | same | 6 | - | - | - |
 | `src/input/pick_color_grab.rs` | same | 0 | - | - | - |
 | `src/ipc/client.rs` | same | 6 | - | - | - |
 | `src/ipc/server.rs` | same | 2 | - | - | - |
 | `src/layout/floating.rs` | same | 4 | - | yes | yes |
-| `src/layout/mod.rs` | same | 9 | - | - | - |
+| `src/layout/mod.rs` | same | 10 | - | - | - |
 | `src/layout/monitor.rs` | same | 8 | - | yes | yes |
-| `src/layout/scrolling.rs` | same | 12 | - | yes | yes |
+| `src/layout/scrolling.rs` | same | 13 | - | yes | yes |
 | `src/layout/tests.rs` | same | 2 | - | - | - |
 | `src/layout/tile.rs` | same | 2 | - | yes | yes |
-| `src/layout/workspace.rs` | same | 6 | - | yes | yes |
+| `src/layout/workspace.rs` | same | 7 | - | yes | yes |
 | `src/lib.rs` | same | 0 | - | - | - |
-| `src/niri.rs` | same | 18 | - | yes | yes |
+| `src/niri.rs` | same | 25 | - | yes | yes |
 | `src/protocols/foreign_toplevel.rs` | same | 1 | - | yes | yes |
 | `src/render_helpers/blur.rs` | same | 1 | - | yes | yes |
 | `src/render_helpers/effect_buffer.rs` | same | 0 | - | - | - |
@@ -205,12 +216,14 @@ This is a three-way merge of final trees. It does not predict a rebase, which re
 | `src/render_helpers/shaders/mod.rs` | same | 0 | - | - | - |
 | `src/screencasting/mod.rs` | same | 4 | - | - | - |
 | `src/tests/client.rs` | same | 3 | - | yes | yes |
+| `src/tests/fixture.rs` | same | 0 | - | - | - |
 | `src/tests/mod.rs` | same | 2 | - | yes | yes |
 | `src/window/mapped.rs` | same | 0 | - | - | - |
 | `src/window/mod.rs` | same | 3 | - | - | - |
 
 Conflict notices, verbatim and unparsed:
 
+    CONFLICT (content): Merge conflict in niri-config/Cargo.toml
     CONFLICT (content): Merge conflict in niri-config/src/lib.rs
     CONFLICT (content): Merge conflict in src/layout/floating.rs
     CONFLICT (content): Merge conflict in src/layout/monitor.rs

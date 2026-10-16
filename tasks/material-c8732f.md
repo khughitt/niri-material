@@ -3,8 +3,9 @@ id: material-c8732f
 title: GL_INVALID_VALUE 'Size and/or offset out of range' bursts in the niri log
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-06T00:47:17Z
-updated: 2026-10-06T20:44:04Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-7ff4bc
 tags: [rendering, bug]

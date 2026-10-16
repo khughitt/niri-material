@@ -4,8 +4,8 @@
 //! owner accepted the ring beam with decay on a live a18ca619 session, copied
 //! verbatim (the app-id match dropped: the test client sets none). Each pane
 //! renders through a real focus gain from a second window: the inactive
-//! material, then the comet at frozen instants after the gain, then rest. A large pane's perimeter is
-//! longer than the decay distance, so its comet goes dark before the lap; a
+//! material, then the comet at frozen instants after the gain, then rest. A large pane's perimeter
+//! is longer than the decay distance, so its comet goes dark before the lap; a
 //! small pane's is shorter, so its comet completes the lap.
 //!
 //! The test grades only what must hold for any look: renders are frozen, the
@@ -324,8 +324,9 @@ fn ring_rest_zero_keeps_the_comet() {
 /// A familiar-style signal on `pane`, the first window: an accent at
 /// Active, static, as familiar sets on an agent's terminal.
 fn signal_pane(f: &mut Fixture) {
-    use crate::niri::SetWindowSignalArgs;
     use niri_ipc::{SignalLevel, SignalMotion};
+
+    use crate::niri::SetWindowSignalArgs;
 
     let id = f.niri().layout.windows().next().unwrap().1.id().get();
     f.niri()

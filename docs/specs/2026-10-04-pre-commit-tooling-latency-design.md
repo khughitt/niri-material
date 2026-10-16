@@ -148,6 +148,13 @@ precedence over docs-only patterns.
 Add `hook-pre-commit-full` as a recipe if needed for dispatch, but have both code
 recipes record the existing timing target **`hook-pre-commit`**. Preserve test counts
 and failure propagation. Do not invent an exemption or selection-widening marker.
+
+Superseded 2026-10-08 (decided on ops' `docs/notes/2026-10-08-tt-latency-follow-ups-brief.md`;
+landed by material-ffede2 with ops-ccb3c4): a route is its own target, so a fast route
+creeping toward its own budget is judged instead of hidden in a mixed median. The fast
+recipe records **`hook-pre-commit-fast`**, which ops' latency.toml judges at the same
+45 s code-commit limit; only the full route still records `hook-pre-commit`, keeping its
+limit row and incident history. Recipe names and the hook dispatch stay as designed here.
 Narrowing reduces how often lifecycle validation runs; parallel scheduling below
 must reduce its cost. Neither change permits excluding slow successful samples.
 

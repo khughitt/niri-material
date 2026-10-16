@@ -7,7 +7,7 @@ size: m
 complexity: high
 process: planned
 created: 2026-10-06T18:28:17Z
-updated: 2026-10-06T20:16:40Z
+updated: 2026-10-13T09:18:39Z
 depends: []
 parent: material-6062fd
 tags: [rendering, design]
@@ -19,7 +19,7 @@ Design the opt-in window-content optical stage from docs/notes/2026-10-06-glass-
 
 Done: a written design and implementation plan reviewed by the owner before code. Settle opt-in and zero/disabled behavior, the window texture's sampling and alpha/compositing order, which content can refract or attenuate, readability at normal terminal text sizes, resize/open/close behavior, and popup/screencast coverage. Coordinate the shared content boundary with material-987655 while retaining its own trigger and parent. Preserve default opaque pixels byte-for-byte and apply window opacity exactly once. Name the height-field information needed from material-be611b; its accepted merge is required for a depth implementation, not for preparing the design. Define frozen-clock neutral/opaque/translucent checks, owner-reviewed text comparisons and a later bounded cost check for loss of the opaque early return. No renderer code or live host changes in the design phase.
 
-On the design result, record the recommendation in the brief and run tasks note on material-7f5751 and material-987655 with the finding, in the same commit, so both ideas can be reconsidered.
+On the design result, record the recommendation in the brief and run tasks note on material-7f5751 and material-987655 with the finding, before the result's branch merges, so both ideas can be reconsidered.
 
 ## Notes
 

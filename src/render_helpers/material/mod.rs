@@ -49,15 +49,6 @@ pub struct BackgroundMapping {
 /// UV mappings. An element straddling a workspace boundary during a
 /// workspace switch resolves to its center's workspace; fragments outside
 /// that workspace's rect fall back to the backdrop layer.
-///
-/// Known limitation: a window being interactively dragged loses its frosted
-/// appearance while `backdrop-blur` is on, in both overview and the normal
-/// view, returning when the drag ends. Instrumented runs proved the dragged
-/// and stationary elements bind the same buffers and the same blurred texture
-/// in the same frame, so the divergence is in the sampling geometry derived
-/// here rather than in blur production or texture selection. Tracked as
-/// `material-e88df7`; see
-/// `docs/materials/2026-08-29-material-backdrop-blur-design.md`.
 pub fn background_mapping(
     geo_in_backdrop: Rectangle<f64, Logical>,
     workspaces: &[(Rectangle<f64, Logical>, Color32F)],
@@ -1735,8 +1726,9 @@ mod tests {
 
     #[test]
     fn glass_signal_inputs_sums_ripples_and_maxes_flash() {
-        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
         use niri_config::ImpulseResponse as R;
+
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
 
         let mut frame = SignalFrame {
             accent: None,
@@ -1793,8 +1785,9 @@ mod tests {
 
     #[test]
     fn rim_light_only_moves_under_rim_orbit() {
-        use crate::render_helpers::signal::SignalFrame;
         use niri_config::{AttentionResponse, ResolvedResponse};
+
+        use crate::render_helpers::signal::SignalFrame;
 
         let frame = SignalFrame {
             accent: Some([1., 0.5, 0.]),
@@ -1826,8 +1819,9 @@ mod tests {
 
     #[test]
     fn glass_signal_inputs_leaves_sweep_alone() {
-        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
         use niri_config::ImpulseResponse as R;
+
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
 
         let mut frame = SignalFrame {
             accent: None,
@@ -1962,8 +1956,9 @@ mod tests {
 
     #[test]
     fn signal_uniforms_carry_presence_focus_beam_and_selectors() {
-        use crate::render_helpers::signal::{color_linear, SignalFrame};
         use niri_config::{FocusResponse, ResolvedResponse};
+
+        use crate::render_helpers::signal::{color_linear, SignalFrame};
 
         let mut r = ResolvedResponse::default();
         let quiet = SignalUniforms::quiet(&r);
@@ -2026,8 +2021,9 @@ mod tests {
 
     #[test]
     fn inherited_impulse_color_fades_with_presence() {
-        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
         use niri_config::{ImpulseResponse as R, ResolvedResponse};
+
+        use crate::render_helpers::signal::{ImpulseFrame, SignalFrame};
 
         let r = ResolvedResponse::default();
         let mut frame = SignalFrame {

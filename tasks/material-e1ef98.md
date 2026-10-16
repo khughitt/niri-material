@@ -3,8 +3,9 @@ id: material-e1ef98
 title: capture.json records the fixture's exit status at release
 status: idea
 priority: 2
+reviewed: true
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-06T19:17:33Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-2834d7
 tags: [capture]

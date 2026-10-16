@@ -638,8 +638,9 @@ pub static INTERACTIONS: &[Interaction] = &[
 /// stage and every stage is the same optic. Checked on `STAGES` by a test,
 /// and on fixtures so the negatives are proven while `STAGES` has none.
 pub fn check_selectors(stages: &[Stage], specs: &[super::params::ParamSpec]) -> Result<(), String> {
-    use super::params::ParamKind;
     use std::collections::BTreeMap;
+
+    use super::params::ParamKind;
 
     let mut by_param: BTreeMap<&str, Vec<&Stage>> = BTreeMap::new();
     for stage in stages {

@@ -3,8 +3,9 @@ id: material-343f27
 title: Validated measurement for glass ray bending
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-06T11:12:33Z
-updated: 2026-10-06T19:24:24Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-49871a
 tags: [rendering, harness]

@@ -4,8 +4,9 @@ title: "Source: privacy indicators from cast and microphone state"
 status: idea
 priority: 2
 size: s
+reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-09-29T22:07:57Z
+updated: 2026-10-12T18:21:14Z
 depends: [material-a54d89]
 parent: material-9b8bf9
 tags: [signals, sources]

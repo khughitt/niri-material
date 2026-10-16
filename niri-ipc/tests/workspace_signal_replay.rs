@@ -25,7 +25,6 @@ use niri_ipc::{
     Event, Impulse, ImpulseKind, Signal, SignalLevel, SignalMotion, Timestamp, Window,
     WindowLayout, Workspace,
 };
-
 use SignalLevel::{Active, Demand, Notice, Quiet};
 
 /// Per-workspace candidate summary: `None` means no window on the workspace carries a signal,

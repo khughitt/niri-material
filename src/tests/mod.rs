@@ -9,6 +9,7 @@ mod animations;
 mod attention_idle;
 mod floating;
 mod focus_swap;
+mod frost_drag;
 mod fullscreen;
 mod glass_edge;
 mod layer_shell;

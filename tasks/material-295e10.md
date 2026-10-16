@@ -3,8 +3,9 @@ id: material-295e10
 title: Art-directed rim width for glint and reflection on low-ior glass
 status: idea
 priority: 2
+reviewed: true
 created: 2026-10-09T23:29:33Z
-updated: 2026-10-10T13:42:56Z
+updated: 2026-10-12T18:21:13Z
 depends: []
 parent: material-6062fd
 tags: [rendering, material]

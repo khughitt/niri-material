@@ -249,8 +249,9 @@ of eight) cuts the idle cost by about 40 % (to 0.019 ms) but makes an
 active layer dearer, so neither
 is kept; the shader stays at `e5edd631`. The likeliest cause is the larger
 scaled path inlined eight times into the material program weighing on its
-register allocation, but no ISA or register count was read. Recovering the
-idle cost is material-03fdf3, which carries both variants as patches. Settled glass renders no frames, so the
+register allocation; the register counts below confirm it. Recovering the
+idle cost is material-03fdf3, which carries both variants as patches and
+lands the row accumulator below. Settled glass renders no frames, so the
 cost lands on damaged frames only.
 
 With that, four fine layers at scale 8 add 0.923 ms over `none` against
@@ -258,6 +259,47 @@ Hermite's 0.424 ms; the ratio 2.18 is close to the hash ratio 144/64 = 2.25,
 since both runs' `none` carries its own build's idle cost. The draws are
 bimodal as before: split at 0.6 × the case median, four fine at scale 8
 has 16 early draws at 0.140 ms and 68 later at 1.188 ms.
+
+### Row accumulator (`127bce2d`, material-03fdf3)
+
+NVIDIA's shader disk cache holds the compiled SASS, and `nvdisasm` reads its
+register count (the `regs.sh` attachment on material-03fdf3). On the
+material program at the branch head: Hermite 96 registers, the B-spline
+`noise.frag` of `e5edd631` 128, the streamed and slot-loop variants 96. On
+`e5edd631`'s own source the counts (Hermite 64, B-spline 96) order the same
+way as the A/B timings above, with no spills anywhere: registers set most of
+the idle cost, code size the rest.
+
+`127bce2d` folds each of the six hash rows into one `vec4` accumulator with
+per-row B-spline weights, one code path for white and fine: 72 registers.
+Its pixels differ from the current B-spline by at most one code (4 to 67 of
+5.2 M bytes per case over eight scaled cases). The trade is that a scaled
+white layer hashes 36 points instead of 16. A second candidate, a rolling
+window shared by white and fine ("unified", bit-identical to `e5edd631`),
+compiles to 96 registers.
+
+Same-session A/B `noise-idle-ab-full-1792149757` (2026-10-16, TTY with the
+desktop stopped, clean capture verdict): a is `127bce2d`; b1 the current
+B-spline, b2 Hermite and b3 unified, each a `niri-tracy` built at `d89a8988`'s
+tree with that `noise.frag`. Material draw medians in ms, two rounds each:
+
+| Case | a (row accumulator) | b1 (B-spline) | b2 (Hermite) | b3 (unified) |
+| --- | ---: | ---: | ---: | ---: |
+| none | 0.2867, 0.2867 | 0.3236, 0.3246 | 0.2908, 0.2908 | 0.2918, 0.2918 |
+| one fine, scale 1 | 0.3589, 0.3594 | 0.3988, 0.3983 | 0.3676, 0.3676 | 0.3676, 0.3676 |
+| four fine, scale 8 | 1.1448, 1.1448 | 1.2513, 1.2513 | 0.7342, 0.7347 | 1.3332, 1.3332 |
+
+**The row accumulator removes the B-spline's idle cost and then some:**
+0.037 ms (11.5 %) below the current B-spline with noise off, 0.004 ms below
+Hermite, and cheaper than the B-spline with one fine layer (0.040 ms) and with
+four scaled layers (0.107 ms). Hermite stays cheapest at scale 8, because it
+hashes 16 points there against the B-spline's 36. `127bce2d` lands.
+
+Absolute medians run higher than the 2026-10-07 runs (Hermite `none` 0.2908
+against 0.2294), so only the same-session columns compare. All are later-mode
+draws at the P8 idle clock (the clock attribution experiment, material-f386ae).
+Two earlier attempts the same night were refused by the settle gate when the
+GPU's idle floor moved between about 10.4 and 17 W between sub-runs.
 
 ### Hermite lattice (`558bfa02`)
 

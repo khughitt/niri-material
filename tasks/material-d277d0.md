@@ -4,8 +4,9 @@ title: "Source: OSC 133 shell-integration watcher"
 status: idea
 priority: 2
 size: m
+reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-11T09:56:44Z
+updated: 2026-10-12T18:21:13Z
 depends: [material-a54d89, material-07bac9, material-9fb9ec]
 parent: material-9b8bf9
 tags: [signals, sources]

@@ -3,8 +3,9 @@ id: material-1aa3af
 title: "Surface grain on the glass edge: noise that survives dark glass"
 status: idea
 priority: 2
+reviewed: true
 created: 2026-10-03T00:52:50Z
-updated: 2026-10-06T18:28:46Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-6062fd
 tags: [rendering, material]

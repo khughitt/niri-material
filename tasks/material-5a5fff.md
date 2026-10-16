@@ -3,8 +3,9 @@ id: material-5a5fff
 title: Interpolate glass parameters across a focus material swap
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-05T01:10:50Z
-updated: 2026-10-06T18:41:36Z
+updated: 2026-10-12T18:21:14Z
 depends: []
 parent: material-53f873
 tags: [material]
