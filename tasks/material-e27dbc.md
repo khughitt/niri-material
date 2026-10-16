@@ -1,7 +1,7 @@
 ---
 id: material-e27dbc
 title: Identify a Noctalia panel and the smallest material-cohesion comparison
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
@@ -9,8 +9,9 @@ process: direct
 needs: [nested]
 owner: research/material-e27dbc
 created: 2026-10-14T10:42:18Z
-updated: 2026-10-16T00:01:36Z
+updated: 2026-10-16T00:01:48Z
 started: 2026-10-15T23:26:10Z
+completed: 2026-10-16T00:01:48Z
 depends: []
 parent: material-55380c
 tags: []
@@ -32,3 +33,7 @@ Ideas it wakes: On completion, run tasks note material-62347d --no-reviewed "<fi
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-16T00:00:33Z (research/material-e27dbc): attached: noctalia-cohesion-sheet.png (2048333 bytes): Owner sheet: does the treated shell (B) read as the same material as the terminal glass? A = live baseline (control); rows: 1 control center, 2 launcher, 3 bar; nested niri 1280x720, live wallpaper and palette
 - 2026-10-16T00:01:36Z (research/material-e27dbc): finding: representative panel = control center (noctalia-attached-panel, shared with Prism's and every attached plugin panel, takes the bar's opacity); launcher (noctalia-panel, overlay) stands for floating panels. Noctalia already sends exact-shape ext-background-effect blur for bar, panels, OSD, toasts and dock; buffers are padded, so a footprint should follow that region. Live effective opacity: bar + attached 0.70 (settings override of config 0.93), floating glass 0.55, so niri effects show through 30-45%. Nested comparison (docs/materials/scripts/noctalia-surfaces.sh, sheet attached): treated = all panels 0.55, corners 20 px, glass noise 0.03 / saturation 0.95; change is small over dark glass (bar pixels 5-10 levels), corners match. Conclusion: existing effects reach translucency, grain, saturation and corner radius only; slab optics need a layer-material design if the owner judges B insufficient, and the hue needs a compositor change either way. No hued arm (palette transcode; would preview client tint, not route A).
+- 2026-10-16T00:01:48Z (research/material-e27dbc): done
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T00:01:48Z (research/material-e27dbc): Surface inventory, nested comparison recipe (docs/materials/scripts/noctalia-surfaces.sh) and owner sheet recorded; brief updated with the table, constraints and conclusion
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
