@@ -37,7 +37,9 @@ ROOT=$(git rev-parse --show-toplevel)
 # paths, and concurrent runs must never share or delete each other's sockets.
 RT=$(mktemp -d "$XDG_RUNTIME_DIR/gos.XXXXXX")
 RUN=$(basename "$RT")
-HOST=$RUN-host; WESTON_PID=; NIRI_PID=; CAP_PID=; SUB_RUN=
+HOST=$RUN-host; WESTON_PID=; NIRI_PID=; CAP_PID=; GPU_CLOCK_PID=; SUB_RUN=
+CAPTURE_GPU_CLOCKS=${CAPTURE_GPU_CLOCKS:-0}
+case "$CAPTURE_GPU_CLOCKS" in 0|1) ;; *) echo 'CAPTURE_GPU_CLOCKS must be 0 or 1' >&2; exit 2 ;; esac
 fail() { echo "FAIL: $*" >&2; exit 1; }
 remove_runtime_dir() {
     python3 - "$RT" <<'PY'
@@ -59,6 +61,7 @@ stop_weston() {
 cleanup() {
     local rc=$?
     if [ -n "$CAP_PID" ]; then kill "$CAP_PID" 2>/dev/null || true; wait "$CAP_PID" 2>/dev/null || true; fi
+    if [ -n "$GPU_CLOCK_PID" ]; then kill "$GPU_CLOCK_PID" 2>/dev/null || true; wait "$GPU_CLOCK_PID" 2>/dev/null || true; fi
     if [ -n "$NIRI_PID" ]; then kill "$NIRI_PID" 2>/dev/null || true; wait "$NIRI_PID" 2>/dev/null || true; fi
     stop_weston || rc=1
     remove_runtime_dir || rc=1
@@ -68,6 +71,8 @@ cleanup() {
     exit "$rc"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # --- capture record ---------------------------------------------------------
 # CAPTURE_META lets a test substitute a recording stub; unset, it is the tool.
@@ -90,8 +95,10 @@ no_timing_on_pixels() {
 # After build_binaries: both binaries, this lib, and the calling script are the
 # static inputs. Extra --input/--config arguments pass through.
 capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the installed binary only
+    local clocks=()
+    [ "$CAPTURE_GPU_CLOCKS" = 0 ] || clocks=(--config gpu-clock-sampling=100ms)
     capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" ${NIRI_TRACY:+--binary "$NIRI_TRACY"} \
-        --input "$ROOT/docs/materials/scripts/glass-optic-smoke-lib.sh" --input "$0" "$@" \
+        --input "$ROOT/docs/materials/scripts/glass-optic-smoke-lib.sh" --input "$0" "${clocks[@]}" "$@" \
         || fail "identity refused"
 }
 # The previous launch's GPU work can hold P5 for a moment after its niri exits;
@@ -485,6 +492,18 @@ EOF
 }
 capture_bg() {
     no_timing_on_pixels capture_bg
+    if [ "$CAPTURE_GPU_CLOCKS" = 1 ]; then
+        # Opt-in: polling can change power state, so unsampled baselines stay available.
+        TZ=UTC nvidia-smi --query-gpu=timestamp,clocks.gr,clocks.mem,pstate,power.draw --format=csv -lms 100 \
+            > "$OUT/$1.gpu-clocks.csv" 2> "$OUT/$1.gpu-clocks.log" & GPU_CLOCK_PID=$!
+        local ready=0
+        for _ in $(seq 50); do
+            kill -0 "$GPU_CLOCK_PID" 2>/dev/null || break
+            if [ "$(wc -l < "$OUT/$1.gpu-clocks.csv")" -ge 2 ]; then ready=1; break; fi
+            sleep 0.1
+        done
+        [ "$ready" = 1 ] || fail "GPU clock sampler produced no samples; see $OUT/$1.gpu-clocks.log"
+    fi
     : > "$OUT/$1.capture.log"
     timeout 90 "$TOOLS/tracy-capture" -o "$OUT/$1.tracy" -a 127.0.0.1 -p "$TRACY_PORT" -s 30 \
         > "$OUT/$1.capture.log" 2>&1 & CAP_PID=$!
@@ -499,6 +518,10 @@ capture_ready() {
 }
 capture_wait() {
     local rc=0; wait "$CAP_PID" || rc=$?; CAP_PID=
+    if [ -n "$GPU_CLOCK_PID" ]; then
+        kill -0 "$GPU_CLOCK_PID" 2>/dev/null || fail 'GPU clock sampler exited before Tracy finished'
+        kill "$GPU_CLOCK_PID"; wait "$GPU_CLOCK_PID" 2>/dev/null || true; GPU_CLOCK_PID=
+    fi
     [ "$rc" -eq 0 ] || fail "tracy-capture exited $rc (no client connected, or timed out)"
 }
 col() {

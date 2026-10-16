@@ -10,6 +10,8 @@
 # in NOISE_LAYERS_COST_AB_CASES (default `none one-fine-1`) runs a, b1, b2,
 # ..., then again, so a shift between sessions cannot pass for a shift
 # between binaries. metrics.txt maps each side to its binary (ab_side_<s>=).
+# CAPTURE_GPU_CLOCKS=1 retains 100 ms clock samples joined to material draws.
+# One optional positional case name bounds the pilot.
 set -eu
 PILOT=${NOISE_LAYERS_COST_PILOT:-0}
 case "$PILOT" in 0|1) ;; *) echo "NOISE_LAYERS_COST_PILOT must be 0 or 1" >&2; exit 2 ;; esac
@@ -24,6 +26,13 @@ source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 trap cleanup_cost EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+if [ "$#" -gt 0 ]; then
+    [ "$#" = 1 ] || fail 'expected at most one noise cost case'
+    [ -z "$AB" ] || fail 'case arguments cannot be combined with NOISE_LAYERS_COST_AB'
+    case "$1" in none|one-fine-1|four-fine-1|four-fine-8|backdrop-fine-1|backdrop-fine-8) ;;
+        *) fail "unknown noise cost case: $1" ;;
+    esac
+fi
 build_binaries
 await_load
 capture_preflight headless
@@ -52,6 +61,7 @@ declare -A CASES=(
     [backdrop-fine-8]='noise 0.3 type="fine" site="backdrop" scale=8'
 )
 ORDER=(none one-fine-1 four-fine-1 four-fine-8 backdrop-fine-1 backdrop-fine-8)
+[ "$#" = 0 ] || ORDER=("$@")
 declare -A BIN=()
 for name in "${ORDER[@]}"; do BIN[$name]=$NIRI_TRACY; done
 if [ -n "$AB" ]; then
@@ -79,6 +89,39 @@ write_cost_config() {   # $1 path, $2 glass noise lines
     sed '/^spawn-at-startup "swaybg" /d' "$1.tmp" > "$1"
     rm "$1.tmp"
 }
+reload_clock_anchor() {   # $1 config, $2 case name
+    python3 - "$NIRI_SOCKET" "$1" "$OUT/$2.clock-anchor.txt" <<'PYANCHOR'
+import json, pathlib, socket, sys, time
+def connect():
+    sock = socket.socket(socket.AF_UNIX)
+    sock.settimeout(5)
+    sock.connect(sys.argv[1])
+    return sock
+with connect() as events:
+    events.sendall(b'"EventStream"\n')
+    stream = events.makefile('r')
+    assert json.loads(stream.readline()) == {'Ok': 'Handled'}, 'event stream refused'
+    # ConfigLoaded is also in the initial state; consume it before requesting a reload.
+    for line in stream:
+        if 'ConfigLoaded' in json.loads(line):
+            break
+    else:
+        raise RuntimeError('event stream closed before initial config state')
+    before = time.time_ns()
+    with connect() as action:
+        request = {'Action': {'LoadConfigFile': {'path': sys.argv[2]}}}
+        action.sendall(json.dumps(request).encode() + b'\n')
+        assert json.loads(action.makefile('r').readline()) == {'Ok': 'Handled'}, 'reload action refused'
+    for line in stream:
+        event = json.loads(line)
+        if 'ConfigLoaded' in event:
+            assert event['ConfigLoaded']['failed'] is False, 'config reload failed'
+            pathlib.Path(sys.argv[3]).write_text(f'{before} {time.time_ns()}\n')
+            break
+    else:
+        raise RuntimeError('event stream closed before ConfigLoaded')
+PYANCHOR
+}
 calibrate_probe_rect "$NIRI" 0
 for name in "${ORDER[@]}"; do
     cfg=$OUT/$name.kdl
@@ -91,7 +134,7 @@ for name in "${ORDER[@]}"; do
     probe_rect "$NIRI"
     sleep 1
     start=$(now_ns)
-    reload_marker "$cfg"
+    if [ "$CAPTURE_GPU_CLOCKS" = 1 ]; then reload_clock_anchor "$cfg" "$name"; else reload_marker "$cfg"; fi
     for i in $(seq 1 "$DAMAGE_STEPS"); do
         magick -size 1280x720 xc:"rgb($((i * 10)),100,120)" "$OUT/$name-wall-$i.png"
         stop_walls; wait_for_wall_removal; start_wall "$OUT/$name-wall-$i.png"
@@ -104,7 +147,7 @@ for name in "${ORDER[@]}"; do
     count_last20 "$name" > "$OUT/$name-redraws.txt"
     csvexport --gpu "$OUT/$name.tracy" "$OUT/$name.gpu.csv"
     python3 - "$OUT" "$name" "$DAMAGE_STEPS" "$((PW * PH))" <<'PYREPORT' >> "$OUT/metrics.txt"
-import csv, math, pathlib, statistics, sys
+import bisect, csv, datetime, math, pathlib, statistics, sys
 root, name, steps, area = pathlib.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
 def zones(path, time_column, duration_column):
     with path.open() as f:
@@ -130,9 +173,42 @@ for span in ['MaterialRenderElement::draw', 'Grain::render']:
     print(f'{name}_{span}_gpu_count={len(values)}')
     print(f'{name}_{span}_median_ms={(statistics.median(values) if values else 0) / 1e6:.6f}')
 print(f'{name}_glass_area_px={area}')
+clocks_path = root / f'{name}.gpu-clocks.csv'
+if clocks_path.exists():
+    wall_lo, wall_hi = map(int, (root / f'{name}.clock-anchor.txt').read_text().split())
+    assert 0 < wall_lo <= wall_hi and wall_hi - wall_lo <= 100_000_000, 'clock anchor exceeds one sample period'
+    clocks = []
+    with clocks_path.open() as file:
+        for row in csv.DictReader(file, skipinitialspace=True):
+            stamp = datetime.datetime.strptime(row['timestamp'], '%Y/%m/%d %H:%M:%S.%f').replace(tzinfo=datetime.timezone.utc)
+            ns = int(stamp.timestamp()) * 10**9 + stamp.microsecond * 1000
+            gr = int(row['clocks.current.graphics [MHz]'].split()[0])
+            mem = int(row['clocks.current.memory [MHz]'].split()[0])
+            power = float(row['power.draw [W]'].split()[0])
+            assert gr > 0 and mem > 0 and math.isfinite(power) and power >= 0, 'invalid GPU clock sample'
+            assert row['pstate'].startswith('P') and row['pstate'][1:].isdigit(), 'invalid GPU pstate'
+            clocks.append((ns, gr, mem, row['pstate'], power))
+    assert len(clocks) >= 2, 'GPU clock trace needs at least two samples'
+    times = [sample[0] for sample in clocks]
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    assert all(0 < gap <= 250_000_000 for gap in gaps), 'GPU clock samples must increase with gaps below 250 ms (one GPU)'
+    draws = sorted((int(t), d) for n, t, d in gpu if n == 'MaterialRenderElement::draw')
+    assert draws, 'no material draws to align'
+    with (root / f'{name}.draw-clocks.csv').open('w') as file:
+        writer = csv.writer(file)
+        writer.writerow(['trace_ns', 'gpu_ms', 'wall_earliest_ns', 'wall_latest_ns', 'sample_wall_ns', 'graphics_mhz', 'memory_mhz', 'pstate', 'power_w'])
+        for t, duration in draws:
+            lo, hi = wall_lo + t - int(begin), wall_hi + t - int(begin)
+            index = bisect.bisect_right(times, lo) - 1
+            assert index >= 0 and hi <= times[-1] and hi - times[index] <= 250_000_000, 'GPU clock trace does not cover material draw'
+            writer.writerow([t, f'{duration / 1e6:.6f}', lo, hi, *clocks[index]])
+    print(f'{name}_clock_anchor_width_ms={(wall_hi - wall_lo) / 1e6:.3f}')
+    print(f'{name}_clock_max_gap_ms={max(gaps) / 1e6:.3f}')
+    print(f'{name}_first_material_draw_wall_earliest_ns={wall_lo + draws[0][0] - int(begin)}')
+    print(f'{name}_first_material_draw_wall_latest_ns={wall_hi + draws[0][0] - int(begin)}')
 PYREPORT
 done
-[ -n "$AB" ] || python3 - "$OUT/metrics.txt" <<'PYDELTA' >> "$OUT/metrics.txt"
+if [ -z "$AB" ] && [ "$#" = 0 ]; then python3 - "$OUT/metrics.txt" <<'PYDELTA' >> "$OUT/metrics.txt"
 import sys
 m = dict(line.strip().split('=', 1) for line in open(sys.argv[1]) if '=' in line)
 none = float(m['none_MaterialRenderElement::draw_median_ms'])
@@ -141,5 +217,6 @@ for name in ['one-fine-1', 'four-fine-1', 'four-fine-8', 'backdrop-fine-1', 'bac
     area = int(m[f'{name}_glass_area_px'])
     print(f'{name}_material_ns_per_px_over_none={(median - none) * 1e6 / area:.4f}')
 PYDELTA
+fi
 finish
 printf 'PASS: noise layers cost (pilot=%s%s)\n' "$PILOT" "${AB:+, a/b}"

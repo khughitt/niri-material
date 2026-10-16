@@ -270,7 +270,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             script = ('fail() { echo "$*" >&2; exit 1; }\n'
                       'capture_meta() { printf "%s\\n" "$*"; }\n' +
                       self.function('capture_preflight') + '\n' + self.function('capture_identity') +
-                      '\nOUT=$1; ROOT=/source; CAPTURE_TASK=material-task; NIRI=/bin/niri; NIRI_TRACY=; '
+                      '\nOUT=$1; ROOT=/source; CAPTURE_TASK=material-task; CAPTURE_GPU_CLOCKS=0; NIRI=/bin/niri; NIRI_TRACY=; '
                       'capture_preflight headless; capture_identity --config preset=aurora')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -286,7 +286,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as out:
             script = ('capture_meta() { printf "%s" "$*" > "$OUT/release-call"; return 1; }\n'
                       'stop_weston() { :; }\nremove_runtime_dir() { :; }\n' + self.function('cleanup') +
-                      '\nOUT=$1; CAP_PID=; NIRI_PID=; cleanup')
+                      '\nOUT=$1; CAP_PID=; GPU_CLOCK_PID=; NIRI_PID=; cleanup')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertEqual((Path(out) / 'release-call').read_text(), f'release {out}')
@@ -302,7 +302,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             script = (self.LIFECYCLE +
                       'capture_meta() { echo "{\\"released\\": $(date +%s%N)}" > "$OUT/capture.json"; }\n' +
                       self.function('write_sums') + '\n' + self.function('cleanup') + '\n' + self.function('finish') +
-                      '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; finish')
+                      '\nOUT=$1; CAP_PID=; GPU_CLOCK_PID=; NIRI_PID=; trap cleanup EXIT; finish')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('PASS', result.stdout)
@@ -319,7 +319,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
                       'capture_meta() { if [ -e "$OUT/.first" ]; then echo retry > "$OUT/capture.json"; return 0; fi; '
                       'touch "$OUT/.first"; echo failed > "$OUT/capture.json"; return 2; }\n' +
                       self.function('write_sums') + '\n' + self.function('cleanup') + '\n' + self.function('finish') +
-                      '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; finish')
+                      '\nOUT=$1; CAP_PID=; GPU_CLOCK_PID=; NIRI_PID=; trap cleanup EXIT; finish')
             result = self.run_bash(script, out)
             self.assertEqual(result.returncode, 1)
             self.assertIn('capture release reported 2', result.stderr)
@@ -331,7 +331,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
     def test_no_manifest_when_the_run_never_reached_finish(self):
         with tempfile.TemporaryDirectory() as out:
             script = (self.LIFECYCLE + 'capture_meta() { :; }\n' + self.function('write_sums') + '\n' +
-                      self.function('cleanup') + '\nOUT=$1; CAP_PID=; NIRI_PID=; trap cleanup EXIT; false')
+                      self.function('cleanup') + '\nOUT=$1; CAP_PID=; GPU_CLOCK_PID=; NIRI_PID=; trap cleanup EXIT; false')
             self.run_bash(script, out)
             self.assertFalse((Path(out) / 'SHA256SUMS').exists())
 

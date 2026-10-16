@@ -296,8 +296,9 @@ four scaled layers (0.107 ms). Hermite stays cheapest at scale 8, because it
 hashes 16 points there against the B-spline's 36. `127bce2d` lands.
 
 Absolute medians run higher than the 2026-10-07 runs (Hermite `none` 0.2908
-against 0.2294), so only the same-session columns compare. All are later-mode
-draws at the P8 idle clock (the clock attribution experiment, material-f386ae).
+against 0.2294), so only the same-session columns compare. All medians sit in
+the later mode, at the P8 idle clock (the clock attribution experiment,
+material-f386ae).
 Two earlier attempts the same night were refused by the settle gate when the
 GPU's idle floor moved between about 10.4 and 17 W between sub-runs.
 
@@ -334,10 +335,110 @@ across cases:
 The pilot's three steps per case saw only the first mode (none 0.030, four
 fine at scale 8 0.079 ms), so its absolute figures are not comparable with
 the full run's; the ratio between cases agrees (2.6 against 2.8). The
-mechanism is not measured: a GPU clock change between the start-up burst
-and the 1 Hz cadence fits the constant ratio, but no clock trace was taken.
+mechanism is the GPU clock: the early draws run in the start-up P0 burst and
+the later ones at the P8 idle clock (the clock attribution experiment below).
 The noise placement run's damage-case material draw (0.210 ms,
 `2026-10-05-noise-placement-evidence.md`) sits in the later mode.
+
+### Clock attribution experiment (material-f386ae)
+
+Preparation adds opt-in `CAPTURE_GPU_CLOCKS=1` sampling to the shared Tracy
+capture helper. It launches `nvidia-smi` before Tracy, queries UTC timestamp,
+graphics and memory clocks, pstate and power every 100 ms, and reaps the
+sampler when capture finishes or aborts. Sampling is optional because polling
+may affect power state; existing unsampled captures remain available.
+
+`noise-layers-cost.sh none` runs one case. With sampling enabled it subscribes
+to the private compositor's event stream, consumes the initial config state,
+then brackets the first requested config reload until its `ConfigLoaded`
+event. This matters because the action reply precedes the asynchronous reload.
+The corresponding CPU zone supplies a trace-time anchor. The report keeps a
+wall-time interval for the first material draw and every subsequent draw,
+rather than assuming Tracy's program-relative origin is a wall clock.
+
+Each case retains `<case>.gpu-clocks.csv`, sampler stderr in
+`<case>.gpu-clocks.log`, `<case>.clock-anchor.txt`, and
+`<case>.draw-clocks.csv` beside its Tracy and exported CPU/GPU files. Joined
+rows show the last sampled state preceding the draw's earliest possible wall
+time, with the sample timestamp and both draw-time bounds. They are nearby
+observations, not proof of instantaneous clocks. The report refuses an anchor
+wider than 100 ms, missing draw coverage, or sampling gaps above 250 ms.
+The sampler runs on this host's single GPU; interleaved multi-GPU rows fail
+the strictly increasing timestamp check.
+
+The offline one-case rehearsal reached its report and checksum verdict with
+host/build operations substituted. Tests exercise actual capture cleanup on
+normal completion, trace failure, sampler failure and TERM, plus delayed reload
+completion after the initial event burst. A single real NVIDIA query confirmed
+the timestamp and units, including `TZ=UTC`; it was not a cost measurement.
+
+**Hardware verdict: the split is the GPU clock.** Three runs of `none` on
+2026-10-16, TTY with the desktop stopped, all with clean capture verdicts.
+Draw counts are those inside the stimulus window (from the first reload
+marker), as `metrics.txt` reports them:
+
+| Run | Steps | Sampling | Draws | Median (ms) |
+| --- | ---: | --- | ---: | ---: |
+| `gpu-clocks-pilot-1792148904` | 3 | on | 12 | 0.0410 |
+| `gpu-clocks-full-1792149496` | 20 | on | 80 | 0.3246 |
+| `gpu-clocks-control-1792149627` | 20 | off | 80 | 0.3246 |
+
+The sampled full run's joined rows (anchor width 4.5 ms, largest sample gap
+104 ms) put each in-window draw in one clock state:
+
+| State (graphics / memory MHz) | Draws | Median (ms) | Graphics cycles per draw | Seconds after the window opens |
+| --- | ---: | ---: | ---: | --- |
+| P0, 1815 / 7001 | 12 | 0.0404 | ~73k | 0.00–2.16 |
+| P5, 345 / 810 | 2 | 0.2662 | ~92k | 2.98–3.06 |
+| P8, 270 / 405 | 2 | 0.2698 | ~73k | 3.11–3.15 |
+| P8, 225 / 405 | 2 | 0.3251 | ~73k | 3.98–4.07 |
+| P8, 210 / 405 | 62 | 0.3256 | ~68k | from 4.11 |
+
+The fast draws are exactly the ones that ran while the GPU was still in P0.
+P0 was already present when sampling began, about a second before the first
+draw (2.2 s before the window opens; the cooldown before the sub-run had left
+the GPU in P8). It left P0 about 2.5 s into the window, read P5 for one
+0.5 s reading, and P8 from about 3.1 s, although the cadence was unchanged:
+the driver's hold after the compositor's start-up expiring fits, but is not
+measured. Every later draw ran at the P8 idle clock. The ratio, 0.3256 /
+0.0404 = 8.1, is the constant ratio near 8 seen in every earlier case.
+
+The draw cost tracks the graphics clock alone: about 70k graphics cycles per
+draw from P0 to P8, across a 17-fold range of memory clock. The driver
+refreshes its clock and power readings only every 0.5 s, although they are
+polled every 100 ms, so a draw up to 0.5 s before a reported change can carry
+the previous state. The two draws tagged P5 cost what the 270 MHz draws cost,
+and the two tagged 225 MHz cost the 210 MHz rate: their tags are that
+resolution, not evidence about the memory clock.
+
+The unsampled control's steady P8 median agrees with the sampled run's to
+one step of the GPU timer (durations are multiples of 1024 ns, about 0.3 %
+here), and both runs have 12 fast draws in the window. So 10 Hz polling of
+`nvidia-smi` does not hold the GPU out of P8. One pair of runs cannot rule out
+an effect on the descent itself: the control's six descent draws spread
+0.186–0.296 ms against the sampled run's 0.264–0.328. The three-step pilot
+ends inside the P0 burst, which is why pilots see only the first mode.
+
+Recommendation: **report the later mode, and select it by clock state rather
+than by count.** The later mode is the shader's cost at the clock an idle
+desktop actually runs at when a damage arrives about once a second, which is
+the condition these captures model. It is not a cost at full clock. Locking
+clocks (`nvidia-smi -lgc`, root) is rejected: it would measure a state the
+desktop never reaches at this cadence and needs a privileged host change in
+every capture. Dropping the first N draws by count is fragile, because the
+burst length depends on start-up timing (11 to 16 draws in the earlier
+traces, 12 in the window here). Cost reports should exclude draws whose
+joined row is not P8 (allowing for the 0.5 s reading lag above), and pilots should not be compared
+with full runs in absolute terms. The report does not do this selection yet,
+and sampling is still opt-in (material-d2e552). Medians of earlier full runs
+(about 80 draws, at most 16 early ones) are already the later mode and stand.
+
+A separate observation from the same session: after nested runs end, the
+idle P8 floor (210 / 405 MHz, no GPU clients) settled at either about 10.4 W
+or about 17 W, and could flip between runs. The clocks do not distinguish the
+two states. capture-meta's settle gate refused two noise A/B attempts on such
+a flip (material-03fdf3). Draw medians within one capture are unaffected so
+far, but long A/B captures are exposed to it.
 
 Settled glass renders no frames, so these are costs per damaged frame. A
 superseded full run (`noise-layers-cost-full-1791340265`, same shader
