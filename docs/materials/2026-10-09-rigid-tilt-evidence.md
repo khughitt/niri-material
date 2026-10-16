@@ -100,3 +100,41 @@ control (4° with the camera at 2000 px, κ = 2000 / 1408 px slab width ≈ 1.42
   in any frame of the sheet; the render asserts the pane lies wholly left of it.
 
 Owner's verdict (2026-10-10): B2 (θp 10°, κ 6), S2 (wall spill on). With S2 `view::wall_spill` keeps its value 1; on a horizontal swing at B2 the spill changes no pixel (the beam head never reaches the lifted wall), so it shows only on swings that lift the top or bottom edge.
+
+## Cost
+
+`docs/materials/scripts/view-tilt-cost.sh` (design §8.5): a same-session A/B
+of this tree's `niri-tracy` (a) against `niri-tracy-23039f67`, built at the
+branch's base (b), alternating a, b, a, b. Each rest case replaces the
+wallpaper 20 times at 1 Hz with the live look and the beam off; the bound is
+a's median material draw within 1 % of b's or 0.002 ms, whichever is larger.
+All runs on 2026-10-16, TTY with the desktop stopped, clean capture
+verdicts. The medians are later-mode draws at the GPU's P8 idle clock (the
+clock attribution experiment in the noise layers evidence); the three-step
+pilots ran inside the start-up P0 burst and are not compared with these.
+
+Before the contingency (`2f86b3ac`, `cost-full-1792146671`), the single
+program failed the bound by about 13 %:
+
+| Case | a1, a2 (ms) | b1, b2 (ms) | a − b (ms) | Bound (ms) | Verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `view-tilt 0` | 0.7465, 0.7613 | 0.6574, 0.6564 | 0.0970 | 0.0066 | INCONCLUSIVE (a1/a2 apart) |
+| `view-tilt 10`, no swing | 0.7465, 0.7485 | 0.6564, 0.6559 | 0.0914 | 0.0066 | FAIL |
+| one fine noise layer | 0.8182, 0.8151 | 0.7301, 0.7311 | 0.0860 | 0.0073 | FAIL |
+
+With the view path in its own program variant (`perf(material): rigid tilt
+view path as a second program variant`, `cost-full-1792152702`), the rest
+path costs what the base does:
+
+| Case | a1, a2 (ms) | b1, b2 (ms) | a − b (ms) | Bound (ms) | Verdict |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `view-tilt 0` | 0.6569, 0.6584 | 0.6569, 0.6554 | 0.0015 | 0.0066 | PASS |
+| `view-tilt 10`, no swing | 0.6615, 0.6564 | 0.6595, 0.6579 | 0.0003 | 0.0066 | PASS |
+| one fine noise layer | 0.7291, 0.7332 | 0.7306, 0.7316 | 0.0000 | 0.0073 | PASS |
+
+The swing case (a only, `view-tilt 10`, κ 6, six focus gains 3 s apart)
+records the material draws within 0.9 s of each gain: 330 frames, median
+1.466 ms, maximum 1.951 ms, and 32.4 ms of GPU time per gain above the
+`view-tilt 10` rest median (0.659 ms). Before the contingency the same case
+read median 1.425, maximum 1.713 and 25.7 ms per gain. The swing figures carry
+no bound.
