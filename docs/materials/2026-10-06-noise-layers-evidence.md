@@ -292,8 +292,8 @@ across cases:
 The pilot's three steps per case saw only the first mode (none 0.030, four
 fine at scale 8 0.079 ms), so its absolute figures are not comparable with
 the full run's; the ratio between cases agrees (2.6 against 2.8). The
-mechanism is not measured: a GPU clock change between the start-up burst
-and the 1 Hz cadence fits the constant ratio, but no clock trace was taken.
+mechanism is the GPU clock: the early draws run in the start-up P0 burst and
+the later ones at the P8 idle clock (the clock attribution experiment below).
 The noise placement run's damage-case material draw (0.210 ms,
 `2026-10-05-noise-placement-evidence.md`) sits in the later mode.
 
@@ -329,29 +329,55 @@ normal completion, trace failure, sampler failure and TERM, plus delayed reload
 completion after the initial event burst. A single real NVIDIA query confirmed
 the timestamp and units, including `TZ=UTC`; it was not a cost measurement.
 
-**Hardware verdict: pending.** No clock-to-mode attribution is established yet.
-In a quiet TTY session with the desktop stopped, from the main checkout:
+**Hardware verdict: the split is the GPU clock.** Three runs of `none` on
+2026-10-16, TTY with the desktop stopped, all with clean capture verdicts:
 
-```sh
-cd .worktrees/material-f386ae
-CAPTURE_TASK=material-f386ae CAPTURE_GPU_CLOCKS=1 \
-  OUT="$NIRI_MATERIAL_WORK_ROOT/gpu-clocks-pilot-$(date +%s)" \
-  NOISE_LAYERS_COST_PILOT=1 docs/materials/scripts/noise-layers-cost.sh none
-```
+| Run | Steps | Sampling | Draws | Median (ms) |
+| --- | ---: | --- | ---: | ---: |
+| `gpu-clocks-pilot-1792148904` | 3 | on | 16 | 0.0410 |
+| `gpu-clocks-full-1792149496` | 20 | on | 80 | 0.3246 |
+| `gpu-clocks-control-1792149627` | 20 | off | 80 | 0.3246 |
 
-Read the pilot's `metrics.txt`, sampling trace, joined rows and capture verdict
-before extending it. Then run the same case with `NOISE_LAYERS_COST_PILOT=0`
-and a fresh `OUT` for the full 20-step stimulus; the three-step pilot need not
-reach the later mode. Run an unsampled full case with `CAPTURE_GPU_CLOCKS=0`
-in another fresh directory to check whether polling changes the timing split.
-Record each attempt's `run:` note on the task.
+The sampled full run's joined rows (anchor width 4.5 ms, largest sample gap
+104 ms) put every draw in one clock state:
 
-Compare the early/later draw-duration split with the raw graphics-clock and
-pstate transitions using the retained uncertainty. Recommend keeping the later
-mode, locking clocks, or excluding startup draws only from that evidence. If no
-clock transition aligns, state that result and investigate timer-query startup
-or prefilter warm-up next. The quiet run can share material-3d48b0's host session;
-it must not run concurrently with that pilot.
+| State (graphics / memory MHz) | Draws | Median (ms) | Seconds after first draw |
+| --- | ---: | ---: | --- |
+| P0, 1815 / 7001 | 16 | 0.0410 | 0.00–3.36 |
+| P5, 345 / 810 | 2 | 0.2662 | 4.18–4.26 |
+| P8, 270 and 225 / 405 | 4 | 0.27–0.33 | 4.31–5.27 |
+| P8, 210 / 405 | 62 | 0.3256 | from 5.31 |
+
+The fast draws are exactly the ones that ran while the GPU was still in P0
+from the compositor's start-up. It left P0 about 4 s after the first draw,
+when the 1 Hz cadence stopped keeping it busy, and every later draw ran at the
+P8 idle clock. The ratio, 0.3256 / 0.0410 = 7.9, is the constant ratio near 8
+seen in every earlier case. The draw time is not proportional to the graphics
+clock alone (P5's 345 MHz gives 0.266 ms, not 0.21), so the memory clock
+counts as well. The unsampled control gives the same median to the
+microsecond, so polling `nvidia-smi` at 10 Hz does not move the GPU out of
+P8. The three-step pilot ends inside the P0 burst, which is why pilots see
+only the first mode.
+
+Recommendation: **report the later mode, and select it by clock state rather
+than by count.** The later mode is the shader's cost at the clock an idle
+desktop actually runs at when a damage arrives about once a second, which is
+the condition these captures model. It is not a cost at full clock. Locking
+clocks (`nvidia-smi -lgc`, root) is rejected: it would measure a state the
+desktop never reaches at this cadence and needs a privileged host change in
+every capture. Dropping the first N draws by count is fragile, because the
+burst length depends on start-up timing (11 to 16 draws so far). Cost reports
+should exclude draws whose joined row is not P8 at the idle clock, and pilots
+should not be compared with full runs in absolute terms. Medians of earlier
+full runs (80 draws, 16 or fewer early ones) are already the later mode and
+stand.
+
+A separate observation from the same session: after nested runs end, the
+idle P8 floor (210 / 405 MHz, no GPU clients) settled at either about 10.4 W
+or about 17 W, and could flip between runs. The clocks do not distinguish the
+two states. capture-meta's settle gate refused two noise A/B attempts on such
+a flip (material-03fdf3). Draw medians within one capture are unaffected so
+far, but long A/B captures are exposed to it.
 
 Settled glass renders no frames, so these are costs per damaged frame. A
 superseded full run (`noise-layers-cost-full-1791340265`, same shader
