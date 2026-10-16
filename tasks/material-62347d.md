@@ -4,7 +4,7 @@ title: Explore material treatment for Noctalia bars and panels
 status: idea
 priority: 2
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-15T22:55:01Z
+updated: 2026-10-16T00:01:42Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
@@ -23,3 +23,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-15T22:26:11Z (research/material-6b1c0b): material-6b1c0b finding: niri can bind a layer surface's accent to its output's active window with existing layout state and redraw triggers (Monitor::active_window holds under panel keyboard focus); a layer needs a per-output crossfade, animation coverage and fingerprinted damage; the binding belongs inside a layer-material design. The drawing still waits on material-e27dbc's comparison.
 - 2026-10-15T22:53:06Z (materials-26.04): review: brief round 1 — verdict: revise; findings: should-fix 2; reviewer: unverified (pasted by the owner)
 - 2026-10-15T22:55:01Z (docs/noctalia-brief-review): brief revised after review round 1: optical treatment (comparison) and hue delivery are separate choices; a compositor tint under the client's translucent background is the only route to built-in chrome at Noctalia 5.2.1/5.3.0; the hold uses a per-workspace record of settled active windows, not focus timestamps
+- 2026-10-16T00:01:42Z (research/material-e27dbc): material-e27dbc finding: control center (noctalia-attached-panel) is the first target, launcher (noctalia-panel) the second; Noctalia's ext-background-effect region gives the exact visible body for a footprint; existing effects reach translucency, grain, saturation and corner radius only (nested sheet attached to material-e27dbc, owner to judge A1-B3); hue delivery needs a compositor change regardless.
