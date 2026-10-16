@@ -5,15 +5,21 @@
 # Each case replaces the wallpaper DAMAGE_STEPS times at 1 Hz; every
 # replacement damages the backdrop, which re-renders the glass and reruns the
 # grain pass. NOISE_LAYERS_COST_PILOT=1 runs three steps per case.
-# NOISE_LAYERS_COST_AB=<niri-tracy binary> instead compares that binary (b)
-# with this tree's (a) in one session: `none` and `one-fine-1` alternate
-# a, b, a, b, so a shift between sessions cannot pass for a shift between
-# binaries.
+# NOISE_LAYERS_COST_AB=<niri-tracy binary>[:<binary>...] instead compares
+# those binaries (b1, b2, ...) with this tree's (a) in one session: each case
+# in NOISE_LAYERS_COST_AB_CASES (default `none one-fine-1`) runs a, b1, b2,
+# ..., then again, so a shift between sessions cannot pass for a shift
+# between binaries. metrics.txt maps each side to its binary (ab_side_<s>=).
 set -eu
 PILOT=${NOISE_LAYERS_COST_PILOT:-0}
 case "$PILOT" in 0|1) ;; *) echo "NOISE_LAYERS_COST_PILOT must be 0 or 1" >&2; exit 2 ;; esac
 AB=${NOISE_LAYERS_COST_AB:-}
-[ -z "$AB" ] || [ -x "$AB" ] || { echo "NOISE_LAYERS_COST_AB must name an executable" >&2; exit 2; }
+AB_BINS=()
+[ -z "$AB" ] || IFS=: read -r -a AB_BINS <<< "$AB"
+for bin in "${AB_BINS[@]}"; do
+    [ -x "$bin" ] || { echo "NOISE_LAYERS_COST_AB must name executables: $bin" >&2; exit 2; }
+done
+read -r -a AB_CASES <<< "${NOISE_LAYERS_COST_AB_CASES:-none one-fine-1}"
 source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 trap cleanup_cost EXIT
 trap 'exit 130' INT
@@ -22,8 +28,13 @@ build_binaries
 await_load
 capture_preflight headless
 if [ -n "$AB" ]; then
-    cp "$AB" "$OUT/niri-tracy-b"
-    capture_identity --binary "$OUT/niri-tracy-b" --config "pilot=$PILOT" --config ab=1
+    AB_IDENTITY=()
+    for i in "${!AB_BINS[@]}"; do
+        cp "${AB_BINS[$i]}" "$OUT/niri-tracy-b$((i + 1))"
+        AB_IDENTITY+=(--binary "$OUT/niri-tracy-b$((i + 1))")
+    done
+    capture_identity "${AB_IDENTITY[@]}" --config "pilot=$PILOT" --config ab=1 \
+        --config "ab_cases=${AB_CASES[*]}"
 else
     capture_identity --config "pilot=$PILOT"
 fi
@@ -44,13 +55,22 @@ ORDER=(none one-fine-1 four-fine-1 four-fine-8 backdrop-fine-1 backdrop-fine-8)
 declare -A BIN=()
 for name in "${ORDER[@]}"; do BIN[$name]=$NIRI_TRACY; done
 if [ -n "$AB" ]; then
+    SIDES=(a)
+    echo "ab_side_a=$NIRI_TRACY" >> "$OUT/metrics.txt"
+    for i in "${!AB_BINS[@]}"; do
+        SIDES+=("b$((i + 1))")
+        echo "ab_side_b$((i + 1))=${AB_BINS[$i]}" >> "$OUT/metrics.txt"
+    done
     ORDER=()
-    for base in none one-fine-1; do for round in 1 2; do for side in a b; do
-        CASES[$base-$side$round]=${CASES[$base]}
-        BIN[$base-$side$round]=$NIRI_TRACY
-        [ "$side" = a ] || BIN[$base-$side$round]=$OUT/niri-tracy-b
-        ORDER+=("$base-$side$round")
-    done; done; done
+    for base in "${AB_CASES[@]}"; do
+        [ -n "${CASES[$base]+set}" ] || fail "NOISE_LAYERS_COST_AB_CASES: unknown case $base"
+        for round in 1 2; do for side in "${SIDES[@]}"; do
+            CASES[$base-$side-$round]=${CASES[$base]}
+            BIN[$base-$side-$round]=$NIRI_TRACY
+            [ "$side" = a ] || BIN[$base-$side-$round]=$OUT/niri-tracy-$side
+            ORDER+=("$base-$side-$round")
+        done; done
+    done
 fi
 write_cost_config() {   # $1 path, $2 glass noise lines
     GLASS_EXTRA=$'ior 1\nattenuation-color "#ffffff"\nsaturation 1\n'"$2" \
