@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-313 paths differ: 52 class B (seam), 216 class A (fork-only), 45 class C (scaffolding).
+315 paths differ: 52 class B (seam), 216 class A (fork-only), 47 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -64,12 +64,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +40/-4 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +94/-0 |
+| `AGENTS.md` | C | A | +96/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
-| `justfile` | C | A | +124/-0 |
+| `justfile` | C | A | +126/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/lib.rs` | B | M | +1918/-127 |
@@ -118,6 +118,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/capture_hold.py` | C | A | +580/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
+| `tools/identity-check` | C | A | +57/-0 |
 | `tools/ops-check` | C | A | +339/-0 |
 | `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
@@ -132,11 +133,12 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
 | `tools/test_gpu_clocks.py` | C | A | +267/-0 |
+| `tools/test_identity_check.py` | C | A | +90/-0 |
 | `tools/test_noise_placement_cost.py` | C | A | +102/-0 |
 | `tools/test_optic_settling.py` | C | A | +1289/-0 |
-| `tools/test_package_pin.py` | C | A | +117/-0 |
+| `tools/test_package_pin.py` | C | A | +122/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +375/-0 |
-| `tools/test_target_dir_check.py` | C | A | +180/-0 |
+| `tools/test_target_dir_check.py` | C | A | +181/-0 |
 | `tools/test_tooling_tests.py` | C | A | +411/-0 |
 | `tools/test_upstream_report.py` | C | A | +954/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |

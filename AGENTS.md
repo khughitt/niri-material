@@ -76,7 +76,9 @@ rendering design assumes.
   both routes are capped by `NEXTEST_TEST_THREADS` when
   set; the cap must be a positive ASCII decimal integer.
 - `just check` runs hygiene, target isolation, rustfmt, clippy, fast tooling and
-  task/report/pin checks; `just check-full` substitutes parallel full tooling.
+  identity/task/report/pin checks; `just check-full` substitutes parallel full tooling.
+  `tools/identity-check` refuses a repo-local user.name or user.email: the trace a
+  git fixture leaves when hook-inherited GIT_DIR redirects its `git config` here.
   Pre-commit uses full tooling for the narrow lifecycle subjects and gate wiring in
   `tooling_full_paths`, fast tooling for other code, and static source plus consistency
   checks for root guides/tasks/specs/plans/notes. The fast route records

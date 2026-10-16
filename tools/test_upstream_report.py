@@ -36,15 +36,15 @@ class Fixture(unittest.TestCase):
     def setUp(self):
         self.root = pathlib.Path(tempfile.mkdtemp())
         self.git("init", "-q", "-b", "main")
-        self.git("config", "user.email", "fixture@example.invalid")
-        self.git("config", "user.name", "Fixture")
-        self.git("config", "commit.gpgsign", "false")
-
+        # Confined before the first config write: an escaped one lands in this repository.
         toplevel = self.git("rev-parse", "--show-toplevel").strip()
         self.assertEqual(
             os.path.realpath(toplevel), os.path.realpath(self.root),
             "fixture escaped its temporary repository",
         )
+        self.git("config", "user.email", "fixture@example.invalid")
+        self.git("config", "user.name", "Fixture")
+        self.git("config", "commit.gpgsign", "false")
 
     def tearDown(self):
         shutil.rmtree(self.root, ignore_errors=True)
