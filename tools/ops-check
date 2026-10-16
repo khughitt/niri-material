@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 11
+# ops-check version 12
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -20,6 +20,14 @@ exits 2 when it cannot run at all.
   it without backticks. From a linked worktree, one that only the main checkout has
   (its .worktrees) is named as such: setup cannot produce it there.
 - Conflicted copies: no tracked path may be a Dropbox conflicted copy.
+- Stale index: no staged path may hold content the working tree does not, where the
+  working tree holds HEAD's version (or nothing, for a path HEAD lacks). In a synced
+  checkout the index stays host-local while refs sync, so the other host's commit moves
+  HEAD and the files here and leaves the index behind; committing it would revert that
+  work. Judged per path, so a real edit staged on top of a stale index still finds the
+  stale paths, and on the index git hands a hook, so `git commit -- <path>` (built from
+  HEAD) passes. `git rm --cached` reads the same way: `OPS_CHECK_STALE_INDEX=allow` lets
+  intended staging through. Repair: `git reset -q -- <path>`, or ops `bin/git-index-health`.
 - Agent scratch: no tracked path may lie under a `.agents/` directory. The global ignore
   keeps one out of `git add`; only `git add -f` gets past it, and only the index shows that.
 - Machine layout: no tracked file may carry this machine's layout — the home directory,
@@ -43,6 +51,7 @@ import re
 import socket
 import subprocess
 import sys
+import tempfile
 import tomllib
 
 DOCS = ("README.md", "AGENTS.md", "CLAUDE.md")
@@ -69,6 +78,12 @@ LAYOUT_LINES = 10
 ADOPTED = {"cli.toml": "cli.toml", "cli_surface.py": "bin/cli_surface.py", "keys.toml": "keys.toml"}
 # A hostname that names no machine in particular is not layout.
 GENERIC_HOSTNAMES = ("localhost",)
+STALE_LINES = 10
+STALE_OVERRIDE = "OPS_CHECK_STALE_INDEX"
+# Options on every command that reads or writes the guard's scratch index.
+SCRATCH = ("-c", "core.splitIndex=false", "-c", "core.ignoreStat=false")
+# A file's modes: without core.fileMode a change between them is no sign of anything.
+REGULAR = {"100644", "100755"}
 
 
 def fail(message):
@@ -209,6 +224,133 @@ def adopted_findings(root, files, projects):
                             f" land the change in ops first, then run `vendored adopt {name}` here")
 
 
+def git_z(root, *args, env=None):
+    """NUL-separated `git` output as str tokens, or None when git fails. Bytes decoded
+    with surrogateescape, so any path round-trips into a pathspec and no newline is
+    translated inside a path."""
+    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True, env=env)
+    if result.returncode != 0:
+        return None
+    return [t for t in result.stdout.decode("utf-8", errors="surrogateescape").split("\0") if t]
+
+
+def absent(blob):
+    """git's all-zero sha, the side of a change that does not exist, at any hash length."""
+    return set(blob) == {"0"}
+
+
+def staged_changes(root):
+    """{path: (HEAD mode, HEAD blob, index mode, index blob)} for every path the index being committed (a hook
+    inherits GIT_INDEX_FILE) disagrees with HEAD about; unmerged paths are left out, and
+    so are intent-to-add entries, which a commit does not record."""
+    tokens = git_z(root, "diff-index", "--cached", "--raw", "-z", "--no-abbrev", "--no-renames",
+                   "--ita-invisible-in-index", "--ignore-submodules=none", "HEAD")
+    if tokens is None:
+        fail("cannot compare the index with HEAD")
+    changes = {}
+    for meta, path in zip(tokens[0::2], tokens[1::2]):
+        head_mode, index_mode, head, index, status = meta.split()
+        if status != "U":
+            changes[path] = (head_mode.lstrip(":"), head, index_mode, index)
+    return changes
+
+
+def differs_from_head(root, entries):
+    """The paths of `entries` ({path: (mode, blob)} from HEAD) whose working tree does
+    not match HEAD. Measured in a scratch index holding only those entries, so the real
+    index is never read or written, only the candidates are hashed, and no pathspec is
+    parsed (git refuses one that lies beyond a symlink, as a replaced directory's old
+    children do). Never split, so no shared index lands in the synced git directory, and
+    never assume-unchanged (core.ignoreStat), so every entry is compared. A submodule's
+    own dirt is not its commit, so only the commit is compared there."""
+    with tempfile.TemporaryDirectory() as tmp:
+        env = dict(os.environ, GIT_INDEX_FILE=str(pathlib.Path(tmp) / "index"))
+        info = "".join(f"{mode} {blob}\t{path}\0" for path, (mode, blob) in entries.items())
+        written = subprocess.run(["git", "-C", str(root), *SCRATCH, "update-index",
+                                  "-z", "--index-info"], input=os.fsencode(info), capture_output=True, env=env)
+        if written.returncode != 0:
+            fail("cannot write the scratch index")
+        # -q: entries that differ are the answer, not an error; it still hashes them.
+        if git_z(root, *SCRATCH, "update-index", "-q", "--refresh", env=env) is None:
+            fail("cannot refresh the scratch index")
+        out = git_z(root, *SCRATCH, "diff-files", "--name-only", "-z",
+                    "--ignore-submodules=dirty", env=env)
+        if out is None:
+            fail("cannot compare the working tree with HEAD")
+        return set(out)
+
+
+def unborn(root):
+    """Whether HEAD names a branch with no commit yet. A HEAD that resolves to nothing
+    for any other reason (a ref file cut short by a partial sync) cannot be judged."""
+    if git(root, "rev-parse", "--verify", "-q", "HEAD") is not None:
+        return False
+    ref = git(root, "symbolic-ref", "-q", "HEAD")
+    # A branch with a reflog had commits: its ref vanished (a partial sync of the other
+    # host's pack-refs), and a commit now would start a new root.
+    if ref is None or git(root, "show-ref", "--verify", "-q", ref.strip()) is not None \
+            or git(root, "reflog", "exists", ref.strip()) is not None:
+        fail("HEAD cannot be resolved: a broken or vanished ref, or one synced ahead of its objects"
+             f" (a new branch with an empty reflog: rerun with {STALE_OVERRIDE}=allow)")
+    return True
+
+
+def stale_index_findings(root, allowed):
+    """(path, 0, message) for each staged path whose working tree holds HEAD's version
+    (or, for a path HEAD lacks, nothing): the commit would record content nobody sees on
+    disk, which is what an index left behind by another host's synced commit does. Then
+    one `(index)` line with the remedy. Silent before the first commit and when allowed."""
+    if allowed or unborn(root):
+        return
+    changes = staged_changes(root)
+    if not changes:
+        return
+    # Cheap first: a path whose working tree matches the index (stat cache) holds the
+    # staged content on disk, so only the rest need hashing against HEAD.
+    unsettled = git_z(root, "diff-files", "--name-only", "-z", "--ignore-submodules=none")
+    if unsettled is None:
+        fail("cannot compare the working tree with the index")
+    unsettled = set(unsettled)
+    candidates = {p: c for p, c in changes.items() if absent(c[3]) or p in unsettled}
+    in_head = {p: (mode, head) for p, (mode, head, _, _) in candidates.items() if not absent(head)}
+    differs = differs_from_head(root, in_head) if in_head else set()
+    # Without file modes the working tree cannot hold one, so a staged mode is no sign.
+    file_modes = git(root, "config", "--bool", "core.fileMode") != "false\n"
+    stale = []
+    for path, (head_mode, head, index_mode, index) in sorted(candidates.items()):
+        if absent(head):
+            if not os.path.lexists(root / path):
+                stale.append((path, "staged, but neither HEAD nor the working tree has it: the commit would restore it"))
+        elif path not in differs:
+            if absent(index):
+                stale.append((path, "staged as deleted, but the working tree holds HEAD's version: the commit would delete it"))
+            elif index == head:
+                if not file_modes and {head_mode, index_mode} <= REGULAR:
+                    continue
+                stale.append((path, "staged mode change the working tree does not have"))
+            else:
+                stale.append((path, "staged content would revert HEAD's version, which the working tree holds"))
+    if not stale:
+        return
+    for path, message in stale[:STALE_LINES]:
+        yield path, 0, message
+    if len(stale) > STALE_LINES:
+        yield "(index)", 0, f"{len(stale) - STALE_LINES} more stale paths are not listed"
+    yield "(index)", 0, (f"{len(stale)} staged path{'s' if len(stale) != 1 else ''} would commit what the working tree does not hold;"
+                         " if another host's sync moved HEAD under this index, `git reset -q -- <path>`"
+                         " rebuilds each entry from HEAD without touching the working tree (`git reset -q`"
+                         " when every staged path is listed, or ops `git-index-health --repair <root>`"
+                         " across checkouts); if the staging is intended, rerun with"
+                         f" {STALE_OVERRIDE}=allow")
+
+
+def stale_allowed(env):
+    value = env.get(STALE_OVERRIDE)
+    if value not in (None, "allow"):
+        fail(f"{STALE_OVERRIDE} must be `allow` or unset, not `{value}`")
+    return value == "allow"
+
+
 def tracked(root):
     return (git(root, "ls-files", "-z") or "").split("\0")[:-1]
 
@@ -306,9 +448,10 @@ def references(root, projects, basenames, doc):
         previous = line
 
 
-def findings(root, projects, values):
+def findings(root, projects, values, stale_ok=False):
     """Every finding in the repository at root, as (path, line, message); line 0 when
     the finding is about a path rather than a place in a document."""
+    yield from stale_index_findings(root, stale_ok)
     files = tracked(root)
     basenames = {pathlib.PurePosixPath(f).name for f in files}
     for doc in DOCS:
@@ -328,7 +471,7 @@ def main():
     projects = registry(os.environ)
     values = layout(os.environ, projects, socket.gethostname(), banned(os.environ))
     count = 0
-    for path, line, message in findings(root, projects, values):
+    for path, line, message in findings(root, projects, values, stale_allowed(os.environ)):
         where = f"{path}:{line}" if line else path
         sys.stderr.write(f"{where}: {message}\n")
         count += 1
