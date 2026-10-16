@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-16T12:34:35Z
+updated: 2026-10-16T12:34:40Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -23,4 +23,6 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 ## Notes
 
 - 2026-10-16T12:34:35Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:45aab597-9132-43ae-af7a-ff9fd44c6248","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T12:34:40Z (materials-26.04): parked (waiting on user, quiet; headless, 30 min): On a quiet TTY host (desktop stopped): from the main checkout, dump nvidia-smi -q (full) at rest, then run noise-layers-cost.sh none (NOISE_LAYERS_COST_PILOT=1, CAPTURE_TASK=material-04818d, fresh OUT; build ~3, run ~3) repeatedly, sampling power.draw between runs, until the floor lands on ~17 W; dump nvidia-smi -q again and diff the two (power/perf/clocks event reasons, PCIe, fan, display). Then propose prevention or a reviewed settle-gate change. Earlier: the 2026-10-16 session saw both floors and two refused A/B attempts.
   provenance: {"harness_session":"claude-code:45aab597-9132-43ae-af7a-ff9fd44c6248","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
