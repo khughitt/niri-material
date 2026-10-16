@@ -19,6 +19,8 @@ tt := "python3 tools/tt"
 # fast_cmd selects affected Rust packages; test_cmd stays Rust-only for CI.
 # check_cmd runs hygiene, target isolation, rustfmt, clippy, fast tooling and
 # repository consistency checks. Full checks substitute parallel tooling once.
+# identity-check follows the tooling, so a fixture leaking a commit identity into
+# .git/config fails the very commit whose tests leaked it.
 nextest_cmd := "cargo nextest run --status-level fail --final-status-level fail"
 fast_cmd := "python3 tools/test-affected --status-level fail --final-status-level fail"
 one_cmd := nextest_cmd
@@ -29,7 +31,7 @@ tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --fu
 tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --check-paths"
 hygiene_cmd := "python3 tools/ops-check"
 check_before_cmd := hygiene_cmd + " && python3 tools/target-dir-check && rustup run nightly cargo fmt --all -- --check && cargo clippy --all --all-targets"
-check_after_cmd := "tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
+check_after_cmd := "python3 tools/identity-check && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
 check_cmd := check_before_cmd + " && " + tooling_fast_cmd + " && " + check_after_cmd
 full_check_cmd := check_before_cmd + " && " + tooling_full_cmd + " && " + check_after_cmd
 

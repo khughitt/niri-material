@@ -44,9 +44,14 @@ def run(cwd, *args):
 class PinTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.root = pathlib.Path(self.tmp.name)
+        self.root = pathlib.Path(self.tmp.name).resolve()
         self.addCleanup(self.tmp.cleanup)
         run(self.root, "git", "init", "-q", "-b", "main")
+        # Confined before the first config write: an escaped one lands in this repository.
+        toplevel = subprocess.run(
+            ("git", "rev-parse", "--show-toplevel"), cwd=self.root, capture_output=True,
+            text=True, check=True).stdout.strip()
+        self.assertEqual(pathlib.Path(toplevel), self.root, "fixture git escaped its temp dir")
         run(self.root, "git", "config", "user.email", "test@example.com")
         run(self.root, "git", "config", "user.name", "Test")
         (self.root / "docs/materials").mkdir(parents=True)
