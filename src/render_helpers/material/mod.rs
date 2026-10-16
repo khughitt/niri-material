@@ -624,29 +624,26 @@ pub fn seed_basis(projection: &[f32; 9], scale: f64) -> [f32; 4] {
     ]
 }
 
-/// The view uniforms (design 2026-10-09 §4.1). At rest every value is the identity.
+/// The view uniforms (design 2026-10-09 §4.1), which only the view variant declares: it is
+/// bound only while a swing runs (§6 "Contingency"), so `mat_view_on` is 1.
 fn view_uniforms(
-    view: Option<(&ElementView, &Camera)>,
+    view: &ElementView,
+    camera: &Camera,
     quad: [f32; 4],
     seed: [f32; 4],
 ) -> [Uniform<'static>; 5] {
-    let (on, values, dir) = match view {
-        Some((view, camera)) => (
-            1,
+    [
+        Uniform::new("mat_view_on", UniformValue::_1i(1)),
+        Uniform::new(
+            "mat_view",
             [
                 camera.cos_m1 as f32,
                 camera.sin as f32,
                 camera.lambda as f32,
                 view.wall_spill,
             ],
-            [camera.dir.x as f32, camera.dir.y as f32],
         ),
-        None => (0, [0., 0., 0., 1.], [1., 0.]),
-    };
-    [
-        Uniform::new("mat_view_on", UniformValue::_1i(on)),
-        Uniform::new("mat_view", values),
-        Uniform::new("mat_view_dir", dir),
+        Uniform::new("mat_view_dir", [camera.dir.x as f32, camera.dir.y as f32]),
         Uniform::new("mat_view_quad", quad),
         Uniform::new("mat_view_seed", seed),
     ]
@@ -829,8 +826,11 @@ impl MaterialState {
         self.jelly_seed
     }
 
+    /// Whether both material programs compiled: a tile draws the rest program and, while a
+    /// swing runs, the view variant, so one without the other is no material path.
     pub fn has_program(renderer: &mut GlesRenderer) -> bool {
-        Shaders::get(renderer).material.is_some()
+        let shaders = Shaders::get(renderer);
+        shaders.material.is_some() && shaders.material_view.is_some()
     }
 
     /// Advances the element commit counter if and only if a pixel input
@@ -1120,17 +1120,18 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_bevel_profile", g.bevel_profile as f32),
         ];
         uniforms.extend(self.optics.iter().cloned());
-        let camera = self
-            .view
-            .as_ref()
-            .map(|view| frame_camera(&self.frame, &view.pose));
-        let quad = view_quad(self.frame.area, self.drawn, self.scale);
-        let seed = seed_basis(frame.projection(), self.scale);
-        uniforms.extend(view_uniforms(
-            self.view.as_ref().zip(camera.as_ref()),
-            quad,
-            seed,
-        ));
+        // The view variant only while a swing runs (design 2026-10-09 §6 "Contingency"); at
+        // rest the base's program draws with the base's uniforms.
+        let program = match &self.view {
+            Some(view) => {
+                let camera = frame_camera(&self.frame, &view.pose);
+                let quad = view_quad(self.frame.area, self.drawn, self.scale);
+                let seed = seed_basis(frame.projection(), self.scale);
+                uniforms.extend(view_uniforms(view, &camera, quad, seed));
+                ProgramType::MaterialView
+            }
+            None => ProgramType::Material,
+        };
         let uniforms: Rc<[Uniform<'static>]> = uniforms.into();
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
@@ -1143,7 +1144,7 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             ),
         ]);
         let inner = ShaderRenderElement::new(
-            ProgramType::Material,
+            program,
             self.drawn.size,
             None,
             self.scale as f32,
@@ -2742,24 +2743,17 @@ mod tests {
     }
 
     #[test]
-    fn the_view_uniforms_are_the_identity_at_rest() {
-        let rest = view_uniforms(None, [0., 0., 1., 1.], [1., 0., 0., 1.]);
-        let expect = [
-            Uniform::new("mat_view_on", UniformValue::_1i(0)),
-            Uniform::new("mat_view", [0f32, 0., 0., 1.]),
-            Uniform::new("mat_view_dir", [1f32, 0.]),
-            Uniform::new("mat_view_quad", [0f32, 0., 1., 1.]),
-            Uniform::new("mat_view_seed", [1f32, 0., 0., 1.]),
-        ];
-        assert_eq!(rest, expect);
+    fn the_view_uniforms_at_the_identity_pose_correct_nothing() {
         let id = swing_view(ViewPose::identity(DVec2::new(0.6, 0.8), 6.), None);
         let camera = Camera::new(&id.pose, DVec2::ZERO, DVec2::splat(100.));
-        let on = view_uniforms(Some((&id, &camera)), [0., 0., 1., 1.], [1., 0., 0., 1.]);
+        let on = view_uniforms(&id, &camera, [0., 0., 1., 1.], [1., 0., 0., 1.]);
         assert_eq!(on[0], Uniform::new("mat_view_on", UniformValue::_1i(1)));
         assert_eq!(
             on[1],
             Uniform::new("mat_view", [-0f32, 0., 0., 1.]),
             "every correction is zero"
         );
+        assert_eq!(on[3], Uniform::new("mat_view_quad", [0f32, 0., 1., 1.]));
+        assert_eq!(on[4], Uniform::new("mat_view_seed", [1f32, 0., 0., 1.]));
     }
 }

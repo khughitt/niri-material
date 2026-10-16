@@ -28,6 +28,19 @@ pub(crate) fn material_source() -> String {
     source
 }
 
+/// The material program's view variant (design 2026-10-09 §6 "Contingency"): the same source
+/// with `MATERIAL_VIEW` defined after the precision line, so the rigid tilt's `#ifdef` blocks
+/// compile in. `material_source()` defines nothing, so the rest program preprocesses to the
+/// base's text; the view variant is bound only while a swing runs.
+pub(crate) fn material_view_source() -> String {
+    let precision = "precision highp float;\n";
+    let source = material_source();
+    let rest = source
+        .strip_prefix(precision)
+        .expect("material_source starts with the precision line");
+    format!("{precision}#define MATERIAL_VIEW\n{rest}")
+}
+
 /// The effect-program grain pass (`noise site=backdrop`): a complete
 /// `#version 100` fragment program over `blur.vert`'s `v_coords`, built from
 /// the shared helpers, the noise optic's GLSL and `grain.frag`'s main.
@@ -98,13 +111,22 @@ pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>> {
         UniformName::new("mat_sig_ring_accent", UniformType::_1f),
         UniformName::new("mat_light_ior", UniformType::_1f),
         UniformName::new("mat_bevel_profile", UniformType::_1f),
+    ];
+    names.extend(optics::uniform_names());
+    names
+}
+
+/// The view variant's uniforms: the material program's, then the five view uniforms
+/// (design 2026-10-09 §4.1).
+pub(crate) fn material_view_uniform_names() -> Vec<UniformName<'static>> {
+    let mut names = material_uniform_names();
+    names.extend([
         UniformName::new("mat_view_on", UniformType::_1i),
         UniformName::new("mat_view", UniformType::_4f),
         UniformName::new("mat_view_dir", UniformType::_2f),
         UniformName::new("mat_view_quad", UniformType::_4f),
         UniformName::new("mat_view_seed", UniformType::_4f),
-    ];
-    names.extend(optics::uniform_names());
+    ]);
     names
 }
 
@@ -117,6 +139,8 @@ pub struct Shaders {
     pub gradient_fade: Option<GlesTexProgram>,
     pub blur: Option<BlurProgram>,
     pub material: Option<ShaderProgram>,
+    /// The material program with the rigid tilt's view path compiled in.
+    pub material_view: Option<ShaderProgram>,
     pub custom_resize: RefCell<Option<ShaderProgram>>,
     pub custom_close: RefCell<Option<ShaderProgram>>,
     pub custom_open: RefCell<Option<ShaderProgram>>,
@@ -128,6 +152,7 @@ pub enum ProgramType {
     Shadow,
     Resize,
     Material,
+    MaterialView,
     Close,
     Open,
 }
@@ -248,22 +273,36 @@ impl Shaders {
             })
             .ok();
 
+        let material_textures = [
+            "niri_tex_win",
+            "niri_tex_bg",
+            "niri_tex_bg_high",
+            "niri_tex_backdrop",
+            "niri_tex_backdrop_high",
+        ];
         let material_source = material_source();
         let material_uniforms = material_uniform_names();
         let material = ShaderProgram::compile(
             renderer,
             &material_source,
             &material_uniforms,
-            &[
-                "niri_tex_win",
-                "niri_tex_bg",
-                "niri_tex_bg_high",
-                "niri_tex_backdrop",
-                "niri_tex_backdrop_high",
-            ],
+            &material_textures,
         )
         .map_err(|err| {
             warn!("error compiling material shader: {err:?}");
+        })
+        .ok();
+
+        let material_view_source = material_view_source();
+        let material_view_uniforms = material_view_uniform_names();
+        let material_view = ShaderProgram::compile(
+            renderer,
+            &material_view_source,
+            &material_view_uniforms,
+            &material_textures,
+        )
+        .map_err(|err| {
+            warn!("error compiling material view shader: {err:?}");
         })
         .ok();
 
@@ -276,6 +315,7 @@ impl Shaders {
             gradient_fade,
             blur,
             material,
+            material_view,
             custom_resize: RefCell::new(None),
             custom_close: RefCell::new(None),
             custom_open: RefCell::new(None),
@@ -326,6 +366,7 @@ impl Shaders {
                 .clone()
                 .or_else(|| self.resize.clone()),
             ProgramType::Material => self.material.clone(),
+            ProgramType::MaterialView => self.material_view.clone(),
             ProgramType::Close => self.custom_close.borrow().clone(),
             ProgramType::Open => self.custom_open.borrow().clone(),
         }
@@ -518,9 +559,10 @@ mod tests {
 
     #[test]
     fn material_uniform_names_are_unique() {
-        let names = material_uniform_names();
-        let unique: HashSet<_> = names.iter().map(|n| n.name.clone()).collect();
-        assert_eq!(unique.len(), names.len());
+        for names in [material_uniform_names(), material_view_uniform_names()] {
+            let unique: HashSet<_> = names.iter().map(|n| n.name.clone()).collect();
+            assert_eq!(unique.len(), names.len());
+        }
     }
 
     #[test]
@@ -661,11 +703,46 @@ mod tests {
         assert_eq!(hook_calls(&twice, "noise_behind(").len(), 2);
     }
 
-    /// The material program after the `// ---- main` marker, comments
-    /// stripped: hook calls are counted there, not in an optic's own GLSL
-    /// where the function is defined.
-    fn main_body() -> String {
-        let source = material_source();
+    /// `source` as the preprocessor leaves it with `MATERIAL_VIEW` defined (`view`) or not.
+    /// The material files guard the view path with `#ifdef MATERIAL_VIEW`, an optional
+    /// `#else` and `#endif`, never nested (design 2026-10-09 §6 "Contingency").
+    fn variant(source: &str, view: bool) -> String {
+        let mut out = String::with_capacity(source.len());
+        let mut inside = false;
+        let mut keep = true;
+        for line in source.lines() {
+            match line.trim() {
+                "#ifdef MATERIAL_VIEW" => {
+                    assert!(!inside, "a nested MATERIAL_VIEW block");
+                    inside = true;
+                    keep = view;
+                }
+                "#else" if inside => keep = !view,
+                "#endif" if inside => {
+                    inside = false;
+                    keep = true;
+                }
+                t => {
+                    assert!(
+                        !(inside && t.starts_with("#if")),
+                        "a conditional inside a MATERIAL_VIEW block"
+                    );
+                    if keep {
+                        out.push_str(line);
+                        out.push('\n');
+                    }
+                }
+            }
+        }
+        assert!(!inside, "an unterminated MATERIAL_VIEW block");
+        out
+    }
+
+    /// The material program after the `// ---- main` marker, as the rest program (`view`
+    /// false) or the view variant compiles it, comments stripped: hook calls are counted
+    /// there, not in an optic's own GLSL where the function is defined.
+    fn main_body(view: bool) -> String {
+        let source = variant(&material_source(), view);
         let marker = "\n// ---- main\n";
         let at = source
             .find(marker)
@@ -675,29 +752,31 @@ mod tests {
 
     #[test]
     fn pipeline_material_hooks_are_called_exactly_once_in_stage_order() {
-        let body = main_body();
-        let mut last = 0;
-        for stage in STAGES {
-            let Some(optic) = stage.optic else { continue };
-            if optic.program != Program::Material {
-                continue;
+        for view in [false, true] {
+            let body = main_body(view);
+            let mut last = 0;
+            for stage in STAGES {
+                let Some(optic) = stage.optic else { continue };
+                if optic.program != Program::Material {
+                    continue;
+                }
+                // GLSL identifiers spell a hyphenated optic name with underscores.
+                let call = format!("{}_{}(", optic.name.replace('-', "_"), optic.hook);
+                let calls = hook_calls(&body, &call);
+                assert_eq!(
+                    calls.len(),
+                    1,
+                    "{} (view {view}): main.frag calls {call} {} times, expected exactly one",
+                    stage.id,
+                    calls.len()
+                );
+                assert!(
+                    calls[0] >= last,
+                    "{} (view {view}): {call} is called before an earlier stage's hook",
+                    stage.id
+                );
+                last = calls[0];
             }
-            // GLSL identifiers spell a hyphenated optic name with underscores.
-            let call = format!("{}_{}(", optic.name.replace('-', "_"), optic.hook);
-            let calls = hook_calls(&body, &call);
-            assert_eq!(
-                calls.len(),
-                1,
-                "{}: main.frag calls {call} {} times, expected exactly one",
-                stage.id,
-                calls.len()
-            );
-            assert!(
-                calls[0] >= last,
-                "{}: {call} is called before an earlier stage's hook",
-                stage.id
-            );
-            last = calls[0];
         }
     }
 
@@ -839,7 +918,10 @@ mod tests {
 
     #[test]
     fn the_view_uniforms_are_declared() {
-        let source = material_source();
+        let source = material_view_source();
+        assert!(
+            source.starts_with("precision highp float;\n#define MATERIAL_VIEW\n// ---- common\n")
+        );
         for (name, glsl, ty) in [
             ("mat_view_on", "uniform int mat_view_on;", UniformType::_1i),
             ("mat_view", "uniform vec4 mat_view;", UniformType::_4f),
@@ -861,12 +943,19 @@ mod tests {
         ] {
             assert!(source.contains(glsl), "{glsl}");
             assert!(
-                material_uniform_names()
+                material_view_uniform_names()
                     .iter()
                     .any(|n| n.name == name && n.type_ == ty),
                 "{name}"
             );
         }
+        // The rest program takes none of them (design 2026-10-09 §6 "Contingency").
+        assert!(
+            material_uniform_names()
+                .iter()
+                .all(|n| !n.name.starts_with("mat_view")),
+            "the rest program's uniforms name a view uniform"
+        );
         let main = source.split_once("void main()").unwrap().1;
         assert!(main.contains("if (mat_view_on == 1)\n        v = mat_view_quad.xy + niri_v_coords * mat_view_quad.zw;"));
     }

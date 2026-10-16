@@ -125,7 +125,10 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
 ## Under a swing (the rigid tilt)
 
 While a swing runs (`view-tilt`, design `2026-10-09-transient-rigid-tilt`),
-`mat_view_on` is 1 and the shader takes one branch before stage 0:
+the element binds the material program's view variant, the same files
+compiled with `#define MATERIAL_VIEW` (`material_view_source`,
+`ProgramType::MaterialView`). Its `mat_view_on` is 1, and the shader takes
+one branch before stage 0:
 
 1. The drawn quad is the swing's footprint; `mat_view_quad` maps it back to
    the resting area's UV.
@@ -162,7 +165,12 @@ The swing runs on the unadjusted clock: `animations.slowdown` does not
 stretch it, as it does the ring beam. A slab with no extent along the swing
 direction cannot take a swing and renders at rest.
 
-At rest the branch is one uniform test and every stage reads today's inputs.
+At rest the element binds the rest program, which declares no view uniform
+and preprocesses to the shader text from before the tilt: every view line
+sits in an `#ifdef MATERIAL_VIEW` block, and a rest line the view path
+changed keeps its earlier text under `#else`. A single program with the
+branch behind one uniform test cost about 13 % per material draw at rest
+(design §6 "Contingency").
 
 ## 4. What the order settles
 

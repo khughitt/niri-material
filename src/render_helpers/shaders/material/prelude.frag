@@ -62,16 +62,19 @@ uniform vec3 mat_sig_ring_color;
 uniform float mat_sig_ring_accent;
 uniform float mat_light_ior;
 uniform float mat_bevel_profile;
+#ifdef MATERIAL_VIEW
 // The rigid tilt (spec 2026-10-09-transient-rigid-tilt §4): 1 while a swing runs. mat_view
 // carries cos θ − 1, sin θ, λ = w / (κE) and the wall spill gain; mat_view_dir is d;
 // mat_view_quad maps the drawn quad's UV to the resting area's UV (offset, scale);
-// mat_view_seed is framebuffer px per logical px, row-major. At rest: 0, (0, 0, 0, 1),
-// (1, 0), (0, 0, 1, 1).
+// mat_view_seed is framebuffer px per logical px, row-major. At the identity pose: 1,
+// (0, 0, 0, gain), d, (0, 0, 1, 1). Only this view variant declares them; it is bound only
+// while a swing runs (§6 "Contingency").
 uniform int mat_view_on;
 uniform vec4 mat_view;
 uniform vec2 mat_view_dir;
 uniform vec4 mat_view_quad;
 uniform vec4 mat_view_seed;
+#endif
 
 // Slab geometry published by slabSurface for the focus filament: the outer
 // silhouette and the face (the chamfer's inner edge, jelly included), which
@@ -105,7 +108,9 @@ struct Surface {
     float across;      // u: 0 at the face edge, 1 at the silhouette, 0 on the face
     vec2 acrossDir;    // normalize(grad u), outward across the bevel
     float outerDist;   // signed distance to the silhouette, negative inside
+#ifdef MATERIAL_VIEW
     vec3 view;         // toward the viewer: +z at rest
+#endif
 };
 
 bool inRect(vec2 v, vec4 rect) {
@@ -324,9 +329,11 @@ float bevelProfileSlope(float u, float k) {
     float b = clamp(1.0 - pow(u, k), BEVEL_PROFILE_EPS, 1.0);
     return pow(a, k - 1.0) * pow(b, 1.0 / k - 1.0);
 }
+#ifdef MATERIAL_VIEW
 
 // The slab's frame, independent of the fragment: the silhouette and the face that trails the
-// jelly, published for the filament and the traced solid. slabSurface starts with it.
+// jelly, published for the filament and the traced solid. The view variant's slabSurface
+// starts with it; the rest program's keeps the base's inline copy (§6 "Contingency").
 void slabFrame(out float chamfer) {
     vec2 slab_min = mat_slab_rect.xy * mat_area_size;
     vec2 slab_size = mat_slab_rect.zw * mat_area_size;
@@ -371,6 +378,7 @@ void slabFrame(out float chamfer) {
     g_face_half = inner_half;
     g_face_r = inner_r;
 }
+#endif
 
 // The fragment-faked slab at an element-local logical-px position:
 // coverage in [0, 1], the structural normal (y-down, +z toward the viewer),
@@ -381,6 +389,7 @@ void slabFrame(out float chamfer) {
 void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist,
                  out float innerDist, out float chamferOut, out float height,
                  out float across, out vec2 acrossDir) {
+#ifdef MATERIAL_VIEW
     float chamfer;
     slabFrame(chamfer);
     chamferOut = chamfer;
@@ -390,6 +399,51 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     vec2 inner_half = g_face_half;
     vec4 inner_r = g_face_r;
     vec4 outer_r = g_outer_r;
+#else
+    vec2 slab_min = mat_slab_rect.xy * mat_area_size;
+    vec2 slab_size = mat_slab_rect.zw * mat_area_size;
+    vec2 half_ext = slab_size * 0.5;
+    vec2 center = slab_min + half_ext;
+
+    // Tiny-slab guard: for windows too small to carry a chamfer the upper
+    // bound collapses to 0 (never below — reversed clamp bounds are
+    // undefined in GLSL) and the whole slab renders as front face.
+    float max_chamfer = max(min(half_ext.x, half_ext.y) - 1.0, 0.0);
+    float chamfer = clamp(mat_chamfer, 0.0, max_chamfer);
+
+    vec2 inner_half = (half_ext - vec2(chamfer))
+        * (vec2(1.0) + mat_jelly_resize / max(2.0 * half_ext, vec2(1.0)));
+    vec2 inner_center = center + mat_jelly_move;
+
+    // `mat_corner_radius` is fitted to the *window*, but neither SDF box is
+    // the window: the inner face is the window narrowed on both axes by
+    // 2 * max(|offset-x|, |offset-y|), then translated by the offset
+    // (defaults, 100 px window: slab 112, inner face 88). Refit to the box
+    // actually being drawn. The reduction is proportional across all four
+    // corners, never per-corner clamping, which would shrink a large radius
+    // whose neighbour is small.
+    // Fit against whichever box binds harder. Jelly scales `inner_half`
+    // while `half_ext` stays fixed, so a positive resize can leave the inner
+    // face wider than (outer - 2 * chamfer): at the 112/88 geometry a
+    // full-flex resize reaches an inner edge near 90.4, and 90.4 + 2 * 12
+    // overflows the 112 px outer edge. Constraining the *inner* radius by
+    // both keeps `outer = inner + chamfer` exactly true, which the bevel
+    // normal below depends on — it takes its slope from the height field
+    // between the inner and outer boundaries, so a separately fitted outer
+    // ring would change that run, and tilt the normal, at exactly the corners
+    // it narrowed.
+    vec2 radius_half = min(inner_half, half_ext - vec2(chamfer));
+    vec4 inner_r = fitRadii(mat_corner_radius, radius_half);
+    vec4 outer_r = inner_r + vec4(chamfer);
+
+    g_center = center;
+    g_half = half_ext;
+    g_outer_r = outer_r;
+    g_face_center = inner_center;
+    g_face_half = inner_half;
+    g_face_r = inner_r;
+    chamferOut = chamfer;
+#endif
 
     float d = sdRoundedBox(p - center, half_ext, outer_r);
     outerDist = d;
@@ -429,6 +483,7 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
         acrossDir = length(gradU) > 0.0 ? normalize(gradU) : gIn;
     }
 }
+#ifdef MATERIAL_VIEW
 
 // The view path's state for this fragment (spec 2026-10-09 §4.1). main sets it while
 // mat_view_on is 1. At rest it keeps these initial values, the rest optics' own, and no
@@ -744,6 +799,7 @@ vec2 viewHit() {
     g_hit_z = -g_trace_t * mat_thickness;
     return g_h0_shift + g_rho.xy * (g_trace_t * mat_thickness);
 }
+#endif
 
 // The refracted ray's length to the backdrop plane under local height h
 // (spec §3.1 "Ray model"). On the face, t = (0, 0, -1) and L = h.
@@ -763,21 +819,27 @@ vec3 liftTapNormal(vec3 n) {
 // element and the background buffers share the y-down orientation.
 vec3 tap(vec2 v, vec3 n, float ior, float h) {
     vec3 refr = refract(vec3(0.0, 0.0, -1.0), liftTapNormal(n), 1.0 / ior);
+#ifdef MATERIAL_VIEW
     if (g_view_on)
         refr = refract(g_ray, liftTapNormal(n), 1.0 / ior);
+#endif
     vec2 vv = v + (refr.xy * rayPath(refr, h)) / mat_area_size;
+#ifdef MATERIAL_VIEW
     // Under a tilt the exit point on the back plane goes through toScreen (§4.2).
     if (g_view_on)
         vv += viewScreenShift(vec3(v * mat_area_size + refr.xy * rayPath(refr, h), -mat_thickness))
             / mat_area_size;
+#endif
     return srgbToLinear(sampleBackground(vv));
 }
 
 // Interior light follows the perturbed normal through the light-path index
 // and lands `depth` px into the slab; this is that in-plane displacement.
 vec2 lightShift(vec3 n, float ior, float depth) {
+#ifdef MATERIAL_VIEW
     if (g_view_on)
         return refract(g_ray, n, 1.0 / ior).xy * depth;
+#endif
     return refract(vec3(0.0, 0.0, -1.0), n, 1.0 / ior).xy * depth;
 }
 

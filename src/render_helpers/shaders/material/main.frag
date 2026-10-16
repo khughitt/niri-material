@@ -1,9 +1,12 @@
 void main() {
     vec2 v = niri_v_coords;
+#ifdef MATERIAL_VIEW
     // During a swing the drawn quad is the footprint; v stays the resting area's UV.
     if (mat_view_on == 1)
         v = mat_view_quad.xy + niri_v_coords * mat_view_quad.zw;
+#endif
     vec2 p = v * mat_area_size;
+#ifdef MATERIAL_VIEW
 
     // The rigid tilt (spec 2026-10-09 §4.1): the slab-local ray and its window-plane hit. The
     // decal is sampled there, and the glass is shaded at the hit; every shift is exactly zero
@@ -21,13 +24,19 @@ void main() {
         winV = v + g_h0_shift / mat_area_size;
         hasDecal = g_decal_ok;
     }
+#endif
 
     // Window sample: zero outside the texture footprint. Corner clipping
     // already happened when the window elements rendered into the
     // offscreen, so the texture is final window content.
     vec4 win = vec4(0.0);
+#ifdef MATERIAL_VIEW
     if (hasDecal && inRect(winV, mat_geo_rect)) {
         vec2 wv = (winV - mat_geo_rect.xy) / mat_geo_rect.zw;
+#else
+    if (inRect(v, mat_geo_rect)) {
+        vec2 wv = (v - mat_geo_rect.xy) / mat_geo_rect.zw;
+#endif
         win = texture2D(niri_tex_win, mat_win_rect.xy + wv * mat_win_rect.zw);
     }
     if (win.a == 1.0) {
@@ -43,6 +52,7 @@ void main() {
     float surfaceHeight;
     float bevelAcross;
     vec2 acrossDir;
+#ifdef MATERIAL_VIEW
     if (g_view_on) {
         vec2 hitShift = viewHit();
         p = p + hitShift;
@@ -52,8 +62,10 @@ void main() {
         seed = gl_FragCoord.xy + whole;
         g_seed_glide = fb - whole;
     }
+#endif
     slabSurface(p, coverage, surfaceNormal, slabDist, innerDist, slabChamfer,
                 surfaceHeight, bevelAcross, acrossDir);
+#ifdef MATERIAL_VIEW
     // The outline coverage and the wall (§4.3, §4.5). A face hit far from the outline keeps
     // the coverage slabSurface gave it, which is 1 there.
     if (g_view_on && (!g_face_hit || g_face_near))
@@ -84,6 +96,7 @@ void main() {
         }
         return;
     }
+#endif
 
     vec4 glassed = vec4(0.0);
     if (coverage > 0.0) {
@@ -108,11 +121,13 @@ void main() {
                 0.0);
             n = normalize(n + mat_jelly_activity * mat_jelly_ripple * ripple);
         }
+#ifdef MATERIAL_VIEW
 
         // The wall takes its normal as both normals (spec 2026-10-09 §4.3 "Specular"):
         // distortion and ripple do not bend it.
         if (g_view_on && g_wall)
             n = surfaceNormal;
+#endif
 
         // Neutral effects make every tap identical: skip the loop and
         // jitter entirely. Config validation keeps both non-negative, so
@@ -127,8 +142,13 @@ void main() {
                 float fi = float(i);
                 if (fi >= count)
                     break;
+#ifdef MATERIAL_VIEW
                 float r1 = hash12(seed + fi * 17.0);
                 float r2 = hash12(seed + fi * 71.0 + 3.7);
+#else
+                float r1 = hash12(gl_FragCoord.xy + fi * 17.0);
+                float r2 = hash12(gl_FragCoord.xy + fi * 71.0 + 3.7);
+#endif
                 // Today's smear rule applied to the local height.
                 float t = surfaceHeight * (1.0 + mat_anisotropic_blur * (fi + r1) / count);
                 if (mat_chromatic_aberration > 0.0) {
@@ -145,18 +165,27 @@ void main() {
         }
 
         // Behind hooks act once on the averaged linear backdrop.
+#ifdef MATERIAL_VIEW
         sampled = saturation_behind(sampled, seed);
         sampled = noise_behind(sampled, seed);
+#else
+        sampled = saturation_behind(sampled, gl_FragCoord.xy);
+        sampled = noise_behind(sampled, gl_FragCoord.xy);
+#endif
 
         // Beer-Lambert along the structural ray to the backdrop plane
         // (spec §3.1): the face path is the thickness exactly; on the bevel
         // the glass thins. Distortion moves taps but does not lengthen it.
         float surfaceCosine = clamp(surfaceNormal.z, 0.0, 1.0);
+#ifdef MATERIAL_VIEW
         if (g_view_on)
             surfaceCosine = clamp(dot(g_view, surfaceNormal), 0.0, 1.0);
+#endif
         vec3 structuralRay = refract(vec3(0.0, 0.0, -1.0), surfaceNormal, 1.0 / mat_ior);
+#ifdef MATERIAL_VIEW
         if (g_view_on)
             structuralRay = refract(g_ray, surfaceNormal, 1.0 / mat_ior);
+#endif
         float opticalDistance = rayPath(structuralRay, surfaceHeight);
         vec3 att = pow(clamp(mat_attenuation_color.rgb, vec3(0.001), vec3(1.0)),
                        vec3(opticalDistance / mat_attenuation_distance));
@@ -240,9 +269,11 @@ void main() {
                 if (slabChamfer > 0.0 && innerDist > 0.0) {
                     spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - bevelAcross);
                 }
+#ifdef MATERIAL_VIEW
                 // Guided light leaves the slab at the wall at the face-edge strength (§4.3).
                 if (g_wall)
                     spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * mat_view.w;
+#endif
             }
             float glow = (accentGlow * presence + focusGlow) * (1.0 + 2.0 * mat_jelly_activity);
             vec3 color = showAccent
@@ -265,7 +296,11 @@ void main() {
             facing = max(dot(normalize(surfaceNormal.xy),
                              normalize(mat_sig_light.xy)), 0.0);
         vec3 specular = vec3(fresnel * (0.15 + 0.85 * facing));
+#ifdef MATERIAL_VIEW
         Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist, g_view);
+#else
+        Surface surf = Surface(p, v, surfaceNormal, n, surfaceCosine, fresnel, bevelAcross, acrossDir, slabDist);
+#endif
         // Specular hooks, in OPTICS order (render-pipeline.md stage 6).
         specular = reflection_specular(specular, surf);
         specular = edge_highlight_specular(specular, surf);
@@ -295,7 +330,11 @@ void main() {
         vec3 glassColor = linearToSrgb(transmitted + within + specular + emissive);
         // Post hooks, in OPTICS order (render-pipeline.md stage 9): film grain
         // over the finished, encoded glass.
+#ifdef MATERIAL_VIEW
         glassColor = noise_post(glassColor, seed);
+#else
+        glassColor = noise_post(glassColor, gl_FragCoord.xy);
+#endif
         glassed = vec4(glassColor, 1.0) * coverage;
     }
 

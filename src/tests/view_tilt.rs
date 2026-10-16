@@ -490,6 +490,9 @@ fn every_identity_scene_parses_and_replaces_its_nodes() {
     assert!(bevel0(STOCK).contains("bevel 0") && !bevel0(STOCK).contains("bevel 12"));
 }
 
+/// §8.2 "Rest identity" across the two programs (§6 "Contingency"): the rest render binds the
+/// rest program, built from the base's text, and the forced identity pose gives every tile a
+/// view, so it binds the view variant. The two must agree byte for byte.
 #[test]
 fn the_view_branch_at_the_identity_is_byte_identical_to_rest() {
     eprintln!(

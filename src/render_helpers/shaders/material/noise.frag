@@ -45,7 +45,11 @@ vec4 noiseBspline(float t) {
 float noiseValue(vec2 fragCoord, float type, float scale, vec2 offset) {
     if (scale <= 1.0)
         return type < 0.5 ? hash12(fragCoord + offset) - 0.5 : fineGrain(fragCoord + offset);
+#ifdef MATERIAL_VIEW
     vec2 p = (fragCoord + g_seed_glide) / scale;
+#else
+    vec2 p = fragCoord / scale;
+#endif
     vec2 base = floor(p) + offset;
     vec2 t = fract(p);
     vec4 bx = noiseBspline(t.x);

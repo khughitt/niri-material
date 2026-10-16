@@ -14,6 +14,17 @@ files: byte-identical (`$EV` = `baseline-20261009T2350`). Within the branch,
 byte-identically to rest, and that a frame after a swing equals a never-swung
 render.
 
+After the cost A/B failed the rest bound, the view path moved into a second
+program variant (design §6 "Contingency"; plan Task 14 Step 4): the rest
+program is the base's shader text, the files stripped of their
+`#ifdef MATERIAL_VIEW` blocks diff empty against `23039f67`'s, and the view
+variant is bound only while a swing runs. The same renders dumped at the commit
+`perf(material): rigid tilt view path as a second program variant` (parent
+`2f86b3ac`) on `NVIDIA GeForce RTX 3070/PCIe/SSE2`, 137 files, are
+byte-identical to the base dumps above (`$EV` = `contingency-20261016T0749`).
+`view_tilt`'s identity check now compares the two programs: the forced
+identity pose binds the view variant.
+
 ## Execution rulings
 
 Each of these was decided while executing the plan and refines or narrows a
