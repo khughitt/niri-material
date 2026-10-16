@@ -9,7 +9,7 @@ process: direct
 needs: [nested]
 owner: research/material-e27dbc
 created: 2026-10-14T10:42:18Z
-updated: 2026-10-16T00:01:48Z
+updated: 2026-10-16T01:05:53Z
 started: 2026-10-15T23:26:10Z
 completed: 2026-10-16T00:01:48Z
 depends: []
@@ -37,3 +37,4 @@ Ideas it wakes: On completion, run tasks note material-62347d --no-reviewed "<fi
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-16T00:01:48Z (research/material-e27dbc): Surface inventory, nested comparison recipe (docs/materials/scripts/noctalia-surfaces.sh) and owner sheet recorded; brief updated with the table, constraints and conclusion
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T01:05:53Z (materials-26.04): control (owner asked whether the material mapped): nested probe without material shows the wallpaper through (mean 116,106,94), with the pinned live glass renders near-black (7,9,9; attenuation-distance 12 through thickness 31.2), with attenuation-distance 400 frosted (103,97,87): the terminal glass maps. No material is mapped onto any Noctalia surface in either column; niri has no layer material pass, which is what the comparison tests. Evidence: /mnt/ssd3/niri-material/material-e27dbc/control-1792112653/strip.png
