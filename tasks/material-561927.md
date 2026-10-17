@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T16:16:36Z
+updated: 2026-10-17T16:16:42Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -38,3 +38,5 @@ Process: planned
 - 2026-10-17T16:14:54Z (fix/material-561927): Spec review round 1: (1) acceptance must be post-merge: branch acceptance with --dry-run, merge, three qualifying post-merge runs, recording verify from the registered checkout (tt-latency refuses with an active worktree claim or newer worktree record); (2) add test_optic_settling (git at 578/626/843) to the isolation inventory with a focused poisoned-env test; (3) marker test needs a control commit proving the hook fires, plus a global core.hooksPath fixture for older git
 - 2026-10-17T16:15:57Z (fix/material-561927): spec round 2: two-stage verification (branch --dry-run; merge = remedy timestamp; release claim; three qualifying post-merge runs; recording verify from the registered checkout); test_optic_settling added to isolation with inventory import test and a focused poisoned-GIT_DIR run; suppression tests use a control commit for both config-hook and global core.hooksPath forms
 - 2026-10-17T16:16:36Z (fix/material-561927): spec round 2 correction: test_optic_settling's git lookups read the checkout's own HEAD (Path(__file__).parents[1]), not a fixture; focused-run test asserts the checkout HEAD wins over a decoy GIT_DIR
+- 2026-10-17T16:16:42Z (fix/material-561927): parked (waiting on user, review): Owner: review round 2 of .worktrees/material-561927/docs/specs/2026-10-17-pre-commit-fast-hermetic-git-design.md (post-merge two-stage verification; test_optic_settling in the inventory; control commits for config-hook and core.hooksPath forms). After acceptance, agent writes the plan, implements, branch acceptance with --dry-run, merge, post-merge runs and recording verify from the registered checkout.
+  provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
