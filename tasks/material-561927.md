@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T16:58:55Z
+updated: 2026-10-17T16:59:01Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -59,3 +59,4 @@ Process: planned
 - 2026-10-17T16:58:48Z (fix/material-561927): resumed
   provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T16:58:55Z (fix/material-561927): review: plan round 2 — verdict: revise; findings: P1 1; reviewer: codex
+- 2026-10-17T16:59:01Z (fix/material-561927): Plan review round 2 P1: retirement scan's grep -r skips symlinked files met during traversal, so a dotfiles-managed unit symlinked to a file outside the worktree whose ExecStart names the worktree passes the guard (reviewer reproduced: exit 0). Use grep -R and add that case to the safeguard pilot.
