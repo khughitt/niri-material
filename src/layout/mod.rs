@@ -85,6 +85,7 @@ pub mod monitor;
 pub mod opening_window;
 pub mod scrolling;
 pub mod shadow;
+pub mod shell_hue;
 pub mod tab_indicator;
 pub mod tile;
 pub mod workspace;

@@ -43,12 +43,18 @@ topmost. Per output, per frame:
    the workspace background color, the workspace shadows, then the output
    backdrop.
 
-Two elements in step 3 carry effects, and they are different programs:
+Layer surfaces (any layer) with a `surface-remap` rule draw through
+`surface_remap.frag` instead of the default texture program: their own
+pixels, before compositing. It is not a material stage and changes no pass
+order above; background effects behind the layer are unchanged.
+
+Elements that carry effects, and they are different programs:
 
 | Element | Program | What it draws |
 | --- | --- | --- |
 | Material element | `material.frag` | The window body composed over the glass slab. Everything in section 2. |
 | Background-effect element | `postprocess_and_clip` (`clipped_surface.frag` + `postprocess.frag`) | The sampled backdrop behind the window, with `blur { noise; saturation }` or the window rule's `background-effect` overrides, drawn *under* the window body. |
+| Surface remap element | `surface_remap.frag` (+ `common.frag`) | A layer surface's pixels with its surface family moved to the glass face and the held hue (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md). |
 
 Prism's terminal window rule writes
 `background-effect { blur false; noise 0; saturation 1 }`, so for Prism-managed windows the second element is

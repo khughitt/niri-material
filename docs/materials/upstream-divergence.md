@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-318 paths differ: 52 class B (seam), 219 class A (fork-only), 47 class C (scaffolding).
+331 paths differ: 56 class B (seam), 228 class A (fork-only), 47 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -67,12 +67,14 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `AGENTS.md` | C | A | +96/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
+| `docs/wiki/Configuration:-Layer-Rules.md` | B | M | +48/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
 | `justfile` | C | A | +126/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1918/-127 |
+| `niri-config/src/layer_rule.rs` | B | M | +69/-1 |
+| `niri-config/src/lib.rs` | B | M | +2091/-127 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -92,25 +94,27 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/input/pick_color_grab.rs` | B | M | +1/-0 |
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
+| `src/layer/mapped.rs` | B | M | +210/-8 |
+| `src/layer/mod.rs` | B | M | +7/-0 |
 | `src/layout/floating.rs` | B | M | +24/-6 |
-| `src/layout/mod.rs` | B | M | +176/-25 |
-| `src/layout/monitor.rs` | B | M | +200/-25 |
+| `src/layout/mod.rs` | B | M | +177/-25 |
+| `src/layout/monitor.rs` | B | M | +214/-25 |
 | `src/layout/scrolling.rs` | B | M | +68/-8 |
 | `src/layout/tests.rs` | B | M | +309/-5 |
 | `src/layout/tile.rs` | B | M | +2807/-80 |
 | `src/layout/workspace.rs` | B | M | +44/-6 |
 | `src/lib.rs` | B | M | +1/-0 |
-| `src/niri.rs` | B | M | +311/-1 |
+| `src/niri.rs` | B | M | +378/-1 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
 | `src/render_helpers/effect_buffer.rs` | B | M | +636/-15 |
-| `src/render_helpers/mod.rs` | B | M | +37/-0 |
+| `src/render_helpers/mod.rs` | B | M | +39/-0 |
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
-| `src/render_helpers/shaders/mod.rs` | B | M | +470/-0 |
+| `src/render_helpers/shaders/mod.rs` | B | M | +494/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/client.rs` | B | M | +148/-0 |
+| `src/tests/client.rs` | B | M | +373/-4 |
 | `src/tests/fixture.rs` | B | M | +3/-1 |
-| `src/tests/mod.rs` | B | M | +11/-0 |
+| `src/tests/mod.rs` | B | M | +12/-0 |
 | `src/window/mapped.rs` | B | M | +48/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/README.md` | C | A | +29/-0 |

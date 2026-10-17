@@ -19,6 +19,7 @@ mod noise_site;
 mod remove_output;
 mod ring_look;
 mod ring_pair;
+mod shell_hue;
 mod signal;
 mod transactions;
 mod window_opening;

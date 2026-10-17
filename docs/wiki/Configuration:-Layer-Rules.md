@@ -43,6 +43,14 @@ layer-rule {
         saturation 3
     }
 
+    // surface-remap {
+    //     surface "#151310"
+    //     container "#221f1c"
+    //     outline "#4d453c"
+    //     material "terminal-glass"
+    //     hue-chroma 0.03
+    // }
+
     popups {
         opacity 0.5
         geometry-corner-radius 6
@@ -250,6 +258,46 @@ layer-rule {
 
     background-effect {
         xray false
+    }
+}
+```
+
+#### `surface-remap`
+
+<sup>Since: next release</sup>
+
+Recolor a shell's surfaces to a glass material's face, and to the project hue of the output's active workspace.
+niri moves every pixel near the surface family (`surface`, `container`, `outline`, the colors the shell draws its backgrounds, cards and outlines with) to the face the named material shows over a neutral backdrop.
+Text, icons and accents keep their colors.
+
+- `surface`, `container`, `outline`: the shell's surface family, required. Prism writes these from Noctalia's palette.
+- `material`: a material whose glass is dark enough for an opaque surface to match it, required. Its most open channel may pass at most 1% of the backdrop; lighter glass is a config error.
+- `hue-chroma`: how strongly the surfaces take the held hue, from `0` (no hue, the default) to `0.1`.
+
+A workspace holds the hue of the last window that stayed its active window for a second while carrying a signal accent; windows without an accent keep that hue, and it clears when the window closes, leaves the workspace, or loses its accent.
+Each output shows its active workspace's hue and crossfades over `animations { material-signal }`.
+
+Every `surface-remap` must be complete; a later matching rule replaces the whole node.
+
+```kdl
+material "terminal-glass" {
+    glass {
+        ior 1.28
+        thickness 31.2
+        attenuation-color "#0D1D1E"
+        attenuation-distance 12
+    }
+}
+
+layer-rule {
+    match namespace=r#"^noctalia-(bar-[^"]+|attached-panel|panel)$"#
+
+    surface-remap {
+        surface "#151310"
+        container "#221f1c"
+        outline "#4d453c"
+        material "terminal-glass"
+        hue-chroma 0.03
     }
 }
 ```
