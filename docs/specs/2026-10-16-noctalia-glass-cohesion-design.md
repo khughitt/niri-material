@@ -4,6 +4,18 @@
 accepted for planning 2026-10-17 (review round 3); revised after review round 4. Scope brief:
 `docs/notes/2026-10-14-noctalia-material-brief.md`.
 
+Implemented 2026-10-17 (plan `docs/plans/2026-10-17-noctalia-glass-cohesion.md`;
+owner accepted the nested sheet with `hue-chroma 0.03`). Declared deviations
+from this text: the face model lives in `niri-config` (plan); damage uses
+`ExtraDamage` elements pushed before the surfaces they redraw instead of a
+commit-counter fingerprint (section 7), with the same contract; role chroma
+offsets are clamped per role at zero (`ΔC ≥ 0`) rather than as the palette
+helper's summed `max(t_C + ΔC, 0)` (section 3), since the offset is applied
+along a blended hue direction (identical for palettes whose container and
+outline are at least as chromatic as their surface); a shader that fails to
+compile logs a warning and draws the shell unremapped, as niri's other custom
+programs do, with a test that the shader compiles on the test renderer.
+
 ## Intent
 
 The owner's words (2026-10-15): beyond a static variant of the material, the
