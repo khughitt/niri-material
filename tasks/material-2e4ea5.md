@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-gates-evidence
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T10:43:39Z
+updated: 2026-10-17T10:44:45Z
 started: 2026-10-17T10:01:20Z
 depends: []
 tags: [rendering]
@@ -45,3 +45,5 @@ Related: material-04818d (what selects the 10.4 vs 17 W floor), material-d2e552 
 - 2026-10-17T10:34:42Z (capture-gates-evidence): resumed
   provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T10:34:48Z (capture-gates-evidence): review: spec round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6.1-sol
+- 2026-10-17T10:44:45Z (capture-gates-evidence): parked (waiting on user, review): Owner reviews the plan docs/plans/2026-10-17-capture-evidence-gates.md (in .worktrees/capture-gates-evidence) and picks the execution method; then the agent runs the worktree baseline tests and starts material-a0492a (Task 1)
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
