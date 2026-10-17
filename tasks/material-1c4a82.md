@@ -4,8 +4,8 @@ title: Roll out Noctalia glass cohesion on the live desktop
 status: todo
 priority: 2
 created: 2026-10-17T14:42:03Z
-updated: 2026-10-17T14:42:03Z
-depends: []
+updated: 2026-10-17T14:42:09Z
+depends: [prism-301d9f]
 parent: material-55380c
 tags: []
 agent: claude-code/claude-opus-5-5
