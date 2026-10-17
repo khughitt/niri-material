@@ -1,18 +1,21 @@
 ---
 id: material-2e4ea5
 title: "Capture gates judge measured contamination, not circumstantial host events"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: high
 process: planned
-owner: materials-26.04
+owner: capture-gates-evidence
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T10:01:20Z
+updated: 2026-10-17T11:54:11Z
 started: 2026-10-17T10:01:20Z
+completed: 2026-10-17T11:54:11Z
 depends: []
 tags: [rendering]
 agent: claude-code/claude-opus-5-5
+spec: docs/specs/2026-10-17-capture-evidence-gates-design.md
+plan: docs/plans/2026-10-17-capture-evidence-gates.md
 ---
 
 Why: on 2026-10-16 three of eight quiet-host attempts were stopped by gates whose trigger did not touch the measurement. (1) A step in the idle GPU power floor (10.4 <-> 17 W, or 8.9 -> 10.4 W when the fb0-blanked display woke) failed the settle check, which compares every sub-run's idle watts with one run-start baseline (+-1.5 W). The refused noise A/B's completed sub-runs (noise-idle-ab-full-1792148041: none a 0.2877, b1 0.3246, b2 0.2918 ms) equal the passing run's (noise-idle-ab-full-1792149757) to one 1024 ns GPU-timer step. (2) A 20 s console login on tty2 (getty@tty2 restart, no CPU or GPU load) made the journal scan mark a nested headless pilot disturbed.
@@ -30,3 +33,38 @@ Related: material-04818d (what selects the 10.4 vs 17 W floor), material-d2e552 
 
 - 2026-10-17T10:01:20Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:01:32Z (capture-gates-evidence): resumed
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:08:55Z (capture-gates-evidence): Spec drafted: power on headless judged as contention only with a GPU client in the window (else annotated); VT getty/autovt restarts annotated on nested lanes; read-only judge verb. Evidence: none-a-1 median 0.287744 ms at both the 17.1 W and 10.5 W floors.
+- 2026-10-17T10:09:26Z (capture-gates-evidence): parked (waiting on user, review): Owner reviews the spec docs/specs/2026-10-17-capture-evidence-gates-design.md (in .worktrees/capture-gates-evidence); on approval the agent writes the implementation plan there
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:25:57Z (capture-gates-evidence): resumed
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:26:13Z (capture-gates-evidence): review: spec round 1 — verdict: revise; findings: must-fix 2; reviewer: owner-relayed (model unverified)
+- 2026-10-17T10:27:06Z (capture-gates-evidence): parked (waiting on user, review): Owner reviews spec round 2: docs/specs/2026-10-17-capture-evidence-gates-design.md (in .worktrees/capture-gates-evidence), §5 and §6.1 revised; on approval the agent writes the implementation plan there
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:34:42Z (capture-gates-evidence): resumed
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:34:48Z (capture-gates-evidence): review: spec round 2 — verdict: accept; findings: none; reviewer: codex/gpt-6.1-sol
+- 2026-10-17T10:44:45Z (capture-gates-evidence): parked (waiting on user, review): Owner reviews the plan docs/plans/2026-10-17-capture-evidence-gates.md (in .worktrees/capture-gates-evidence) and picks the execution method; then the agent runs the worktree baseline tests and starts material-a0492a (Task 1)
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:00:40Z (capture-gates-evidence): resumed
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:00:53Z (capture-gates-evidence): review: plan round 1 — verdict: revise; findings: must-fix 1; reviewer: owner-relayed (model unverified)
+- 2026-10-17T11:02:22Z (capture-gates-evidence): parked (waiting on user, review): Owner reviews plan round 2: docs/plans/2026-10-17-capture-evidence-gates.md (in .worktrees/capture-gates-evidence) and picks the execution method; then the agent runs the worktree baseline tests and starts material-a0492a (Task 1)
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:19:51Z (capture-gates-evidence): resumed
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:19:57Z (capture-gates-evidence): review: plan round 2 — verdict: accept; findings: none; reviewer: human
+- 2026-10-17T11:20:03Z (capture-gates-evidence): Execution method chosen by the owner: native (superpowers:executing-plans), in a fresh session.
+- 2026-10-17T11:20:25Z (capture-gates-evidence): parked (waiting on agent, session): In a fresh session, execute docs/plans/2026-10-17-capture-evidence-gates.md natively (superpowers:executing-plans) in .worktrees/capture-gates-evidence: run the worktree baseline tests (just setup already ran), then tasks start material-a0492a (Task 1) and continue through Task 4; then the final whole-branch review by a fresh reviewer
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:22:48Z (capture-gates-evidence): resumed
+  provenance: {"harness_session":"claude-code:76b3bee8-6b12-4a7f-bb04-fa48a2d3ccc7","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:40:04Z (capture-gates-evidence): replay: 162 records, exit 0 104 / 1 47 / 2 11 (all 11 unsupported recorded gpu_pstate policies); 2026-10-16 refusals all exit 0; 2026-09-24, timer-fired, pstate and pCbsOC refusals exit 1; all 29 refused preflights exit 1; no settled window fails
+- 2026-10-17T11:48:05Z (capture-gates-evidence): review: impl round 1 — verdict: accept; findings: Critical 0, Important 0, Minor 7; reviewer: claude-code/claude-opus-5-5
+- 2026-10-17T11:53:50Z (capture-gates-evidence): review: impl round 2 — verdict: accept; findings: Critical 0, Important 0, Minor 3; reviewer: claude-code/claude-opus-5-5
+- 2026-10-17T11:54:11Z (capture-gates-evidence): done
+  provenance: {"harness_session":"claude-code:76b3bee8-6b12-4a7f-bb04-fa48a2d3ccc7","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:54:11Z (capture-gates-evidence): Capture gates judge measured contention: settle annotates client-free headless power steps, the release scan classifies VT logins by lane, and capture-meta judge re-judges any retained record read-only; replay of 162 records: 2026-10-16 refusals pass, real refusals still fail
+  provenance: {"harness_session":"claude-code:76b3bee8-6b12-4a7f-bb04-fa48a2d3ccc7","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

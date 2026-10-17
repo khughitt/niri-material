@@ -524,7 +524,8 @@ for each attempt. None is part of the implementation.
 
    **Passes when,** for both runs:
    - every settle is `settled`;
-   - no disturbance is recorded;
+   - no disturbance of severity `fail` is recorded (an annotated floor step or VT
+     login is reported in the run's `run:` note);
    - every renderer is `verified`;
    - `provenance.binaries` includes the pinned b hash;
    - the b-side config hashes equal the reference's;

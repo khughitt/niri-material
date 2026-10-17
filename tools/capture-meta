@@ -28,6 +28,7 @@ TOOL = str(pathlib.Path(__file__).resolve())
 Host = ch.Host
 
 SCHEMA = 1
+RULES = "2026-10-17"   # the gate rules a run is judged by: docs/specs/2026-10-17-capture-evidence-gates-design.md
 RECORD = "capture.json"
 LOCK_NAME = "capture-meta.lock"
 
@@ -422,17 +423,48 @@ def describe_load(top):
     return "; ".join(describe_process(p) for p in top) or "no process named"
 
 
-def judge_settled(summary, samples, baseline, thresholds, lane):
-    reasons = []
-    for key, limit in (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", "settle_mem_pct"), ("gpu_util_pct", "settle_gpu_util_pct"), ("gpu_power_w", "settle_gpu_power_w")):
+SETTLE_DELTAS = (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", "settle_mem_pct"),
+                 ("gpu_util_pct", "settle_gpu_util_pct"), ("gpu_power_w", "settle_gpu_power_w"))
+
+
+def unclaimed_power(summary, lane):
+    """GPU power is no claim of the nested lane, and with no GPU client in the window
+    nothing could have competed for it (2026-10-17 gates design §2)."""
+    clients = summary["gpu_clients"]
+    return lane == "headless" and not clients["graphics"] and not clients["compute"]
+
+
+def judge_window(summary, baseline, thresholds, lane):
+    """The settle rules a window's summary carries: (reasons, annotations). settle and judge share it."""
+    reasons, annotations = [], []
+    unclaimed = unclaimed_power(summary, lane)
+    for key, limit in SETTLE_DELTAS:
         delta = summary[key] - baseline[key]
-        if abs(delta) > thresholds[limit]:
-            verb = "exceeds" if delta > 0 else "falls below"
-            reasons.append(f"{key} {summary[key]} {verb} baseline {baseline[key]} by more than {thresholds[limit]}")
+        if abs(delta) <= thresholds[limit]:
+            continue
+        if key == "gpu_power_w" and unclaimed:
+            side = "above" if delta > 0 else "below"
+            annotations.append({"rule": "unclaimed-power-step",
+                                "detail": f"gpu_power_w {summary[key]} is {round(abs(delta), 3)} {side} "
+                                          f"baseline {baseline[key]}; no GPU client in the window"})
+            continue
+        verb = "exceeds" if delta > 0 else "falls below"
+        reasons.append(f"{key} {summary[key]} {verb} baseline {baseline[key]} by more than {thresholds[limit]}")
+    if unclaimed and summary["gpu_power_iqr_w"] > thresholds["gpu_power_iqr_w"]:
+        annotations.append({"rule": "unclaimed-power-spread",
+                            "detail": f"gpu_power_iqr_w {summary['gpu_power_iqr_w']} exceeds "
+                                      f"{thresholds['gpu_power_iqr_w']}; no GPU client in the window"})
+    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]:
+        reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
+    return reasons + client_reasons([summary["gpu_clients"]], lane), annotations
+
+
+def judge_settled(summary, samples, baseline, thresholds, lane):
+    reasons, annotations = judge_window(summary, baseline, thresholds, lane)
     floor = thresholds["mem_available_pct_min"]
-    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples): reasons.append(f"mem_available_pct below floor {floor}")
-    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]: reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
-    return reasons + client_reasons([s.gpu_clients for s in samples], lane)
+    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples):
+        reasons.append(f"mem_available_pct below floor {floor}")
+    return reasons, annotations
 
 
 def load_record(run_dir):
@@ -574,7 +606,7 @@ def append_sub_run(run_dir, entry):
         save_record(run_dir, record)
 
 
-SCAN_VERDICTS = ("clean", "disturbed", "unscanned", "not-run")
+SCAN_VERDICTS = ("clean", "annotated", "disturbed", "unscanned", "not-run")
 
 
 def update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
@@ -605,7 +637,8 @@ def _update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
 
 
 def describe_disturbance(d):
-    return f"{d['kind']} {d['unit']} ({d['manager']}) at {d['at']}"
+    severity = f" [{d['severity']}]" if "severity" in d else ""
+    return f"{d['kind']} {d['unit']} ({d['manager']}) at {d['at']}{severity}"
 
 
 def failure_list(attempt):
@@ -617,6 +650,10 @@ def exit_for(end):
     if restore.get("state") == "failed":
         raise CannotRun(f"hold not fully restored; restore by hand: {failure_list(restore['attempts'][-1])}")
     verdict = scan.get("verdict")
+    if verdict == "annotated":
+        for d in scan["disturbances"]:
+            print(f"capture-meta: annotated: {describe_disturbance(d)}", file=sys.stderr)
+        return
     if verdict == "clean":
         return
     if verdict == "disturbed":
@@ -862,7 +899,8 @@ def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
             refresh_record_sum(run_dir)
 
     def record_end(hold, wakes, attempt):
-        end = load_record(run_dir).get("hold_end", {})
+        current = load_record(run_dir)
+        end = current.get("hold_end", {})
         if attempt["undone"] == 0 and "scan" in end and end.get("restore", {}).get("state") == "complete":
             written["hold_end"] = end      # a leftover after a saved record: nothing new to say
             return
@@ -875,7 +913,8 @@ def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
                 scan = {**base, "verdict": "unscanned", "error": hold["wake_error"]}
             else:
                 try:
-                    verdict, disturbances = ch.scan(host, hold, wakes)
+                    _, flagged = ch.scan(host, hold, wakes)
+                    verdict, disturbances = ch.classify(flagged, current.get("run", {}).get("lane"))
                     scan = {**base, "verdict": verdict, "disturbances": disturbances}
                 except CannotRun as error:
                     scan = {**base, "verdict": "unscanned", "error": str(error)}
@@ -942,7 +981,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         lock_info = acquire_lock(lock_file, owner_pid, run["id"], run_dir=run_dir)
     except Refused as error:
         write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": [str(error)],
-                                             "thresholds": thresholds})
+                                             "thresholds": thresholds, "rules": RULES})
         raise
     held = False
     try:
@@ -954,7 +993,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         if early:
             write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": early,
                                                  "thresholds": thresholds, "lock": lock_info,
-                                                 "host_condition": condition})
+                                                 "host_condition": condition, "rules": RULES})
             raise Refused("; ".join(early))
         kinds = ch.HOLD_KINDS if lane in MEASURED_LANES else PIXEL_HOLD_KINDS
         plan = ch.plan_hold(host, socket, kinds)
@@ -967,7 +1006,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         if lane == "pixels":
             write_section(run_dir, "environment", environment(gpu, tools, proc))
             write_section(run_dir, "preflight", {"verdict": "unsampled", "at": now_rfc3339(), "lock": lock_info,
-                                                 "host_condition": condition})
+                                                 "host_condition": condition, "rules": RULES})
             return
         write_section(run_dir, "environment", environment(gpu, tools, proc))
         samples = sample_stream(proc, gpu, seconds, sleep)
@@ -976,7 +1015,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         reasons = judge_quiet(summary, samples, thresholds, lane)
         section = {"verdict": "quiet" if not reasons else "refused", "at": now_rfc3339(),
                    "reasons": reasons, "thresholds": thresholds, "lock": lock_info,
-                   "host_condition": condition}
+                   "host_condition": condition, "rules": RULES}
         message = "; ".join(reasons)
         if any(summary[key] > thresholds[key] for key in HOST_LOAD_KEYS):
             try:
@@ -1045,7 +1084,7 @@ def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=
     thresholds = record["preflight"].get("thresholds")
     expected = record["preflight"].get("lock")
     threshold_keys = {"settle_cpu_busy_pct", "settle_mem_pct", "settle_gpu_util_pct",
-                      "settle_gpu_power_w", "mem_available_pct_min", "gpu_pstate"}
+                      "settle_gpu_power_w", "mem_available_pct_min", "gpu_pstate", "gpu_power_iqr_w"}
     if (not isinstance(thresholds, dict) or not threshold_keys <= thresholds.keys()
             or not isinstance(expected, dict) or "owner_pid" not in expected
             or isinstance(expected["owner_pid"], bool) or not isinstance(expected["owner_pid"], int)
@@ -1060,12 +1099,19 @@ def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=
     started = now_rfc3339()
     samples = sample_stream(proc, gpu, seconds, sleep)
     summary = summarize(samples)
-    reasons = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
+    reasons, annotations = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
+    previous = next((e["gpu_power_w"] for e in reversed(record.get("sub_runs", []))
+                     if e["verdict"] == "settled" and "gpu_power_w" in e), record["baseline"]["gpu_power_w"])
     entry = {"name": sub_run, "started": started, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
+             "gpu_power_step_w": round(summary["gpu_power_w"] - previous, 3),
              "inputs": entry_inputs, "verdict": "settled" if not reasons else "refused"}
+    if annotations:
+        entry["annotations"] = annotations
     if reasons:
         entry["reason"] = "; ".join(reasons)
     append_sub_run(run_dir, entry)
+    for annotation in annotations:
+        print(f"capture-meta: annotated: {annotation['rule']}: {annotation['detail']}", file=sys.stderr)
     if reasons:
         raise Refused(entry["reason"])
 
@@ -1250,6 +1296,125 @@ def release(run_dir, record, run):
         raise Refused(f"lock is not this run's ({run['id']}); left in place")
 
 
+PASS, FAIL, NO_EVIDENCE = "pass", "fail", "no evidence"
+WINDOW_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w", "gpu_power_iqr_w",
+               "gpu_pstates", "gpu_clients")
+BASELINE_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w")
+
+
+def threshold_supported(key, value):
+    """Whether settle could have applied this recorded threshold. Some early pixel runs
+    recorded a hand-written P-state policy ("any (user-authorized pixel-only run)") that
+    no settle rule reads."""
+    if key == "gpu_pstate":
+        return isinstance(value, str) and re.fullmatch(r"P\d{1,2}", value) is not None
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def judge_preflight(record):
+    """Preflight's rules are unchanged: the recorded verdict stands (2026-10-17 gates design §5)."""
+    preflight = record.get("preflight")
+    if preflight is None:
+        return NO_EVIDENCE, "none", ["no preflight section"]
+    verdict = preflight.get("verdict")
+    if verdict in ("quiet", "unsampled"):
+        return PASS, verdict, []
+    if verdict == "refused":
+        return FAIL, verdict, [f"refused: {r}" for r in preflight.get("reasons") or ["no reason recorded"]]
+    return NO_EVIDENCE, str(verdict), [f"verdict {verdict!r} is not one preflight writes"]
+
+
+def judge_windows(record):
+    """Re-applies the settle rules to every sampled sub-run. The per-sample memory floor is
+    not recorded, so a refusal that names it stands."""
+    entries = [e for e in record.get("sub_runs", []) if e["verdict"] in ("settled", "refused")]
+    recorded = ", ".join(f"{sum(e['verdict'] == v for e in entries)} {v}" for v in ("settled", "refused"))
+    if not entries:
+        return PASS, "no sampled sub-runs", []
+    baseline = record.get("baseline")
+    if not isinstance(baseline, dict) or any(key not in baseline for key in BASELINE_KEYS):
+        return NO_EVIDENCE, recorded, ["sub-runs were sampled but the baseline is missing"]
+    kept = (record.get("preflight") or {}).get("thresholds") or {}
+    thresholds = {**DEFAULT_THRESHOLDS, **kept}
+    unsupported = [f"{key}={thresholds[key]!r}" for key in DEFAULT_THRESHOLDS
+                   if not threshold_supported(key, thresholds[key])]
+    if unsupported:
+        return NO_EVIDENCE, recorded, [f"recorded thresholds settle never applies: {', '.join(unsupported)}; "
+                                       "windows not re-judged"]
+    lines, failed = [], False
+    missing = sorted(set(DEFAULT_THRESHOLDS) - set(kept))
+    if missing:
+        lines.append(f"thresholds not recorded, judged at today's defaults: {', '.join(missing)}")
+    lane = record.get("run", {}).get("lane")
+    for entry in entries:
+        if any(key not in entry for key in WINDOW_KEYS):
+            failed = failed or entry["verdict"] == "refused"
+            lines.append(f"{entry['name']}: window not recorded; kept as {entry['verdict']}")
+            continue
+        reasons, annotations = judge_window(entry, baseline, thresholds, lane)
+        if "mem_available_pct below floor" in entry.get("reason", ""):
+            reasons.append("mem_available_pct below floor (recorded; samples not kept)")
+            lines.append(f"{entry['name']}: {entry['verdict']} on the memory floor; samples not kept, "
+                         "the recorded verdict stands")
+        now = "refused" if reasons else "settled"
+        failed = failed or bool(reasons)
+        if now != entry["verdict"]:
+            why = "; ".join(reasons) or "; ".join(f"{a['rule']}: {a['detail']}" for a in annotations)
+            lines.append(f"{entry['name']}: recorded {entry['verdict']}, now {now} ({why})")
+    return (FAIL if failed else PASS), recorded, lines
+
+
+def judge_scan(record):
+    """The scan's state decides before any entry is classified: an empty disturbance list
+    means none found only in a scan that ran."""
+    end = record.get("hold_end") or {}
+    scan = end.get("scan")
+    if scan is None:
+        if "hold" not in record:
+            return PASS, "none", ["no hold: predates the disturber hold, or preflight refused before holding"]
+        return NO_EVIDENCE, "none", ["hold recorded but never released; no scan"]
+    verdict = scan["verdict"]
+    if end.get("restore", {}).get("state") == "failed":
+        return NO_EVIDENCE, verdict, ["hold not fully restored"]
+    if verdict == "unscanned":
+        return NO_EVIDENCE, verdict, [f"unscanned ({scan.get('error')})"]
+    if verdict == "not-run":
+        code = scan.get("preflight_exit")
+        return (FAIL if code == 1 else NO_EVIDENCE), verdict, [f"preflight rolled back its hold (exit {code})"]
+    now, entries = ch.classify(scan["disturbances"], record.get("run", {}).get("lane"))
+    lines = [f"recorded {verdict}, now {now}"] if now != verdict else []
+    lines += [describe_disturbance(d) for d in entries]
+    return (FAIL if now == "disturbed" else PASS), verdict, lines
+
+
+def judge_record(record):
+    return {"preflight": judge_preflight(record), "settle": judge_windows(record), "scan": judge_scan(record)}
+
+
+def cmd_judge(args):
+    """Re-judges a run under the current rules from its capture.json alone; writes nothing."""
+    if not (pathlib.Path(args.run_dir) / RECORD).is_file():
+        raise CannotRun(f"no {RECORD} in {args.run_dir}")
+    record = load_record(args.run_dir)
+    try:
+        parts = judge_record(record)
+    except (KeyError, TypeError, ValueError, AttributeError) as error:
+        # validate_record checks sections, not each entry's shape: a hand-edited record is unreadable, never a failure
+        raise CannotRun(f"{RECORD}: malformed record, cannot be judged: {type(error).__name__} {error}") from error
+    rules = (record.get("preflight") or {}).get("rules", "before 2026-10-17")
+    print(f"judge {record.get('run', {}).get('id')}  rules recorded {rules}, current {RULES}")
+    for name, (outcome, recorded, lines) in parts.items():
+        print(f"  {name}: {outcome} (recorded {recorded})")
+        for line in lines:
+            print(f"    {line}")
+    def named(outcome):
+        return ", ".join(name for name, part in parts.items() if part[0] == outcome)
+    if named(NO_EVIDENCE):
+        raise CannotRun(f"no evidence: {named(NO_EVIDENCE)}")
+    if named(FAIL):
+        raise Refused(f"fails under the current rules: {named(FAIL)}")
+
+
 def guard(host, lock_file, run_dir, iterations=None):
     run_dir = pathlib.Path(run_dir).resolve()
     def owner_dead():
@@ -1303,7 +1468,8 @@ def render(record):
     if preflight:
         at = f" at {preflight['at']}" if "at" in preflight else ""
         condition = f"  host {preflight['host_condition']}" if "host_condition" in preflight else ""
-        lines += ["", f"preflight {preflight.get('verdict')}{at}{condition}"]
+        rules = f"  rules {preflight['rules']}" if "rules" in preflight else ""
+        lines += ["", f"preflight {preflight.get('verdict')}{at}{condition}{rules}"]
         for reason in preflight.get("reasons", []):
             lines.append(f"  {reason}")
         host_load = preflight.get("host_load")
@@ -1330,7 +1496,10 @@ def render(record):
     if end:
         restore, scan = end.get("restore", {}), end.get("scan", {})
         last = (restore.get("attempts") or [{}])[-1].get("by")
-        lines.append(f"hold end  restore {restore.get('state')} ({last})  scan {scan.get('verdict')}")
+        verdict = scan.get("verdict")
+        if verdict == "annotated":
+            verdict = f"annotated ({len(scan['disturbances'])})"
+        lines.append(f"hold end  restore {restore.get('state')} ({last})  scan {verdict}")
         lines += [f"  {describe_disturbance(d)}" for d in scan.get("disturbances", [])]
     sub_runs = record.get("sub_runs")
     if sub_runs:
@@ -1347,7 +1516,9 @@ def render(record):
                 checked = f"  renderer {entry['renderer']['verdict']}"
             elif entry["verdict"] == "settled" and run.get("lane") in MEASURED_LANES:
                 checked = "  renderer unchecked"   # release refuses this run (spec §6.3)
-            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{checked}")
+            step = f"  step {entry['gpu_power_step_w']:+} W" if "gpu_power_step_w" in entry else ""
+            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{step}{checked}")
+            lines += [f"    annotated {a['rule']}: {a['detail']}" for a in entry.get("annotations", [])]
     return "\n".join(lines) + "\n"
 
 
@@ -1411,6 +1582,9 @@ def build_parser():
     grd.set_defaults(func=cmd_guard)
     rst = subs.add_parser("restore")
     rst.set_defaults(func=cmd_restore)
+    jdg = subs.add_parser("judge")
+    jdg.add_argument("run_dir")
+    jdg.set_defaults(func=cmd_judge)
     return parser
 
 
