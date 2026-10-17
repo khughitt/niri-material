@@ -48,18 +48,25 @@ in its commit.
 
 ## Review Focus
 
-1. **A window with only a compute client on `headless`:** power must still
+1. **A recorded threshold settle could never apply** (12 retained
+   render-order pixel runs record `gpu_pstate` as
+   `any (user-authorized pixel-only run)` or
+   `P5|P8 (user-authorized pixel-only run)`): `judge` must report no evidence
+   for their windows, naming the threshold, and never newly refuse them. Test
+   in Task 3. Found in plan review round 1: without it, the replay newly
+   refuses 125 settled windows across 11 records.
+2. **A window with only a compute client on `headless`:** power must still
    fail. The client test covers compute as well as graphics. Test in Task 1.
-2. **The first sampled entry, or the only earlier one, is refused:**
+3. **The first sampled entry, or the only earlier one, is refused:**
    `gpu_power_step_w` is taken against the baseline, never against a refused
    window. Test in Task 1.
-3. **Re-classifying entries that already carry a severity** (a record
+4. **Re-classifying entries that already carry a severity** (a record
    `judge` replays): the old `severity`/`rule` is replaced, never kept. Test
    in Task 2.
-4. **Old sub-run entries without window fields** (early records hold only
+5. **Old sub-run entries without window fields** (early records hold only
    `name`/`verdict`/`started`): `judge` keeps the recorded verdict and does
    not crash. Test in Task 3.
-5. **`judge` on a directory with no `capture.json`, or a corrupt one:** exit
+6. **`judge` on a directory with no `capture.json`, or a corrupt one:** exit
    2, and no file appears in the directory. Test in Task 3.
 
 ---
@@ -588,6 +595,8 @@ git commit -m "feat(capture-meta): classify scan disturbances by lane"
   (before `def guard`), and the `judge` subparser in `build_parser`.
 - Test: `tools/test_capture_meta.py`, a new `JudgeTests` class after
   `ShowTests`.
+- Spec: §5 part 2 already names unsupported recorded thresholds as no
+  evidence. It was added at plan review round 1.
 
 **Interfaces:**
 - Consumes: `judge_window`, `DEFAULT_THRESHOLDS` and `RULES` (Task 1);
@@ -720,6 +729,29 @@ class JudgeTests(unittest.TestCase):
         pixel.pop("baseline")
         self.assertEqual(self.judged(pixel)[0], 0)
 
+    def test_unsupported_recorded_pstate_policies_are_no_evidence(self):   # render-order-*-pixels runs
+        for policy in ("any (user-authorized pixel-only run)", "P5|P8 (user-authorized pixel-only run)"):
+            with self.subTest(policy=policy):
+                thresholds = dict(cm.DEFAULT_THRESHOLDS, gpu_pstate=policy)
+                code, out = self.judged(capture_record([sampled("iridescence-n0-on", "settled", 10.4, iqr=8.905,
+                                                                pstates=("P5", "P8"), graphics=("niri",))],
+                                                       preflight={"verdict": "quiet", "thresholds": thresholds},
+                                                       hold=False))
+                self.assertEqual(code, 2, out)
+                self.assertIn(f"gpu_pstate={policy!r}", out)
+                self.assertIn("windows not re-judged", out)
+                self.assertNotIn("now refused", out)
+        thresholds = dict(cm.DEFAULT_THRESHOLDS, settle_gpu_power_w="1.5")
+        code, out = self.judged(capture_record([sampled("A", "settled", 10.4)],
+                                               preflight={"verdict": "quiet", "thresholds": thresholds}, scan=CLEAN))
+        self.assertEqual(code, 2, out)
+        self.assertIn("settle_gpu_power_w='1.5'", out)
+        refused = capture_record(preflight={"verdict": "refused", "reasons": ["load1 3.0 exceeds 2.0"],
+                                            "thresholds": dict(cm.DEFAULT_THRESHOLDS,
+                                                               gpu_pstate="any (user-authorized pixel-only run)")},
+                                 hold=False)
+        self.assertEqual(self.judged(refused)[0], 1)   # render-order-within-pixels.v8Dp2y: no windows to re-judge
+
     def test_a_missing_or_corrupt_record_cannot_be_judged(self):
         self.assertEqual(self.judged(None)[0], 2)
         with tempfile.TemporaryDirectory() as directory:
@@ -747,6 +779,15 @@ WINDOW_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w
 BASELINE_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w")
 
 
+def threshold_supported(key, value):
+    """Whether settle could have applied this recorded threshold. Some early pixel runs
+    recorded a hand-written P-state policy ("any (user-authorized pixel-only run)") that
+    no settle rule reads."""
+    if key == "gpu_pstate":
+        return isinstance(value, str) and re.fullmatch(r"P\d{1,2}", value) is not None
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
 def judge_preflight(record):
     """Preflight's rules are unchanged: the recorded verdict stands (2026-10-17 gates design §5)."""
     preflight = record.get("preflight")
@@ -772,6 +813,11 @@ def judge_windows(record):
         return NO_EVIDENCE, recorded, ["sub-runs were sampled but the baseline is missing"]
     kept = (record.get("preflight") or {}).get("thresholds") or {}
     thresholds = {**DEFAULT_THRESHOLDS, **kept}
+    unsupported = [f"{key}={thresholds[key]!r}" for key in DEFAULT_THRESHOLDS
+                   if not threshold_supported(key, thresholds[key])]
+    if unsupported:
+        return NO_EVIDENCE, recorded, [f"recorded thresholds settle never applies: {', '.join(unsupported)}; "
+                                       "windows not re-judged"]
     lines, failed = [], False
     missing = sorted(set(DEFAULT_THRESHOLDS) - set(kept))
     if missing:
@@ -901,15 +947,22 @@ for run in material-265eb0/trace-20260924T163317 material-265eb0/trace-20260924T
            material-265eb0/power-full-20260927T030030 hold-pilot/pc-1 noise-layers-pilot-1791337568 \
            render-order-readiness.pCbsOC; do grep " $run\$" "$out/exits.txt"; done                              # each 1
 grep -c '^2 ' "$out/exits.txt"; grep '^2 ' "$out/exits.txt"                                                   # no-evidence list
+grep -l "windows not re-judged" "$out"/*.txt | wc -l                                                          # 11
 ```
 
 Expected:
 - the first four exit 0;
 - the next six exit 1;
 - `grep -l` prints "no settled window fails".
+- 11 records report "windows not re-judged". These are the render-order pixel
+  runs whose recorded `gpu_pstate` is `any (user-authorized pixel-only run)`
+  or `P5|P8 (user-authorized pixel-only run)`, and each exits 2.
+  `render-order-within-pixels.v8Dp2y` records the same policy but has no
+  sampled window. It is a refused preflight and exits 1.
 
 For each exit-2 record, read its output file and name the reason (an
-unreadable schema, never released, unscanned, or a `not-run` with exit 2).
+unreadable schema, never released, unscanned, a `not-run` with exit 2, or a
+recorded threshold settle never applies).
 Every refused preflight should exit 1 (29 on 2026-10-17), or 2 where its
 rollback could not run. If any expectation fails, stop: the rules or `judge`
 disagree with the spec. Fix that under its own task, with a test, before
@@ -922,7 +975,7 @@ Append to spec §6.2, under a `**Replay, <date>:**` lead-in:
 - the exit counts;
 - the four 2026-10-16 runs and their exit 0;
 - the six still-failing runs;
-- each exit-2 record with its reason;
+- each exit-2 record with its reason, the 11 unsupported-threshold runs by name;
 - the statement "no recorded `settled` window fails".
 
 Also make these edits:

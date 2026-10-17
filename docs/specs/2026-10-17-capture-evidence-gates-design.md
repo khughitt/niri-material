@@ -198,7 +198,14 @@ one of three outcomes: **pass**, **fail**, or **no evidence**.
    `refused`), `judge` rebuilds the window summary from the recorded medians,
    IQR, P-states and clients. It applies the current settle rules against the
    recorded baseline and thresholds. Thresholds missing from older records
-   take today's defaults, and the output says so.
+   take today's defaults, and the output says so. A recorded threshold that
+   settle could never apply makes this part no evidence, naming the
+   threshold: the windows are not re-judged. Examples are a `gpu_pstate`
+   other than `P<n>`, such as the `any (user-authorized pixel-only run)` and
+   `P5|P8 (user-authorized pixel-only run)` of 12 render-order pixel runs, or
+   a non-numeric limit. Re-judging those windows against today's literal
+   P-state rule would newly refuse 125 windows that settled under the policy
+   the run recorded.
 
    Sample-level rules need the per-sample memory floor, which the record does
    not keep. For those, `judge` uses the recorded verdict, and says so when a
