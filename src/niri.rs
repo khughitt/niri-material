@@ -231,6 +231,10 @@ pub struct Niri {
 
     /// One deadline timer per window with pending slot or impulse expiry (design §1).
     pub signal_deadlines: HashMap<MappedId, RegistrationToken>,
+    /// Which project hue each workspace holds for remapped layers (spec §4).
+    pub shell_hue: crate::layout::shell_hue::ShellHue<WorkspaceId, MappedId>,
+    /// Redraw armed for the next pending hue settle.
+    pub shell_hue_timer: Option<RegistrationToken>,
 
     // This space does not actually contain any windows, but all outputs are mapped into it
     // according to their global position.
@@ -2426,6 +2430,27 @@ impl Niri {
         self.output_state.get_mut(output).unwrap().signal_timer = Some(token);
     }
 
+    /// A window settles after the dwell with nothing else redrawing; wake
+    /// the outputs then so the hue arrives on time.
+    pub fn arm_shell_hue_timer(&mut self) {
+        if let Some(token) = self.shell_hue_timer.take() {
+            self.event_loop.remove(token);
+        }
+        let Some(deadline) = self.shell_hue.next_deadline() else {
+            return;
+        };
+        let delay = deadline.saturating_sub(get_monotonic_time());
+        let token = self
+            .event_loop
+            .insert_source(Timer::from_duration(delay), |_, _, state| {
+                state.niri.shell_hue_timer = None;
+                state.niri.queue_redraw_all();
+                TimeoutAction::Drop
+            })
+            .unwrap();
+        self.shell_hue_timer = Some(token);
+    }
+
     pub fn new(
         config: Rc<RefCell<Config>>,
         event_loop: LoopHandle<'static, State>,
@@ -2451,6 +2476,7 @@ impl Niri {
         animation_clock.set_complete_instantly(config_.animations.off);
 
         let layout = Layout::new(animation_clock.clone(), &config_);
+        let shell_hue = crate::layout::shell_hue::ShellHue::new(animation_clock.clone());
 
         let (blocker_cleared_tx, blocker_cleared_rx) = mpsc::channel();
 
@@ -2703,6 +2729,8 @@ impl Niri {
 
             layout,
             signal_deadlines: HashMap::new(),
+            shell_hue,
+            shell_hue_timer: None,
             global_space: Space::default(),
             sorted_outputs: Vec::default(),
             output_state: HashMap::new(),
@@ -4297,6 +4325,7 @@ impl Niri {
     pub fn update_render_elements(&mut self, output: Option<&Output>) {
         self.update_xray_render_elements(output);
         self.layout.update_render_elements(output);
+        self.update_shell_hue();
 
         for (out, state) in self.output_state.iter_mut() {
             if output.is_none_or(|output| out == output) {
@@ -4306,6 +4335,12 @@ impl Niri {
                 if let Some(transition) = &mut state.screen_transition {
                     transition.update_render_elements(scale, transform);
                 }
+
+                let hue = self
+                    .layout
+                    .monitor_for_output(out)
+                    .map(|mon| self.shell_hue.output_hue(mon.workspace_blend()))
+                    .unwrap_or_default();
 
                 let layer_map = layer_map_for_output(out);
                 for surface in layer_map.layers() {
@@ -4317,9 +4352,36 @@ impl Niri {
                     };
 
                     mapped.update_render_elements(geo.size.to_f64());
+                    mapped.set_shell_hue(hue);
                 }
             }
         }
+    }
+
+    /// Feeds the shell hue resolver what every workspace shows now.
+    fn update_shell_hue(&mut self) {
+        use crate::layout::shell_hue::WorkspaceObs;
+        use crate::layout::LayoutElement as _;
+
+        // The resolver has two time sources: this `now`, for the dwell, and
+        // the clock `Niri::new` gave it, for its fades. Both must be the same
+        // clock: `self.clock` is that clock, and its unadjusted time keeps the
+        // dwell on real time whatever the animation rate.
+        let now = self.clock.now_unadjusted();
+        let anim = self.config.borrow().animations.material_signal.0;
+        let obs: Vec<_> = self
+            .layout
+            .workspaces()
+            .map(|(_, _, ws)| WorkspaceObs {
+                id: ws.id(),
+                active: ws.active_window().map(|w| w.id()),
+                windows: ws
+                    .windows()
+                    .map(|w| (w.id(), w.signal(now).and_then(|s| s.accent)))
+                    .collect(),
+            })
+            .collect();
+        self.shell_hue.update(now, anim, &obs);
     }
 
     // Updates only those render elements that go in the xray buffer.
@@ -4863,6 +4925,7 @@ impl Niri {
             res = backend.render(self, output, target_presentation_time);
             if res != RenderResult::Skipped {
                 self.arm_signal_timer(output);
+                self.arm_shell_hue_timer();
             }
         }
 

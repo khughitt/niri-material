@@ -97,13 +97,13 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/layer/mod.rs` | B | M | +7/-0 |
 | `src/layout/floating.rs` | B | M | +24/-6 |
 | `src/layout/mod.rs` | B | M | +177/-25 |
-| `src/layout/monitor.rs` | B | M | +200/-25 |
+| `src/layout/monitor.rs` | B | M | +214/-25 |
 | `src/layout/scrolling.rs` | B | M | +68/-8 |
 | `src/layout/tests.rs` | B | M | +309/-5 |
 | `src/layout/tile.rs` | B | M | +2807/-80 |
 | `src/layout/workspace.rs` | B | M | +44/-6 |
 | `src/lib.rs` | B | M | +1/-0 |
-| `src/niri.rs` | B | M | +315/-1 |
+| `src/niri.rs` | B | M | +378/-1 |
 | `src/protocols/foreign_toplevel.rs` | B | M | +6/-4 |
 | `src/render_helpers/blur.rs` | B | M | +113/-61 |
 | `src/render_helpers/effect_buffer.rs` | B | M | +636/-15 |

@@ -1,4 +1,7 @@
+use std::time::Duration;
+
 use niri_config::Config;
+use niri_ipc::{SignalLevel, SignalMotion};
 use smithay::backend::renderer::element::{Element as _, Id};
 use smithay::desktop::PopupManager;
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer;
@@ -11,8 +14,11 @@ use wayland_client::protocol::wl_surface::WlSurface;
 
 use super::client::{ClientId, LayerConfigureProps};
 use super::*;
+use crate::layout::shell_hue::HOLD_DWELL;
+use crate::niri::SetWindowSignalArgs;
 use crate::render_helpers::surface_remap::{HueBlend, OutputHue};
 use crate::render_helpers::{RenderCtx, RenderTarget};
+use crate::utils::with_toplevel_role;
 
 const GLASS: &str = r##"
 material "tg" {
@@ -393,4 +399,172 @@ fn remap_damage_covers_the_drawn_surface_tree() {
             geometry(&bar_damage)
         );
     }
+}
+
+fn open_window(f: &mut Fixture, id: ClientId, title: &str) {
+    let window = f.client(id).create_window();
+    let surface = window.surface.clone();
+    window.set_title(title);
+    window.commit();
+    f.roundtrip(id);
+    let window = f.client(id).window(&surface);
+    window.attach_new_buffer();
+    window.ack_last_and_commit();
+    f.double_roundtrip(id);
+}
+
+fn window_id(f: &mut Fixture, title: &str) -> u64 {
+    f.niri()
+        .layout
+        .windows()
+        .find(|(_, m)| with_toplevel_role(m.toplevel(), |r| r.title.as_deref() == Some(title)))
+        .map(|(_, m)| m.id().get())
+        .unwrap()
+}
+
+fn active_window_id(f: &mut Fixture) -> Option<u64> {
+    let mon = f.niri().layout.monitors().next().unwrap();
+    mon.active_workspace_ref()
+        .active_window()
+        .map(|m| m.id().get())
+}
+
+fn set_accent(f: &mut Fixture, id: u64, accent: &str) {
+    f.niri()
+        .set_window_signal(SetWindowSignalArgs {
+            id,
+            source: String::from("familiar"),
+            accent: Some(String::from(accent)),
+            level: SignalLevel::Quiet,
+            motion: SignalMotion::Static,
+            tag: None,
+            ttl_ms: None,
+            after_level: None,
+            after_motion: None,
+            until_focus: false,
+        })
+        .unwrap();
+}
+
+/// One frame at `now` on the resolver's time base, with no dispatch.
+fn frame_at(f: &mut Fixture, now: Duration) {
+    let niri = f.niri();
+    niri.clock.set_unadjusted(now);
+    niri.update_render_elements(None);
+}
+
+/// Opens the red "agent" behind a second window, then focuses it with no
+/// dispatch and returns the time the test's first frame should use.
+///
+/// Every redraw a dispatch runs sets the clock to the host's uptime
+/// (`Niri::redraw` takes the frame clock's presentation time), so a window
+/// focused during one would start its dwell at an unknown moment. Here the
+/// agent only becomes active between dispatches, so its dwell starts at the
+/// returned time once the test frames it. It never holds its accent while
+/// active during a dispatch, so no earlier redraw can settle it.
+fn focus_the_agent(f: &mut Fixture, id: ClientId) -> Duration {
+    open_window(f, id, "agent");
+    open_window(f, id, "other");
+    let agent = window_id(f, "agent");
+    assert_ne!(
+        active_window_id(f),
+        Some(agent),
+        "the new window took focus"
+    );
+    set_accent(f, agent, "#e5533c");
+    f.niri().layout.focus_left();
+    assert_eq!(active_window_id(f), Some(agent));
+    // Cleared after the last dispatch, so this reads the host's uptime: no
+    // frame the test drives goes back before a frame a dispatch drew.
+    f.niri().clock.now_unadjusted()
+}
+
+#[test]
+fn hue_follows_the_active_agent_after_the_dwell() {
+    let mut f = Fixture::with_config(look(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_layer(&mut f, id, "bar", None);
+    let t0 = focus_the_agent(&mut f, id);
+
+    frame_at(&mut f, t0);
+    assert_eq!(layer(&mut f, "bar").shell_hue().blend, HueBlend::NEUTRAL);
+    frame_at(&mut f, t0 + Duration::from_millis(500));
+    assert_eq!(layer(&mut f, "bar").shell_hue().blend, HueBlend::NEUTRAL);
+    frame_at(&mut f, t0 + Duration::from_millis(1100));
+    assert_eq!(layer(&mut f, "bar").shell_hue().blend, red());
+}
+
+#[test]
+fn an_exclusive_panel_keeps_the_hue() {
+    let mut f = Fixture::with_config(look(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_layer(&mut f, id, "bar", None);
+    let t0 = focus_the_agent(&mut f, id);
+    frame_at(&mut f, t0);
+    frame_at(&mut f, t0 + Duration::from_millis(1100));
+    assert_eq!(layer(&mut f, "bar").shell_hue().blend, red());
+
+    // The panel's dispatch redraws at the host's uptime, before t0 + 1100:
+    // a held hue survives that too.
+    open_layer(&mut f, id, "panel", Some(KeyboardInteractivity::Exclusive));
+    frame_at(&mut f, t0 + Duration::from_millis(2000));
+    frame_at(&mut f, t0 + Duration::from_millis(4000));
+    assert_eq!(layer(&mut f, "bar").shell_hue().blend, red());
+}
+
+/// Redraws every output through the real redraw path, which arms the hue
+/// timer.
+fn redraw_all(f: &mut Fixture) {
+    let crate::niri::State { backend, niri } = f.niri_state();
+    niri.queue_redraw_all();
+    niri.redraw_queued_outputs(backend);
+}
+
+fn drop_shell_hue_timer(f: &mut Fixture) {
+    let niri = f.niri();
+    if let Some(token) = niri.shell_hue_timer.take() {
+        niri.event_loop.remove(token);
+    }
+}
+
+#[test]
+fn a_pending_settle_arms_a_redraw_deadline() {
+    let mut f = Fixture::with_config(look(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_layer(&mut f, id, "bar", None);
+    let t0 = focus_the_agent(&mut f, id);
+    frame_at(&mut f, t0);
+    assert_eq!(f.niri().shell_hue.next_deadline(), Some(t0 + HOLD_DWELL));
+
+    // Setup's own redraws may have armed it for "other"; start from none.
+    drop_shell_hue_timer(&mut f);
+    redraw_all(&mut f);
+    assert!(
+        f.niri().shell_hue_timer.is_some(),
+        "the redraw armed the settle"
+    );
+
+    frame_at(&mut f, t0 + HOLD_DWELL);
+    assert_eq!(f.niri().shell_hue.next_deadline(), None);
+    redraw_all(&mut f);
+    assert!(
+        f.niri().shell_hue_timer.is_none(),
+        "nothing pending, nothing armed"
+    );
+}
+
+#[test]
+fn workspace_blend_names_the_active_workspace_at_rest() {
+    let mut f = Fixture::with_config(look(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_window(&mut f, id, "agent");
+    let niri = f.niri();
+    let mon = niri.layout.monitors().next().unwrap();
+    let (a, _b, frac) = mon.workspace_blend();
+    assert_eq!(a, mon.active_workspace_ref().id());
+    assert_eq!(frac, 0.);
 }
