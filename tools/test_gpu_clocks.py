@@ -392,8 +392,8 @@ sleep() { :; }
 
     @staticmethod
     def burst_case(root):
-        # one-fine-1: two draws per step; those in the first ten seconds run at
-        # P0 and cost 0.03 ms, the twenty after at the idle clock and 0.33 ms.
+        # one-fine-1: two draws per step; the twenty draws in the first ten steps
+        # run at P0 and cost 0.03 ms, the twenty after at the idle clock, 0.33 ms.
         rows = [('MaterialRenderElement::draw', t * 10**9 + offset, 30_000 if t < 12 else 330_000)
                 for t in range(2, 22) for offset in (200_000_000, 600_000_000)]
         with (root / 'gpu-one-fine-1.csv').open('w') as file:
@@ -431,3 +431,4 @@ sleep() { :; }
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('unknown noise cost case: ', result.stderr)
             self.assertNotIn('bad array subscript', result.stderr)
+            self.assertFalse((root / 'built').exists())
