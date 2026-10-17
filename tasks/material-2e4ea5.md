@@ -1,15 +1,16 @@
 ---
 id: material-2e4ea5
 title: "Capture gates judge measured contamination, not circumstantial host events"
-status: doing
+status: done
 priority: 2
 size: m
 complexity: high
 process: planned
 owner: capture-gates-evidence
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T11:53:50Z
+updated: 2026-10-17T11:54:11Z
 started: 2026-10-17T10:01:20Z
+completed: 2026-10-17T11:54:11Z
 depends: []
 tags: [rendering]
 agent: claude-code/claude-opus-5-5
@@ -63,3 +64,7 @@ Related: material-04818d (what selects the 10.4 vs 17 W floor), material-d2e552 
 - 2026-10-17T11:40:04Z (capture-gates-evidence): replay: 162 records, exit 0 104 / 1 47 / 2 11 (all 11 unsupported recorded gpu_pstate policies); 2026-10-16 refusals all exit 0; 2026-09-24, timer-fired, pstate and pCbsOC refusals exit 1; all 29 refused preflights exit 1; no settled window fails
 - 2026-10-17T11:48:05Z (capture-gates-evidence): review: impl round 1 — verdict: accept; findings: Critical 0, Important 0, Minor 7; reviewer: claude-code/claude-opus-5-5
 - 2026-10-17T11:53:50Z (capture-gates-evidence): review: impl round 2 — verdict: accept; findings: Critical 0, Important 0, Minor 3; reviewer: claude-code/claude-opus-5-5
+- 2026-10-17T11:54:11Z (capture-gates-evidence): done
+  provenance: {"harness_session":"claude-code:76b3bee8-6b12-4a7f-bb04-fa48a2d3ccc7","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:54:11Z (capture-gates-evidence): Capture gates judge measured contention: settle annotates client-free headless power steps, the release scan classifies VT logins by lane, and capture-meta judge re-judges any retained record read-only; replay of 162 records: 2026-10-16 refusals pass, real refusals still fail
+  provenance: {"harness_session":"claude-code:76b3bee8-6b12-4a7f-bb04-fa48a2d3ccc7","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
