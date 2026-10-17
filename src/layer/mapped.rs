@@ -7,7 +7,9 @@ use smithay::backend::renderer::element::{Element as _, Id};
 use smithay::backend::renderer::gles::GlesTexProgram;
 #[cfg(test)]
 use smithay::backend::renderer::utils::CommitCounter;
+use smithay::desktop::utils::bbox_from_surface_tree;
 use smithay::desktop::{LayerSurface, PopupKind, PopupManager};
+use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Scale, Size};
 use smithay::wayland::compositor::{remove_pre_commit_hook, HookId};
 use smithay::wayland::shell::wlr_layer::{ExclusiveZone, Layer};
@@ -99,6 +101,14 @@ fn remap_setup(rules: &ResolvedLayerRules, config: &Config) -> Option<RemapSetup
         .find(|m| m.name == remap.material.name)
         .expect("surface-remap materials are validated at config load");
     Some(RemapSetup::new(remap, &material.resolve().glass))
+}
+
+/// What `surface`'s tree covers when drawn at `loc`: its subsurfaces
+/// included, as the remap wraps each of them.
+fn surface_tree_extent(surface: &WlSurface, loc: Point<f64, Logical>) -> Rectangle<f64, Logical> {
+    let mut extent = bbox_from_surface_tree(surface, (0, 0)).to_f64();
+    extent.loc += loc;
+    extent
 }
 
 /// A surface element as pushed: through the remap program when there is one.
@@ -332,8 +342,8 @@ impl MappedLayer {
             if self.remap.is_some() {
                 // Damage before the pixels it redraws: elements are front to
                 // back, and damage behind a declared opaque region is skipped.
-                let geometry = Rectangle::new(location, self.block_out_buffer.size());
-                push(self.remap_damage.render(geometry).into());
+                let extent = surface_tree_extent(surface, buf_pos);
+                push(self.remap_damage.render(extent).into());
             }
             let program = self.remap_program(ctx.renderer);
             push_elements_from_surface_tree(
@@ -400,7 +410,8 @@ impl MappedLayer {
             let bounds = PopupManager::popups_for_surface(surface)
                 .filter(|(popup, _)| PopupClass::of(popup).follows_layer())
                 .map(|(popup, offset)| {
-                    Rectangle::new(location + offset.to_f64(), popup.geometry().size.to_f64())
+                    let surface_loc = location + (offset - popup.geometry().loc).to_f64();
+                    surface_tree_extent(popup.wl_surface(), surface_loc)
                 })
                 .reduce(|a, b| a.merge(b));
             if let Some(bounds) = bounds {

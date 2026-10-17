@@ -93,7 +93,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/input/pick_color_grab.rs` | B | M | +1/-0 |
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
-| `src/layer/mapped.rs` | B | M | +199/-8 |
+| `src/layer/mapped.rs` | B | M | +210/-8 |
 | `src/layer/mod.rs` | B | M | +7/-0 |
 | `src/layout/floating.rs` | B | M | +24/-6 |
 | `src/layout/mod.rs` | B | M | +177/-25 |
@@ -111,7 +111,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/render_helpers/resize.rs` | B | M | +6/-1 |
 | `src/render_helpers/shaders/mod.rs` | B | M | +494/-0 |
 | `src/screencasting/mod.rs` | B | M | +1/-0 |
-| `src/tests/client.rs` | B | M | +302/-4 |
+| `src/tests/client.rs` | B | M | +373/-4 |
 | `src/tests/fixture.rs` | B | M | +3/-1 |
 | `src/tests/mod.rs` | B | M | +12/-0 |
 | `src/window/mapped.rs` | B | M | +48/-0 |

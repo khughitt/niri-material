@@ -5,6 +5,8 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
 use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     Anchor, KeyboardInteractivity,
 };
+use smithay::utils::{Physical, Rectangle, Scale, Size};
+use smithay::wayland::compositor::get_children;
 use wayland_client::protocol::wl_surface::WlSurface;
 
 use super::client::{ClientId, LayerConfigureProps};
@@ -216,8 +218,9 @@ fn reload_renaming_the_material_follows_the_rule() {
     assert!(layer(&mut f, "bar").remap_uniforms().is_some());
 }
 
-/// The output's render elements, front to back, as the real loop renders them.
-fn output_elements(f: &mut Fixture) -> Vec<Id> {
+/// The output's render elements, front to back, as the real loop renders
+/// them, with their geometry at the output's scale of 1.
+fn output_element_geometries(f: &mut Fixture) -> Vec<(Id, Rectangle<i32, Physical>)> {
     let output = f.niri_output(1);
     let crate::niri::State { backend, niri } = f.niri_state();
     niri.update_render_elements(Some(&output));
@@ -231,10 +234,18 @@ fn output_elements(f: &mut Fixture) -> Vec<Id> {
             };
             niri.render_to_vec(ctx, &output, false)
                 .iter()
-                .map(|e| e.id().clone())
+                .map(|e| (e.id().clone(), e.geometry(Scale::from(1.))))
                 .collect()
         })
         .unwrap()
+}
+
+/// The output's render elements, front to back, as the real loop renders them.
+fn output_elements(f: &mut Fixture) -> Vec<Id> {
+    output_element_geometries(f)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect()
 }
 
 #[test]
@@ -301,4 +312,85 @@ fn remap_damage_precedes_the_pixels_it_redraws() {
         animating: false,
     });
     assert_ne!(before, mapped.popup_remap_damage_commit());
+}
+
+#[test]
+fn remap_damage_covers_the_drawn_surface_tree() {
+    // The remap wraps every element of a surface tree, so its damage must
+    // cover the tree as drawn, not the window or layer geometry (task 5
+    // review): a popup whose buffer extends past its window geometry, and a
+    // layer subsurface outside the layer surface.
+    let mut f = Fixture::with_config(look(""));
+    f.niri_state().backend.headless().add_renderer().unwrap();
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    let bar = open_layer(&mut f, id, "bar", None);
+    f.client(id)
+        .add_colored_subsurface(&bar, (0, 50), (100, 30));
+    f.client(id).layer(&bar).commit();
+
+    let popup = f
+        .client(id)
+        .create_layer_popup(&bar, (180, 80))
+        .surface
+        .clone();
+    f.client(id).popup(&popup).commit();
+    f.roundtrip(id);
+    {
+        let popup = f.client(id).popup(&popup);
+        popup.set_window_geometry(10, 10, 180, 80);
+        popup.attach_new_colored_buffer(0x15, 0x13, 0x10, 0xff);
+        popup.set_size(200, 100);
+        popup.ack_last_and_commit();
+    }
+    f.double_roundtrip(id);
+
+    let (bar_id, sub_id, popup_id, bar_damage, popup_damage) = {
+        let mapped = layer(&mut f, "bar");
+        let bar = mapped.surface().wl_surface();
+        let (popup, _) = PopupManager::popups_for_surface(bar)
+            .next()
+            .expect("the popup is mapped");
+        let sub = get_children(bar);
+        assert_eq!(sub.len(), 1, "the layer has its subsurface");
+        (
+            Id::from_wayland_resource(bar),
+            Id::from_wayland_resource(&sub[0]),
+            Id::from_wayland_resource(popup.wl_surface()),
+            mapped.remap_damage_id().clone(),
+            mapped.popup_remap_damage_id().clone(),
+        )
+    };
+    let elements = output_element_geometries(&mut f);
+    let geometry = |id: &Id| {
+        elements
+            .iter()
+            .find(|(e, _)| e == id)
+            .map(|(_, geometry)| *geometry)
+            .unwrap_or_else(|| panic!("{id:?} is not rendered"))
+    };
+    assert_eq!(
+        geometry(&popup_id).size,
+        Size::from((200, 100)),
+        "the popup draws its whole buffer"
+    );
+    assert!(
+        geometry(&popup_damage).contains_rect(geometry(&popup_id)),
+        "popup damage {:?} covers the drawn popup {:?}",
+        geometry(&popup_damage),
+        geometry(&popup_id)
+    );
+    let (bar_geo, sub_geo) = (geometry(&bar_id), geometry(&sub_id));
+    assert_eq!(
+        sub_geo.loc.y,
+        bar_geo.loc.y + bar_geo.size.h,
+        "the subsurface sits below the layer surface"
+    );
+    for drawn in [bar_geo, sub_geo] {
+        assert!(
+            geometry(&bar_damage).contains_rect(drawn),
+            "layer damage {:?} covers the drawn {drawn:?}",
+            geometry(&bar_damage)
+        );
+    }
 }
