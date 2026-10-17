@@ -5,8 +5,8 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-10-02T00:08:50Z
-updated: 2026-10-12T18:21:14Z
-depends: [material-be611b]
+updated: 2026-10-17T17:35:01Z
+depends: [material-be611b, material-58a1a1, material-ac926f, material-f4143a]
 parent: material-6062fd
 tags: [rendering, material]
 agent: claude-code/claude-opus-5-5
