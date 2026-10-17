@@ -517,12 +517,14 @@ capture_ready() {
     fail "tracy-capture never reported a connection (see $OUT/$1.capture.log)"
 }
 capture_wait() {
-    local rc=0; wait "$CAP_PID" || rc=$?; CAP_PID=
+    local rc=0 died=; wait "$CAP_PID" || rc=$?; CAP_PID=
     if [ -n "$GPU_CLOCK_PID" ]; then
-        kill -0 "$GPU_CLOCK_PID" 2>/dev/null || fail 'GPU clock sampler exited before Tracy finished'
-        kill "$GPU_CLOCK_PID"; wait "$GPU_CLOCK_PID" 2>/dev/null || true; GPU_CLOCK_PID=
+        kill -0 "$GPU_CLOCK_PID" 2>/dev/null || died='; the GPU clock sampler had also exited'
+        # The sampler can exit between the check and the kill: the check decides.
+        kill "$GPU_CLOCK_PID" 2>/dev/null || true; wait "$GPU_CLOCK_PID" 2>/dev/null || true; GPU_CLOCK_PID=
     fi
-    [ "$rc" -eq 0 ] || fail "tracy-capture exited $rc (no client connected, or timed out)"
+    [ "$rc" -eq 0 ] || fail "tracy-capture exited $rc (no client connected, or timed out)$died"
+    [ -z "$died" ] || fail 'GPU clock sampler exited before Tracy finished'
 }
 col() {
     local idx; idx=$(head -1 "$1" | tr ',' '\n' | grep -nx "$2" | cut -d: -f1)

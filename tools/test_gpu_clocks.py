@@ -1,5 +1,6 @@
 """The capture owns its clock sampler, and wall-time joins retain uncertainty."""
 import csv
+import datetime
 import json
 import os
 from pathlib import Path
@@ -107,6 +108,12 @@ sys.exit(int(os.environ['TRACE_RC']))
                 rc, stderr, _, _ = self.capture(trace_rc=trace_rc, abort=abort)
                 self.assertEqual(rc, want, stderr)
 
+    def test_trace_failure_is_reported_even_when_the_sampler_also_exited(self):
+        rc, stderr, _, _ = self.capture(mode='early', trace_rc=7)
+        self.assertEqual(rc, 1, stderr)
+        self.assertIn('tracy-capture exited 7', stderr)
+        self.assertIn('GPU clock sampler had also exited', stderr)
+
 
 class ClockAnchorTests(unittest.TestCase):
     def test_anchor_waits_for_config_loaded_after_async_action_reply(self):
@@ -152,8 +159,28 @@ class ClockAnchorTests(unittest.TestCase):
                 server.close()
 
 
+def clock_row(tenths, graphics, pstate, power):
+    """One nvidia-smi row, `tenths` of a second after 2026-10-11 10:00:00 UTC (the fixture anchor)."""
+    stamp = datetime.datetime(2026, 10, 11, 10) + datetime.timedelta(seconds=tenths / 10)
+    return (f'{stamp:%Y/%m/%d %H:%M:%S}.{stamp.microsecond // 1000:03d}, {graphics} MHz, '
+            f'{405 if pstate == "P8" else 7001} MHz, {pstate}, {power} W\n')
+
+
+CLOCK_HEADER = 'timestamp, clocks.current.graphics [MHz], clocks.current.memory [MHz], pstate, power.draw [W]\n'
+REPORT_SOURCE = COST.read_text().split("<<'PYREPORT' >> \"$OUT/metrics.txt\"\n", 1)[1].split('\nPYREPORT', 1)[0]
+
+
 class ClockAlignmentTests(unittest.TestCase):
-    def report(self, *, sampled=True, empty=False):
+    # Trace time 2 s is wall 10:00:00.000-.020 (the anchor). The window is one
+    # step, 2-3 s. Readings are P0 before the window, P8 at 225 MHz for its
+    # first half second (a lagged reading), P8 at the 210 MHz idle clock after,
+    # with one 270 MHz reading at 10:00:01.300.
+    SAMPLES = ([clock_row(-1, 1815, 'P0', 43.1)] + [clock_row(t, 225, 'P8', 14.4) for t in range(0, 5)] +
+               [clock_row(t, 270 if t == 13 else 210, 'P8', 22.5 if t == 13 else 10.5) for t in range(5, 22)])
+    DRAWS = [(1_950_000_000, 30_000), (2_050_000_000, 270_000), (2_250_000_000, 290_000),
+             (2_550_000_000, 330_000), (2_850_000_000, 310_000), (3_500_000_000, 320_000)]
+
+    def report(self, *, sampled=True, samples=None, minimum_idle=0):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for suffix, header, rows in (
@@ -161,82 +188,105 @@ class ClockAlignmentTests(unittest.TestCase):
                     ('State::reload_config', 2_000_000_000, 5),
                     ('EffectBuffer::sharp_damage', 2_050_000_000, 1),
                     ('State::reload_config', 3_000_000_000, 5)]),
-                ('gpu.csv', ['name', 'Time from start of program', 'GPU execution time'], [
-                    ('MaterialRenderElement::draw', 1_950_000_000, 30_000),
-                    ('MaterialRenderElement::draw', 2_050_000_000, 230_000)]),
+                ('gpu.csv', ['name', 'Time from start of program', 'GPU execution time'],
+                 [('MaterialRenderElement::draw', t, d) for t, d in self.DRAWS]),
             ):
                 with (root / f'none.{suffix}').open('w') as file:
                     writer = csv.writer(file)
                     writer.writerow(header)
                     writer.writerows(rows)
-            if sampled:
+            if samples is not None:
                 (root / 'none.clock-anchor.txt').write_text('1791712800000000000 1791712800020000000\n')
-                (root / 'none.gpu-clocks.csv').write_text(
-                    'timestamp, clocks.current.graphics [MHz], clocks.current.memory [MHz], pstate, power.draw [W]\n' +
-                    ('' if empty else '2026/10/11 09:59:59.900, 1680 MHz, 7001 MHz, P0, 40 W\n'
-                     '2026/10/11 10:00:00.000, 210 MHz, 405 MHz, P8, 14 W\n'
-                     '2026/10/11 10:00:00.100, 210 MHz, 405 MHz, P8, 14 W\n'))
-            source = COST.read_text().split("<<'PYREPORT' >> \"$OUT/metrics.txt\"\n", 1)[1].split('\nPYREPORT', 1)[0]
-            result = subprocess.run(['python3', '-c', source, directory, 'none', '1', '100000'],
+                (root / 'none.gpu-clocks.csv').write_text(CLOCK_HEADER + ''.join(samples))
+            result = subprocess.run(['python3', '-c', REPORT_SOURCE, directory, 'none', '1', '100000',
+                                     '1' if sampled else '0', str(minimum_idle)],
                                     text=True, capture_output=True, timeout=5, env={**os.environ, 'TZ': 'UTC'})
             joined = root / 'none.draw-clocks.csv'
             rows = []
             if joined.exists():
                 with joined.open() as file:
                     rows = list(csv.DictReader(file))
-            return result, rows
+            metrics = dict(line.split('=', 1) for line in result.stdout.splitlines())
+            return result, rows, metrics
 
     def test_first_draw_wall_time_and_clock_join_retain_anchor_width(self):
-        result, rows = self.report()
+        result, rows, metrics = self.report(samples=self.SAMPLES)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), len(self.DRAWS))
         self.assertEqual(rows[0]['wall_earliest_ns'], '1791712799950000000')
         self.assertEqual(rows[0]['wall_latest_ns'], '1791712799970000000')
-        self.assertEqual(rows[0]['graphics_mhz'], '1680')
-        self.assertEqual(rows[1]['graphics_mhz'], '210')
+        self.assertEqual([r['graphics_mhz'] for r in rows], ['1815', '225', '225', '210', '210', '210'])
         self.assertEqual(rows[0]['gpu_ms'], '0.030000')
-        self.assertEqual(rows[1]['gpu_ms'], '0.230000')
+        self.assertEqual(rows[1]['gpu_ms'], '0.270000')
+        self.assertEqual(metrics['none_first_material_draw_wall_earliest_ns'], '1791712799950000000')
+
+    def test_rows_mark_the_stimulus_window(self):
+        _, rows, _ = self.report(samples=self.SAMPLES)
+        self.assertEqual([r['in_window'] for r in rows], ['0', '1', '1', '1', '1', '0'])
+
+    def test_idle_clock_draws_hold_the_idle_clock_through_the_reading_lag(self):
+        # Idle: P8 at the trace's lowest P8 clock from the joined reading through
+        # the first reading 0.5 s after the draw. The draw at 2.25 s joins a
+        # lagged 225 MHz reading; 2.85 s has the 270 MHz reading inside its lag.
+        _, rows, metrics = self.report(samples=self.SAMPLES)
+        self.assertEqual([r['idle_clock'] for r in rows], ['0', '0', '0', '1', '0', '1'])
+        self.assertEqual(metrics['none_idle_graphics_mhz'], '210')
+        self.assertEqual(metrics['none_MaterialRenderElement::draw_idle_clock_count'], '1')
+        self.assertEqual(metrics['none_MaterialRenderElement::draw_idle_clock_median_ms'], '0.330000')
+        self.assertEqual(metrics['none_idle_clock_power_median_w'], '10.50')
+        # All in-window draws, as before: the key earlier comparisons pinned.
+        self.assertEqual(metrics['none_MaterialRenderElement::draw_median_ms'], '0.300000')
+
+    def test_too_few_idle_clock_draws_refuse_the_report(self):
+        result, _, _ = self.report(samples=self.SAMPLES, minimum_idle=2)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('1 idle-clock material draws', result.stderr)
+
+    def test_a_pilot_without_idle_clock_draws_reports_none(self):
+        samples = [clock_row(t, 1815, 'P0', 43.1) for t in range(-1, 15)] + [clock_row(t, 210, 'P8', 10.5) for t in range(15, 22)]
+        result, _, metrics = self.report(samples=samples)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(metrics['none_MaterialRenderElement::draw_idle_clock_count'], '0')
+        self.assertNotIn('none_MaterialRenderElement::draw_idle_clock_median_ms', metrics)
+        self.assertNotIn('none_idle_clock_power_median_w', metrics)
+
+    def test_a_trace_ending_inside_a_draws_reading_lag_refuses(self):
+        result, _, _ = self.report(samples=self.SAMPLES[:-1])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('GPU clock trace does not cover', result.stderr)
 
     def test_report_without_clock_sampling_keeps_original_metrics(self):
-        result, rows = self.report(sampled=False)
+        result, rows, metrics = self.report(sampled=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('none_MaterialRenderElement::draw_median_ms=0.230000', result.stdout)
+        self.assertEqual(metrics['none_MaterialRenderElement::draw_median_ms'], '0.300000')
+        self.assertNotIn('none_MaterialRenderElement::draw_idle_clock_count', metrics)
         self.assertEqual(rows, [])
 
+    def test_sampled_report_requires_the_clock_trace(self):
+        result, _, _ = self.report(samples=None)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('none.gpu-clocks.csv', result.stderr)
+
     def test_empty_clock_trace_cannot_produce_a_cost_verdict(self):
-        result, _ = self.report(empty=True)
+        result, _, _ = self.report(samples=[])
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('clock', result.stderr.lower())
 
 
 class NoiseCostPilotTests(unittest.TestCase):
-    def test_one_case_reaches_its_verdict_without_running_other_cases(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / 'runtime').mkdir()
-            (root / 'noise-layers-cost.sh').write_text(COST.read_text())
-            cpu = [('State::reload_config', t * 10**9, 5) for t in (2, 3, 4, 5)]
-            cpu += [('EffectBuffer::sharp_damage', t * 10**9 + 100, 1) for t in (2, 3, 4)]
-            gpu = [('MaterialRenderElement::draw', t * 10**9 + 200, 230_000) for t in (2, 3, 4)]
-            for name, header, rows in [('cpu.csv', ['name', 'ns_since_start', 'exec_time_ns'], cpu),
-                                       ('gpu.csv', ['name', 'Time from start of program', 'GPU execution time'], gpu)]:
-                with (root / name).open('w') as file:
-                    writer = csv.writer(file)
-                    writer.writerow(header)
-                    writer.writerows(rows)
-            # Replace the expensive host/build boundary; run the real config and report code.
-            (root / 'glass-optic-smoke-lib.sh').write_text('''
+    # Replace the expensive host/build boundary; run the real config, report and A/B code.
+    STUB_LIB = '''
 magick() { :; }
 source "$REAL_LIB"
-build_binaries() { NIRI=/bin/true; NIRI_TRACY=/bin/true; }
+build_binaries() { touch "$TEST_ROOT/built"; NIRI=/bin/true; NIRI_TRACY=/bin/true; }
 await_load() { :; }
 capture_preflight() { :; }
-capture_identity() { :; }
+capture_identity() { printf '%s\\n' "$@" > "$TEST_ROOT/identity-args"; }
 reserve_tracy_port() { :; }
 tools_ready() { :; }
 calibrate_probe_rect() { :; }
 start_nested() { :; }
-capture_bg() { :; }
+capture_bg() { [ "$CAPTURE_GPU_CLOCKS" = 0 ] || cp "$TEST_ROOT/clocks.csv" "$OUT/$1.gpu-clocks.csv"; }
 capture_ready() { :; }
 start_wall() { :; }
 spawn_probe() { :; }
@@ -251,13 +301,42 @@ stop_nested() { :; }
 count_last20() { cp "$TEST_ROOT/cpu.csv" "$OUT/$1.csv"; echo 20; }
 csvexport() { cp "$TEST_ROOT/gpu.csv" "$3"; }
 sleep() { :; }
-''')
-            env = {**os.environ, 'REAL_LIB': str(LIB), 'TEST_ROOT': directory,
-                   'OUT': str(root / 'out'), 'XDG_RUNTIME_DIR': str(root / 'runtime'),
-                   'NIRI_MATERIAL_WORK_ROOT': directory, 'CAPTURE_META': ':',
-                   'NOISE_LAYERS_COST_PILOT': '1', 'NOISE_LAYERS_COST_AB': '', 'CAPTURE_GPU_CLOCKS': '0'}
-            result = subprocess.run(['bash', str(root / 'noise-layers-cost.sh'), 'none'], cwd=ROOT,
-                                    env=env, text=True, capture_output=True, timeout=5)
+'''
+
+    def run_cost(self, root, *args, pilot=True, ab='', clocks=None):
+        steps = 3 if pilot else 20
+        (root / 'runtime').mkdir()
+        # The anchor connects to a live niri; the stub writes the bracket the fixture times assume.
+        source = re.sub(r'^reload_clock_anchor\(\) \{.*?^}', 'reload_clock_anchor() { '
+                        'echo "1791712800000000000 1791712800005000000" > "$OUT/$2.clock-anchor.txt"; }',
+                        COST.read_text(), count=1, flags=re.S | re.M)
+        (root / 'noise-layers-cost.sh').write_text(source)
+        (root / 'glass-optic-smoke-lib.sh').write_text(self.STUB_LIB)
+        cpu = [('State::reload_config', t * 10**9, 5) for t in range(2, steps + 3)]
+        cpu += [('EffectBuffer::sharp_damage', t * 10**9 + 100, 1) for t in range(2, steps + 2)]
+        gpu = [('MaterialRenderElement::draw', t * 10**9 + 200_000_000, 230_000) for t in range(2, steps + 2)]
+        gpu += [('Grain::render', t * 10**9 + 250_000_000, 50_000) for t in range(2, steps + 2)]
+        for name, header, rows in [('cpu.csv', ['name', 'ns_since_start', 'exec_time_ns'], cpu),
+                                   ('gpu.csv', ['name', 'Time from start of program', 'GPU execution time'], gpu)]:
+            with (root / name).open('w') as file:
+                writer = csv.writer(file)
+                writer.writerow(header)
+                writer.writerows(rows)
+        (root / 'clocks.csv').write_text(CLOCK_HEADER + ''.join(clock_row(t, 210, 'P8', 10.5) for t in range(-1, steps * 10 + 10)))
+        env = {k: v for k, v in os.environ.items() if k != 'CAPTURE_GPU_CLOCKS'}
+        env.update({'REAL_LIB': str(LIB), 'TEST_ROOT': str(root), 'TZ': 'UTC',
+                    'OUT': str(root / 'out'), 'XDG_RUNTIME_DIR': str(root / 'runtime'),
+                    'NIRI_MATERIAL_WORK_ROOT': str(root), 'CAPTURE_META': ':',
+                    'NOISE_LAYERS_COST_PILOT': '1' if pilot else '0', 'NOISE_LAYERS_COST_AB': ab})
+        if clocks is not None:
+            env['CAPTURE_GPU_CLOCKS'] = clocks
+        return subprocess.run(['bash', str(root / 'noise-layers-cost.sh'), *args], cwd=ROOT,
+                              env=env, text=True, capture_output=True, timeout=20)
+
+    def test_one_case_reaches_its_verdict_without_running_other_cases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_cost(root, 'none', clocks='0')
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('PASS: noise layers cost (pilot=1)', result.stdout)
             self.assertIn('none_MaterialRenderElement::draw_gpu_count=3', (root / 'out/metrics.txt').read_text())
@@ -265,3 +344,52 @@ sleep() { :; }
             self.assertIn('noise 0', (root / 'out/none.kdl').read_text())
             check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=root / 'out', capture_output=True)
             self.assertEqual(check.returncode, 0, check.stderr)
+
+    def test_identity_records_the_selected_cases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_cost(root, 'none', clocks='0')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('cases=none', (root / 'identity-args').read_text().splitlines())
+
+    def test_cost_runs_sample_clocks_by_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_cost(root, 'none')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue((root / 'out/none.draw-clocks.csv').exists())
+            self.assertIn('none_MaterialRenderElement::draw_idle_clock_count=3', (root / 'out/metrics.txt').read_text())
+
+    def test_case_arguments_are_refused_before_the_build(self):
+        for args, ab, message in ((('bogus',), '', 'unknown noise cost case: bogus'),
+                                  (('none', 'one-fine-1'), '', 'expected at most one noise cost case'),
+                                  (('none',), '/bin/true', 'cannot be combined with NOISE_LAYERS_COST_AB')):
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result = self.run_cost(root, *args, ab=ab, clocks='0')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertFalse((root / 'built').exists())
+
+    def test_sampled_ab_run_joins_clocks_for_every_sub_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_cost(root, pilot=False, ab='/bin/true')
+            self.assertEqual(result.returncode, 0, result.stderr)
+            metrics = (root / 'out/metrics.txt').read_text()
+            subs = [f'{case}-{side}-{n}' for case in ('none', 'one-fine-1') for n in (1, 2) for side in ('a', 'b1')]
+            for name in subs:
+                with self.subTest(sub_run=name):
+                    self.assertTrue((root / f'out/{name}.draw-clocks.csv').exists())
+                    self.assertIn(f'{name}_MaterialRenderElement::draw_idle_clock_count=20', metrics)
+                    self.assertIn(f'{name}_MaterialRenderElement::draw_idle_clock_median_ms=0.230000', metrics)
+            self.assertEqual(len(list((root / 'out').glob('*.draw-clocks.csv'))), len(subs))
+
+    def test_full_run_reports_idle_clock_deltas_over_none(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_cost(root, pilot=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            metrics = (root / 'out/metrics.txt').read_text()
+            self.assertIn('one-fine-1_material_ns_per_px_over_none=0.0000', metrics)
+            self.assertIn('one-fine-1_material_idle_clock_ns_per_px_over_none=0.0000', metrics)

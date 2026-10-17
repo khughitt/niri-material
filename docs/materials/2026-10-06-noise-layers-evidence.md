@@ -429,9 +429,24 @@ every capture. Dropping the first N draws by count is fragile, because the
 burst length depends on start-up timing (11 to 16 draws in the earlier
 traces, 12 in the window here). Cost reports should exclude draws whose
 joined row is not P8 (allowing for the 0.5 s reading lag above), and pilots should not be compared
-with full runs in absolute terms. The report does not do this selection yet,
-and sampling is still opt-in (material-d2e552). Medians of earlier full runs
+with full runs in absolute terms. Medians of earlier full runs
 (about 80 draws, at most 16 early ones) are already the later mode and stand.
+
+**The report now selects them (material-d2e552).** `noise-layers-cost.sh`
+samples clocks by default; `CAPTURE_GPU_CLOCKS=0` keeps the unsampled
+condition earlier references were measured in. A draw counts as idle-clock when
+every reading from its joined row through the first reading 0.5 s past its
+latest wall time is P8 at the trace's lowest P8 graphics clock. That rule keeps
+no draw from the descent and gives up the two draws whose 225 MHz tags were
+lag. `<case>.draw-clocks.csv` marks each draw `in_window` and `idle_clock`.
+`metrics.txt` adds, per case, `idle_graphics_mhz`, the in-window idle-clock
+draws' `draw_idle_clock_count` and `draw_idle_clock_median_ms`, and their
+`idle_clock_power_median_w`, which tells the 10.4 W floor from the 17 W one
+below. A sampled full run refuses a case with fewer idle-clock draws than
+damage steps, and its deltas over `none` add an `_idle_clock_` set that
+refuses cases idling at different graphics clocks. `draw_median_ms` still
+covers every in-window draw. Rerun offline on the sampled full run above, the
+report selects 62 draws, median 0.3256 ms at 10.84 W; on the pilot, none.
 
 A separate observation from the same session: after nested runs end, the
 idle P8 floor (210 / 405 MHz, no GPU clients) settled at either about 10.4 W
