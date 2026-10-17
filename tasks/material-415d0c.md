@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-17T02:04:23Z
-updated: 2026-10-17T02:15:25Z
+updated: 2026-10-17T02:15:39Z
 depends: []
 parent: material-53f873
 tags: [rendering, lighting]
@@ -30,3 +30,7 @@ Leave the chosen look and acceptable ongoing cost to the owner at the sheet revi
 Where: src/render_helpers/material/optics/aurora.rs and mod.rs (apply_resolved), src/render_helpers/shaders/material/aurora.frag, niri-config/src/material/ (pipeline.rs lists no Aurora response), src/layout/tile.rs (optic_frame, tick_deadline, are_animations_ongoing); constraints in docs/specs/2026-09-29-sustained-optic-settling-design.md and docs/materials/render-pipeline.md.
 
 Ideas it wakes: on the design result, update the brief and run `tasks note <id> --no-reviewed "<finding>"` on material-1c5a30 and material-f3e4e4, before this result's branch merges.
+
+## Notes
+
+- 2026-10-17T02:15:39Z (materials-26.04): From brief review round 4 (on material-ffd61f's proposal): added scenes S10–S12 through amount 0 with continuity and exact-termination checks, and required seed-matched controls for byte comparisons; both carried into this body.
