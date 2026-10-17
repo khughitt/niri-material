@@ -1,7 +1,7 @@
 # Noctalia glass cohesion and workspace project hue
 
 2026-10-16. Design for `material-62347d` under `material-55380c`. Status:
-draft for owner review. Scope brief:
+accepted for planning 2026-10-17 (review round 3). Scope brief:
 `docs/notes/2026-10-14-noctalia-material-brief.md`.
 
 ## Intent
@@ -172,13 +172,13 @@ swatch at the 1% bound is:
 
 | IOR | OKLab L offset at backdrop 0.05 / 0.5 |
 | --- | --- |
-| 1.0 (worst case) | −0.047 / +0.045 |
+| 1.0 (worst case) | −0.0466 / +0.04501 |
 | 1.1 | −0.038 / +0.042 |
 | 1.28 (live) | −0.022 / +0.032 |
 | 1.5 | −0.013 / +0.022 |
 | 3.0 | −0.004 / +0.008 |
 
-The guaranteed bound is the worst row: within −0.047 and +0.045 OKLab L
+The guaranteed bound is the worst row: within −0.047 and +0.04501 OKLab L
 across the supported range. That case is a neutral `T` at the bound with IOR 1
 (for example `#191919`, thickness 20, distance 10: −0.046 / +0.044). The live
 glass is at −0.007 / +0.013. The worst case is established numerically, not
@@ -416,10 +416,10 @@ Prism's repository:
 **Scanout.** A wrapped surface is no longer a direct-scanout candidate. Top
 layer surfaces with partial alpha seldom are anyway.
 
-### 8. Owner semantics: defaults this spec takes
+### 8. Owner semantics
 
-The brief left these questions to the owner. The spec adopts the brief's lean,
-and any of them can be overridden in review:
+The brief left these questions to the owner. The spec adopted the brief's
+lean, and the owner kept all four at acceptance (2026-10-17):
 
 - **Active window has no accent:** the workspace holds the hue of the last
   accented window that settled there, or goes neutral if there is none.
@@ -463,7 +463,7 @@ and any of them can be overridden in review:
   - the IOR table in section 2, row by row;
   - a sampled sweep of accepted configurations (colors, thicknesses,
     distances, IOR 1 to 3): every sample's face over neutral backdrops from
-    0.05 to 0.5 stays within −0.047 and +0.045 L of its swatch, and over
+    0.05 to 0.5 stays within −0.047 and +0.04501 L of its swatch, and over
     saturated red, green and blue backdrops passes at most 1% of each
     channel.
 - A check of the model's constants against `main.frag`.
