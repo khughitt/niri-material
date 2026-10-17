@@ -511,7 +511,9 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("B: window not recorded; kept as refused", out)
         self.assertIn("judged at today's defaults", out)
         floor = capture_record([sampled("C", "refused", 10.4, reason="mem_available_pct below floor 20.0")], scan=CLEAN)
-        self.assertEqual(self.judged(floor)[0], 1)
+        code, out = self.judged(floor)
+        self.assertEqual(code, 1, out)
+        self.assertIn("C: refused on the memory floor; samples not kept, the recorded verdict stands", out)
 
     def test_pixel_runs_have_no_windows_to_judge(self):
         pixel = capture_record([{"name": "cell-1", "verdict": "begun", "started": STARTED}], lane="pixels",
@@ -541,6 +543,15 @@ class JudgeTests(unittest.TestCase):
                                                                gpu_pstate="any (user-authorized pixel-only run)")},
                                  hold=False)
         self.assertEqual(self.judged(refused)[0], 1)   # render-order-within-pixels.v8Dp2y: no windows to re-judge
+
+    def test_a_malformed_record_cannot_be_judged(self):
+        unitless = {"kind": "restart", "manager": "system", "at": "t"}
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as directory:
+            cm.save_record(pathlib.Path(directory), capture_record(scan={"verdict": "disturbed", "disturbances": [unitless]}))
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                self.assertEqual(cm.main(["judge", directory]), 2)
+        self.assertIn("malformed record", stderr.getvalue())
 
     def test_a_missing_or_corrupt_record_cannot_be_judged(self):
         self.assertEqual(self.judged(None)[0], 2)

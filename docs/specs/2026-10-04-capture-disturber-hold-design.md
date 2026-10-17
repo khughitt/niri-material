@@ -247,13 +247,15 @@ below.
 }
 ```
 
-`scan.verdict` is `clean`, `disturbed`, `unscanned` (§5) or `not-run` (a
+`scan.verdict` is `clean`, `annotated` (every flagged entry has severity
+`annotate`, §5), `disturbed`, `unscanned` (§5) or `not-run` (a
 preflight rollback). Each `restore.attempts[].by` is `release`, `preflight`, `guard`,
 `hand` (`capture-meta restore` run by a person) or `next-preflight`.
 
 Exit codes, from the record as it stands after the attempt: `restore.state`
 `failed` exits 2, printing each unrestored item with its `restore` command;
-otherwise `scan.verdict` decides: `clean` exits 0, `disturbed` exits 1,
+otherwise `scan.verdict` decides: `clean` exits 0, `annotated` exits 0 after
+printing each annotation, `disturbed` exits 1,
 `unscanned` exits 2, and `not-run` repeats the preflight failure's code
 (1 refused, 2 could not run). `capture-meta show` prints the hold and its verdict above the
 sub-runs.

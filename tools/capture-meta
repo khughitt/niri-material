@@ -1354,6 +1354,8 @@ def judge_windows(record):
         reasons, annotations = judge_window(entry, baseline, thresholds, lane)
         if "mem_available_pct below floor" in entry.get("reason", ""):
             reasons.append("mem_available_pct below floor (recorded; samples not kept)")
+            lines.append(f"{entry['name']}: {entry['verdict']} on the memory floor; samples not kept, "
+                         "the recorded verdict stands")
         now = "refused" if reasons else "settled"
         failed = failed or bool(reasons)
         if now != entry["verdict"]:
@@ -1394,7 +1396,11 @@ def cmd_judge(args):
     if not (pathlib.Path(args.run_dir) / RECORD).is_file():
         raise CannotRun(f"no {RECORD} in {args.run_dir}")
     record = load_record(args.run_dir)
-    parts = judge_record(record)
+    try:
+        parts = judge_record(record)
+    except (KeyError, TypeError, ValueError, AttributeError) as error:
+        # validate_record checks sections, not each entry's shape: a hand-edited record is unreadable, never a failure
+        raise CannotRun(f"{RECORD}: malformed record, cannot be judged: {type(error).__name__} {error}") from error
     rules = (record.get("preflight") or {}).get("rules", "before 2026-10-17")
     print(f"judge {record.get('run', {}).get('id')}  rules recorded {rules}, current {RULES}")
     for name, (outcome, recorded, lines) in parts.items():
