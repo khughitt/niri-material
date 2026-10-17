@@ -1,13 +1,15 @@
 ---
 id: material-62347d
 title: Design and build Noctalia glass cohesion with workspace project hue
-status: todo
+status: doing
 priority: 2
 size: l
 complexity: high
 process: planned
+owner: materials-26.04
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T02:10:36Z
+updated: 2026-10-17T02:10:41Z
+started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
@@ -28,3 +30,5 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-15T22:55:01Z (docs/noctalia-brief-review): brief revised after review round 1: optical treatment (comparison) and hue delivery are separate choices; a compositor tint under the client's translucent background is the only route to built-in chrome at Noctalia 5.2.1/5.3.0; the hold uses a per-workspace record of settled active windows, not focus timestamps
 - 2026-10-16T00:01:42Z (research/material-e27dbc): material-e27dbc finding: control center (noctalia-attached-panel) is the first target, launcher (noctalia-panel) the second; Noctalia's ext-background-effect region gives the exact visible body for a footprint; existing effects reach translucency, grain, saturation and corner radius only (nested sheet attached to material-e27dbc, owner to judge A1-B3); hue delivery needs a compositor change regardless.
 - 2026-10-17T02:03:13Z (materials-26.04): owner verdict 2026-10-16: column C of the material-b156e7 sheet (matched hue and darkness: custom palette with glass-colored surfaces, bar and attached panels 0.95, floating panels solid) looks viable; the optical treatment is Noctalia styling, no layer material needed for cohesion
+- 2026-10-17T02:10:41Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
