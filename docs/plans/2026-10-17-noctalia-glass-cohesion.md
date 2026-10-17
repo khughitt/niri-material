@@ -16,6 +16,12 @@
 
 **Spec:** [docs/specs/2026-10-16-noctalia-glass-cohesion-design.md](../specs/2026-10-16-noctalia-glass-cohesion-design.md) (accepted for planning after spec review round 3, then revised after round 4). Round 4 added three things: unsupported face-lighting optics, the achromatic-accent policy, and the input-method popup exemption. Section 3's overlay claim was corrected while planning (see the spec's note there).
 
+**Status:** revised after plan review round 1 (2026-10-17). Four changes:
+- the layer's rules are recomputed before its remap on reload, which fixes a Glass-off panic;
+- `hue-chroma 0` is the static look under any hue;
+- popup remap damage moved in front of the popups;
+- a justified Oklab round-trip tolerance.
+
 **Deviation from the spec, stated once:** the spec places the face model in `src/render_helpers/material/`. It lives in `niri-config/src/material/face.rs` instead, because the range check must run at config load (`niri validate` included), and only `niri-config` runs there. The niri crate imports it from there. The test that pins the model's constants against `main.frag` lives in the niri crate (Task 3), beside the shader.
 
 ## Global Constraints
@@ -29,11 +35,13 @@
 - **Guaranteed lightness bound:** within −0.047 and +0.04501 Oklab L, over neutral backdrops from 0.05 to 0.5 (linear), across IOR [1, 3].
 - **Remap radii:** `r0 = 0.008`, `r1 = 0.02`.
 - **Source surface:** Oklab L ≤ 0.4, otherwise a load error.
-- **`hue-chroma`:** in [0, 0.1], default 0.
+- **`hue-chroma`:** in [0, 0.1], default 0. At 0 (or omitted) every hue state resolves to the neutral family: the static look, whatever the workspace holds.
 - **Muted accent:** an accent whose Oklab chroma is below 0.02 has no hue and resolves to neutral.
 - **Hold dwell:** 1000 ms, owned by the binding. Focus timestamps play no part.
 - **Crossfade:** duration and curve from `animations.material-signal`. The crossfade and switch blend interpolate target families (here the `HueBlend` coordinates, Task 3), never accents.
 - **Popups:** the remap reaches xdg popups only. Input-method popups are exempt, decided in the same per-kind match that gives them the default popup rules.
+- **Reload order:** a mapped layer's rules are recomputed against the new config before its remap is rebuilt from them.
+- **Damage order:** remap damage elements are pushed before the surfaces they redraw (layer and popups), whenever the layer has a remap.
 - **Node replacement:** `surface-remap` nodes are complete and replaced whole by later matching rules. Fields never merge.
 - **No fallback:** config errors fail config load, and no runtime failure path exists.
 - **Surfaces in the sheet and the example rule:** `^noctalia-(bar-[^"]+|attached-panel|panel)$`.
@@ -154,10 +162,13 @@ mod tests {
 
     #[test]
     fn oklab_round_trips() {
+        // The published matrices are inverse only to their 10 digits: the
+        // round trip errs by about 3e-8 to 2e-7 (plan review round 1), far
+        // below one 8-bit level (about 4e-3 at the darkest step).
         for rgb in [[0.2, 0.5, 0.9], [0.01, 0.003, 0.4], [0.9, 0.9, 0.1]] {
             let back = oklab_to_linear(linear_to_oklab(rgb));
             for i in 0..3 {
-                assert!((back[i] - rgb[i]).abs() < 1e-9, "{rgb:?} -> {back:?}");
+                assert!((back[i] - rgb[i]).abs() < 1e-6, "{rgb:?} -> {back:?}");
             }
         }
     }
@@ -1101,6 +1112,28 @@ mod tests {
     }
 
     #[test]
+    fn zero_or_omitted_strength_keeps_the_static_look() {
+        let red = HueBlend::from_accent(hex("#e5533c"));
+        let omitted = remap("#151310", "#221f1c", "#4d453c", 0.);
+        assert_eq!(omitted.hue_chroma, None);
+        let explicit = SurfaceRemap {
+            hue_chroma: Some(niri_config::material::Milli(0.)),
+            ..omitted.clone()
+        };
+        for node in [omitted, explicit] {
+            let setup = RemapSetup::with_face(&node, [9. / 255., 10. / 255., 10. / 255.]);
+            let neutral = setup.family(HueBlend::NEUTRAL);
+            // Settled on a red agent, and every point of a fade toward it.
+            for t in [0., 0.25, 0.5, 1.] {
+                let blend = HueBlend::lerp(HueBlend::NEUTRAL, red, t);
+                assert_eq!(setup.family(blend), neutral, "{:?} at {t}", node.hue_chroma);
+            }
+            // Review example: the outline stays #333d3d, not about #413937.
+            assert_eq!(srgb_levels(setup.family(red)[2]), [51, 61, 61], "{:?}", node.hue_chroma);
+        }
+    }
+
+    #[test]
     fn muted_accent_is_neutral() {
         for gray in ["#ffffff", "#808080", "#000000", "#7f8081"] {
             let blend = HueBlend::from_accent(hex(gray));
@@ -1317,6 +1350,13 @@ Expected: FAIL with `not implemented` panics.
     }
 
     pub fn family(&self, blend: HueBlend) -> [[f64; 3]; 3] {
+        // `hue-chroma 0` is the static look: no project hue, whatever the
+        // workspace holds or how far a fade has got (plan review round 1).
+        let blend = if self.hue_chroma > 0. {
+            blend
+        } else {
+            HueBlend::NEUTRAL
+        };
         let n = f64::from(blend.neutral);
         let h = blend.hue.map(f64::from);
         let ab = [0, 1].map(|i| n * self.face[i + 1] + self.hue_chroma * h[i]);
@@ -1348,7 +1388,7 @@ Expected: FAIL with `not implemented` panics.
 - [ ] **Step 4: Run the tests to see them pass**
 
 Run: `just test-one -p niri surface_remap`
-Expected: PASS (12 tests). If a radius test fails on a palette, do not retune the radii silently. Record the failing palette, role and weight in the task note, and stop for the controller: the spec pins the starting values.
+Expected: PASS (13 tests). If a radius test fails on a palette, do not retune the radii silently. Record the failing palette, role and weight in the task note, and stop for the controller: the spec pins the starting values.
 
 - [ ] **Step 5: Format, run the fast suite, commit**
 
@@ -1813,6 +1853,8 @@ git commit -m "feat(layout): add the per-workspace shell hue resolver"
 - Modify: `src/render_helpers/mod.rs` (add `pub mod surface_remap_element;`)
 - Modify: `src/render_helpers/shaders/mod.rs` (the `Shaders` field and its compile, beside `clipped_surface`, lines 106–200 and 268)
 - Modify: `src/layer/mapped.rs` (fields, `new`, `update_config`, `render_normal`, `render_popups`, `are_animations_ongoing`, new methods, and the render element enum)
+- Modify: `src/niri.rs` (`State::reload_config`: recompute each mapped layer's rules before `update_config`, about line 1467)
+- Modify: `src/tests/client.rs` (xdg popups on layer surfaces, and opaque regions)
 - Create: `src/tests/shell_hue.rs`
 - Modify: `src/tests/mod.rs` (add `mod shell_hue;` in alphabetical order)
 
@@ -1832,7 +1874,12 @@ git commit -m "feat(layout): add the per-workspace shell hue resolver"
     - `set_shell_hue(&mut self, hue: OutputHue)`
     - `shell_hue(&self) -> OutputHue`
     - `remap_uniforms(&self) -> Option<RemapUniforms>`
-    - `remap_damage_commit(&self) -> CommitCounter` (test inspection)
+    - `remap_damage_commit(&self) -> CommitCounter`, `popup_remap_damage_commit(&self) -> CommitCounter`, `remap_damage_id(&self) -> &Id` and `popup_remap_damage_id(&self) -> &Id` (test inspection)
+  - In the test client:
+    - `Client::create_layer_popup(&mut self, parent: &WlSurface, size: (i32, i32)) -> &mut Popup`
+    - `Client::popup(&mut self, surface: &WlSurface) -> &mut Popup`
+    - `Client::set_opaque_region(&self, surface: &WlSurface, w: i32, h: i32)`
+    - `Popup`, with `commit`, `ack_last_and_commit`, `attach_new_colored_buffer` and `set_size`
 
 - [ ] **Step 1: Write the failing layer integration tests**
 
@@ -1846,9 +1893,14 @@ use smithay::reexports::wayland_protocols_wlr::layer_shell::v1::client::zwlr_lay
     Anchor, KeyboardInteractivity,
 };
 
+use smithay::backend::renderer::element::Id;
+use smithay::desktop::PopupManager;
+use wayland_client::protocol::wl_surface::WlSurface;
+
 use super::client::{ClientId, LayerConfigureProps};
 use super::*;
 use crate::render_helpers::surface_remap::{HueBlend, OutputHue};
+use crate::render_helpers::{RenderCtx, RenderTarget};
 
 const GLASS: &str = r##"
 material "tg" {
@@ -1887,7 +1939,7 @@ pub(super) fn open_layer(
     id: ClientId,
     namespace: &str,
     kb: Option<KeyboardInteractivity>,
-) {
+) -> WlSurface {
     let layer = f.client(id).create_layer(None, Layer::Top, namespace);
     let surface = layer.surface.clone();
     layer.set_configure_props(LayerConfigureProps {
@@ -1903,6 +1955,7 @@ pub(super) fn open_layer(
     layer.set_size(100, 50);
     layer.ack_last_and_commit();
     f.double_roundtrip(id);
+    surface
 }
 
 pub(super) fn layer<'a>(f: &'a mut Fixture, namespace: &str) -> &'a mut crate::layer::MappedLayer {
@@ -2001,6 +2054,293 @@ fn a_running_fade_keeps_the_layer_animating() {
     layer(&mut f, "other").set_shell_hue(fading);
     assert!(layer(&mut f, "bar").are_animations_ongoing());
     assert!(!layer(&mut f, "other").are_animations_ongoing(), "no rule, nothing to animate");
+}
+
+#[test]
+fn reload_without_the_rule_and_its_material_drops_the_remap() {
+    // Glass off: Prism removes both the material and the rule (plan review
+    // round 1). The layer must rebuild against the new rules, not panic.
+    let mut f = Fixture::with_config(look(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_layer(&mut f, id, "bar", None);
+    assert!(layer(&mut f, "bar").remap_uniforms().is_some());
+    f.niri_state().reload_config(Ok(config("animations { off; }")));
+    assert!(layer(&mut f, "bar").remap_uniforms().is_none());
+}
+
+#[test]
+fn reload_renaming_the_material_follows_the_rule() {
+    let mut f = Fixture::with_config(look(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    open_layer(&mut f, id, "bar", None);
+    let text = format!(
+        "animations {{ off; }}\n{}\n{}",
+        GLASS.replace("\"tg\"", "\"tg2\""),
+        RULE.replace("\"tg\"", "\"tg2\"")
+    );
+    f.niri_state().reload_config(Ok(config(&text)));
+    let remap = layer(&mut f, "bar").rules().surface_remap.clone().unwrap();
+    assert_eq!(remap.material.name, "tg2");
+    assert!(layer(&mut f, "bar").remap_uniforms().is_some());
+}
+
+/// The output's render elements, front to back, as the real loop renders them.
+fn output_elements(f: &mut Fixture) -> Vec<Id> {
+    let output = f.niri_output(1);
+    let crate::niri::State { backend, niri } = f.niri_state();
+    niri.update_render_elements(Some(&output));
+    backend
+        .with_primary_renderer(|renderer| {
+            let ctx = RenderCtx {
+                renderer,
+                target: RenderTarget::Output,
+                xray: None,
+                signal_ticks: None,
+            };
+            niri.render_to_vec(ctx, &output, false)
+                .iter()
+                .map(|e| e.id().clone())
+                .collect()
+        })
+        .unwrap()
+}
+
+#[test]
+fn remap_damage_precedes_the_pixels_it_redraws() {
+    // Elements are front to back, and smithay skips damage hidden behind a
+    // declared opaque region (plan review round 1): each remap damage element
+    // must come before the surface it redraws, popups included.
+    let mut f = Fixture::with_config(look(""));
+    f.add_output(1, (1920, 1080));
+    let id = f.add_client();
+    let bar = open_layer(&mut f, id, "bar", None);
+
+    let popup = f.client(id).create_layer_popup(&bar, (200, 100)).surface.clone();
+    f.client(id).popup(&popup).commit();
+    f.roundtrip(id);
+    {
+        let client = f.client(id);
+        client.set_opaque_region(&popup, 200, 100);
+        let popup = client.popup(&popup);
+        popup.attach_new_colored_buffer(0x15, 0x13, 0x10, 0xff);
+        popup.set_size(200, 100);
+        popup.ack_last_and_commit();
+    }
+    f.double_roundtrip(id);
+
+    let (bar_id, popup_id, bar_damage, popup_damage) = {
+        let mapped = layer(&mut f, "bar");
+        let (popup, _) = PopupManager::popups_for_surface(mapped.surface().wl_surface())
+            .next()
+            .expect("the popup is mapped");
+        (
+            Id::from_wayland_resource(mapped.surface().wl_surface()),
+            Id::from_wayland_resource(popup.wl_surface()),
+            mapped.remap_damage_id().clone(),
+            mapped.popup_remap_damage_id().clone(),
+        )
+    };
+    let ids = output_elements(&mut f);
+    let at = |id: &Id| {
+        ids.iter()
+            .position(|e| e == id)
+            .unwrap_or_else(|| panic!("{id:?} is not rendered"))
+    };
+    assert!(at(&popup_damage) < at(&popup_id), "popup damage sits in front of the popup");
+    assert!(at(&bar_damage) < at(&bar_id), "layer damage sits in front of the layer");
+
+    // A hue-only change, with the popup's buffer untouched, damages it.
+    let mapped = layer(&mut f, "bar");
+    let before = mapped.popup_remap_damage_commit();
+    mapped.set_shell_hue(OutputHue {
+        blend: red(),
+        animating: false,
+    });
+    assert_ne!(before, mapped.popup_remap_damage_commit());
+}
+```
+
+The ids hold whether or not the remap program compiled on the test renderer: the wrapper's id is its inner surface element's (`Id::from_wayland_resource` of the surface, as smithay's `WaylandSurfaceRenderElement` assigns), and the damage elements are pushed whenever the layer has a remap.
+
+Add the popup and opaque-region support the last test needs to `src/tests/client.rs`:
+
+Imports:
+
+```rust
+use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_popup::{self, XdgPopup};
+use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_positioner::XdgPositioner;
+use wayland_client::protocol::wl_region::WlRegion;
+```
+
+A `pub popups: Vec<Popup>,` field on `State` after `layers`, initialized `popups: Vec::new(),` beside `layers: Vec::new(),` (about line 195), and the type:
+
+```rust
+pub struct Popup {
+    pub qh: QueueHandle<State>,
+    pub spbm: WpSinglePixelBufferManagerV1,
+
+    pub surface: WlSurface,
+    pub xdg_surface: XdgSurface,
+    pub xdg_popup: XdgPopup,
+    pub viewport: WpViewport,
+    pub configures_received: Vec<u32>,
+}
+
+impl Popup {
+    pub fn commit(&self) {
+        self.surface.commit();
+    }
+
+    pub fn ack_last_and_commit(&self) {
+        let serial = *self.configures_received.last().unwrap();
+        self.xdg_surface.ack_configure(serial);
+        self.commit();
+    }
+
+    pub fn attach_new_colored_buffer(&self, r: u8, g: u8, b: u8, a: u8) {
+        let scale = |v: u8| u32::from(v) * (u32::MAX / 255);
+        let buffer =
+            self.spbm
+                .create_u32_rgba_buffer(scale(r), scale(g), scale(b), scale(a), &self.qh, ());
+        self.surface.attach(Some(&buffer), 0, 0);
+    }
+
+    pub fn set_size(&self, w: u16, h: u16) {
+        self.viewport.set_destination(i32::from(w), i32::from(h));
+    }
+}
+```
+
+In `impl State`, beside `create_layer`:
+
+```rust
+    /// An xdg popup on a layer surface, anchored at the layer's origin.
+    pub fn create_layer_popup(&mut self, parent: &WlSurface, size: (i32, i32)) -> &mut Popup {
+        let compositor = self.compositor.as_ref().unwrap();
+        let xdg_wm_base = self.xdg_wm_base.as_ref().unwrap();
+        let viewporter = self.viewporter.as_ref().unwrap();
+
+        let surface = compositor.create_surface(&self.qh, ());
+        let xdg_surface = xdg_wm_base.get_xdg_surface(&surface, &self.qh, ());
+        let positioner = xdg_wm_base.create_positioner(&self.qh, ());
+        positioner.set_size(size.0, size.1);
+        positioner.set_anchor_rect(0, 0, 1, 1);
+        let xdg_popup = xdg_surface.get_popup(None, &positioner, &self.qh, ());
+        positioner.destroy();
+        let parent = self.layers.iter().find(|l| l.surface == *parent).unwrap();
+        parent.layer_surface.get_popup(&xdg_popup);
+        let viewport = viewporter.get_viewport(&surface, &self.qh, ());
+
+        self.popups.push(Popup {
+            qh: self.qh.clone(),
+            spbm: self.spbm.clone().unwrap(),
+            surface,
+            xdg_surface,
+            xdg_popup,
+            viewport,
+            configures_received: Vec::new(),
+        });
+        self.popups.last_mut().unwrap()
+    }
+
+    pub fn popup(&mut self, surface: &WlSurface) -> &mut Popup {
+        self.popups
+            .iter_mut()
+            .find(|p| p.surface == *surface)
+            .unwrap()
+    }
+
+    /// Declares the whole `w × h` of `surface` opaque (applies on commit).
+    pub fn set_opaque_region(&self, surface: &WlSurface, w: i32, h: i32) {
+        let region = self.compositor.as_ref().unwrap().create_region(&self.qh, ());
+        region.add(0, 0, w, h);
+        surface.set_opaque_region(Some(&region));
+        region.destroy();
+    }
+```
+
+In `impl Client`, beside `create_layer`:
+
+```rust
+    pub fn create_layer_popup(&mut self, parent: &WlSurface, size: (i32, i32)) -> &mut Popup {
+        self.state.create_layer_popup(parent, size)
+    }
+
+    pub fn popup(&mut self, surface: &WlSurface) -> &mut Popup {
+        self.state.popup(surface)
+    }
+
+    pub fn set_opaque_region(&self, surface: &WlSurface, w: i32, h: i32) {
+        self.state.set_opaque_region(surface, w, h);
+    }
+```
+
+The `XdgSurface` dispatch looks up windows only. Route a popup's configure too:
+
+```rust
+            xdg_surface::Event::Configure { serial } => {
+                if let Some(window) = state.windows.iter_mut().find(|w| w.xdg_surface == *xdg_surface)
+                {
+                    let configure = window.pending_configure.clone();
+                    window.configures_received.push((serial, configure));
+                } else {
+                    let popup = state
+                        .popups
+                        .iter_mut()
+                        .find(|p| p.xdg_surface == *xdg_surface)
+                        .unwrap();
+                    popup.configures_received.push(serial);
+                }
+            }
+```
+
+and add the three dispatches (`XdgPositioner` and `WlRegion` have no events):
+
+```rust
+impl Dispatch<XdgPopup, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &XdgPopup,
+        event: <XdgPopup as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            xdg_popup::Event::Configure { .. }
+            | xdg_popup::Event::PopupDone
+            | xdg_popup::Event::Repositioned { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<XdgPositioner, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &XdgPositioner,
+        _event: <XdgPositioner as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<WlRegion, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlRegion,
+        _event: <WlRegion as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
 }
 ```
 
@@ -2408,9 +2748,21 @@ New methods in `impl MappedLayer`:
     pub fn remap_damage_commit(&self) -> CommitCounter {
         self.remap_damage.current_commit()
     }
+
+    pub fn popup_remap_damage_commit(&self) -> CommitCounter {
+        self.popup_remap_damage.current_commit()
+    }
+
+    pub fn remap_damage_id(&self) -> &Id {
+        self.remap_damage.id()
+    }
+
+    pub fn popup_remap_damage_id(&self) -> &Id {
+        self.popup_remap_damage.id()
+    }
 ```
 
-`current_commit` comes from smithay's `Element` trait: add `use smithay::backend::renderer::element::Element as _;` to the imports.
+`current_commit` and `id` come from smithay's `Element` trait: add `use smithay::backend::renderer::element::{Element as _, Id};` to the imports.
 
 `are_animations_ongoing`:
 
@@ -2426,56 +2778,79 @@ In `render_normal`, replace the non-block-out branch's `push_elements_from_surfa
             // Layer surfaces don't have extra geometry like windows.
             let buf_pos = location;
 
-            let remap = self.remap_uniforms().and_then(|uniforms| {
+            let remap = self.remap_uniforms();
+            if remap.is_some() {
+                // Damage before the pixels it redraws: elements are front to
+                // back, and damage behind a declared opaque region is skipped.
+                let geometry = Rectangle::new(location, self.block_out_buffer.size());
+                push(self.remap_damage.render(geometry).into());
+            }
+            let program = remap.and_then(|uniforms| {
                 SurfaceRemapRenderElement::shader(ctx.renderer)
                     .cloned()
                     .map(|program| (uniforms, program))
             });
-            if let Some((uniforms, program)) = remap {
-                let geometry = Rectangle::new(location, self.block_out_buffer.size());
-                push(self.remap_damage.render(geometry).into());
-                push_elements_from_surface_tree(
-                    ctx.renderer,
-                    surface,
-                    buf_pos.to_physical_precise_round(scale),
-                    scale,
-                    alpha,
-                    Kind::ScanoutCandidate,
-                    &mut |elem| {
-                        push(SurfaceRemapRenderElement::new(elem, program.clone(), uniforms).into())
-                    },
-                );
-            } else {
-                push_elements_from_surface_tree(
-                    ctx.renderer,
-                    surface,
-                    buf_pos.to_physical_precise_round(scale),
-                    scale,
-                    alpha,
-                    Kind::ScanoutCandidate,
-                    &mut |elem| push(elem.into()),
-                );
-            }
+            push_elements_from_surface_tree(
+                ctx.renderer,
+                surface,
+                buf_pos.to_physical_precise_round(scale),
+                scale,
+                alpha,
+                Kind::ScanoutCandidate,
+                &mut |elem| match &program {
+                    Some((uniforms, program)) => push(
+                        SurfaceRemapRenderElement::new(elem, program.clone(), *uniforms).into(),
+                    ),
+                    None => push(elem.into()),
+                },
+            );
 ```
 
 A program that failed to compile has already logged `error compiling surface remap shader`. The layer then draws unremapped, the same policy niri applies to every custom texture program (`clipped_surface`). The Task 8 pilot greps the nested log for that line.
 
-In `render_popups`, compute the program once before the loop:
+In `render_popups`, after `let xray_pos = …` and before the loop, compute the program once and push the popups' damage ahead of them:
 
 ```rust
-        let remap = self.remap_uniforms().and_then(|uniforms| {
+        let surface = self.surface.wl_surface();
+        let remap = self.remap_uniforms();
+        let program = remap.and_then(|uniforms| {
             SurfaceRemapRenderElement::shader(ctx.renderer)
                 .cloned()
                 .map(|program| (uniforms, program))
         });
-        let mut popup_bounds: Option<Rectangle<f64, Logical>> = None;
+        if remap.is_some() {
+            // One rectangle over the xdg popups the remap reaches, pushed
+            // before them for the same front-to-back reason as the layer's.
+            let bounds = PopupManager::popups_for_surface(surface)
+                .filter(|(popup, _)| PopupClass::of(popup) == PopupClass::Xdg)
+                .map(|(popup, offset)| {
+                    Rectangle::new(location + offset.to_f64(), popup.geometry().size.to_f64())
+                })
+                .reduce(|a, b| a.merge(b));
+            if let Some(bounds) = bounds {
+                push(self.popup_remap_damage.render(bounds).into());
+            }
+        }
 ```
 
-Replace the loop's existing `popup_rules` match with one decision for both the popup rules and the remap. Input-method popups belong to another client, and get neither the rules nor the remap (spec §5, §7):
+The existing `let surface = self.surface.wl_surface();` line moves up into this block; keep one.
+
+Inside the loop, replace the existing `popup_rules` match with one decision for both the popup rules and the remap. Input-method popups belong to another client, and get neither the rules nor the remap (spec §5, §7):
 
 ```rust
-            let (popup_rules, popup_remap) =
-                popup_treatment(PopupClass::of(&popup), self.rules.popups, remap.clone());
+            let (popup_rules, popup_program) =
+                popup_treatment(PopupClass::of(&popup), self.rules.popups, program.clone());
+```
+
+and replace the popup's `push_elements_from_surface_tree(…)` callback the same way as `render_normal`'s:
+
+```rust
+                &mut |elem| match &popup_program {
+                    Some((uniforms, program)) => push(
+                        SurfaceRemapRenderElement::new(elem, program.clone(), *uniforms).into(),
+                    ),
+                    None => push(elem.into()),
+                },
 ```
 
 Add the decision as free items at the bottom of `mapped.rs`, above `impl Drop`:
@@ -2530,28 +2905,27 @@ mod tests {
 }
 ```
 
-Inside the loop, replace the popup's `push_elements_from_surface_tree(…)` with the same two-armed form as `render_normal`. Use `surface_loc` as the position and `popup_remap` as the arm's condition (`if let Some((uniforms, program)) = popup_remap.clone()`). In the remap arm, grow the bounds after `let geometry = …`:
+- [ ] **Step 6b: Rebuild layer rules before the remap on reload**
+
+`State::reload_config` calls `mapped.update_config(&config)` (about line 1467) before it recomputes layer rules (about line 1687). With the old rules, `remap_setup` would look up a material the new config may no longer have, and its `expect` would panic on the Glass toggle. Recompute each layer's rules against the new config first:
 
 ```rust
-            if popup_remap.is_some() {
-                popup_bounds = Some(popup_bounds.map_or(geometry, |b| b.merge(geometry)));
-            }
-```
-
-After the loop:
-
-```rust
-        if let Some(bounds) = popup_bounds {
-            push(self.popup_remap_damage.render(bounds).into());
+        self.niri.layout.update_config(&config);
+        let is_at_startup = self.niri.is_at_startup;
+        for mapped in self.niri.mapped_layer_surfaces.values_mut() {
+            // Rules first: update_config rebuilds the remap from them, against
+            // this config's materials.
+            mapped.recompute_layer_rules(&config.layer_rules, is_at_startup);
+            mapped.update_config(&config);
         }
 ```
 
-`render_popups` computes `geometry` after the surface push. Move its `let geometry = Rectangle::new(location + offset.to_f64(), popup_geo.size.to_f64());` above the push so both arms can use it.
+The later `self.niri.recompute_layer_rules()` then finds nothing changed, and `reload_config` already ends with `queue_redraw_all()`, so no redraw is lost. Every other caller already recomputes rules before `update_config` (`handlers/layer_shell.rs`, `Niri::recompute_layer_rules`), and `MappedLayer::new` takes rules computed from the same config. So the `expect` in `remap_setup` states a real invariant: a layer's rules and the config they are read against are one config.
 
 - [ ] **Step 7: Run the layer tests**
 
 Run: `just test-one -p niri tests::shell_hue` and `just test-one -p niri input_method_popups`
-Expected: PASS (5 tests and 1 test).
+Expected: PASS (8 tests and 1 test).
 
 - [ ] **Step 8: Run the whole niri suite affected by the enum change**
 
@@ -2563,7 +2937,7 @@ Expected: PASS. The new enum variants break nothing that matches exhaustively on
 ```bash
 rustup run nightly cargo fmt --all
 tasks check
-git add src/render_helpers/shaders/surface_remap.frag src/render_helpers/surface_remap_element.rs src/render_helpers/mod.rs src/render_helpers/shaders/mod.rs src/layer/mapped.rs src/tests/shell_hue.rs src/tests/mod.rs
+git add src/render_helpers/shaders/surface_remap.frag src/render_helpers/surface_remap_element.rs src/render_helpers/mod.rs src/render_helpers/shaders/mod.rs src/layer/mapped.rs src/niri.rs src/tests/client.rs src/tests/shell_hue.rs src/tests/mod.rs
 git commit -m "feat(layer): draw remapped layer surfaces through the surface remap program"
 ```
 
