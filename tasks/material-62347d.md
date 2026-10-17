@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T13:47:02Z
+updated: 2026-10-17T13:47:07Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -73,3 +73,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
   provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T10:57:38Z (material-62347d): execution: preflight scan of the plan found 5 blocking defects (T6 compile/test-time/count, T2 count, T8 $OUT) and undeclared spec deviations; rulings in the SDD ledger, carried into dispatches; baseline just test green (680 passed)
 - 2026-10-17T13:47:02Z (material-62347d): pilot: matched+remap (pilot-1792244160) — both cases finished, no shader compile failure; control-center p{640,360}: remap 19,21,21 vs matched 20,21,21 (B matches A; both ~20, not the brief's guessed ~10). Full run sheet-1792244203: hue-quiet 27,18,16, hue-strong 32,15,12; strip bar pixel F0 12,22,29 (cyan) → F1 11,9,9 → F2 24,10,10 → F3..F11 31,16,16 (red): continuous blend through neutral over ~0.6 s, F3-F11 settled
+- 2026-10-17T13:47:07Z (material-62347d): attached: noctalia-cohesion-sheet.png (1087405 bytes): Task 8 sheet: A approved look (control), B niri remap no hue, C hue-chroma 0.015, D hue-chroma 0.03; rows control center, launcher, bar
