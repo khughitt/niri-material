@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-gates-evidence
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T10:26:13Z
+updated: 2026-10-17T10:27:06Z
 started: 2026-10-17T10:01:20Z
 depends: []
 tags: [rendering]
@@ -39,3 +39,5 @@ Related: material-04818d (what selects the 10.4 vs 17 W floor), material-d2e552 
 - 2026-10-17T10:25:57Z (capture-gates-evidence): resumed
   provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T10:26:13Z (capture-gates-evidence): review: spec round 1 — verdict: revise; findings: must-fix 2; reviewer: owner-relayed (model unverified)
+- 2026-10-17T10:27:06Z (capture-gates-evidence): parked (waiting on user, review): Owner reviews spec round 2: docs/specs/2026-10-17-capture-evidence-gates-design.md (in .worktrees/capture-gates-evidence), §5 and §6.1 revised; on approval the agent writes the implementation plan there
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
