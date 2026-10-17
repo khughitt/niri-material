@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: material-d2e552
 created: 2026-10-16T11:56:58Z
-updated: 2026-10-17T13:01:24Z
+updated: 2026-10-17T13:05:47Z
 started: 2026-10-17T12:32:29Z
 depends: []
 tags: [rendering]
@@ -30,3 +30,4 @@ Review minors carried here: add an in_window column to <case>.draw-clocks.csv (n
 - 2026-10-17T12:46:53Z (material-d2e552): Decision: noise-layers-cost samples clocks by default (f386ae's unsampled control matched the steady median); draw_median_ms keeps every in-window draw so 3d48b0's pinned interval stands, and its spec §8.2 recipe now names CAPTURE_GPU_CLOCKS=0. Idle-clock rule: P8 at the trace's lowest P8 clock from the joined reading through the first reading 0.5 s past the draw. Floor stratification: idle_clock_power_median_w per case. Minor 'identity claims sampling for fixtures that never reach capture_bg' is already material-93ef9e's scope (optic-settling, the only independent Tracy launcher besides material-signals, which has no capture_identity).
 - 2026-10-17T12:59:09Z (material-d2e552): review: impl round 1 — verdict: revise; findings: Important 1, Minor 4; reviewer: claude-code/claude-opus-5-5
 - 2026-10-17T13:01:24Z (material-d2e552): Round 1 ruling: Important (3d48b0 recipe runs sampled against §8.2) accepted — keep CAPTURE_GPU_CLOCKS=0 for the pilot to match its unsampled references; a held clock is diagnosed by a sampled rerun after a failed interval check, not by the pilot; rejected the alternative of counting an idle-draw refusal as the verdict (mixes conditions). Park text amended from the main checkout after merge. Minors 1-4 fixed in place (empty case name, discriminating delta test plus mixed-clock refusal test, mutation-checked; comment; doc refusals).
+- 2026-10-17T13:05:47Z (material-d2e552): review: impl round 2 — verdict: accept; findings: Minor 3; reviewer: claude-code/claude-opus-5-5
