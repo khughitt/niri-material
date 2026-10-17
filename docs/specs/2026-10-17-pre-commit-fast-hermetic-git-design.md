@@ -1,6 +1,6 @@
 # Pre-commit fast route: hermetic git for tooling fixtures
 
-Status: Implemented on the branch; post-merge verification pending (material-561927).
+Status: Implemented (material-561927).
 
 ## 1. Incident
 
@@ -177,6 +177,13 @@ obligation is met".
 7. From the registered checkout, `tt-latency verify material-561927 --after
    <remedy timestamp>` runs once, recording. When it exits 0, its output goes
    into the `tasks done` message.
+
+**Post-merge results** (2026-10-17). The branch merged into `materials-26.04`
+at 2026-10-17T18:32:40Z (`9ec6f82e`). Three staged fast-route hook runs from the
+registered checkout took 38.3, 31.8 and 32.1 s, and no other checkout recorded a
+fast-route run in the window. `tt-latency verify material-561927 --after
+2026-10-17T18:32:40Z` exited 0: "after 2026-10-17T18:32:40Z:
+hook-pre-commit-fast median 32.08 s, limit 45 s, 3 runs".
 
 The post-merge window counts every `hook-pre-commit-fast` run on the host from
 any checkout. A worktree branched before the remedy records slow runs until it

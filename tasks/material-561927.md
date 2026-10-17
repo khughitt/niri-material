@@ -1,15 +1,17 @@
 ---
 id: material-561927
 title: "Test latency over limit: hook-pre-commit-fast 54.226 s against 45 s"
-status: doing
+status: done
 priority: 0
 size: m
 complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T18:37:37Z
+updated: 2026-10-17T18:38:03Z
 started: 2026-10-17T15:16:53Z
+completed: 2026-10-17T18:38:03Z
+closed: 2026-10-17T18:38:03Z
 depends: []
 tags: [halt, test-latency, testing]
 source: "tt-latency:titan:2026-10-17T14:00:24Z"
@@ -83,3 +85,7 @@ Process: planned
   provenance: {"harness_session":"claude-code:d1c980a7-486b-490c-9a46-066f589ce6a6","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T18:33:01Z (materials-26.04): remedy: fix/material-561927 merged into materials-26.04 at 2026-10-17T18:32:40Z
 - 2026-10-17T18:37:37Z (materials-26.04): verified: titan after 2026-10-17T18:32:40Z: hook-pre-commit-fast median 32.08 s, limit 45 s, 3 runs
+- 2026-10-17T18:38:03Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:d1c980a7-486b-490c-9a46-066f589ce6a6","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T18:38:03Z (materials-26.04): tt-latency verify material-561927 --after 2026-10-17T18:32:40Z exit 0:  titan hook-pre-commit-fastmet (median 32.1 s, 3 runs, limit 45 s) noted: verified: titan after 2026-10-17T18:32:40Z: hook-pre-commit-fast median 32.08 s, limit 45 s, 3 runs verified: every obligation is met
+  provenance: {"harness_session":"claude-code:d1c980a7-486b-490c-9a46-066f589ce6a6","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
