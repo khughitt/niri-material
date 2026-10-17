@@ -76,7 +76,11 @@ job already runs that way, since its runner has no global config.
      hook writes a marker. The control commit, made with `GIT_CONFIG_GLOBAL`
      naming that file, must create the marker, which proves the hook form is
      live on this Git. The marker is then removed, `isolate` runs, and the
-     same commit must leave no marker. No `GIT_*` key survives but the two
+     same commit must leave no marker. On Git older than 2.54 (CI installs
+     Ubuntu's packaged Git), config hooks do not exist. There, the
+     config-hook test pins that the control leaves no marker; it does not
+     skip, since CI's tooling job refuses unexpected skips. The
+     `core.hooksPath` form covers isolation on every Git. No `GIT_*` key survives but the two
      `isolate` sets.
    - *Inventory.* Each tooling test module whose source runs git (found by
      scanning `tools/test_*.py`, so a new module is covered without editing a
@@ -134,7 +138,8 @@ recorded before merging.
 
 **On the branch** (acceptance, before the final review and merge):
 
-1. Tooling passes in both modes, with the case count and skip set unchanged:
+1. Tooling passes in both modes. The case count grows only by the new tests,
+   and the skip set is unchanged:
    `just check` (fast) and `just check-full` (full), both with the global hook
    still installed on the host.
 2. The cause is gone: with the hook installed, `test_upstream_report` takes at
@@ -149,8 +154,9 @@ recorded before merging.
 
 **After merge** (closure):
 
-5. The branch merges into `materials-26.04`; the merge commit's time is the
-   remedy timestamp. The worktree's claim is released (park) and its task
+5. The branch merges into `materials-26.04`. The remedy timestamp is the UTC
+   time recorded right after the merge lands (a fast-forward carries no
+   merge-time commit of its own). The worktree's claim is released (park) and its task
    record carries nothing newer than the registered checkout's.
 6. Three qualifying `hook-pre-commit-fast` runs land after the remedy
    timestamp: successful, uncontended and unwidened, on the idle host, from
