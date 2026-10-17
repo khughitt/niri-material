@@ -397,7 +397,7 @@ case_note() {   # $1 case
         remap) echo "remap. No palette change: Noctalia's wallpaper palette, niri's surface-remap to the glass face, hue-chroma 0; bar and attached panels 0.95, floating panels solid. Should read as A." ;;
         hue-quiet) echo "hue, quiet. B, plus the probe's accent $ACCENT held for the workspace: hue-chroma 0.015. Is the hue present but quiet?" ;;
         hue-strong) echo "hue, strong. As C at hue-chroma 0.03. Which of C and D reads as the project, legibly?" ;;
-        matched) echo "matched. B, plus the glass's hue and darkness: surfaces $GLASS_SURFACE (cards and outlines keep their steps above it), accents unchanged; bar and attached panels 0.95 opaque, floating panels solid." ;;
+        matched) echo "the approved look (control): Noctalia's custom glass palette, surfaces $GLASS_SURFACE (cards and outlines keep their steps above it), accents unchanged; bar and attached panels 0.95 opaque, floating panels solid." ;;
     esac
 }
 make_sheet() {
