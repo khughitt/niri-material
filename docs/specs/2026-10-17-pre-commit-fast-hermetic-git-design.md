@@ -83,10 +83,21 @@ job already runs that way, since its runner has no global config.
      list) is imported in a subprocess whose environment carries a decoy
      `GIT_DIR`, `GIT_INDEX_FILE` and `GIT_CONFIG_GLOBAL`. After import, that
      environment must be hermetic.
-   - *Focused run.* One `test_optic_settling` case that reads the checkout's
-     source commit runs as a focused `python3 -m unittest` subprocess with
-     `GIT_DIR` naming a decoy repository whose HEAD differs. It passes, which
-     means it recorded the checkout's HEAD and not the decoy's.
+   - *Focused run.* A passing case alone proves nothing here: the prepare
+     case and `optic-settling-smoke.sh` both inherit `GIT_DIR`, so both can
+     read the decoy's HEAD and agree. The prepare case
+     (`PrepareTests.test_prepare_validates_inventory_and_cleans_runtime`)
+     therefore gains an explicit comparison. It reads the checkout's HEAD
+     itself, independently, with `git -C <checkout> rev-parse HEAD` under an
+     environment built for that call (every `GIT_*` key removed,
+     `GIT_CONFIG_GLOBAL=/dev/null`, `GIT_CONFIG_NOSYSTEM=1`), whatever the
+     process environment holds. It then asserts that the `source_commit`
+     recorded in `manifest.json` equals that HEAD. The regression test runs
+     that case as a focused `python3 -m unittest` subprocess with `GIT_DIR`
+     naming a decoy repository. It first asserts that the decoy's HEAD
+     differs from the checkout's, then that the run passes. Without
+     `isolate` in the module, the recorded commit is the decoy's and the
+     comparison fails; with it, the run passes.
    - *Coordinator.* A worker runs with `GIT_CONFIG_GLOBAL=/dev/null` and
      `GIT_CONFIG_NOSYSTEM=1`.
 
