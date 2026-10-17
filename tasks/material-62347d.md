@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T14:42:42Z
+updated: 2026-10-17T14:43:26Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -78,3 +78,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-17T14:30:46Z (material-62347d): owner verdict 2026-10-17: B1-B3 (niri surface-remap over Noctalia's own palette) reads as A1-A3 (approved look); hue-chroma 0.03 (column D) reads as the project; the switch strip is acceptable (continuous blend through neutral, no snap)
 - 2026-10-17T14:31:04Z (material-62347d): review: impl round 1 — verdict: revise; findings: important 2, minor 7; reviewer: claude-code/claude-opus-5-5 (final whole-branch)
 - 2026-10-17T14:42:42Z (material-62347d): review: impl round 2 — verdict: accept; findings: none; reviewer: claude-code/claude-sonnet-5-5 (scoped re-review of the final-review fix round)
+- 2026-10-17T14:43:26Z (material-62347d): done: niri side implemented (Tasks 1-8, commits bd8b45bd..291bc250) and judged (owner verdict 2026-10-17: remap reads as the approved look, hue-chroma 0.03, strip OK); final whole-branch review clean after one corrective round; Prism side prism-301d9f; rollout material-1c4a82; follow-ups material-ce4134, material-f3db85, material-ab6281
