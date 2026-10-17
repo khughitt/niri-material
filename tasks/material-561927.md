@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: materials-26.04
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T18:33:01Z
+updated: 2026-10-17T18:37:37Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -82,3 +82,4 @@ Process: planned
 - 2026-10-17T18:32:49Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:d1c980a7-486b-490c-9a46-066f589ce6a6","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T18:33:01Z (materials-26.04): remedy: fix/material-561927 merged into materials-26.04 at 2026-10-17T18:32:40Z
+- 2026-10-17T18:37:37Z (materials-26.04): verified: titan after 2026-10-17T18:32:40Z: hook-pre-commit-fast median 32.08 s, limit 45 s, 3 runs
