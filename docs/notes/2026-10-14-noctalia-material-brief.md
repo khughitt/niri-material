@@ -210,6 +210,11 @@ Hue delivery:
   5.3.0 has one; it would be an upstream feature, and proposing it is the
   owner's action.
 
+Design (2026-10-16, draft): `docs/specs/2026-10-16-noctalia-glass-cohesion-design.md`.
+After the owner chose C, it takes neither A nor a palette route. niri remaps
+the shell's surface family to the glass face and the held hue, because a
+Noctalia palette change runs every template and `colors_changed`.
+
 Prefer the bounded comparison before a renderer extension. No visual choice
 or claim of adequate cohesion has been made. For the hue, the lean is A,
 carried by whichever optical treatment the comparison picks, with B as a
