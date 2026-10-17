@@ -61,21 +61,38 @@ job already runs that way, since its runner has no global config.
 3. **Every module that runs git.** The six module-level scrub loops
    (`test_upstream_report`, `test_identity_check`, `test_target_dir_check`,
    `test_package_pin`, `test_capture_meta`, `test_glass_optic_smoke`) become a
-   call to `isolate(os.environ)`. `test_gates`, which builds fixture
-   repositories with no scrub today, gains the same call. A focused
-   `just test-one` run of one module, which bypasses the coordinator, stays
-   hermetic too. The call is idempotent.
-4. **Tests.** A test of the helper: given an environment carrying `GIT_DIR`,
-   `GIT_INDEX_FILE` and a `GIT_CONFIG_GLOBAL` whose file declares a
-   `pre-commit` config hook that writes a marker, a fixture commit after
-   `isolate` leaves no marker, and no `GIT_*` key but the two it sets
-   survives. A coordinator test pins that a worker runs with
-   `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`.
+   call to `isolate(os.environ)`. Two modules that run git with no scrub today
+   gain the same call: `test_gates`, which builds fixture repositories, and
+   `test_optic_settling`, whose source-commit lookups (`git -C <root>
+   rev-parse HEAD`) an inherited `GIT_DIR` would point at another repository.
+   A focused `just test-one` run of one module, which bypasses the
+   coordinator, stays hermetic too. The call is idempotent.
+4. **Tests.**
+   - *Suppression, with a control.* For each of two host-config hook forms, a
+     global config file that declares a `pre-commit` config hook
+     (`hook.<name>.event`/`command`, Git 2.54+) and one that sets
+     `core.hooksPath` to a directory with a `pre-commit` script (any Git), the
+     hook writes a marker. The control commit, made with `GIT_CONFIG_GLOBAL`
+     naming that file, must create the marker, which proves the hook form is
+     live on this Git. The marker is then removed, `isolate` runs, and the
+     same commit must leave no marker. No `GIT_*` key survives but the two
+     `isolate` sets.
+   - *Inventory.* Each tooling test module whose source runs git (found by
+     scanning `tools/test_*.py`, so a new module is covered without editing a
+     list) is imported in a subprocess whose environment carries a decoy
+     `GIT_DIR`, `GIT_INDEX_FILE` and `GIT_CONFIG_GLOBAL`. After import, that
+     environment must be hermetic.
+   - *Focused run.* One `test_optic_settling` case that reads its fixture's
+     source commit runs as a focused `python3 -m unittest` subprocess with
+     `GIT_DIR` naming a decoy repository, and passes with the fixture's commit.
+   - *Coordinator.* A worker runs with `GIT_CONFIG_GLOBAL=/dev/null` and
+     `GIT_CONFIG_NOSYSTEM=1`.
 
-`test_gates`'s missing scrub is a latent hazard of its own. Today, whether an
-inherited `GIT_INDEX_FILE` reaches its fixtures depends on whether a scrubbing
-module was imported first in the same worker. Step 3 closes it as part of the
-same change.
+The missing scrubs in `test_gates` and `test_optic_settling` are latent
+hazards of their own. Today, whether an inherited `GIT_INDEX_FILE` or
+`GIT_DIR` reaches them depends on whether a scrubbing module was imported
+first in the same worker, and nothing protects a focused run. Step 3 closes
+both as part of the same change.
 
 ### Rejected alternatives
 
@@ -84,7 +101,7 @@ same change.
   ties this repository to one ops hook's name, so the next global hook or
   setting brings the incident back, and other host settings keep leaking in.
 - **Make `git-identity-check` faster in ops.** That is worth doing for every
-  project, and it is filed with ops below, but a Python hook stays several
+  project, and it is filed with ops as ops-3dc696, but a Python hook stays several
   times git's own 10 ms per commit, and fixtures should not depend on host
   hooks at all.
 - **Rebalance fast-route buckets by measured time.** Buckets are balanced by
@@ -96,6 +113,14 @@ same change.
 
 ## 4. Verification
 
+Verification has two stages. The incident's window starts when the fix lands
+on `materials-26.04`, so the branch's own runs cannot close it. `tt-latency`
+also refuses to record from a worktree, or while one holds a live claim or a
+newer copy of the task record. This differs from material-5094f2, which
+recorded before merging.
+
+**On the branch** (acceptance, before the final review and merge):
+
 1. Tooling passes in both modes, with the case count and skip set unchanged:
    `just check` (fast) and `just check-full` (full), both with the global hook
    still installed on the host.
@@ -106,23 +131,34 @@ same change.
    divergence-report save and restore, from the 2026-10-07 recurrence plan.
    The projection is ~37 s: about 14 s of non-tooling steps plus ~23 s of
    tooling.
-4. `tt-latency verify material-561927 --after <remedy timestamp> --dry-run`
-   during acceptance; the single recording verify runs after the final review
-   passes, right before closing the task, as in material-5094f2.
+4. `tt-latency verify material-561927 --after <branch remedy timestamp>
+   --dry-run` exits 0. It is a check only and records nothing.
 
-Verification counts every `hook-pre-commit-fast` run on the host after the
-remedy timestamp, from any checkout. A worktree branched before the remedy
-records slow runs until it merges `materials-26.04`. The remedy timestamp is
-when the fix lands on `materials-26.04`; open worktrees whose fast-route
-commits would pollute the window merge it first, or their runs are named in
-the verify note.
+**After merge** (closure):
+
+5. The branch merges into `materials-26.04`; the merge commit's time is the
+   remedy timestamp. The worktree's claim is released (park) and its task
+   record carries nothing newer than the registered checkout's.
+6. Three qualifying `hook-pre-commit-fast` runs land after the remedy
+   timestamp: successful, uncontended and unwidened, on the idle host, from
+   the registered checkout on `materials-26.04`. They are staged fast-route
+   hook runs by the same private-index procedure, unless ordinary commits
+   supply them first.
+7. From the registered checkout, `tt-latency verify material-561927 --after
+   <remedy timestamp>` runs once, recording. When it exits 0, its output goes
+   into the `tasks done` message.
+
+The post-merge window counts every `hook-pre-commit-fast` run on the host from
+any checkout. A worktree branched before the remedy records slow runs until it
+merges `materials-26.04`. Open worktrees whose fast-route commits would fall
+into the window merge it first, or their runs are named in the verify note.
 
 ## 5. Out of scope
 
 - The 35 s fast-route target from the 2026-10-04 design. This change restores
   the route to its pre-hook ~37 s; the bucket rebalance above is the lever for
   the rest.
-- `git-identity-check`'s own cost (ops feedback below), and removing
+- `git-identity-check`'s own cost (filed with ops as ops-3dc696), and removing
   `tools/identity-check` (material-e0d6b1).
 - The toplevel assertion lore-e1c2db also recommends: it guards against
   writes, not latency, and every fixture here already builds its repository
