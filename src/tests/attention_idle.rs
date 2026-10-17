@@ -302,6 +302,16 @@ fn output_pass_on(f: &mut Fixture, output: &Output) -> bool {
     niri.output_state[&output].signal_timer.is_some()
 }
 
+/// Raises the idle threshold out of the way and starts the quiet time now.
+/// The fixture's quiet time runs from construction, and a cold shader compile
+/// in `add_renderer` can take longer than any threshold the test raises to.
+fn start_active(f: &mut Fixture) {
+    f.niri().set_input_idle_threshold(Duration::from_secs(10));
+    f.niri().notified_activity_this_iteration = false;
+    f.niri().notify_activity();
+    assert!(f.niri().clock.optic_time(get_monotonic_time()).running);
+}
+
 fn settle_redraws(f: &mut Fixture) {
     for state in f.niri().output_state.values_mut() {
         state.redraw_state = RedrawState::Idle;
@@ -320,7 +330,7 @@ fn optic_settling_edges_queue_a_redraw_and_drop_then_rearm_the_optic_timer() {
     let (mut f, _id) = aurora_fixture(true);
     // Keep the detector's own timer out of the way: the edges below come from
     // threshold reloads and `notify_activity`.
-    f.niri().set_input_idle_threshold(Duration::from_secs(10));
+    start_active(&mut f);
     f.state.server.dispatch();
     assert!(output_pass(&mut f), "a running Aurora arms its next bucket");
 
@@ -384,7 +394,7 @@ fn optic_settling_removing_one_of_two_outputs_keeps_the_shared_timeline() {
     f.add_output(2, (1280, 720));
     // Edges below come from threshold reloads and `notify_activity`, as in
     // the edge test above.
-    f.niri().set_input_idle_threshold(Duration::from_secs(10));
+    start_active(&mut f);
     f.state.server.dispatch();
     let lit = output_named(&mut f, "headless-1");
     let removed = output_named(&mut f, "headless-2");
