@@ -1,5 +1,9 @@
 # Capture gates judge measured contention: implementation plan
 
+**Status:** approved by the owner at plan review round 2 (2026-10-17), after
+round 1 added the unsupported-threshold case. Execution: native
+(superpowers:executing-plans), in a fresh session.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** settle and the release scan annotate host events that carry no
