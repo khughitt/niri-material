@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T18:31:19Z
+updated: 2026-10-17T18:31:25Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -75,3 +75,4 @@ Process: planned
 - 2026-10-17T18:31:08Z (fix/material-561927): review: impl round 1 — verdict: accept; findings: Critical 0, Important 0, Minor 5; reviewer: claude-code/claude-opus-5-5
 - 2026-10-17T18:31:14Z (fix/material-561927): minor (deferred): test_hermetic_git.py config-hook comment calls CI's Git 'packaged' and pre-2.54; GitHub ubuntu-24.04 may ship >=2.54 via git-core PPA, so the inert branch may run nowhere — reword to 'on Git older than 2.54'; optionally print git --version in ci-tooling-test
 - 2026-10-17T18:31:19Z (fix/material-561927): minor (deferred): FocusedRunTests checks only returncode; a future skip on the prepare case would pass vacuously — also assert 'Ran 1 test' and no 'skipped' in the child's stderr
+- 2026-10-17T18:31:25Z (fix/material-561927): minor (deferred): InventoryTests GIT_USE comment overstates coverage — test_glass_optic_smoke calls isolate but never quotes 'git', so the probe does not guard it; scan globs test_*.py while discovery uses test*.py
