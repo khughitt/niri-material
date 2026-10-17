@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: material-d2e552
 created: 2026-10-16T11:56:58Z
-updated: 2026-10-17T12:32:49Z
+updated: 2026-10-17T12:46:53Z
 started: 2026-10-17T12:32:29Z
 depends: []
 tags: [rendering]
@@ -27,3 +27,4 @@ Review minors carried here: add an in_window column to <case>.draw-clocks.csv (n
   provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T12:32:49Z (material-d2e552): resumed
   provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T12:46:53Z (material-d2e552): Decision: noise-layers-cost samples clocks by default (f386ae's unsampled control matched the steady median); draw_median_ms keeps every in-window draw so 3d48b0's pinned interval stands, and its spec §8.2 recipe now names CAPTURE_GPU_CLOCKS=0. Idle-clock rule: P8 at the trace's lowest P8 clock from the joined reading through the first reading 0.5 s past the draw. Floor stratification: idle_clock_power_median_w per case. Minor 'identity claims sampling for fixtures that never reach capture_bg' is already material-93ef9e's scope (optic-settling, the only independent Tracy launcher besides material-signals, which has no capture_identity).
