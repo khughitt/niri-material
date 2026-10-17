@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T16:53:27Z
+updated: 2026-10-17T16:58:48Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -55,4 +55,6 @@ Process: planned
 - 2026-10-17T16:51:09Z (fix/material-561927): Plan review round 1: P1 Task 6 step 3 host-pointer check prints and continues into unlock/remove, and omits user systemd units and config includes; make a found pointer stop the block. P2 Task 6 step 2 continues to stamp REMEDY and record the merge after both merge commands fail; stop unless the merge succeeded and no merge is unresolved.
 - 2026-10-17T16:53:21Z (fix/material-561927): plan round 2: Task 6 merge block stops (no stamp) unless the merge completed (MERGE_HEAD, unmerged paths, ancestry checked); remedy timestamp kept in the git dir since shell state does not persist; retirement block refuses while any pointer resolves into the worktree (logical or real path) across ~/bin, ~/.local/bin, user systemd units/drop-ins, ~/.config/niri. Piloted on scratch fixtures: conflict stops unstamped, ff and diverged stamp; missing-target launcher, logical link, unit link, drop-in and niri include all stop with worktree and branch kept, clean case removes. Pilot found readlink -f missing a link whose target dirs do not exist; switched to readlink -m plus the raw link text.
 - 2026-10-17T16:53:27Z (fix/material-561927): parked (waiting on user, review): Owner: review round 2 of .worktrees/material-561927/docs/plans/2026-10-17-pre-commit-fast-hermetic-git-plan.md (Task 6 merge and retirement guards), and pick execution (recommended: native inline + one fresh final reviewer). Then agent executes Tasks 1-4, branch acceptance (Task 5, idle host), merge and post-merge verification (Task 6).
+  provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T16:58:48Z (fix/material-561927): resumed
   provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
