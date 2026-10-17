@@ -6,9 +6,9 @@ priority: 2
 size: l
 complexity: high
 process: planned
-owner: materials-26.04
+owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T02:23:04Z
+updated: 2026-10-17T08:47:38Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -35,4 +35,6 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T02:22:40Z (material-62347d): spec drafted: docs/specs/2026-10-16-noctalia-glass-cohesion-design.md — niri remaps Noctalia's surface family to the modelled glass face plus a per-workspace held hue (layer-rule surface-remap, Prism emits the colors); palette routes rejected: a Noctalia palette change runs ~17 templates and colors_changed (prism apply niri), restyles GTK/Qt, and loops under tintSource=noctalia. Next: owner reviews the spec, then writing-plans.
 - 2026-10-17T02:23:04Z (material-62347d): parked (waiting on user, review): owner reviews docs/specs/2026-10-16-noctalia-glass-cohesion-design.md (branch material-62347d, .worktrees/material-62347d); on approval the agent runs writing-plans in that worktree
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T08:47:38Z (material-62347d): resumed
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
