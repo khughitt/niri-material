@@ -493,7 +493,9 @@ for each attempt. None is part of the implementation.
        `bc488733c6c015d5546e8c503b15487098e471d1394f9255f84c95433c344cc3`
 
    **How the fixture runs the retained binary.** `noise-layers-cost.sh`'s
-   existing A/B mode: `NOISE_LAYERS_COST_PILOT=0`,
+   existing A/B mode: `NOISE_LAYERS_COST_PILOT=0`, `CAPTURE_GPU_CLOCKS=0`
+   (the references ran unsampled; the fixture samples by default since
+   material-d2e552),
    `NOISE_LAYERS_COST_AB=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-hermite-rebuild-1791431057/niri-tracy-b`.
    This runs `none` and `one-fine-1`, two rounds per side. Side a is built from
    the checkout as usual and is not part of the comparison. Only the b-side

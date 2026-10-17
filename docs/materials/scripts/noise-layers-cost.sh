@@ -10,9 +10,16 @@
 # in NOISE_LAYERS_COST_AB_CASES (default `none one-fine-1`) runs a, b1, b2,
 # ..., then again, so a shift between sessions cannot pass for a shift
 # between binaries. metrics.txt maps each side to its binary (ab_side_<s>=).
-# CAPTURE_GPU_CLOCKS=1 retains 100 ms clock samples joined to material draws.
-# One optional positional case name bounds the pilot.
+# Clock samples (CAPTURE_GPU_CLOCKS, on by default here) are joined to the
+# material draws in <case>.draw-clocks.csv, and metrics.txt adds the median of
+# the in-window draws that ran at the idle clock: the start-up burst runs at P0
+# and costs about an eighth as much (2026-10-06-noise-layers-evidence.md,
+# Hardware verdict). The `draw_median_ms` keys keep every in-window draw, as
+# earlier runs reported; CAPTURE_GPU_CLOCKS=0 keeps their unsampled condition.
+# One optional positional case name picks one case for any run; it is refused
+# with NOISE_LAYERS_COST_AB.
 set -eu
+CAPTURE_GPU_CLOCKS=${CAPTURE_GPU_CLOCKS:-1}
 PILOT=${NOISE_LAYERS_COST_PILOT:-0}
 case "$PILOT" in 0|1) ;; *) echo "NOISE_LAYERS_COST_PILOT must be 0 or 1" >&2; exit 2 ;; esac
 AB=${NOISE_LAYERS_COST_AB:-}
@@ -26,12 +33,21 @@ source "$(dirname "$0")/glass-optic-smoke-lib.sh"
 trap cleanup_cost EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
+FINE=$'noise 0.15 type="fine"'
+declare -A CASES=(
+    [none]='noise 0'
+    [one-fine-1]='noise 0.3 type="fine"'
+    [four-fine-1]="$FINE"$'\n'"$FINE"$'\n'"$FINE"$'\n'"$FINE"
+    [four-fine-8]=$(printf '%s scale=8\n' "$FINE" "$FINE" "$FINE" "$FINE")
+    [backdrop-fine-1]='noise 0.3 type="fine" site="backdrop"'
+    [backdrop-fine-8]='noise 0.3 type="fine" site="backdrop" scale=8'
+)
+ORDER=(none one-fine-1 four-fine-1 four-fine-8 backdrop-fine-1 backdrop-fine-8)
 if [ "$#" -gt 0 ]; then
     [ "$#" = 1 ] || fail 'expected at most one noise cost case'
     [ -z "$AB" ] || fail 'case arguments cannot be combined with NOISE_LAYERS_COST_AB'
-    case "$1" in none|one-fine-1|four-fine-1|four-fine-8|backdrop-fine-1|backdrop-fine-8) ;;
-        *) fail "unknown noise cost case: $1" ;;
-    esac
+    [ -n "$1" ] && [ -n "${CASES[$1]+set}" ] || fail "unknown noise cost case: $1"
+    ORDER=("$1")
 fi
 build_binaries
 await_load
@@ -45,23 +61,17 @@ if [ -n "$AB" ]; then
     capture_identity "${AB_IDENTITY[@]}" --config "pilot=$PILOT" --config ab=1 \
         --config "ab_cases=${AB_CASES[*]}"
 else
-    capture_identity --config "pilot=$PILOT"
+    capture_identity --config "pilot=$PILOT" --config "cases=${ORDER[*]}"
 fi
 reserve_tracy_port
 tools_ready
 DAMAGE_STEPS=20
 [ "$PILOT" = 0 ] || DAMAGE_STEPS=3
-FINE=$'noise 0.15 type="fine"'
-declare -A CASES=(
-    [none]='noise 0'
-    [one-fine-1]='noise 0.3 type="fine"'
-    [four-fine-1]="$FINE"$'\n'"$FINE"$'\n'"$FINE"$'\n'"$FINE"
-    [four-fine-8]=$(printf '%s scale=8\n' "$FINE" "$FINE" "$FINE" "$FINE")
-    [backdrop-fine-1]='noise 0.3 type="fine" site="backdrop"'
-    [backdrop-fine-8]='noise 0.3 type="fine" site="backdrop" scale=8'
-)
-ORDER=(none one-fine-1 four-fine-1 four-fine-8 backdrop-fine-1 backdrop-fine-8)
-[ "$#" = 0 ] || ORDER=("$@")
+# A sampled full run's window outlasts the start-up burst (about 4 s) by most of
+# its steps, and each damage draws about four times, so it must yield at least as
+# many idle-clock draws as steps; a pilot's three steps end inside the burst.
+IDLE_DRAWS=0
+[ "$PILOT" = 1 ] || [ "$CAPTURE_GPU_CLOCKS" = 0 ] || IDLE_DRAWS=$DAMAGE_STEPS
 declare -A BIN=()
 for name in "${ORDER[@]}"; do BIN[$name]=$NIRI_TRACY; done
 if [ -n "$AB" ]; then
@@ -146,9 +156,10 @@ for name in "${ORDER[@]}"; do
     stop_walls; stop_nested
     count_last20 "$name" > "$OUT/$name-redraws.txt"
     csvexport --gpu "$OUT/$name.tracy" "$OUT/$name.gpu.csv"
-    python3 - "$OUT" "$name" "$DAMAGE_STEPS" "$((PW * PH))" <<'PYREPORT' >> "$OUT/metrics.txt"
+    python3 - "$OUT" "$name" "$DAMAGE_STEPS" "$((PW * PH))" "$CAPTURE_GPU_CLOCKS" "$IDLE_DRAWS" <<'PYREPORT' >> "$OUT/metrics.txt"
 import bisect, csv, datetime, math, pathlib, statistics, sys
 root, name, steps, area = pathlib.Path(sys.argv[1]), sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+sampled, idle_draws = sys.argv[5] == '1', int(sys.argv[6])
 def zones(path, time_column, duration_column):
     with path.open() as f:
         reader = csv.DictReader(f)
@@ -174,7 +185,8 @@ for span in ['MaterialRenderElement::draw', 'Grain::render']:
     print(f'{name}_{span}_median_ms={(statistics.median(values) if values else 0) / 1e6:.6f}')
 print(f'{name}_glass_area_px={area}')
 clocks_path = root / f'{name}.gpu-clocks.csv'
-if clocks_path.exists():
+if sampled:
+    assert clocks_path.exists(), f'{clocks_path} missing: CAPTURE_GPU_CLOCKS=1 records it'
     wall_lo, wall_hi = map(int, (root / f'{name}.clock-anchor.txt').read_text().split())
     assert 0 < wall_lo <= wall_hi and wall_hi - wall_lo <= 100_000_000, 'clock anchor exceeds one sample period'
     clocks = []
@@ -192,30 +204,57 @@ if clocks_path.exists():
     times = [sample[0] for sample in clocks]
     gaps = [b - a for a, b in zip(times, times[1:])]
     assert all(0 < gap <= 250_000_000 for gap in gaps), 'GPU clock samples must increase with gaps below 250 ms (one GPU)'
+    # The later draws run at the idle clock: P8 at the lowest P8 graphics clock.
+    idle_mhz = min((gr for _, gr, _, pstate, _ in clocks if pstate == 'P8'), default=None)
+    assert idle_mhz is not None, f'{name}: the GPU clock trace never reaches P8'
+    # The driver refreshes its readings every 0.5 s, so a draw's own state can
+    # first show up to that long after it: a draw ran at the idle clock only if
+    # every reading from its joined one through the first one past that lag does.
+    lag = 500_000_000
     draws = sorted((int(t), d) for n, t, d in gpu if n == 'MaterialRenderElement::draw')
     assert draws, 'no material draws to align'
+    selected = []
     with (root / f'{name}.draw-clocks.csv').open('w') as file:
         writer = csv.writer(file)
-        writer.writerow(['trace_ns', 'gpu_ms', 'wall_earliest_ns', 'wall_latest_ns', 'sample_wall_ns', 'graphics_mhz', 'memory_mhz', 'pstate', 'power_w'])
+        writer.writerow(['trace_ns', 'gpu_ms', 'wall_earliest_ns', 'wall_latest_ns', 'sample_wall_ns', 'graphics_mhz', 'memory_mhz', 'pstate', 'power_w', 'in_window', 'idle_clock'])
         for t, duration in draws:
             lo, hi = wall_lo + t - int(begin), wall_hi + t - int(begin)
             index = bisect.bisect_right(times, lo) - 1
-            assert index >= 0 and hi <= times[-1] and hi - times[index] <= 250_000_000, 'GPU clock trace does not cover material draw'
-            writer.writerow([t, f'{duration / 1e6:.6f}', lo, hi, *clocks[index]])
+            after = bisect.bisect_left(times, hi + lag)
+            assert index >= 0 and after < len(times) and hi - times[index] <= 250_000_000, 'GPU clock trace does not cover material draw and its reading lag'
+            in_window = begin <= t <= end
+            idle = all(clocks[k][3] == 'P8' and clocks[k][1] == idle_mhz for k in range(index, after + 1))
+            if in_window and idle:
+                selected.append((duration, clocks[index][4]))
+            writer.writerow([t, f'{duration / 1e6:.6f}', lo, hi, *clocks[index], int(in_window), int(idle)])
+    assert len(selected) >= idle_draws, f'{name}: {len(selected)} idle-clock material draws, expected at least {idle_draws}'
+    print(f'{name}_idle_graphics_mhz={idle_mhz}')
+    print(f'{name}_MaterialRenderElement::draw_idle_clock_count={len(selected)}')
+    if selected:
+        print(f'{name}_MaterialRenderElement::draw_idle_clock_median_ms={statistics.median(d for d, _ in selected) / 1e6:.6f}')
+        # Which idle power floor (about 10.4 or 17 W) the case ran on.
+        print(f'{name}_idle_clock_power_median_w={statistics.median(w for _, w in selected):.2f}')
     print(f'{name}_clock_anchor_width_ms={(wall_hi - wall_lo) / 1e6:.3f}')
     print(f'{name}_clock_max_gap_ms={max(gaps) / 1e6:.3f}')
     print(f'{name}_first_material_draw_wall_earliest_ns={wall_lo + draws[0][0] - int(begin)}')
     print(f'{name}_first_material_draw_wall_latest_ns={wall_hi + draws[0][0] - int(begin)}')
 PYREPORT
 done
-if [ -z "$AB" ] && [ "$#" = 0 ]; then python3 - "$OUT/metrics.txt" <<'PYDELTA' >> "$OUT/metrics.txt"
+if [ -z "$AB" ] && [ "$#" = 0 ]; then python3 - "$OUT/metrics.txt" "$IDLE_DRAWS" <<'PYDELTA' >> "$OUT/metrics.txt"
 import sys
 m = dict(line.strip().split('=', 1) for line in open(sys.argv[1]) if '=' in line)
-none = float(m['none_MaterialRenderElement::draw_median_ms'])
-for name in ['one-fine-1', 'four-fine-1', 'four-fine-8', 'backdrop-fine-1', 'backdrop-fine-8']:
-    median = float(m[f'{name}_MaterialRenderElement::draw_median_ms'])
-    area = int(m[f'{name}_glass_area_px'])
-    print(f'{name}_material_ns_per_px_over_none={(median - none) * 1e6 / area:.4f}')
+names = ['one-fine-1', 'four-fine-1', 'four-fine-8', 'backdrop-fine-1', 'backdrop-fine-8']
+def deltas(key, label):
+    none = float(m[f'none_MaterialRenderElement::{key}'])
+    for name in names:
+        median = float(m[f'{name}_MaterialRenderElement::{key}'])
+        area = int(m[f'{name}_glass_area_px'])
+        print(f'{name}_{label}_ns_per_px_over_none={(median - none) * 1e6 / area:.4f}')
+deltas('draw_median_ms', 'material')
+if sys.argv[2] != '0':   # every case has an idle-clock median: sampled, not a pilot
+    idle = {m[f'{name}_idle_graphics_mhz'] for name in ['none', *names]}
+    assert len(idle) == 1, f'cases idled at different graphics clocks: {sorted(idle)} MHz'
+    deltas('draw_idle_clock_median_ms', 'material_idle_clock')
 PYDELTA
 fi
 finish
