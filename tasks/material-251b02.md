@@ -1,15 +1,16 @@
 ---
 id: material-251b02
 title: "Settling tests flake under single-process cargo test: timeline not running at start"
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
 process: direct
 owner: material-251b02
 created: 2026-10-08T09:31:15Z
-updated: 2026-10-17T08:57:30Z
+updated: 2026-10-17T08:59:19Z
 started: 2026-10-17T08:47:53Z
+completed: 2026-10-17T08:59:19Z
 depends: []
 tags: [testing, flaky]
 agent: claude-code/claude-opus-5-5
@@ -25,3 +26,7 @@ makepkg check() (cargo test --workspace --all-targets, one process, RAYON_NUM_TH
 - 2026-10-17T08:48:12Z (material-251b02): resumed
   provenance: {"harness_session":"claude-code:45d9d610-ca8a-4b8a-ad97-be9caa9e4f00","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T08:57:30Z (material-251b02): Root cause: not a stale timer. InputActivity's quiet time runs from Niri construction, the 60 ms detector is already idle when setup finishes, and set_threshold(10 s) flips back to active only while setup took < 10 s (5.7 s measured cold on materials-26.04; ~12 s on material-abc08c's tilt split). RED: an 11 s sleep after aurora_fixture(true) reproduces both failures at :325/:400. Fix in the tests: start_active raises the threshold then notify_activity, so quiet time counts from there.
+- 2026-10-17T08:59:19Z (material-251b02): done
+  provenance: {"harness_session":"claude-code:45d9d610-ca8a-4b8a-ad97-be9caa9e4f00","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T08:59:19Z (material-251b02): Fixed in the tests: start_active raises the threshold and records input, so a slow renderer setup no longer leaves the detector idle; red reproduced with an 11 s setup stand-in, module green cold, test-fast 548/548.
+  provenance: {"harness_session":"claude-code:45d9d610-ca8a-4b8a-ad97-be9caa9e4f00","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
