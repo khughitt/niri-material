@@ -344,6 +344,12 @@ restoring, and the run is not evidence until rescanned by hand.
 Idle locks have no entry the scan reads; caffeine (§3.3) is the
 protection.
 
+Each flagged entry carries a `severity` (`fail` or `annotate`) and a `rule`,
+and `scan.verdict` gains `annotated` (every entry annotated; release exits 0).
+A `restart` of `getty@tty*` or `autovt@tty*` is annotated on the headless and
+pixels lanes and fails on dedicated; every other entry fails
+([gates design](2026-10-17-capture-evidence-gates-design.md) §4.2).
+
 ## 6. Testing and the first live run
 
 Unit tests in `tools/test_capture_meta.py` drive the hold through an

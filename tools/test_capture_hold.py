@@ -391,6 +391,43 @@ class ScanTests(TempHost):
             ch.scan(host, self.hold(), [])
 
 
+def flagged(kind, unit, manager="system"):
+    return {"at": "t", "at_us": T0, "manager": manager, "unit": unit, "kind": kind}
+
+
+class ClassifyTests(unittest.TestCase):
+    def test_vt_login_is_annotated_on_nested_lanes_and_fails_elsewhere(self):
+        for lane, verdict, severity in (("headless", "annotated", "annotate"), ("pixels", "annotated", "annotate"),
+                                        ("dedicated", "disturbed", "fail"), (None, "disturbed", "fail")):
+            with self.subTest(lane=lane):
+                got, entries = ch.classify([flagged("restart", "getty@tty2.service")], lane)
+                self.assertEqual(got, verdict)
+                self.assertEqual((entries[0]["severity"], entries[0]["rule"]), (severity, "vt-login"))
+        self.assertEqual(ch.classify([flagged("restart", "autovt@tty3.service")], "pixels")[0], "annotated")
+
+    def test_other_units_and_kinds_fail_on_every_lane(self):
+        for d in (flagged("restart", "getty-static.service"), flagged("restart", "dropbox.service", "user"),
+                  flagged("timer-fired", "systemd-tmpfiles-clean.service"),
+                  flagged("timer-added", "run-p2107991-i6325666.timer", "user"),
+                  flagged("held-started", "getty@tty2.service"), flagged("monitor-woke", "card1-DP-1", "sysfs")):
+            for lane in ("headless", "pixels", "dedicated"):
+                with self.subTest(unit=d["unit"], kind=d["kind"], lane=lane):
+                    verdict, entries = ch.classify([d], lane)
+                    self.assertEqual(verdict, "disturbed")
+                    self.assertEqual((entries[0]["severity"], entries[0]["rule"]), ("fail", d["kind"]))
+
+    def test_one_failing_entry_disturbs_and_an_empty_list_is_clean(self):
+        verdict, entries = ch.classify([flagged("restart", "getty@tty2.service"),
+                                        flagged("timer-fired", "man-db.service")], "headless")
+        self.assertEqual((verdict, [e["severity"] for e in entries]), ("disturbed", ["annotate", "fail"]))
+        self.assertEqual(ch.classify([], "headless"), ("clean", []))
+
+    def test_an_earlier_severity_is_replaced(self):
+        old = dict(flagged("restart", "getty@tty2.service"), severity="fail", rule="restart")
+        verdict, entries = ch.classify([old], "headless")
+        self.assertEqual((verdict, entries[0]["severity"], entries[0]["rule"]), ("annotated", "annotate", "vt-login"))
+
+
 class GuardLoopTests(TempHost):
     def setUp(self):
         self.h = self.host(connectors=LIT)

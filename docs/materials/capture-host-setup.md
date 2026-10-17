@@ -90,7 +90,10 @@ itself is ops's `display-dim` (`ops-a1715a`).
 active user timer, the services named in
 `${XDG_CONFIG_HOME:-~/.config}/niri-material/capture-hold`, and on the
 desktop Noctalia's caffeine and monitor power. `release` restores them and
-scans the journal; a disturbed run fails its fixture.
+scans the journal; a disturbed run fails its fixture. A console login on
+another VT (a `getty@`/`autovt@` restart) is recorded as an annotation on the
+headless and pixels lanes and still fails a dedicated run
+([gates design](../specs/2026-10-17-capture-evidence-gates-design.md)).
 
 Restore is not schedule-preserving: `systemctl --user start` re-anchors
 each timer's `OnActiveSec` trigger at the restore instant (and an

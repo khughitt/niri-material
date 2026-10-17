@@ -606,7 +606,7 @@ def append_sub_run(run_dir, entry):
         save_record(run_dir, record)
 
 
-SCAN_VERDICTS = ("clean", "disturbed", "unscanned", "not-run")
+SCAN_VERDICTS = ("clean", "annotated", "disturbed", "unscanned", "not-run")
 
 
 def update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
@@ -637,7 +637,8 @@ def _update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
 
 
 def describe_disturbance(d):
-    return f"{d['kind']} {d['unit']} ({d['manager']}) at {d['at']}"
+    severity = f" [{d['severity']}]" if "severity" in d else ""
+    return f"{d['kind']} {d['unit']} ({d['manager']}) at {d['at']}{severity}"
 
 
 def failure_list(attempt):
@@ -649,6 +650,10 @@ def exit_for(end):
     if restore.get("state") == "failed":
         raise CannotRun(f"hold not fully restored; restore by hand: {failure_list(restore['attempts'][-1])}")
     verdict = scan.get("verdict")
+    if verdict == "annotated":
+        for d in scan["disturbances"]:
+            print(f"capture-meta: annotated: {describe_disturbance(d)}", file=sys.stderr)
+        return
     if verdict == "clean":
         return
     if verdict == "disturbed":
@@ -894,7 +899,8 @@ def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
             refresh_record_sum(run_dir)
 
     def record_end(hold, wakes, attempt):
-        end = load_record(run_dir).get("hold_end", {})
+        current = load_record(run_dir)
+        end = current.get("hold_end", {})
         if attempt["undone"] == 0 and "scan" in end and end.get("restore", {}).get("state") == "complete":
             written["hold_end"] = end      # a leftover after a saved record: nothing new to say
             return
@@ -907,7 +913,8 @@ def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
                 scan = {**base, "verdict": "unscanned", "error": hold["wake_error"]}
             else:
                 try:
-                    verdict, disturbances = ch.scan(host, hold, wakes)
+                    _, flagged = ch.scan(host, hold, wakes)
+                    verdict, disturbances = ch.classify(flagged, current.get("run", {}).get("lane"))
                     scan = {**base, "verdict": verdict, "disturbances": disturbances}
                 except CannotRun as error:
                     scan = {**base, "verdict": "unscanned", "error": str(error)}
@@ -1370,7 +1377,10 @@ def render(record):
     if end:
         restore, scan = end.get("restore", {}), end.get("scan", {})
         last = (restore.get("attempts") or [{}])[-1].get("by")
-        lines.append(f"hold end  restore {restore.get('state')} ({last})  scan {scan.get('verdict')}")
+        verdict = scan.get("verdict")
+        if verdict == "annotated":
+            verdict = f"annotated ({len(scan['disturbances'])})"
+        lines.append(f"hold end  restore {restore.get('state')} ({last})  scan {verdict}")
         lines += [f"  {describe_disturbance(d)}" for d in scan.get("disturbances", [])]
     sub_runs = record.get("sub_runs")
     if sub_runs:

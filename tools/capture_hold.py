@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import time
@@ -525,6 +526,25 @@ def scan(host, hold, wakes):
         found.append(_disturbance(wake["at_us"], "sysfs", wake["connector"], kind))
     found.sort(key=lambda d: d["at_us"])
     return ("disturbed" if found else "clean"), found
+
+
+VT_UNIT = re.compile(r"(getty|autovt)@tty\d+\.service")
+VT_ANNOTATED_LANES = ("headless", "pixels")
+
+
+def classify(disturbances, lane):
+    """Severity and rule for each flagged entry (2026-10-17 gates design §4.2). A console
+    login restarts its getty: a nested compositor never sees it, a DRM session on a VT
+    does. Every other kind fails on every lane, and so does everything when the lane is
+    unknown."""
+    classified = []
+    for d in disturbances:
+        vt = d["kind"] == "restart" and VT_UNIT.fullmatch(d["unit"]) is not None
+        severity = "annotate" if vt and lane in VT_ANNOTATED_LANES else "fail"
+        classified.append({**d, "severity": severity, "rule": "vt-login" if vt else d["kind"]})
+    if not classified:
+        return "clean", classified
+    return ("disturbed" if any(d["severity"] == "fail" for d in classified) else "annotated"), classified
 
 
 def _log_wake(lock_file, hold, record):

@@ -1288,6 +1288,29 @@ class HoldRecordTests(unittest.TestCase):
         self.assertIn("hold end  restore complete (release)  scan disturbed", text)
         self.assertIn("  restart x.service (user) at t", text)
 
+    def test_exit_for_passes_an_annotated_scan_and_refuses_a_dedicated_vt_login(self):
+        getty = {"kind": "restart", "unit": "getty@tty2.service", "manager": "system", "at": "t"}
+        complete = {"state": "complete", "attempts": []}
+        verdict, entries = cm.ch.classify([getty], "headless")
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            cm.exit_for({"restore": complete, "scan": {"verdict": verdict, "disturbances": entries}})
+        self.assertIn("annotated: restart getty@tty2.service (system) at t [annotate]", stderr.getvalue())
+        verdict, entries = cm.ch.classify([getty], "dedicated")
+        with self.assertRaisesRegex(cm.Refused, r"getty@tty2.service \(system\) at t \[fail\]"):
+            cm.exit_for({"restore": complete, "scan": {"verdict": verdict, "disturbances": entries}})
+        cm.validate_record({"hold_end": {"scan": {"verdict": "annotated", "disturbances": entries}}})
+
+    def test_show_counts_annotations_and_prints_severity(self):
+        record = {"run": {"id": "r"}, "hold": {"desktop": "absent", "items": []},
+                  "hold_end": {"restore": {"state": "complete", "attempts": [{"by": "release", "failures": []}]},
+                               "scan": {"verdict": "annotated", "disturbances": [
+                                   {"kind": "restart", "unit": "getty@tty2.service", "manager": "system", "at": "t",
+                                    "severity": "annotate", "rule": "vt-login"}]}}}
+        text = cm.render(record)
+        self.assertIn("scan annotated (1)", text)
+        self.assertIn("  restart getty@tty2.service (system) at t [annotate]", text)
+
 
 class LifecycleTests(unittest.TestCase):
     def setUp(self):
@@ -1534,6 +1557,8 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual(cm.main(["release", str(self.run)]), 1)
         self.assertEqual(self.host.snapshot()[:2], self.before[:2])
         self.assertEqual(cm.load_record(self.run)["hold_end"]["scan"]["disturbances"][0]["kind"], "timer-fired")
+        entry = cm.load_record(self.run)["hold_end"]["scan"]["disturbances"][0]
+        self.assertEqual((entry["severity"], entry["rule"]), ("fail", "timer-fired"))
 
     def test_refused_preflight_rolls_back_and_release_repeats_its_code(self):
         busy = dict(QUIET, util_pct=90.0)
@@ -1843,6 +1868,22 @@ class LifecycleTests(unittest.TestCase):
         saved = (self.run / "SHA256SUMS").read_bytes()
         self.assertEqual(cm.main(["release", str(self.run)]), 0)
         self.assertEqual((self.run / "SHA256SUMS").read_bytes(), saved)
+
+    def test_console_login_restart_is_annotated_and_release_passes(self):
+        self.preflight()
+        self.host.journal["system"].append({"__REALTIME_TIMESTAMP": str(self.host.now_us() + 5),
+                                            "UNIT": "getty@tty2.service", "MESSAGE_ID": cm.ch.RESTART})
+        self.host.clock += 60_000_000
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            self.assertEqual(cm.main(["release", str(self.run)]), 0)
+        scan = cm.load_record(self.run)["hold_end"]["scan"]
+        self.assertEqual(scan["verdict"], "annotated")
+        self.assertEqual([(d["unit"], d["severity"], d["rule"]) for d in scan["disturbances"]],
+                         [("getty@tty2.service", "annotate", "vt-login")])
+        self.assertIn("annotated: restart getty@tty2.service", stderr.getvalue())
+        self.assertEqual(self.host.snapshot(), self.before)
+
 
 
 def ch_hold_name():

@@ -114,8 +114,8 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mapped.rs` | B | M | +48/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/README.md` | C | A | +29/-0 |
-| `tools/capture-meta` | C | A | +1474/-0 |
-| `tools/capture_hold.py` | C | A | +580/-0 |
+| `tools/capture-meta` | C | A | +1484/-0 |
+| `tools/capture_hold.py` | C | A | +600/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
 | `tools/identity-check` | C | A | +57/-0 |
@@ -126,8 +126,8 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/target-dir-check` | C | A | +144/-0 |
 | `tools/test-affected` | C | A | +135/-0 |
 | `tools/test_affected.py` | C | A | +49/-0 |
-| `tools/test_capture_hold.py` | C | A | +463/-0 |
-| `tools/test_capture_meta.py` | C | A | +1861/-0 |
+| `tools/test_capture_hold.py` | C | A | +500/-0 |
+| `tools/test_capture_meta.py` | C | A | +1902/-0 |
 | `tools/test_gates.py` | C | A | +279/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +881/-0 |
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
