@@ -7,6 +7,11 @@ import subprocess
 import tempfile
 import unittest
 
+from tools.hermetic_git import isolate
+
+# Fixture repositories here must not see a hook's GIT_INDEX_FILE or GIT_DIR, nor host git config.
+isolate(os.environ)
+
 ROOT = Path(__file__).resolve().parent.parent
 
 

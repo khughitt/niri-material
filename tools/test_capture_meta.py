@@ -15,8 +15,9 @@ import threading
 import unittest
 from unittest import mock
 
-for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
-    del os.environ[_name]
+from tools.hermetic_git import isolate
+
+isolate(os.environ)
 
 spec = importlib.util.spec_from_loader(
     "capture_meta",

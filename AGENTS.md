@@ -75,6 +75,8 @@ rendering design assumes.
   total by default and up to sixteen under a granted budget;
   both routes are capped by `NEXTEST_TEST_THREADS` when
   set; the cap must be a positive ASCII decimal integer.
+  A test module that runs git calls `isolate(os.environ)` from `tools/hermetic_git.py`
+  at import; the coordinator also applies it to every worker.
 - `just check` runs hygiene, target isolation, rustfmt, clippy, fast tooling and
   identity/task/report/pin checks; `just check-full` substitutes parallel full tooling.
   `tools/identity-check` refuses a repo-local user.name or user.email: the trace a
