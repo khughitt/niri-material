@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T17:20:01Z
+updated: 2026-10-17T17:20:22Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -67,3 +67,5 @@ Process: planned
   provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T17:19:55Z (fix/material-561927): review: plan round 3 — verdict: accept; findings: none; reviewer: codex/gpt-6-astra
 - 2026-10-17T17:20:01Z (fix/material-561927): Plan round 3 accepted: 9a04c082 resolves the P1; reviewer reran the guard with a symlinked unit (worktree reference stopped removal, clean unit passed). Owner approved the plan; execution: native (inline) + one fresh final reviewer, in a fresh session.
+- 2026-10-17T17:20:22Z (fix/material-561927): parked (waiting on agent, session): Agent, fresh session: open .worktrees/material-561927 (branch fix/material-561927), run tasks start material-561927, then execute docs/plans/2026-10-17-pre-commit-fast-hermetic-git-plan.md natively (superpowers:executing-plans) from Task 1 (material-5e6dd7) through Task 4; Task 5 (branch acceptance) and Task 6 (merge, post-merge verify) need an idle host; one fresh final reviewer after Task 5 step 6.
+  provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
