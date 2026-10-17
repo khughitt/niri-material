@@ -1,15 +1,17 @@
 ---
 id: material-62347d
 title: Design and build Noctalia glass cohesion with workspace project hue
-status: doing
+status: done
 priority: 2
 size: l
 complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T14:43:26Z
+updated: 2026-10-17T14:43:32Z
 started: 2026-10-17T02:10:41Z
+completed: 2026-10-17T14:43:32Z
+closed: 2026-10-17T14:43:32Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
@@ -79,3 +81,7 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-17T14:31:04Z (material-62347d): review: impl round 1 — verdict: revise; findings: important 2, minor 7; reviewer: claude-code/claude-opus-5-5 (final whole-branch)
 - 2026-10-17T14:42:42Z (material-62347d): review: impl round 2 — verdict: accept; findings: none; reviewer: claude-code/claude-sonnet-5-5 (scoped re-review of the final-review fix round)
 - 2026-10-17T14:43:26Z (material-62347d): done: niri side implemented (Tasks 1-8, commits bd8b45bd..291bc250) and judged (owner verdict 2026-10-17: remap reads as the approved look, hue-chroma 0.03, strip OK); final whole-branch review clean after one corrective round; Prism side prism-301d9f; rollout material-1c4a82; follow-ups material-ce4134, material-f3db85, material-ab6281
+- 2026-10-17T14:43:32Z (material-62347d): done
+  provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T14:43:32Z (material-62347d): surface-remap layer rule, glass face model, per-workspace hue resolver and remap shader landed; owner accepted the sheet (hue-chroma 0.03); Prism and rollout follow-ups filed
+  provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
