@@ -5,8 +5,8 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-10-06T15:07:38Z
-updated: 2026-10-12T18:21:13Z
-depends: []
+updated: 2026-10-17T17:35:31Z
+depends: [material-46b23d, material-d21ff0]
 parent: material-5d6b2c
 tags: [performance, rendering]
 agent: claude-code/claude-opus-5-5
