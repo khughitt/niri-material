@@ -8,11 +8,12 @@ complexity: high
 process: planned
 owner: capture-gates-evidence
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T10:01:32Z
+updated: 2026-10-17T10:08:49Z
 started: 2026-10-17T10:01:20Z
 depends: []
 tags: [rendering]
 agent: claude-code/claude-opus-5-5
+spec: docs/specs/2026-10-17-capture-evidence-gates-design.md
 ---
 
 Why: on 2026-10-16 three of eight quiet-host attempts were stopped by gates whose trigger did not touch the measurement. (1) A step in the idle GPU power floor (10.4 <-> 17 W, or 8.9 -> 10.4 W when the fb0-blanked display woke) failed the settle check, which compares every sub-run's idle watts with one run-start baseline (+-1.5 W). The refused noise A/B's completed sub-runs (noise-idle-ab-full-1792148041: none a 0.2877, b1 0.3246, b2 0.2918 ms) equal the passing run's (noise-idle-ab-full-1792149757) to one 1024 ns GPU-timer step. (2) A 20 s console login on tty2 (getty@tty2 restart, no CPU or GPU load) made the journal scan mark a nested headless pilot disturbed.
