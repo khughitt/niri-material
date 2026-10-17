@@ -16,6 +16,7 @@ use super::client::{ClientId, LayerConfigureProps};
 use super::*;
 use crate::layout::shell_hue::HOLD_DWELL;
 use crate::niri::SetWindowSignalArgs;
+use crate::render_helpers::shaders::Shaders;
 use crate::render_helpers::surface_remap::{HueBlend, OutputHue};
 use crate::render_helpers::{RenderCtx, RenderTarget};
 use crate::utils::with_toplevel_role;
@@ -252,6 +253,23 @@ fn output_elements(f: &mut Fixture) -> Vec<Id> {
         .into_iter()
         .map(|(id, _)| id)
         .collect()
+}
+
+#[test]
+fn the_surface_remap_shader_compiles_on_the_test_renderer() {
+    // A GLSL error only logs a warning and leaves every remapped layer
+    // unremapped, so compilation needs its own check.
+    let mut f = Fixture::with_config(look(""));
+    f.niri_state().backend.headless().add_renderer().unwrap();
+    f.niri_state()
+        .backend
+        .with_primary_renderer(|renderer| {
+            assert!(
+                Shaders::get(renderer).surface_remap.is_some(),
+                "surface_remap.frag failed to compile"
+            );
+        })
+        .unwrap();
 }
 
 #[test]
