@@ -151,28 +151,52 @@ unchanged.
 **A reference swatch, not the live glass.** The result is the face over
 `B_ref`. The real terminal shows its actual backdrop through the glass, and the
 opaque shell can't follow that, so the match holds only where the backdrop
-term is small. Glass is supported only when it transmits at most 1% of the
-backdrop's luminance:
+term is small. Glass is supported only when no channel transmits more than
+1%:
 
 ```
-Y(T) · (1 − f0) ≤ 0.01,   Y = Rec. 709 luminance
+max(T) · (1 − f0) ≤ 0.01
 ```
 
-**Error within the range.** Over blurred backdrops between 0.05 and 0.5
-(linear), the real face stays within −0.022 and +0.032 OKLab L of the swatch
-at the bound, and within −0.008 and +0.013 for the live glass.
+Each channel of the transmitted light is the backdrop's channel times that
+channel of `T · (1 − f0)`. So under this check, every backdrop, colored or
+neutral, passes at most 1% of each channel and of its luminance through the
+face. A neutral measure such as `Y(T)` can't promise that. For example,
+`#000080` at thickness 30, distance 10 and IOR 1.28 has `Y(T)` under 1%, yet
+passes 12.5% of a blue backdrop. The max-channel check rejects it.
 
-| Glass | Y(T) | Face over black / 0.2 / white |
+**Lightness error within the range.** The error grows as the specular floor
+`0.15 · f0` shrinks, so it depends on IOR. niri accepts IOR in [1, 3]. For
+neutral backdrops between 0.05 and 0.5 (linear), the face's offset from the
+swatch at the 1% bound is:
+
+| IOR | OKLab L offset at backdrop 0.05 / 0.5 |
+| --- | --- |
+| 1.0 (worst case) | −0.047 / +0.045 |
+| 1.1 | −0.038 / +0.042 |
+| 1.28 (live) | −0.022 / +0.032 |
+| 1.5 | −0.013 / +0.022 |
+| 3.0 | −0.004 / +0.008 |
+
+The guaranteed bound is the worst row: within −0.047 and +0.045 OKLab L
+across the supported range. That case is a neutral `T` at the bound with IOR 1
+(for example `#191919`, thickness 20, distance 10: −0.046 / +0.044). The live
+glass is at −0.007 / +0.013. The worst case is established numerically, not
+assumed: a test samples accepted configurations across colors, distances,
+thicknesses and IORs, and checks every sample against the guaranteed bound
+(Verification).
+
+| Glass | max(T) · (1 − f0) | Face over black / 0.2 / white |
 | --- | --- | --- |
-| live `terminal-glass` | 0.003 | 7,7,7 / 8,10,10 / 9,17,18 |
-| same color, distance 20 | 0.029, out of range | 7,7,7 / 13,24,24 / 28,53,54 |
-| Prism's default tint `#dfe8ff` at distance 30, live thickness and IOR | 0.91, out of range | 7,7,7 / 116,118,123 / 238,243,254 |
+| live `terminal-glass` | 0.004 | 7,7,7 / 8,10,10 / 9,17,18 |
+| same color, distance 20 | 0.035, out of range | 7,7,7 / 13,24,24 / 28,53,54 |
+| `#dfe8ff` (Prism's default tint) at distance 30, live thickness and IOR | 0.98, out of range | 7,7,7 / 116,118,123 / 238,243,254 |
 
 **Outside the range.** niri rejects a `surface-remap` naming out-of-range
 glass at config load:
 
 ```
-surface-remap: material "<name>" transmits <Y> of its backdrop;
+surface-remap: material "<name>" transmits <max(T)·(1−f0)> in its most open channel;
 the shell match supports dark glass up to 0.01
 ```
 
@@ -342,9 +366,14 @@ Prism's repository:
 
 - **Template.** Prism's Noctalia template (`noctalia-palette.template`) adds
   `surface_container` and `outline_variant` beside `primary` and `surface`.
-- **Rule output.** While a new parameter `shell.remap` is on (default on),
-  the niri sink emits one complete `surface-remap` node, whatever the glass's
-  tint source:
+- **Rule output.** The niri sink emits one complete `surface-remap` node only
+  while both `glass.enabled` and a new parameter `shell.remap` (default on)
+  are on, whatever the glass's tint source.
+  - When `glass.enabled` is off, Prism already leaves out the
+    `terminal-glass` definition. The remap rule is left out with it, and so is
+    the remap's need for Noctalia's palette, so the existing Glass toggle keeps
+    working without touching `shell.remap`.
+  - The emitted node carries:
   - the three family colors from Noctalia's resolved palette;
   - the name of the active glass material;
   - `hue-chroma` from a new Prism parameter (proposed `shell.hueChroma`).
@@ -354,9 +383,9 @@ Prism's repository:
   L 0.4, the sink omits the rule and its apply report says why:
   `shell remap off: Noctalia is in light mode`. Switching to light mode then
   leaves the shell as Noctalia draws it, rather than failing the whole apply.
-- **Missing palette.** When the palette file is missing, the apply fails the
-  same way it does today for the `noctalia` tint source, with the existing fix
-  hint.
+- **Missing palette.** When the rule is to be emitted and the palette file
+  is missing, the apply fails the same way it does today for the `noctalia`
+  tint source, with the existing fix hint.
 - **Glass out of range.** The apply fails with niri's message (section 2).
 
 ### 7. Rendering integration
@@ -425,10 +454,18 @@ and any of them can be overridden in review:
     two levels of 8,11,10;
   - the table in section 2: black, `B_ref` and white for the live glass and
     for distance 20;
-  - the range bound: the live glass accepted; distance 20 and the
-    `#dfe8ff` light glass rejected with the section 2 message;
-  - the stated error: within the range, the face over backdrops from 0.05 to
-    0.5 stays within −0.022 and +0.032 L of the swatch at the bound.
+  - the range check accepts the live glass;
+  - it rejects distance 20, the `#dfe8ff` light glass, and `#000080` at
+    thickness 30, distance 10, IOR 1.28 (passes the neutral `Y(T)` test, but
+    a blue backdrop gets 12.5% through), each with the section 2 message;
+  - `#191919` at thickness 20, distance 10, IOR 1 is accepted, and its
+    offsets (−0.046 / +0.044) fall inside the guaranteed bound;
+  - the IOR table in section 2, row by row;
+  - a sampled sweep of accepted configurations (colors, thicknesses,
+    distances, IOR 1 to 3): every sample's face over neutral backdrops from
+    0.05 to 0.5 stays within −0.047 and +0.045 L of its swatch, and over
+    saturated red, green and blue backdrops passes at most 1% of each
+    channel.
 - A check of the model's constants against `main.frag`.
 - The remap's CPU mirror reproduces `noctalia-glass-palette.py`'s anchors
   within one level.
@@ -452,6 +489,16 @@ and any of them can be overridden in review:
   - two matching rules, where the later complete node replaces the earlier
     one whole.
 - The damage fingerprint changes with the hue and holds at rest.
+
+**Prism tests (in the Prism task):**
+- `glass.enabled` on and `shell.remap` on: one complete node naming
+  `terminal-glass`.
+- `glass.enabled` off: no rule, no remap palette requirement. A missing
+  palette file doesn't fail the apply unless the `noctalia` tint source needs
+  it.
+- `shell.remap` off: no rule.
+- Light mode: no rule, and the report line.
+- The emitted fragment passes `niri validate` for each case above.
 
 **Nested sheet (owner gate).** `docs/materials/scripts/noctalia-surfaces.sh`
 gains a `remap` case, with Noctalia on its wallpaper palette and the rule set,
