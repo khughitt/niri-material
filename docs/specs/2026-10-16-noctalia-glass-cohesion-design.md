@@ -1,7 +1,7 @@
 # Noctalia glass cohesion and workspace project hue
 
 2026-10-16. Design for `material-62347d` under `material-55380c`. Status:
-accepted for planning 2026-10-17 (review round 3). Scope brief:
+accepted for planning 2026-10-17 (review round 3); revised after review round 4. Scope brief:
 `docs/notes/2026-10-14-noctalia-material-brief.md`.
 
 ## Intent
@@ -148,6 +148,31 @@ changing the shader without updating the model fails. Noise and saturation
 are left out: the noise is zero-mean, and saturation leaves a neutral backdrop
 unchanged.
 
+**Supported effects.** The model holds only where nothing else lights the
+flat face. In `main.frag`:
+- reflection and edge highlight are zero on the face;
+- the ring and its spill sit on the edge band and the chamfer;
+- impulse sweeps are transient.
+
+Two optics do light the face and are left unsupported:
+- **Aurora.** `aurora_within` adds `0.35 · aurora · color · att^0.2` across
+  the whole face. With the live glass and a white aurora at strength 1,
+  transmission stays at 0.0038 and passes the range check, but a face sample
+  rises from about `#080a0a` to `#445454` (round-4 review).
+- **Iridescence.** `iridescence_specular` recolors the specular floor itself:
+  at the face's cosine of 1, the floor is scaled by `(1, 0.25, 0.25) · 2` at
+  full strength.
+
+niri rejects a `surface-remap` whose material sets either at config load:
+
+```
+surface-remap: material "<name>" sets aurora|iridescence, which lights the
+flat face; the shell match supports glass without them
+```
+
+The accent tint of the specular floor (`mat_sig_light.z`) is driven by the
+window's own signal, and the shell's held hue covers it.
+
 **A reference swatch, not the live glass.** The result is the face over
 `B_ref`. The real terminal shows its actual backdrop through the glass, and the
 opaque shell can't follow that, so the match holds only where the backdrop
@@ -201,7 +226,8 @@ the shell match supports dark glass up to 0.01
 ```
 
 Through Prism, this makes the apply fail with that message. The fix is to
-darken the glass or turn off `shell.remap` (section 6). Rejecting the rule
+darken the glass, drop the unsupported optic, or turn off `shell.remap`
+(section 6). Rejecting the rule
 means a Prism glass edit that crosses the range fails loudly, instead of the
 shell quietly turning a light color under dark text.
 
@@ -234,9 +260,17 @@ texture is composited:
 - Exact anchor pixels reproduce `noctalia-glass-palette.py`'s output.
 - Low-chroma blends near the family, such as hover overlays of `on_surface` at
   low alpha, move with it, much as they would under C's palette.
-- Hover and accent overlays drawn at low alpha over the surface (up to about
-  25%) sit 0.002 to 0.015 from the polyline, so they move with the family, as
-  they would under C's palette.
+- **Neutral overlays move with the family.** These are `on_surface`
+  highlights drawn at low alpha over the surface. On all three test palettes,
+  they keep weight 1 up to 16% alpha, as they would under C's palette.
+- **Accent overlays move only when the accent is muted.** These are `primary`
+  or `hover` drawn over the surface. On the live wallpaper's palette (primary
+  chroma 0.045) a `primary` overlay keeps weight 1 up to 16%. On a vivid
+  palette (primary chroma 0.197) it leaves the family by 8% alpha (weight
+  0.03), so it keeps the source surface's lightness under its tint. Such an
+  overlay is a highlight, and stays distinct from the family. The sheet
+  judges it. (Corrected 2026-10-17 while planning, from three generated
+  palettes.)
 - Text and icons (`on_surface`, `on_surface_variant`, L ≥ 0.8), accents
   (`primary` and the rest) and `error` sit 0.12 to 0.55 away and stay
   unchanged.
@@ -255,8 +289,10 @@ palettes:
 - every family anchor at weight 1;
 - `on_surface`, `on_surface_variant`, the accents, `error` and black at
   weight 0;
-- surface overlays of `on_surface` and `primary` at up to 16% alpha at
-  weight ≥ 0.5.
+- surface overlays of `on_surface` at up to 16% alpha at weight ≥ 0.5 on
+  all three palettes;
+- surface overlays of `primary` at up to 16% alpha at weight ≥ 0.5 on the
+  live and blue palettes.
 
 **Per-frame uniforms.** niri computes these on the CPU: the three source
 anchors and their offsets in OKLab, the two radii, and the current target
@@ -302,6 +338,12 @@ blending: the surface, container and outline target colors in OKLab.
 - *Hued:* the target surface keeps the face's L, takes the accent's OKLCH hue,
   and takes chroma `hue-chroma`. The container and outline follow at their
   offsets.
+- *Achromatic accent:* an accent whose Oklab chroma is below 0.02 has no hue
+  to take. Black, gray and white are valid accents, and imposing
+  `hue-chroma` on their undefined hue would invent a color: the round-4
+  review computed about `#130509` for black and `#0e0900` for gray. Such an
+  accent resolves to the neutral target. Its window's glass agrees: niri's
+  accent tint of a gray accent is a neutral chromaticity.
 
 Each workspace's crossfade, and the switch blend, interpolate these target
 families linearly in OKLab and never touch the accents. Linear OKLab
@@ -349,9 +391,12 @@ layer-rule {
   - a source `surface` lighter than OKLab L 0.4, because the remap supports a
     dark Noctalia scheme.
 - `hue-chroma` is in [0, 0.1] and defaults to 0.
-- The remap applies to the layer surface and its popups. Noctalia's menus and
-  tooltips draw on the same family, and keeping them neutral would read as a
-  seam.
+- The remap applies to the layer surface and its xdg popups. Noctalia's
+  menus and tooltips draw on the same family, and keeping them neutral would
+  read as a seam.
+- Input-method popups are exempt. A candidate window belongs to the input
+  method's client, not to the shell, so it doesn't use Noctalia's palette.
+  The existing popup rules exempt it for the same reason.
 - When several matching rules set `surface-remap`, the last one replaces the
   whole node, as `opacity` does. Fields never merge across rules. So whatever
   rules match a layer at runtime, the node it gets is one that was validated
@@ -391,9 +436,13 @@ Prism's repository:
 ### 7. Rendering integration
 
 **Layers.**
-- A `SurfaceRemapRenderElement` wraps each `WaylandSurfaceRenderElement` that
-  `MappedLayer::render_normal` and `render_popups` produce for a rule with
-  `surface-remap`, following `ClippedSurfaceRenderElement`.
+- A `SurfaceRemapRenderElement` wraps each `WaylandSurfaceRenderElement`
+  produced for a rule with `surface-remap`, following
+  `ClippedSurfaceRenderElement`. Two paths are wrapped:
+  - `MappedLayer::render_normal`;
+  - `render_popups`, for `PopupKind::Xdg` only. The decision sits in the same
+    per-kind match that already gives `PopupKind::InputMethod` the default
+    popup rules.
 - Its program is a new `surface_remap.frag` beside `clipped_surface.frag`.
 - Block-out keeps drawing its solid color, unremapped.
 
@@ -436,6 +485,7 @@ lean, and the owner kept all four at acceptance (2026-10-17):
   - a missing field in any `surface-remap` node;
   - `hue-chroma` out of range;
   - glass outside the supported range;
+  - glass with aurora or iridescence;
   - a light source surface.
 
   There is no fallback to an unremapped shell, and no runtime failure path,
@@ -461,6 +511,9 @@ lean, and the owner kept all four at acceptance (2026-10-17):
   - `#191919` at thickness 20, distance 10, IOR 1 is accepted, and its
     offsets (−0.046 / +0.044) fall inside the guaranteed bound;
   - the IOR table in section 2, row by row;
+  - the live glass with a white aurora at strength 1 passes the range check
+    but is rejected with the supported-effects message, and so is the live
+    glass with iridescence 1;
   - a sampled sweep of accepted configurations (colors, thicknesses,
     distances, IOR 1 to 3): every sample's face over neutral backdrops from
     0.05 to 0.5 stays within −0.047 and +0.04501 L of its swatch, and over
@@ -471,6 +524,13 @@ lean, and the owner kept all four at acceptance (2026-10-17):
   within one level.
 - The radii, on three palettes, with the weights section 3 lists.
 - Black and white are unchanged.
+- Achromatic accents: black, mid gray, white and a near-gray (chroma below
+  0.02) resolve to the neutral target, with finite uniforms.
+- Popups: the per-kind decision remaps xdg popups and leaves input-method
+  popups unremapped. The test client has no input-method protocol, so no
+  fixture can open a candidate window. A unit test pins the decision on the
+  popup kind, and the shared match with the existing popup-rule exemption
+  keeps the two from drifting apart.
 - The resolver:
   - settle after the dwell;
   - a brief visit doesn't count;
