@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T09:00:25Z
+updated: 2026-10-17T09:16:56Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -47,4 +47,6 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-17T08:58:34Z (material-62347d): review: spec round 2 — verdict: revise; findings: should-fix 2; reviewer: unverified (pasted by the owner)
 - 2026-10-17T09:00:14Z (material-62347d): spec revised after round 2: range check is max(T)(1-f0) <= 0.01 (bounds every channel for any backdrop); lightness bound derived across IOR 1-3, guaranteed -0.047/+0.045 (worst case IOR 1), with both counterexamples and a sampled sweep in verification; Prism emits the remap only when glass.enabled and shell.remap are both on
 - 2026-10-17T09:00:25Z (material-62347d): parked (waiting on user, review): owner re-reviews docs/specs/2026-10-16-noctalia-glass-cohesion-design.md after round 2 fixes (.worktrees/material-62347d); on approval the agent runs writing-plans there
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T09:16:56Z (material-62347d): resumed
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
