@@ -6,9 +6,9 @@ priority: 1
 size: s
 complexity: mid
 process: direct
-owner: spike/material-ac926f
+owner: materials-26.04
 created: 2026-10-09T23:29:33Z
-updated: 2026-10-09T23:50:24Z
+updated: 2026-10-17T16:36:59Z
 started: 2026-10-09T23:29:40Z
 depends: []
 parent: material-6062fd
@@ -29,3 +29,5 @@ Question: do an attenuation-tinted edge light at the rim and a resting ring spil
 - 2026-10-09T23:50:13Z (spike/material-ac926f): parked (waiting on user, review): Owner judges the attached sheet (tasks show material-ac926f prints its path; also /mnt/ssd3/niri-material/material-ac926f/sheet/edge-cohesion-sheet.png) and names cells. On a yes, start material-f72d5c (planned: spec amendment, schema reads declared, bevel.rs mirror) and material-58a1a1 (resting spill); on a no, drop both and note why. The spike branch spike/material-ac926f and the worktree .worktrees/material-ac926f are throwaway: remove after the verdict (tt-report first).
   provenance: {"harness_session":"claude-code:ff22882b-dfa1-4b0d-a989-d026665b0306","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-09T23:50:24Z (spike/material-ac926f): Pinned tests the throwaway breaks (expected; they name what the production change must declare): pipeline_optic_glsl_reads_are_declared (reflection's GLSL reads attenuation-color, attenuation-distance and bevel, which its schema reads omit) and material_source_is_prelude_then_optics_in_order_then_main (pins the beam-only spill line). All other material, ring, bevel, glass-edge and noise tests pass (155 of 157 in the filter).
+- 2026-10-17T16:36:59Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
