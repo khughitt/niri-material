@@ -6,9 +6,9 @@ priority: 2
 size: s
 complexity: mid
 process: direct
-owner: materials-26.04
+owner: material-b156e7
 created: 2026-10-17T01:24:01Z
-updated: 2026-10-17T01:24:30Z
+updated: 2026-10-17T01:24:37Z
 started: 2026-10-17T01:24:30Z
 depends: []
 parent: material-55380c
@@ -24,4 +24,6 @@ Where: docs/materials/scripts/noctalia-surfaces.sh; Noctalia v5.2.1 custom palet
 ## Notes
 
 - 2026-10-17T01:24:30Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T01:24:37Z (material-b156e7): resumed
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
