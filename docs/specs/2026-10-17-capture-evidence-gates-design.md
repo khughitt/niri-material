@@ -1,8 +1,10 @@
 # Capture gates judge measured contention, not circumstantial host events
 
-**Status:** approved by the owner for planning at spec review round 2 (2026-10-17). Revised after round 1 so that
-`judge` keeps refused preflights as failures and does not read an unscanned
-or unreleased record as a clean scan.
+**Status:** implemented on `capture-gates-evidence` (plan
+`docs/plans/2026-10-17-capture-evidence-gates.md`); retained-record replay in
+§6.2. Approved by the owner for planning at spec review round 2 (2026-10-17),
+after round 1 made `judge` keep refused preflights as failures and stop
+reading an unscanned or unreleased record as a clean scan.
 **Task:** `material-2e4ea5`, under `material-2834d7` (evidence instruments).
 **Changes:** [capture protocol design](2026-09-11-material-capture-protocol-design.md) §2.4
 (settle tolerance), [disturber hold design](2026-10-04-capture-disturber-hold-design.md) §4.3
@@ -305,6 +307,36 @@ replay records:
 
 The result goes in a `tasks note` on `material-2e4ea5` and is appended to
 this section. On 2026-10-17, the retained set holds 1330 settled windows.
+
+**Replay, 2026-10-17:** `capture-meta judge` over the 162 retained records
+exits 0 for 104, 1 for 47 and 2 for 11.
+
+- The four 2026-10-16 runs exit 0: `material-6901e0/cost-pilot-1792145107`,
+  `material-6901e0/cost-pilot-1792145940` (its scan is now `annotated`),
+  `noise-idle-ab-full-1792148041` and `noise-idle-ab-full-1792148490`.
+- The refusals of §1 still fail (exit 1):
+  `material-265eb0/trace-20260924T163317` and `trace-20260924T165644`
+  (settle), `material-265eb0/power-full-20260927T030030` (settle, P-state),
+  `hold-pilot/pc-1` and `noise-layers-pilot-1791337568` (scan), and
+  `render-order-readiness.pCbsOC` (preflight).
+- Of the 47 exit-1 records, 29 are refused preflights (every refused
+  preflight in the set; 2 of them, `noise-layers-ab-stream-1791430290` and
+  `noise-layers-preflight-1791285645`, are `not-run` rollbacks with
+  `preflight_exit` 1), 16 hold a settle refusal that still refuses, and 2
+  are the scan failures above.
+- The 11 exit-2 records are the render-order pixel runs whose recorded
+  `gpu_pstate` is a policy settle never applies, so their windows are not
+  re-judged: `render-order-aurora-depth200.MZzHGt/run`,
+  `render-order-aurora-depth.WzKHWH/run`, `render-order-behind-pixels.tyHcpH`,
+  `render-order-behind-pixels.Z6RecW`, `render-order-behind-red.064YZ3`,
+  `render-order-behind-red.qucX7K`, `render-order-old-ring.FH88OR/evidence/run`,
+  `render-order-old-ring.OoNe3c/evidence/run`,
+  `render-order-within-pixels.eS4KzB/run`, `render-order-within-pixels.V12xVh/run`
+  and `render-order-within-resume.C2DA1f/run`. No record is unreadable, never
+  released or unscanned. `render-order-within-pixels.v8Dp2y/run` records the
+  same policy but no sampled window; it is a refused preflight and exits 1.
+- 124 records predate the disturber hold, and their output says so.
+- No recorded `settled` window fails.
 
 ## 7. Documents this changes
 
