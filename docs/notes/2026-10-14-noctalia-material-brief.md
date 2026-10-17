@@ -210,7 +210,7 @@ Hue delivery:
   5.3.0 has one; it would be an upstream feature, and proposing it is the
   owner's action.
 
-Design (2026-10-16, draft): `docs/specs/2026-10-16-noctalia-glass-cohesion-design.md`.
+Design (2026-10-16, accepted 2026-10-17; plan docs/plans/2026-10-17-noctalia-glass-cohesion.md): `docs/specs/2026-10-16-noctalia-glass-cohesion-design.md`.
 After the owner chose C, it takes neither A nor a palette route. niri remaps
 the shell's surface family to the glass face and the held hue, because a
 Noctalia palette change runs every template and `colors_changed`.
