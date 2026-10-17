@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: research/material-ffd61f-r1
 created: 2026-10-06T18:41:37Z
-updated: 2026-10-15T22:32:11Z
+updated: 2026-10-17T02:15:32Z
 started: 2026-10-15T22:07:20Z
 completed: 2026-10-15T22:32:11Z
 depends: []
@@ -47,3 +47,4 @@ Ideas it wakes: On completion, run tasks note on material-1c5a30 and material-f3
   provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-15T22:32:11Z (research/material-ffd61f-r1): Review rounds 1-3 addressed in the dynamics brief: frame-request (tile are_animations_ongoing) checks for every scene, idle (S6/S7) and motion-policy (S8/S9) scenes with drift-hz 4, D measured from the last trigger, defined overcast/sun controls, and real-time 25 fps clips for judging 3/6/12 s pacing. Recommendation unchanged.
   provenance: {"harness_session":"claude-code:77182cee-3286-44f3-9666-0bc89bdd1b7a","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T02:15:32Z (materials-26.04): review: impl round 4 — verdict: revise; findings: Important 2; reviewer: unverified (relayed by user)
