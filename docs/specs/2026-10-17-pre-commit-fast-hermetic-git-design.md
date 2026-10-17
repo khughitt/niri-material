@@ -63,8 +63,9 @@ job already runs that way, since its runner has no global config.
    `test_package_pin`, `test_capture_meta`, `test_glass_optic_smoke`) become a
    call to `isolate(os.environ)`. Two modules that run git with no scrub today
    gain the same call: `test_gates`, which builds fixture repositories, and
-   `test_optic_settling`, whose source-commit lookups (`git -C <root>
-   rev-parse HEAD`) an inherited `GIT_DIR` would point at another repository.
+   `test_optic_settling`, whose source-commit lookups (`git -C <checkout>
+   rev-parse HEAD`, read from this checkout, not a fixture) an inherited
+   `GIT_DIR` would point at another repository.
    A focused `just test-one` run of one module, which bypasses the
    coordinator, stays hermetic too. The call is idempotent.
 4. **Tests.**
@@ -82,9 +83,10 @@ job already runs that way, since its runner has no global config.
      list) is imported in a subprocess whose environment carries a decoy
      `GIT_DIR`, `GIT_INDEX_FILE` and `GIT_CONFIG_GLOBAL`. After import, that
      environment must be hermetic.
-   - *Focused run.* One `test_optic_settling` case that reads its fixture's
+   - *Focused run.* One `test_optic_settling` case that reads the checkout's
      source commit runs as a focused `python3 -m unittest` subprocess with
-     `GIT_DIR` naming a decoy repository, and passes with the fixture's commit.
+     `GIT_DIR` naming a decoy repository whose HEAD differs. It passes, which
+     means it recorded the checkout's HEAD and not the decoy's.
    - *Coordinator.* A worker runs with `GIT_CONFIG_GLOBAL=/dev/null` and
      `GIT_CONFIG_NOSYSTEM=1`.
 
