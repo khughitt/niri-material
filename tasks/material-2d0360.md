@@ -4,8 +4,9 @@ title: Explore continuous frosted-glass strength
 status: idea
 priority: 2
 reviewed: true
+awaiting_user: true
 created: 2026-10-12T10:50:30Z
-updated: 2026-10-14T10:43:38Z
+updated: 2026-10-17T17:34:43Z
 depends: []
 tags: []
 source: "mindful:thought:fc0a7db0d7bbae0edfa27a6a310d25d3"
