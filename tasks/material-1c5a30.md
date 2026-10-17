@@ -4,8 +4,8 @@ title: "Lighting spike: sunrise, lanterns, fireflies, warm organic light"
 status: idea
 priority: 2
 created: 2026-09-06T22:07:49Z
-updated: 2026-10-15T22:15:33Z
-depends: []
+updated: 2026-10-17T02:04:44Z
+depends: [material-415d0c]
 parent: material-53f873
 tags: [rendering, lighting, spike]
 source: "mindful:thought:fee58ae2c54b4072ad2b0ba02a2cf1d1"
