@@ -1,10 +1,10 @@
 ---
 id: material-62347d
 title: Explore material treatment for Noctalia bars and panels
-status: idea
+status: todo
 priority: 2
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T02:03:13Z
+updated: 2026-10-17T02:10:30Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
