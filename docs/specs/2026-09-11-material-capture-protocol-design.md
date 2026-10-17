@@ -168,7 +168,10 @@ lane), and GPU power inter-quartile range ≤ 1.0 W. A `settle` passes when its
 medians are within tolerance of the baseline: CPU ± 5 points, available memory
 within 5 % of `MemTotal` of the baseline and still above the floor, GPU
 utilization ± 3 points, GPU power ± 1.5 W, and the same P-state and client
-constraints. The memory floor is a fraction rather than a byte count because
+constraints. The GPU power tolerance applies on the dedicated lane, and on the
+headless lane only when a GPU client appears in the window; a client-free
+headless window records a power departure as an annotation
+([gates design](2026-10-17-capture-evidence-gates-design.md) §4.1). The memory floor is a fraction rather than a byte count because
 the same rule must hold on a 16 GiB laptop and this 125 GiB host.
 
 These numbers are defaults, overridable with `--threshold KEY=VALUE`, and every

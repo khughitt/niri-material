@@ -391,6 +391,16 @@ class ShowTests(unittest.TestCase):
                        "cell-1: begun", "never finished"):
             self.assertIn(needle, text)
 
+    def test_show_prints_power_steps_annotations_and_rules(self):
+        record = {"schema": 1, "run": {"id": "r", "lane": "headless", "started": STARTED},
+                  "preflight": {"verdict": "quiet", "rules": "2026-10-17"},
+                  "sub_runs": [{"name": "none-b3-1", "verdict": "settled", "gpu_power_step_w": 6.69,
+                                "annotations": [{"rule": "unclaimed-power-step", "detail": "gpu_power_w 17.115 is 6.725 above baseline 10.39; no GPU client in the window"}]}]}
+        text = cm.render(record)
+        self.assertIn("preflight quiet  rules 2026-10-17", text)
+        self.assertIn("none-b3-1: settled  step +6.69 W", text)
+        self.assertIn("    annotated unclaimed-power-step: gpu_power_w 17.115 is 6.725 above baseline 10.39", text)
+
 
 class FakeProc:
     def __init__(self, ticks, load1=0.5, available_kib=80_000, total_kib=100_000):
@@ -556,11 +566,12 @@ class JudgementTests(unittest.TestCase):
         samples = quiet_samples()
         self.assertEqual(cm.judge_quiet(cm.summarize(samples), samples, cm.DEFAULT_THRESHOLDS, "headless"), [])
         samples = quiet_samples(3, power_w=24.1)
-        reasons = cm.judge_settled(cm.summarize(samples), samples, cm.summarize(quiet_samples()), cm.DEFAULT_THRESHOLDS, "headless")
+        reasons, _ = cm.judge_settled(cm.summarize(samples), samples, cm.summarize(quiet_samples()), cm.DEFAULT_THRESHOLDS, "headless")
         self.assertIn("gpu_power_w 24.1 exceeds baseline 18.4 by more than 1.5", " ".join(reasons))
         dropped = quiet_samples(3)
         for sample in dropped: sample.mem_available_kib = 70_000
-        self.assertIn("mem_available_pct", " ".join(cm.judge_settled(cm.summarize(dropped), dropped, cm.summarize(quiet_samples()), cm.DEFAULT_THRESHOLDS, "headless")))
+        reasons, _ = cm.judge_settled(cm.summarize(dropped), dropped, cm.summarize(quiet_samples()), cm.DEFAULT_THRESHOLDS, "headless")
+        self.assertIn("mem_available_pct", " ".join(reasons))
 
     def test_each_quiet_threshold_and_lane_client_refuses(self):
         for key, value, needle in (("util_pct", 35.0, "gpu_util_pct"), ("pstate", "P0", "gpu_pstate")):
@@ -583,6 +594,68 @@ class JudgementTests(unittest.TestCase):
         self.assertEqual(cm.parse_thresholds(["cpu_busy_pct=101", "gpu_power_iqr_w=2000"])["cpu_busy_pct"], 101.0)
         for pair in ("nonsense=1", "load1=nan", "load1=-1", "gpu_pstate=X8"):
             with self.assertRaises(cm.CannotRun): cm.parse_thresholds([pair])
+
+
+DESKTOP = ("Xwayland", "kitty", "niri", "noctalia", "qs")
+
+
+def window(power, iqr=0.2, util=0.0, cpu=1.0, mem=80.0, pstates=("P8",), graphics=(), compute=()):
+    """A settle window's summary, as capture.json records it."""
+    return {"cpu_busy_pct": cpu, "mem_available_pct": mem, "gpu_util_pct": util, "gpu_power_w": power,
+            "gpu_power_iqr_w": iqr, "gpu_pstates": list(pstates),
+            "gpu_clients": {"compute": list(compute), "graphics": list(graphics)}}
+
+
+class GateSettleTests(unittest.TestCase):
+    """Recorded windows from retained runs (2026-10-17 gates design §6.1)."""
+
+    def judged(self, summary, baseline, lane="headless"):
+        return cm.judge_window(summary, baseline, cm.DEFAULT_THRESHOLDS, lane)
+
+    def test_client_free_floor_steps_from_2026_10_16_are_annotated(self):
+        cases = (  # (run/sub-run, window, baseline, detail)
+            ("noise-idle-ab-full-1792148041/none-b3-1", window(17.115, iqr=0.027), window(10.39),
+             "gpu_power_w 17.115 is 6.725 above baseline 10.39; no GPU client in the window"),
+            ("noise-idle-ab-full-1792148490/none-b1-1", window(10.39, iqr=0.285, cpu=4.2), window(17.125, cpu=4.2),
+             "gpu_power_w 10.39 is 6.735 below baseline 17.125; no GPU client in the window"),
+            ("cost-pilot-1792145107/tilt10-a2", window(10.685, iqr=0.188, cpu=0.9), window(8.945, cpu=1.1),
+             "gpu_power_w 10.685 is 1.74 above baseline 8.945; no GPU client in the window"))
+        for name, summary, baseline, detail in cases:
+            with self.subTest(name):
+                self.assertEqual(self.judged(summary, baseline),
+                                 ([], [{"rule": "unclaimed-power-step", "detail": detail}]))
+
+    def test_the_2026_09_24_idle_lock_step_still_fails_with_the_desktop_as_client(self):
+        reasons, annotations = self.judged(window(11.585, iqr=0.258, graphics=DESKTOP),
+                                           window(9.9, cpu=1.1, graphics=DESKTOP))
+        self.assertEqual(reasons, ["gpu_power_w 11.585 exceeds baseline 9.9 by more than 1.5"])
+        self.assertEqual(annotations, [])
+
+    def test_a_compute_client_alone_keeps_the_power_rule(self):
+        reasons, annotations = self.judged(window(17.0, compute=("python3",)), window(10.4))
+        self.assertIn("gpu_power_w 17.0 exceeds baseline 10.4 by more than 1.5", reasons)
+        self.assertEqual(annotations, [])
+
+    def test_contention_rules_are_unchanged_with_or_without_clients(self):
+        for graphics in (DESKTOP, ()):
+            with self.subTest(graphics=graphics):
+                reasons, _ = self.judged(window(10.035, util=5.0, graphics=graphics),
+                                         window(10.055, util=0.0, graphics=graphics))
+                self.assertIn("gpu_util_pct 5.0 exceeds baseline 0.0 by more than 3.0", reasons)
+        reasons, _ = self.judged(window(10.755, pstates=("P5", "P8")), window(10.555), lane="dedicated")
+        self.assertIn("gpu_pstate ['P5', 'P8'] not always P8", reasons)
+
+    def test_dedicated_power_still_fails_without_clients(self):
+        reasons, annotations = self.judged(window(17.0), window(10.4), lane="dedicated")
+        self.assertEqual(reasons, ["gpu_power_w 17.0 exceeds baseline 10.4 by more than 1.5"])
+        self.assertEqual(annotations, [])
+
+    def test_power_spread_is_annotated_only_when_unclaimed(self):
+        self.assertEqual(self.judged(window(10.2, iqr=1.328), window(10.15)),
+                         ([], [{"rule": "unclaimed-power-spread",
+                                "detail": "gpu_power_iqr_w 1.328 exceeds 1.0; no GPU client in the window"}]))
+        self.assertEqual(self.judged(window(10.2, iqr=1.328, graphics=("niri",)), window(10.15, graphics=("niri",))),
+                         ([], []))
 
 
 class PreflightTests(unittest.TestCase):
@@ -883,6 +956,36 @@ class SettleTests(unittest.TestCase):
             finally:
                 if saved is None: os.environ.pop("XDG_RUNTIME_DIR", None)
                 else: os.environ["XDG_RUNTIME_DIR"] = saved
+
+    def test_client_free_power_step_settles_with_an_annotation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                cm.settle(run, "none-b3-1", [run / "A.kdl"], 3, FakeProc([(i * 2, i * 100) for i in range(9)]),
+                          FakeGpu([dict(QUIET, power_w=25.0)] * 3, clients={"compute": [], "graphics": []}),
+                          sleep=lambda s: None, lock=lambda: lock)
+            entry = cm.load_record(run)["sub_runs"][0]
+            self.assertEqual(entry["verdict"], "settled")
+            self.assertNotIn("reason", entry)
+            self.assertEqual([a["rule"] for a in entry["annotations"]], ["unclaimed-power-step"])
+            self.assertEqual(entry["gpu_power_step_w"], 6.6)
+            self.assertIn("annotated: unclaimed-power-step", stderr.getvalue())
+
+    def test_power_step_is_taken_against_the_previous_settled_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, lock = self.prepared(directory)                  # baseline 18.4 W, niri as client
+            with self.assertRaises(cm.Refused):
+                self.settled(run, lock, "R", power_w=24.1)        # refused: never a step's reference
+            self.settled(run, lock, "A", power_w=19.0)
+            self.settled(run, lock, "C", power_w=19.5)
+            steps = [(e["name"], e["verdict"], e["gpu_power_step_w"]) for e in cm.load_record(run)["sub_runs"]]
+            self.assertEqual(steps, [("R", "refused", 5.7), ("A", "settled", 0.6), ("C", "settled", 0.5)])
+
+    def test_preflight_records_the_rules_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, _ = self.prepared(directory)
+            self.assertEqual(cm.load_record(run)["preflight"]["rules"], "2026-10-17")
 
 
 class EndToEndTest(unittest.TestCase):

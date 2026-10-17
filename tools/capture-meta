@@ -28,6 +28,7 @@ TOOL = str(pathlib.Path(__file__).resolve())
 Host = ch.Host
 
 SCHEMA = 1
+RULES = "2026-10-17"   # the gate rules a run is judged by: docs/specs/2026-10-17-capture-evidence-gates-design.md
 RECORD = "capture.json"
 LOCK_NAME = "capture-meta.lock"
 
@@ -422,17 +423,48 @@ def describe_load(top):
     return "; ".join(describe_process(p) for p in top) or "no process named"
 
 
-def judge_settled(summary, samples, baseline, thresholds, lane):
-    reasons = []
-    for key, limit in (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", "settle_mem_pct"), ("gpu_util_pct", "settle_gpu_util_pct"), ("gpu_power_w", "settle_gpu_power_w")):
+SETTLE_DELTAS = (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", "settle_mem_pct"),
+                 ("gpu_util_pct", "settle_gpu_util_pct"), ("gpu_power_w", "settle_gpu_power_w"))
+
+
+def unclaimed_power(summary, lane):
+    """GPU power is no claim of the nested lane, and with no GPU client in the window
+    nothing could have competed for it (2026-10-17 gates design §2)."""
+    clients = summary["gpu_clients"]
+    return lane == "headless" and not clients["graphics"] and not clients["compute"]
+
+
+def judge_window(summary, baseline, thresholds, lane):
+    """The settle rules a window's summary carries: (reasons, annotations). settle and judge share it."""
+    reasons, annotations = [], []
+    unclaimed = unclaimed_power(summary, lane)
+    for key, limit in SETTLE_DELTAS:
         delta = summary[key] - baseline[key]
-        if abs(delta) > thresholds[limit]:
-            verb = "exceeds" if delta > 0 else "falls below"
-            reasons.append(f"{key} {summary[key]} {verb} baseline {baseline[key]} by more than {thresholds[limit]}")
+        if abs(delta) <= thresholds[limit]:
+            continue
+        if key == "gpu_power_w" and unclaimed:
+            side = "above" if delta > 0 else "below"
+            annotations.append({"rule": "unclaimed-power-step",
+                                "detail": f"gpu_power_w {summary[key]} is {round(abs(delta), 3)} {side} "
+                                          f"baseline {baseline[key]}; no GPU client in the window"})
+            continue
+        verb = "exceeds" if delta > 0 else "falls below"
+        reasons.append(f"{key} {summary[key]} {verb} baseline {baseline[key]} by more than {thresholds[limit]}")
+    if unclaimed and summary["gpu_power_iqr_w"] > thresholds["gpu_power_iqr_w"]:
+        annotations.append({"rule": "unclaimed-power-spread",
+                            "detail": f"gpu_power_iqr_w {summary['gpu_power_iqr_w']} exceeds "
+                                      f"{thresholds['gpu_power_iqr_w']}; no GPU client in the window"})
+    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]:
+        reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
+    return reasons + client_reasons([summary["gpu_clients"]], lane), annotations
+
+
+def judge_settled(summary, samples, baseline, thresholds, lane):
+    reasons, annotations = judge_window(summary, baseline, thresholds, lane)
     floor = thresholds["mem_available_pct_min"]
-    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples): reasons.append(f"mem_available_pct below floor {floor}")
-    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]: reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
-    return reasons + client_reasons([s.gpu_clients for s in samples], lane)
+    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples):
+        reasons.append(f"mem_available_pct below floor {floor}")
+    return reasons, annotations
 
 
 def load_record(run_dir):
@@ -942,7 +974,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         lock_info = acquire_lock(lock_file, owner_pid, run["id"], run_dir=run_dir)
     except Refused as error:
         write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": [str(error)],
-                                             "thresholds": thresholds})
+                                             "thresholds": thresholds, "rules": RULES})
         raise
     held = False
     try:
@@ -954,7 +986,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         if early:
             write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": early,
                                                  "thresholds": thresholds, "lock": lock_info,
-                                                 "host_condition": condition})
+                                                 "host_condition": condition, "rules": RULES})
             raise Refused("; ".join(early))
         kinds = ch.HOLD_KINDS if lane in MEASURED_LANES else PIXEL_HOLD_KINDS
         plan = ch.plan_hold(host, socket, kinds)
@@ -967,7 +999,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         if lane == "pixels":
             write_section(run_dir, "environment", environment(gpu, tools, proc))
             write_section(run_dir, "preflight", {"verdict": "unsampled", "at": now_rfc3339(), "lock": lock_info,
-                                                 "host_condition": condition})
+                                                 "host_condition": condition, "rules": RULES})
             return
         write_section(run_dir, "environment", environment(gpu, tools, proc))
         samples = sample_stream(proc, gpu, seconds, sleep)
@@ -976,7 +1008,7 @@ def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tool
         reasons = judge_quiet(summary, samples, thresholds, lane)
         section = {"verdict": "quiet" if not reasons else "refused", "at": now_rfc3339(),
                    "reasons": reasons, "thresholds": thresholds, "lock": lock_info,
-                   "host_condition": condition}
+                   "host_condition": condition, "rules": RULES}
         message = "; ".join(reasons)
         if any(summary[key] > thresholds[key] for key in HOST_LOAD_KEYS):
             try:
@@ -1045,7 +1077,7 @@ def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=
     thresholds = record["preflight"].get("thresholds")
     expected = record["preflight"].get("lock")
     threshold_keys = {"settle_cpu_busy_pct", "settle_mem_pct", "settle_gpu_util_pct",
-                      "settle_gpu_power_w", "mem_available_pct_min", "gpu_pstate"}
+                      "settle_gpu_power_w", "mem_available_pct_min", "gpu_pstate", "gpu_power_iqr_w"}
     if (not isinstance(thresholds, dict) or not threshold_keys <= thresholds.keys()
             or not isinstance(expected, dict) or "owner_pid" not in expected
             or isinstance(expected["owner_pid"], bool) or not isinstance(expected["owner_pid"], int)
@@ -1060,12 +1092,19 @@ def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=
     started = now_rfc3339()
     samples = sample_stream(proc, gpu, seconds, sleep)
     summary = summarize(samples)
-    reasons = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
+    reasons, annotations = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
+    previous = next((e["gpu_power_w"] for e in reversed(record.get("sub_runs", []))
+                     if e["verdict"] == "settled" and "gpu_power_w" in e), record["baseline"]["gpu_power_w"])
     entry = {"name": sub_run, "started": started, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
+             "gpu_power_step_w": round(summary["gpu_power_w"] - previous, 3),
              "inputs": entry_inputs, "verdict": "settled" if not reasons else "refused"}
+    if annotations:
+        entry["annotations"] = annotations
     if reasons:
         entry["reason"] = "; ".join(reasons)
     append_sub_run(run_dir, entry)
+    for annotation in annotations:
+        print(f"capture-meta: annotated: {annotation['rule']}: {annotation['detail']}", file=sys.stderr)
     if reasons:
         raise Refused(entry["reason"])
 
@@ -1303,7 +1342,8 @@ def render(record):
     if preflight:
         at = f" at {preflight['at']}" if "at" in preflight else ""
         condition = f"  host {preflight['host_condition']}" if "host_condition" in preflight else ""
-        lines += ["", f"preflight {preflight.get('verdict')}{at}{condition}"]
+        rules = f"  rules {preflight['rules']}" if "rules" in preflight else ""
+        lines += ["", f"preflight {preflight.get('verdict')}{at}{condition}{rules}"]
         for reason in preflight.get("reasons", []):
             lines.append(f"  {reason}")
         host_load = preflight.get("host_load")
@@ -1347,7 +1387,9 @@ def render(record):
                 checked = f"  renderer {entry['renderer']['verdict']}"
             elif entry["verdict"] == "settled" and run.get("lane") in MEASURED_LANES:
                 checked = "  renderer unchecked"   # release refuses this run (spec §6.3)
-            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{checked}")
+            step = f"  step {entry['gpu_power_step_w']:+} W" if "gpu_power_step_w" in entry else ""
+            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{step}{checked}")
+            lines += [f"    annotated {a['rule']}: {a['detail']}" for a in entry.get("annotations", [])]
     return "\n".join(lines) + "\n"
 
 
