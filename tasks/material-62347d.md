@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T09:43:59Z
+updated: 2026-10-17T09:44:05Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -54,3 +54,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-17T09:17:01Z (material-62347d): review: spec round 3 — verdict: accept; findings: minor 1; reviewer: unverified (pasted by the owner)
 - 2026-10-17T09:17:07Z (material-62347d): owner (Keith) 2026-10-17: spec accepted for planning; section 8 defaults kept (hold last hue, 1 s dwell, hue only, bar + attached + floating panels)
 - 2026-10-17T09:40:09Z (material-62347d): review: spec round 4 — verdict: revise; findings: must-fix 1, should-fix 2; reviewer: unverified (pasted by the owner, forwarded from session niri-material-97)
+- 2026-10-17T09:44:05Z (material-62347d): spec revised after round 4: aurora and iridescence rejected for surface-remap (they light the flat face); achromatic accents (Oklab chroma < 0.02) resolve neutral; remap reaches xdg popups only, input-method popups exempt in the same per-kind match. Spec section 3 overlay claim corrected while planning (vivid primaries leave the family by 8% alpha). Plan written: docs/plans/2026-10-17-noctalia-glass-cohesion.md (9 tasks; Task 8 is the owner's sheet gate).
