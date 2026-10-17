@@ -1,6 +1,6 @@
 # Pre-commit fast route: hermetic git for tooling fixtures
 
-Status: Approved (material-561927); implementation pending.
+Status: Implemented on the branch; post-merge verification pending (material-561927).
 
 ## 1. Incident
 
@@ -151,6 +151,17 @@ recorded before merging.
    tooling.
 4. `tt-latency verify material-561927 --after <branch remedy timestamp>
    --dry-run` exits 0. It is a check only and records nothing.
+
+**Branch results** (2026-10-17, global hook installed, load average under 3).
+`just check` and `just check-full` exit 0 with 535 tests each (529 plus the six
+this branch adds); their 40 and 2 `SKIP` lines match `materials-26.04`, whose
+tooling took 40.1 s fast and 38.8 s full against the branch's 24.1 s and 22.6 s.
+`test_upstream_report` took 7.8 s and fast tooling 25.3 s. Three staged
+fast-route hook runs took 38.9, 31.9 and 31.5 s (median 31.9 s); they run the
+hook with `OPS_CHECK_STALE_INDEX=allow`, since ops-check's stale-index guard
+refuses a private index whose staged blob the working tree lacks. `tt-latency
+verify material-561927 --after 2026-10-17T18:09:38Z --dry-run` exits 0: "every
+obligation is met".
 
 **After merge** (closure):
 

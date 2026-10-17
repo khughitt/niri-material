@@ -482,7 +482,7 @@ stage_run() (  # $1: path whose staged blob gains a trailing newline
   mode=$(git ls-files -s -- "$1" | cut -d' ' -f1)
   blob=$( { cat "$1"; echo; } | git hash-object -w --stdin)
   GIT_INDEX_FILE=$idx git update-index --cacheinfo "$mode,$blob,$1"
-  s=$(date +%s.%N); GIT_INDEX_FILE=$idx .githooks/pre-commit >/dev/null 2>&1; rc=$?
+  s=$(date +%s.%N); GIT_INDEX_FILE=$idx OPS_CHECK_STALE_INDEX=allow .githooks/pre-commit >/dev/null 2>&1; rc=$?
   echo "$1 rc=$rc $(python3 -c "print(round($(date +%s.%N)-$s,1))") s"
 )
 before=$(git status --porcelain)
@@ -490,6 +490,8 @@ for i in 1 2 3; do stage_run tools/upstream-report; done
 [ "$(git status --porcelain)" = "$before" ] && echo "working tree unchanged" || git status --short
 jq -r --arg since "<branch remedy timestamp>" 'select(.project=="material" and .target=="hook-pre-commit-fast" and .at>=$since) | "\(.at) \(.seconds) exit=\(.exit)"' ~/.local/share/ops/runs.jsonl
 ```
+
+`OPS_CHECK_STALE_INDEX=allow` is ops-check's override for intended staging: without it the stale-index guard refuses the private index (its staged blob is not in the working tree), exit 1 at ~5 s. Added at Task 5 execution.
 
 Expected: `working tree unchanged`; three `rc=0` runs; median ≤ 40 s. These runs also prove the hook's inherited `GIT_INDEX_FILE` reaches no fixture.
 
