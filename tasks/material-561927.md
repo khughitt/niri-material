@@ -7,7 +7,7 @@ size: m
 complexity: high
 process: planned
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T14:00:32Z
+updated: 2026-10-17T14:41:50Z
 depends: []
 tags: [halt, test-latency, testing]
 source: "tt-latency:titan:2026-10-17T14:00:24Z"
@@ -20,3 +20,4 @@ Process: planned
 ## Notes
 
 - 2026-10-17T14:00:32Z (materials-26.04): breach: titan window 2026-10-10T14:00:24Z..2026-10-17T14:00:24Z: hook-pre-commit-fast median 54.226 s, limit 45 s, 28 runs on 6 days
+- 2026-10-17T14:41:50Z (material-62347d): halt override: attempted material-591938 by 4e29fe84-ae01-4701-a4ac-da51f5fe6c77: close-out of the in-progress material-62347d (task records only: file Prism + rollout follow-ups, close the goal); no code, no effect on hook latency
