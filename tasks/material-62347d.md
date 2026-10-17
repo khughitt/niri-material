@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T09:44:26Z
+updated: 2026-10-17T10:16:22Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -56,4 +56,6 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-17T09:40:09Z (material-62347d): review: spec round 4 — verdict: revise; findings: must-fix 1, should-fix 2; reviewer: unverified (pasted by the owner, forwarded from session niri-material-97)
 - 2026-10-17T09:44:05Z (material-62347d): spec revised after round 4: aurora and iridescence rejected for surface-remap (they light the flat face); achromatic accents (Oklab chroma < 0.02) resolve neutral; remap reaches xdg popups only, input-method popups exempt in the same per-kind match. Spec section 3 overlay claim corrected while planning (vivid primaries leave the family by 8% alpha). Plan written: docs/plans/2026-10-17-noctalia-glass-cohesion.md (9 tasks; Task 8 is the owner's sheet gate).
 - 2026-10-17T09:44:26Z (material-62347d): parked (waiting on user, review): owner reviews the round-4 spec revision and the plan docs/plans/2026-10-17-noctalia-glass-cohesion.md (.worktrees/material-62347d, commit dfd38b25) and picks subagent-driven or native execution; the agent then runs it there
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:16:22Z (material-62347d): resumed
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
