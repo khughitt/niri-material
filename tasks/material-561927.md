@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T18:31:31Z
+updated: 2026-10-17T18:32:23Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -77,3 +77,5 @@ Process: planned
 - 2026-10-17T18:31:19Z (fix/material-561927): minor (deferred): FocusedRunTests checks only returncode; a future skip on the prepare case would pass vacuously — also assert 'Ran 1 test' and no 'skipped' in the child's stderr
 - 2026-10-17T18:31:25Z (fix/material-561927): minor (deferred): InventoryTests GIT_USE comment overstates coverage — test_glass_optic_smoke calls isolate but never quotes 'git', so the probe does not guard it; scan globs test_*.py while discovery uses test*.py
 - 2026-10-17T18:31:31Z (fix/material-561927): minor (deferred): inventory probe catches git-before-isolate at import only when that call raises (decoy GIT_DIR missing); a check=False call would pass — accepted design limit
+- 2026-10-17T18:32:23Z (fix/material-561927): parked (waiting on agent): merge fix/material-561927, then Task 6 post-merge verification from the main checkout
+  provenance: {"harness_session":"claude-code:d1c980a7-486b-490c-9a46-066f589ce6a6","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
