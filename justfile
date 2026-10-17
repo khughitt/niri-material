@@ -37,7 +37,7 @@ full_check_cmd := check_before_cmd + " && " + tooling_full_cmd + " && " + check_
 
 # Prose-only trees: material docs and wiki contain Rust test inputs.
 # Keep the repository-specific consistency checks in both commit paths.
-tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py docs/materials/scripts/vt-lib.sh docs/materials/scripts/optic-settling-smoke.sh docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/*-client.c .githooks/* justfile .github/workflows/*"
+tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py tools/hermetic_git.py docs/materials/scripts/vt-lib.sh docs/materials/scripts/optic-settling-smoke.sh docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/*-client.c .githooks/* justfile .github/workflows/*"
 docs_paths := "README.md AGENTS.md CONTRIBUTING.md docs/specs/*.md docs/plans/*.md docs/notes/*.md tasks/*.md"
 docs_check_cmd := hygiene_cmd + " && " + tooling_paths_cmd + " && " + check_after_cmd
 # The hooks regenerate and stage the divergence report before checking it: its
