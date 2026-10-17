@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T16:15:57Z
+updated: 2026-10-17T16:16:36Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -37,3 +37,4 @@ Process: planned
 - 2026-10-17T16:14:48Z (fix/material-561927): review: spec round 1 — verdict: revise; findings: Must fix 2, Should fix 1; reviewer: unverified (relayed by user)
 - 2026-10-17T16:14:54Z (fix/material-561927): Spec review round 1: (1) acceptance must be post-merge: branch acceptance with --dry-run, merge, three qualifying post-merge runs, recording verify from the registered checkout (tt-latency refuses with an active worktree claim or newer worktree record); (2) add test_optic_settling (git at 578/626/843) to the isolation inventory with a focused poisoned-env test; (3) marker test needs a control commit proving the hook fires, plus a global core.hooksPath fixture for older git
 - 2026-10-17T16:15:57Z (fix/material-561927): spec round 2: two-stage verification (branch --dry-run; merge = remedy timestamp; release claim; three qualifying post-merge runs; recording verify from the registered checkout); test_optic_settling added to isolation with inventory import test and a focused poisoned-GIT_DIR run; suppression tests use a control commit for both config-hook and global core.hooksPath forms
+- 2026-10-17T16:16:36Z (fix/material-561927): spec round 2 correction: test_optic_settling's git lookups read the checkout's own HEAD (Path(__file__).parents[1]), not a fixture; focused-run test asserts the checkout HEAD wins over a decoy GIT_DIR
