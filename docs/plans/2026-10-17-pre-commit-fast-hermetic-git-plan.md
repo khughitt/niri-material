@@ -522,9 +522,29 @@ Runs from the registered checkout (the main checkout that `tasks projects` lists
 
 - [ ] **Step 2: Merge and stamp the remedy time.** In the main checkout, `git status --porcelain` must not list `docs/materials/upstream-divergence.md` or any path the branch touches; otherwise stop and resolve with whoever owns those edits. Then:
 
+The block stops, without stamping anything, unless the merge completed: a conflicting `--no-ff` merge leaves `MERGE_HEAD` and unmerged paths behind, and those are checked before the timestamp is written. Shell state does not persist between commands, so the remedy timestamp lives in a file in the git directory, and later steps read it from there.
+
 ```bash
-git merge --ff-only fix/material-561927 || git merge --no-ff fix/material-561927 -m "merge: hermetic git for tooling fixtures (material-561927)"
-REMEDY=$(date -u +%Y-%m-%dT%H:%M:%SZ); echo "$REMEDY"
+bash <<'EOF'
+set -eu
+[ "$(git branch --show-current)" = materials-26.04 ] || { echo "stop: not on materials-26.04" >&2; exit 1; }
+if ! git merge --ff-only fix/material-561927; then
+  if ! git merge --no-ff fix/material-561927 -m "merge: hermetic git for tooling fixtures (material-561927)"; then
+    echo "stop: merge failed; resolve it (or git merge --abort) and rerun this step" >&2; exit 1
+  fi
+fi
+if git rev-parse -q --verify MERGE_HEAD >/dev/null; then echo "stop: a merge is still in progress" >&2; exit 1; fi
+[ -z "$(git diff --name-only --diff-filter=U)" ] || { echo "stop: unmerged paths remain" >&2; exit 1; }
+git merge-base --is-ancestor fix/material-561927 HEAD || { echo "stop: fix/material-561927 is not in HEAD" >&2; exit 1; }
+date -u +%Y-%m-%dT%H:%M:%SZ > "$(git rev-parse --git-path material-561927-remedy)"
+cat "$(git rev-parse --git-path material-561927-remedy)"
+EOF
+```
+
+Only when the block exits 0:
+
+```bash
+REMEDY=$(cat "$(git rev-parse --git-path material-561927-remedy)")
 tasks start material-561927
 tasks start material-c0c135
 tasks note material-561927 "remedy: fix/material-561927 merged into materials-26.04 at $REMEDY"
@@ -532,19 +552,55 @@ tasks note material-561927 "remedy: fix/material-561927 merged into materials-26
 
 - [ ] **Step 3: Retire the worktree.** So no sibling holds a newer record or a live claim when verification records:
 
+First the inspections, whose findings you act on by hand:
+
 ```bash
 tt-report
 git -C .worktrees/material-561927 status --ignored --porcelain   # copy out anything still needed; target/ is build output
 ls .worktrees/material-561927/.superpowers/sdd/ 2>/dev/null       # copy material-561927's ledger and review report out first if its Ruling/minor lines are not yet in a final message
-for p in ~/bin/* ~/.local/bin/*; do readlink -f "$p"; done | grep -F .worktrees/material-561927 && echo "host pointer into worktree: stop"
-git worktree unlock .worktrees/material-561927
-git worktree remove .worktrees/material-561927
-git branch -d fix/material-561927
 ```
+
+Then one guarded block. It refuses, and removes nothing, while any host pointer resolves into the worktree. It checks both the worktree's logical path and its real path, since `.worktrees` is a link into local storage, across every pointer location the repository instructions name: launchers in `~/bin` and `~/.local/bin`, user systemd units (links, and unit files or drop-ins that name the path), and the known config includes (`~/.config/niri`, links and files that name the path). A pointer found here was repointed by a live test and is restored first (the task's notes record what, from, to and how), then the block reruns.
+
+```bash
+bash <<'EOF'
+set -eu
+shopt -s nullglob globstar
+wt=.worktrees/material-561927
+logical=$PWD/$wt
+real=$(cd "$wt" && pwd -P)
+places=(~/bin ~/.local/bin ~/.config/systemd/user ~/.config/niri)
+hits=()
+for dir in "${places[@]}"; do
+  [ -e "$dir" ] || continue
+  for path in "$dir"/**; do
+    if [ -L "$path" ]; then
+      # -m resolves even when the target's directories do not exist; the raw text catches the rest.
+      for target in "$(readlink -m "$path")" "$(readlink "$path")"; do
+        case "$target" in "$real"|"$real"/*|"$logical"|"$logical"/*) hits+=("$path -> $target"); break ;; esac
+      done
+    fi
+  done
+  while IFS= read -r file; do hits+=("$file names the worktree"); done \
+    < <(grep -rIlsF -e "$real" -e "$logical" "$dir" || true)
+done
+if [ "${#hits[@]}" -gt 0 ]; then
+  printf 'stop: host pointer into the worktree; restore it, then rerun:\n' >&2
+  printf '  %s\n' "${hits[@]}" >&2
+  exit 1
+fi
+git worktree unlock "$wt"
+git worktree remove "$wt"
+git branch -d fix/material-561927
+EOF
+```
+
+Expected: exit 0 with the worktree and branch gone. Any `stop:` line means nothing was removed.
 
 - [ ] **Step 4: Three qualifying post-merge runs.** On the idle host (park `--reason quiet --waiting-on user --minutes 10` otherwise), in the main checkout on `materials-26.04`, run Task 5 step 4's `stage_run` block unchanged (three `tools/upstream-report` runs). Then list the post-merge window, every checkout included:
 
 ```bash
+REMEDY=$(cat "$(git rev-parse --git-path material-561927-remedy)")
 jq -r --arg since "$REMEDY" 'select(.project=="material" and .target=="hook-pre-commit-fast" and .at>=$since) | "\(.at) \(.seconds) exit=\(.exit) \(.by)"' ~/.local/share/ops/runs.jsonl
 ```
 
@@ -553,6 +609,7 @@ Expected: three `exit=0` runs from this checkout, each under 40 s. A run from an
 - [ ] **Step 5: Record verification and close.**
 
 ```bash
+REMEDY=$(cat "$(git rev-parse --git-path material-561927-remedy)")
 tt-latency verify material-561927 --after "$REMEDY" --dry-run   # must exit 0 first
 tt-latency verify material-561927 --after "$REMEDY"             # recording, once
 ```
@@ -560,10 +617,12 @@ tt-latency verify material-561927 --after "$REMEDY"             # recording, onc
 Set the spec's status line to `Status: Implemented (material-561927).` and add a "Post-merge results" paragraph with the three run seconds and the verify line. Then close Task 6's child and the parent, the parent's message carrying the verify output:
 
 ```bash
+REMEDY=$(cat "$(git rev-parse --git-path material-561927-remedy)")
 git add docs/specs/2026-10-17-pre-commit-fast-hermetic-git-design.md
 tasks done material-c0c135 "post-merge: three fast hooks <a>/<b>/<c> s; tt-latency verify exit 0"
 tasks done material-561927 "tt-latency verify material-561927 --after $REMEDY exit 0: <verify output>"
 tasks check
 git add tasks/material-c0c135.md tasks/material-561927.md
 git commit -m "docs(specs): hermetic git verified after merge (material-561927)"
+rm "$(git rev-parse --git-path material-561927-remedy)"
 ```
