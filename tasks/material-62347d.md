@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T08:47:44Z
+updated: 2026-10-17T08:50:37Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -39,3 +39,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
 - 2026-10-17T08:47:38Z (material-62347d): resumed
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T08:47:44Z (material-62347d): review: spec round 1 — verdict: revise; findings: must-fix 1, should-fix 2; reviewer: unverified (pasted by the owner)
+- 2026-10-17T08:50:37Z (material-62347d): spec revised after round 1: crossfade and switch blend interpolate OKLab target families, never accents (no gray-midpoint snap); face model is a reference swatch over B_ref 0.2 with a supported range Y(T)(1-f0) <= 0.01, rejected at load outside it; surface-remap nodes are complete and replace whole; Prism omits the rule in light mode and owns hue-chroma
