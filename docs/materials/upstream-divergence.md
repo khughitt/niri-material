@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-320 paths differ: 52 class B (seam), 221 class A (fork-only), 47 class C (scaffolding).
+322 paths differ: 54 class B (seam), 221 class A (fork-only), 47 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -72,7 +72,8 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `justfile` | C | A | +126/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
-| `niri-config/src/lib.rs` | B | M | +1919/-127 |
+| `niri-config/src/layer_rule.rs` | B | M | +69/-1 |
+| `niri-config/src/lib.rs` | B | M | +2091/-127 |
 | `niri-config/src/window_rule.rs` | B | M | +7/-0 |
 | `niri-ipc/src/lib.rs` | B | M | +162/-1 |
 | `niri-ipc/src/state.rs` | B | M | +108/-0 |
@@ -92,6 +93,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/input/pick_color_grab.rs` | B | M | +1/-0 |
 | `src/ipc/client.rs` | B | M | +56/-1 |
 | `src/ipc/server.rs` | B | M | +113/-1 |
+| `src/layer/mod.rs` | B | M | +7/-0 |
 | `src/layout/floating.rs` | B | M | +24/-6 |
 | `src/layout/mod.rs` | B | M | +176/-25 |
 | `src/layout/monitor.rs` | B | M | +200/-25 |

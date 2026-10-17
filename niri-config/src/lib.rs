@@ -547,6 +547,11 @@ where
             {
                 ctx.emit_error(DecodeError::Custom(message.into()));
             }
+            for message in
+                crate::layer_rule::validate_surface_remaps(&config.layer_rules, &config.materials)
+            {
+                ctx.emit_error(DecodeError::Custom(message.into()));
+            }
         }
 
         Ok(Self)
@@ -1405,6 +1410,172 @@ mod tests {
                 .as_ref()
                 .map(|m| m.name.as_str()),
             Some("frost")
+        );
+    }
+
+    const REMAP_GLASS: &str = r##"
+        material "tg" {
+            glass {
+                ior 1.28
+                thickness 31.2
+                attenuation-color "#0D1D1E"
+                attenuation-distance 12
+            }
+        }
+    "##;
+
+    fn remap_config(body: &str) -> String {
+        format!(
+            "{REMAP_GLASS}\nlayer-rule {{\n    match namespace=\"^bar$\"\n    surface-remap {{\n{body}\n    }}\n}}\n"
+        )
+    }
+
+    const REMAP_BODY: &str = r##"
+        surface "#151310"
+        container "#221f1c"
+        outline "#4d453c"
+        material "tg"
+        hue-chroma 0.03
+    "##;
+
+    /// `do_parse_err` with miette's line wrapping undone, so a message is
+    /// matched whole.
+    #[track_caller]
+    fn remap_err(text: &str) -> String {
+        do_parse_err(text)
+            .split_whitespace()
+            .filter(|word| *word != "│")
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn parses_surface_remap() {
+        let parsed = do_parse(&remap_config(REMAP_BODY));
+        let remap = parsed.layer_rules[0].surface_remap.as_ref().unwrap();
+        assert_eq!(
+            remap.surface,
+            Color::from_rgba8_unpremul(0x15, 0x13, 0x10, 0xff)
+        );
+        assert_eq!(
+            remap.container,
+            Color::from_rgba8_unpremul(0x22, 0x1f, 0x1c, 0xff)
+        );
+        assert_eq!(
+            remap.outline,
+            Color::from_rgba8_unpremul(0x4d, 0x45, 0x3c, 0xff)
+        );
+        assert_eq!(remap.material.name, "tg");
+        assert_eq!(remap.hue_chroma.map(|x| x.0), Some(0.03));
+    }
+
+    #[test]
+    fn surface_remap_hue_chroma_defaults_to_none() {
+        let body = REMAP_BODY.replace("hue-chroma 0.03", "");
+        let parsed = do_parse(&remap_config(&body));
+        assert_eq!(
+            parsed.layer_rules[0]
+                .surface_remap
+                .as_ref()
+                .unwrap()
+                .hue_chroma,
+            None
+        );
+    }
+
+    #[test]
+    fn surface_remap_requires_every_color_and_the_material() {
+        for (line, field) in [
+            ("surface \"#151310\"", "surface"),
+            ("container \"#221f1c\"", "container"),
+            ("outline \"#4d453c\"", "outline"),
+            ("material \"tg\"", "material"),
+        ] {
+            let err = remap_err(&remap_config(&REMAP_BODY.replace(line, "")));
+            assert!(
+                err.contains(&format!("child node `{field}` is required")),
+                "{field}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn surface_remap_rejects_unknown_material() {
+        let err = remap_err(&remap_config(&REMAP_BODY.replace("\"tg\"", "\"nope\"")));
+        assert!(err.contains("unknown material: nope"), "{err}");
+    }
+
+    #[test]
+    fn surface_remap_rejects_hue_chroma_out_of_range() {
+        let err = remap_err(&remap_config(&REMAP_BODY.replace("0.03", "0.2")));
+        assert!(err.contains("value must be between 0 and 0.1"), "{err}");
+    }
+
+    #[test]
+    fn surface_remap_rejects_glass_outside_the_range() {
+        let config =
+            remap_config(REMAP_BODY).replace("attenuation-distance 12", "attenuation-distance 20");
+        let err = remap_err(&config);
+        assert!(
+            err.contains("surface-remap: material \"tg\" transmits"),
+            "{err}"
+        );
+        assert!(
+            err.contains("the shell match supports dark glass up to 0.01"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn surface_remap_rejects_a_light_source_surface() {
+        let err = remap_err(&remap_config(&REMAP_BODY.replace("#151310", "#e8e1dc")));
+        assert!(
+            err.contains("the remap supports a dark Noctalia scheme"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn surface_remap_rejects_glass_that_lights_its_face() {
+        let config = remap_config(REMAP_BODY).replace(
+            "attenuation-distance 12",
+            "attenuation-distance 12\n                iridescence 1",
+        );
+        let err = remap_err(&config);
+        assert!(
+            err.contains("sets iridescence, which lights the flat face"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn surface_remap_rejects_a_response() {
+        let err = remap_err(&remap_config(
+            &REMAP_BODY.replace("material \"tg\"", "material \"tg\" response=\"default\""),
+        ));
+        assert!(
+            err.contains("surface-remap: material \"tg\" takes no response"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn two_rules_keep_their_own_complete_nodes() {
+        let second = REMAP_BODY
+            .replace("#151310", "#111318")
+            .replace("hue-chroma 0.03", "");
+        let text = format!(
+            "{}\nlayer-rule {{\n    match namespace=\"^bar$\"\n    surface-remap {{\n{second}\n    }}\n}}\n",
+            remap_config(REMAP_BODY)
+        );
+        let parsed = do_parse(&text);
+        let first = parsed.layer_rules[0].surface_remap.as_ref().unwrap();
+        let later = parsed.layer_rules[1].surface_remap.as_ref().unwrap();
+        assert_eq!(first.hue_chroma.map(|x| x.0), Some(0.03));
+        assert_eq!(later.hue_chroma, None);
+        assert_eq!(
+            later.surface,
+            Color::from_rgba8_unpremul(0x11, 0x13, 0x18, 0xff)
         );
     }
 
@@ -3731,6 +3902,7 @@ mod tests {
                             saturation: None,
                         },
                     },
+                    surface_remap: None,
                 },
             ],
             binds: Binds(
