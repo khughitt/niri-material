@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T16:23:28Z
+updated: 2026-10-17T16:24:20Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -44,3 +44,4 @@ Process: planned
   provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T16:23:22Z (fix/material-561927): review: spec round 2 — verdict: revise; findings: P2 1; reviewer: unverified (relayed by user)
 - 2026-10-17T16:23:28Z (fix/material-561927): Spec review round 2 P2: a passing focused optic-settling case proves nothing, since fixture and optic-settling-smoke.sh both inherit GIT_DIR and agree on the decoy HEAD (reviewer confirmed via just test-one). Require comparing recorded source_commit against the checkout HEAD read independently under a clean env. User: after fixing, draft the plan.
+- 2026-10-17T16:24:20Z (fix/material-561927): spec round 3: prepare case asserts manifest source_commit equals the checkout HEAD read under a per-call clean env; focused decoy-GIT_DIR run asserts decoy HEAD differs, then that the case passes
