@@ -39,6 +39,7 @@ pub mod layer_rule;
 pub mod layout;
 pub mod material;
 pub mod misc;
+pub mod oklab;
 pub mod output;
 pub mod recent_windows;
 pub mod signal;
