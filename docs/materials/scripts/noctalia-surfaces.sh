@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Noctalia surfaces in a nested niri (material-e27dbc): a surface inventory and
-# a baseline-versus-treated panel comparison, without the live desktop.
+# a panel comparison across appearance cases, without the live desktop.
 #
 # Each case runs a headless Weston, a nested niri and an isolated Noctalia:
 # its own config, state, data and cache directories and a private D-Bus
@@ -19,15 +19,25 @@
 #             glass: bar and attached panels at 0.55 like the floating ones,
 #             panel corners scaled to the windows' 20 px, and the glass's
 #             noise (0.03) and saturation (0.95) on the shell's blur.
+#   matched   treated, plus the glass's hue and darkness (material-b156e7): a
+#             custom palette that keeps the wallpaper palette's accents and
+#             text but moves the surface family to the glass's rendered color
+#             (noctalia-glass-palette.py), with the bar and attached panels at
+#             0.95 and floating panels solid, since the glass passes only a few
+#             percent of its backdrop.
+# No case puts a niri material on a Noctalia surface: niri has no layer
+# material pass. Every difference is Noctalia styling or niri's layer blur.
 #
-# Usage: OUT=<dir> WALL=<image> [NIRI=niri] [CASES="baseline treated"] noctalia-surfaces.sh
+# Usage: OUT=<dir> WALL=<image> [NIRI=niri] [CASES="baseline treated matched"] noctalia-surfaces.sh
 # WALL should be the live wallpaper (`noctalia msg wallpaper-get`), so the
 # palette Noctalia derives from it matches the desktop's.
-# Requires: weston, niri, noctalia, kitty, dbus-run-session, jq.
+# Requires: weston, niri, noctalia, kitty, dbus-run-session, jq, python3,
+# ImageMagick 7.
 set -euo pipefail
 
 NIRI=${NIRI:-niri}
-CASES=${CASES:-baseline treated}
+SCRIPTS=$(dirname "$(realpath "$0")")
+CASES=${CASES:-baseline treated matched}
 WALL=${WALL:-/usr/share/noctalia/assets/noctalia-wallpaper.png}
 : "${OUT:?set OUT to an empty output directory}"
 [ -r "$WALL" ] || { echo "FAIL: WALL $WALL is not readable" >&2; exit 1; }
@@ -125,7 +135,7 @@ write_niri_config() {   # $1 case, $2 path
     local effect
     case "$1" in
         baseline) effect='xray false;' ;;
-        treated) effect='xray false; noise 0.03; saturation 0.95;' ;;
+        treated|matched) effect='xray false; noise 0.03; saturation 0.95;' ;;
         *) fail "unknown case $1" ;;
     esac
     cat > "$2" <<KDL
@@ -153,12 +163,28 @@ $GLASS
 KDL
 }
 
+# The pinned glass's rendered color over the live wallpaper, measured from the
+# probe's interior in the nested run (mean 9,10,10).
+GLASS_SURFACE='#090a0a'
+
 write_noctalia_config() {   # $1 case, $2 dir
-    local bar_opacity corner_scale
+    local bar_opacity corner_scale panel_mode=glass theme
+    theme='source = "wallpaper"
+wallpaper_scheme = "m3-content"'
     case "$1" in
         baseline) bar_opacity=0.70; corner_scale=1.0 ;;
         # 12 px x 1.05 UI scale x 1.6 = 20 px, the windows' corner radius.
         treated) bar_opacity=0.55; corner_scale=1.6 ;;
+        matched)
+            bar_opacity=0.95; corner_scale=1.6; panel_mode=solid
+            theme='source = "custom"
+custom_palette = "glass-matched"'
+            mkdir -p "$2/noctalia/palettes"
+            noctalia theme "$WALL" --scheme m3-content --dark -o "$OUT/$1.tokens.json" \
+                > "$OUT/$1.theme.log" 2>&1 || fail "noctalia theme failed (see $OUT/$1.theme.log)"
+            python3 -I "$SCRIPTS/noctalia-glass-palette.py" "$OUT/$1.tokens.json" "$GLASS_SURFACE" \
+                "$2/noctalia/palettes/glass-matched.json" > "$OUT/$1.palette.log"
+            ;;
         *) fail "unknown case $1" ;;
     esac
     mkdir -p "$2/noctalia"
@@ -171,15 +197,14 @@ setup_wizard_enabled = false
 corner_radius_scale = $corner_scale
 
 [shell.panel]
-transparency_mode = "glass"
+transparency_mode = "$panel_mode"
 
 [bar.default]
 background_opacity = $bar_opacity
 
 [theme]
 mode = "dark"
-source = "wallpaper"
-wallpaper_scheme = "m3-content"
+$theme
 
 [wallpaper.default]
 path = "$WALL"
@@ -264,43 +289,54 @@ label() {   # $1 text, $2 width, $3 point size, $4 font, $5 out
     magick -background '#1b1b1b' -fill '#eeeeee' -font "$4" -pointsize "$3" \
         -size "$2"x caption:"$1" -bordercolor '#1b1b1b' -border 12 "$5"
 }
+case_note() {   # $1 case
+    case "$1" in
+        baseline) echo "baseline (control). Live settings: bar and attached panels 0.70 opaque, floating panels 0.55, wallpaper palette, panel corners 12.6 px, shell blur noise 0.1, saturation 1.0." ;;
+        treated) echo "treated. All panels 0.55 opaque, wallpaper palette, panel corners 20 px like the windows, shell blur noise 0.03 and saturation 0.95 like the glass." ;;
+        matched) echo "matched. B, plus the glass's hue and darkness: surfaces $GLASS_SURFACE (cards and outlines keep their steps above it), accents unchanged; bar and attached panels 0.95 opaque, floating panels solid." ;;
+    esac
+}
 make_sheet() {
-    local s="$OUT/sheet" cw=960 col row cells=() rows=()
+    local s="$OUT/sheet" cw=768 col row i ids=(A B C) cells=() rows=() heads=() width
     mkdir -p "$s"
-    label "Does the treated shell read as the same material as the terminal glass?" \
-        1960 34 DejaVu-Sans-Bold "$s/title.png"
-    label "Look at the panels and bar against the glass terminal on the left: translucency, grain and corner radius. Bevel, edge light and the ring are beyond layer effects in both columns. Nested niri, 1280x720, live wallpaper and palette, cells at 75%." \
-        1960 22 DejaVu-Sans "$s/look.png"
-    label "A: baseline (control). Live settings: bar and attached panels 0.70 opaque, floating panels 0.55, panel corners 12.6 px, shell blur noise 0.1 and saturation 1.0." \
-        "$cw" 22 DejaVu-Sans "$s/col-a.png"
-    label "B: treated. All panels 0.55 opaque, panel corners 20 px like the windows, shell blur noise 0.03 and saturation 0.95 like the glass." \
-        "$cw" 22 DejaVu-Sans "$s/col-b.png"
-    magick "$s/col-a.png" "$s/col-b.png" -background '#1b1b1b' -gravity north +append "$s/cols.png"
+    width=$(( ${#CASE_LIST[@]} * (cw + 20) - 24 ))
+    label "Do the bar and panels read as the same dark glass as the terminal?" \
+        "$width" 34 DejaVu-Sans-Bold "$s/title.png"
+    label "No column puts a niri material on the bar or panels: niri has none for layer surfaces yet. Every difference is Noctalia styling or niri's blur. Compare each column's bar and panels with the glass terminal on the left. Nested niri, 1280x720, live wallpaper, cells at 60%." \
+        "$width" 22 DejaVu-Sans "$s/look.png"
+    for i in "${!CASE_LIST[@]}"; do
+        label "${ids[$i]}: $(case_note "${CASE_LIST[$i]}")" "$cw" 20 DejaVu-Sans "$s/col-$i.png"
+        heads+=("$s/col-$i.png")
+    done
+    magick "${heads[@]}" -background '#1b1b1b' -gravity north +append "$s/cols.png"
     row=0
     for step in control-center launcher bar; do
         row=$((row + 1)); cells=()
-        for col in A:baseline B:treated; do
-            magick "$OUT/${col#*:}.$step.png" -resize 75% -gravity northwest \
-                -fill '#00000099' -draw 'rectangle 0,0 70,44' -fill '#ffffff' \
-                -font DejaVu-Sans-Bold -pointsize 30 -annotate +10+6 "${col%%:*}$row" \
-                -bordercolor '#1b1b1b' -border 10 "$s/cell-${col%%:*}$row.png"
-            cells+=("$s/cell-${col%%:*}$row.png")
+        for i in "${!CASE_LIST[@]}"; do
+            col=${ids[$i]}
+            magick "$OUT/${CASE_LIST[$i]}.$step.png" -resize 60% -gravity northwest \
+                -fill '#00000099' -draw 'rectangle 0,0 64,40' -fill '#ffffff' \
+                -font DejaVu-Sans-Bold -pointsize 28 -annotate +9+5 "$col$row" \
+                -bordercolor '#1b1b1b' -border 10 "$s/cell-$col$row.png"
+            cells+=("$s/cell-$col$row.png")
         done
         case $step in
             control-center) title="Row $row: control center (attached panel, noctalia-attached-panel)" ;;
             launcher) title="Row $row: launcher (floating panel, noctalia-panel)" ;;
             bar) title="Row $row: bar alone (noctalia-bar-default)" ;;
         esac
-        label "$title" 1960 24 DejaVu-Sans-Bold "$s/row$row.png"
+        label "$title" "$width" 24 DejaVu-Sans-Bold "$s/row$row.png"
         magick "${cells[@]}" -background '#1b1b1b' +append "$s/cells$row.png"
         magick "$s/row$row.png" "$s/cells$row.png" -background '#1b1b1b' -append "$s/block$row.png"
         rows+=("$s/block$row.png")
     done
     magick "$s/title.png" "$s/look.png" "$s/cols.png" "${rows[@]}" -background '#1b1b1b' \
-        -gravity west -append +repage -depth 8 "$OUT/noctalia-cohesion-sheet.png"
+        -gravity west -append +repage -depth 8 -define png:compression-level=9 \
+        "$OUT/noctalia-cohesion-sheet.png"
     echo "sheet: $OUT/noctalia-cohesion-sheet.png"
 }
 
-for c in $CASES; do run_case "$c"; done
-if [ "$CASES" = "baseline treated" ]; then make_sheet; fi
+read -r -a CASE_LIST <<< "$CASES"
+for c in "${CASE_LIST[@]}"; do run_case "$c"; done
+[ "${CASE_LIST[0]}" != baseline ] || [ "${#CASE_LIST[@]}" -lt 2 ] || make_sheet
 echo "OUT=$OUT"

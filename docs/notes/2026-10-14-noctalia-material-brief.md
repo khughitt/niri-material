@@ -56,6 +56,17 @@ workspace reinforces the project being worked on.
   small: bar pixels move by 5 to 10 levels, while the corners now visibly
   match the windows. Bevel, refraction, edge light, ring and hue are absent
   from both.
+- The owner judged hue and darkness the main difference (2026-10-16), and a
+  third case, `matched` (`material-b156e7`; sheet attached there), closes it
+  with Noctalia settings alone. A custom palette keeps the wallpaper palette's
+  accents and text and moves the surface family to the glass's rendered
+  color in OKLCH (`docs/materials/scripts/noctalia-glass-palette.py`):
+  surface `#151310` to `#090a0a`, cards `#221f1c` to `#141616`, outlines
+  `#4d453c` to `#333d3d`. The bar and attached panels go to 0.95 opacity and
+  floating panels to `solid`. Measured against the glass at 8,11,10, the
+  control center reads 10,10,10 and the launcher 9,10,10 (baseline 23 to
+  28); the bar over the bright wall reads 18,17,16, the 5% of backdrop it
+  still passes.
 - The original capture is
   `mindful:thought:d6cae16e5bd867ec390c14ab866e7619`: use material on bar,
   panel and other Noctalia surfaces for cohesion. It links the `familiar`
@@ -121,6 +132,14 @@ workspace reinforces the project being worked on.
   solid, soft and glass (1.0, 0.80, 0.55), and attached panels follow the bar.
   On the live desktop the bar's opacity sits in Noctalia's settings layer,
   which overrides `config.toml`, so a rollout changes it there.
+- A custom palette is static: the live palette follows the wallpaper
+  (`source = "wallpaper"`), and the glass color is Prism's. A live matched
+  palette has to be regenerated whenever either changes, from the hooks that
+  already run on `wallpaper_changed` and `colors_changed` (switching to the
+  regenerated palette fires `colors_changed` again, so that path must not
+  loop), and the glass's
+  rendered color depends on its backdrop (it passes a few percent), so the
+  target is a measured or modelled value, not the attenuation color itself.
 - Preserve client text, input regions, exclusive zones, popup placement,
   output scaling, capture blocking and damage behaviour. Any renderer design
   must follow `docs/materials/render-pipeline.md`.
