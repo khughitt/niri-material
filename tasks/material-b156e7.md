@@ -1,15 +1,16 @@
 ---
 id: material-b156e7
 title: Match the Noctalia bar and panel surfaces to the terminal glass's hue and darkness
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
 process: direct
 owner: material-b156e7
 created: 2026-10-17T01:24:01Z
-updated: 2026-10-17T01:37:42Z
+updated: 2026-10-17T01:37:48Z
 started: 2026-10-17T01:24:30Z
+completed: 2026-10-17T01:37:48Z
 depends: []
 parent: material-55380c
 tags: []
@@ -29,3 +30,7 @@ Where: docs/materials/scripts/noctalia-surfaces.sh; Noctalia v5.2.1 custom palet
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T01:36:36Z (material-b156e7): attached: noctalia-cohesion-sheet.png (1649509 bytes): Owner sheet: do the bar and panels read as the same dark glass as the terminal? A = live baseline (control), B = treated, C = matched hue and darkness; rows: 1 control center, 2 launcher, 3 bar; no niri material on the shell in any column
 - 2026-10-17T01:37:42Z (material-b156e7): result: matched case (custom palette from the wallpaper palette, surfaces #090a0a / cards #141616 / outlines #333d3d, accents kept; bar + attached 0.95, floating solid; corners 1.6, glass noise/saturation on blur) measures control center 10,10,10 and launcher 9,10,10 vs glass 8,11,10 (baseline 23-28); bar 18,17,16 over the bright wall. Caveat: a custom palette is static; live use needs regeneration on wallpaper/glass change without a colors_changed loop.
+- 2026-10-17T01:37:48Z (material-b156e7): done
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T01:37:48Z (material-b156e7): Matched case and three-column sheet landed (docs/materials/scripts/noctalia-surfaces.sh, noctalia-glass-palette.py); settings and caveats in the brief
+  provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
