@@ -7,7 +7,7 @@ size: xs
 complexity: low
 process: direct
 created: 2026-10-09T23:29:33Z
-updated: 2026-10-09T23:50:32Z
+updated: 2026-10-17T16:38:15Z
 depends: [material-ac926f]
 parent: material-6062fd
 tags: [rendering, signals]
@@ -20,3 +20,4 @@ main.frag scales the ring's bevel spill by the beam term alone (moving), so once
 ## Notes
 
 - 2026-10-09T23:50:32Z (materials-26.04): From the spike: the spill line is pinned by material_source_is_prelude_then_optics_in_order_then_main; the form that worked is spill = BEAM_SPILL * glow * (1 - u) on the chamfer, outside the focus branch, so the accent lights the edge too. Mirror in ring.rs.
+- 2026-10-17T16:38:15Z (materials-26.04): Owner accepted the ac926f sheet 2026-10-17: proceed. Start from the spike code at /mnt/ssd3/niri-material/material-ac926f/spike-commit-9d1315ea.patch. Its spill differs from the body's formula: BEAM_SPILL * total glow * (1-u), accent and rest included, outside the focus branch. Decide which the accepted sheet (row J, columns 2 and 4) actually showed, and pin that.
