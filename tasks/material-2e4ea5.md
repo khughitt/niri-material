@@ -1,13 +1,15 @@
 ---
 id: material-2e4ea5
 title: "Capture gates judge measured contamination, not circumstantial host events"
-status: todo
+status: doing
 priority: 2
 size: m
 complexity: high
 process: planned
+owner: materials-26.04
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T00:51:03Z
+updated: 2026-10-17T10:01:20Z
+started: 2026-10-17T10:01:20Z
 depends: []
 tags: [rendering]
 agent: claude-code/claude-opus-5-5
@@ -23,3 +25,8 @@ Design questions for the spec (process planned; the hold and host-conditions des
 - Severity: fail / annotate / ignore, decided per lane and recorded, so a reviewer can re-judge a run without rerunning it.
 - Validation: replay tonight's refused capture.json records through the new rules (each refused attempt should pass with annotations, and the 2026-09-24 refusals should still refuse).
 Related: material-04818d (what selects the 10.4 vs 17 W floor), material-d2e552 (clock-state selection of draws).
+
+## Notes
+
+- 2026-10-17T10:01:20Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
