@@ -1,15 +1,17 @@
 ---
 id: material-ac926f
 title: "Spike: attenuation-tinted edge light and resting ring spill on the live looks"
-status: doing
+status: done
 priority: 1
 size: s
 complexity: mid
 process: direct
 owner: materials-26.04
 created: 2026-10-09T23:29:33Z
-updated: 2026-10-17T16:36:59Z
+updated: 2026-10-17T16:37:05Z
 started: 2026-10-09T23:29:40Z
+completed: 2026-10-17T16:37:05Z
+closed: 2026-10-17T16:37:05Z
 depends: []
 parent: material-6062fd
 tags: [spike, rendering]
@@ -30,4 +32,8 @@ Question: do an attenuation-tinted edge light at the rim and a resting ring spil
   provenance: {"harness_session":"claude-code:ff22882b-dfa1-4b0d-a989-d026665b0306","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-09T23:50:24Z (spike/material-ac926f): Pinned tests the throwaway breaks (expected; they name what the production change must declare): pipeline_optic_glsl_reads_are_declared (reflection's GLSL reads attenuation-color, attenuation-distance and bevel, which its schema reads omit) and material_source_is_prelude_then_optics_in_order_then_main (pins the beam-only spill line). All other material, ring, bevel, glass-edge and noise tests pass (155 of 157 in the filter).
 - 2026-10-17T16:36:59Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T16:37:05Z (materials-26.04): done
+  provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T16:37:05Z (materials-26.04): Owner verdict 2026-10-17: accept — the edge light plus resting ring spill reads as one slab on the sheet. Proceeding with material-f72d5c (edge light, planned) and material-58a1a1 (resting spill). Spike branch and worktree removed; the spike's full commit is retained at /mnt/ssd3/niri-material/material-ac926f/spike-commit-9d1315ea.patch beside the v1/v2 shader patches and dumps.
   provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
