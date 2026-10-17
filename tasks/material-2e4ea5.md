@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-gates-evidence
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T11:20:25Z
+updated: 2026-10-17T11:22:48Z
 started: 2026-10-17T10:01:20Z
 depends: []
 tags: [rendering]
@@ -58,3 +58,5 @@ Related: material-04818d (what selects the 10.4 vs 17 W floor), material-d2e552 
 - 2026-10-17T11:20:03Z (capture-gates-evidence): Execution method chosen by the owner: native (superpowers:executing-plans), in a fresh session.
 - 2026-10-17T11:20:25Z (capture-gates-evidence): parked (waiting on agent, session): In a fresh session, execute docs/plans/2026-10-17-capture-evidence-gates.md natively (superpowers:executing-plans) in .worktrees/capture-gates-evidence: run the worktree baseline tests (just setup already ran), then tasks start material-a0492a (Task 1) and continue through Task 4; then the final whole-branch review by a fresh reviewer
   provenance: {"harness_session":"claude-code:63b33ff5-4e3e-4682-9faf-fed3c89e90e9","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T11:22:48Z (capture-gates-evidence): resumed
+  provenance: {"harness_session":"claude-code:76b3bee8-6b12-4a7f-bb04-fa48a2d3ccc7","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
