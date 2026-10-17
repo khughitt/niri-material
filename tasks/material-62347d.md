@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T10:35:16Z
+updated: 2026-10-17T10:57:38Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -71,3 +71,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T10:35:16Z (material-62347d): resumed
   provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T10:57:38Z (material-62347d): execution: preflight scan of the plan found 5 blocking defects (T6 compile/test-time/count, T2 count, T8 $OUT) and undeclared spec deviations; rulings in the SDD ledger, carried into dispatches; baseline just test green (680 passed)
