@@ -115,11 +115,27 @@ transitions, so it waits on this look and on the clock decision.
   the change, revealed after D. S6: the change lands while input is already
   idle. S7: the idle threshold passes at D/2. S8 and S9: S1 under
   `motion "reduced"` and `"off"`. S6–S9 use `drift-hz 4` at both ends, so the
-  drift's hold and policy are observable beside the fade.
+  drift's hold and policy are observable beside the fade. S10–S12 cross
+  amount 0, where Aurora's phase and scheduling change: `AuroraOptic::rate`
+  returns 0 for an unlit field, so `phase_on` pins the phase to 0 (seed
+  ignored) and `next_change` arms nothing. S10: 0 → sun. S11: sun → 0.
+  S12: sun → 0 reversed to sun at D/2. All three use `drift-hz 4` at the lit
+  end, so a fade that takes rate or phase from the resolved target instead of
+  the rendered amount shows up as a phase jump or a stalled drift.
 - **Controls and checks:** neutral is `aurora 0` (the accepted look). The
   overcast and sun controls are the two pilot presets below, rendered with
   no transition. S1–S5 and the controls use `drift-hz 0`, so the transition
-  is the only time-varying term. Deterministic checks:
+  is the only time-varying term. Aurora still reads the window's jelly seed at
+  `drift-hz 0` (`aurora.frag` offsets the field by `mat_jelly_seed`), and each
+  `MaterialState::new` draws a fresh seed from a global counter, so a control
+  built as a separate state can differ from a correct transition. A control
+  therefore renders through the scene's own material state (the same seed,
+  geometry, window buffer, output scale and clock), changing only the resolved
+  Aurora values, or through a separate state given the scene's seed by a
+  test-only constructor. Before any byte comparison the harness asserts equal
+  jelly seed, geometry and non-Aurora uniforms; a mismatch is a harness fault,
+  neither a pass nor a fail. The design names which route it takes.
+  Deterministic checks:
   - Endpoints (S1–S5): the frame before the first trigger equals the overcast
     control, and the frame at the end equals the sun control byte for byte;
     S4's equals the overcast control. S6–S9 use `drift-hz 4`, so they compare
@@ -143,6 +159,15 @@ transitions, so it waits on this look and on the clock decision.
     S9. `animations { off }` reaches the sun control in the first frame and
     requests no frames.
   - Neutral: amount 0 at both ends starts nothing and requests no frames.
+  - Through zero (S10–S12): sampled every frame, the rendered amount moves
+    continuously from the frame before the trigger, with no step at the
+    trigger or at S12's reversal. While the rendered amount is nonzero, the
+    phase uniform equals the lit preset's drift phase at that time (seeded,
+    bucketed at `drift-hz 4`) and optic deadlines arm. Phase 0 and no
+    deadlines appear only once the rendered amount is exactly 0. S10's first
+    frame after the trigger already drifts. S11 ends with amount exactly 0,
+    phase 0, no deadline or frame request, and bytes equal to the neutral
+    control. S12 ends on the sun preset's uniforms.
 - **Review media:** S1's stills judge appearance only. With one easing curve,
   frames at the same fractions of D are identical for every D, so pacing is
   judged on timed clips instead. Each clip renders the deterministic harness
