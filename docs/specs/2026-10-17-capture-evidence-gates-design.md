@@ -1,6 +1,8 @@
 # Capture gates judge measured contention, not circumstantial host events
 
-**Status:** draft for spec review (round 1).
+**Status:** draft for spec review (round 2). Revised after round 1 so that
+`judge` keeps refused preflights as failures and does not read an unscanned
+or unreleased record as a clean scan.
 **Task:** `material-2e4ea5`, under `material-2834d7` (evidence instruments).
 **Changes:** [capture protocol design](2026-09-11-material-capture-protocol-design.md) §2.4
 (settle tolerance), [disturber hold design](2026-10-04-capture-disturber-hold-design.md) §4.3
@@ -180,28 +182,54 @@ tools/capture-meta judge <run-dir>
 ```
 
 `judge` reads `capture.json` and changes nothing: it takes no lock, holds
-nothing and writes no file. It does the following:
+nothing and writes no file. It judges three parts of the record, each with
+one of three outcomes: **pass**, **fail**, or **no evidence**.
 
-1. For every sub-run entry with samples (`settled` or `refused`), it rebuilds
-   the window summary from the recorded medians, IQR, P-states and clients. It
-   applies the current settle rules against the recorded baseline and
-   thresholds. Thresholds missing from older records take today's defaults,
-   and the output says so.
-2. For every entry in `hold_end.scan.disturbances`, it applies the current
-   `classify`.
-3. It prints one line for each item whose outcome differs from the recorded
-   one, then a summary: the recorded verdicts, the current verdicts and both
-   rule identities.
+1. **Preflight.** Its rules are unchanged, so `judge` keeps the recorded
+   verdict:
+   - `quiet` or `unsampled`: pass;
+   - `refused`: fail (rule `preflight`), printing the recorded reasons;
+   - a missing `preflight` section, or any other verdict: no evidence.
 
-Sample-level rules need the per-sample memory floor, which the record does
-not keep. `judge` uses the recorded verdict for those, and says so when a
-recorded reason names the floor.
+   A refused preflight usually has no sub-runs and no scan. On 2026-10-17, 29
+   retained records are refused preflights: 27 from before the hold, and 2
+   rolled back (`not-run`).
+2. **Settle windows.** For every sub-run entry with samples (`settled` or
+   `refused`), `judge` rebuilds the window summary from the recorded medians,
+   IQR, P-states and clients. It applies the current settle rules against the
+   recorded baseline and thresholds. Thresholds missing from older records
+   take today's defaults, and the output says so.
+
+   Sample-level rules need the per-sample memory floor, which the record does
+   not keep. For those, `judge` uses the recorded verdict, and says so when a
+   recorded reason names the floor.
+
+   A record with no sub-runs passes this part.
+3. **Scan.** The scan's state decides how it is judged, before any
+   disturbance is classified, because an empty disturbance list means "none
+   found" only in a scan that ran:
+
+   | Record state | Outcome |
+   | --- | --- |
+   | No `hold` section (a record from before the disturber hold, 2026-10-04; 97 quiet and 27 refused on 2026-10-17) | Pass. The output says "no hold: predates the disturber hold", so the absence is never read as a clean scan. |
+   | `hold`, but no `hold_end.scan` (never released) | No evidence |
+   | `hold_end.restore.state: failed` | No evidence, as `exit_for` does |
+   | `scan.verdict: unscanned` | No evidence |
+   | `scan.verdict: not-run` (a preflight rollback) | Fail when `preflight_exit` is 1; no evidence when it is 2 |
+   | `scan.verdict` `clean`, `annotated` or `disturbed` | Each entry in `disturbances` is classified by the current `classify`: fail when any entry is `fail`, otherwise pass |
+
+`judge` prints one line for each item whose outcome differs from the recorded
+one. It then prints a summary: each part's outcome, the recorded verdicts, the
+current verdicts and both rule identities.
 
 | Exit | When |
 | --- | --- |
-| 0 | No item is `fail` under the current rules |
-| 1 | Some item is `fail` under the current rules |
-| 2 | The record is unreadable, or it has no preflight |
+| 2 | The record is unreadable, or any part has no evidence |
+| 1 | Otherwise, when any part fails |
+| 0 | Every part passes |
+
+No evidence outranks a failure. A run that cannot be judged is never reported
+as merely failed, and a failure never hides a missing scan.
 
 A refused settle stopped its fixture. `judge` exiting 0 on such a run means
 the refusal would now be an annotation. It does not mean the run is complete
@@ -235,10 +263,19 @@ suite does not read the work root.
 
 `judge` is tested on these records:
 
-- a pre-2026-10-17 record with a refused power window: it reports the change
-  and exits 0;
-- the 2026-09-24 record: exit 1;
-- a record with no `preflight`: exit 2.
+| Record | Exit |
+| --- | --- |
+| A pre-2026-10-17 record with a refused power window (`noise-idle-ab-full-1792148041`); it reports the change | 0 |
+| The 2026-09-24 record (`trace-20260924T163317`) | 1 |
+| A refused preflight with no sub-runs and no hold, from `render-order-readiness.pCbsOC` (CPU 16.6 %, load 5.53, utilization 26 %, P3/P5/P8, a compute client) | 1 |
+| A `not-run` rollback with `preflight_exit` 1 | 1 |
+| A `not-run` rollback with `preflight_exit` 2 | 2 |
+| A quiet preflight and settled windows with `scan.verdict: unscanned` and an empty `disturbances` list | 2 |
+| A `hold` section with no `hold_end` | 2 |
+| `hold_end.restore.state: failed` with a clean scan | 2 |
+| A quiet record from before the hold, with settled windows and no `hold`; the output names the missing hold | 0 |
+| An unscanned record that also has a refused settle window (no evidence outranks a failure) | 2 |
+| No `preflight` section | 2 |
 
 In every case, the record's bytes and mtime are unchanged afterwards.
 
@@ -254,6 +291,8 @@ replay records:
 
 - each of the four 2026-10-16 runs exits 0;
 - every refusal listed in §1 still fails;
+- every refused preflight exits 1, or 2 where its rollback could not run;
+- every record judged as no evidence is listed with its reason;
 - no entry recorded `settled` is `fail` under the current rules. The rules
   only relax, so this holds by construction, and the replay checks it.
 
