@@ -402,6 +402,155 @@ class ShowTests(unittest.TestCase):
         self.assertIn("    annotated unclaimed-power-step: gpu_power_w 17.115 is 6.725 above baseline 10.39", text)
 
 
+def sampled(name, verdict, power, iqr=0.2, util=0.0, cpu=1.0, pstates=("P8",), graphics=(), reason=None):
+    e = {"name": name, "verdict": verdict, **window(power, iqr, util, cpu, 80.0, pstates, graphics)}
+    if reason:
+        e["reason"] = reason
+    return e
+
+
+def capture_record(sub_runs=(), lane="headless", baseline_w=10.39, graphics=(), preflight=None, hold=True,
+           scan=None, restore="complete"):
+    r = {"run": {"id": "r", "lane": lane, "started": STARTED},
+         "baseline": {"seconds": 20, **window(baseline_w, graphics=graphics)},
+         "preflight": preflight if preflight is not None else {"verdict": "quiet", "thresholds": dict(cm.DEFAULT_THRESHOLDS)},
+         "sub_runs": list(sub_runs)}
+    if hold:
+        r["hold"] = {"items": []}
+    if scan is not None:
+        r["hold_end"] = {"restore": {"state": restore, "attempts": []},
+                         "scan": {"until_us": 1, "disturbances": [], **scan}}
+    return r
+
+
+CLEAN = {"verdict": "clean"}
+
+
+class JudgeTests(unittest.TestCase):
+    def judged(self, rec):
+        """Runs `judge` on a saved record and checks it changed nothing in the run directory."""
+        with tempfile.TemporaryDirectory() as directory:
+            run = pathlib.Path(directory)
+            if rec is not None:
+                cm.save_record(run, rec)
+            before = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in run.iterdir()}
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(io.StringIO()):
+                code = cm.main(["judge", str(run)])
+            after = {p.name: (p.read_bytes(), p.stat().st_mtime_ns) for p in run.iterdir()}
+            self.assertEqual(after, before)
+            return code, stdout.getvalue()
+
+    def test_a_refused_client_free_floor_step_now_settles(self):   # noise-idle-ab-full-1792148041
+        code, out = self.judged(capture_record([sampled("none-b2-1", "settled", 10.425),
+                                        sampled("none-b3-1", "refused", 17.115, iqr=0.027,
+                                              reason="gpu_power_w 17.115 exceeds baseline 10.39 by more than 1.5")],
+                                       scan=CLEAN))
+        self.assertEqual(code, 0, out)
+        self.assertIn("none-b3-1: recorded refused, now settled (unclaimed-power-step", out)
+        self.assertIn("rules recorded before 2026-10-17, current 2026-10-17", out)
+
+    def test_a_recorded_vt_login_disturbance_now_passes(self):   # cost-pilot-1792145940
+        getty = {"kind": "restart", "unit": "getty@tty2.service", "manager": "system", "at": "t"}
+        code, out = self.judged(capture_record([sampled("tilt0-a1", "settled", 10.3)], baseline_w=10.345,
+                                       scan={"verdict": "disturbed", "disturbances": [getty]}))
+        self.assertEqual(code, 0, out)
+        self.assertIn("recorded disturbed, now annotated", out)
+
+    def test_the_2026_09_24_idle_lock_record_still_fails(self):   # trace-20260924T163317, no hold
+        code, out = self.judged(capture_record([sampled("B-resize-2", "settled", 9.995, graphics=DESKTOP),
+                                        sampled("B-resize-3", "refused", 11.585, iqr=0.258, graphics=DESKTOP,
+                                              reason="gpu_power_w 11.585 exceeds baseline 9.9 by more than 1.5")],
+                                       baseline_w=9.9, graphics=DESKTOP, hold=False))
+        self.assertEqual(code, 1, out)
+        self.assertIn("settle: fail", out)
+        self.assertIn("no hold: predates the disturber hold", out)
+
+    def test_a_refused_preflight_with_no_sub_runs_fails(self):   # render-order-readiness.pCbsOC
+        reasons = ["cpu_busy_pct 16.6 exceeds 10.0", "load1 5.53 exceeds 2.0", "gpu_util_pct 26.0 exceeds 5.0",
+                   "gpu_pstate ['P3', 'P5', 'P8'] not always P8", "gpu_power_iqr_w 7.463 exceeds 1.0",
+                   "compute clients present: BitwigStudio"]
+        code, out = self.judged(capture_record(preflight={"verdict": "refused", "reasons": reasons}, hold=False))
+        self.assertEqual(code, 1, out)
+        self.assertIn("preflight: fail", out)
+        self.assertIn("refused: load1 5.53 exceeds 2.0", out)
+
+    def test_scan_states_without_evidence(self):
+        refused = {"verdict": "refused", "reasons": ["gpu_util_pct 90.0 exceeds 5.0"]}
+        quiet_windows = [sampled("A", "settled", 10.4)]
+        power_refusal = sampled("B", "refused", 17.0, graphics=("niri",), reason="gpu_power_w 17.0 exceeds baseline 10.39 by more than 1.5")
+        cases = (  # (name, record, exit, needle)
+            ("not-run, preflight refused", capture_record(preflight=refused, scan={"verdict": "not-run", "preflight_exit": 1}), 1, "scan: fail"),
+            ("not-run, could not run", capture_record(scan={"verdict": "not-run", "preflight_exit": 2}), 2, "scan: no evidence"),
+            ("unscanned, empty list", capture_record(quiet_windows, scan={"verdict": "unscanned", "error": "journalctl: exit 1"}), 2, "unscanned (journalctl: exit 1)"),
+            ("held, never released", capture_record(quiet_windows), 2, "never released"),
+            ("restore failed", capture_record(quiet_windows, scan=CLEAN, restore="failed"), 2, "not fully restored"),
+            ("unscanned outranks a refused window", capture_record([power_refusal], scan={"verdict": "unscanned"}), 2, "settle: fail"),
+            ("no preflight", {**capture_record(quiet_windows, scan=CLEAN), "preflight": None}, 2, "no preflight section"))
+        for name, rec, code_expected, needle in cases:
+            with self.subTest(name):
+                if rec.get("preflight") is None:
+                    rec.pop("preflight")
+                code, out = self.judged(rec)
+                self.assertEqual(code, code_expected, out)
+                self.assertIn(needle, out)
+
+    def test_a_quiet_record_from_before_the_hold_passes_and_says_so(self):
+        code, out = self.judged(capture_record([sampled("A", "settled", 9.9, graphics=DESKTOP)], baseline_w=9.9,
+                                       graphics=DESKTOP, hold=False))
+        self.assertEqual(code, 0, out)
+        self.assertIn("no hold: predates the disturber hold", out)
+
+    def test_old_entries_and_thresholds_are_kept_or_defaulted(self):
+        old = capture_record([{"name": "A", "verdict": "settled", "started": STARTED},
+                      {"name": "B", "verdict": "refused", "reason": "gpu busy"}],
+                     preflight={"verdict": "quiet"}, scan=CLEAN)
+        code, out = self.judged(old)
+        self.assertEqual(code, 1, out)
+        self.assertIn("A: window not recorded; kept as settled", out)
+        self.assertIn("B: window not recorded; kept as refused", out)
+        self.assertIn("judged at today's defaults", out)
+        floor = capture_record([sampled("C", "refused", 10.4, reason="mem_available_pct below floor 20.0")], scan=CLEAN)
+        self.assertEqual(self.judged(floor)[0], 1)
+
+    def test_pixel_runs_have_no_windows_to_judge(self):
+        pixel = capture_record([{"name": "cell-1", "verdict": "begun", "started": STARTED}], lane="pixels",
+                       preflight={"verdict": "unsampled"}, scan=CLEAN)
+        pixel.pop("baseline")
+        self.assertEqual(self.judged(pixel)[0], 0)
+
+    def test_unsupported_recorded_pstate_policies_are_no_evidence(self):   # render-order-*-pixels runs
+        for policy in ("any (user-authorized pixel-only run)", "P5|P8 (user-authorized pixel-only run)"):
+            with self.subTest(policy=policy):
+                thresholds = dict(cm.DEFAULT_THRESHOLDS, gpu_pstate=policy)
+                code, out = self.judged(capture_record([sampled("iridescence-n0-on", "settled", 10.4, iqr=8.905,
+                                                                pstates=("P5", "P8"), graphics=("niri",))],
+                                                       preflight={"verdict": "quiet", "thresholds": thresholds},
+                                                       hold=False))
+                self.assertEqual(code, 2, out)
+                self.assertIn(f"gpu_pstate={policy!r}", out)
+                self.assertIn("windows not re-judged", out)
+                self.assertNotIn("now refused", out)
+        thresholds = dict(cm.DEFAULT_THRESHOLDS, settle_gpu_power_w="1.5")
+        code, out = self.judged(capture_record([sampled("A", "settled", 10.4)],
+                                               preflight={"verdict": "quiet", "thresholds": thresholds}, scan=CLEAN))
+        self.assertEqual(code, 2, out)
+        self.assertIn("settle_gpu_power_w='1.5'", out)
+        refused = capture_record(preflight={"verdict": "refused", "reasons": ["load1 3.0 exceeds 2.0"],
+                                            "thresholds": dict(cm.DEFAULT_THRESHOLDS,
+                                                               gpu_pstate="any (user-authorized pixel-only run)")},
+                                 hold=False)
+        self.assertEqual(self.judged(refused)[0], 1)   # render-order-within-pixels.v8Dp2y: no windows to re-judge
+
+    def test_a_missing_or_corrupt_record_cannot_be_judged(self):
+        self.assertEqual(self.judged(None)[0], 2)
+        with tempfile.TemporaryDirectory() as directory:
+            (pathlib.Path(directory) / cm.RECORD).write_text("{not json")
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(cm.main(["judge", directory]), 2)
+            self.assertEqual(sorted(p.name for p in pathlib.Path(directory).iterdir()), [cm.RECORD])
+
+
 class FakeProc:
     def __init__(self, ticks, load1=0.5, available_kib=80_000, total_kib=100_000):
         self.ticks = list(ticks); self.i = 0

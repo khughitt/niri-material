@@ -1296,6 +1296,119 @@ def release(run_dir, record, run):
         raise Refused(f"lock is not this run's ({run['id']}); left in place")
 
 
+PASS, FAIL, NO_EVIDENCE = "pass", "fail", "no evidence"
+WINDOW_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w", "gpu_power_iqr_w",
+               "gpu_pstates", "gpu_clients")
+BASELINE_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w")
+
+
+def threshold_supported(key, value):
+    """Whether settle could have applied this recorded threshold. Some early pixel runs
+    recorded a hand-written P-state policy ("any (user-authorized pixel-only run)") that
+    no settle rule reads."""
+    if key == "gpu_pstate":
+        return isinstance(value, str) and re.fullmatch(r"P\d{1,2}", value) is not None
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def judge_preflight(record):
+    """Preflight's rules are unchanged: the recorded verdict stands (2026-10-17 gates design §5)."""
+    preflight = record.get("preflight")
+    if preflight is None:
+        return NO_EVIDENCE, "none", ["no preflight section"]
+    verdict = preflight.get("verdict")
+    if verdict in ("quiet", "unsampled"):
+        return PASS, verdict, []
+    if verdict == "refused":
+        return FAIL, verdict, [f"refused: {r}" for r in preflight.get("reasons") or ["no reason recorded"]]
+    return NO_EVIDENCE, str(verdict), [f"verdict {verdict!r} is not one preflight writes"]
+
+
+def judge_windows(record):
+    """Re-applies the settle rules to every sampled sub-run. The per-sample memory floor is
+    not recorded, so a refusal that names it stands."""
+    entries = [e for e in record.get("sub_runs", []) if e["verdict"] in ("settled", "refused")]
+    recorded = ", ".join(f"{sum(e['verdict'] == v for e in entries)} {v}" for v in ("settled", "refused"))
+    if not entries:
+        return PASS, "no sampled sub-runs", []
+    baseline = record.get("baseline")
+    if not isinstance(baseline, dict) or any(key not in baseline for key in BASELINE_KEYS):
+        return NO_EVIDENCE, recorded, ["sub-runs were sampled but the baseline is missing"]
+    kept = (record.get("preflight") or {}).get("thresholds") or {}
+    thresholds = {**DEFAULT_THRESHOLDS, **kept}
+    unsupported = [f"{key}={thresholds[key]!r}" for key in DEFAULT_THRESHOLDS
+                   if not threshold_supported(key, thresholds[key])]
+    if unsupported:
+        return NO_EVIDENCE, recorded, [f"recorded thresholds settle never applies: {', '.join(unsupported)}; "
+                                       "windows not re-judged"]
+    lines, failed = [], False
+    missing = sorted(set(DEFAULT_THRESHOLDS) - set(kept))
+    if missing:
+        lines.append(f"thresholds not recorded, judged at today's defaults: {', '.join(missing)}")
+    lane = record.get("run", {}).get("lane")
+    for entry in entries:
+        if any(key not in entry for key in WINDOW_KEYS):
+            failed = failed or entry["verdict"] == "refused"
+            lines.append(f"{entry['name']}: window not recorded; kept as {entry['verdict']}")
+            continue
+        reasons, annotations = judge_window(entry, baseline, thresholds, lane)
+        if "mem_available_pct below floor" in entry.get("reason", ""):
+            reasons.append("mem_available_pct below floor (recorded; samples not kept)")
+        now = "refused" if reasons else "settled"
+        failed = failed or bool(reasons)
+        if now != entry["verdict"]:
+            why = "; ".join(reasons) or "; ".join(f"{a['rule']}: {a['detail']}" for a in annotations)
+            lines.append(f"{entry['name']}: recorded {entry['verdict']}, now {now} ({why})")
+    return (FAIL if failed else PASS), recorded, lines
+
+
+def judge_scan(record):
+    """The scan's state decides before any entry is classified: an empty disturbance list
+    means none found only in a scan that ran."""
+    end = record.get("hold_end") or {}
+    scan = end.get("scan")
+    if scan is None:
+        if "hold" not in record:
+            return PASS, "none", ["no hold: predates the disturber hold, or preflight refused before holding"]
+        return NO_EVIDENCE, "none", ["hold recorded but never released; no scan"]
+    verdict = scan["verdict"]
+    if end.get("restore", {}).get("state") == "failed":
+        return NO_EVIDENCE, verdict, ["hold not fully restored"]
+    if verdict == "unscanned":
+        return NO_EVIDENCE, verdict, [f"unscanned ({scan.get('error')})"]
+    if verdict == "not-run":
+        code = scan.get("preflight_exit")
+        return (FAIL if code == 1 else NO_EVIDENCE), verdict, [f"preflight rolled back its hold (exit {code})"]
+    now, entries = ch.classify(scan["disturbances"], record.get("run", {}).get("lane"))
+    lines = [f"recorded {verdict}, now {now}"] if now != verdict else []
+    lines += [describe_disturbance(d) for d in entries]
+    return (FAIL if now == "disturbed" else PASS), verdict, lines
+
+
+def judge_record(record):
+    return {"preflight": judge_preflight(record), "settle": judge_windows(record), "scan": judge_scan(record)}
+
+
+def cmd_judge(args):
+    """Re-judges a run under the current rules from its capture.json alone; writes nothing."""
+    if not (pathlib.Path(args.run_dir) / RECORD).is_file():
+        raise CannotRun(f"no {RECORD} in {args.run_dir}")
+    record = load_record(args.run_dir)
+    parts = judge_record(record)
+    rules = (record.get("preflight") or {}).get("rules", "before 2026-10-17")
+    print(f"judge {record.get('run', {}).get('id')}  rules recorded {rules}, current {RULES}")
+    for name, (outcome, recorded, lines) in parts.items():
+        print(f"  {name}: {outcome} (recorded {recorded})")
+        for line in lines:
+            print(f"    {line}")
+    def named(outcome):
+        return ", ".join(name for name, part in parts.items() if part[0] == outcome)
+    if named(NO_EVIDENCE):
+        raise CannotRun(f"no evidence: {named(NO_EVIDENCE)}")
+    if named(FAIL):
+        raise Refused(f"fails under the current rules: {named(FAIL)}")
+
+
 def guard(host, lock_file, run_dir, iterations=None):
     run_dir = pathlib.Path(run_dir).resolve()
     def owner_dead():
@@ -1463,6 +1576,9 @@ def build_parser():
     grd.set_defaults(func=cmd_guard)
     rst = subs.add_parser("restore")
     rst.set_defaults(func=cmd_restore)
+    jdg = subs.add_parser("judge")
+    jdg.add_argument("run_dir")
+    jdg.set_defaults(func=cmd_judge)
     return parser
 
 
