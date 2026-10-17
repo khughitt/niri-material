@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: capture-gates-evidence
 created: 2026-10-17T00:51:03Z
-updated: 2026-10-17T11:40:04Z
+updated: 2026-10-17T11:48:05Z
 started: 2026-10-17T10:01:20Z
 depends: []
 tags: [rendering]
@@ -61,3 +61,4 @@ Related: material-04818d (what selects the 10.4 vs 17 W floor), material-d2e552 
 - 2026-10-17T11:22:48Z (capture-gates-evidence): resumed
   provenance: {"harness_session":"claude-code:76b3bee8-6b12-4a7f-bb04-fa48a2d3ccc7","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T11:40:04Z (capture-gates-evidence): replay: 162 records, exit 0 104 / 1 47 / 2 11 (all 11 unsupported recorded gpu_pstate policies); 2026-10-16 refusals all exit 0; 2026-09-24, timer-fired, pstate and pCbsOC refusals exit 1; all 29 refused preflights exit 1; no settled window fails
+- 2026-10-17T11:48:05Z (capture-gates-evidence): review: impl round 1 — verdict: accept; findings: Critical 0, Important 0, Minor 7; reviewer: claude-code/claude-opus-5-5
