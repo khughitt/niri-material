@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-333 paths differ: 56 class B (seam), 230 class A (fork-only), 47 class C (scaffolding).
+335 paths differ: 56 class B (seam), 230 class A (fork-only), 49 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -122,6 +122,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/capture_hold.py` | C | A | +600/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
+| `tools/hermetic_git.py` | C | A | +18/-0 |
 | `tools/identity-check` | C | A | +57/-0 |
 | `tools/ops-check` | C | A | +482/-0 |
 | `tools/optic_settling.py` | C | A | +611/-0 |
@@ -137,6 +138,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
 | `tools/test_gpu_clocks.py` | C | A | +434/-0 |
+| `tools/test_hermetic_git.py` | C | A | +91/-0 |
 | `tools/test_identity_check.py` | C | A | +90/-0 |
 | `tools/test_noise_placement_cost.py` | C | A | +102/-0 |
 | `tools/test_optic_settling.py` | C | A | +1289/-0 |
