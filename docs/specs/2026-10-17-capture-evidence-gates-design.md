@@ -1,6 +1,6 @@
 # Capture gates judge measured contention, not circumstantial host events
 
-**Status:** draft for spec review (round 2). Revised after round 1 so that
+**Status:** approved by the owner for planning at spec review round 2 (2026-10-17). Revised after round 1 so that
 `judge` keeps refused preflights as failures and does not read an unscanned
 or unreleased record as a clean scan.
 **Task:** `material-2e4ea5`, under `material-2834d7` (evidence instruments).
