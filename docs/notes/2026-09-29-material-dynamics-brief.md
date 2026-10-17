@@ -1,6 +1,6 @@
 # Material dynamics scoping brief
 
-Updated 2026-10-15. Handoff for `material-53f873`, not an approved design.
+Updated 2026-10-16. Handoff for `material-53f873`, not an approved design.
 
 ## Problem
 
@@ -222,8 +222,11 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
   its original captured request is retained below the updated body.
 - `material-1c5a30` and `material-f3e4e4`: `material-ffd61f` traced current
   optics and proposed the overcast-to-sun transition above, with no rendering
-  change or capture run. Both ideas carry its finding note. Their next scope pass
-  decides whether to file the transition's design task (`planned`).
+  change or capture run. Both ideas carry its finding note. The 2026-10-16 scope
+  pass filed `material-415d0c` (P2 / m / high / planned, owner need) to design
+  the Aurora envelope from the proposal; both ideas stay briefed and depend on
+  it. Its result wakes them. Lanterns and mouse interaction (`material-1c5a30`)
+  and the weather clock (`material-f3e4e4`) stay open behind that look.
 - `material-9be53d`: shelved until a reproducible wanted behavior and acceptance
   check demonstrate a gap in existing animations, responses or optic clocks.
 - `material-d873bf`: briefed; `material-ccda38` (P2 / s / high / planned,
