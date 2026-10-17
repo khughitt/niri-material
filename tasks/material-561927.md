@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T15:25:06Z
+updated: 2026-10-17T15:25:13Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -27,3 +27,4 @@ Process: planned
   provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T15:25:06Z (fix/material-561927): resumed
   provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T15:25:13Z (fix/material-561927): diagnosis: global pre-commit hook hook.identity-check (dotfiles 6b73551, 2026-10-17 06:26) runs git-identity-check (~110 ms: python startup, ops-profile/tt imports, 9 subprocesses) on every fixture git commit; fixture commit 0.128 s vs 0.010 s with hook disabled. Fast tooling 42.0 s with hook vs 23.3 s with a hook-free global config (529 cases, 4 children); test_upstream_report alone 26.1 s vs 7.3 s. Non-tooling check steps ~14 s (clippy 7.6, ops-check 4.1). Fast hook went 34.6 s (01:36Z, 487 cases) -> 54-67 s (11:06Z on, same 487 cases); the hook-pre-commit full route stays 33 s (more children).
