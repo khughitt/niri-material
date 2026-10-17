@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-b156e7
 created: 2026-10-17T01:24:01Z
-updated: 2026-10-17T01:37:48Z
+updated: 2026-10-17T02:03:19Z
 started: 2026-10-17T01:24:30Z
 completed: 2026-10-17T01:37:48Z
 depends: []
@@ -34,3 +34,4 @@ Where: docs/materials/scripts/noctalia-surfaces.sh; Noctalia v5.2.1 custom palet
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T01:37:48Z (material-b156e7): Matched case and three-column sheet landed (docs/materials/scripts/noctalia-surfaces.sh, noctalia-glass-palette.py); settings and caveats in the brief
   provenance: {"harness_session":"claude-code:c824d38e-5906-4679-a1cd-041a0cd9885d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T02:03:19Z (materials-26.04): owner verdict 2026-10-16: column C of the material-b156e7 sheet (matched hue and darkness: custom palette with glass-colored surfaces, bar and attached panels 0.95, floating panels solid) looks viable; the optical treatment is Noctalia styling, no layer material needed for cohesion
