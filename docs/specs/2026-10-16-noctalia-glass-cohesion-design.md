@@ -19,7 +19,10 @@ are at 0.95 opacity, and floating panels are solid.
 What this design delivers:
 
 1. **The look.** The live bar and panels read as C does, and keep reading that
-   way when the wallpaper or the glass changes, with no manual step.
+   way with no manual step when the wallpaper changes or the glass changes
+   within the supported range (dark glass, section 2). The shell matches the
+   glass over a reference backdrop. The terminal brightens over bright
+   wallpaper and the opaque shell does not follow it.
 2. **The project hue.** Each output's bar and panels take the hue of the
    project its active workspace is working on, and change with it.
 
@@ -76,7 +79,9 @@ Two findings point the other way:
   reflectance at the configured IOR (`main.frag`: reflection is zero on the
   face and the facing term vanishes there). With the live `terminal-glass` and
   a neutral backdrop `B` of 0.2 (linear), this gives 8,10,10. `material-b156e7`
-  measured 8,11,10. The backdrop contributes at most two levels.
+  measured 8,11,10. The backdrop still matters: the same glass computes to
+  7,7,7 over black and 9,17,18 over white, and lighter glass diverges much
+  further (section 2).
 - **niri already recolors client pixels.** `ClippedSurfaceRenderElement`
   wraps a client's `WaylandSurfaceRenderElement` in a custom texture program.
   A layer surface can be wrapped the same way.
@@ -142,6 +147,39 @@ shader source for them, as `ring.rs` already does for the ring constants, so
 changing the shader without updating the model fails. Noise and saturation
 are left out: the noise is zero-mean, and saturation leaves a neutral backdrop
 unchanged.
+
+**A reference swatch, not the live glass.** The result is the face over
+`B_ref`. The real terminal shows its actual backdrop through the glass, and the
+opaque shell can't follow that, so the match holds only where the backdrop
+term is small. Glass is supported only when it transmits at most 1% of the
+backdrop's luminance:
+
+```
+Y(T) · (1 − f0) ≤ 0.01,   Y = Rec. 709 luminance
+```
+
+**Error within the range.** Over blurred backdrops between 0.05 and 0.5
+(linear), the real face stays within −0.022 and +0.032 OKLab L of the swatch
+at the bound, and within −0.008 and +0.013 for the live glass.
+
+| Glass | Y(T) | Face over black / 0.2 / white |
+| --- | --- | --- |
+| live `terminal-glass` | 0.003 | 7,7,7 / 8,10,10 / 9,17,18 |
+| same color, distance 20 | 0.029, out of range | 7,7,7 / 13,24,24 / 28,53,54 |
+| Prism's default tint `#dfe8ff` at distance 30, live thickness and IOR | 0.91, out of range | 7,7,7 / 116,118,123 / 238,243,254 |
+
+**Outside the range.** niri rejects a `surface-remap` naming out-of-range
+glass at config load:
+
+```
+surface-remap: material "<name>" transmits <Y> of its backdrop;
+the shell match supports dark glass up to 0.01
+```
+
+Through Prism, this makes the apply fail with that message. The fix is to
+darken the glass or turn off `shell.remap` (section 6). Rejecting the rule
+means a Prism glass edit that crosses the range fails loudly, instead of the
+shell quietly turning a light color under dark text.
 
 ### 3. Remap
 
@@ -225,22 +263,42 @@ hue each workspace holds:
 `Monitor::active_window()`, which doesn't depend on keyboard focus, so an open
 panel or an unfocused output keeps its hue (brief, `material-6b1c0b`).
 
-- During a workspace switch, the output blends the two workspaces' targets by
-  the fractional `Monitor::workspace_render_idx()`.
+- During a workspace switch, the output blends the current target families of
+  the two workspaces it shows, by the fractional
+  `Monitor::workspace_render_idx()`, in OKLab.
 - The overview shows the active workspace's hue.
+- Every layer on an output reads that one blended point, so the whole output
+  shows the same hue at the same moment.
 
-**Crossfade.** Each output in `OutputState` owns one crossfade, so every layer
-on an output shows the same hue at the same moment. It reuses the tile's
-signal crossfade: `SignalCrossfade` and `CrossfadePoint` move out of
-`src/layout/tile.rs` into a shared module, and keep their timing, so the shell
-and the terminal's glass fade together.
+**Targets come first.** A hue state resolves to a target family before any
+blending: the surface, container and outline target colors in OKLab.
 
-**Hued target.** The target keeps the face's L, takes the accent's OKLCH hue,
-and takes chroma `hue-chroma × presence`, where presence comes from the
-crossfade. Because a dark face shows almost no hue of its own (the transmitted
-part is at most two levels), the face hue isn't derived from the glass.
-`hue-chroma` is an art-directed strength, and the owner picks it at the sheet
-gate.
+- *Neutral:* the face color, and the container and outline at their offsets
+  (section 3).
+- *Hued:* the target surface keeps the face's L, takes the accent's OKLCH hue,
+  and takes chroma `hue-chroma`. The container and outline follow at their
+  offsets.
+
+Each workspace's crossfade, and the switch blend, interpolate these target
+families linearly in OKLab and never touch the accents. Linear OKLab
+interpolation is continuous at every fraction: red to cyan passes through a
+near-neutral family, not across an undefined hue, and neutral to hued fades
+the chroma. Accents are never interpolated in RGB and then reduced to a hue:
+that path snaps at the gray midpoint (the round-1 review computed `#130505` at
+49.9% and `#000d0d` at 50.1%).
+
+Because a dark face shows almost no hue of its own (section 2), the hue isn't
+taken from the glass. `hue-chroma` is an art-directed strength, and the owner
+picks it at the sheet gate.
+
+**Crossfade.** Each workspace's resolver state owns one crossfade over target
+families. When the workspace's target changes, a fade starts from the current
+interpolated family, so an interrupted fade continues from where it is. The
+duration and curve are `animations.material-signal`, the same setting the
+tile's accent crossfade uses, so the shell and the terminal's glass fade
+together. The tile's `SignalCrossfade` isn't reused: it interpolates accents,
+and the shell must interpolate targets. While any fade or switch blend runs on
+an output, its remapped layers count as animating.
 
 ### 5. Configuration
 
@@ -259,17 +317,21 @@ layer-rule {
 }
 ```
 
-- `surface`, `container`, `outline` and `material` are required. A rule
-  naming an unknown material fails config load with the existing
-  `unknown material:` error.
+- Every node is complete on its own. `surface`, `container`, `outline` and
+  `material` are required in each node, and a missing one fails config load.
+  The other config-load failures:
+  - an unknown material, with the existing `unknown material:` error;
+  - glass outside the supported range (section 2);
+  - a source `surface` lighter than OKLab L 0.4, because the remap supports a
+    dark Noctalia scheme.
 - `hue-chroma` is in [0, 0.1] and defaults to 0.
 - The remap applies to the layer surface and its popups. Noctalia's menus and
   tooltips draw on the same family, and keeping them neutral would read as a
   seam.
-- When several matching rules set `surface-remap`, fields merge one by one,
-  later rules winning, as `background-effect` does (`src/layer/mod.rs`,
-  `merge_with`). The required fields are checked on the merged result, so
-  `config.kdl` can set `hue-chroma` while `prism.kdl` sets the colors.
+- When several matching rules set `surface-remap`, the last one replaces the
+  whole node, as `opacity` does. Fields never merge across rules. So whatever
+  rules match a layer at runtime, the node it gets is one that was validated
+  at load, and no runtime failure path exists.
 
 ### 6. Prism contract
 
@@ -280,14 +342,22 @@ Prism's repository:
 
 - **Template.** Prism's Noctalia template (`noctalia-palette.template`) adds
   `surface_container` and `outline_variant` beside `primary` and `surface`.
-- **Rule output.** The niri sink emits `surface-remap`, whatever the glass's
+- **Rule output.** While a new parameter `shell.remap` is on (default on),
+  the niri sink emits one complete `surface-remap` node, whatever the glass's
   tint source:
   - the three family colors from Noctalia's resolved palette;
   - the name of the active glass material;
   - `hue-chroma` from a new Prism parameter (proposed `shell.hueChroma`).
+
+  Prism owns every field, so no other file needs to add to the node.
+- **Light mode.** When Noctalia's resolved surface is lighter than OKLab
+  L 0.4, the sink omits the rule and its apply report says why:
+  `shell remap off: Noctalia is in light mode`. Switching to light mode then
+  leaves the shell as Noctalia draws it, rather than failing the whole apply.
 - **Missing palette.** When the palette file is missing, the apply fails the
   same way it does today for the `noctalia` tint source, with the existing fix
   hint.
+- **Glass out of range.** The apply fails with niri's message (section 2).
 
 ### 7. Rendering integration
 
@@ -333,8 +403,15 @@ and any of them can be overridden in review:
 ## Error handling
 
 - Configuration errors fail config load with the node and value named:
-  unknown material, a missing color, `hue-chroma` out of range. There is no
-  fallback to an unremapped shell.
+  - an unknown material;
+  - a missing field in any `surface-remap` node;
+  - `hue-chroma` out of range;
+  - glass outside the supported range;
+  - a light source surface.
+
+  There is no fallback to an unremapped shell, and no runtime failure path,
+  because nodes are replaced whole (section 5).
+- Prism omits the rule in light mode and reports it (section 6).
 - Prism refuses to emit the rule without Noctalia's palette, and says how to
   produce it.
 - A window id the resolver no longer finds clears its record. Clearing is the
@@ -343,17 +420,37 @@ and any of them can be overridden in review:
 ## Verification
 
 **Unit tests (Rust, `just test-one`):**
-- The face model against `material-b156e7`'s measurement: the live
-  `terminal-glass` within two levels of 8,11,10.
+- The face model:
+  - against `material-b156e7`'s measurement: the live `terminal-glass` within
+    two levels of 8,11,10;
+  - the table in section 2: black, `B_ref` and white for the live glass and
+    for distance 20;
+  - the range bound: the live glass accepted; distance 20 and the
+    `#dfe8ff` light glass rejected with the section 2 message;
+  - the stated error: within the range, the face over backdrops from 0.05 to
+    0.5 stays within −0.022 and +0.032 L of the swatch at the bound.
 - A check of the model's constants against `main.frag`.
 - The remap's CPU mirror reproduces `noctalia-glass-palette.py`'s anchors
   within one level.
 - The radii, on three palettes, with the weights section 3 lists.
 - Black and white are unchanged.
-- The resolver: settle after the dwell; a brief visit doesn't count; the hold
-  across a non-accent window; clearing on close, move or lost accent; the
-  switch blend; keyboard focus on a panel leaves the hue unchanged.
-- Config parsing and errors for `surface-remap`.
+- The resolver:
+  - settle after the dwell;
+  - a brief visit doesn't count;
+  - the hold across a non-accent window;
+  - clearing on close, move or lost accent;
+  - the switch blend;
+  - keyboard focus on a panel leaves the hue unchanged.
+- The crossfade over target families:
+  - red to cyan sampled at many fractions around 50% changes by less than
+    0.01 OKLab between neighbouring samples (no snap);
+  - neutral to hued and back;
+  - an interrupted fade continues from its current point.
+- Config:
+  - parsing `surface-remap`;
+  - each load error;
+  - two matching rules, where the later complete node replaces the earlier
+    one whole.
 - The damage fingerprint changes with the hue and holds at rest.
 
 **Nested sheet (owner gate).** `docs/materials/scripts/noctalia-surfaces.sh`
