@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T09:40:09Z
+updated: 2026-10-17T09:43:59Z
 started: 2026-10-17T02:10:41Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
@@ -16,6 +16,7 @@ tags: []
 source: "mindful:thought:d6cae16e5bd867ec390c14ab866e7619"
 agent: codex
 spec: docs/specs/2026-10-16-noctalia-glass-cohesion-design.md
+plan: docs/plans/2026-10-17-noctalia-glass-cohesion.md
 ---
 
 Explore applying the existing material treatment to other Noctalia surfaces, including the bar and panels, to improve visual cohesion. Identify suitable surfaces and integration constraints during scoping; the capture asks for cohesion without settling the visual treatment or implementation.
