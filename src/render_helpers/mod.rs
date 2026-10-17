@@ -54,6 +54,7 @@ pub mod signal;
 pub mod snapshot;
 pub mod solid_color;
 pub mod surface;
+pub mod surface_remap;
 pub mod texture;
 pub mod xray;
 
