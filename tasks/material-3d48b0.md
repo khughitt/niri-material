@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-16T11:49:37Z
+updated: 2026-10-17T13:08:34Z
 started: 2026-10-11T12:04:57Z
 depends: []
 parent: material-2834d7
@@ -30,3 +30,5 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 - 2026-10-11T12:16:17Z (materials-26.04): parked (waiting on user, quiet; idle, 25 min): Desktop-idle pilot run 1 (owner away, desktop up, nothing else working) from the main checkout: CAPTURE_TASK=material-3d48b0 OUT=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-idle-pilot-$(date +%s) NOISE_LAYERS_COST_PILOT=0 NOISE_LAYERS_COST_AB=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-hermite-rebuild-1791431057/niri-tracy-b docs/materials/scripts/noise-layers-cost.sh. Phases: build 3, await_load up to 5 (needs load1 < 1.0 with the desktop up; a timeout there is that check, not a refused preflight), preflight 1, 8 sub-runs 4 plus GPU cooldowns. Judge by spec §8.2: every settle settled, no disturbance, every renderer verified, provenance has b cb21ad03…, b config hashes aa09f751…/bc488733…, all four b medians in none [0.228352, 0.230400] and one-fine-1 [0.299008, 0.304128]. Write a run: note. If it passes, run 2 the same way (OUT …-idle-2-…) and judge it; on two passes admit desktop-idle in spec §5.3, map nested measurements to idle, record both run IDs in §8.2, done. On a failure record the reason and keep the route tty.
   provenance: {"harness_session":"claude-code:94bf876f-10c5-43b5-9b79-bbaa31b7031d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-16T11:49:37Z (materials-26.04): Not run in the 2026-10-16 quiet session: it needs the desktop up (idle) and the host was a bare TTY. Bearing from material-f386ae: noise-layers-cost medians are later-mode draws at the P8 idle clock (16 early draws at P0 1815 MHz, 0.041 ms; later at P8 210 MHz, 0.326 ms). A desktop that holds the GPU above P8 would move these medians for reasons unrelated to settles, so the pilot's interval check should record pstate/clocks (CAPTURE_GPU_CLOCKS=1) to tell the two apart.
+- 2026-10-17T13:08:34Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
