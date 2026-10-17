@@ -138,10 +138,10 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
 | `tools/test_gpu_clocks.py` | C | A | +434/-0 |
-| `tools/test_hermetic_git.py` | C | A | +91/-0 |
+| `tools/test_hermetic_git.py` | C | A | +111/-0 |
 | `tools/test_identity_check.py` | C | A | +90/-0 |
 | `tools/test_noise_placement_cost.py` | C | A | +102/-0 |
-| `tools/test_optic_settling.py` | C | A | +1289/-0 |
+| `tools/test_optic_settling.py` | C | A | +1301/-0 |
 | `tools/test_package_pin.py` | C | A | +122/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +375/-0 |
 | `tools/test_target_dir_check.py` | C | A | +181/-0 |
