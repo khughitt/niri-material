@@ -1,14 +1,16 @@
 ---
 id: material-04b9b2
 title: Drive the resolver from niri and hand each output's hue to its layers
-status: doing
+status: done
 priority: 2
 complexity: high
 process: direct
 owner: material-62347d
 created: 2026-10-17T11:15:33Z
-updated: 2026-10-17T13:23:26Z
+updated: 2026-10-17T13:23:31Z
 started: 2026-10-17T12:58:11Z
+completed: 2026-10-17T13:23:31Z
+closed: 2026-10-17T13:23:31Z
 depends: []
 parent: material-62347d
 tags: []
@@ -22,3 +24,7 @@ step: "Task 6: Drive the resolver from niri and hand each output's hue to its la
 - 2026-10-17T12:58:11Z (material-62347d): started
   provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T13:23:26Z (material-62347d): review: impl round 1 — verdict: accept; findings: minor 5; reviewer: claude-code/claude-opus-5-5
+- 2026-10-17T13:23:31Z (material-62347d): done
+  provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T13:23:31Z (material-62347d): resolver driven from niri, each output's hue handed to its layers, landed in a5c787c2; review clean
+  provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
