@@ -8,9 +8,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Git exports repository variables into hooks, where they override subprocess cwd.
-for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
-    del os.environ[_name]
+from tools.hermetic_git import isolate
+
+# Git exports repository variables into hooks, where they override subprocess cwd;
+# host git config stays out too.
+isolate(os.environ)
 
 
 class TraceCoverageTest(unittest.TestCase):

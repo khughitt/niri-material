@@ -6,12 +6,13 @@ import sys
 import tempfile
 import unittest
 
+from tools.hermetic_git import isolate
+
 # Git exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE into hook processes and they
 # OVERRIDE `git -C <dir>`; check_cmd runs this suite from the pre-commit hook, so a
 # fixture's worktrees would otherwise land in THIS repository. Same scrub as
-# test_upstream_report.py.
-for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
-    del os.environ[_name]
+# test_upstream_report.py, and reads no host git config.
+isolate(os.environ)
 
 TOOL = pathlib.Path(__file__).with_name("target-dir-check")
 

@@ -1,4 +1,5 @@
 """isolate() keeps the host's git environment and configuration out of tooling tests."""
+import json
 import os
 import pathlib
 import re
@@ -105,6 +106,35 @@ class FocusedRunTests(unittest.TestCase):
                                  env=dict(os.environ, GIT_DIR=str(decoy / '.git')),
                                  capture_output=True, text=True, timeout=120)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+
+
+# A module "runs git" when its source quotes the command name, which every git call,
+# argv list and shutil.which in these modules does.
+GIT_USE = re.compile(r'''["']git["']''')
+PROBE = '''
+import importlib, json, os, sys
+sys.path.insert(0, 'tools')
+importlib.import_module(sys.argv[1])
+print(json.dumps({key: value for key, value in os.environ.items() if key.startswith('GIT_')}))
+'''
+
+
+class InventoryTests(unittest.TestCase):
+    def test_every_git_running_module_isolates_at_import(self):
+        modules = sorted(path.stem for path in (ROOT / 'tools').glob('test_*.py')
+                         if GIT_USE.search(path.read_text()))
+        self.assertTrue({'test_gates', 'test_optic_settling', 'test_upstream_report'} <= set(modules), modules)
+        with tempfile.TemporaryDirectory() as temporary:
+            decoy = dict(os.environ, GIT_DIR=str(pathlib.Path(temporary) / 'decoy.git'),
+                         GIT_INDEX_FILE=str(pathlib.Path(temporary) / 'index'),
+                         GIT_CONFIG_GLOBAL=str(pathlib.Path(temporary) / 'host-gitconfig'))
+            for module in modules:
+                with self.subTest(module=module):
+                    run = subprocess.run([sys.executable, '-c', PROBE, module], cwd=ROOT, env=decoy,
+                                         capture_output=True, text=True, timeout=60)
+                    self.assertEqual(run.returncode, 0, run.stderr)
+                    self.assertEqual(json.loads(run.stdout.splitlines()[-1]),
+                                     {'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'})
 
 
 if __name__ == '__main__':

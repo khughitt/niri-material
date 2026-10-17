@@ -12,13 +12,15 @@ import textwrap
 import unittest
 import unittest.mock
 
+from tools.hermetic_git import isolate
+
 # Git exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE into hook processes, and they
 # OVERRIDE `git -C <dir>`. `check_cmd` runs this suite from the pre-commit hook, so
 # without this scrub a fixture's `git commit` lands in THIS repository instead of its
 # temporary one — which is exactly how an earlier run moved the branch to a bogus
-# commit. Scrubbing the whole process also covers the report.* helpers the tests call.
-for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
-    del os.environ[_name]
+# commit. Scrubbing the whole process also covers the report.* helpers the tests call,
+# and the process reads no host git config.
+isolate(os.environ)
 
 spec = importlib.util.spec_from_loader(
     "upstream_report",
