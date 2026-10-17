@@ -1,14 +1,16 @@
 ---
 id: material-5ad153
 title: Documentation
-status: doing
+status: done
 priority: 2
 complexity: low
 process: direct
 owner: material-62347d
 created: 2026-10-17T11:15:39Z
-updated: 2026-10-17T13:34:31Z
+updated: 2026-10-17T13:34:38Z
 started: 2026-10-17T13:23:37Z
+completed: 2026-10-17T13:34:38Z
+closed: 2026-10-17T13:34:38Z
 depends: []
 parent: material-62347d
 tags: []
@@ -22,3 +24,7 @@ step: "Task 7: Documentation"
 - 2026-10-17T13:23:37Z (material-62347d): started
   provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T13:34:31Z (material-62347d): review: impl round 1 — verdict: accept; findings: minor 2; reviewer: claude-code/claude-sonnet-5-5
+- 2026-10-17T13:34:38Z (material-62347d): done
+  provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T13:34:38Z (material-62347d): surface-remap documented (wiki, render pipeline, brief pointer) in 642d3774; review clean
+  provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
