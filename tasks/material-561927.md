@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T16:59:46Z
+updated: 2026-10-17T16:59:52Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -61,3 +61,5 @@ Process: planned
 - 2026-10-17T16:58:55Z (fix/material-561927): review: plan round 2 — verdict: revise; findings: P1 1; reviewer: codex
 - 2026-10-17T16:59:01Z (fix/material-561927): Plan review round 2 P1: retirement scan's grep -r skips symlinked files met during traversal, so a dotfiles-managed unit symlinked to a file outside the worktree whose ExecStart names the worktree passes the guard (reviewer reproduced: exit 0). Use grep -R and add that case to the safeguard pilot.
 - 2026-10-17T16:59:46Z (fix/material-561927): plan round 3: retirement content scan uses grep -R (follows linked files and dirs); pilot re-run, 10 cases: missing-target launcher, logical launcher, unit link, drop-in, niri include, unit linked to an outside file naming the worktree (real and logical), linked niri dir naming it all stop with worktree and branch kept; clean HOME and a dir link loop remove both. Pilot set recorded in the plan step.
+- 2026-10-17T16:59:52Z (fix/material-561927): parked (waiting on user, review): Owner: review round 3 of .worktrees/material-561927/docs/plans/2026-10-17-pre-commit-fast-hermetic-git-plan.md (retirement scan follows linked config files) and pick execution (recommended: native inline + one fresh final reviewer). Then agent executes Tasks 1-4, branch acceptance (Task 5, idle host), merge and post-merge verification (Task 6).
+  provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
