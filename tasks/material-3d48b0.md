@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-17T13:08:34Z
+updated: 2026-10-17T13:08:40Z
 started: 2026-10-11T12:04:57Z
 depends: []
 parent: material-2834d7
@@ -32,3 +32,4 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 - 2026-10-16T11:49:37Z (materials-26.04): Not run in the 2026-10-16 quiet session: it needs the desktop up (idle) and the host was a bare TTY. Bearing from material-f386ae: noise-layers-cost medians are later-mode draws at the P8 idle clock (16 early draws at P0 1815 MHz, 0.041 ms; later at P8 210 MHz, 0.326 ms). A desktop that holds the GPU above P8 would move these medians for reasons unrelated to settles, so the pilot's interval check should record pstate/clocks (CAPTURE_GPU_CLOCKS=1) to tell the two apart.
 - 2026-10-17T13:08:34Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T13:08:40Z (materials-26.04): Since material-d2e552 (merged eadc3835) noise-layers-cost.sh samples GPU clocks by default. This pilot sets CAPTURE_GPU_CLOCKS=0 (spec §8.2) so it matches its unsampled TTY references; this overrules the 2026-10-16 note's CAPTURE_GPU_CLOCKS=1. A sampled full run would also refuse, rather than report, a desktop that holds the GPU above the idle clock. If the interval check fails, rerun once with CAPTURE_GPU_CLOCKS=1 to tell a held clock (draw_idle_clock_count, idle_graphics_mhz in metrics.txt) from settles.
