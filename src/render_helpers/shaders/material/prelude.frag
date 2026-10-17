@@ -109,7 +109,7 @@ struct Surface {
     vec2 acrossDir;    // normalize(grad u), outward across the bevel
     float outerDist;   // signed distance to the silhouette, negative inside
 #ifdef MATERIAL_VIEW
-    vec3 view;         // toward the viewer: +z at rest
+    vec3 view;         // toward the viewer: +z at the identity pose
 #endif
 };
 
@@ -400,6 +400,7 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
     vec4 inner_r = g_face_r;
     vec4 outer_r = g_outer_r;
 #else
+    // The base's frame, inline: slabFrame is its twin in the view variant. Change both.
     vec2 slab_min = mat_slab_rect.xy * mat_area_size;
     vec2 slab_size = mat_slab_rect.zw * mat_area_size;
     vec2 half_ext = slab_size * 0.5;
@@ -486,8 +487,8 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
 #ifdef MATERIAL_VIEW
 
 // The view path's state for this fragment (spec 2026-10-09 §4.1). main sets it while
-// mat_view_on is 1. At rest it keeps these initial values, the rest optics' own, and no
-// stage reads it outside a branch on g_view_on.
+// mat_view_on is 1. At the identity pose it keeps these initial values, the rest optics' own,
+// and no stage reads it outside a branch on g_view_on.
 bool g_view_on = false;
 vec3 g_ray = vec3(0.0, 0.0, -1.0);   // slab-local incident direction, unit
 vec3 g_view = vec3(0.0, 0.0, 1.0);   // toward the viewer: -g_ray

@@ -146,7 +146,7 @@ pub struct Shaders {
     pub custom_open: RefCell<Option<ShaderProgram>>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgramType {
     Border,
     Shadow,
@@ -705,7 +705,8 @@ mod tests {
 
     /// `source` as the preprocessor leaves it with `MATERIAL_VIEW` defined (`view`) or not.
     /// The material files guard the view path with `#ifdef MATERIAL_VIEW`, an optional
-    /// `#else` and `#endif`, never nested (design 2026-10-09 §6 "Contingency").
+    /// `#else` and `#endif`, never nested (design 2026-10-09 §6 "Contingency"). Any other
+    /// preprocessor line fails: this model of the preprocessor would not see what it does.
     fn variant(source: &str, view: bool) -> String {
         let mut out = String::with_capacity(source.len());
         let mut inside = false;
@@ -724,8 +725,8 @@ mod tests {
                 }
                 t => {
                     assert!(
-                        !(inside && t.starts_with("#if")),
-                        "a conditional inside a MATERIAL_VIEW block"
+                        !t.starts_with('#'),
+                        "a preprocessor line other than the MATERIAL_VIEW forms: {t}"
                     );
                     if keep {
                         out.push_str(line);
@@ -956,6 +957,11 @@ mod tests {
                 .all(|n| !n.name.starts_with("mat_view")),
             "the rest program's uniforms name a view uniform"
         );
+        // And the rest program's text is the base's: no view state or the view-only frame.
+        let rest = variant(&material_source(), false);
+        for token in ["mat_view", "g_view", "g_seed_glide", "slabFrame("] {
+            assert!(!rest.contains(token), "the rest program names {token}");
+        }
         let main = source.split_once("void main()").unwrap().1;
         assert!(main.contains("if (mat_view_on == 1)\n        v = mat_view_quad.xy + niri_v_coords * mat_view_quad.zw;"));
     }

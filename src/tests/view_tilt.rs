@@ -28,7 +28,10 @@ use crate::render_helpers::material::view::solid::{outline, trace, Segment, Soli
 use crate::render_helpers::material::view::{
     footprint, hooks, swing_shape, Camera, ViewPose, VIEW_NEAR_CLIP,
 };
-use crate::render_helpers::material::{drawn_area, material_frame, ElementView, MaterialFrame};
+use crate::render_helpers::material::{
+    drawn_area, material_frame, take_bound_programs, ElementView, MaterialFrame,
+};
+use crate::render_helpers::shaders::ProgramType;
 use crate::render_helpers::RenderTarget;
 use crate::window::mapped::MappedId;
 use crate::window::Mapped;
@@ -492,7 +495,8 @@ fn every_identity_scene_parses_and_replaces_its_nodes() {
 
 /// §8.2 "Rest identity" across the two programs (§6 "Contingency"): the rest render binds the
 /// rest program, built from the base's text, and the forced identity pose gives every tile a
-/// view, so it binds the view variant. The two must agree byte for byte.
+/// view, so it binds the view variant. Each render's draws record the program they bound, and
+/// the two renders must agree byte for byte.
 #[test]
 fn the_view_branch_at_the_identity_is_byte_identical_to_rest() {
     eprintln!(
@@ -503,8 +507,20 @@ fn the_view_branch_at_the_identity_is_byte_identical_to_rest() {
     let identity = ViewPose::identity(DVec2::new(0.6, 0.8), 6.);
     let mut failures = Vec::new();
     for (name, scene) in identity_scenes() {
+        take_bound_programs();
         let rest = renders(&scene, None, &frames);
+        let rest_bound = take_bound_programs();
         let forced = renders(&scene, Some(identity), &frames);
+        let forced_bound = take_bound_programs();
+        assert!(
+            !rest_bound.is_empty() && rest_bound.iter().all(|p| *p == ProgramType::Material),
+            "{name}: the rest render bound {rest_bound:?}"
+        );
+        assert!(
+            !forced_bound.is_empty()
+                && forced_bound.iter().all(|p| *p == ProgramType::MaterialView),
+            "{name}: the forced render bound {forced_bound:?}"
+        );
         for (i, (a, b)) in rest.iter().zip(&forced).enumerate() {
             dump(&format!("identity/{name}-{i}-rest"), a, (OUT_W, OUT_H));
             dump(&format!("identity/{name}-{i}-forced"), b, (OUT_W, OUT_H));

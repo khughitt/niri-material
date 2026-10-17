@@ -23,7 +23,9 @@ variant is bound only while a swing runs. The same renders dumped at the commit
 `2f86b3ac`) on `NVIDIA GeForce RTX 3070/PCIe/SSE2`, 137 files, are
 byte-identical to the base dumps above (`$EV` = `contingency-20261016T0749`).
 `view_tilt`'s identity check now compares the two programs: the forced
-identity pose binds the view variant.
+identity pose binds the view variant, and each render's material draws record
+the program they bound, so the check asserts the rest program for the rest
+render and the view variant for the forced one.
 
 ## Execution rulings
 
@@ -138,3 +140,18 @@ records the material draws within 0.9 s of each gain: 330 frames, median
 `view-tilt 10` rest median (0.659 ms). Before the contingency the same case
 read median 1.425, maximum 1.713 and 25.7 ms per gain. The swing figures carry
 no bound.
+
+Start-up: `Shaders::init` now compiles the material program four times (the
+rest program and the view variant, each with smithay's debug twin). Timed on
+2026-10-16 on `NVIDIA GeForce RTX 3070/PCIe/SSE2` (surfaceless EGL as the
+headless backend builds it, three rounds each) with a throwaway test, not kept:
+
+| Program | Cold (`__GL_SHADER_DISK_CACHE=0`) | Warm (disk cache) |
+| --- | ---: | ---: |
+| all of `Shaders::compile` | 11.6–12.1 s | 61–75 ms |
+| material rest program | 4.5–4.8 s | 23–24 ms |
+| material view variant | 6.7–7.4 s | 31–35 ms |
+| the single program before the split (`2f86b3ac`'s files) | 7.4 s | — |
+
+The split adds about 4.5 s to a cold start, which the driver pays once after
+any change to the shader text or the driver, and about 23 ms to a warm one.

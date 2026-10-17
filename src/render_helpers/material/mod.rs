@@ -199,6 +199,19 @@ pub fn glass_signal_inputs(
 
 static JELLY_SEED: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(test)]
+thread_local! {
+    /// The program each material draw on this thread bound, in draw order.
+    static BOUND_PROGRAMS: RefCell<Vec<ProgramType>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The programs material draws on this thread bound since the last call, in draw order: a
+/// render shows which of the two (§6 "Contingency") it drew with.
+#[cfg(test)]
+pub(crate) fn take_bound_programs() -> Vec<ProgramType> {
+    BOUND_PROGRAMS.take()
+}
+
 /// The material element's coordinate frame: the inflated element area plus
 /// every rect the shader needs, expressed in element UV.
 #[derive(Debug, Clone, PartialEq)]
@@ -1132,6 +1145,8 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             }
             None => ProgramType::Material,
         };
+        #[cfg(test)]
+        BOUND_PROGRAMS.with_borrow_mut(|bound| bound.push(program));
         let uniforms: Rc<[Uniform<'static>]> = uniforms.into();
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
@@ -2753,6 +2768,7 @@ mod tests {
             Uniform::new("mat_view", [-0f32, 0., 0., 1.]),
             "every correction is zero"
         );
+        assert_eq!(on[2], Uniform::new("mat_view_dir", [0.6f32, 0.8]));
         assert_eq!(on[3], Uniform::new("mat_view_quad", [0f32, 0., 1., 1.]));
         assert_eq!(on[4], Uniform::new("mat_view_seed", [1f32, 0., 0., 1.]));
     }
