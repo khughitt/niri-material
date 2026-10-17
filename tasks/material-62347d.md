@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: material-62347d
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T14:43:32Z
+updated: 2026-10-17T14:57:48Z
 started: 2026-10-17T02:10:41Z
 completed: 2026-10-17T14:43:32Z
 closed: 2026-10-17T14:43:32Z
@@ -85,3 +85,4 @@ Owner addition (2026-10-15): beyond a static variant of the material, the shell 
   provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T14:43:32Z (material-62347d): surface-remap layer rule, glass face model, per-workspace hue resolver and remap shader landed; owner accepted the sheet (hue-chroma 0.03); Prism and rollout follow-ups filed
   provenance: {"harness_session":"claude-code:4e29fe84-ae01-4701-a4ac-da51f5fe6c77","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T14:57:48Z (material-62347d): execution corrections to the plan: T6 resolver built from animation_clock.clone() (no clock local); T6 tests timed from clock.now_unadjusted() after the last dispatch (absolute times fail on a real host) and the deadline test checks the armed timer; T2/T6 test counts 9/13; T2 required-field test asserts knuffel's text; T3 pins COEFF_FLOOR and SPECULAR_FLOOR to main.frag text; T5 shared remap_program/surface_element helpers, one follows_layer popup predicate, test-only accessors cfg(test), damage from the surface tree bbox (plan's window-geometry rects left stale pixels); T7 remap note placed for layers of any layer, not item 4; T8 OUT exported, no machine paths; final review added a shader-compiles test; T9 concerns: note dropped (reserved for tasks filed after done)
