@@ -1,10 +1,13 @@
 ---
 id: material-62347d
-title: Explore material treatment for Noctalia bars and panels
+title: Design and build Noctalia glass cohesion with workspace project hue
 status: todo
 priority: 2
+size: l
+complexity: high
+process: planned
 created: 2026-10-12T10:50:31Z
-updated: 2026-10-17T02:10:30Z
+updated: 2026-10-17T02:10:36Z
 depends: [material-e27dbc, material-6b1c0b]
 parent: material-55380c
 tags: []
