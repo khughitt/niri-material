@@ -25,10 +25,19 @@
 #             (noctalia-glass-palette.py), with the bar and attached panels at
 #             0.95 and floating panels solid, since the glass passes only a few
 #             percent of its backdrop.
-# No case puts a niri material on a Noctalia surface: niri has no layer
+#   remap      the matched look from niri instead of a palette: Noctalia on its
+#              wallpaper palette, bar and attached panels 0.95, floating panels
+#              solid, and a surface-remap rule moving Noctalia's surface family
+#              to the pinned glass's face (no hue).
+#   hue-quiet  remap, with the probe terminal carrying the accent $ACCENT and
+#              hue-chroma 0.015.
+#   hue-strong remap with hue-chroma 0.03.
+# STRIP=1 adds a transition strip: two accented probes on two workspaces and a
+# slowed workspace switch, sampled across the crossfade.
+# The baseline, treated and matched cases put no niri material on a Noctalia surface: niri has no layer
 # material pass. Every difference is Noctalia styling or niri's layer blur.
 #
-# Usage: OUT=<dir> WALL=<image> [NIRI=niri] [CASES="baseline treated matched"] noctalia-surfaces.sh
+# Usage: OUT=<dir> WALL=<image> [NIRI=niri] [CASES="matched remap hue-quiet hue-strong"] [ACCENT=#e5533c] [ACCENT2=#3cc6e5] [STRIP=1] noctalia-surfaces.sh
 # WALL should be the live wallpaper (`noctalia msg wallpaper-get`), so the
 # palette Noctalia derives from it matches the desktop's.
 # Requires: weston, niri, noctalia, kitty, dbus-run-session, jq, python3,
@@ -37,7 +46,10 @@ set -euo pipefail
 
 NIRI=${NIRI:-niri}
 SCRIPTS=$(dirname "$(realpath "$0")")
-CASES=${CASES:-baseline treated matched}
+CASES=${CASES:-matched remap hue-quiet hue-strong}
+ACCENT=${ACCENT:-#e5533c}
+ACCENT2=${ACCENT2:-#3cc6e5}
+STRIP=${STRIP:-0}
 WALL=${WALL:-/usr/share/noctalia/assets/noctalia-wallpaper.png}
 : "${OUT:?set OUT to an empty output directory}"
 [ -r "$WALL" ] || { echo "FAIL: WALL $WALL is not readable" >&2; exit 1; }
@@ -132,17 +144,24 @@ window-rule {
 }'
 
 write_niri_config() {   # $1 case, $2 path
-    local effect
+    local effect remap='' anims='animations { off; }'
     case "$1" in
         baseline) effect='xray false;' ;;
         treated|matched) effect='xray false; noise 0.03; saturation 0.95;' ;;
+        remap) effect='xray false; noise 0.03; saturation 0.95;'; remap=$(remap_rule 0) ;;
+        hue-quiet) effect='xray false; noise 0.03; saturation 0.95;'; remap=$(remap_rule 0.015) ;;
+        hue-strong) effect='xray false; noise 0.03; saturation 0.95;'; remap=$(remap_rule 0.03) ;;
+        strip)
+            effect='xray false; noise 0.03; saturation 0.95;'; remap=$(remap_rule 0.03)
+            anims='animations { slowdown 8; }'
+            ;;
         *) fail "unknown case $1" ;;
     esac
     cat > "$2" <<KDL
 prefer-no-csd
 hotkey-overlay { skip-at-startup; }
 config-notification { disable-failed; }
-animations { off; }
+$anims
 layout {
     gaps 40
     background-color "transparent"
@@ -159,6 +178,7 @@ layer-rule {
     match namespace=r#"^noctalia-(bar-[^"]+|notification|dock|panel|attached-panel|osd)$"#
     background-effect { $effect }
 }
+$remap
 $GLASS
 KDL
 }
@@ -166,6 +186,33 @@ KDL
 # The pinned glass's rendered color over the live wallpaper, measured from the
 # probe's interior in the nested run (mean 9,10,10).
 GLASS_SURFACE='#090a0a'
+
+# Noctalia's surface family for WALL, the colors Prism will write live.
+family_colors() {
+    local tokens="$OUT/family.tokens.json"
+    if [ ! -s "$tokens" ]; then
+        noctalia theme "$WALL" --scheme m3-content --dark -o "$tokens" \
+            > "$OUT/family.theme.log" 2>&1 || fail "noctalia theme failed (see $OUT/family.theme.log)"
+    fi
+    FAM_SURFACE=$(jq -r '(.dark // .).surface' "$tokens")
+    FAM_CONTAINER=$(jq -r '(.dark // .).surface_container' "$tokens")
+    FAM_OUTLINE=$(jq -r '(.dark // .).outline_variant' "$tokens")
+}
+remap_rule() {   # $1 hue-chroma
+    family_colors
+    cat <<KDL
+layer-rule {
+    match namespace=r#"^noctalia-(bar-[^"]+|attached-panel|panel)$"#
+    surface-remap {
+        surface "$FAM_SURFACE"
+        container "$FAM_CONTAINER"
+        outline "$FAM_OUTLINE"
+        material "nsf-glass"
+        hue-chroma $1
+    }
+}
+KDL
+}
 
 write_noctalia_config() {   # $1 case, $2 dir
     local bar_opacity corner_scale panel_mode=glass theme
@@ -185,6 +232,7 @@ custom_palette = "glass-matched"'
             python3 -I "$SCRIPTS/noctalia-glass-palette.py" "$OUT/$1.tokens.json" "$GLASS_SURFACE" \
                 "$2/noctalia/palettes/glass-matched.json" > "$OUT/$1.palette.log"
             ;;
+        remap|hue-quiet|hue-strong|strip) bar_opacity=0.95; corner_scale=1.6; panel_mode=solid ;;
         *) fail "unknown case $1" ;;
     esac
     mkdir -p "$2/noctalia"
@@ -220,6 +268,10 @@ wait_for() {   # $1 seconds, $2… command that succeeds when ready
 }
 has_layer() { nmsg -j layers | jq -e --arg ns "$1" 'any(.[]; .namespace == $ns)'; }
 has_probe() { nmsg -j windows | jq -e 'any(.[]; .app_id == "nsf-probe")'; }
+probe_ids() { nmsg -j windows | jq -r '[.[] | select(.app_id == "nsf-probe") | .id] | sort | .[]'; }
+accent_window() {   # $1 window id, $2 accent
+    nmsg set-window-signal --id "$1" --source familiar --accent "$2"
+}
 shot() {   # $1 png path
     rm -f "$1"
     nmsg action screenshot-screen --write-to-disk true --show-pointer false --path "$1"
@@ -238,14 +290,8 @@ open_panel() {   # $1 case, $2 panel id, $3 namespace
     sleep 1
 }
 
-run_case() {   # $1 case
+start_stack() {   # $1 case; $N is set and both configs written
     local c=$1
-    N=$(mktemp -d "$OUT/$c.noctalia.XXXX")
-    write_niri_config "$c" "$OUT/$c.niri.kdl"
-    write_noctalia_config "$c" "$N/config"
-    noctalia_env noctalia config validate > "$OUT/$c.noctalia-validate.log" 2>&1 \
-        || fail "Noctalia rejected the $c config (see $OUT/$c.noctalia-validate.log)"
-
     weston --backend=headless --renderer=gl --shell=kiosk-shell.so \
         --width=1280 --height=720 --socket="$HOST" > "$OUT/$c.weston.log" 2>&1 &
     WESTON_PID=$!
@@ -267,11 +313,30 @@ run_case() {   # $1 case
     wait_for 10 test -s "$N/noctalia.pid" || fail "Noctalia did not start (see $OUT/$c.noctalia.log)"
     NOCT_PID=$(cat "$N/noctalia.pid")
     wait_for 30 has_layer noctalia-bar-default || fail "no bar layer (see $OUT/$c.noctalia.log)"
-
+}
+spawn_probe() {
     nmsg action spawn -- kitty --config NONE --class nsf-probe -o background_opacity=0 \
         -o cursor_blink_interval=0 -o font_size=11 \
         sh -c 'printf "~/d/niri-material  materials-26.04\n\n  src/layer/mapped.rs\n  src/niri.rs\n  docs/notes/\n"; exec sleep infinity'
+}
+
+run_case() {   # $1 case
+    local c=$1
+    family_colors
+    N=$(mktemp -d "$OUT/$c.noctalia.XXXX")
+    write_niri_config "$c" "$OUT/$c.niri.kdl"
+    write_noctalia_config "$c" "$N/config"
+    noctalia_env noctalia config validate > "$OUT/$c.noctalia-validate.log" 2>&1 \
+        || fail "Noctalia rejected the $c config (see $OUT/$c.noctalia-validate.log)"
+    start_stack "$c"
+
+    spawn_probe
     wait_for 10 has_probe || fail "no probe terminal"
+    case $c in
+        hue-quiet|hue-strong)
+            accent_window "$(probe_ids | head -1)" "$ACCENT"
+            ;;
+    esac
     # Let the palette derive from the wallpaper and the wallpaper fade in.
     sleep 3
     record "$c" bar
@@ -281,6 +346,42 @@ run_case() {   # $1 case
 
     stop_case
     echo "case $c: done"
+}
+
+run_strip() {
+    local c=strip i
+    family_colors
+    N=$(mktemp -d "$OUT/$c.noctalia.XXXX")
+    write_niri_config "$c" "$OUT/$c.niri.kdl"
+    write_noctalia_config "$c" "$N/config"
+    start_stack "$c"
+
+    spawn_probe
+    wait_for 10 has_probe || fail "no first probe"
+    accent_window "$(probe_ids | head -1)" "$ACCENT"
+    sleep 6   # dwell, then the slowed fade
+    nmsg action focus-workspace-down
+    spawn_probe
+    wait_for 10 sh -c "[ \$(NIRI_SOCKET='$NIRI_SOCKET' '$NIRI' msg -j windows | jq '[.[] | select(.app_id == \"nsf-probe\")] | length') -ge 2 ]" \
+        || fail "no second probe"
+    accent_window "$(probe_ids | tail -1)" "$ACCENT2"
+    sleep 6
+    nmsg action focus-workspace-up
+    for i in $(seq 0 11); do shot "$OUT/strip.$i.png"; sleep 0.2; done
+
+    local frames=()
+    for i in $(seq 0 11); do
+        magick "$OUT/strip.$i.png" -crop 1280x110+0+0 +repage -gravity northwest \
+            -fill '#00000099' -draw 'rectangle 0,0 60,34' -fill '#ffffff' \
+            -font DejaVu-Sans-Bold -pointsize 22 -annotate +8+5 "F$i" "$OUT/strip.crop.$i.png"
+        frames+=("$OUT/strip.crop.$i.png")
+    done
+    label "Does the bar crossfade from cyan to red without a snap? Frames F0-F11 in order, about 0.3 s apart, of a workspace switch slowed 8x: workspace 2's agent ($ACCENT2) to workspace 1's agent ($ACCENT), hue-chroma 0.03. Top 110 px of the nested output." \
+        1280 20 DejaVu-Sans "$OUT/strip.title.png"
+    magick "$OUT/strip.title.png" "${frames[@]}" -background '#1b1b1b' -append +repage -depth 8 \
+        -define png:compression-level=9 "$OUT/noctalia-hue-transition.png"
+    stop_case
+    echo "strip: $OUT/noctalia-hue-transition.png"
 }
 
 # The owner's sheet: columns are the cases (A the live baseline), rows the
@@ -293,16 +394,30 @@ case_note() {   # $1 case
     case "$1" in
         baseline) echo "baseline (control). Live settings: bar and attached panels 0.70 opaque, floating panels 0.55, wallpaper palette, panel corners 12.6 px, shell blur noise 0.1, saturation 1.0." ;;
         treated) echo "treated. All panels 0.55 opaque, wallpaper palette, panel corners 20 px like the windows, shell blur noise 0.03 and saturation 0.95 like the glass." ;;
+        remap) echo "remap. No palette change: Noctalia's wallpaper palette, niri's surface-remap to the glass face, hue-chroma 0; bar and attached panels 0.95, floating panels solid. Should read as A." ;;
+        hue-quiet) echo "hue, quiet. B, plus the probe's accent $ACCENT held for the workspace: hue-chroma 0.015. Is the hue present but quiet?" ;;
+        hue-strong) echo "hue, strong. As C at hue-chroma 0.03. Which of C and D reads as the project, legibly?" ;;
         matched) echo "matched. B, plus the glass's hue and darkness: surfaces $GLASS_SURFACE (cards and outlines keep their steps above it), accents unchanged; bar and attached panels 0.95 opaque, floating panels solid." ;;
     esac
 }
 make_sheet() {
-    local s="$OUT/sheet" cw=768 col row i ids=(A B C) cells=() rows=() heads=() width
+    local s="$OUT/sheet" cw col row i ids=(A B C D) cells=() rows=() heads=() width
+    local title look scale=60
+    if [[ " ${CASE_LIST[*]} " == *" remap "* ]]; then
+        title="Does the niri remap read as the approved look, and which hue strength reads as the project?"
+        look="Column A is the approved look (control): Noctalia's custom glass palette. B is niri's surface remap over Noctalia's own wallpaper palette, with no hue. C and D give the probe terminal the accent $ACCENT and remap the bar and panels toward its hue at two strengths. Nested niri, 1280x720, live wallpaper, cells at 50%."
+        scale=50
+    else
+        title="Do the bar and panels read as the same dark glass as the terminal?"
+        look="No column puts a niri material on the bar or panels: niri has none for layer surfaces yet. Every difference is Noctalia styling or niri's blur. Compare each column's bar and panels with the glass terminal on the left. Nested niri, 1280x720, live wallpaper, cells at 60%."
+    fi
+    [ -z "${SCALE:-}" ] || scale=$SCALE
+    cw=$((1280 * scale / 100))
     mkdir -p "$s"
     width=$(( ${#CASE_LIST[@]} * (cw + 20) - 24 ))
-    label "Do the bar and panels read as the same dark glass as the terminal?" \
+    label "$title" \
         "$width" 34 DejaVu-Sans-Bold "$s/title.png"
-    label "No column puts a niri material on the bar or panels: niri has none for layer surfaces yet. Every difference is Noctalia styling or niri's blur. Compare each column's bar and panels with the glass terminal on the left. Nested niri, 1280x720, live wallpaper, cells at 60%." \
+    label "$look" \
         "$width" 22 DejaVu-Sans "$s/look.png"
     for i in "${!CASE_LIST[@]}"; do
         label "${ids[$i]}: $(case_note "${CASE_LIST[$i]}")" "$cw" 20 DejaVu-Sans "$s/col-$i.png"
@@ -314,7 +429,7 @@ make_sheet() {
         row=$((row + 1)); cells=()
         for i in "${!CASE_LIST[@]}"; do
             col=${ids[$i]}
-            magick "$OUT/${CASE_LIST[$i]}.$step.png" -resize 60% -gravity northwest \
+            magick "$OUT/${CASE_LIST[$i]}.$step.png" -resize ${scale}% -gravity northwest \
                 -fill '#00000099' -draw 'rectangle 0,0 64,40' -fill '#ffffff' \
                 -font DejaVu-Sans-Bold -pointsize 28 -annotate +9+5 "$col$row" \
                 -bordercolor '#1b1b1b' -border 10 "$s/cell-$col$row.png"
@@ -338,5 +453,6 @@ make_sheet() {
 
 read -r -a CASE_LIST <<< "$CASES"
 for c in "${CASE_LIST[@]}"; do run_case "$c"; done
-[ "${CASE_LIST[0]}" != baseline ] || [ "${#CASE_LIST[@]}" -lt 2 ] || make_sheet
+[ "${#CASE_LIST[@]}" -lt 2 ] || make_sheet
+[ "$STRIP" = 0 ] || run_strip
 echo "OUT=$OUT"
