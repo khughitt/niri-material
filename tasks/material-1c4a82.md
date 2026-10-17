@@ -3,8 +3,11 @@ id: material-1c4a82
 title: Roll out Noctalia glass cohesion on the live desktop
 status: todo
 priority: 2
+size: s
+complexity: low
+process: direct
 created: 2026-10-17T14:42:03Z
-updated: 2026-10-17T14:42:09Z
+updated: 2026-10-17T15:13:39Z
 depends: [prism-301d9f]
 parent: material-55380c
 tags: []
