@@ -16,7 +16,7 @@
 
 **Spec:** [docs/specs/2026-10-16-noctalia-glass-cohesion-design.md](../specs/2026-10-16-noctalia-glass-cohesion-design.md) (accepted for planning after spec review round 3, then revised after round 4). Round 4 added three things: unsupported face-lighting optics, the achromatic-accent policy, and the input-method popup exemption. Section 3's overlay claim was corrected while planning (see the spec's note there).
 
-**Status:** revised after plan review round 1 (2026-10-17). Four changes:
+**Status:** accepted for execution after plan review round 2 (2026-10-17), with its one-line renderer setup carried into Task 5. Earlier: revised after plan review round 1 (2026-10-17). Four changes:
 - the layer's rules are recomputed before its remap on reload, which fixes a Glass-off panic;
 - `hue-chroma 0` is the static look under any hue;
 - popup remap damage moved in front of the popups;
@@ -2113,6 +2113,8 @@ fn remap_damage_precedes_the_pixels_it_redraws() {
     // declared opaque region (plan review round 1): each remap damage element
     // must come before the surface it redraws, popups included.
     let mut f = Fixture::with_config(look(""));
+    // Fixture::with_config has no renderer; render_to_vec needs one.
+    f.niri_state().backend.headless().add_renderer().unwrap();
     f.add_output(1, (1920, 1080));
     let id = f.add_client();
     let bar = open_layer(&mut f, id, "bar", None);
