@@ -444,7 +444,9 @@ draws' `draw_idle_clock_count` and `draw_idle_clock_median_ms`, and their
 `idle_clock_power_median_w`, which tells the 10.4 W floor from the 17 W one
 below. A sampled full run refuses a case with fewer idle-clock draws than
 damage steps, and its deltas over `none` add an `_idle_clock_` set that
-refuses cases idling at different graphics clocks. `draw_median_ms` still
+refuses cases idling at different graphics clocks. Every sampled report, a
+pilot's included, refuses a clock trace that never reaches P8 or that ends
+less than 0.5 s after a draw. `draw_median_ms` still
 covers every in-window draw. Rerun offline on the sampled full run above, the
 report selects 62 draws, median 0.3256 ms at 10.84 W; on the pilot, none.
 

@@ -286,7 +286,10 @@ reserve_tracy_port() { :; }
 tools_ready() { :; }
 calibrate_probe_rect() { :; }
 start_nested() { :; }
-capture_bg() { [ "$CAPTURE_GPU_CLOCKS" = 0 ] || cp "$TEST_ROOT/clocks.csv" "$OUT/$1.gpu-clocks.csv"; }
+capture_bg() {   # a case's own clocks-<case>.csv, else the shared trace
+    local f=$TEST_ROOT/clocks-$1.csv; [ -e "$f" ] || f=$TEST_ROOT/clocks.csv
+    [ "$CAPTURE_GPU_CLOCKS" = 0 ] || cp "$f" "$OUT/$1.gpu-clocks.csv"
+}
 capture_ready() { :; }
 start_wall() { :; }
 spawn_probe() { :; }
@@ -299,11 +302,11 @@ capture_wait() { :; }
 wall_count() { echo 1; }
 stop_nested() { :; }
 count_last20() { cp "$TEST_ROOT/cpu.csv" "$OUT/$1.csv"; echo 20; }
-csvexport() { cp "$TEST_ROOT/gpu.csv" "$3"; }
+csvexport() { local f; f=$TEST_ROOT/gpu-$(basename "$2" .tracy).csv; [ -e "$f" ] || f=$TEST_ROOT/gpu.csv; cp "$f" "$3"; }
 sleep() { :; }
 '''
 
-    def run_cost(self, root, *args, pilot=True, ab='', clocks=None):
+    def run_cost(self, root, *args, pilot=True, ab='', clocks=None, prepare=None):
         steps = 3 if pilot else 20
         (root / 'runtime').mkdir()
         # The anchor connects to a live niri; the stub writes the bracket the fixture times assume.
@@ -323,6 +326,8 @@ sleep() { :; }
                 writer.writerow(header)
                 writer.writerows(rows)
         (root / 'clocks.csv').write_text(CLOCK_HEADER + ''.join(clock_row(t, 210, 'P8', 10.5) for t in range(-1, steps * 10 + 10)))
+        if prepare:
+            prepare(root)
         env = {k: v for k, v in os.environ.items() if k != 'CAPTURE_GPU_CLOCKS'}
         env.update({'REAL_LIB': str(LIB), 'TEST_ROOT': str(root), 'TZ': 'UTC',
                     'OUT': str(root / 'out'), 'XDG_RUNTIME_DIR': str(root / 'runtime'),
@@ -385,11 +390,44 @@ sleep() { :; }
                     self.assertIn(f'{name}_MaterialRenderElement::draw_idle_clock_median_ms=0.230000', metrics)
             self.assertEqual(len(list((root / 'out').glob('*.draw-clocks.csv'))), len(subs))
 
+    @staticmethod
+    def burst_case(root):
+        # one-fine-1: two draws per step; those in the first ten seconds run at
+        # P0 and cost 0.03 ms, the twenty after at the idle clock and 0.33 ms.
+        rows = [('MaterialRenderElement::draw', t * 10**9 + offset, 30_000 if t < 12 else 330_000)
+                for t in range(2, 22) for offset in (200_000_000, 600_000_000)]
+        with (root / 'gpu-one-fine-1.csv').open('w') as file:
+            writer = csv.writer(file)
+            writer.writerow(['name', 'Time from start of program', 'GPU execution time'])
+            writer.writerows(rows)
+        (root / 'clocks-one-fine-1.csv').write_text(CLOCK_HEADER + ''.join(
+            clock_row(t, 1815, 'P0', 43.1) if t <= 100 else clock_row(t, 210, 'P8', 10.5) for t in range(-1, 210)))
+
     def test_full_run_reports_idle_clock_deltas_over_none(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            result = self.run_cost(root, pilot=False)
+            result = self.run_cost(root, pilot=False, prepare=self.burst_case)
             self.assertEqual(result.returncode, 0, result.stderr)
             metrics = (root / 'out/metrics.txt').read_text()
-            self.assertIn('one-fine-1_material_ns_per_px_over_none=0.0000', metrics)
-            self.assertIn('one-fine-1_material_idle_clock_ns_per_px_over_none=0.0000', metrics)
+            # Over none's 0.23 ms on 240000 px: all draws (median 0.18 ms), idle-clock draws (0.33 ms).
+            self.assertIn('one-fine-1_MaterialRenderElement::draw_idle_clock_count=20', metrics)
+            self.assertIn('one-fine-1_material_ns_per_px_over_none=-0.2083', metrics)
+            self.assertIn('one-fine-1_material_idle_clock_ns_per_px_over_none=0.4167', metrics)
+
+    def test_full_run_refuses_cases_idling_at_different_clocks(self):
+        def prepare(root):
+            (root / 'clocks-backdrop-fine-8.csv').write_text(CLOCK_HEADER + ''.join(
+                clock_row(t, 225, 'P8', 14.4) for t in range(-1, 210)))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_cost(root, pilot=False, prepare=prepare)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("cases idled at different graphics clocks: ['210', '225'] MHz", result.stderr)
+
+    def test_an_empty_case_name_is_refused_by_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = self.run_cost(root, '', clocks='0')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('unknown noise cost case: ', result.stderr)
+            self.assertNotIn('bad array subscript', result.stderr)

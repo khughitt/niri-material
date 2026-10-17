@@ -46,7 +46,7 @@ ORDER=(none one-fine-1 four-fine-1 four-fine-8 backdrop-fine-1 backdrop-fine-8)
 if [ "$#" -gt 0 ]; then
     [ "$#" = 1 ] || fail 'expected at most one noise cost case'
     [ -z "$AB" ] || fail 'case arguments cannot be combined with NOISE_LAYERS_COST_AB'
-    [ -n "${CASES[$1]+set}" ] || fail "unknown noise cost case: $1"
+    [ -n "$1" ] && [ -n "${CASES[$1]+set}" ] || fail "unknown noise cost case: $1"
     ORDER=("$1")
 fi
 build_binaries
@@ -67,8 +67,9 @@ reserve_tracy_port
 tools_ready
 DAMAGE_STEPS=20
 [ "$PILOT" = 0 ] || DAMAGE_STEPS=3
-# A sampled full run's window outlasts the start-up burst by most of its steps,
-# so it must yield an idle-clock draw per step; a pilot's three steps end inside it.
+# A sampled full run's window outlasts the start-up burst (about 4 s) by most of
+# its steps, and each damage draws about four times, so it must yield at least as
+# many idle-clock draws as steps; a pilot's three steps end inside the burst.
 IDLE_DRAWS=0
 [ "$PILOT" = 1 ] || [ "$CAPTURE_GPU_CLOCKS" = 0 ] || IDLE_DRAWS=$DAMAGE_STEPS
 declare -A BIN=()
