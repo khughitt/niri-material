@@ -560,7 +560,7 @@ git -C .worktrees/material-561927 status --ignored --porcelain   # copy out anyt
 ls .worktrees/material-561927/.superpowers/sdd/ 2>/dev/null       # copy material-561927's ledger and review report out first if its Ruling/minor lines are not yet in a final message
 ```
 
-Then one guarded block. It refuses, and removes nothing, while any host pointer resolves into the worktree. It checks both the worktree's logical path and its real path, since `.worktrees` is a link into local storage, across every pointer location the repository instructions name: launchers in `~/bin` and `~/.local/bin`, user systemd units (links, and unit files or drop-ins that name the path), and the known config includes (`~/.config/niri`, links and files that name the path). A pointer found here was repointed by a live test and is restored first (the task's notes record what, from, to and how), then the block reruns.
+Then one guarded block. It refuses, and removes nothing, while any host pointer resolves into the worktree. It checks both the worktree's logical path and its real path, since `.worktrees` is a link into local storage, across every pointer location the repository instructions name: launchers in `~/bin` and `~/.local/bin`, user systemd units (links, and unit files or drop-ins that name the path), and the known config includes (`~/.config/niri`, links and files that name the path). Content is searched through symlinks (`grep -R`), so a unit or include managed as a dotfiles link to a file outside the worktree still counts when that file names the worktree. A pointer found here was repointed by a live test and is restored first (the task's notes record what, from, to and how), then the block reruns.
 
 ```bash
 bash <<'EOF'
@@ -582,7 +582,7 @@ for dir in "${places[@]}"; do
     fi
   done
   while IFS= read -r file; do hits+=("$file names the worktree"); done \
-    < <(grep -rIlsF -e "$real" -e "$logical" "$dir" || true)
+    < <(grep -RIlsF -e "$real" -e "$logical" "$dir" || true)  # -R: a dotfiles-linked unit names it too
 done
 if [ "${#hits[@]}" -gt 0 ]; then
   printf 'stop: host pointer into the worktree; restore it, then rerun:\n' >&2
@@ -596,6 +596,8 @@ EOF
 ```
 
 Expected: exit 0 with the worktree and branch gone. Any `stop:` line means nothing was removed.
+
+Piloted on scratch fixtures (fake `HOME`, `.worktrees` linked into storage). Each of these stops the block with the worktree and branch kept: a launcher linking to a not-yet-existing path in the worktree (real path), a launcher linking through `.worktrees`, a unit linking into the worktree, a drop-in naming the worktree, a niri include naming it, a unit linked to a file outside the worktree whose `ExecStart` names it, and a config directory linked outside `HOME` holding an include that names it. A clean `HOME`, including one with a directory link loop, removes both.
 
 - [ ] **Step 4: Three qualifying post-merge runs.** On the idle host (park `--reason quiet --waiting-on user --minutes 10` otherwise), in the main checkout on `materials-26.04`, run Task 5 step 4's `stage_run` block unchanged (three `tools/upstream-report` runs). Then list the post-merge window, every checkout included:
 
