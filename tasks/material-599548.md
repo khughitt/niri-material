@@ -5,8 +5,8 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-09-11T00:47:47Z
-updated: 2026-10-12T18:21:14Z
-depends: []
+updated: 2026-10-17T17:35:13Z
+depends: [ops-c8b158, ops-1b5a9c, forge-e0743c]
 parent: material-3aa1f2
 tags: [quick-add, cross-project, assets]
 source: "mindful:thought:3f94e656b70f4e5585c1cb60c166e4da"
