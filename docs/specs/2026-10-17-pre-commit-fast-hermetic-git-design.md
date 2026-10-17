@@ -1,6 +1,6 @@
 # Pre-commit fast route: hermetic git for tooling fixtures
 
-Status: Draft (material-561927).
+Status: Approved (material-561927); implementation pending.
 
 ## 1. Incident
 

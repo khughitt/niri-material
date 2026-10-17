@@ -1,5 +1,7 @@
 # Hermetic git for tooling fixtures: implementation plan
 
+Status: Approved 2026-10-17 (plan review round 3, codex/gpt-6-astra; owner). Execution: native (inline), then one fresh final reviewer.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Tooling tests run git without the host's `GIT_*` environment or its global and system git config, which takes the global `identity-check` hook's ~19 s back out of the fast pre-commit route.
