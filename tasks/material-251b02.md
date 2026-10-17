@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: material-251b02
 created: 2026-10-08T09:31:15Z
-updated: 2026-10-17T08:48:12Z
+updated: 2026-10-17T08:57:30Z
 started: 2026-10-17T08:47:53Z
 depends: []
 tags: [testing, flaky]
@@ -24,3 +24,4 @@ makepkg check() (cargo test --workspace --all-targets, one process, RAYON_NUM_TH
   provenance: {"harness_session":"claude-code:45d9d610-ca8a-4b8a-ad97-be9caa9e4f00","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T08:48:12Z (material-251b02): resumed
   provenance: {"harness_session":"claude-code:45d9d610-ca8a-4b8a-ad97-be9caa9e4f00","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T08:57:30Z (material-251b02): Root cause: not a stale timer. InputActivity's quiet time runs from Niri construction, the 60 ms detector is already idle when setup finishes, and set_threshold(10 s) flips back to active only while setup took < 10 s (5.7 s measured cold on materials-26.04; ~12 s on material-abc08c's tilt split). RED: an 11 s sleep after aurora_fixture(true) reproduces both failures at :325/:400. Fix in the tests: start_active raises the threshold then notify_activity, so quiet time counts from there.
