@@ -8,7 +8,7 @@ complexity: high
 process: planned
 owner: fix/material-561927
 created: 2026-10-17T14:00:27Z
-updated: 2026-10-17T16:33:54Z
+updated: 2026-10-17T16:50:57Z
 started: 2026-10-17T15:16:53Z
 depends: []
 tags: [halt, test-latency, testing]
@@ -48,4 +48,6 @@ Process: planned
 - 2026-10-17T16:24:20Z (fix/material-561927): spec round 3: prepare case asserts manifest source_commit equals the checkout HEAD read under a per-call clean env; focused decoy-GIT_DIR run asserts decoy HEAD differs, then that the case passes
 - 2026-10-17T16:33:27Z (fix/material-561927): plan drafted: docs/plans/2026-10-17-pre-commit-fast-hermetic-git-plan.md (6 tasks: material-5e6dd7 helper, -fa47f7 coordinator, -9b865d optic-settling, -2d059c module adoption + inventory, -c946ff branch acceptance + final review, -c0c135 merge + post-merge verify + close). Spec amended alongside: config hooks inert on Git<2.54 (CI apt git) pinned without skipping; case count grows by new tests; remedy timestamp recorded at merge
 - 2026-10-17T16:33:54Z (fix/material-561927): parked (waiting on user, review): Owner: review .worktrees/material-561927/docs/plans/2026-10-17-pre-commit-fast-hermetic-git-plan.md (6 tasks) and spec round 3 (commits 2f473cb9, 5c8708db), and pick execution (recommended: native inline + one fresh final reviewer). Then agent executes Tasks 1-4, branch acceptance (Task 5, idle host), merge and post-merge verification (Task 6).
+  provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T16:50:57Z (fix/material-561927): resumed
   provenance: {"harness_session":"claude-code:1de14f0d-c1b6-47e6-a778-7ce6a1cc8ae1","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
