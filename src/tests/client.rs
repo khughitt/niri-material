@@ -13,6 +13,8 @@ use single_pixel_buffer::v1::client::wp_single_pixel_buffer_manager_v1::WpSingle
 use smithay::reexports::wayland_protocols::wp::single_pixel_buffer;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use smithay::reexports::wayland_protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
+use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_popup::{self, XdgPopup};
+use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_positioner::XdgPositioner;
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_surface::{self, XdgSurface};
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_toplevel::{self, XdgToplevel};
 use smithay::reexports::wayland_protocols::xdg::shell::client::xdg_wm_base::{self, XdgWmBase};
@@ -31,6 +33,7 @@ use wayland_client::protocol::wl_callback::{self, WlCallback};
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_display::WlDisplay;
 use wayland_client::protocol::wl_output::{self, WlOutput};
+use wayland_client::protocol::wl_region::WlRegion;
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::protocol::wl_shm::{self, WlShm};
 use wayland_client::protocol::wl_shm_pool::WlShmPool;
@@ -64,6 +67,7 @@ pub struct State {
 
     pub windows: Vec<Window>,
     pub layers: Vec<LayerSurface>,
+    pub popups: Vec<Popup>,
 }
 
 pub struct Window {
@@ -94,6 +98,16 @@ pub struct LayerSurface {
     pub close_requested: bool,
 
     pub configures_looked_at: usize,
+}
+
+pub struct Popup {
+    pub qh: QueueHandle<State>,
+    pub spbm: WpSinglePixelBufferManagerV1,
+
+    pub surface: WlSurface,
+    pub xdg_surface: XdgSurface,
+    pub viewport: WpViewport,
+    pub configures_received: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -193,6 +207,7 @@ impl Client {
             virtual_pointer_manager: None,
             windows: Vec::new(),
             layers: Vec::new(),
+            popups: Vec::new(),
         };
 
         Self {
@@ -256,6 +271,18 @@ impl Client {
 
     pub fn layer(&mut self, surface: &WlSurface) -> &mut LayerSurface {
         self.state.layer(surface)
+    }
+
+    pub fn create_layer_popup(&mut self, parent: &WlSurface, size: (i32, i32)) -> &mut Popup {
+        self.state.create_layer_popup(parent, size)
+    }
+
+    pub fn popup(&mut self, surface: &WlSurface) -> &mut Popup {
+        self.state.popup(surface)
+    }
+
+    pub fn set_opaque_region(&self, surface: &WlSurface, w: i32, h: i32) {
+        self.state.set_opaque_region(surface, w, h);
     }
 
     pub fn output(&mut self, name: &str) -> WlOutput {
@@ -345,6 +372,77 @@ impl State {
             .iter_mut()
             .find(|w| w.surface == *surface)
             .unwrap()
+    }
+
+    /// An xdg popup on a layer surface, anchored at the layer's origin.
+    pub fn create_layer_popup(&mut self, parent: &WlSurface, size: (i32, i32)) -> &mut Popup {
+        let compositor = self.compositor.as_ref().unwrap();
+        let xdg_wm_base = self.xdg_wm_base.as_ref().unwrap();
+        let viewporter = self.viewporter.as_ref().unwrap();
+
+        let surface = compositor.create_surface(&self.qh, ());
+        let xdg_surface = xdg_wm_base.get_xdg_surface(&surface, &self.qh, ());
+        let positioner = xdg_wm_base.create_positioner(&self.qh, ());
+        positioner.set_size(size.0, size.1);
+        positioner.set_anchor_rect(0, 0, 1, 1);
+        let xdg_popup = xdg_surface.get_popup(None, &positioner, &self.qh, ());
+        positioner.destroy();
+        let parent = self.layers.iter().find(|l| l.surface == *parent).unwrap();
+        parent.layer_surface.get_popup(&xdg_popup);
+        let viewport = viewporter.get_viewport(&surface, &self.qh, ());
+
+        self.popups.push(Popup {
+            qh: self.qh.clone(),
+            spbm: self.spbm.clone().unwrap(),
+            surface,
+            xdg_surface,
+            viewport,
+            configures_received: Vec::new(),
+        });
+        self.popups.last_mut().unwrap()
+    }
+
+    pub fn popup(&mut self, surface: &WlSurface) -> &mut Popup {
+        self.popups
+            .iter_mut()
+            .find(|p| p.surface == *surface)
+            .unwrap()
+    }
+
+    /// Declares the whole `w × h` of `surface` opaque (applies on commit).
+    pub fn set_opaque_region(&self, surface: &WlSurface, w: i32, h: i32) {
+        let region = self
+            .compositor
+            .as_ref()
+            .unwrap()
+            .create_region(&self.qh, ());
+        region.add(0, 0, w, h);
+        surface.set_opaque_region(Some(&region));
+        region.destroy();
+    }
+}
+
+impl Popup {
+    pub fn commit(&self) {
+        self.surface.commit();
+    }
+
+    pub fn ack_last_and_commit(&self) {
+        let serial = *self.configures_received.last().unwrap();
+        self.xdg_surface.ack_configure(serial);
+        self.commit();
+    }
+
+    pub fn attach_new_colored_buffer(&self, r: u8, g: u8, b: u8, a: u8) {
+        let scale = |v: u8| u32::from(v) * (u32::MAX / 255);
+        let buffer =
+            self.spbm
+                .create_u32_rgba_buffer(scale(r), scale(g), scale(b), scale(a), &self.qh, ());
+        self.surface.attach(Some(&buffer), 0, 0);
+    }
+
+    pub fn set_size(&self, w: u16, h: u16) {
+        self.viewport.set_destination(i32::from(w), i32::from(h));
     }
 }
 
@@ -727,13 +825,21 @@ impl Dispatch<XdgSurface, ()> for State {
     ) {
         match event {
             xdg_surface::Event::Configure { serial } => {
-                let window = state
+                if let Some(window) = state
                     .windows
                     .iter_mut()
                     .find(|w| w.xdg_surface == *xdg_surface)
-                    .unwrap();
-                let configure = window.pending_configure.clone();
-                window.configures_received.push((serial, configure));
+                {
+                    let configure = window.pending_configure.clone();
+                    window.configures_received.push((serial, configure));
+                } else {
+                    let popup = state
+                        .popups
+                        .iter_mut()
+                        .find(|p| p.xdg_surface == *xdg_surface)
+                        .unwrap();
+                    popup.configures_received.push(serial);
+                }
             }
             _ => unreachable!(),
         }
@@ -916,6 +1022,50 @@ impl Dispatch<WpViewport, ()> for State {
         _state: &mut Self,
         _proxy: &WpViewport,
         _event: <WpViewport as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<XdgPopup, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &XdgPopup,
+        event: <XdgPopup as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        match event {
+            xdg_popup::Event::Configure { .. }
+            | xdg_popup::Event::PopupDone
+            | xdg_popup::Event::Repositioned { .. } => (),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl Dispatch<XdgPositioner, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &XdgPositioner,
+        _event: <XdgPositioner as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<WlRegion, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlRegion,
+        _event: <WlRegion as wayland_client::Proxy>::Event,
         _data: &(),
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,

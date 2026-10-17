@@ -107,6 +107,7 @@ pub struct Shaders {
     pub border: Option<ShaderProgram>,
     pub shadow: Option<ShaderProgram>,
     pub clipped_surface: Option<GlesTexProgram>,
+    pub surface_remap: Option<GlesTexProgram>,
     pub postprocess_and_clip: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub gradient_fade: Option<GlesTexProgram>,
@@ -199,6 +200,28 @@ impl Shaders {
             })
             .ok();
 
+        let surface_remap = renderer
+            .compile_custom_texture_shader(
+                concat!(
+                    include_str!("surface_remap.frag"),
+                    "\n// ---- common\n",
+                    include_str!("material/common.frag"),
+                ),
+                &[
+                    UniformName::new("remap_anchor0", UniformType::_3f),
+                    UniformName::new("remap_anchor1", UniformType::_3f),
+                    UniformName::new("remap_anchor2", UniformType::_3f),
+                    UniformName::new("remap_offset0", UniformType::_3f),
+                    UniformName::new("remap_offset1", UniformType::_3f),
+                    UniformName::new("remap_offset2", UniformType::_3f),
+                    UniformName::new("remap_radii", UniformType::_2f),
+                ],
+            )
+            .map_err(|err| {
+                warn!("error compiling surface remap shader: {err:?}");
+            })
+            .ok();
+
         let postprocess_and_clip = renderer
             .compile_custom_texture_shader(
                 concat!(
@@ -266,6 +289,7 @@ impl Shaders {
             border,
             shadow,
             clipped_surface,
+            surface_remap,
             postprocess_and_clip,
             resize,
             gradient_fade,

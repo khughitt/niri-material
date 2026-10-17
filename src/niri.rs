@@ -1465,7 +1465,11 @@ impl State {
         }
 
         self.niri.layout.update_config(&config);
+        let is_at_startup = self.niri.is_at_startup;
         for mapped in self.niri.mapped_layer_surfaces.values_mut() {
+            // Rules first: update_config rebuilds the remap from them, against
+            // this config's materials.
+            mapped.recompute_layer_rules(&config.layer_rules, is_at_startup);
             mapped.update_config(&config);
         }
 
