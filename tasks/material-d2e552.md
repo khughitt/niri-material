@@ -7,7 +7,7 @@ size: s
 complexity: low
 process: direct
 created: 2026-10-16T11:56:58Z
-updated: 2026-10-16T12:02:11Z
+updated: 2026-10-17T12:29:24Z
 depends: []
 tags: [rendering]
 agent: claude-code/claude-opus-5-5
@@ -20,3 +20,4 @@ Review minors carried here: add an in_window column to <case>.draw-clocks.csv (n
 ## Notes
 
 - 2026-10-16T12:02:11Z (materials-26.04): From the f386ae re-review: nvidia-smi refreshes clocks/pstate/power on a 0.5 s grid though polled at 100 ms, so a joined row can lag a draw by up to 0.5 s; a strict P8/210 filter would drop draws that ran at the idle clock (the 225-tagged ones cost the 210 rate). Select with that lag allowed for.
+- 2026-10-17T12:29:24Z (materials-26.04): Since material-2e4ea5 (merged 2026-10-17), every settle entry records gpu_power_step_w and its gpu_power_w, so cost medians can also be stratified by idle floor (10.4 vs 17 W), which the gates design §8 left out of scope. Consider it alongside the clock-state selection.
