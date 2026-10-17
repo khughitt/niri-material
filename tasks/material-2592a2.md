@@ -4,10 +4,11 @@ title: "Ring beam: revisit ring-glow's default after burn-in"
 status: idea
 priority: 2
 reviewed: true
+awaiting_user: true
 needs: [owner]
 defer: 2026-10-05
 created: 2026-09-21T09:39:49Z
-updated: 2026-10-12T18:21:14Z
+updated: 2026-10-17T17:34:55Z
 depends: []
 parent: material-6062fd
 tags: [rendering]
