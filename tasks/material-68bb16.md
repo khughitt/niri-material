@@ -1,10 +1,10 @@
 ---
 id: material-68bb16
 title: "A material renderer outside niri's render path: a portable core and material behind client surfaces"
-status: idea
+status: shelved
 priority: 2
 created: 2026-10-17T22:29:43Z
-updated: 2026-10-17T22:29:43Z
+updated: 2026-10-18T22:47:18Z
 depends: []
 tags: [material]
 source: dots-a417c7
@@ -19,3 +19,7 @@ Assessment at scoping time (niri-material 8cfd964a, not yet reviewed):
 - Feasible split 1, a portable material core: a crate with the shader sources, uniform layout, parameter and signal model, which niri-material's elements consume. It would also serve a headless renderer for sheets and tests. Cost: an interface boundary inside a fork that already rebases about three times a year. Related: the material library lane material-3aa1f2.
 - Feasible split 2, compositor-drawn material behind a client's surface: a layer-rule `material` node (alternative 2 of docs/notes/2026-10-14-noctalia-material-brief.md), or later a small protocol through which a client asks for a material behind its surface, as ext-background-effect does for blur. kitty's dropdown would then carry the glass itself, with no second surface to keep in step. A separate toggled material surface stacked under kitty is possible, but two clients would have to agree on geometry and visibility.
 - Lean: split 2 first, when layer-surface material is wanted; split 1 once a second consumer (a headless renderer, another host) exists.
+
+## Notes
+
+- 2026-10-18T22:47:18Z (materials-26.04): shelved: Wake when a consumer wants material drawn behind a layer or client surface (for example the dropdowns choosing niri-material glass, dots-a417c7's option (c)), or when a second consumer of a portable material core exists (a headless renderer for sheets and tests, another host). Scoped 2026-10-18 as an idea; unshelve returns it to idea for a fresh scope.
