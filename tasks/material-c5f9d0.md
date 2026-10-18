@@ -9,7 +9,7 @@ process: direct
 needs: [quiet, nested, owner]
 owner: material-abc08c
 created: 2026-10-09T21:41:52Z
-updated: 2026-10-18T02:53:29Z
+updated: 2026-10-18T03:05:21Z
 started: 2026-10-17T03:02:16Z
 depends: [material-2283b8, material-abc08c]
 parent: material-6901e0
@@ -31,3 +31,5 @@ Step 15 of the transient rigid tilt plan (docs/plans/2026-10-09-transient-rigid-
 - 2026-10-18T02:45:11Z (material-abc08c): resumed
   provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-18T02:53:29Z (material-abc08c): run: 7 min (est 10, headless); build 3, await_load 3, preflight 1, tilt-swing 1; passed: /mnt/ssd3/niri-material/ring-motion-clips-dc4d7bc6/ring-clips-1961202-1792291528 (26 frames in 2.5 s, gain 0.003 s into the burst, crops at 0.121/0.322/0.422/0.726 s, settle settled, renderer verified, scan clean; baseline 17.49 W P8)
+- 2026-10-18T03:05:20Z (material-abc08c): run: 10 min (est 25, headless); build 2, scratch build 3, await_load 3, preflight 1, sequences 2; passed: /mnt/ssd3/niri-material/ring-motion-clips-a29c11e9/ring-clips-1973688-1792292030 (25-26 frames per 2.5 s burst, every sub-run settled, renderers verified, scan clean, source a29c11e9 clean; baseline 17.505 W P8)
+- 2026-10-18T03:05:20Z (material-abc08c): clips: /mnt/ssd3/niri-material/ring-motion-clips-a29c11e9/ring-clips-1973688-1792292030 (tilt-swing, -beam, -slow, -flipped); swing-review-sheet.png there is the labelled 4x4 crop sheet (rows A-D = sequences, columns 1-4 = 0.15/0.3/0.45/0.7 s, row A the control)

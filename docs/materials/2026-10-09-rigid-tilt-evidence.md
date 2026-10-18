@@ -155,3 +155,17 @@ headless backend builds it, three rounds each) with a throwaway test, not kept:
 
 The split adds about 4.5 s to a cold start, which the driver pays once after
 any change to the shader text or the driver, and about 23 ms to a warm one.
+
+## Clip
+
+Four swings at the owner's pick (`view-tilt 10; view-distance 6`) on the
+nested lane: `$EV` = `ring-motion-clips-a29c11e9/ring-clips-1973688-1792292030`
+(`tilt-swing`, `tilt-swing-beam`, `tilt-swing-slow` at 1400 ms, and
+`tilt-swing-flipped` with the sign reversed), each a 2.5 s burst from before
+the gain with 4x corner crops at 0.15, 0.3, 0.45 and 0.7 s. Each burst took
+25 or 26 frames; the crops landed 0.122–0.128, 0.317–0.332, 0.413–0.427 and
+0.703–0.738 s after the gain. Every sub-run settled with its renderer
+verified, and the release scan was clean. `swing-review-sheet.png` lays the
+16 crops out by sequence and instant, and each sequence's GIF shows the motion.
+
+Owner's verdict: pending.
