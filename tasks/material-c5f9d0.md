@@ -9,7 +9,7 @@ process: direct
 needs: [quiet, nested, owner]
 owner: material-abc08c
 created: 2026-10-09T21:41:52Z
-updated: 2026-10-17T03:08:44Z
+updated: 2026-10-18T02:53:29Z
 started: 2026-10-17T03:02:16Z
 depends: [material-2283b8, material-abc08c]
 parent: material-6901e0
@@ -28,3 +28,6 @@ Step 15 of the transient rigid tilt plan (docs/plans/2026-10-09-transient-rigid-
 - 2026-10-17T03:08:43Z (material-abc08c): Step 1 landed in c7e865c1 (bash -n and tools.test_glass_optic_smoke pass); release binary prebuilt in this worktree's target/. Pilot not attempted 2026-10-16: load1 6-12 from other agent sessions and an obs index, so the script's load1 < 1.0 wait before preflight could not pass.
 - 2026-10-17T03:08:43Z (material-abc08c): parked (waiting on user, quiet; headless, 33 min): On a quiet host, from .worktrees/material-abc08c: pilot CAPTURE_TASK=material-c5f9d0 TILT=10 KAPPA=6 SEQUENCES=tilt-swing BEAM_SCRATCH=0 docs/materials/scripts/ring-motion-clips.sh (build ~1 since prebuilt, await_load up to 5, preflight 1, one sequence ~3); expect clips: OK and clips.txt naming the gain offset and four crops. Then the same with SEQUENCES='tilt-swing tilt-swing-beam tilt-swing-slow tilt-swing-flipped' BEAM_SCRATCH=1 (scratch build ~10, four sequences ~11). Write a run: note for each, then plan Task 15 Step 4 (Clip section, park for the owner's verdict).
   provenance: {"harness_session":"claude-code:9b20b293-4bfc-4e7b-978b-dea07dbd57df","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-18T02:45:11Z (material-abc08c): resumed
+  provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-18T02:53:29Z (material-abc08c): run: 7 min (est 10, headless); build 3, await_load 3, preflight 1, tilt-swing 1; passed: /mnt/ssd3/niri-material/ring-motion-clips-dc4d7bc6/ring-clips-1961202-1792291528 (26 frames in 2.5 s, gain 0.003 s into the burst, crops at 0.121/0.322/0.422/0.726 s, settle settled, renderer verified, scan clean; baseline 17.49 W P8)
