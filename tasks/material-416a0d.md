@@ -1,10 +1,10 @@
 ---
 id: material-416a0d
 title: "Balance fast tooling buckets by measured case time, not case count"
-status: idea
+status: todo
 priority: 2
 created: 2026-10-17T15:27:43Z
-updated: 2026-10-17T15:27:43Z
+updated: 2026-10-18T22:48:03Z
 depends: []
 tags: [testing]
 agent: claude-code/claude-opus-5-5
