@@ -5,8 +5,9 @@ status: idea
 priority: 2
 size: s
 reviewed: true
+reviewed_at: 2026-10-18T23:01:23Z
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-18T23:01:17Z
+updated: 2026-10-18T23:01:23Z
 depends: [material-a54d89, material-415d0c]
 parent: material-9b8bf9
 tags: [signals, sources, prism]
@@ -24,3 +25,4 @@ Waiting on: material-415d0c's design result. Brief: docs/notes/2026-09-29-signal
 
 - 2026-09-05T18:51:03Z (materials-26.04): Related 2026-09-05: prism-9298b9 (state profiles idea under prism-2f0b4b) covers hook-driven theme-mode and power-profile contexts; the time-of-day baseline decision stays here.
 - 2026-09-29T22:07:57Z (materials-26.04): scope: briefed; ambient baseline remains a global Prism parameter versus per-window signal decision; no ambient transport or visual contract is established; brief: docs/notes/2026-09-29-signal-sources-brief.md
+- 2026-10-18T23:01:23Z (materials-26.04): scope: briefed; recorded that the ambient baseline is an in-place definition change (Prism-owned), not a per-window signal; made this idea depend on the Aurora envelope design material-415d0c, whose result decides easing; attenuation colour, the clock (shared with material-f3e4e4) and the Prism transport remain; brief: docs/notes/2026-09-29-signal-sources-brief.md
