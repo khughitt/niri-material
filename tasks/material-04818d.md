@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-18T09:08:17Z
+updated: 2026-10-18T09:19:20Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -40,3 +40,5 @@ What: find what selects the state (candidates: memory/voltage rail state after a
   provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-18T08:40:04Z (materials-26.04): Correction (owner, 2026-10-18): the fb0-blanked panel that 'woke during the first sub-run' on 2026-10-16 (8.95 W baseline, +1.4 W, material-2283b8's refused pilot) was the owner moving the mouse, not a spontaneous wake. Blanking holds without input (2026-10-17: 110 min blanked, no wake). Quiet sessions blank once at queue start, per the owner's decision in ops-20c8a8.
 - 2026-10-18T09:08:17Z (materials-26.04): Owner approved root tests (2026-10-18) and asked for a sudo route instead of typing passwords: dots-0e5d83 adds gpu-ctl (NVML via ctypes, no display needed) with a NOPASSWD grant for exactly persistence on|off, fan auto, fan 45-100, installed by dots' install-capture-sudoers. /mnt/ssd3/niri-material/material-04818d-floor/root-tests.sh runs the two probes (persistence on/off, fan auto/45, a floor sample after each) and restores the state it found.
+- 2026-10-18T09:19:20Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
