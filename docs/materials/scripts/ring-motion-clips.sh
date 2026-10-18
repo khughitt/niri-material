@@ -27,10 +27,13 @@
 #   tilt-swing          the rigid tilt alone (beam off) at `view-tilt $TILT;
 #                       view-distance $KAPPA`: a 2.5 s burst from before the gain
 #                       and 4x crops of the gaining pane's corner through the swing
-#   tilt-swing-beam     the same with the beam on: the look the owner judges
+#   tilt-swing-beam     the same with the beam on, at `ring-glow $BEAM_GLOW`:
+#                       the look the owner judges
 #   tilt-swing-slow     `view-tilt-settle 1400`, beside the 900 ms default
 #   tilt-swing-flipped  a scratch build with the swing's sign flipped: the
 #                       origin's edge comes forward first
+# Any tilt-swing sequence also gets swing-measured-sheet.py's sheet: the pane's
+# side edges measured per frame, since the swing is a few pixels at small angles.
 #
 # The scratch sequences build the tree twice more with one constant changed
 # each: a tracked-files copy under $OUT/src-<name> is edited with sed (the
@@ -40,8 +43,11 @@
 #
 # Env: NIRI_MATERIAL_WORK_ROOT (artifacts land under it), CAPTURE_TASK (the
 # task id authorizing the run), NIRI (default: this checkout's release build,
-# built here), BEAM_SCRATCH (default 1). Requires: weston, kitty, swaybg, jq,
-# ImageMagick, cargo (scratch sequences).
+# built here), BEAM_SCRATCH (default 1), TILT and KAPPA (the swing's view-tilt
+# and view-distance, default 10 and 6), BEAM_GLOW (tilt-swing-beam's ring-glow,
+# default 1, the shipped value). Requires: weston, kitty, swaybg, jq,
+# ImageMagick, cargo (scratch sequences), python3 with Pillow and matplotlib
+# (the swing sheet).
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)
@@ -53,6 +59,7 @@ OUT=$EVIDENCE/ring-motion-clips-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # short: nested niri panics on long socket paths
 SEQUENCES=${SEQUENCES:-"beam-run beam-gap16 beam-nospill beam-splash beam-fast beam-wander beam-decay beam-bevel0"}
 TILT=${TILT:-10}; KAPPA=${KAPPA:-6}   # the owner's pick from the stills (Task 13)
+BEAM_GLOW=${BEAM_GLOW:-1}             # ring-glow's default; 3 is its ceiling
 TILT_SWINGS="tilt-swing tilt-swing-beam tilt-swing-slow tilt-swing-flipped"
 SWING_S=2.5   # view-tilt-settle is 900 ms; the rest of the burst shows the pane at rest
 BEAM_SCRATCH=${BEAM_SCRATCH:-1}
@@ -118,9 +125,9 @@ KITTY_OPTS='"-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "
 # `bevel 10; ring-gap 8` is the spec's pairing under review, with the shipped
 # `ring-beam-speed 300` and `ring-glow 1`; SPEED, GAP and GLASS vary one of
 # them per fixture. The idle gate is off: the nested instance sees no input.
-write_config() {   # $1 = path; SPEED, GAP, GLASS, NOISE, NOISE_HZ, DECAY, VTILT, VKAPPA, SETTLE override the fixture's defaults
+write_config() {   # $1 = path; SPEED, GAP, GLOW, GLASS, NOISE, NOISE_HZ, DECAY, VTILT, VKAPPA, SETTLE override the fixture's defaults
     cat > "$1" <<EOF
-material "tg" { glass { ${GLASS:-bevel 10;} }; response "default" { ring-beam-speed ${SPEED:-300}; ring-gap ${GAP:-8}; ring-glow 1; ring-beam-noise ${NOISE:-0}; ring-beam-noise-hz ${NOISE_HZ:-3}; ring-beam-decay ${DECAY:-0}; view-tilt ${VTILT:-0}; view-distance ${VKAPPA:-6}; view-tilt-settle ${SETTLE:-900}; }; }
+material "tg" { glass { ${GLASS:-bevel 10;} }; response "default" { ring-beam-speed ${SPEED:-300}; ring-gap ${GAP:-8}; ring-glow ${GLOW:-1}; ring-beam-noise ${NOISE:-0}; ring-beam-noise-hz ${NOISE_HZ:-3}; ring-beam-decay ${DECAY:-0}; view-tilt ${VTILT:-0}; view-distance ${VKAPPA:-6}; view-tilt-settle ${SETTLE:-900}; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 layout { focus-ring { off; }; gaps 24; }
 hotkey-overlay { skip-at-startup; }
@@ -137,7 +144,7 @@ NOISE=0.5 NOISE_HZ=4 write_config "$OUT/beam-wander.kdl"
 DECAY=1500 write_config "$OUT/beam-decay.kdl"
 GLASS='bevel 0; offset-x 0; offset-y 0;' write_config "$OUT/beam-bevel0.kdl"
 SPEED=0 VTILT=$TILT VKAPPA=$KAPPA write_config "$OUT/tilt-swing.kdl"
-VTILT=$TILT VKAPPA=$KAPPA write_config "$OUT/tilt-swing-beam.kdl"
+GLOW=$BEAM_GLOW VTILT=$TILT VKAPPA=$KAPPA write_config "$OUT/tilt-swing-beam.kdl"
 SPEED=0 VTILT=$TILT VKAPPA=$KAPPA SETTLE=1400 write_config "$OUT/tilt-swing-slow.kdl"
 
 # --- scratch builds ----------------------------------------------------------
@@ -420,6 +427,11 @@ for s in $SEQUENCES; do
         tilt-swing-slow)    seq_tilt_swing_slow ;;
         tilt-swing-flipped) if [ "$BEAM_SCRATCH" = 0 ]; then echo "$s: skipped (BEAM_SCRATCH=0)" | tee -a "$OUT/clips.txt"; else seq_tilt_swing_flipped; fi ;;
         *) fail "unknown sequence $s" ;;
+    esac
+done
+for s in $SEQUENCES; do
+    case " $TILT_SWINGS " in
+        *" $s "*) python3 -I docs/materials/scripts/swing-measured-sheet.py "$OUT" | tee -a "$OUT/clips.txt"; break ;;
     esac
 done
 echo "clips: OK; $OUT/clips.txt, capture record $OUT/capture.json"
