@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-17T02:04:23Z
-updated: 2026-10-17T02:15:39Z
+updated: 2026-10-18T23:01:43Z
 depends: []
 parent: material-53f873
 tags: [rendering, lighting]
@@ -29,7 +29,7 @@ Leave the chosen look and acceptable ongoing cost to the owner at the sheet revi
 
 Where: src/render_helpers/material/optics/aurora.rs and mod.rs (apply_resolved), src/render_helpers/shaders/material/aurora.frag, niri-config/src/material/ (pipeline.rs lists no Aurora response), src/layout/tile.rs (optic_frame, tick_deadline, are_animations_ongoing); constraints in docs/specs/2026-09-29-sustained-optic-settling-design.md and docs/materials/render-pipeline.md.
 
-Ideas it wakes: on the design result, update the brief and run `tasks note <id> --no-reviewed "<finding>"` on material-1c5a30 and material-f3e4e4, before this result's branch merges.
+Ideas it wakes: on the design result, update the brief and run `tasks note <id> --no-reviewed "<finding>"` on material-1c5a30, material-f3e4e4 and material-f41c54 (for f41c54, say whether the envelope could carry attenuation colour and which clock was chosen), before this result's branch merges.
 
 ## Notes
 
