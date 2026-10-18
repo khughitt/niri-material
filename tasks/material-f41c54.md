@@ -6,13 +6,19 @@ priority: 2
 size: s
 reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-12T18:21:14Z
+updated: 2026-10-18T23:01:11Z
 depends: [material-a54d89]
 parent: material-9b8bf9
 tags: [signals, sources, prism]
 ---
 
 Outcome: decide whether an ambient global baseline (attenuation color temperature by time of day or Noctalia scheme tone) is a prism parameter change or a signal, and implement the chosen path. Likely prism-owned. Source: docs/materials/2026-09-02-material-signals-design.md section 11.
+
+Established 2026-10-18: the evidence now backs the Prism lean. Signal slots carry per-window facts written by sources (signals design sections 1 and 2); an ambient baseline is one global appearance, so it is an in-place definition change (a config reload or a Prism apply), not a signal. Such a change cuts today (`apply_resolved`). material-415d0c designs the envelope that eases an in-place definition change, scoped to Aurora amount and colours, and leaves the time-of-day source here. The dynamics brief (docs/notes/2026-09-29-material-dynamics-brief.md) finds a static warm Aurora preset is config-only now and leaves the clock question open (activity, real time or an event, and what input idle freezes); the weather cycle material-f3e4e4 shares that question. prism-9298b9 (shelved) would activate Prism contexts from Noctalia's theme-mode and colours hooks and leaves time of day to this idea.
+
+Remaining: whether the envelope extends to attenuation colour, which clock drives a time-of-day change, and which Prism transport applies it (a state profile or a timer).
+
+Waiting on: material-415d0c's design result. Brief: docs/notes/2026-09-29-signal-sources-brief.md.
 
 ## Notes
 
