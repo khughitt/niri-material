@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: planned
 created: 2026-10-17T15:27:43Z
-updated: 2026-10-18T22:48:09Z
+updated: 2026-10-18T22:48:22Z
 depends: []
 tags: [testing]
 agent: claude-code/claude-opus-5-5
@@ -34,3 +34,7 @@ Done:
 - Measured: three hook-pre-commit-fast runs on titan after the merge, with the slowest bucket within about 15% of the mean bucket case time and the route median at least 5 s under the 32–39 s baseline above.
 
 Where: tools/tooling_tests.py (`module_buckets`, `run_tooling`, the worker receipts), tools/test_tooling_tests.py, the AGENTS.md Gates paragraph on fast tooling, docs/specs/2026-10-17-pre-commit-fast-hermetic-git-design.md (Rejected alternatives), material-561927 (bucket data and diagnosis notes).
+
+## Notes
+
+- 2026-10-18T22:48:22Z (materials-26.04): scope: scoped; idea -> todo P2 s mid planned; premise holds (count packing unchanged since 4860a257; the 2026-10-17 figures were hook-free, as every run now is); established: per-case elapsed already in worker receipts, tt keeps only the 5 slowest, module_buckets also packs the full remainder, both files are in tooling_full_paths, material-5c9b37 touches the same function; the spec decides the weight store (lean: machine-local, self-refreshing; rejected: committed weights file) and its staleness rules; checked at niri-material 27015551 against tt runs 2026-10-17 18:16-18:36Z (32-39 s, limit 45 s)
