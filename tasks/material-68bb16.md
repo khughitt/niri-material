@@ -4,7 +4,7 @@ title: "A material renderer outside niri's render path: a portable core and mate
 status: shelved
 priority: 2
 created: 2026-10-17T22:29:43Z
-updated: 2026-10-18T22:47:34Z
+updated: 2026-10-18T22:47:40Z
 depends: []
 tags: [material]
 source: dots-a417c7
@@ -27,3 +27,4 @@ Established at scope (2026-10-18, niri-material 27015551):
 ## Notes
 
 - 2026-10-18T22:47:18Z (materials-26.04): shelved: Wake when a consumer wants material drawn behind a layer or client surface (for example the dropdowns choosing niri-material glass, dots-a417c7's option (c)), or when a second consumer of a portable material core exists (a headless renderer for sheets and tests, another host). Scoped 2026-10-18 as an idea; unshelve returns it to idea for a fresh scope.
+- 2026-10-18T22:47:40Z (materials-26.04): scope: shelved; wake: a consumer wants material behind a layer or client surface, or a second consumer of a portable core exists; body's line count corrected (5,360 Rust lines at 8cfd964a, not ~4.2k) and an Established section added (no overlapping open task; Noctalia cohesion chose styling on 2026-10-16, material-55380c; dropdowns take prism's look first, dots-a417c7); checked at niri-material 27015551
