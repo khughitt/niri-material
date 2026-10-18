@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-17T02:04:23Z
-updated: 2026-10-18T23:01:43Z
+updated: 2026-10-18T23:01:49Z
 depends: []
 parent: material-53f873
 tags: [rendering, lighting]
@@ -34,3 +34,4 @@ Ideas it wakes: on the design result, update the brief and run `tasks note <id> 
 ## Notes
 
 - 2026-10-17T02:15:39Z (materials-26.04): From brief review round 4 (on material-ffd61f's proposal): added scenes S10–S12 through amount 0 with continuity and exact-termination checks, and required seed-matched controls for byte comparisons; both carried into this body.
+- 2026-10-18T23:01:49Z (materials-26.04): Scope pass 2026-10-18: material-f41c54 (ambient baseline) now depends on this design; added it to Ideas it wakes. Scope unchanged: no time-of-day source here.
