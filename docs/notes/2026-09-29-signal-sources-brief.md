@@ -1,6 +1,7 @@
 # External material signal sources
 
-Scope pass: 2026-09-29; terminal transport evidence added 2026-10-11.
+Scope pass: 2026-09-29; terminal transport evidence added 2026-10-11;
+privacy, audio and ambient re-scoped 2026-10-18.
 Establish terminal event transport and window attribution before implementing
 more sources against the shipped signals contract.
 Goal: `material-9b8bf9`. This brief is not an approved design.
@@ -35,6 +36,23 @@ before implementation.
   `src/ipc/server.rs` publishes changes. `refresh_mapped_cast_window_rules`
   in `src/screencasting/mod.rs` marks window targets regardless of activity;
   `Mapped::set_is_window_cast_target` recomputes rules without writing signals.
+  The `Cast` consumer `pid` is known for wlr-screencopy casts only; PipeWire
+  casts carry `pw_node_id`.
+- A cast-target indication already works by configuration (checked
+  2026-10-18): a window rule matching `is-window-cast-target=true` can select
+  a `material` (`niri-config/src/window_rule.rs`), and the cast flag takes the
+  same `need_to_recompute_rules` path as the tested `is-focused` material swap
+  (`src/tests/material.rs`) into `Tile::refresh_material`. The swap replaces the
+  whole material with the accepted hard cut (`7f5ee9e2`), and a paused cast
+  still matches.
+- An ambient baseline is one global appearance: an in-place definition change
+  through a config reload or a Prism apply, which cuts today (`apply_resolved`).
+  `material-415d0c` designs an envelope that eases such a change, scoped to
+  Aurora amount and colours; the
+  [dynamics brief](2026-09-29-material-dynamics-brief.md) leaves its clock
+  (activity, real time or an event) open for the weather cycle `material-f3e4e4`.
+  Shelved `prism-9298b9` would key Prism contexts on Noctalia's theme-mode and
+  colours hooks and leaves time of day to `material-f41c54`.
 
 ## Constraints
 
@@ -57,8 +75,9 @@ bridge is completed work.
    transport is demonstrated below. Design window identity and source cleanup
    before production work; Ghostty needs a separate adapter investigation.
 2. Start with cast indication through existing cast events or native state.
-   Observable targets exist, but active versus selected semantics and
-   microphone/camera scope remain unresolved.
+   Observable targets exist and a window-rule material swap needs no code, but
+   active versus selected semantics and microphone/camera scope remain
+   unresolved.
 3. Build one watcher framework or PTY proxy for all sources. Defer this option:
    the sources need different evidence, and no shared transport requirement
    has been demonstrated. Ambient global tuning may need no signal writer.
@@ -73,14 +92,18 @@ bridge is completed work.
   `material-5d854f`; impulse animation age is not completion percentage.
 - **Privacy:** Indicate selected or actively streaming targets, captured
   windows or consuming apps, and how should output capture be represented?
-  A later privacy design settles scope; PipeWire/portal evidence must establish
-  microphone/camera ownership before implementation.
+  For cast targets the owner decides whether the window-rule material swap is
+  enough or a native Notice slot is wanted, so a warm rim layers over any
+  material and eases in. Microphone, camera and cast-consumer ownership wait on
+  `material-9cdccf`'s PipeWire evidence; a later privacy design settles scope.
 - **Audio:** Can stream identity map uniquely to a window, including absent
-  PIDs, shared processes and multiple streams? A bounded attribution probe
-  must answer before choosing a watcher and clearing policy.
-- **Ambient:** Should time/scheme change global attenuation temperature or
-  per-window state? Lean toward Prism for a global parameter; a later design
-  must settle the intended appearance and verify available scheme/time hooks.
+  PIDs, shared processes and multiple streams? `material-9cdccf` answers this
+  before a watcher and clearing policy are chosen.
+- **Ambient:** The per-window alternative is set aside: the baseline is a
+  global definition change, Prism-owned. Open: whether `material-415d0c`'s
+  envelope can carry attenuation colour, which clock drives a time-of-day
+  change (shared with `material-f3e4e4`), and which Prism transport applies it.
+  The design result of `material-415d0c` answers the first and reopens the idea.
 
 ## Proposed decomposition
 
@@ -91,9 +114,15 @@ bridge is completed work.
   It records terminal event coverage, window mapping, lifecycle and ownership
   here and wakes `material-d277d0` and `material-79d1de` with finding notes in
   its result commit. Its probe is complete; it does not deploy a watcher.
-- Privacy, audio and ambient remain briefed. File their bounded evidence or
-  design tasks when taking up that direction. This handoff settles no shared
-  watcher framework or progress implementation.
+- After that finding, `material-53da57` demonstrates Ghostty transport and
+  `material-9fb9ec` designs terminal identity and lifecycle.
+- `material-9cdccf` (priority 2, medium, mid complexity, direct, `nested`) probes
+  PipeWire playback and capture attribution to niri windows under a nested
+  session with a private PipeWire. `material-e91ae9` and `material-588ca9`
+  depend on it; its result wakes both (2026-10-18 pass).
+- `material-f41c54` depends on the Aurora envelope design `material-415d0c`,
+  whose wake list now names it.
+- This handoff settles no shared watcher framework or progress implementation.
 
 ## Terminal transport finding — 2026-10-11
 
