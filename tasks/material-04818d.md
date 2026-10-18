@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-18T03:51:36Z
+updated: 2026-10-18T03:51:42Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -32,3 +32,4 @@ What: find what selects the state (candidates: memory/voltage rail state after a
   provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-18T03:51:31Z (materials-26.04): run: 28 min (est 30, headless); build 5, await_load 3, pilots 10, floor samples 8; passed: 6 NOISE_LAYERS_COST_PILOT=1 none runs (/mnt/ssd3/niri-material/material-04818d-floor/run-1..6-*), 12 sub-runs all settled at 17.43-17.58 W (steps within ±0.11 W), 60 s rest samples after each at 17.45-17.59 W; the floor never left ~17 W, so the 10.4 W dump this step wanted was not reached
 - 2026-10-18T03:51:36Z (materials-26.04): 17 W state characterized (2026-10-17 TTY, desktop stopped 22:42; dumps and samples in /mnt/ssd3/niri-material/material-04818d-floor): P8 210/405 MHz, clocks event reasons Idle only, PCIe 2.5 GT/s x16, persistence off, NVreg DynamicPowerManagement 3, no user-space holder of any GPU node (fuser), console 3440x1440@60.00 on nvidia-drm fbdev, fan control manual (GPUFanControlState 1) at 45% with both fans at ~641 RPM. Blanking the console (fb0 4, dpms Off, Display Active Disabled) took the floor 17.52 -> 17.04 W, against the ~1.7 W the display cost on the 10.4 W floor on 2026-10-16 (8.95 -> 10.685 W): the extra ~7 W is not scanout or the display link. A user-level nvidia-settings set of GPUFanControlState=0 (via a pixman headless weston as its display) is silently ignored, so the fan-mode candidate needs root to test; fans at ~640 RPM cannot plausibly account for 7 W.
+- 2026-10-18T03:51:42Z (materials-26.04): Retained capture baselines: 2026-10-01..06 and 10-16 at 10.1-10.9 W, 10-07 and 10-17 at 17.0-17.6 W throughout, 10-16 flipping twice mid-A/B (up between 06:56:39 and 06:57:28, down between 07:02:30 and 07:03:19). The journal holds nothing at either step beyond the kitty/portal/localed starts every case has. gpu-fan-curve logged the same TTY sequence on every one of those nights (fan control 'reset externally' when the desktop stops, then failed re-engages every 15 s), so the daemon's TTY behaviour does not select the floor.
