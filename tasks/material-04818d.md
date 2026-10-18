@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-17T13:09:05Z
+updated: 2026-10-18T03:08:02Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -28,3 +28,5 @@ What: find what selects the state (candidates: memory/voltage rail state after a
   provenance: {"harness_session":"claude-code:45aab597-9132-43ae-af7a-ff9fd44c6248","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-17T11:40:09Z (capture-gates-evidence): The settle gate change its done-criterion allows is reviewed and implemented: docs/specs/2026-10-17-capture-evidence-gates-design.md (client-free headless power steps are annotated). The floor's cause stays this task's question.
 - 2026-10-17T13:09:05Z (materials-26.04): Since material-d2e552 (eadc3835), noise-layers-cost.sh samples GPU clocks by default: each case now keeps <case>.gpu-clocks.csv (100 ms power.draw/pstate/clocks through the capture) and metrics.txt reports idle_clock_power_median_w, which shows the floor (≈10.4 vs ≈17 W) the case ran on. CAPTURE_GPU_CLOCKS=0 restores the unsampled condition.
+- 2026-10-18T03:08:02Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
