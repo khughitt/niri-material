@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-18T06:00:00Z
+updated: 2026-10-18T06:00:06Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -35,3 +35,4 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 - 2026-10-18T03:51:42Z (materials-26.04): Retained capture baselines: 2026-10-01..06 and 10-16 at 10.1-10.9 W, 10-07 and 10-17 at 17.0-17.6 W throughout, 10-16 flipping twice mid-A/B (up between 06:56:39 and 06:57:28, down between 07:02:30 and 07:03:19). The journal holds nothing at either step beyond the kitty/portal/localed starts every case has. gpu-fan-curve logged the same TTY sequence on every one of those nights (fan control 'reset externally' when the desktop stops, then failed re-engages every 15 s), so the daemon's TTY behaviour does not select the floor.
 - 2026-10-18T03:52:35Z (materials-26.04): Filed dots-9c011b: gpu-fan-curve treats the desktop's stale wayland-1 as a live session through every TTY night, polling nvidia-smi + nvidia-settings every 15 s and unable to hand the fans back to automatic control (MAXTEMP or --revert). Not the floor's selector (same on both floor families), but a GPU poller during every quiet capture.
 - 2026-10-18T06:00:00Z (materials-26.04): run: 128 min (est 127, headless); passive watch 110, load bursts 13, display cycle 5; passed: the 17 W state held through everything non-root. Passive watch (panel blanked, 5 s samples, 1308 samples 23:55-01:40) 16.72-17.16 W, no step. Three 90 s glmark2 terrain bursts (2560x1440 off-screen under a GL headless weston: 160-174 W, P0 1950/7001 MHz, PCIe gen3, peak 63 C, fan pinned 45%) each settled within 30 s to 17.6-17.9 W, the same floor plus ~0.5-0.9 W of warmer-silicon leakage. A console unblank/reblank modeset cycle: 17.56 (blanked) -> 17.44 (lit) -> 16.99 W (blanked). Scripts and data: /mnt/ssd3/niri-material/material-04818d-floor (floor-sample.sh, floor-watch.sh, burst-test.sh, fan-toggle.sh).
+- 2026-10-18T06:00:06Z (materials-26.04): Where this leaves the cause: of the listed candidates, display link and P0-burst rail state are ruled out as selectors from the 17 W side (neither moves it), PCIe ASPM shows nothing (gen1 x16 at idle, policy default), and the fan-mode candidate is untested (sets need root) but implausible for 7 W. The state is sticky for a whole session once entered, and the 10.4 W nights never showed a 17 W dump. Next evidence: the first quiet session that opens on ~10.4 W runs floor-sample.sh there for its nvidia-smi -q, diffed against rest0.q.txt (17 W); or, with root, toggle persistence mode and fan control in the 17 W state and watch the floor.
