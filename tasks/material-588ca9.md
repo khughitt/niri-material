@@ -6,8 +6,8 @@ priority: 2
 size: s
 reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-18T23:00:39Z
-depends: [material-a54d89]
+updated: 2026-10-18T23:00:46Z
+depends: [material-a54d89, material-9cdccf]
 parent: material-9b8bf9
 tags: [signals, sources]
 ---
