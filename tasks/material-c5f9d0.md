@@ -9,7 +9,7 @@ process: direct
 needs: [quiet, nested, owner]
 owner: material-abc08c
 created: 2026-10-09T21:41:52Z
-updated: 2026-10-18T17:47:26Z
+updated: 2026-10-18T17:54:13Z
 started: 2026-10-17T03:02:16Z
 depends: [material-2283b8, material-abc08c]
 parent: material-6901e0
@@ -37,4 +37,7 @@ Step 15 of the transient rigid tilt plan (docs/plans/2026-10-09-transient-rigid-
   provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-18T10:14:30Z (material-abc08c): owner review 2026-10-18 of the clip sheets: rows look identical, too subtle to judge. Measured from the frames (swing-measured-sheet.png + swing-measured.json in the run dir): at view-tilt 10 / view-distance 6 the swing is an 8 px pull-in of one side edge of a 604 px pane (matches W sin θp / 2κ = 8.7 px); visible ~0-0.35 s at settle 900 and ~0-0.55 s at 1400; the -16% overshoot (~1 px) does not show; B's tilt equals A's and its beam (ring-glow 1) is a 3 px ~13% contrast line under the title bar, outside the corner crops. The old sheet's columns 3-4 (0.45/0.7 s) fall on the zero crossing and rest by design.
 - 2026-10-18T17:47:26Z (material-abc08c): resumed
+  provenance: {"harness_session":"claude-code:bef94e62-0d14-4edb-9dbd-2b4ba4493543","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-18T17:54:12Z (material-abc08c): owner 2026-10-18: measured sheet accepted as the reading aid; queue an amplitude ladder recapture. b6519fec adds swing-measured-sheet.py (run by ring-motion-clips.sh after any tilt-swing sequence; piloted on ring-clips-1973688-1792292030, peaks 7.3-8.6 px, matching the gradient measure) and BEAM_GLOW (tilt-swing-beam's ring-glow, default 1). Ladder runs the beam row at ring-glow 3 so the beam is visible; 1 stays the shipped value.
+- 2026-10-18T17:54:12Z (material-abc08c): parked (waiting on user, quiet; headless, 20 min): On a quiet host, from .worktrees/material-abc08c (headless weston unit), pilot = run 1: CAPTURE_TASK=material-c5f9d0 TILT=20 KAPPA=6 BEAM_GLOW=3 SEQUENCES='tilt-swing tilt-swing-beam' BEAM_SCRATCH=0 docs/materials/scripts/ring-motion-clips.sh (release build ~2, await_load up to 5, preflight 1, two sequences ~2, sheet <1); expect clips: OK and swing-measured-sheet.png with a ~17 px peak. Read it, then run 2: the same with KAPPA=3 (~34 px peak, ~8 min). Earlier attempts of this recipe: 2026-10-16 never passed the script's load1 < 1.0 wait (load 6-12 from other sessions); 10-18 runs passed. Write a run: note per attempt, then hand the owner the two sheets beside the 10/6 one (ring-clips-1973688-1792292030/swing-measured-sheet.png) and park for the amplitude verdict; after it: record under Clip, flip the sign / set view-tilt-settle if asked, note prism-2a8fea, close material-6901e0's plan.
   provenance: {"harness_session":"claude-code:bef94e62-0d14-4edb-9dbd-2b4ba4493543","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
