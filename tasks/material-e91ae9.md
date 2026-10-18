@@ -5,8 +5,9 @@ status: idea
 priority: 2
 size: s
 reviewed: true
+reviewed_at: 2026-10-18T23:00:17Z
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-18T23:00:10Z
+updated: 2026-10-18T23:00:17Z
 depends: [material-a54d89, material-9cdccf]
 parent: material-9b8bf9
 tags: [signals, sources]
@@ -21,3 +22,4 @@ Waiting on: material-9cdccf, the PipeWire attribution probe. Its finding decides
 ## Notes
 
 - 2026-09-29T22:07:58Z (materials-26.04): scope: briefed; audio Active/Breathe fits current slots; Wayland connection PID can be missing or shared, so stream attribution and teardown need evidence; brief: docs/notes/2026-09-29-signal-sources-brief.md
+- 2026-10-18T23:00:17Z (materials-26.04): scope: briefed; recorded the Window.pid limits as established; filed research material-9cdccf (PipeWire stream-to-window attribution probe, P2/m/mid/direct, nested) and made this idea depend on it; brief: docs/notes/2026-09-29-signal-sources-brief.md
