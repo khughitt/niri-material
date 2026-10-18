@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-18T03:08:02Z
+updated: 2026-10-18T03:51:31Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -30,3 +30,4 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 - 2026-10-17T13:09:05Z (materials-26.04): Since material-d2e552 (eadc3835), noise-layers-cost.sh samples GPU clocks by default: each case now keeps <case>.gpu-clocks.csv (100 ms power.draw/pstate/clocks through the capture) and metrics.txt reports idle_clock_power_median_w, which shows the floor (≈10.4 vs ≈17 W) the case ran on. CAPTURE_GPU_CLOCKS=0 restores the unsampled condition.
 - 2026-10-18T03:08:02Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:5449fcbc-f1d5-4050-872d-855f55483679","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-18T03:51:31Z (materials-26.04): run: 28 min (est 30, headless); build 5, await_load 3, pilots 10, floor samples 8; passed: 6 NOISE_LAYERS_COST_PILOT=1 none runs (/mnt/ssd3/niri-material/material-04818d-floor/run-1..6-*), 12 sub-runs all settled at 17.43-17.58 W (steps within ±0.11 W), 60 s rest samples after each at 17.45-17.59 W; the floor never left ~17 W, so the 10.4 W dump this step wanted was not reached
