@@ -5,7 +5,7 @@ status: shelved
 priority: 2
 size: s
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-19T15:37:57Z
+updated: 2026-10-19T15:38:03Z
 depends: [material-a54d89]
 parent: material-b5cbd6
 tags: [signals, design]
@@ -17,3 +17,4 @@ Outcome: decide whether window-rule Match gains signal-level="demand" style matc
 
 - 2026-09-29T22:31:42Z (materials-26.04): scope: briefed; signal mutations already invalidate window rules; raw-fold versus rendered-level semantics, absent-versus-Quiet matching and a concrete rule use case remain undecided; brief: docs/notes/2026-09-29-signal-model-extensions-brief.md
 - 2026-10-19T15:37:57Z (materials-26.04): shelved: A concrete window rule needs to select on external signal level: an appearance that existing responses, signal-source/signal-tag matches and is-urgent cannot express
+- 2026-10-19T15:38:03Z (materials-26.04): scope: shelved; Match in niri-config/src/window_rule.rs still has no signal-level field, signal mutations already invalidate rules, and no rule use case has appeared since the 2026-09-29 pass; shelved like siblings material-6cca0a and material-1cc048; brief: docs/notes/2026-09-29-signal-model-extensions-brief.md
