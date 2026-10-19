@@ -5,8 +5,9 @@ status: idea
 priority: 2
 size: s
 reviewed: true
+reviewed_at: 2026-10-19T15:37:30Z
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-19T15:37:24Z
+updated: 2026-10-19T15:37:30Z
 depends: [material-a54d89, material-9faf34]
 parent: material-0a4093
 tags: [signals, rendering, design]
@@ -17,3 +18,4 @@ Outcome: the ring fills proportionally to a progress channel. Requires a continu
 ## Notes
 
 - 2026-09-29T21:32:24Z (materials-26.04): scope: briefed; confirmed job progress is absent from slots and IPC; source folding/expiry and current ring geometry require design before rendering; brief: docs/notes/2026-09-29-glass-signal-responses-brief.md
+- 2026-10-19T15:37:30Z (materials-26.04): scope: briefed; job progress is still absent from slots and IPC; kitty delivers OSC 9;4 (material-07bac9), so a producer exists; filed material-9faf34 (P2 / m / high / planned, owner) to design the channel and ring fill after material-9fb9ec settles source ownership; this idea depends on it; brief: docs/notes/2026-09-29-glass-signal-responses-brief.md
