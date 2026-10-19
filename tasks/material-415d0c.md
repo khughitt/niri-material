@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-17T02:04:23Z
-updated: 2026-10-18T23:01:49Z
+updated: 2026-10-19T15:10:07Z
 depends: []
 parent: material-53f873
 tags: [rendering, lighting]
@@ -35,3 +35,4 @@ Ideas it wakes: on the design result, update the brief and run `tasks note <id> 
 
 - 2026-10-17T02:15:39Z (materials-26.04): From brief review round 4 (on material-ffd61f's proposal): added scenes S10–S12 through amount 0 with continuity and exact-termination checks, and required seed-matched controls for byte comparisons; both carried into this body.
 - 2026-10-18T23:01:49Z (materials-26.04): Scope pass 2026-10-18: material-f41c54 (ambient baseline) now depends on this design; added it to Ideas it wakes. Scope unchanged: no time-of-day source here.
+- 2026-10-19T15:10:07Z (materials-26.04): Brief checks corrected (9f32a0c2, from owner review 2026-10-19): S10 and S12 end lit at drift-hz 4, so they are exempt from full quiescence; from the end on the envelope requests no frames while the drift keeps the static sun preset's deadlines and phase and holds at idle. S12, like S4, retriggers at D/2 and ends at 1.5 D; its endpoint, frame-request and settling checks sample from there.
