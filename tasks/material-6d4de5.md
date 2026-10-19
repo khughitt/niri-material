@@ -5,7 +5,7 @@ status: idea
 priority: 1
 reviewed: true
 created: 2026-09-06T00:32:54Z
-updated: 2026-10-12T18:21:13Z
+updated: 2026-10-19T14:31:19Z
 depends: [prism-66b025]
 parent: material-53f873
 tags: [rendering, dynamics]
@@ -14,6 +14,11 @@ tags: [rendering, dynamics]
 Remaining outcome: decide whether the existing bevel-dependent flex cap, inner-face-only shear, or ior-dependent ripple needs a redesign after the accepted drag follow-lag implementation. The absent drag stimulus was fixed by material-4354cf (f8a890d3); it is no longer a renderer bug to fix here.
 
 Done for a future design: identify a reproducible unacceptable deformation or ripple appearance on current code, name the desired change, preserve finite settling and opaque client pixels, and define deterministic and owner-reviewed visual checks before changing the cap or optical model. Where to look: docs/notes/2026-09-29-material-dynamics-brief.md; docs/specs/2026-10-01-drag-follow-lag-design.md; src/layout/tile.rs::material_dynamics/motion_residual; src/render_helpers/material/mod.rs::jelly_state; src/render_helpers/shaders/material/prelude.frag::slabSurface and main.frag's ripple perturbation. The existing motion sweep establishes response, not a preferred gain or slab deformation. This remains an idea while that visual target is unresolved.
+
+## Open questions
+
+- Owner: on current code (drag follow-lag f8a890d3 shipped and accepted), which flex, shear or ripple appearance is unacceptable? Name one reproducible case (a drag, release, column move or focus change, with the glass and Prism values) and the change wanted: a larger or bevel-independent flex cap, whole-slab shear instead of inner-face shear, or ripple displacement independent of ior. That case becomes the target of a design task.
+- Owner: if no case is unacceptable today, should this idea be shelved until one appears, or dropped? The transient rigid tilt design (material-abc08c) already settles how a swing interacts with jelly flex.
 
 ## Original captured request
 
