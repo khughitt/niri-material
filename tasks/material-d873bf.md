@@ -5,8 +5,8 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-10-02T00:08:50Z
-updated: 2026-10-12T18:21:14Z
-depends: []
+updated: 2026-10-19T14:30:09Z
+depends: [material-ccda38]
 parent: material-53f873
 tags: [dynamics, rendering]
 agent: claude-code/claude-opus-5-5
