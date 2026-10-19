@@ -4,8 +4,10 @@ title: "Revisit the dynamics: drag, move, focus, flex, ripple"
 status: idea
 priority: 1
 reviewed: true
+awaiting_user: true
+reviewed_at: 2026-10-19T14:31:27Z
 created: 2026-09-06T00:32:54Z
-updated: 2026-10-19T14:31:19Z
+updated: 2026-10-19T14:31:28Z
 depends: [prism-66b025]
 parent: material-53f873
 tags: [rendering, dynamics]
@@ -33,3 +35,4 @@ Reassess how the glass responds to drag, move, and focus changes. Prism reports 
 - 2026-09-30T09:51:39Z (material-b3ce14): material-b3ce14 finding: during interactive drag and hold the jelly residual is exactly 0 (tile pinned to the pointer, grab offset excluded), so flex and ripple are dead however fast the pointer moves; glass flexes only on lift (tiled 1.46 px, floating 0.18 px) and tiled release (2.96 px, capped at max flex). Smallest missing contract: a follow-lag residual (a critically damped point chasing the pointer-anchored render location on the window-movement spring) fed to jelly during Moving. Owner choices listed in the dynamics brief.
 - 2026-09-30T10:00:29Z (materials-26.04): Drag stimulus design split out to material-4354cf; this idea keeps the max-flex cap, whole-slab shear and ior-independent ripple levers.
 - 2026-10-06T18:41:36Z (materials-26.04): scope: briefed; retained cap, whole-slab shear and ior-independent ripple questions; drag follow-lag is implemented and accepted, so a concrete residual visual gap must precede redesign; brief: docs/notes/2026-09-29-material-dynamics-brief.md
+- 2026-10-19T14:31:28Z (materials-26.04): scope: question; premises rechecked on 2b93bf33 (flex cap still 0.25 * bevel_depth in tile.rs::material_dynamics, ripple still perturbs the normal in main.frag); no follow-up can supply the visual target, so the owner names an unacceptable case or shelves it; questions under ## Open questions; brief: docs/notes/2026-09-29-material-dynamics-brief.md
