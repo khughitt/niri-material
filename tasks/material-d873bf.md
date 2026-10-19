@@ -4,8 +4,9 @@ title: "Short subtle transients: rotation, light travel and glints on state chan
 status: idea
 priority: 2
 reviewed: true
+reviewed_at: 2026-10-19T14:30:23Z
 created: 2026-10-02T00:08:50Z
-updated: 2026-10-19T14:30:09Z
+updated: 2026-10-19T14:30:23Z
 depends: [material-ccda38]
 parent: material-53f873
 tags: [dynamics, rendering]
@@ -18,3 +19,4 @@ Owner priority (2026-10-01): brief, subtle animations on transitions (focus, ope
 
 - 2026-10-02T00:14:51Z (materials-26.04): First concrete case (2026-10-01): a focus-loss transient. Today the ring only animates on focus gain and snaps off on loss; a short drain of the light would reuse the comet's run/decay timing and end in the quiescent state.
 - 2026-10-06T20:28:20Z (materials-26.04): scope: briefed; moving beam ends immediately on loss while resting focus light already crossfades; frame one bounded focus-loss comparison against existing behavior before broad transients or an animation subsystem; brief: docs/notes/2026-09-29-material-dynamics-brief.md
+- 2026-10-19T14:30:23Z (materials-26.04): scope: briefed; recorded the wait as a dep on material-ccda38 (finite focus-loss cue design, todo), whose result wakes this idea; open/move/resize glints stay in this body; brief: docs/notes/2026-09-29-material-dynamics-brief.md
