@@ -96,7 +96,9 @@ transitions, so it waits on this look and on the clock decision.
 - **Duration (D):** 6 s from the last trigger on niri's `Animation`
   (`cubic-bezier 0.42 0 0.58 1`), one `animations` entry and no profile
   system. The review compares 3, 6 and 12 s as timed clips. "The end" below
-  is D after the last trigger: D in most scenes, 1.5 D in S4.
+  is D after the last trigger: D in most scenes, 1.5 D in S4 and S12, which
+  retrigger at D/2. Their endpoint, frame-request and settling checks sample
+  from 1.5 D.
 - **Reduced/off motion:** a luminance and hue fade is not motion. Like the
   signal crossfade, it fades under `motion "reduced"` and `"off"`;
   `animations { off }` cuts to the target. The drift keeps its existing table.
@@ -147,9 +149,15 @@ transitions, so it waits on this look and on the clock decision.
     visible frame from the first trigger until the end, false before the
     trigger and from the end on, and false while S5's slab is out of view. A fade whose frames came from optic deadlines would
     stop requesting them at S6's and S7's idle edge and fail here.
-  - Settling (every scene but S8): from the end on, no material deadline arms
-    and the fingerprint is constant. S8 keeps input active, so its drift goes
-    on stepping at half rate, as accepted.
+  - Settling (every scene but S8, S10 and S12): from the end on, no material
+    deadline arms and the fingerprint is constant. S8 keeps input active, so
+    its drift goes on stepping at half rate, as accepted. S10 and S12 end lit
+    on the sun preset at `drift-hz 4` with input active, so their drift goes on
+    too. From the end on, the envelope requests nothing: the tile's predicate
+    is false (the frame-request check), and the optic deadlines and phase
+    match those of the sun preset at `drift-hz 4`, rendered with no
+    transition, at the same times. Once input idles, the phase holds and no
+    deadline arms, as in that control.
   - Idle: S6's and S7's Aurora amount and color uniforms equal S1's at every
     sampled time, and they reach the sun preset's at the end with no input
     event. The drift phase holds from the idle edge on. A fade on the paused
