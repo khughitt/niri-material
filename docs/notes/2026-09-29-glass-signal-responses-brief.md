@@ -55,9 +55,9 @@ Progress must define validation, source arbitration, expiry and clearing
 before ring geometry. The current ring is an arc-length beam, not the
 original signals design's historical ring placement.
 
-Related open work: `material-1c5a30` covers broader organic lighting;
-`material-f86183` covers wider inactivity/quiescence; `material-79d1de` needs
-the future progress channel for OSC reports. These remain separate ideas;
+Related work: `material-1c5a30` (open) covers broader organic lighting;
+`material-f86183` (done) shipped wider inactivity settling; `material-79d1de`
+(open) needs the future progress channel for OSC reports. These remain separate;
 `material-d257d9` already designs the shared opt-in client-content boundary
 for `material-7f5751` and desaturation. Keep the desaturation idea's source,
 parent and trigger decision; do not create a second content-stage design.
@@ -79,6 +79,18 @@ parent and trigger decision; do not create a second content-stage design.
 
 ## Unanswered questions
 
+- **Unsignalled windows (frost and desaturation):** the store and the
+  renderer disagree on a window with no signal. `WindowSignals::fold` returns
+  `None` once no slot remains (`src/window/signal.rs`), and IPC reports
+  `signal: None`. The tile substitutes an effective Quiet/Static signal for
+  `None` (`src/layout/tile.rs::signal_for_frame`). A trigger keyed on the store's
+  level skips unsignalled windows; one keyed on the effective level frosts or
+  desaturates them. Both designs must say whether an unsignalled window counts
+  as Quiet. If it does, they must say when its Quiet age starts: at map, when
+  the last slot clears, or on TTL demotion to Quiet. They must also say what
+  resets the age: a set to a level above Quiet, focus, input, or a set that
+  stays at Quiet. Most windows carry no signal, so this choice decides how
+  many windows the effect reaches.
 - **Frost:** elapsed Quiet time, input inactivity, or both? Which growth/wipe
   geometry and reduced-motion behavior? `material-f86183` is done: sustained
   optics settle after 30 s of input idle on the optic timeline. Roughness is
@@ -90,8 +102,12 @@ parent and trigger decision; do not create a second content-stage design.
 - **Progress:** which source wins, and how are unknown/indeterminate progress,
   expiry and completion represented? `material-9faf34` designs the store,
   IPC/events and ring fill, after `material-9fb9ec` settles source naming and
-  ownership. kitty already delivers OSC 9;4 (`material-07bac9`), so a producer
-  exists.
+  ownership. Progress delivery was demonstrated in a bounded probe
+  (`material-07bac9`: kitty 0.49.2, OSC 9;4 value 42). The probe read kitty
+  internals through `on_tab_bar_dirty`, not a stable progress callback, and
+  that access is version-specific. A production adapter is still owed
+  (see the [transport limitations](2026-09-29-signal-sources-brief.md#coverage)).
+  Ghostty delivery is unverified (`material-53da57`).
 - **Fireflies:** particle density, depth and absent-accent hue behavior, with
   what measured GPU ceiling? A bounded visual/performance spike, coordinated
   with `material-1c5a30`, can answer; no measurement was run in this pass.
@@ -119,4 +135,5 @@ parent and trigger decision; do not create a second content-stage design.
   planned, owner, depends on `material-9fb9ec`) designs the job-progress
   channel and ring fill; `material-5d854f` and `material-79d1de` depend on it
   and wake on its result. Other lighting, inactivity and OSC ideas
-  retain their sources and scope; no new task was filed in this pass.
+  retain their sources and scope. The 2026-10-19 pass filed only
+  `material-9faf34`; earlier passes filed none.
