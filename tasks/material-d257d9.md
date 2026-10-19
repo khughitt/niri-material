@@ -7,7 +7,7 @@ size: m
 complexity: high
 process: planned
 created: 2026-10-06T18:28:17Z
-updated: 2026-10-13T09:18:39Z
+updated: 2026-10-19T15:57:59Z
 depends: []
 parent: material-6062fd
 tags: [rendering, design]
@@ -24,3 +24,4 @@ On the design result, record the recommendation in the brief and run tasks note 
 ## Notes
 
 - 2026-10-06T20:16:40Z (materials-26.04): Scope handoff for material-987655: reuse this design; retain Quiet versus unfocused as a distinct trigger decision and compare client/popup/capture coverage and text readability. The existing wake-up note requirement remains; record the desaturation finding in docs/notes/2026-09-29-glass-signal-responses-brief.md alongside the optics brief, in the design-result commit. No new renderer or capture work is added to the design phase.
+- 2026-10-19T15:57:59Z (materials-26.04): For desaturation's trigger: define unsignalled windows, which the store folds to None while src/layout/tile.rs::signal_for_frame renders them as Quiet. Say whether they count as Quiet and, for a Quiet-age trigger, when the age starts and resets. See docs/notes/2026-09-29-glass-signal-responses-brief.md (Unanswered questions).
