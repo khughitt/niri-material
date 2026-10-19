@@ -1,6 +1,6 @@
 # Material dynamics scoping brief
 
-Updated 2026-10-16. Handoff for `material-53f873`, not an approved design.
+Updated 2026-10-19. Handoff for `material-53f873`, not an approved design.
 
 ## Problem
 
@@ -225,6 +225,8 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
 
 - **Deformation:** which current cap, shear or ripple appearance is unacceptable?
   The owner supplies a concrete example before `material-6d4de5` becomes a design task.
+  The 2026-10-19 pass found nothing a follow-up could answer and marked the idea
+  `question`, awaiting the owner: name a case, or shelve or drop it.
 - **Lighting:** answered by `material-ffd61f` above: a finite overcast-to-sun
   Aurora transition, whose only missing behavior is the envelope. The owner
   later judges the look and acceptable ongoing cost.
@@ -243,8 +245,10 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
 
 - `material-5a5fff`: propose drop, supported by `material-8e3b73` and
   `7f5ee9e2`; the idea remains open pending disposition.
-- `material-6d4de5`: briefed, limited to the remaining deformation questions;
-  its original captured request is retained below the updated body.
+- `material-6d4de5`: limited to the remaining deformation questions;
+  its original captured request is retained below the updated body. Since
+  2026-10-19 it is a `question` awaiting the owner, not briefed: no research
+  can supply the visual target. The premises still hold on `2b93bf33`.
 - `material-1c5a30` and `material-f3e4e4`: `material-ffd61f` traced current
   optics and proposed the overcast-to-sun transition above, with no rendering
   change or capture run. Both ideas carry its finding note. The 2026-10-16 scope
@@ -260,6 +264,7 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
   refocus, policy, visibility and neutral-client checks must be explicit;
   keeping current behavior remains an acceptable verdict. Completion updates
   this brief and wakes the original idea with a finding note before the result's branch merges.
+  Since 2026-10-19 the idea depends on `material-ccda38`, so its wait is recorded.
   Open/move/resize glints remain in the idea's preserved body, outside this
   first design. No host capture or rendering implementation ran in this pass.
 - Reuse the existing lane; no new goal or animation subsystem. Historical
