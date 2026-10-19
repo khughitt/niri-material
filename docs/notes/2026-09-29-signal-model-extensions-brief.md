@@ -1,6 +1,6 @@
 # Deferred signal-model extensions
 
-Scope passes: 2026-09-29 and 2026-10-06. Goal: `material-b5cbd6`. This brief is not an
+Scope passes: 2026-09-29, 2026-10-06 and 2026-10-19. Goal: `material-b5cbd6`. This brief is not an
 approved design. The three ideas share §11 of the original signals design;
 their original bodies and dependency on `material-a54d89` are preserved.
 
@@ -207,8 +207,10 @@ and latency budget per event.
   refresh-atomic cross-workspace summaries, defined drag attribution, a shared
   fold beyond maximum level, or demonstrates unacceptable client folding
   cost. Record the requirement and budget before unshelving.
-- `material-d88a8f` remains a briefed idea, unchanged by the follow-up pass.
-  A concrete rule use case must justify a design; this brief authorizes none.
+- `material-d88a8f` is shelved (2026-10-19) until a concrete window rule
+  needs to select on external signal level, with an appearance that existing
+  responses, source/tag matches and `is-urgent` cannot express. `Match` still
+  has no level field. This brief authorizes no design.
 - Related `material-987655` remains under its existing response goal and
   reuses `material-d257d9` for the opt-in client-content boundary. No new
   goal, summary event or duplicate design task was created in this pass.

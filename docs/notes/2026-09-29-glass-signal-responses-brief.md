@@ -1,6 +1,6 @@
 # Deferred glass signal responses
 
-Scope passes: 2026-09-29 and 2026-10-06. Handoff, not an approved design.
+Scope passes: 2026-09-29, 2026-10-06 and 2026-10-19. Handoff, not an approved design.
 Goal: `material-0a4093`.
 
 ## Problem
@@ -80,12 +80,18 @@ parent and trigger decision; do not create a second content-stage design.
 ## Unanswered questions
 
 - **Frost:** elapsed Quiet time, input inactivity, or both? Which growth/wipe
-  geometry and reduced-motion behavior? A later frost design must settle
-  these against `material-f86183`; reusing the global idle gate alone is
-  insufficient.
+  geometry and reduced-motion behavior? `material-f86183` is done: sustained
+  optics settle after 30 s of input idle on the optic timeline. Roughness is
+  already numeric and the prefilter blends adjacent levels (`material-2d0360`,
+  `d9914514`; inert at IOR 1), so growth needs no new prefilter work. Frost
+  grows while the host is idle, so its clock is the open decision; it waits
+  on `material-415d0c`, whose finite Aurora envelope chooses between the
+  ordinary clock and the optic timeline.
 - **Progress:** which source wins, and how are unknown/indeterminate progress,
-  expiry and completion represented? A later progress design must cover the
-  store, IPC/events and ring, coordinated with `material-79d1de`.
+  expiry and completion represented? `material-9faf34` designs the store,
+  IPC/events and ring fill, after `material-9fb9ec` settles source naming and
+  ownership. kitty already delivers OSC 9;4 (`material-07bac9`), so a producer
+  exists.
 - **Fireflies:** particle density, depth and absent-accent hue behavior, with
   what measured GPU ceiling? A bounded visual/performance spike, coordinated
   with `material-1c5a30`, can answer; no measurement was run in this pass.
@@ -107,5 +113,10 @@ parent and trigger decision; do not create a second content-stage design.
   updates both this brief and the
   [optics brief](2026-10-06-glass-optics-brief.md).
 - `material-987655` remains briefed; no parallel desaturation design or
-  implementation task is needed. Other lighting, inactivity and OSC ideas
+  implementation task is needed.
+- 2026-10-19: `material-4bf8b8` depends on `material-415d0c` (Aurora envelope
+  design), whose wake list now names it. `material-9faf34` (P2 / m / high /
+  planned, owner, depends on `material-9fb9ec`) designs the job-progress
+  channel and ring fill; `material-5d854f` and `material-79d1de` depend on it
+  and wake on its result. Other lighting, inactivity and OSC ideas
   retain their sources and scope; no new task was filed in this pass.
