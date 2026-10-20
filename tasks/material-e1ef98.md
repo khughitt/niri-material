@@ -5,14 +5,24 @@ status: idea
 priority: 2
 reviewed: true
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-12T18:21:14Z
-depends: []
+updated: 2026-10-20T21:44:15Z
+depends: [material-232940]
 parent: material-2834d7
 tags: [capture]
 agent: claude-code/claude-opus-5-5
 ---
 
 Why: the run: note's outcome (passed, failed, refused, hung, aborted) must still come from the person or the agent's transcript for a detached or TTY-started run. capture.json now has its duration (material-c44509) but not whether the fixture passed. Every fixture's exit trap holds rc when it calls release; release --exit-status "$rc" would record it as run.exit_status. The record then distinguishes a pass from anything else, though not failed from aborted; scoping decides whether that is enough to be worth the change across every fixture's trap.
+
+## Current scope (2026-10-20)
+
+release still has no exit-status argument. finish_run stamps only the first release; summarize releases before log checks/PASS, and cleanup can fail writing checksums afterward. The newer capture-meta judge checks evidence gates, not final fixture exit. Reuse material-232940 for the smallest truthful outcome boundary, after material-282edc inventories the external lifecycle; preserve unknown outcomes for killed/recovered runs.
+
+Read [ref:brief] for the existing alternatives, constraints and bounded handoff.
+
+## References
+
+- brief (input, required, kind=brief): docs/notes/2026-10-06-capture-lifecycle-brief.md — existing scope handoff and follow-up boundaries
 
 ## Notes
 
