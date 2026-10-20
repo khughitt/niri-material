@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-06T20:44:05Z
-updated: 2026-10-13T09:18:39Z
+updated: 2026-10-20T21:45:35Z
 depends: []
 parent: material-7ff4bc
 tags: [harness, rendering]
@@ -23,7 +23,13 @@ Bound: One deterministic flat-field study using the existing in-process GLES fix
 
 Expected result: Record signed per-channel means, spread, code-value distributions, repeats and resolution limits, reference assumptions and which cause is supported or remains unknown. Use raw code values as well as grey spread so a DC/channel bias is not called residual grain. Define a check that distinguishes a supported mechanism from blur rounding. Report a recommendation (retain documented 8-bit behavior or scope a format/clamp design) with unknown visual acceptance and memory/driver-support costs explicit; no wider-format implementation is authorized by the measurement. Reuse material-674d4e for owner judgement of the backdrop site's look. Run just test-one -p niri <focused-filter> then just test-fast for fixture changes, and update this task and the brief. This is a pixel/control study, not a quiet-host benchmark.
 
-Ideas it wakes: On completion, run tasks note on material-d1171f with the findings before this result's branch merges.
+Ideas it wakes: On completion, run tasks note --no-reviewed on material-d1171f with the findings before this result's branch merges.
+
+Scope recheck (2026-10-20, 52c14d4d): Current noise_source still clamps before the Abgr8888 target; the lightness path has an additional gamut clamp. Noise-layer accumulation has since landed, so controls must use one layer and pin kind/seed. Reuse material-aaa714 to separate clipping from blur quantization with deterministic signed dark/midtone/bright controls. A wider target alone cannot remove the shader clamp; no format change is justified yet.
+
+## References
+
+- brief (input, required, kind=brief): docs/notes/2026-10-06-render-anomalies-brief.md — read the constraints and existing evidence before this follow-up
 
 ## Notes
 
