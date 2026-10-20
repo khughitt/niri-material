@@ -4,8 +4,9 @@ title: Layered 3d texture embedded in the glass
 status: idea
 priority: 2
 reviewed: true
+reviewed_at: 2026-10-20T21:43:07Z
 created: 2026-09-11T00:47:47Z
-updated: 2026-10-20T21:43:00Z
+updated: 2026-10-20T21:43:07Z
 depends: [material-56f91a]
 parent: material-3aa1f2
 tags: [quick-add, rendering]
@@ -30,3 +31,4 @@ Read [ref:brief] for the existing alternatives, constraints and bounded handoff.
 
 - 2026-09-11T00:52:15Z (materials-26.04): Counterpart in mindful: mind6-5c0193 (identity-bearing textures shared between mindful structure identity and the glass texture layer).
 - 2026-10-06T20:03:51Z (materials-26.04): scope: briefed; backdrop textures are already refracted, but material-local embedded texture coordinates and composition are undefined; investigate the smallest reading-layer proof before a new sampler or stack; brief: docs/notes/2026-10-06-material-texture-composition-brief.md
+- 2026-10-20T21:43:07Z (materials-26.04): scope: briefed; revalidated against 52c14d4d; reused material-56f91a and recorded the missing dependency; The embedded reading-layer question remains open. Current samplers cover the window and prefiltered backgrounds, not a material-local imported image. Noise layers have landed, but do not settle anchoring, depth, alpha or resource lifetime. Reuse material-56f91a for one frozen-pixel proof proposal and minimum resource requirements; owner visual judgement follows that proposal.; brief: docs/notes/2026-10-06-material-texture-composition-brief.md
