@@ -251,8 +251,8 @@ for the new feasibility task; later measured runs declare `quiet` and run a pilo
 
 ## Proposed decomposition
 
-- `material-5a5fff`: propose drop, supported by `material-8e3b73` and
-  `7f5ee9e2`; the idea remains open pending disposition.
+- `material-5a5fff`: dropped on 2026-10-20 with owner approval, supported by
+  `material-8e3b73` and `7f5ee9e2`.
 - `material-6d4de5`: limited to the remaining deformation questions;
   its original captured request is retained below the updated body. Since
   2026-10-19 it is a `question` awaiting the owner, not briefed: no research
