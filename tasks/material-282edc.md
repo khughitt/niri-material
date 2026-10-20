@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-06T19:18:11Z
-updated: 2026-10-20T21:45:21Z
+updated: 2026-10-20T22:42:44Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -21,7 +21,7 @@ Bound: Locate the retained experiments checkout and branch without switching its
 Expected result: Record whether the consumer is active, the exact insertion point and verification needed for a minimal finish call, or why the task should be shelved or dropped; distinguish normal completed sub-runs from refused or abandoned ones. Do not mark aborted sub-runs finished merely because cleanup ran. Record findings on this task and in the brief.
 Ideas it wakes: On completion, run tasks note --no-reviewed on material-a9a455 with the finding, before this result's branch merges.
 
-Scope recheck (2026-10-20, 52c14d4d): material-9cf378 records continued idle-budget support and results/idle-budget advanced to 4d03b5b on 2026-10-09 (renderer verification and release-status propagation). This settles activity, not whether normal DRM stop calls finish_sub_run. Reuse material-282edc to inspect that retained consumer revision and distinguish normal completion from aborted cleanup; no capture is needed.
+Scope recheck (2026-10-20, 52c14d4d): material-9cf378 records continued idle-budget support and results/idle-budget advanced to 4d03b5b on 2026-10-09 (renderer verification and release-status propagation). This settles activity, not whether normal DRM stop calls finish_sub_run. Inspect that retained consumer revision and distinguish normal completion from aborted cleanup; no capture is needed.
 
 ## References
 
