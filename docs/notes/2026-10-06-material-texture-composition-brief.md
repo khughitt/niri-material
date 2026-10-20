@@ -29,8 +29,8 @@ suggestions agree with the preserved task bodies.
   describes their different carriers/composition laws and marks every site
   non-orderable. `adding-an-optic.md` defines `within` as additive attenuated
   light; that is not automatically a stone/paper image layer.
-- Noise sites landed (`1d2777aa`); noise layers `material-3fcba2` remain in
-  progress. Their concrete grain behavior does not establish a common stack
+- Noise sites landed (`1d2777aa`); noise layers `material-3fcba2` completed
+  on 2026-10-08. Their concrete grain behavior does not establish a common stack
   for textures, base-material blending and profiles. Prism's rack goal
   `prism-a03862` is still open and its task describes lowering to native fields.
 - Related task records already retain registry coordination `ops-c8b158`,
@@ -76,7 +76,8 @@ Reuse `forge-e0743c` instead of filing another substrate investigation.
 
 ## Proposed decomposition
 
-- `material-05c901`: **briefed**, awaiting a concrete embedded-texture proof.
+- `material-05c901`: **briefed**, depending on `material-56f91a` for a concrete
+  embedded-texture proof proposal; dependency recorded in the 2026-10-20 recheck.
 - `material-599548`: **briefed**, reusing existing registry/catalog/provider
   work and awaiting this consumer's requirements; no new registry task or API.
 - `material-197db1`: **shelved** until a concrete second material/texture

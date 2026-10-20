@@ -44,6 +44,23 @@ their causes. Keep their investigations independent.
 
 ## Constraints
 
+Rechecked on 2026-10-20 against `52c14d4d`. The ideas now depend on their
+existing attribution tasks. Noise layers have landed; the grain investigation
+uses one explicit layer to retain the original fine/lightness controls.
+
+Upstream searches of open/closed niri and Smithay issues and PRs found the
+exact signature in [Smithay #1933](https://github.com/Smithay/smithay/pull/1933).
+That clamp patch is closed **unmerged**; the maintainer asks why callers supply
+out-of-bounds damage and prefers fixing the responsible path across renderers.
+[niri #4188](https://github.com/niri-wm/niri/issues/4188) is another upload-bounds
+report; [Smithay #2231](https://github.com/Smithay/smithay/pull/2231) is open
+multi-GPU copy work. Neither establishes this fork's cause. The search also
+checked Smithay master's `update_memory`, its changelog, branch inventory and
+relevant development/resize branch material. No verified fixing release or
+commit was established. Compare these candidates with pinned Smithay
+`ff5fa7df` and actual binary provenance before reproduction; do not adopt the
+unmerged clamp or pin a speculative fix.
+
 Read [render-pipeline.md](../materials/render-pipeline.md) before renderer
 changes. Preserve alpha, opaque-client identity, neutral output and cache
 invalidation. No speculative GL guards, callback suppression or production
@@ -52,7 +69,7 @@ channel bias distinct from residual grain. Start with one case through its
 verdict before a longer matrix. Prefer in-process controls; nested reproduction
 uses the declared `nested` need. Timing/power runs require separate quiet
 evidence; no desktop replay, service restart or host pointer change is authorized
-by these investigations. The pending noise-layers branch is unnecessary.
+by these investigations. No additional noise-layer work is necessary.
 
 ## Alternatives
 
