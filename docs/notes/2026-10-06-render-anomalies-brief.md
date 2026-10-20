@@ -53,7 +53,7 @@ exact signature in [Smithay #1933](https://github.com/Smithay/smithay/pull/1933)
 That clamp patch is closed **unmerged**; the maintainer asks why callers supply
 out-of-bounds damage and prefers fixing the responsible path across renderers.
 [niri #4188](https://github.com/niri-wm/niri/issues/4188) is another upload-bounds
-report; [Smithay #2231](https://github.com/Smithay/smithay/pull/2231) is open
+report, closed as not planned on 2026-06-16; [Smithay #2231](https://github.com/Smithay/smithay/pull/2231) is open
 multi-GPU copy work. Neither establishes this fork's cause. The search also
 checked Smithay master's `update_memory`, its changelog, branch inventory and
 relevant development/resize branch material. No verified fixing release or
