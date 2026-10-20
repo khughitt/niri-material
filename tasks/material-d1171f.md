@@ -4,8 +4,9 @@ title: Does backdrop grain clipping lift dark texels under blur?
 status: idea
 priority: 2
 reviewed: true
+reviewed_at: 2026-10-20T21:44:08Z
 created: 2026-10-06T08:56:17Z
-updated: 2026-10-20T21:44:02Z
+updated: 2026-10-20T21:44:08Z
 depends: [material-aaa714]
 parent: material-7ff4bc
 tags: [material, noise]
@@ -27,3 +28,4 @@ Read [ref:brief] for the existing alternatives, constraints and bounded handoff.
 ## Notes
 
 - 2026-10-06T20:44:03Z (materials-26.04): scope: briefed; measured blue lift is one-signed but clipping and 8-bit blur rounding are not isolated; use deterministic flat-field controls before changing format or accepting the bias; brief: docs/notes/2026-10-06-render-anomalies-brief.md
+- 2026-10-20T21:44:08Z (materials-26.04): scope: briefed; revalidated against 52c14d4d; reused material-aaa714 and recorded the missing dependency; Current noise_source still clamps before the Abgr8888 target; the lightness path has an additional gamut clamp. Noise-layer accumulation has since landed, so controls must use one layer and pin kind/seed. Reuse material-aaa714 to separate clipping from blur quantization with deterministic signed dark/midtone/bright controls. A wider target alone cannot remove the shader clamp; no format change is justified yet.; brief: docs/notes/2026-10-06-render-anomalies-brief.md
