@@ -4,8 +4,9 @@ title: capture.json records the fixture's exit status at release
 status: idea
 priority: 2
 reviewed: true
+reviewed_at: 2026-10-20T21:44:22Z
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-20T21:44:15Z
+updated: 2026-10-20T21:44:22Z
 depends: [material-232940]
 parent: material-2834d7
 tags: [capture]
@@ -28,3 +29,4 @@ Read [ref:brief] for the existing alternatives, constraints and bounded handoff.
 
 - 2026-10-06T13:03:07Z (materials-26.04): concerns: material-c44509 extension — the record has the run's length but not its outcome
 - 2026-10-06T19:17:33Z (materials-26.04): scope: briefed; early release, repeated-release immutability and checksum work after release prevent treating release success as fixture exit; design final outcome recording separately from hold restoration; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md
+- 2026-10-20T21:44:22Z (materials-26.04): scope: briefed; revalidated against 52c14d4d; reused material-232940 and recorded the missing dependency; release still has no exit-status argument. finish_run stamps only the first release; summarize releases before log checks/PASS, and cleanup can fail writing checksums afterward. The newer capture-meta judge checks evidence gates, not final fixture exit. Reuse material-232940 for the smallest truthful outcome boundary, after material-282edc inventories the external lifecycle; preserve unknown outcomes for killed/recovered runs.; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md
