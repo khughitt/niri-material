@@ -8,7 +8,7 @@ complexity: high
 process: direct
 needs: [nested]
 created: 2026-10-06T20:44:04Z
-updated: 2026-10-20T21:45:28Z
+updated: 2026-10-20T22:42:51Z
 depends: []
 parent: material-7ff4bc
 tags: [harness, rendering]
@@ -26,7 +26,7 @@ Expected result: Record a minimal reproducer and the GL caller plus invalid argu
 
 Ideas it wakes: On completion, run tasks note --no-reviewed on material-c8732f with the attribution result before this result's branch merges.
 
-Scope recheck (2026-10-20, 52c14d4d): The caller remains unknown. Upstream search on 2026-10-20 covered open/closed niri and Smithay issues/PRs for GL_INVALID_VALUE and the exact message, Smithay master update_memory, branch inventory and relevant development/resize branch material, and CHANGELOG.md. Smithay PR #1933 matches the exact message but is closed unmerged; maintainers ask for caller-level attribution rather than a GLES-only clamp. niri #4188 is another glTexSubImage2D bounds report, not proof of our cause. Smithay #2231 is open multigpu copy work, also unproven here. No verified fixing release/commit was established: do not pin or carry a workaround yet. Reuse material-86c841 to compare these candidates against pinned Smithay ff5fa7df and actual binary provenance before one minimal reproduction. Upstream links: https://github.com/Smithay/smithay/pull/1933 ; https://github.com/niri-wm/niri/issues/4188 ; https://github.com/Smithay/smithay/pull/2231 .
+Scope recheck (2026-10-20, 52c14d4d): The caller remains unknown. Upstream search on 2026-10-20 covered open/closed niri and Smithay issues/PRs for GL_INVALID_VALUE and the exact message, Smithay master update_memory, branch inventory and relevant development/resize branch material, and CHANGELOG.md. Smithay PR #1933 matches the exact message but is closed unmerged; maintainers ask for caller-level attribution rather than a GLES-only clamp. niri #4188 (closed as not planned, 2026-06-16) is another glTexSubImage2D bounds report, not proof of our cause. Smithay #2231 is open multigpu copy work, also unproven here. No verified fixing release/commit was established: do not pin or carry a workaround yet. Compare these candidates against pinned Smithay ff5fa7df and actual binary provenance before one minimal reproduction. Upstream links: https://github.com/Smithay/smithay/pull/1933 ; https://github.com/niri-wm/niri/issues/4188 ; https://github.com/Smithay/smithay/pull/2231 .
 
 ## References
 
