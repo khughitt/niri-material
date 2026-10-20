@@ -4,8 +4,9 @@ title: "idle-budget fixture: finish its DRM sub-runs in capture.json"
 status: idea
 priority: 2
 reviewed: true
+reviewed_at: 2026-10-20T21:43:41Z
 created: 2026-10-06T13:03:07Z
-updated: 2026-10-20T21:43:35Z
+updated: 2026-10-20T21:43:41Z
 depends: [material-282edc]
 parent: material-2834d7
 tags: [capture]
@@ -28,3 +29,4 @@ Read [ref:brief] for the existing alternatives, constraints and bounded handoff.
 
 - 2026-10-06T13:03:07Z (materials-26.04): concerns: material-c44509 extension — the lib's sub-run finish does not reach a consumer with its own host stop
 - 2026-10-06T19:17:33Z (materials-26.04): scope: briefed; local DRM stop already finishes sub-runs; the external idle-budget consumer is not present in this checkout and needs a bounded lifecycle inventory before a patch; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md
+- 2026-10-20T21:43:41Z (materials-26.04): scope: briefed; revalidated against 52c14d4d; reused material-282edc and recorded the missing dependency; material-9cf378 records continued idle-budget support and results/idle-budget advanced to 4d03b5b on 2026-10-09 (renderer verification and release-status propagation). This settles activity, not whether normal DRM stop calls finish_sub_run. Reuse material-282edc to inspect that retained consumer revision and distinguish normal completion from aborted cleanup; no capture is needed.; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md
