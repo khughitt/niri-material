@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-06T20:44:05Z
-updated: 2026-10-20T21:45:35Z
+updated: 2026-10-20T22:42:57Z
 depends: []
 parent: material-7ff4bc
 tags: [harness, rendering]
@@ -25,7 +25,7 @@ Expected result: Record signed per-channel means, spread, code-value distributio
 
 Ideas it wakes: On completion, run tasks note --no-reviewed on material-d1171f with the findings before this result's branch merges.
 
-Scope recheck (2026-10-20, 52c14d4d): Current noise_source still clamps before the Abgr8888 target; the lightness path has an additional gamut clamp. Noise-layer accumulation has since landed, so controls must use one layer and pin kind/seed. Reuse material-aaa714 to separate clipping from blur quantization with deterministic signed dark/midtone/bright controls. A wider target alone cannot remove the shader clamp; no format change is justified yet.
+Scope recheck (2026-10-20, 52c14d4d): Current noise_source still clamps before the Abgr8888 target; the lightness path has an additional gamut clamp. Noise-layer accumulation has since landed, so controls must use one layer and pin kind/seed. Separate clipping from blur quantization with deterministic signed dark/midtone/bright controls. A wider target alone cannot remove the shader clamp; no format change is justified yet.
 
 ## References
 
