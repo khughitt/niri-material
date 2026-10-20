@@ -4,8 +4,9 @@ title: Validated measurement for glass ray bending
 status: idea
 priority: 2
 reviewed: true
+reviewed_at: 2026-10-20T21:43:21Z
 created: 2026-09-06T11:12:33Z
-updated: 2026-10-20T21:43:14Z
+updated: 2026-10-20T21:43:21Z
 depends: [material-98763f]
 parent: material-49871a
 tags: [rendering, harness]
@@ -29,3 +30,4 @@ Read [ref:brief] for the existing alternatives, constraints and bounded handoff.
 - 2026-09-29T22:38:51Z (materials-26.04): scope: briefed; regional Lab RMSE still cannot identify bending; bounded calibration research will test spatial warp against photometric-only controls; brief: docs/notes/2026-09-29-glass-measurement-brief.md
 - 2026-10-06T17:27:19Z (material-bb8480): material-bb8480 (2026-10-06) calibrated an instrument for this: on the seeded aperiodic backdrop, ZNCC matching refined by Gauss-Newton (docs/materials/scripts/warp-calibration.py, 7 px window) reads chamfer shifts of 1-20 px to 0.02 px in the strip interior and rejects photometric-only change; windows across the strip edges are flagged and must be masked from the window rect and bevel. Still needed before a reading counts as bending: render the same glass over two uniform backdrops beside the textured one and divide out att = (R2-R1)/(g2-g1), spec = R1 - att*g1 per pixel (attenuation multiplies, the Fresnel glint adds, neither depends on backdrop content); ior 1 and thickness 0 are confounded controls. The in-process headless fixture behind src/tests/ring_pair.rs may host those renders without the idle host. Corners and distortion > 0 need material-79fb49's affine model. Evidence: docs/materials/2026-10-06-glass-warp-calibration-evidence.md.
 - 2026-10-06T19:24:24Z (materials-26.04): scope: briefed; straight-edge estimator calibration is complete, but rendered linear-light flat-field controls must validate photometric isolation before interpreting shader displacement; one bounded rendered-control investigation follows; brief: docs/notes/2026-09-29-glass-measurement-brief.md
+- 2026-10-20T21:43:21Z (materials-26.04): scope: briefed; revalidated against 52c14d4d; reused material-98763f and recorded the missing dependency; Synthetic straight-strip calibration is complete; rendered photometric isolation is not. Reuse material-98763f to validate paired uniform-field correction in linear light against independent optical expectations and a photometric-only control. Keep corners and nonzero distortion outside this first measurement; do not borrow the synthetic 0.02 px bound.; brief: docs/notes/2026-09-29-glass-measurement-brief.md
