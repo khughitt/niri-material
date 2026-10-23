@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 13
+# ops-check version 14
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -28,7 +28,9 @@ exits 2 when it cannot run at all.
   host, say). The values are read from the machine the check runs on, never written here:
   this file is public in every project that vendors it. Matches are whole words, one
   finding per value per line, at most LAYOUT_LINES lines per file and then a count.
-  `tasks/*.md` is exempt (records are written only by tasks). A repository whose content is
+  `tasks/*.md` is exempt (records are written only by tasks), and so, in any repository, is
+  `<prefix>/tasks/<prefix>-<hex>.md`, the per-project form of a records repository or work
+  overlay. A repository whose content is
   host configuration by design lists the path prefixes that may carry the layout under
   `layout_allowed` in a root `.ops-check.toml`; a malformed file exits 2.
 - Adopted copies: a tracked `tools/` copy of an adopted contract (cli.toml, cli_surface.py,
@@ -62,7 +64,9 @@ JUSTFILE_RECIPE = re.compile(r"^([a-z][\w-]*)\s*(?:\+?\*?[\w ]*)?:(?!=)", re.MUL
 FENCE = re.compile(r"^\s*(```|~~~)")
 # The last word of a candidate prefix, without the punctuation that can precede it.
 WORD = re.compile(r"\w[\w-]*$")
-TASK_RECORD = re.compile(r"^tasks/[^/]+\.md$")
+# A record: tasks/<any>.md in a project, or <prefix>/tasks/<prefix>-<hex6>.md in a records
+# repository or work overlay, whose directory is named for the prefix (the tasks grammar).
+TASK_RECORD = re.compile(r"^(?:tasks/[^/]+|([a-z][a-z0-9]{1,7})/tasks/\1-[0-9a-f]{6})\.md$")
 PROJECT_CONFIG = ".ops-check.toml"
 LAYOUT_LINES = 10
 # Adopted contracts under tools/ -> their source in ops (ops bin/vendored's ADOPTED).
