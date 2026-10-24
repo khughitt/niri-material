@@ -6,8 +6,9 @@ priority: 3
 size: s
 complexity: low
 process: direct
+defer: 2026-12-23
 created: 2026-10-24T12:48:15Z
-updated: 2026-10-24T15:29:36Z
+updated: 2026-10-24T15:29:43Z
 depends: []
 tags: [docs]
 source: curate-docs
