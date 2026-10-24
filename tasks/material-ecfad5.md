@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-23T20:14:57Z
-updated: 2026-10-23T20:14:57Z
+updated: 2026-10-24T13:48:07Z
 depends: []
 tags: [docs]
 source: ops-2c5fbc
@@ -25,3 +25,7 @@ At 2026-10-23: README.md 133 lines, AGENTS.md 98, no CLAUDE.md. tools/ops-check,
 Done when: `tools/ops-docs check` exits 0 here with identity.toml present; the project's check route runs it (and so its pre-commit hook, where it has one); and `bin/ops-projects check` in ops no longer lists material and still exits 0.
 
 Profile: personal; integrate under this repository's own rules.
+
+## Notes
+
+- 2026-10-24T13:48:07Z (materials-26.04): curate-docs: material-10a999 at bfea33f0 confirms: Mechanical adoption gap: tools/ops-docs and root identity.toml are absent; ops-docs check exits 2, so guide regions/budgets/declarations are not verified. Complete the existing identity/checker/gate adoption.
