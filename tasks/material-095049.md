@@ -2,12 +2,12 @@
 id: material-095049
 title: Update the optic recipe for the current layered Noise API
 status: todo
-priority: 3
+priority: 1
 size: s
 complexity: low
 process: direct
 created: 2026-10-24T13:48:26Z
-updated: 2026-10-24T13:48:33Z
+updated: 2026-10-24T18:57:08Z
 depends: []
 tags: [docs]
 source: material-10a999
