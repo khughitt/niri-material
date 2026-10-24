@@ -2,12 +2,12 @@
 id: material-10a999
 title: Documentation review
 status: todo
-priority: 2
+priority: 3
 size: s
 complexity: low
 process: direct
 created: 2026-10-24T12:48:15Z
-updated: 2026-10-24T13:50:18Z
+updated: 2026-10-24T15:29:36Z
 depends: []
 tags: [docs]
 source: curate-docs
