@@ -7,7 +7,7 @@ size: s
 complexity: low
 process: direct
 created: 2026-10-24T12:48:15Z
-updated: 2026-10-24T12:50:13Z
+updated: 2026-10-24T12:50:19Z
 depends: []
 tags: [docs]
 source: curate-docs
@@ -19,3 +19,4 @@ The reusable record of curate-docs passes over this project: one note per pass n
 ## Notes
 
 - 2026-10-24T12:48:31Z (materials-26.04): doc-review: eligible since 2026-10-24: baseline
+- 2026-10-24T12:50:19Z (materials-26.04): doc-review: selected 2026-10-24; eligible since 2026-10-24; baseline; run /curate-docs --project material
