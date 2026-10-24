@@ -2,12 +2,12 @@
 id: material-2a38d4
 title: Link IPC usage documentation from the crate README
 status: todo
-priority: 3
+priority: 1
 size: xs
 complexity: low
 process: direct
 created: 2026-10-24T13:48:45Z
-updated: 2026-10-24T13:48:45Z
+updated: 2026-10-24T18:57:21Z
 depends: []
 tags: [docs]
 source: material-10a999
