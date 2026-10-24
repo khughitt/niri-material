@@ -2,12 +2,12 @@
 id: material-4498c6
 title: Correct the backdrop-blur plan path in the material index
 status: todo
-priority: 3
+priority: 1
 size: xs
 complexity: low
 process: direct
 created: 2026-10-24T13:48:39Z
-updated: 2026-10-24T13:48:39Z
+updated: 2026-10-24T18:57:15Z
 depends: []
 tags: [docs]
 source: material-10a999
