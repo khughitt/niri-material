@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-10-23T20:14:57Z
-updated: 2026-10-24T13:48:14Z
+updated: 2026-10-24T13:48:20Z
 depends: []
 tags: [docs]
 source: ops-2c5fbc
@@ -30,3 +30,4 @@ Profile: personal; integrate under this repository's own rules.
 
 - 2026-10-24T13:48:07Z (materials-26.04): curate-docs: material-10a999 at bfea33f0 confirms: Mechanical adoption gap: tools/ops-docs and root identity.toml are absent; ops-docs check exits 2, so guide regions/budgets/declarations are not verified. Complete the existing identity/checker/gate adoption.
 - 2026-10-24T13:48:14Z (materials-26.04): curate-docs: material-10a999 at bfea33f0 confirms: README.md:53-56 and docs/materials/README.md:22-143 retain guide status/history prose. Replace completion labels and chronology with tracker/evidence pointers, preserving unique evidence in dated records and current compatibility/use guidance.
+- 2026-10-24T13:48:20Z (materials-26.04): curate-docs: material-10a999 at bfea33f0 confirms: AGENTS.md:11-12 repeats global tasks prime/start/done/check and :48-49 repeats tt-report before worktree removal. Remove those four duplicated lines while retaining Git LFS, Cargo isolation, capture and tooling guidance.
