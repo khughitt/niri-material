@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-27T02:29:16Z
+updated: 2026-10-27T02:38:01Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -48,3 +48,4 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 - 2026-10-27T02:27:37Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-27T02:29:16Z (materials-26.04): 10.4 W session-open sample (2026-10-26 22:27, TTY, desktop stopped, panel lit, same boot as the 10-17 17 W rest0): floor-sample.sh rest-20261026 60 -> 60 samples mean 9.97 W (9.85-10.22), P8 210/405. Diff against rest0 (17.33 W): nvidia-smi -q identical apart from power draw, PCIe throughput counters, SW-power-capping counter and 1 C of temperature; .state.txt identical (PCIe 2.5 GT/s x16, D0 active, ASPM default, dpms On, fan_curve still failing to engage manual). Same driver 615.78.08 and boot (up since 10-16 10:11), so the floor flipped back to 10 W within one boot with nothing nvidia-smi or sysfs reports changing: the selector is invisible to both. Files: /mnt/ssd3/niri-material/material-04818d-floor/rest-20261026.{csv,q.txt,state.txt}.
+- 2026-10-27T02:38:01Z (materials-26.04): run: 9 min (est 8, headless); base 1, pm-on 1.5, pm-off 1.5, fan-auto 2.5, fan-45 1.5; passed: root-tests.sh run in the 10 W state (the 17 W state its step wanted was not present at session open). Floor means: base 9.90, persistence on 9.84, off 9.80, fan auto (fans stop, 0 RPM) 9.41, fan manual 45% 9.82 W. Neither persistence nor fan mode lifts the 10 W floor toward 17 W; fans at 45% cost ~0.4 W. Restored persistence off, fans manual 45%. Log: /mnt/ssd3/niri-material/material-04818d-floor/root-tests-20261026-2229.log. The 17 W-state run still waits for a session that is in that state; later nested runs tonight are checked for a flip.
