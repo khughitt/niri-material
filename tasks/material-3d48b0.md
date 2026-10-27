@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-18T03:52:41Z
+updated: 2026-10-27T09:52:01Z
 started: 2026-10-11T12:04:57Z
 depends: []
 parent: material-2834d7
@@ -36,3 +36,5 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 - 2026-10-17T13:08:46Z (materials-26.04): parked (waiting on user, quiet; idle, 25 min): Desktop-idle pilot run 1 (owner away, desktop up, nothing else working) from the main checkout: CAPTURE_TASK=material-3d48b0 CAPTURE_GPU_CLOCKS=0 OUT=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-idle-pilot-$(date +%s) NOISE_LAYERS_COST_PILOT=0 NOISE_LAYERS_COST_AB=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-hermite-rebuild-1791431057/niri-tracy-b docs/materials/scripts/noise-layers-cost.sh. Phases: build 3, await_load up to 5 (needs load1 < 1.0 with the desktop up; a timeout there is that check, not a refused preflight), preflight 1, 8 sub-runs 4 plus GPU cooldowns. Judge by spec §8.2: every settle settled, no disturbance, every renderer verified, provenance has b cb21ad03…, b config hashes aa09f751…/bc488733…, all four b medians (draw_median_ms) in none [0.228352, 0.230400] and one-fine-1 [0.299008, 0.304128]. Write a run: note. If it passes, run 2 the same way (OUT …-idle-2-…) and judge it; on two passes admit desktop-idle in spec §5.3, map nested measurements to idle, record both run IDs in §8.2, done. On a failure record the reason, rerun once with CAPTURE_GPU_CLOCKS=1 to attribute it (idle-clock keys in metrics.txt), and keep the route tty.
   provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-18T03:52:41Z (materials-26.04): Not run in the 2026-10-17 quiet session either: the host was handed over as a bare TTY with the desktop stopped, and this pilot needs the desktop up and idle. It needs a night the owner leaves the desktop running (locked, monitors off) instead of dropping to a TTY.
+- 2026-10-27T09:52:01Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
