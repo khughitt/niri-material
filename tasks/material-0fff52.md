@@ -4,7 +4,7 @@ title: Decide whether a second desktop-idle pilot is worth a pre-registered inte
 status: idea
 priority: 2
 created: 2026-10-27T10:38:07Z
-updated: 2026-10-27T10:54:04Z
+updated: 2026-10-27T11:34:15Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -18,3 +18,4 @@ The 2026-10-27 desktop-idle pilot (material-3d48b0, spec 2026-10-08-capture-host
 
 - 2026-10-27T10:38:07Z (add): created
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID","origin":"agent"}
+- 2026-10-27T11:34:15Z (materials-26.04): Owner, 2026-10-27: asked whether gates should tolerate slight jitter, since background processes will run now and then even with every timer held. Agent recommendation: separate the two gate kinds. (1) Host-quiet gates (settle, await_load, disturbances) refuse a run but never produce a wrong number. Robustness there means a bounded automatic retry of a refused settle or load wait, not a looser threshold. Note that on 2026-09-24 the owner chose TTY runs over fixture-retried settles, so this reopens that choice. (2) Acceptance intervals compare medians with a reference. Widening them blindly would also absorb real changes of the same size. A principled pre-registered floor fits: GPU timestamps are quantized to q = 0.001024 ms, and even-count medians land on q/2, so an interval narrower than about ±2q tests quantization rather than the host. A floor of w_c ≥ 2q, or run-to-run spread measured under the candidate condition, would have kept none at about [0.2273, 0.2314]. The 1.5-tick miss is ~0.2% of the median and about 1% of the a/b difference these captures measure (0.287 vs 0.230 ms). Fix the rule in the spec before any re-pilot.
