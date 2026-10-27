@@ -61,17 +61,21 @@ allows exactly `tee /sys/class/graphics/fb0/blank`, along with `50-chvt` and
 `50-gpu-ctl`:
 
 ```sh
-sudo -n -l /usr/bin/tee /sys/class/graphics/fb0/blank   # prints the command, no prompt
+sudo -n -l | grep -F 'NOPASSWD: /usr/bin/tee /sys/class/graphics/fb0/blank'   # the rule itself
 pgrep -x niri || echo 4 | sudo -n tee /sys/class/graphics/fb0/blank
 cat /sys/class/drm/card1-DP-1/dpms                       # Off within ~2 s
 ```
 
 The write only works with no compositor holding DRM master. The connector's
-`dpms` file is the reliable reading; fb0's `blank` goes stale.
+`dpms` file is the reliable reading; fb0's `blank` goes stale. `sudo -n -l
+<cmd>` alone proves nothing on an account that also holds a general sudo rule
+with a cached timestamp, so check for the `NOPASSWD` line. `display-dim
+status` needs no check here: a session that never runs `display-dim set`
+leaves no saved-brightness record to restore.
 
 ## Monitor brightness over DDC/CI (overnight dimming)
 
-On this host the monitor (GBT G34WQC) accepts DDC brightness writes but
+On the reference host the monitor, a GBT G34WQC A on DP-1, accepts DDC brightness writes but
 ignores them: `display-dim set` fails with `DDCRC_VERIFY`, while contrast
 writes take effect. Quiet sessions therefore blank the display instead (see
 above). The rest of this section applies to a monitor that honours VCP 0x10.

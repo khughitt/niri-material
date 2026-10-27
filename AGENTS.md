@@ -35,18 +35,19 @@ rendering design assumes.
   and hands the host over, run that queue yourself: one run at a time, the lane's pilot
   before any full run, and a `run:` note for every attempt. The fixture's reproduction
   notes in the `niri-experiments` results doc give the commands and known pitfalls.
-  A TTY has no display sleep, and this host's monitor ignores DDC brightness
-  writes, so do not try `display-dim set`. Power the panel down once, at queue
-  start, before the first preflight: check `pgrep -x niri` finds nothing, then
-  run `echo 4 | sudo -n tee /sys/class/graphics/fb0/blank` and confirm that
-  `/sys/class/drm/card1-DP-1/dpms` reads `Off` (read the dpms file; fb0's
-  `blank` value goes stale). Do not restore it at the end: the owner's keyboard
-  or mouse wakes it. If you find it lit when the queue ends, blank it again.
-  The sudo rule comes from dotfiles' `install-capture-sudoers`
-  (docs/materials/capture-host-setup.md). When it is missing, report a host
-  setup fault and run undarkened; blanking never gates a run. With the desktop
-  up, the capture hold powers the monitors off itself. Say in the report that
-  the display was powered down.
+  A TTY has no display sleep. The reference host's monitor (G34WQC on DP-1)
+  ignores DDC brightness writes, so do not try `display-dim set` there. Power
+  the panel down once, at queue start, before the first preflight. Check that
+  `pgrep -x niri` finds nothing, run
+  `echo 4 | sudo -n tee /sys/class/graphics/fb0/blank`, and confirm that
+  `/sys/class/drm/card1-DP-1/dpms` reads `Off` within a few seconds. Read the
+  dpms file, not fb0's `blank` value, which goes stale. Never restore or
+  re-blank it; leave it to the owner's keyboard or mouse. A missing sudo rule
+  is a host setup fault, and a panel that stays `On` is reported; either way
+  run with the display lit, because blanking never gates a run. With the
+  desktop up, the capture hold powers the monitors off for each run and on
+  again at release (start-only behaviour there is `ops-cab84f`). Say in the
+  report that the display was powered down.
   The packages and host configuration every capture lane needs (sudoers, udev,
   AUR tools) are recorded in `docs/materials/capture-host-setup.md`.
 - Before removing a worktree, run `tt-report` so its fallback test-timing log is
