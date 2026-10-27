@@ -1,7 +1,7 @@
 ---
 id: material-3d48b0
 title: Pilot nested measurements with the desktop idle against the pinned TTY reference
-status: doing
+status: done
 priority: 1
 size: s
 complexity: mid
@@ -9,8 +9,10 @@ process: direct
 needs: [quiet]
 owner: material-3d48b0
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-27T10:55:41Z
+updated: 2026-10-27T10:55:53Z
 started: 2026-10-11T12:04:57Z
+completed: 2026-10-27T10:55:53Z
+closed: 2026-10-27T10:55:53Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -53,3 +55,7 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 - 2026-10-27T10:53:58Z (material-3d48b0): Correction to the 10:21 run note and the 10:40 done message (review round 1): the pilot's hold found no lit connector (hold.connectors: []); the monitor was most likely already off from the desktop's own idle, but nothing watched it for a wake. The clock-sampled rerun is attribution only, not pass evidence. 'All draws at 210 MHz' means every draw after the start-up P0 burst and ramp. Spec §8.2 (7bfbc437) carries the corrected account.
 - 2026-10-27T10:55:35Z (material-3d48b0): review: impl round 3 — verdict: accept; findings: Minor 1; reviewer: claude-code/claude-opus-5-5
 - 2026-10-27T10:55:41Z (material-3d48b0): Round 3 Minor 1 (obs-index started ~2 min before the await_load window ended, not in its last minute) applied with the reviewer's wording; no further round.
+- 2026-10-27T10:55:53Z (material-3d48b0): done
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:55:53Z (material-3d48b0): Desktop-idle pilot failed by one half-tick on none-b1-1 (0.230912 vs I_none upper 0.230400); a clock-sampled attribution rerun had every b median in I_c and no held clock, and no cause is named (the pilot's hold also left the monitor unwatched). Route stays tty. Result recorded in spec §8.2 after three review rounds (revise, revise, accept); interval-rule question filed as material-0fff52.
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
