@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-27T02:27:37Z
+updated: 2026-10-27T02:29:16Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -47,3 +47,4 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 - 2026-10-18T09:23:53Z (materials-26.04): gpu-ctl grant installed by the owner 2026-10-18 05:21 and verified (NOPASSWD for exactly persistence on|off, fan auto, fan 45-100; env_reset pinned). The parked step stands: root-tests.sh first in the next quiet session, in the 17 W state (17.2 W at 05:19, fans manual 45%).
 - 2026-10-27T02:27:37Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T02:29:16Z (materials-26.04): 10.4 W session-open sample (2026-10-26 22:27, TTY, desktop stopped, panel lit, same boot as the 10-17 17 W rest0): floor-sample.sh rest-20261026 60 -> 60 samples mean 9.97 W (9.85-10.22), P8 210/405. Diff against rest0 (17.33 W): nvidia-smi -q identical apart from power draw, PCIe throughput counters, SW-power-capping counter and 1 C of temperature; .state.txt identical (PCIe 2.5 GT/s x16, D0 active, ASPM default, dpms On, fan_curve still failing to engage manual). Same driver 615.78.08 and boot (up since 10-16 10:11), so the floor flipped back to 10 W within one boot with nothing nvidia-smi or sysfs reports changing: the selector is invisible to both. Files: /mnt/ssd3/niri-material/material-04818d-floor/rest-20261026.{csv,q.txt,state.txt}.
