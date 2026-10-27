@@ -52,7 +52,29 @@ Check without switching (a real `chvt` moves the display away):
 sudo -k; sudo -n -l /usr/bin/chvt     # prints /usr/bin/chvt, no password prompt
 ```
 
+## Powering the display down on a TTY (quiet sessions)
+
+A bare TTY never sleeps the display. Quiet sessions power it down once at
+queue start by blanking the framebuffer console. The owner's input wakes it.
+Dotfiles' `install-capture-sudoers` installs the rule (`50-fb-blank`), which
+allows exactly `tee /sys/class/graphics/fb0/blank`, along with `50-chvt` and
+`50-gpu-ctl`:
+
+```sh
+sudo -n -l /usr/bin/tee /sys/class/graphics/fb0/blank   # prints the command, no prompt
+pgrep -x niri || echo 4 | sudo -n tee /sys/class/graphics/fb0/blank
+cat /sys/class/drm/card1-DP-1/dpms                       # Off within ~2 s
+```
+
+The write only works with no compositor holding DRM master. The connector's
+`dpms` file is the reliable reading; fb0's `blank` goes stale.
+
 ## Monitor brightness over DDC/CI (overnight dimming)
+
+On this host the monitor (GBT G34WQC) accepts DDC brightness writes but
+ignores them: `display-dim set` fails with `DDCRC_VERIFY`, while contrast
+writes take effect. Quiet sessions therefore blank the display instead (see
+above). The rest of this section applies to a monitor that honours VCP 0x10.
 
 `ddcutil` installs a udev rule (`60-ddcutil-i2c.rules`) that grants the
 active local session, including a TTY login, access to the display's I²C
