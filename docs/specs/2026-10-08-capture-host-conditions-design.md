@@ -1,7 +1,8 @@
 # Per-route host conditions for capture evidence
 
 **Status:** implemented on `capture-host-conditions` (plan
-`docs/plans/2026-10-08-capture-host-conditions.md`); pilots pending (§8.2).
+`docs/plans/2026-10-08-capture-host-conditions.md`); the desktop-idle pilot
+failed on 2026-10-27 and nested measurements stay `tty` (§8.2).
 Accepted for planning at spec review round 3 (2026-10-08). Revised after spec review
 round 1, which covered renderer logging, launchers outside the lib, pre-hold
 dedicated checks, renderer evidence on rejected launches, and the pilot's
@@ -537,6 +538,29 @@ for each attempt. None is part of the implementation.
    to `idle` in the queue, and records the run IDs here. A refused settle or an
    out-of-interval median is recorded with its reason, and the route stays
    `tty`. A retry needs a named cause first.
+
+   **Result (2026-10-27, `material-3d48b0`): failed; the route stays `tty`.**
+   The pilot, `noise-layers-ab-idle-pilot-1793095623`, ran with the desktop up
+   and the full hold applied: 14 user timers stopped, idle inhibited, monitors
+   powered off. Preflight read `quiet` on a 9.125 W P8 baseline. Every other
+   criterion held: all nine settles `settled`, no disturbance, a clean release
+   scan, every renderer `verified`, the pinned b binary and both b config
+   hashes. The `one-fine-1` medians, 0.302592 and 0.303104, lie in `I_c`. The
+   `none` medians are 0.230912 and 0.230400. The first lies one half-tick
+   (0.000512 ms) above `I_none`, the second on its upper bound, so the pilot
+   fails, and the second run was not taken.
+
+   One attribution rerun with `CAPTURE_GPU_CLOCKS=1`,
+   `noise-layers-ab-idle-pilot-clocks-1793096533`, also settled and verified
+   throughout. Its b medians all lie in `I_c`: `none` 0.228352 and 0.229376,
+   `one-fine-1` 0.302080 twice. Every case's idle-clock draws ran at 210 MHz,
+   at 9.3–9.5 W. The desktop did not hold the GPU above its idle clock, so the
+   miss has no named cause. `I_none` is only ±1 tick wide, because its six
+   reference medians had no spread (`w_none = 0`). Across these two
+   desktop-idle runs the `none` b medians span 0.228352–0.230912 ms, against
+   0.229376 for every TTY reference. Under these rules, a second pilot needs a
+   cause or an interval rule fixed before it runs, not one widened after this
+   result.
 
 ## 9. Out of scope
 
