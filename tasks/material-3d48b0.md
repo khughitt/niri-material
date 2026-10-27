@@ -1,7 +1,7 @@
 ---
 id: material-3d48b0
 title: Pilot nested measurements with the desktop idle against the pinned TTY reference
-status: done
+status: todo
 priority: 1
 size: s
 complexity: mid
@@ -9,10 +9,8 @@ process: direct
 needs: [quiet]
 owner: material-3d48b0
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-27T10:46:59Z
+updated: 2026-10-27T10:47:05Z
 started: 2026-10-11T12:04:57Z
-completed: 2026-10-27T10:40:50Z
-closed: 2026-10-27T10:40:50Z
 depends: []
 parent: material-2834d7
 tags: [capture]
