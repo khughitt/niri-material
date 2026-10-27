@@ -544,7 +544,7 @@ for each attempt. None is part of the implementation.
    A first attempt, `noise-layers-ab-idle-pilot-1793094737`, stopped at
    `await_load` before any sub-run. load1 stayed at or above 1.0 after the
    build, minutes after a reboot, and `obs-index` began its hourly pass in the
-   window's last minute. The pilot,
+   window's last two minutes. The pilot,
    `noise-layers-ab-idle-pilot-1793095623`, ran unsampled with the desktop up
    and the hold applied: 14 user timers stopped and idle inhibited. Its hold
    found no lit connector (`hold.connectors: []`). The likely reason is that
