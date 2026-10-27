@@ -542,13 +542,16 @@ for each attempt. None is part of the implementation.
 
    **Result (2026-10-27, `material-3d48b0`): failed; the route stays `tty`.**
    A first attempt, `noise-layers-ab-idle-pilot-1793094737`, stopped at
-   `await_load` before any sub-run: the host had rebooted minutes earlier and
-   `obs-index` started its hourly pass. The pilot,
+   `await_load` before any sub-run. load1 stayed at or above 1.0 after the
+   build, minutes after a reboot, and `obs-index` began its hourly pass in the
+   window's last minute. The pilot,
    `noise-layers-ab-idle-pilot-1793095623`, ran unsampled with the desktop up
    and the hold applied: 14 user timers stopped and idle inhibited. Its hold
    found no lit connector (`hold.connectors: []`). The likely reason is that
-   the desktop's own idle had already powered the monitor off: the session
-   journal's only DRM event before the hold is a device change at 06:01:24.
+   the desktop's own idle had already powered the monitor off. Between the
+   desktop's start at 05:50 and the hold, the session journal's only DRM event
+   is a device change at 06:01:24. The rerun's hold power-off logs the same
+   event.
    Nothing watched the monitor for a wake, so the clean release scan covers
    timers and services only. Preflight read `quiet` on a 9.125 W P8 baseline.
    All nine settles were `settled`, every renderer `verified`, and the pinned b
@@ -556,18 +559,23 @@ for each attempt. None is part of the implementation.
    0.302592 and 0.303104, lie in `I_c`. The `none` medians are 0.230912 and
    0.230400. The second sits on the upper bound, inside the closed `I_none`.
    The first lies one half-tick (0.000512 ms) above it, which alone fails the
-   pilot, so the second run was not taken.
+   pilot, so the second desktop-idle run was not taken.
 
    One attribution rerun, `noise-layers-ab-idle-pilot-clocks-1793096533`, also
    settled and verified throughout. It was sampled (`CAPTURE_GPU_CLOCKS=1`) and
-   built from a later source commit, so it is not pass evidence against the
-   unsampled reference. Its hold powered off and watched `card1-DP-1`, and its
+   built from a later source commit (that commit changed only a task record).
+   Because it was sampled, it is not pass evidence against the unsampled
+   reference. Its hold powered off and watched `card1-DP-1`, and its
    b medians all lie in `I_c`: `none` 0.228352 and 0.229376, `one-fine-1`
-   0.302080 twice. In every case the window's draws begin with the usual 16–20
-   at P0 and the ramp down, and every later draw reads P8 at 210 MHz. The
-   desktop did not hold the GPU above its idle clock in this run. The only
-   recorded difference in the pilot's hold is the unwatched monitor, and no
-   input is known to have woken it, so the miss has no named cause. `I_none`
+   0.302080 twice. In every case the window's first 16–20 draws are at P0
+   (10–16 of them) or ramping down through P8, as in `material-f386ae`, and
+   every later draw reads P8 at 210 MHz. The desktop did not hold the GPU above
+   its idle clock in this run. The pilot's hold differs from the rerun's in two
+   recorded ways. First, its monitor went unwatched, and no input is known to
+   have woken it. Second, `familiar-reap.service` was recorded active at the
+   hold. That per-minute sweep finished at 06:13:10.95, before the hold stopped
+   its timer and 37 s before the first sub-run. Neither is a named cause for
+   the miss. `I_none`
    is only ±1 tick wide, because its six reference medians had no spread
    (`w_none = 0`). Across these two desktop-idle runs the `none` b medians span
    0.228352–0.230912 ms, against 0.229376 for every TTY reference. These rules
