@@ -1,13 +1,15 @@
 ---
 id: material-6db557
 title: Switch the quiet-session display step to blank-at-start in the agent guide
-status: todo
+status: doing
 priority: 1
 size: xs
 complexity: low
 process: direct
+owner: materials-26.04
 created: 2026-10-27T11:34:21Z
-updated: 2026-10-27T11:34:21Z
+updated: 2026-10-27T11:34:55Z
+started: 2026-10-27T11:34:55Z
 depends: []
 tags: [docs]
 agent: claude-code
@@ -20,3 +22,5 @@ Owner, 2026-10-27: fb0 screen blanking now works consistently and DDC dimming co
 
 - 2026-10-27T11:34:21Z (add): created
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID","origin":"user"}
+- 2026-10-27T11:34:55Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
