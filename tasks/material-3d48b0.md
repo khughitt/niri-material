@@ -1,7 +1,7 @@
 ---
 id: material-3d48b0
 title: Pilot nested measurements with the desktop idle against the pinned TTY reference
-status: doing
+status: done
 priority: 1
 size: s
 complexity: mid
@@ -9,8 +9,10 @@ process: direct
 needs: [quiet]
 owner: material-3d48b0
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-27T10:36:58Z
+updated: 2026-10-27T10:40:50Z
 started: 2026-10-11T12:04:57Z
+completed: 2026-10-27T10:40:50Z
+closed: 2026-10-27T10:40:50Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -41,4 +43,8 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 - 2026-10-27T10:02:45Z (materials-26.04): run: 10 min (est 25, idle); build 5, await_load 5; refused: await_load timed out (load1 never < 1.0 within 5 min of the build; host rebooted 12 min earlier, and obs-index.service started its hourly pass at 06:00, ~40% CPU, 6 GB RSS, IO pressure avg60 10%). OUT /mnt/ssd3/niri-material/noise-layers-ab-idle-pilot-1793094737, log /mnt/ssd3/niri-material/idle-pilot-run1.log. No sub-run started, so nothing to judge.
 - 2026-10-27T10:21:46Z (materials-26.04): run: 14 min (est 25, idle); obs-index wait 1, build 3, await_load+preflight 2, 9 sub-runs 7, release 1; failed: interval. Run noise-layers-ab-idle-pilot-1793095623 (desktop up, hold applied: 14 user timers stopped, caffeine, monitors powered off; preflight quiet, baseline 9.125 W P8). All 9 settles settled, no disturbances, scan clean, all renderers verified, provenance has niri-tracy-b1 cb21ad03…, b configs aa09f751…/bc488733…. b medians: one-fine-1 0.302592, 0.303104 (in [0.299008, 0.304128]); none 0.230912, 0.230400 against I_none [0.228352, 0.230400]: none-b1-1 is one half-tick (0.000512 ms) above the upper bound, none-b1-2 on it. Both none medians sit at the top of the interval vs the reference's 0.229376. Next per the brief: one rerun with CAPTURE_GPU_CLOCKS=1 to attribute (idle-clock keys).
 - 2026-10-27T10:36:58Z (material-3d48b0): resumed
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:40:50Z (material-3d48b0): done
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:40:50Z (material-3d48b0): Desktop-idle pilot failed by one half-tick on none-b1-1 (0.230912 vs I_none upper 0.230400); clock-sampled attribution rerun passed with all draws at the 210 MHz idle clock, so no named cause. Route stays tty; result and run IDs recorded in spec §8.2; interval-rule question filed as material-0fff52.
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
