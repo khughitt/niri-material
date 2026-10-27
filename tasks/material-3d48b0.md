@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-27T09:52:01Z
+updated: 2026-10-27T10:02:45Z
 started: 2026-10-11T12:04:57Z
 depends: []
 parent: material-2834d7
@@ -38,3 +38,4 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 - 2026-10-18T03:52:41Z (materials-26.04): Not run in the 2026-10-17 quiet session either: the host was handed over as a bare TTY with the desktop stopped, and this pilot needs the desktop up and idle. It needs a night the owner leaves the desktop running (locked, monitors off) instead of dropping to a TTY.
 - 2026-10-27T09:52:01Z (materials-26.04): resumed
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:02:45Z (materials-26.04): run: 10 min (est 25, idle); build 5, await_load 5; refused: await_load timed out (load1 never < 1.0 within 5 min of the build; host rebooted 12 min earlier, and obs-index.service started its hourly pass at 06:00, ~40% CPU, 6 GB RSS, IO pressure avg60 10%). OUT /mnt/ssd3/niri-material/noise-layers-ab-idle-pilot-1793094737, log /mnt/ssd3/niri-material/idle-pilot-run1.log. No sub-run started, so nothing to judge.
