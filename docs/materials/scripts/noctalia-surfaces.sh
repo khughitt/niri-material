@@ -317,7 +317,7 @@ start_stack() {   # $1 case; $N is set and both configs written
 spawn_probe() {
     nmsg action spawn -- kitty --config NONE --class nsf-probe -o background_opacity=0 \
         -o cursor_blink_interval=0 -o font_size=11 \
-        sh -c 'printf "~/d/niri-material  materials-26.04\n\n  src/layer/mapped.rs\n  src/niri.rs\n  docs/notes/\n"; exec sleep infinity'
+        sh -c 'printf "niri-material  materials-26.04\n\n  src/layer/mapped.rs\n  src/niri.rs\n  docs/notes/\n"; exec sleep infinity'
 }
 
 run_case() {   # $1 case

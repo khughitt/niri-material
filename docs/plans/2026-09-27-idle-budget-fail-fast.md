@@ -23,7 +23,7 @@ Just, and the vendored `tools/tt` of niri-material.
 ## Global Constraints
 
 - The code lands in **niri-experiments** on branch `results/idle-budget`, head
-  `647f3c8`, in the worktree `~/d/niri-experiments/.worktrees/material-b15ad7`.
+  `647f3c8`, in the worktree `<niri-experiments checkout>/.worktrees/material-b15ad7`.
   The spec, this plan and the task records land in **niri-material** on branch
   `material-b15ad7` (`.worktrees/material-b15ad7`).
 - Files touched in niri-experiments: `fixtures/idle-budget.sh`,
@@ -103,7 +103,7 @@ Just, and the vendored `tools/tt` of niri-material.
 - [ ] **Step 0: Create the experiments worktree** (once, before any task)
 
 ```bash
-cd ~/d/niri-experiments
+cd "<niri-experiments checkout>"
 work-link --ensure .worktrees
 git worktree add .worktrees/material-b15ad7 results/idle-budget   # not checked out anywhere else
 git worktree lock --reason "on WORK_ROOT storage (host: $(uname -n))" .worktrees/material-b15ad7
@@ -1907,7 +1907,7 @@ settle-gated capture practice), in the niri-material checkout. Each run is a sep
 command. The next one starts only after the previous supervisor has returned.
 
 ```bash
-X=~/d/niri-experiments/.worktrees/material-b15ad7/fixtures
+X="<niri-experiments checkout>"/.worktrees/material-b15ad7/fixtures
 S=$X/idle-budget-supervise.sh
 W=$NIRI_MATERIAL_WORK_ROOT/material-265eb0; T=$(date +%Y%m%dT%H%M%S)
 # 1. trace pilot, ~12 min

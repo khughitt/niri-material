@@ -17,8 +17,8 @@ correction.
 | Tasks source | `b943419c0e37b947a0ca1814f416ff61259f4d8a` |
 | Audit date | 2026-09-01 |
 | Project prefix | `material` |
-| Authority roots | `~/d/niri-material`, `docs/materials/**`, production code/tests/config, and the preserved `debug/overview-drag-frost` worktree |
-| Companion evidence | `~/d/niri-experiments` physical/parity results and `~/d/prism` ownership/config records, inspected read-only |
+| Authority roots | `<niri-material checkout>`, `docs/materials/**`, production code/tests/config, and the preserved `debug/overview-drag-frost` worktree |
+| Companion evidence | `<niri-experiments checkout>` physical/parity results and `<prism checkout>` ownership/config records, inspected read-only |
 
 The audit read every path under `docs/materials/**`, the Material-relevant wiki
 exceptions, root claims, the implementation and tests governing those claims,
@@ -33,7 +33,7 @@ integration; the complete implementation range is recorded above.
 
 | Checkout or branch | Inspected state | Decision |
 | --- | --- | --- |
-| `~/d/niri-material`, `materials-26.04` (historical first-integration snapshot) | Clean at first integrated head `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`, six commits ahead of `origin/materials-26.04` | Stable authority after the reviewed first fast-forward from `7e94d71af195d5f5062d9b51ec80bca513af8ae3`. |
+| `<niri-material checkout>`, `materials-26.04` (historical first-integration snapshot) | Clean at first integrated head `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849`, six commits ahead of `origin/materials-26.04` | Stable authority after the reviewed first fast-forward from `7e94d71af195d5f5062d9b51ec80bca513af8ae3`. |
 | `chore/tasks-migration-material` (historical ledger-closeout snapshot) | Isolated worktree at `e4a982b82f55cae55c8fc8fc9a492f4ebb0b5849` before the ledger-only closeout | Retained for the independent ledger review and second fast-forward. |
 | `debug/overview-drag-frost` | `048814893b9bc4924927468ce1f539b7764d942b`; only the five expected tracked files are dirty; no staged or untracked files | Preserve byte-for-byte; active task owner is `debug/overview-drag-frost`. |
 | `patched-26.04` | `5e53b949`, tracking `origin/patched-26.04` | Historical production base; no task outcome. |
@@ -105,8 +105,8 @@ background-effect surface, not the fork-only material surface.
 | Add damage-aware mipmapped backdrop storage and glass roughness | Accepted v1 design and DRM design call this the first post-v1 follow-up; parity design calls roughness the highest-value missing parameter. Current code has no mip/prefiltered storage or roughness field. | `docs/materials/2026-08-22-v1-design.md`; `docs/materials/2026-08-24-v1-parity-design.md`; `docs/materials/2026-08-27-v1-drm-acceptance-design.md`; `src/render_helpers/effect_buffer.rs` | Unstarted | `l` | `todo` | None | `create` | `material-c854bd` |
 | Decide how noise and saturation compose with glass | The blur design identifies a real unresolved control-surface question and two measurements that require confirmation before implementation. | `docs/materials/2026-08-29-material-backdrop-blur-design.md`; `src/render_helpers/background_effect.rs`; `src/render_helpers/shaders/postprocess.frag` | Unscoped design question | `s` | `idea` | None | `create` | `material-cad932` |
 | Daily-driver package deployment and burn-in | `52f74f10` is an ancestor; `7020776e` records deployment, two cold starts, journal review, and operator PASS. | `docs/materials/2026-08-28-v1-daily-driver-rollout-design.md` | Complete | — | — | — | `no task` | — |
-| Prism owns and emits the native material definition | Prism `main` at `d20111c2` contains the renderer, manifest, definition, and tests; Material records the 2026-08-29 ownership handoff. | `~/d/prism/integrations/niri/**`; `~/d/prism/defs/glass.yaml`; rollout design | Complete; externally owned | — | — | — | `no task` | — |
-| Correct Prism's stale burn-in prose | Material's completed burn-in evidence supersedes the foreign prose, but Prism documentation is outside this repository's migration write scope. | `~/d/prism/docs/superpowers/**`; Material `7020776e` | Pending Prism audit, externally owned | — | — | — | `no Material task`; Task 3 migration concern | — |
+| Prism owns and emits the native material definition | Prism `main` at `d20111c2` contains the renderer, manifest, definition, and tests; Material records the 2026-08-29 ownership handoff. | `<prism checkout>/integrations/niri/**`; `<prism checkout>/defs/glass.yaml`; rollout design | Complete; externally owned | — | — | — | `no task` | — |
+| Correct Prism's stale burn-in prose | Material's completed burn-in evidence supersedes the foreign prose, but Prism documentation is outside this repository's migration write scope. | `<prism checkout>/docs/superpowers/**`; Material `7020776e` | Pending Prism audit, externally owned | — | — | — | `no Material task`; Task 3 migration concern | — |
 | Per-material blur strength, materials on layer surfaces, per-workspace assignment, user GLSL, true meshes, and other v1 exclusions | Each is explicitly a non-goal, unproven need, or broad deferred roadmap item; none has current delivery evidence. | Accepted designs and non-goals | Speculative | — | — | — | `no task` | — |
 | Fix the unused cropped `niri_size` uniform | No shader reads it; the executed Slice 3 plan explicitly applies YAGNI until a consumer exists. | `docs/materials/plans/2026-08-24-slice3.md`; shader grep | Latent, no consumer | — | — | — | `no task` | — |
 
