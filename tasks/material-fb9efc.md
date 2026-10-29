@@ -1,17 +1,17 @@
 ---
 id: material-fb9efc
-title: "Rigid tilt swing: L2's far edge pulls in ~2 px more than the centre-pivot geometry allows"
+title: "Rigid tilt swing: L2's far edge pulls in 2-4 px more than the centre-pivot geometry allows"
 status: idea
 priority: 2
 created: 2026-10-29T19:19:22Z
-updated: 2026-10-29T19:31:05Z
+updated: 2026-10-29T19:37:31Z
 depends: []
 tags: [rendering, camera]
 agent: claude-code/claude-opus-5-5
 origin: agent
 ---
 
-The 2026-10-26 amplitude ladder (material-c5f9d0; evidence docs/materials/2026-10-09-rigid-tilt-evidence.md, Clip) measured the far edge of a 604 px pane at view-tilt 20 / view-distance 6 pulled in 12.2 px in the frame 0.13 s after the gain. The design's centre pivot (spec §3.2, camera at D = κE at the peak) puts a W/2 edge at h cos θ / (1 − sin θ / 2κ), which is 9.9 px at the full 20°, an upper bound for a frame near the peak. So about 2 px (more if the frame sits below θp) is unexplained: the measurement (edge-finding on a scanline, the 6 px rest tolerance), the culling footprint, or the projection. The other rungs (10/6, 20/3) match the model within a pixel. It matters only if a setting near κ 6 at 20° is wanted; the shipped pick (20/3) matches the model.
+The 2026-10-26 amplitude ladder (material-c5f9d0; evidence docs/materials/2026-10-09-rigid-tilt-evidence.md, Clip) measured the far edge of a 604 px pane at view-tilt 20 / view-distance 6 pulled in 12.2 px in the frame 0.123 s after the gain. The design's centre pivot (spec §3.2, camera at D = κE/w) puts a W/2 edge at h cos θ / (1 − w sin θ / 2κ): 9.9 px at the full 20° (an upper bound over the swing) and 8.4 px at the frame's nominal angle (0.925 θp). So 2 to 4 px is unexplained: the measurement (edge-finding on a scanline, frame timing: the first frame already shows pull-in), the culling footprint, or the projection. A hint for the measurement: on the 10/6 tilt-swing-flipped row the receding left edge reads 8.6 px against 7.3 px for the same geometry on the right edge in tilt-swing. The other rungs (10/6, 20/3) match the model within about a pixel. It matters only if a setting near κ 6 at 20° is wanted; the shipped pick (20/3) matches the model.
 
 ## Notes
 

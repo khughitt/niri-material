@@ -169,37 +169,43 @@ verified, and the release scan was clean. `swing-review-sheet.png` lays the
 16 crops out by sequence and instant, and each sequence's GIF shows the motion.
 
 At that pick the owner found the four rows identical and the swing too subtle
-to judge (2026-10-18). Measured from the frames, the gaining pane's origin-side
-edge pulls in 7.3 to 8.6 px of a 604 px pane across the four rows. An amplitude
+to judge (2026-10-18). Measured from the frames, the gaining pane's receding
+edge (the origin side, the far side on the flipped row) pulls in 7.3 to 8.6 px
+of a 604 px pane across the four rows. An amplitude
 ladder followed on 2026-10-26 (`tilt-swing` and `tilt-swing-beam` at
 `ring-glow 3`, settle 900 ms, shipped sign), each peak read by
 `swing-measured-sheet.py` from the frame about 0.12 s after the gain:
 
-| Rung | Setting | Run | Origin-side edge | Far edge | Model at θp (origin / far) |
-| --- | --- | --- | ---: | ---: | ---: |
-| L1 | `view-tilt 10; view-distance 6` | `ring-motion-clips-a29c11e9/ring-clips-1973688-1792292030` | 7.3 px | 0.2 px | 8.8 / 0.2 px |
-| L2 | `view-tilt 20; view-distance 6` | `ring-motion-clips-9eb55e2c/ring-clips-861755-1793069581` | 22.0 px | 12.2 px | 26.1 / 9.9 px |
-| L3 | `view-tilt 20; view-distance 3` | `ring-motion-clips-9eb55e2c/ring-clips-879368-1793070116` | 27.9 px | 0.7 px | 33.5 / 1.1 px |
+| Rung | Setting | Run | Origin-side edge | Far edge | Model at θp (origin / far) | Model at 0.925 θp (origin / far) |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| L1 | `view-tilt 10; view-distance 6` | `ring-motion-clips-a29c11e9/ring-clips-1973688-1792292030` | 7.3 px | 0.2 px | 8.8 / 0.2 px | 7.6 / 0.2 px |
+| L2 | `view-tilt 20; view-distance 6` | `ring-motion-clips-9eb55e2c/ring-clips-861755-1793069581` | 22.0 px | 12.2 px | 26.1 / 9.9 px | 22.4 / 8.4 px |
+| L3 | `view-tilt 20; view-distance 3` | `ring-motion-clips-9eb55e2c/ring-clips-879368-1793070116` | 27.9 px | 0.7 px | 33.5 / 1.1 px | 29.0 / 0.9 px |
 
 The model is the projected edge of a pane pivoting at its centre (section 3.2
 of the design) with the camera at `D = κE` at the peak, where `w = 1`: an edge
 at `h = W/2` lands at `h cos θ / (1 ± sin θ / 2κ)`, receding at the origin
 side and coming forward at the far side. The captured frame sits near, not at,
-the peak, so the model reads a little above the measurements. Foreshortening
+the peak: at its nominal time (0.123 s after the gain, `θ = 0.925 θp`, with
+`w = 0.925`) the model matches the origin side within 1.1 px. The frames'
+timestamps do not pin the content's instant down (the first frame already shows
+0.9 to 4.6 px of pull-in), so the last column carries that uncertainty. Foreshortening
 (`cos θ`) pulls both edges in whatever κ is, and perspective pushes the far
 edge back out. The two nearly cancel at 20° and κ 3, so L3's far edge stays
-put. At κ 6 the model puts the far edge about 10 px in at the peak; the
-measured 12.2 px exceeds even that bound by about 2 px, which is not explained
-(`material-fb9efc`). Both edges cross back through rest at about 0.43 s; the
-far edge's sub-pixel overshoot (at most 0.95 px) lasts to about 0.7 s. `tilt-amplitude-ladder.png`, attached
-to `material-c5f9d0`, lays the three rungs side by side.
+put. At κ 6 the model puts the far edge at most 9.9 px in, at the peak; the
+measured 12.2 px exceeds that bound by about 2 px and the frame-time value by
+about 4 px, which is not explained (`material-fb9efc`). Both edges cross back
+through rest at about 0.43 s; the far edge's sub-pixel overshoot (at most
+0.95 px) lasts to about 0.7 s. `tilt-amplitude-ladder.png`, attached to
+`material-c5f9d0`, lays the three rungs side by side.
 
 Amplitude verdict (2026-10-29, picked by the agent at the owner's delegation):
 L3, `view-tilt 20; view-distance 3`. L1 is the rung the owner already found
-too subtle. L2 and L3 turn by the same angle. L2's stronger foreshortening
-draws both sides of the pane in, so it reads as the pane shrinking while it
-turns. L3's perspective holds the far edge where it rests, so the pane reads
-as turning, with the largest pull-in of the three. The defaults are unchanged
+too subtle. L2 and L3 turn by the same angle, so they foreshorten alike. At
+κ 6 the perspective is too weak to offset the foreshortening at the far edge,
+so both sides of the pane draw in and it reads as shrinking while it turns. At
+κ 3 the perspective holds the far edge where it rests, so the pane reads as
+turning, with the largest pull-in of the three. The defaults are unchanged
 (`view-tilt 0`, off); the pick is Prism's starting value (`prism-2a8fea`).
 
 Sign and settle verdict: pending. The owner gate covers the motion, the sign
