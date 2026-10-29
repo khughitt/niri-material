@@ -168,4 +168,30 @@ the gain with 4x corner crops at 0.15, 0.3, 0.45 and 0.7 s. Each burst took
 verified, and the release scan was clean. `swing-review-sheet.png` lays the
 16 crops out by sequence and instant, and each sequence's GIF shows the motion.
 
-Owner's verdict: pending.
+At that pick the owner found the four rows identical and the swing too subtle
+to judge (2026-10-18). Measured from the frames, the gaining pane's origin-side
+edge pulls in at most 8 px of a 604 px pane. An amplitude ladder followed on
+2026-10-26 (`tilt-swing` and `tilt-swing-beam` at `ring-glow 3`, settle 900 ms,
+shipped sign), each peak read by `swing-measured-sheet.py` about 0.12 s after
+the gain:
+
+| Rung | Setting | Run | Origin-side edge | Far (hinge) edge | First-order W sin θp / 2κ |
+| --- | --- | --- | ---: | ---: | ---: |
+| L1 | `view-tilt 10; view-distance 6` | `ring-motion-clips-a29c11e9/ring-clips-1973688-1792292030` | 7.3 px | 0.2 px | 8.7 px |
+| L2 | `view-tilt 20; view-distance 6` | `ring-motion-clips-9eb55e2c/ring-clips-861755-1793069581` | 22.0 px | 12.2 px | 17.2 px |
+| L3 | `view-tilt 20; view-distance 3` | `ring-motion-clips-9eb55e2c/ring-clips-879368-1793070116` | 27.9 px | 0.7 px | 34.4 px |
+
+Every rung returns to rest by 0.43 s. The pull-in is not linear in
+sin θp / κ, and at L2 the far edge moves too, so that swing is not a hinge
+about the far edge. Neither is diagnosed. `tilt-amplitude-ladder.png`, attached
+to `material-c5f9d0`, lays the three rungs side by side.
+
+Verdict (2026-10-29, picked by the agent at the owner's delegation): L3,
+`view-tilt 20; view-distance 3`. L1 is the rung the owner already found too
+subtle. L2 is rejected because its far edge pulls in 12 px, so the pane shrinks
+from both sides instead of turning. L3 is the largest swing, keeps the far edge
+within 1 px, and settles as fast as the others. The sign and
+`view-tilt-settle` stay as shipped (900 ms): the 10/6 rows were too subtle to
+judge either, and the delegation covered the amplitude only. The defaults are
+unchanged (`view-tilt 0`, off); the pick is Prism's starting value
+(`prism-2a8fea`).

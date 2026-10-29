@@ -1,7 +1,7 @@
 ---
 id: material-c5f9d0
 title: Owner clip on the nested lane
-status: doing
+status: done
 priority: 1
 size: m
 complexity: mid
@@ -9,11 +9,14 @@ process: direct
 needs: [quiet, nested, owner]
 owner: material-abc08c
 created: 2026-10-09T21:41:52Z
-updated: 2026-10-27T03:09:49Z
+updated: 2026-10-29T19:19:52Z
 started: 2026-10-17T03:02:16Z
+completed: 2026-10-29T19:19:51Z
+closed: 2026-10-29T19:19:51Z
 depends: [material-2283b8, material-abc08c]
 parent: material-6901e0
 tags: [rendering, camera]
+model: claude-opus-5-5
 agent: claude-code/claude-opus-5-5
 plan: docs/plans/2026-10-09-transient-rigid-tilt.md
 step: "Task 15: Owner clip on the nested lane"
@@ -52,3 +55,12 @@ Step 15 of the transient rigid tilt plan (docs/plans/2026-10-09-transient-rigid-
 - 2026-10-27T03:09:37Z (material-abc08c): Scratch: /mnt/ssd3/work/niri-material/material-c5f9d0/ (host titan; ladder-sheet.py, tilt-amplitude-ladder.png, ref-1006-remeasure/ = a copy of the 10-18 run's tilt-swing* frames and configs remeasured with the current swing-measured-sheet.py); owner material-c5f9d0, cleanup after the amplitude verdict is recorded. Run dirs stay under /mnt/ssd3/niri-material/ring-motion-clips-9eb55e2c/.
 - 2026-10-27T03:09:49Z (material-abc08c): parked (waiting on user, review): Owner picks the swing amplitude from attached tilt-amplitude-ladder.png (L1 tilt 10/dist 6 = 7.3 px, L2 20/6 = 22.0 px with the left edge also pulling in 12 px, L3 20/3 = 27.9 px; GIFs in each run dir). Then the agent, in .worktrees/material-abc08c: record the verdict under Clip, flip the sign / set view-tilt-settle if asked, note prism-2a8fea with the chosen values, close material-6901e0's plan. If L2's hinge-edge motion matters to the owner, file it for diagnosis first.
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-29T19:18:40Z (material-abc08c): resumed
+  provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-29T19:19:39Z (material-abc08c): review: impl round 2 — verdict: accept; findings: none; reviewer: human
+- 2026-10-29T19:19:39Z (material-abc08c): 2026-10-29: owner delegated the amplitude pick to the agent. Pick L3 (view-tilt 20, view-distance 3; 27.9 px peak, far edge 0.7 px). Rejected L2 (20/6): its far edge pulls in 12 px, so the pane shrinks from both sides; L1 (10/6) was already too subtle. Sign and view-tilt-settle unchanged (not judged; delegation covered amplitude only). Recorded under Clip; prism-2a8fea noted; L2 anomaly and the non-linear pull-in filed as material-fb9efc.
+- 2026-10-29T19:19:51Z (material-abc08c): correction to the round 2 review note above: the verdict was the agent's at the owner's delegation, so its reviewer is claude-code/claude-opus-5-5, not human; round 1 was the owner's 2026-10-18 'too subtle' (verdict: revise).
+- 2026-10-29T19:19:51Z (material-abc08c): done
+  provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-29T19:19:51Z (material-abc08c): Amplitude L3 (view-tilt 20, view-distance 3), picked by the agent at the owner's delegation; sign and settle unchanged; recorded under Clip; prism-2a8fea noted
+  provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
