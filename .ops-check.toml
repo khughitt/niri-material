@@ -1,3 +1,0 @@
-# The PNG attachment's compressed image bytes happen to contain the home-relative sync
-# root; a binary task attachment is never hand-edited, so this one file is exempt.
-layout_allowed = ["tasks/files/material-62347d/noctalia-hue-transition.png"]
