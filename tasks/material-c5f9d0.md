@@ -9,7 +9,7 @@ process: direct
 needs: [quiet, nested, owner]
 owner: material-abc08c
 created: 2026-10-09T21:41:52Z
-updated: 2026-10-29T19:37:07Z
+updated: 2026-10-29T19:41:39Z
 started: 2026-10-17T03:02:16Z
 depends: [material-2283b8, material-abc08c]
 parent: material-6901e0
@@ -67,3 +67,6 @@ Step 15 of the transient rigid tilt plan (docs/plans/2026-10-09-transient-rigid-
 - 2026-10-29T19:29:49Z (material-abc08c): review: impl round 3 — verdict: revise; findings: Important 2, Minor 9; reviewer: claude-code/claude-opus-5-5
 - 2026-10-29T19:29:49Z (material-abc08c): Scoped final review (Tasks 14-15, 6f2ce207..fe44adca), reopened for it: I1 the Clip analysis used a hinge formula; spec §3.2 pivots at the centre with D = κE/w, which predicts 8.8/0.2, 26.1/9.9, 33.5/1.1 px at θp (origin/far edge), so the 'non-linearity' and most of L2's far-edge motion are the specified geometry (residual ~2-4 px at L2); I2 the owner gate covers motion, sign and settle, and the delegation covered amplitude only, so sign and settle stay with the owner.
 - 2026-10-29T19:37:07Z (material-abc08c): review: impl round 4 — verdict: revise; findings: Important 1, Minor 4; reviewer: claude-code/claude-opus-5-5
+- 2026-10-29T19:41:25Z (material-abc08c): review: impl round 5 — verdict: accept; findings: Minor 3; reviewer: claude-code/claude-opus-5-5
+- 2026-10-29T19:41:39Z (material-abc08c): parked (waiting on user, quiet; headless, 20 min): On a quiet host (headless weston lane), from .worktrees/material-abc08c: CAPTURE_TASK=material-c5f9d0 TILT=20 KAPPA=3 BEAM_GLOW=3 SEQUENCES='tilt-swing tilt-swing-slow tilt-swing-flipped' BEAM_SCRATCH=1 docs/materials/scripts/ring-motion-clips.sh (release build ~1-3, flipped scratch build ~3-10, await_load up to 5, preflight 1, three sequences ~3, sheet <1); expect clips: OK and a swing-measured-sheet.png per tilt-swing row. Earlier attempts of this recipe: 2026-10-16 never passed the load1 < 1.0 wait (other sessions); 10-18 and 10-26 runs passed. Write a run: note, then the owner judges sign (shipped vs flipped) and view-tilt-settle (900 vs 1400 ms) at the picked amplitude 20/3 from the GIFs and sheets; then the agent records the sign/settle verdict under Clip, flips the sign or changes the settle default if asked (plan Task 15 Step 4), notes prism-2a8fea, closes material-c5f9d0, and runs finishing-a-development-branch (ledger resume point).
+  provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
