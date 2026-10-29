@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tt version 7
+# tt version 8
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
@@ -28,6 +28,8 @@ from xml.etree import ElementTree
 
 VERSION = 6
 FIELDS = ["at", "project", "target", "command", "seconds", "exit", "tests", "rev", "dirty", "by", "agent", "session", "source", "selection", "content", "slowest"]
+EXECUTION_FIELDS = ["execution", "execution_reason"]
+FIELDS += EXECUTION_FIELDS
 
 PYTEST_WORD = r"(?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?|rerun)"
 
@@ -477,6 +479,53 @@ def repo_root(cwd):
     return pathlib.Path(top) if top else None
 
 
+def read_policy(cwd):
+    """Read only the invoking Git top level, never project records or siblings."""
+    root = repo_root(cwd)
+    if root is None:
+        sys.stderr.write("tt: execution policy unavailable outside Git; running by default\n")
+        return None
+    path = root / ".tt.toml"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        if path.is_symlink():
+            raise ValueError(f"{path}: policy symlink has no readable target") from None
+        return None
+    except (OSError, UnicodeError) as error:
+        raise ValueError(f"{path}: {error}") from error
+    try:
+        doc = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as error:
+        raise ValueError(f"{path}: {error}") from error
+    if set(doc) != {"automatic_broad", "broad_targets"} or type(doc["automatic_broad"]) is not bool:
+        raise ValueError(f"{path}: expected only boolean automatic_broad and broad_targets")
+    targets = doc["broad_targets"]
+    if (not isinstance(targets, list) or not targets
+            or any(not isinstance(t, str) or not t.strip() for t in targets)
+            or len(set(targets)) != len(targets)):
+        raise ValueError(f"{path}: broad_targets must be a nonempty list of unique target names")
+    protected = {"test-one", "test-full", "setup", "docs", "check-hygiene"}
+    if any(t in protected or t.startswith("hook-") for t in targets):
+        raise ValueError(f"{path}: broad_targets contains a protected focused or mandatory target")
+    return {"path": path, **doc}
+
+
+def execution_decision(target, policy, env):
+    """Decide using a validated read_policy result; force never comes from CI."""
+    if "TT_FORCE" in env and env["TT_FORCE"] != "1":
+        raise ValueError("TT_FORCE must be absent or exactly 1")
+    if env.get("TT_FORCE") == "1":
+        return "ran", "forced"
+    if policy is None or target not in policy["broad_targets"]:
+        return "ran", "default"
+    if policy["automatic_broad"]:
+        return "ran", "policy-enabled"
+    if env.get("GITHUB_ACTIONS") == "true":
+        raise ValueError(f"{target}: hosted verification would be skipped by {policy['path']}; add TT_FORCE=1 to the job")
+    return "skipped", "policy-disabled"
+
+
 def agent_of(env):
     if env.get("CLAUDECODE"):
         return "claude", env.get("CLAUDE_CODE_SESSION_ID") or None
@@ -556,10 +605,11 @@ def now():
 def record(path, line):
     """Appends one line, opening the file under the lock so a concurrent harvest either
     happens entirely before (the line lands in the fresh file) or entirely after."""
-    missing = [field for field in FIELDS if field not in line]
+    fields = FIELDS if line.get("source") == "wrapper" else [f for f in FIELDS if f not in EXECUTION_FIELDS]
+    missing = [field for field in fields if field not in line]
     if missing:
         raise ValueError(f"log line missing {missing}")
-    text = json.dumps({field: line[field] for field in FIELDS}) + "\n"
+    text = json.dumps({field: line[field] for field in fields}) + "\n"
     with locked(path):
         with open(path, "a", encoding="utf-8") as handle:
             handle.write(text)
@@ -610,17 +660,33 @@ def main(argv, env, cwd):
         sys.stderr.write("usage: tt <target> -- <command> [args...]\n")
         return 2
     target, command = argv[0], argv[2:]
+    decision_at, decision_start = now(), time.monotonic()
+    try:
+        policy = read_policy(cwd)
+        execution, reason = execution_decision(target, policy, env)
+    except ValueError as error:
+        sys.stderr.write(f"tt: {error}\n")
+        return 2
     root, prefix, linked = project_of(cwd, env)
     log, warning = choose_log(cwd, root, env, linked=linked)
     if warning:
         sys.stderr.write(warning + "\n")
     rev, dirty = git_info(cwd)
+    agent, session = agent_of(env)
+    common = {"project": prefix, "target": target, "command": " ".join(command),
+              "rev": rev, "dirty": dirty, "by": owner_of(env, cwd),
+              "agent": agent, "session": session, "source": "wrapper",
+              "execution": execution, "execution_reason": reason}
+    if execution == "skipped":
+        record(log, {**common, "at": decision_at, "seconds": round(time.monotonic() - decision_start, 3),
+                     "exit": None, "tests": None, "selection": None, "content": None, "slowest": None})
+        sys.stderr.write(f"tt: {target} skipped by policy {policy['path']}; use TT_FORCE=1 to run\n")
+        return 0
     try:
         content = content_identity(cwd)
     except ContentSkipped as error:
         sys.stderr.write(f"tt: content identity skipped: {error}\n")
         content = None
-    agent, session = agent_of(env)
     junit_dir = pathlib.Path(tempfile.mkdtemp(prefix="tt-junit-"))
     try:
         started_at = now()
@@ -637,19 +703,11 @@ def main(argv, env, cwd):
         except OSError as error:
             sys.stderr.write(f"tt: could not remove {junit_dir}: {error}\n")
     record(log, {
+        **common,
         "at": started_at,
-        "project": prefix,
-        "target": target,
-        "command": " ".join(command),
         "seconds": seconds,
         "exit": status,
         "tests": parse_tests(lines) if lines else None,
-        "rev": rev,
-        "dirty": dirty,
-        "by": owner_of(env, cwd),
-        "agent": agent,
-        "session": session,
-        "source": "wrapper",
         "selection": parse_selection(lines),
         "content": content,
         "slowest": slowest_of(junit, parse_unittest_durations(lines, lambda message: sys.stderr.write(message + "\n"))),
