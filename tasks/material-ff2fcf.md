@@ -8,7 +8,7 @@ complexity: low
 process: direct
 owner: materials-26.04
 created: 2026-10-25T17:04:57Z
-updated: 2026-10-29T19:13:29Z
+updated: 2026-10-29T19:14:31Z
 started: 2026-10-29T19:13:29Z
 depends: []
 tags: []
@@ -25,3 +25,4 @@ material-77db8a (dropped) and material-89fb6b (done) still have worktrees whose 
   provenance: {"harness_session":"claude-code:6868fadb-a6fa-442d-a878-d2615487c638","harness_session_source":"CLAUDE_CODE_SESSION_ID","origin":"agent"}
 - 2026-10-29T19:13:29Z (materials-26.04): started
   provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-29T19:14:31Z (materials-26.04): Nothing merged: every moved-path file on both branches (tasks/, docs/specs, docs/plans, docs/notes) is identical on materials-26.04 or newer there (material-6901e0, material-d0518d, the transient-depth brief). Branch-only content is the rejected tilt code, its evidence doc and smoke script (77db8a), and the spike code and tilt-spike-sheet.py (89fb6b); both were deliberately kept unmerged as reference, so branches material-77db8a and spike/material-89fb6b stay. Removed worktrees after checks: clean status, no submodules, no plan ledger, no host pointers, tt-report run; ignored target/ (11G, 8.6G), a comment-only .cargo/config.toml and an empty .superpowers/sdd discarded as regenerable.
