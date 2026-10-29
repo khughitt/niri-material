@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 14
+# ops-check version 15
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -26,7 +26,11 @@ exits 2 when it cannot run at all.
   the hostname, `WORK_ROOT`, a registered checkout or its parent directory (the sync root),
   or a value listed under `banned` in `$XDG_CONFIG_HOME/ops/ops-check.toml` (a tracker
   host, say). The values are read from the machine the check runs on, never written here:
-  this file is public in every project that vendors it. Matches are whole words, one
+  this file is public in every project that vendors it. Home-relative paths and top-level
+  home symlinks to protected paths count too, in text files only (a short alias turns up by
+  chance in binary bytes); generic home conventions are not banned merely for starting
+  with `~/`. Matches are whole words (a tilde alias also continues through `.`, `-`, `+`,
+  `@`, `%`, `~` and `=`, so `~/x.bak` is a different name), one
   finding per value per line, at most LAYOUT_LINES lines per file and then a count.
   `tasks/*.md` is exempt (records are written only by tasks), and so, in any repository, is
   `<prefix>/tasks/<prefix>-<hex>.md`, the per-project form of a records repository or work
@@ -145,6 +149,26 @@ def layout(env, projects, hostname, extra):
         values.setdefault(str(root.parent), "the parent of a registered checkout")
     for value in extra:
         values.setdefault(value, "banned by ops-check.toml")
+    home = pathlib.Path(env.get("HOME") or pathlib.Path.home())
+    try:
+        protected = [(pathlib.Path(value), what) for value, what in values.items()
+                     if what != "the home directory" and pathlib.Path(value).is_absolute() and value != "/"]
+        for path, what in protected:
+            if path != home and path.is_relative_to(home):
+                values.setdefault((pathlib.Path("~") / path.relative_to(home)).as_posix(), what)
+        protected = [(path.resolve(), what) for path, what in protected]
+        if protected:
+            aliases = [(pathlib.Path("~"), home.resolve())]
+            aliases += [(pathlib.Path("~") / path.name, path.resolve())
+                        for path in sorted(home.iterdir()) if path.is_symlink()]
+            for alias, target in aliases:
+                for path, what in protected:
+                    if path.is_relative_to(target):
+                        name = (alias / path.relative_to(target)).as_posix()
+                        if name != "~":
+                            values.setdefault(name, what)
+    except (OSError, RuntimeError) as error:
+        fail(f"cannot inspect home layout aliases: {error}")
     return {value: what for value, what in values.items() if value not in ("", "/")}
 
 
@@ -157,12 +181,25 @@ def layout_allowed(root):
 def layout_findings(root, files, values):
     """(path, line, message) for every layout value in a tracked file, capped per file."""
     allowed = layout_allowed(root)
-    alternation = "|".join(re.escape(v) for v in sorted(values, key=len, reverse=True))
-    pattern = re.compile(rf"(?<!\w)(?:{alternation})(?!\w)")
+
+    def compile_values(selected):
+        # A hyphen or dot continues a directory name, rather than ending a tilde alias.
+        alternation = "|".join(re.escape(v) + (r"(?![\w.+@%~=-])" if v.startswith("~/") else "")
+                               for v in sorted(selected, key=len, reverse=True))
+        return re.compile(rf"(?<!\w)(?:{alternation})(?!\w)") if alternation else None
+
+    textual = compile_values(values)
+    # A short alias (a three-character `~/x`) turns up by chance in compressed bytes, so binary files
+    # (a NUL in the first 8000 bytes, as Git judges them) are matched on full values only.
+    binary = compile_values([v for v in values if not v.startswith("~/")])
     for path in files:
         if TASK_RECORD.match(path) or path.startswith(allowed) or not (root / path).is_file():
             continue
-        text = (root / path).read_bytes().decode("utf-8", errors="replace")
+        raw = (root / path).read_bytes()
+        pattern = binary if b"\0" in raw[:8000] else textual
+        if pattern is None:
+            continue
+        text = raw.decode("utf-8", errors="replace")
         reported = 0
         for number, line in enumerate(text.splitlines(), 1):
             found = dict.fromkeys(m.group(0) for m in pattern.finditer(line))
