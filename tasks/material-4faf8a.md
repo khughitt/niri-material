@@ -8,7 +8,7 @@ complexity: mid
 process: direct
 owner: fix/material-4faf8a
 created: 2026-10-22T19:07:12Z
-updated: 2026-10-29T20:35:05Z
+updated: 2026-10-29T20:46:14Z
 started: 2026-10-29T20:26:32Z
 depends: [ops-9fdfe3, ops-6e157a]
 tags: []
@@ -37,3 +37,4 @@ Reported files:
 - 2026-10-29T20:26:50Z (fix/material-4faf8a): resumed
   provenance: {"harness_session":"claude-code:0abf3f61-62e6-4a09-a944-9063cc887bf3","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-29T20:35:05Z (fix/material-4faf8a): dispositions: docs/materials/scripts/noctalia-surfaces.sh:320 — reworded (decorative probe-terminal prompt text now "niri-material  materials-26.04"); docs/plans/2026-08-31-material-tasks-migration.md:20,21,36,108,109 — reworded (sibling checkout paths to <niri-material checkout>, <niri-experiments checkout>, <prism checkout> placeholders, matching existing repo usage); docs/plans/2026-09-02-material-noise-saturation.md:37,393,396-398 — reworded (prose to "Prism checkout", git -C commands to "<prism checkout>"); docs/plans/2026-09-27-idle-budget-fail-fast.md:26,106,1910 — reworded (<niri-experiments checkout> in prose and commands); docs/superpowers/plans/2026-08-29-material-backdrop-blur.md:512 — reworded (git -C "<dotfiles checkout>"); tasks/files/material-62347d/noctalia-hue-transition.png:22451 — allowed: exact-file layout_allowed entry in new root .ops-check.toml; the hit is coincidental bytes in compressed PNG data of an LFS task attachment, not a path, and attachments are never hand-edited
+- 2026-10-29T20:46:14Z (fix/material-4faf8a): verification: candidate rc=0 at e534d632 (ops-295f8d worktree bin/ops-check, run from worktree top level; also rc=0 at a42b8360); vendored tools/ops-check v14 rc=0; just check rc=0 (hygiene, target-dir-check, nightly rustfmt, clippy, fast tooling 535 tests OK/40 skipped, identity/tasks/upstream-report/package-pin); pre-commit hook passed (fast tooling 535 OK/40 skipped; it regenerated docs/materials/upstream-divergence.md counts for the new root .ops-check.toml); just test full Rust baseline rc=0 (746 passed, 0 failed, 1 ignored; run on e534d632, which touches no Rust); git diff --check clean; no .tt.toml (policy absent); no focused test covers the noctalia-surfaces.sh probe text (string-literal change only)
