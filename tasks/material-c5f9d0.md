@@ -1,7 +1,7 @@
 ---
 id: material-c5f9d0
 title: Owner clip on the nested lane
-status: done
+status: doing
 priority: 1
 size: m
 complexity: mid
@@ -9,10 +9,8 @@ process: direct
 needs: [quiet, nested, owner]
 owner: material-abc08c
 created: 2026-10-09T21:41:52Z
-updated: 2026-10-29T19:19:52Z
+updated: 2026-10-29T19:29:52Z
 started: 2026-10-17T03:02:16Z
-completed: 2026-10-29T19:19:51Z
-closed: 2026-10-29T19:19:51Z
 depends: [material-2283b8, material-abc08c]
 parent: material-6901e0
 tags: [rendering, camera]
@@ -64,3 +62,7 @@ Step 15 of the transient rigid tilt plan (docs/plans/2026-10-09-transient-rigid-
   provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-10-29T19:19:51Z (material-abc08c): Amplitude L3 (view-tilt 20, view-distance 3), picked by the agent at the owner's delegation; sign and settle unchanged; recorded under Clip; prism-2a8fea noted
   provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-29T19:29:49Z (material-abc08c): resumed
+  provenance: {"harness_session":"claude-code:2db0caf2-46d5-402c-b4aa-03b22c49e8bc","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-29T19:29:49Z (material-abc08c): review: impl round 3 — verdict: revise; findings: Important 2, Minor 9; reviewer: claude-code/claude-opus-5-5
+- 2026-10-29T19:29:49Z (material-abc08c): Scoped final review (Tasks 14-15, 6f2ce207..fe44adca), reopened for it: I1 the Clip analysis used a hinge formula; spec §3.2 pivots at the centre with D = κE/w, which predicts 8.8/0.2, 26.1/9.9, 33.5/1.1 px at θp (origin/far edge), so the 'non-linearity' and most of L2's far-edge motion are the specified geometry (residual ~2-4 px at L2); I2 the owner gate covers motion, sign and settle, and the delegation covered amplitude only, so sign and settle stay with the owner.
