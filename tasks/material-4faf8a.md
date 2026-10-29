@@ -1,13 +1,15 @@
 ---
 id: material-4faf8a
 title: Resolve existing tilde-layout findings before checker rollout
-status: todo
+status: doing
 priority: 2
 size: s
 complexity: mid
 process: direct
+owner: materials-26.04
 created: 2026-10-22T19:07:12Z
-updated: 2026-10-22T19:44:18Z
+updated: 2026-10-29T20:26:32Z
+started: 2026-10-29T20:26:32Z
 depends: [ops-9fdfe3, ops-6e157a]
 tags: []
 source: ops-295f8d
@@ -27,3 +29,8 @@ Reported files:
 - docs/plans/2026-09-27-idle-budget-fail-fast.md: first reported line 26; 3 reported finding(s)
 - docs/superpowers/plans/2026-08-29-material-backdrop-blur.md: first reported line 512; 1 reported finding(s)
 - tasks/files/material-62347d/noctalia-hue-transition.png: first reported line 22451; 1 reported finding(s)
+
+## Notes
+
+- 2026-10-29T20:26:32Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:0abf3f61-62e6-4a09-a944-9063cc887bf3","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
