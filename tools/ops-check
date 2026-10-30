@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 15
+# ops-check version 16
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -37,6 +37,11 @@ exits 2 when it cannot run at all.
   overlay. A repository whose content is
   host configuration by design lists the path prefixes that may carry the layout under
   `layout_allowed` in a root `.ops-check.toml`; a malformed file exits 2.
+  A layout-bearing local task attachment may suppress mechanical values only after
+  `tasks attachments` verifies its live ledger and exact config/record/file bytes.
+  Explicit banned values remain checked using a separate scan. Clean and banned-only
+  attachments need no tracker query. Queries share five seconds and 1 MiB of captured
+  stdout/stderr per project; failed checks exit 2, negative rows annotate existing layout.
 - Adopted copies: a tracked `tools/` copy of an adopted contract (cli.toml, cli_surface.py,
   keys.toml) must be, as the working tree holds it, a version ops's default branch has
   landed: a change to the contract lands in ops first and the project then runs `vendored
@@ -44,6 +49,13 @@ exits 2 when it cannot run at all.
   host) the rule does not apply, and a registered ops without origin/HEAD exits 2.
 """
 import os
+import hashlib
+import json
+import selectors
+import shutil
+import signal
+import stat
+import time
 import pathlib
 import re
 import socket
@@ -178,40 +190,243 @@ def layout_allowed(root):
     return tuple(string_list(path, "layout_allowed")) if path.is_file() else ()
 
 
-def layout_findings(root, files, values):
-    """(path, line, message) for every layout value in a tracked file, capped per file."""
-    allowed = layout_allowed(root)
-
+def scan_layout(raw, values, suppressible):
+    """The existing match/line-cap rules, plus uncapped query-selection evidence."""
     def compile_values(selected):
-        # A hyphen or dot continues a directory name, rather than ending a tilde alias.
         alternation = "|".join(re.escape(v) + (r"(?![\w.+@%~=-])" if v.startswith("~/") else "")
                                for v in sorted(selected, key=len, reverse=True))
         return re.compile(rf"(?<!\w)(?:{alternation})(?!\w)") if alternation else None
 
-    textual = compile_values(values)
-    # A short alias (a three-character `~/x`) turns up by chance in compressed bytes, so binary files
-    # (a NUL in the first 8000 bytes, as Git judges them) are matched on full values only.
-    binary = compile_values([v for v in values if not v.startswith("~/")])
+    selected = [v for v in values if not v.startswith("~/")] if b"\0" in raw[:8000] else values
+    pattern = compile_values(selected)
+    if pattern is None:
+        return [], False
+    findings, reported, mechanical = [], 0, False
+    for number, line in enumerate(raw.decode("utf-8", errors="replace").splitlines(), 1):
+        found = dict.fromkeys(m.group(0) for m in pattern.finditer(line))
+        mechanical |= bool(suppressible.intersection(found))
+        if not found:
+            continue
+        reported += 1
+        if reported <= LAYOUT_LINES:
+            findings.extend((number, f"machine layout: {value} ({values[value]})") for value in found)
+    if reported > LAYOUT_LINES:
+        findings.append((0, f"{reported - LAYOUT_LINES} more lines carry machine layout"))
+    return findings, mechanical
+
+
+ATTACHMENT_PATH = re.compile(r"^tasks/files/([a-z][a-z0-9]{1,7})-[0-9a-f]{6}/[^/]+$")
+SHA256 = re.compile(r"[0-9a-f]{64}")
+ATTACHMENT_SECONDS = 5
+ATTACHMENT_CAPTURE = 1024 * 1024
+
+
+def metadata(path):
+    try:
+        value = path.lstat()
+    except FileNotFoundError:
+        return None
+    return (value.st_dev, value.st_ino, value.st_mode, value.st_size,
+            value.st_mtime_ns, value.st_ctime_ns)
+
+
+def read_snapshot(path):
+    before = metadata(path)
+    if before is None or not stat.S_ISREG(before[2]):
+        raise ValueError(f"{path} is not a regular file")
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if (opened.st_dev, opened.st_ino) != before[:2]:
+            raise ValueError(f"{path} was replaced")
+        raw = stream.read()
+    if metadata(path) != before:
+        raise ValueError(f"{path} changed during read")
+    return before, raw
+
+
+def attachment_project(root, path):
+    parts = path.split("/")
+    project, relative = root, path
+    if len(parts) == 5 and parts[0] not in (".", ".."):
+        project, relative = root / parts[0], "/".join(parts[1:])
+    match = ATTACHMENT_PATH.fullmatch(relative)
+    if match is None or (project != root and project.name != match[1]):
+        return None
+    directories = [project, project / "tasks", project / "tasks/files",
+                   project / relative.rsplit("/", 1)[0]]
+    states = [(directory, metadata(directory)) for directory in directories]
+    if any(value is None or not stat.S_ISDIR(value[2]) for _, value in states):
+        return None
+    config = metadata(project / "tasks/.config.toml")
+    if config is None or not stat.S_ISREG(config[2]):
+        return None
+    entry = metadata(project / relative)
+    if entry is None or not stat.S_ISREG(entry[2]):
+        return None
+    return project, relative, states
+
+
+def bounded_attachment_output(command, project, deadline, cap):
+    # Git hooks export routing variables that would otherwise reach a different tree.
+    local_git = {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+                 "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+                 "GIT_PREFIX", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE", "GIT_NAMESPACE",
+                 "GIT_IMPLICIT_WORK_TREE", "GIT_NO_REPLACE_OBJECTS",
+                 "GIT_REPLACE_REF_BASE", "GIT_INTERNAL_SUPER_PREFIX",
+                 "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"}
+    env = {key: value for key, value in os.environ.items()
+           if key not in local_git and not key.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_"))}
+    with subprocess.Popen(command, cwd=project, env=env, stdin=subprocess.DEVNULL,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          start_new_session=True, bufsize=0) as child:
+        selector = selectors.DefaultSelector()
+        output, captured = bytearray(), 0
+        selector.register(child.stdout, selectors.EVENT_READ)
+        selector.register(child.stderr, selectors.EVENT_READ)
+        try:
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise ValueError("five-second project deadline exceeded")
+                for event, _ in selector.select(remaining):
+                    chunk = os.read(event.fd, 65536)
+                    if not chunk:
+                        selector.unregister(event.fileobj)
+                        continue
+                    captured += len(chunk)
+                    if captured > cap:
+                        raise ValueError("combined 1 MiB project stdout/stderr limit exceeded")
+                    if event.fileobj is child.stdout:
+                        output.extend(chunk)
+            child.wait(timeout=max(0, deadline - time.monotonic()))
+            if child.returncode:
+                raise ValueError(f"tasks exited {child.returncode}; install a tasks build with attachments")
+            return bytes(output), captured
+        except BaseException:
+            try:
+                os.killpg(child.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            child.wait()
+            raise
+        finally:
+            selector.close()
+
+
+def query_attachments(project, paths, executable, deadline):
+    """One bounded project query, batching the exact paths under shared limits."""
+    rows, captured = {}, 0
+    try:
+        for start in range(0, len(paths), 128):
+            batch = paths[start:start + 128]
+            if time.monotonic() >= deadline:
+                raise ValueError("five-second project deadline exceeded")
+            _, config = read_snapshot(project / "tasks/.config.toml")
+            output, size = bounded_attachment_output(
+                [executable, "--json", "-C", str(project), "attachments", *batch],
+                project, deadline, ATTACHMENT_CAPTURE - captured)
+            captured += size
+            response = json.loads(output)
+            prefix = ATTACHMENT_PATH.fullmatch(batch[0])[1]
+            if any(ATTACHMENT_PATH.fullmatch(path) is None or ATTACHMENT_PATH.fullmatch(path)[1] != prefix for path in batch):
+                raise ValueError("attachment owner prefix mismatch")
+            if not isinstance(response, dict) or type(response.get("version")) is not int or response["version"] != 1:
+                raise ValueError("expected attachment protocol version 1")
+            if response.get("records") != str(project.resolve()) or response.get("prefix") != prefix:
+                raise ValueError("records directory or prefix mismatch")
+            config_hash = response.get("config_sha256")
+            if not isinstance(config_hash, str) or SHA256.fullmatch(config_hash) is None or config_hash != hashlib.sha256(config).hexdigest():
+                raise ValueError("configuration digest mismatch")
+            attachments = response.get("attachments")
+            if not isinstance(attachments, list) or [row.get("path") if isinstance(row, dict) else None for row in attachments] != batch:
+                raise ValueError("missing, extra, duplicate or reordered attachment rows")
+            for row in attachments:
+                eligible, problems = row.get("eligible"), row.get("problems")
+                if type(eligible) is not bool or not isinstance(problems, list):
+                    raise ValueError("invalid eligibility/problems types")
+                if eligible:
+                    if problems:
+                        raise ValueError("positive row has problems")
+                    if attachment_project(project, row["path"]) is None:
+                        raise ValueError("unsafe positive attachment storage")
+                    for key, path in [("file_sha256", project / row["path"]),
+                                      ("record_sha256", project / "tasks" / (row["path"].split("/")[2] + ".md"))]:
+                        digest = row.get(key)
+                        if not isinstance(digest, str) or SHA256.fullmatch(digest) is None:
+                            raise ValueError(f"invalid {key}")
+                        if hashlib.sha256(read_snapshot(path)[1]).hexdigest() != digest:
+                            raise ValueError(f"{key} mismatch")
+                else:
+                    if "file_sha256" in row or "record_sha256" in row or not problems:
+                        raise ValueError("contradictory negative row")
+                    for problem in problems:
+                        if not isinstance(problem, dict) or problem.get("severity") not in ("error", "warning") or not all(
+                            isinstance(problem.get(key), str) and problem[key] for key in ("kind", "file", "detail")):
+                            raise ValueError("invalid attachment problem")
+                rows[row["path"]] = row
+            if time.monotonic() > deadline:
+                raise ValueError("five-second project deadline exceeded")
+        return rows
+    except (OSError, ValueError, TypeError, subprocess.TimeoutExpired) as error:
+        fail(f"attachment eligibility for {project}: {error}; keep raw evidence and attach a portable derivative until the executing checker accepts it")
+
+
+def layout_findings(root, files, values, explicit_banned):
+    """Scan first; only live local attachments may suppress mechanical layout."""
+    allowed = layout_allowed(root)
+    suppressible = set(values) - set(explicit_banned)
+    banned_values = {value: values.get(value, "banned by ops-check.toml") for value in explicit_banned}
+    scans, groups = {}, {}
     for path in files:
         if TASK_RECORD.match(path) or path.startswith(allowed) or not (root / path).is_file():
             continue
+        before = metadata(root / path)
         raw = (root / path).read_bytes()
-        pattern = binary if b"\0" in raw[:8000] else textual
-        if pattern is None:
-            continue
-        text = raw.decode("utf-8", errors="replace")
-        reported = 0
-        for number, line in enumerate(text.splitlines(), 1):
-            found = dict.fromkeys(m.group(0) for m in pattern.finditer(line))
-            if not found:
-                continue
-            reported += 1
-            if reported > LAYOUT_LINES:
-                continue
-            for value in found:
-                yield path, number, f"machine layout: {value} ({values[value]})"
-        if reported > LAYOUT_LINES:
-            yield path, 0, f"{reported - LAYOUT_LINES} more lines carry machine layout"
+        found, mechanical = scan_layout(raw, values, suppressible)
+        scans[path] = found
+        candidate = attachment_project(root, path) if mechanical else None
+        if candidate is not None:
+            project, relative, directories = candidate
+            config = project / "tasks/.config.toml"
+            record = project / "tasks" / (relative.split("/")[2] + ".md")
+            groups.setdefault(project, []).append((path, relative, raw, before, directories,
+                                                   metadata(config), metadata(record)))
+    executable = shutil.which("tasks") if groups else None
+    if groups and executable is None:
+        fail("attachment eligibility requires tasks with the attachments command on PATH; retain raw evidence and use a portable derivative")
+    for project, candidates in groups.items():
+        rows = query_attachments(project, [entry[1] for entry in candidates], executable,
+                                 time.monotonic() + ATTACHMENT_SECONDS)
+        for path, relative, raw, before, directories, config_before, record_before in candidates:
+            row = rows[relative]
+            if row["eligible"]:
+                try:
+                    if attachment_project(root, path) is None:
+                        raise ValueError("attachment storage became unsafe")
+                    for directory, state in directories:
+                        if metadata(directory) != state:
+                            raise ValueError(f"{directory} changed during eligibility query")
+                    config = project / "tasks/.config.toml"
+                    record = project / "tasks" / (relative.split("/")[2] + ".md")
+                    if metadata(config) != config_before or metadata(record) != record_before:
+                        raise ValueError("configuration or owner record changed during eligibility query")
+                    current, contents = read_snapshot(root / path)
+                    if current != before or contents != raw or row["file_sha256"] != hashlib.sha256(raw).hexdigest():
+                        raise ValueError("attachment differs from scanned buffer")
+                    if row["record_sha256"] != hashlib.sha256(read_snapshot(record)[1]).hexdigest():
+                        raise ValueError("owner record digest mismatch")
+                except (OSError, ValueError) as error:
+                    fail(f"attachment eligibility for {path}: {error}")
+                scans[path] = scan_layout(raw, banned_values, set())[0]
+            else:
+                mechanical_messages = {f"machine layout: {value} ({values[value]})" for value in suppressible}
+                first = next((n for n, (_, message) in enumerate(scans[path]) if message in mechanical_messages), len(scans[path]) - 1)
+                line, message = scans[path][first]
+                details = "; ".join(f"{p['kind']} ({p['severity']}): {p['detail']}" for p in row["problems"])
+                scans[path][first] = line, f"{message}; attachment eligibility: {details}; retain raw evidence and attach a portable derivative"
+    for path, found in scans.items():
+        for line, message in found:
+            yield path, line, message
 
 
 def landed_blobs(ops, source):
@@ -347,7 +562,7 @@ def references(root, projects, basenames, doc):
         previous = line
 
 
-def findings(root, projects, values):
+def findings(root, projects, values, explicit_banned):
     """Every finding in the repository at root, as (path, line, message); line 0 when
     the finding is about a path rather than a place in a document."""
     files = tracked(root)
@@ -360,16 +575,17 @@ def findings(root, projects, values):
             yield path, 0, "Dropbox conflicted copy is tracked"
         if path.startswith(".agents/") or "/.agents/" in path:
             yield path, 0, "agent scratch under .agents/ is tracked"
-    yield from layout_findings(root, files, values)
+    yield from layout_findings(root, files, values, explicit_banned)
     yield from adopted_findings(root, set(files), projects)
 
 
 def main():
     root = repository_root(pathlib.Path(os.getcwd()))
     projects = registry(os.environ)
-    values = layout(os.environ, projects, socket.gethostname(), banned(os.environ))
+    explicit_banned = banned(os.environ)
+    values = layout(os.environ, projects, socket.gethostname(), explicit_banned)
     count = 0
-    for path, line, message in findings(root, projects, values):
+    for path, line, message in findings(root, projects, values, explicit_banned):
         where = f"{path}:{line}" if line else path
         sys.stderr.write(f"{where}: {message}\n")
         count += 1
