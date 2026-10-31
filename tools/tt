@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tt version 8
+# tt version 9
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
@@ -32,6 +32,10 @@ EXECUTION_FIELDS = ["execution", "execution_reason"]
 FIELDS += EXECUTION_FIELDS
 
 PYTEST_WORD = r"(?:passed|failed|errors?|skipped|xfailed|xpassed|deselected|warnings?|rerun)"
+# One summary segment. pytest 9 reports passed subtests as "N subtests passed"; the
+# segment is recognised so the line still counts, but subtests are not tests and never
+# reach the sum. Failed subtests arrive in pytest's ordinary "failed" count.
+PYTEST_SEGMENT = r"\d+ (?:subtests )?" + PYTEST_WORD
 
 # Runners colour their summaries whenever they think they have a terminal (a pty in CI,
 # CARGO_TERM_COLOR=always, FORCE_COLOR); the escapes land in the middle of the numbers.
@@ -64,8 +68,8 @@ RUNNERS = [
     },
     {   # pytest: the final summary, quiet or with bars; passed + failed + errors. The
         # words are pytest's own so "5 items in 3.2s" from some other tool never counts.
-        "seen": re.compile(r"(?:^|=+ )(?:\d+ " + PYTEST_WORD + r", )*\d+ " + PYTEST_WORD + r" in [\d.]+s"),
-        "count": re.compile(r"(?:^|=+ )((?:\d+ " + PYTEST_WORD + r", )*\d+ " + PYTEST_WORD + r") in [\d.]+s"),
+        "seen": re.compile(r"(?:^|=+ )(?:" + PYTEST_SEGMENT + r", )*" + PYTEST_SEGMENT + r" in [\d.]+s"),
+        "count": re.compile(r"(?:^|=+ )((?:" + PYTEST_SEGMENT + r", )*" + PYTEST_SEGMENT + r") in [\d.]+s"),
         "sum_words": ("passed", "failed", "error", "errors"),
         "empty": re.compile(r"^no tests ran in |^collected 0 items"),
     },
@@ -91,7 +95,8 @@ def parse_tests(lines):
                 return None
             if "sum_words" in runner:
                 parts = found.group(1).split(", ")
-                total += sum(int(n) for n, word in (p.split(" ") for p in parts) if word in runner["sum_words"])
+                segments = (p.partition(" ") for p in parts)
+                total += sum(int(n) for n, _, word in segments if word in runner["sum_words"])
             else:
                 total += sum(int(g) for g in found.groups())
             matched = True
