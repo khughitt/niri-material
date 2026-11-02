@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# tt version 9
+# tt version 10
 """Timing wrapper: `tt <target> -- <command> [args...]`.
 
 Runs the command with stdin, stdout, and stderr passed through, and appends one JSON line
@@ -537,6 +537,10 @@ def agent_of(env):
     if env.get("CODEX_CI") == "1":
         # The tasks CLI's provenance rule: the thread id when present (ops-8c83ba).
         return "codex", env.get("CODEX_THREAD_ID") or env.get("CODEX_SESSION_ID") or None
+    if env.get("ANTIGRAVITY_CONVERSATION_ID"):
+        # Checked last so no existing attribution changes; tasks-b42efc settles precedence
+        # when several harnesses' variables coexist, and tt follows it then.
+        return "agy", env["ANTIGRAVITY_CONVERSATION_ID"]
     return None, None
 
 
