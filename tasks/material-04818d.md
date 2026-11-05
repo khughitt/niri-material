@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-11-05T09:22:13Z
+updated: 2026-11-05T09:22:21Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -52,3 +52,4 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 - 2026-10-27T03:27:58Z (materials-26.04): parked (waiting on user, quiet; headless, 9 min): In the next quiet TTY session that opens (or lands after a nested run) in the ~17 W state: bash /mnt/ssd3/niri-material/material-04818d-floor/root-tests.sh (9 min: base 1, persistence on 1.5, off 1.5, fan auto 2.5, fan 45 1.5; restores what it found) and read whether any step drops the floor to ~10 W. Already done 2026-10-26: the same probes in the 10 W state moved nothing toward 17 W (fan auto -0.4 W only), and the 10 W vs 17 W nvidia-smi -q/sysfs snapshots differ only in power draw. If 17 W persists through root-tests too, the selector is invisible to NVML/sysfs: close with the reviewed gate change as the remedy.
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-11-05T09:22:13Z (materials-26.04): resumed
+- 2026-11-05T09:22:21Z (materials-26.04): 2026-11-05 quiet TTY session check: /usr/local/sbin/gpu-ctl status reports persistence: off and fan 0/1: manual, target 45%, speed 45% (identical to the 2026-10-17 17.33 W rest0.q.txt state) while drawing 9.45-10.33 W P8 (210 MHz) before and after nested Weston/niri and headless Chromium GPU runs. Together with the 2026-10-17 17 W session (where 6 noise-layers-cost pilots, three 90 s 174 W glmark2 P0 bursts, 110 min passive watch, and display blank/unblank cycles never left ~17 W) and the 2026-10-26 10 W root-tests.sh run (where fan 45% vs 0 RPM auto cost only 0.41 W and persistence on/off changed 0.04 W, and nvidia-smi -q/sysfs snapshots differed only in power draw), all candidate host/NVML/sysfs selectors are ruled out: the ~10.4 W vs ~17 W P8 floor step is an internal GPU firmware/rail state invisible to nvidia-smi -q, NVML, and sysfs. Per owner agreement (2026-11-05), closing with the reviewed settle-gate change (docs/specs/2026-10-17-capture-evidence-gates-design.md) and per-case floor logging (idle_clock_power_median_w, material-d2e552) as the remedy.
