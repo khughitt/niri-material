@@ -9,7 +9,7 @@ process: direct
 needs: [quiet, nested, owner]
 owner: material-abc08c
 created: 2026-10-09T21:41:52Z
-updated: 2026-11-05T05:23:22Z
+updated: 2026-11-05T05:24:26Z
 started: 2026-10-17T03:02:16Z
 depends: [material-2283b8, material-abc08c]
 parent: material-6901e0
@@ -80,3 +80,4 @@ Step 15 of the transient rigid tilt plan (docs/plans/2026-10-09-transient-rigid-
 - 2026-11-05T05:23:19Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"scratch","path":"$WORK_ROOT/niri-material/material-c5f9d0","state":"kept","verification":"verified","purpose":"ladder-sheet.py, tilt-amplitude-ladder.png, and ref-1006-remeasure/ from the amplitude ladder","next_owner":"task:material-c5f9d0","cleanup_trigger":"after the sign/settle verdict is recorded","manifest":"$WORK_ROOT/niri-material/material-c5f9d0/manifest.json","sha256":"9130c1ef44c9b4b5056807a687d945b1d62b3e9db326eaf44456b4c2edb2b386"}
 - 2026-11-05T05:23:19Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"worktree","path":".worktrees/material-abc08c","state":"kept","verification":"verified","purpose":"material-abc08c branch and SDD workspace .superpowers/sdd/2026-10-09-transient-rigid-tilt","next_owner":"task:material-c5f9d0","cleanup_trigger":"after material-abc08c merges and the ledger rulings and deferred minors reach the final report"}
 - 2026-11-05T05:23:19Z (material-abc08c): retention checkpoint: verified 2026-11-05T05:23:00Z on titan; ring-clips-978014-1793855426/manifest.json (124 files, sha256 9696b0fb...), $WORK_ROOT/niri-material/material-c5f9d0/manifest.json (114 files, sha256 9130c1ef...), and .worktrees/material-abc08c verified; no owned background processes remain
+- 2026-11-05T05:24:26Z (material-abc08c): parked (waiting on user, review): Owner judges the swing's sign (shipped Row A vs flipped Row D) and view-tilt-settle (900 ms Row A vs 1400 ms Row C) at the picked amplitude L3 (view-tilt 20, view-distance 3) from attached swing-measured-20-3-sign-settle.png and the GIFs in /mnt/ssd3/niri-material/ring-motion-clips-f905c9ed/ring-clips-978014-1793855426 (tilt-swing.gif, tilt-swing-slow.gif, tilt-swing-flipped.gif); then the agent records the sign/settle verdict under Clip in docs/materials/2026-10-09-rigid-tilt-evidence.md, flips the sign in src/render_helpers/material/view/mod.rs (and its tests' signs) or changes the view-tilt-settle default if asked (plan Task 15 Step 4), notes prism-2a8fea with the starting values, closes material-c5f9d0, and runs finishing-a-development-branch.
