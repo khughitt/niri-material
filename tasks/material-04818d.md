@@ -1,7 +1,7 @@
 ---
 id: material-04818d
 title: Idle GPU floor flips between ~10.4 and ~17 W after nested runs and refuses long cost captures
-status: doing
+status: done
 priority: 2
 size: s
 complexity: mid
@@ -9,8 +9,10 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-11-05T09:22:35Z
+updated: 2026-11-05T09:22:42Z
 started: 2026-10-16T12:34:35Z
+completed: 2026-11-05T09:22:42Z
+closed: 2026-11-05T09:22:42Z
 depends: []
 tags: [rendering]
 agent: claude-code/claude-opus-5-5
@@ -55,3 +57,5 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 - 2026-11-05T09:22:21Z (materials-26.04): 2026-11-05 quiet TTY session check: /usr/local/sbin/gpu-ctl status reports persistence: off and fan 0/1: manual, target 45%, speed 45% (identical to the 2026-10-17 17.33 W rest0.q.txt state) while drawing 9.45-10.33 W P8 (210 MHz) before and after nested Weston/niri and headless Chromium GPU runs. Together with the 2026-10-17 17 W session (where 6 noise-layers-cost pilots, three 90 s 174 W glmark2 P0 bursts, 110 min passive watch, and display blank/unblank cycles never left ~17 W) and the 2026-10-26 10 W root-tests.sh run (where fan 45% vs 0 RPM auto cost only 0.41 W and persistence on/off changed 0.04 W, and nvidia-smi -q/sysfs snapshots differed only in power draw), all candidate host/NVML/sysfs selectors are ruled out: the ~10.4 W vs ~17 W P8 floor step is an internal GPU firmware/rail state invisible to nvidia-smi -q, NVML, and sysfs. Per owner agreement (2026-11-05), closing with the reviewed settle-gate change (docs/specs/2026-10-17-capture-evidence-gates-design.md) and per-case floor logging (idle_clock_power_median_w, material-d2e552) as the remedy.
 - 2026-11-05T09:22:28Z (materials-26.04): retained: {"v":1,"host":"titan","kind":"evidence","path":"/mnt/ssd3/niri-material/material-04818d-floor","state":"kept","verification":"verified","purpose":"17 W and 10 W nvidia-smi -q/sysfs dumps, passive watch, glmark2 burst logs, and root-tests.sh scripts/logs for material-04818d","next_owner":"none","cleanup_trigger":"none (retained diagnostic evidence for the two P8 power floors)","manifest":"/mnt/ssd3/niri-material/material-04818d-floor/manifest.json","sha256":"87e6d1f399b7786b2bfae98bb29f117ac769c1142d503049f2eb579984c1cf7b"}
 - 2026-11-05T09:22:35Z (materials-26.04): retention checkpoint: verified 2026-11-05T09:22:00Z on titan; /mnt/ssd3/niri-material/material-04818d-floor/manifest.json verified; no owned background processes remain
+- 2026-11-05T09:22:42Z (materials-26.04): done
+- 2026-11-05T09:22:42Z (materials-26.04): Closed per owner agreement: persistence off + manual 45% fan already holds at ~9.7 W P8, the ~10.4 W vs ~17 W P8 floor selector is internal to GPU firmware (invisible to nvidia-smi -q, NVML, and sysfs), and the reviewed settle-gate change (docs/specs/2026-10-17-capture-evidence-gates-design.md) plus idle_clock_power_median_w logging (material-d2e552) is the remedy.
