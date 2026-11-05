@@ -9,7 +9,7 @@ process: direct
 needs: [quiet]
 owner: materials-26.04
 created: 2026-10-16T11:49:16Z
-updated: 2026-10-27T03:27:58Z
+updated: 2026-11-05T09:22:13Z
 started: 2026-10-16T12:34:35Z
 depends: []
 tags: [rendering]
@@ -51,3 +51,4 @@ What: find what selects the state (candidates: memory/voltage rail state after a
 - 2026-10-27T02:38:01Z (materials-26.04): run: 9 min (est 8, headless); base 1, pm-on 1.5, pm-off 1.5, fan-auto 2.5, fan-45 1.5; passed: root-tests.sh run in the 10 W state (the 17 W state its step wanted was not present at session open). Floor means: base 9.90, persistence on 9.84, off 9.80, fan auto (fans stop, 0 RPM) 9.41, fan manual 45% 9.82 W. Neither persistence nor fan mode lifts the 10 W floor toward 17 W; fans at 45% cost ~0.4 W. Restored persistence off, fans manual 45%. Log: /mnt/ssd3/niri-material/material-04818d-floor/root-tests-20261026-2229.log. The 17 W-state run still waits for a session that is in that state; later nested runs tonight are checked for a flip.
 - 2026-10-27T03:27:58Z (materials-26.04): parked (waiting on user, quiet; headless, 9 min): In the next quiet TTY session that opens (or lands after a nested run) in the ~17 W state: bash /mnt/ssd3/niri-material/material-04818d-floor/root-tests.sh (9 min: base 1, persistence on 1.5, off 1.5, fan auto 2.5, fan 45 1.5; restores what it found) and read whether any step drops the floor to ~10 W. Already done 2026-10-26: the same probes in the 10 W state moved nothing toward 17 W (fan auto -0.4 W only), and the 10 W vs 17 W nvidia-smi -q/sysfs snapshots differ only in power draw. If 17 W persists through root-tests too, the selector is invisible to NVML/sysfs: close with the reviewed gate change as the remedy.
   provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-11-05T09:22:13Z (materials-26.04): resumed
