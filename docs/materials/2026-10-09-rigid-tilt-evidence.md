@@ -208,6 +208,24 @@ so both sides of the pane draw in and it reads as shrinking while it turns. At
 turning, with the largest pull-in of the three. The defaults are unchanged
 (`view-tilt 0`, off); the pick is Prism's starting value (`prism-2a8fea`).
 
+Sign and settle clips at L3 (`view-tilt 20; view-distance 3`, beam off) on the
+nested lane: `$EV` = `ring-motion-clips-f905c9ed/ring-clips-978014-1793855426`
+(`tilt-swing` at 900 ms with the shipped sign, `tilt-swing-slow` at 1400 ms
+with the shipped sign, and `tilt-swing-flipped` at 900 ms with the sign
+reversed), each a 2.5 s burst from before the gain (26, 25 and 25 frames;
+gain at 0.003 s into each burst; 4× corner crops at 0.118–0.121, 0.320–0.322,
+0.417–0.422 and 0.702–0.724 s after the gain). Every sub-run settled at the P8
+idle floor (10.22–10.33 W against a 10.25 W baseline) with its renderer
+verified, and the release scan was clean. Measured by `swing-measured-sheet.py`
+(`swing-measured-sheet.png`, attached to `material-c5f9d0` as
+`swing-measured-20-3-sign-settle.png`), the shipped sign (`tilt-swing`, Row A)
+pulls the origin-side right edge in 27.85 px at 0.118 s (left edge 0.70 px) and
+crosses back through rest at about 0.42 s; the 1400 ms settle
+(`tilt-swing-slow`, Row C) pulls the right edge in 29.40 px at 0.220 s (left
+edge 0.72 px) and crosses rest at about 0.62 s; the flipped sign
+(`tilt-swing-flipped`, Row D) pulls the left edge in 32.31 px at 0.121 s (right
+edge −0.08 px) and crosses rest at about 0.42 s. Each sequence's GIF shows the
+motion.
+
 Sign and settle verdict: pending. The owner gate covers the motion, the sign
-and `view-tilt-settle`, and the delegation covered the amplitude only. No
-`tilt-swing-slow` or `tilt-swing-flipped` run exists at 20/3.
+and `view-tilt-settle`, and the delegation covered the amplitude only.
