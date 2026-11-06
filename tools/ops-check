@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 17
+# ops-check version 19
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -397,29 +397,40 @@ def layout_findings(root, files, values, explicit_banned):
     executable = shutil.which("tasks") if groups else None
     if groups and executable is None:
         fail("attachment eligibility requires tasks with the attachments command on PATH; retain raw evidence and use a portable derivative")
+    hint = ("if a concurrent tasks write or check was running in the checkout, "
+            "let it settle and rerun tasks commit or the check; otherwise retain "
+            "raw evidence and attach a portable derivative")
     for project, candidates in groups.items():
         rows = query_attachments(project, [entry[1] for entry in candidates], executable,
                                  time.monotonic() + ATTACHMENT_SECONDS)
         for path, relative, raw, before, directories, config_before, record_before in candidates:
             row = rows[relative]
             if row["eligible"]:
+                subject = project
                 try:
-                    if attachment_project(root, path) is None:
-                        raise ValueError("attachment storage became unsafe")
-                    for directory, state in directories:
-                        if metadata(directory) != state:
-                            raise ValueError(f"{directory} changed during eligibility query")
                     config = project / "tasks/.config.toml"
+                    if metadata(config) != config_before:
+                        raise ValueError("configuration changed during eligibility query")
+                    subject = path
+                    entry = metadata(root / path)
+                    if entry is None or not stat.S_ISREG(entry[2]):
+                        raise ValueError("attachment storage became unsafe")
                     record = project / "tasks" / (relative.split("/")[2] + ".md")
-                    if metadata(config) != config_before or metadata(record) != record_before:
-                        raise ValueError("configuration or owner record changed during eligibility query")
+                    if metadata(record) != record_before:
+                        raise ValueError("owner record changed during eligibility query")
                     current, contents = read_snapshot(root / path)
                     if current != before or contents != raw or row["file_sha256"] != hashlib.sha256(raw).hexdigest():
                         raise ValueError("attachment differs from scanned buffer")
                     if row["record_sha256"] != hashlib.sha256(read_snapshot(record)[1]).hexdigest():
                         raise ValueError("owner record digest mismatch")
+                    subject = project
+                    for directory, state in directories:
+                        if metadata(directory) != state:
+                            raise ValueError(f"{directory} changed during eligibility query")
+                    if attachment_project(root, path) is None:
+                        raise ValueError("attachment storage became unsafe")
                 except (OSError, ValueError) as error:
-                    fail(f"attachment eligibility for {path}: {error}")
+                    fail(f"attachment eligibility for {subject}: {error}; {hint}")
                 scans[path] = scan_layout(raw, banned_values, set())[0]
             else:
                 mechanical_messages = {f"machine layout: {value} ({values[value]})" for value in suppressible}
@@ -468,8 +479,8 @@ def adopted_findings(root, files, projects):
                             f" land the change in ops first, then run `vendored adopt {name}` here")
 
 
-def tracked(root):
-    return (git(root, "ls-files", "-z") or "").split("\0")[:-1]
+def tracked(root, query=git):
+    return (query(root, "ls-files", "-z") or "").split("\0")[:-1]
 
 
 def recipes(root):
@@ -513,14 +524,14 @@ def project_prefix(before, previous):
     return found.group(0) if found else None
 
 
-def main_checkout(root):
+def main_checkout(root, query=git):
     """The main worktree of the repository at root, resolved; None outside git."""
-    listing = git(root, "worktree", "list", "--porcelain")
+    listing = query(root, "worktree", "list", "--porcelain")
     return pathlib.Path(listing.splitlines()[0].removeprefix("worktree ")).resolve() if listing else None
 
 
-def basenames_of(root):
-    return {pathlib.PurePosixPath(f).name for f in tracked(root)}
+def basenames_of(root, query=git):
+    return {pathlib.PurePosixPath(f).name for f in tracked(root, query)}
 
 
 def references(root, projects, basenames, doc):
@@ -539,8 +550,9 @@ def references(root, projects, basenames, doc):
             separated = not before.strip() or before[-1] == " "
             prefix = project_prefix(before, previous) if separated else None
             base, where = (projects[prefix], f" in {prefix}") if prefix in projects else (root, "")
+            query = foreign_git if base.resolve() != root.resolve() else git
             if base not in owners:
-                owners[base] = (basenames_of(base), recipes(base))
+                owners[base] = (basenames_of(base, query), recipes(base))
             names_here, (justfile, names) = owners[base]
             if kind == "recipe":
                 if names is not None and RECIPE.match(token).group(1) not in names:
@@ -552,10 +564,10 @@ def references(root, projects, basenames, doc):
                 continue
             if (base / token).exists():
                 continue
-            if git(base, "check-ignore", "-q", token) is None:
+            if query(base, "check-ignore", "-q", token) is None:
                 yield doc, number, f"`{token}` does not exist{where}"
                 continue
-            main = main_checkout(base)
+            main = main_checkout(base, query)
             if main is not None and main != base.resolve() and (main / token).exists():
                 yield doc, number, (f"`{token}` is git-ignored{where} and exists only in the main checkout,"
                                     " not this worktree: write it without backticks")
