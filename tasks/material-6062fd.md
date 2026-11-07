@@ -5,11 +5,12 @@ status: todo
 priority: 1
 lane: true
 created: 2026-10-02T23:07:45Z
-updated: 2026-10-09T23:32:48Z
+updated: 2026-11-07T22:02:50Z
 depends: []
 tags: [rendering]
 source: docs/notes/2026-10-02-workstreams-brief.md
 agent: claude-code/claude-opus-5-5
+origin: mixed
 ---
 
 Give glass edges, content depth and the embedded ring a shared optical foundation. First milestone: implement the height-field bevel (material-be611b) and have the owner review its appearance.
