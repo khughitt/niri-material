@@ -7,11 +7,12 @@ size: s
 complexity: mid
 process: direct
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-15T18:42:09Z
+updated: 2026-11-07T22:01:18Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
+origin: mixed
 ---
 
 Why: know the cost of each render pass and each exposed parameter across its range, including the main interactions (e.g. frosted backdrop with high distortion detail) and the focused/unfocused split, and produce an estimate that can evaluate a whole preset's cost. This is the measurement side of lane material-5d6b2c; prism-d54be4 (shelved) is the consumer that wants these estimates to shape exposed ranges and warn on demanding settings in the Noctalia panel. Source: mindful:thought:a476e6bcd1fd4297b70824758235d821. Handoffs: docs/notes/2026-09-29-resource-aware-rendering-brief.md and docs/notes/2026-09-29-adaptive-materials-brief.md (notes below). Alongside measured cost, it records the repeated-capture noise floor, which inactive settings save whole-scene work (including shared blur/prefilter caches), what quantities a continuous consumer actually needs before recommending GPU queries or quality tiers, and which joint parameter effects repeatable evidence supports. Cost sensitivity does not establish visual preference.
