@@ -5,11 +5,12 @@ status: todo
 priority: 2
 lane: true
 created: 2026-10-02T23:07:45Z
-updated: 2026-10-03T16:48:43Z
+updated: 2026-11-07T22:03:05Z
 depends: []
 tags: [signals]
 source: docs/notes/2026-10-02-workstreams-brief.md
 agent: claude-code/claude-opus-5-5
+origin: mixed
 ---
 
 Connect signal sources, the store and IPC model, and glass responses, with preparation that can continue while captures wait for a quiet host. First milestone: the workspace replay finding (material-c1330b, now done) and terminal transport and attribution (material-07bac9, needs a nested compositor).
