@@ -7,11 +7,12 @@ size: m
 complexity: mid
 process: direct
 created: 2026-09-06T22:27:52Z
-updated: 2026-10-15T18:40:19Z
+updated: 2026-11-07T22:04:07Z
 depends: [material-397fcb]
 parent: material-3aa1f2
 tags: [material, rendering]
 source: "mindful:thought:5778c060e57d47dd808e20347223cfd5"
+origin: user
 spec: docs/specs/2026-09-10-material-optics-design.md
 ---
 
