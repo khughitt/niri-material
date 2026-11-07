@@ -7,7 +7,7 @@ size: s
 complexity: mid
 process: direct
 created: 2026-09-11T23:34:15Z
-updated: 2026-11-07T22:01:18Z
+updated: 2026-11-07T22:01:25Z
 depends: []
 parent: material-5d6b2c
 tags: [quick-add, performance]
@@ -33,3 +33,4 @@ Ideas it wakes: on completion, run tasks note --no-reviewed on material-2ebf2c, 
 - 2026-09-29T22:56:49Z (materials-26.04): Additional scope handoff: docs/notes/2026-09-29-adaptive-materials-brief.md. Reuse the existing interaction measurements for material-0c7eed; report which joint parameter effects are supported by repeatable evidence and which remain unknown. Cost sensitivity does not establish visual preference or an innate good region. Ideas it wakes: On completion, run tasks note on material-0c7eed with the finding in the same commit as this result, alongside the previously named waiting ideas, and update the adaptive-materials brief.
 - 2026-10-02T23:47:23Z (materials-26.04): workstreams: when taken up, split preparation (capture matrix, script, pilot definition; no host) from the quiet measurement run, so the preparation is not held behind the quiet queue. Preset estimates must account for shared blur/prefilter caches and interactions, not sum per-effect prices.
 - 2026-10-15T18:42:09Z (materials-26.04): scope: rescoped; premises checked at 2dd3b9fa: capture protocol, Tracy GPU spans and cost-script pattern hold, no work started, no per-parameter sweep or noise floor measured, no whole-preset estimator design anywhere (only 'not summed per-effect prices'); decomposed per the 2026-10-02 note into material-0df22c (design + no-host prep, planned, high) and material-864f87 (quiet pilot + matrix, quiet+nested); quiet moved to the run; this task is the closeout (s, mid, direct); wake edges added from material-2ebf2c, material-a0cbb0, material-a91346, material-0c7eed; priority unchanged
+- 2026-11-07T22:01:25Z (materials-26.04): origin backfill (tasks-0dfdf9): stage 1 unavailable (created 2026-09-11 before tasks-053e89); traced via mindful:thought:a476e6bcd1fd4297b70824758235d821 human thought by keith combined with agent preset-authoring workflow decomposition in claude-code:365f5b3e-15f6-430e-aa21-082d2a27e409 -> origin=mixed
