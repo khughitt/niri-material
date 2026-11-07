@@ -5,7 +5,7 @@ status: todo
 priority: 1
 lane: true
 created: 2026-10-02T23:07:45Z
-updated: 2026-11-07T22:02:50Z
+updated: 2026-11-07T22:02:58Z
 depends: []
 tags: [rendering]
 source: docs/notes/2026-10-02-workstreams-brief.md
@@ -23,3 +23,4 @@ Ring embedding (material-4e3e9c) follows it; prepare its comparison scenes and a
 
 - 2026-10-09T23:29:33Z (materials-26.04): Diagnosis 2026-10-09 from the owner's crop (edges flat, material layered): three parallel constant-width features (12 px bevel band, inset ring line, hard silhouette) with nothing varying across the band. Cause: stage 4's path h / -t.z lengthens as the bevel normal tilts by about as much as the thinning shortens it, so at the live active look (att #4c563a over 9 px, thickness 31.2) the bevel transmits 2e-4 at face, mid and silhouette alike; the k=2 profile and reflection 0.6 act only through Schlick f0 1.5 % on the last 1-2 px. The ring's bevel spill is beam-only, so at rest line and band never touch. Next milestone: side-exit attenuation (path clipped at the side wall) and resting ring spill, spiked first on the live looks.
 - 2026-10-09T23:32:48Z (materials-26.04): Correction 2026-10-09: the milestone's first candidate is an attenuation-tinted edge light at the rim (material-f72d5c), not a side-exit path; the resting ring spill (material-58a1a1) stands.
+- 2026-11-07T22:02:58Z (materials-26.04): origin backfill (tasks-0dfdf9): stage 1 unavailable (created 2026-10-02 before tasks-053e89); traced via claude-code:83185704-f448-42a6-ac20-8857595bdb59 L9 user prompt asking to organize material into parallel core goals combined with agent 2026-10-02-workstreams-brief.md -> origin=mixed
