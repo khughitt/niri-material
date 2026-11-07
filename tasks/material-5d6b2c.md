@@ -6,10 +6,11 @@ priority: 1
 complexity: high
 lane: true
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-03T16:48:07Z
+updated: 2026-11-07T22:02:35Z
 depends: []
 tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
+origin: mixed
 ---
 
 Make the GPU, CPU and memory cost of material rendering explicit so visual trade-offs can be chosen from measurements. First milestone: finish the remaining settle lifecycle evidence under material-f86183, then run a bounded cost pilot under material-31074f; material-233295 needs no quiet host.
