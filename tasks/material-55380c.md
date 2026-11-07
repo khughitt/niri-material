@@ -7,12 +7,13 @@ size: m
 complexity: high
 process: planned
 created: 2026-10-14T10:41:49Z
-updated: 2026-10-17T02:03:08Z
+updated: 2026-11-07T22:02:19Z
 depends: []
 parent: material-3aa1f2
 tags: []
 source: docs/notes/2026-10-14-noctalia-material-brief.md
 agent: codex
+origin: agent
 ---
 
 Make the bar and panels visually coherent with the window material. First milestone: identify one representative panel and the smallest comparison using existing layer effects before deciding whether a material render pass is needed.
