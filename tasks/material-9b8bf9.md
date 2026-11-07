@@ -7,12 +7,13 @@ size: l
 complexity: high
 process: planned
 created: 2026-09-29T22:06:32Z
-updated: 2026-10-02T23:07:57Z
+updated: 2026-11-07T22:03:36Z
 depends: []
 parent: material-6f606b
 tags: [signals, sources]
 source: docs/notes/2026-09-29-signal-sources-brief.md
 agent: codex
+origin: agent
 ---
 
 Goal: decide how terminal events, audio activity, privacy state and ambient lighting should feed the existing material signal contract. Handoff: docs/notes/2026-09-29-signal-sources-brief.md. Begin with a bounded terminal transport and window-mapping investigation. Done: each member has a reviewed design and verified delivery, or an explicit shelf/drop disposition. This goal does not authorize changing other repositories or deploying watchers.
