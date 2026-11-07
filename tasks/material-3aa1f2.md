@@ -5,11 +5,12 @@ status: todo
 priority: 2
 lane: true
 created: 2026-10-02T23:07:45Z
-updated: 2026-10-06T21:17:04Z
+updated: 2026-11-07T22:01:33Z
 depends: []
 tags: [material]
 source: docs/notes/2026-10-02-workstreams-brief.md
 agent: claude-code/claude-opus-5-5
+origin: mixed
 ---
 
 Develop material layers and composition from concrete consumers, keeping a shared layer stack a hypothesis until a second consumer fits. Noise placement (material-cf32e5) is merged; the current milestones are noise layers (material-3fcba2) with single-layer pixel identity preserved, and the smallest embedded reading-texture proof (material-56f91a).
