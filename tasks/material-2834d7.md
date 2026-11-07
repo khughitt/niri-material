@@ -5,11 +5,12 @@ status: todo
 priority: 1
 lane: true
 created: 2026-10-02T23:07:45Z
-updated: 2026-10-03T16:48:07Z
+updated: 2026-11-07T22:01:02Z
 depends: []
 tags: [harness]
 source: docs/notes/2026-10-02-workstreams-brief.md
 agent: claude-code/claude-opus-5-5
+origin: mixed
 ---
 
 Quiet-host captures block whole efforts, while most visual checks need only deterministic pixels. First milestone: shared frozen-time helpers (material-3a17b8) and one visual check migrated onto them (material-22d78f).
