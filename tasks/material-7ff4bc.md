@@ -7,12 +7,13 @@ size: m
 complexity: high
 process: direct
 created: 2026-10-06T20:44:04Z
-updated: 2026-10-06T20:44:04Z
+updated: 2026-11-07T22:03:21Z
 depends: []
 parent: material-2834d7
 tags: [harness]
 source: docs/notes/2026-10-06-render-anomalies-brief.md
 agent: codex
+origin: agent
 ---
 
 Establish reproducible causes for the renderer's GL error signature and the backdrop grain's dark-channel lift before choosing fixes. First milestone: isolate each observation using preserved journal provenance and deterministic controls; do not infer a shared cause from two rendering symptoms.
