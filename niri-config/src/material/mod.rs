@@ -300,6 +300,12 @@ pub struct Response {
     #[knuffel(child, unwrap(argument))]
     pub ring_beam_decay: Option<FloatOrInt<0, 20000>>,
     #[knuffel(child, unwrap(argument))]
+    pub view_tilt: Option<FloatOrInt<0, 20>>,
+    #[knuffel(child, unwrap(argument))]
+    pub view_tilt_settle: Option<FloatOrInt<100, 5000>>,
+    #[knuffel(child, unwrap(argument))]
+    pub view_distance: Option<Milli<1500, 50000>>,
+    #[knuffel(child, unwrap(argument))]
     pub ring_width: Option<FloatOrInt<0, 128>>,
     #[knuffel(child, unwrap(argument, str))]
     pub focus: Option<FocusResponse>,
@@ -334,6 +340,9 @@ pub fn response_fields() -> &'static [&'static str] {
         "ring-beam-noise",
         "ring-beam-noise-hz",
         "ring-beam-decay",
+        "view-tilt",
+        "view-tilt-settle",
+        "view-distance",
         "ring-width",
         "focus",
         "ring-color",
@@ -375,6 +384,14 @@ pub struct ResolvedResponse {
     /// Distance along the beam line over which the comet darkens, px;
     /// zero is no decay.
     pub ring_beam_decay: f64,
+    /// Peak angle of the rigid tilt on focus gain, degrees; zero is no swing
+    /// (design 2026-10-09 §3.1).
+    pub view_tilt: f64,
+    /// How long the swing runs, ms.
+    pub view_tilt_settle: f64,
+    /// κ: the camera's distance in multiples of the pane's extent along the
+    /// swing (design 2026-10-09 §3.2).
+    pub view_distance: f64,
 }
 
 impl Default for ResolvedResponse {
@@ -397,6 +414,9 @@ impl Default for ResolvedResponse {
             ring_beam_noise: 0.,
             ring_beam_noise_hz: 3.,
             ring_beam_decay: 0.,
+            view_tilt: 0.,
+            view_tilt_settle: 900.,
+            view_distance: 6.,
         }
     }
 }
@@ -429,6 +449,11 @@ impl ResolvedResponse {
             ring_beam_decay: response
                 .ring_beam_decay
                 .map_or(base.ring_beam_decay, |x| x.0),
+            view_tilt: response.view_tilt.map_or(base.view_tilt, |x| x.0),
+            view_tilt_settle: response
+                .view_tilt_settle
+                .map_or(base.view_tilt_settle, |x| x.0),
+            view_distance: response.view_distance.map_or(base.view_distance, |x| x.0),
         }
     }
 

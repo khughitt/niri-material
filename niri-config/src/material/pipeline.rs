@@ -300,6 +300,10 @@ const RING_RESPONSES: &[&str] = &[
 /// count; a ripple raises jelly activity (the ripple normal, the ring glow).
 const IMPULSE_RESPONSES: &[&str] = &["ping", "done", "error"];
 
+/// The rigid tilt's keys: they move the slab's frame, so the slab stage reads
+/// them (design 2026-10-09 §3.3).
+const VIEW_RESPONSES: &[&str] = &["view-tilt", "view-tilt-settle", "view-distance"];
+
 /// Section 1 of the design, in pipeline order, corrected against the signal
 /// code: impulse-driven and presence-driven stages are animated and list the
 /// responses that drive them, and every taps stage reads the prefilter controls.
@@ -357,7 +361,7 @@ pub static STAGES: &[Stage] = &[
             "jelly-flex",
             "thickness",
         ],
-        &[],
+        VIEW_RESPONSES,
         None,
         true,
     ),
@@ -858,6 +862,9 @@ mod tests {
             ring_beam_noise: _,
             ring_beam_noise_hz: _,
             ring_beam_decay: _,
+            view_tilt: _,
+            view_tilt_settle: _,
+            view_distance: _,
             ring_width: _,
             focus: _,
             ring_color: _,
@@ -882,6 +889,9 @@ mod tests {
             ("ring-beam-noise", "ring-beam-noise 0.2"),
             ("ring-beam-noise-hz", "ring-beam-noise-hz 2"),
             ("ring-beam-decay", "ring-beam-decay 2000"),
+            ("view-tilt", "view-tilt 10"),
+            ("view-tilt-settle", "view-tilt-settle 900"),
+            ("view-distance", "view-distance 6"),
             ("ring-width", "ring-width 2"),
             ("focus", "focus \"ring-light\""),
             ("ring-color", "ring-color \"#ffffff\""),

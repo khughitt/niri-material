@@ -1557,6 +1557,30 @@ impl<W: LayoutElement> Monitor<W> {
             .filter(move |(_ws, geo)| !cull || geo.intersection(output_geo).is_some())
     }
 
+    /// The centre of `window`'s tile in output-local logical coordinates, as it renders now:
+    /// the tile's animated position and size in its workspace, then the workspace's render
+    /// position and the overview zoom, as `window_under` inverts. `None` if its workspace is
+    /// culled.
+    pub fn tile_centre_on_output(&self, window: &W::Id) -> Option<Point<f64, Logical>> {
+        let zoom = self.overview_zoom();
+        self.workspaces_with_render_geo().find_map(|(ws, geo)| {
+            ws.tiles_with_render_positions()
+                .find(|(tile, _, _)| tile.window().id() == window)
+                .map(|(tile, pos, _)| {
+                    let centre = pos + tile.animated_tile_size().downscale(2.).to_point();
+                    geo.loc + centre.upscale(zoom)
+                })
+        })
+    }
+
+    /// The tile of `window` on any of this monitor's workspaces.
+    pub fn tile_mut(&mut self, window: &W::Id) -> Option<&mut Tile<W>> {
+        self.workspaces
+            .iter_mut()
+            .flat_map(Workspace::tiles_mut)
+            .find(|tile| tile.window().id() == window)
+    }
+
     pub fn workspace_under(
         &self,
         pos_within_output: Point<f64, Logical>,

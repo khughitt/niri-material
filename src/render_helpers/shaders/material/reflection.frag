@@ -16,6 +16,13 @@ vec3 reflection_specular(vec3 specular, Surface s) {
     float lb = length(bent);
     vec2 dir = lb > 0.0001 ? bent / lb : s.acrossDir;
     float reach = -s.outerDist + mat_thickness;
+#ifdef MATERIAL_VIEW
+    vec2 at = s.v + dir * reach / mat_area_size;
+    if (g_view_on)
+        at += viewScreenShift(vec3(s.p + dir * reach, -mat_thickness)) / mat_area_size;
+    vec3 scene = srgbToLinear(sampleBackground(at));
+#else
     vec3 scene = srgbToLinear(sampleBackground(s.v + dir * reach / mat_area_size));
+#endif
     return specular + s.fresnel * wr * scene;
 }

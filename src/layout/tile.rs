@@ -3,6 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::Duration;
 
+use glam::DVec2;
 use niri_config::utils::MergeWith as _;
 use niri_config::{
     Color, CornerRadius, GradientInterpolation, MaterialRef, ResolvedGlass, ResolvedResponse,
@@ -30,11 +31,12 @@ use crate::render_helpers::clipped_surface::{ClippedSurfaceRenderElement, Rounde
 use crate::render_helpers::damage::ExtraDamage;
 use crate::render_helpers::material::optics::{self, OpticFrame};
 use crate::render_helpers::material::ring::{self, BeamFrame};
+use crate::render_helpers::material::view::{self, SwingFrom, ViewPose};
 use crate::render_helpers::material::{
-    apply_resolved, background_mapping, bevel_depth, glass_signal_inputs, jelly_state,
-    material_frame, GlassSignalFingerprint, GlassSignalInputs, InputFingerprint, JellyFingerprint,
-    JellyUniforms, MaterialFrame, MaterialRenderConfig, MaterialRenderElement, MaterialState,
-    SignalUniforms,
+    apply_resolved, background_mapping, bevel_depth, drawn_area, glass_signal_inputs, jelly_state,
+    material_frame, ElementView, GlassSignalFingerprint, GlassSignalInputs, InputFingerprint,
+    JellyFingerprint, JellyUniforms, MaterialFrame, MaterialRenderConfig, MaterialRenderElement,
+    MaterialState, SignalUniforms,
 };
 use crate::render_helpers::offscreen::{OffscreenBuffer, OffscreenRenderElement};
 use crate::render_helpers::renderer::NiriRenderer;
@@ -142,12 +144,16 @@ pub struct Tile<W: LayoutElement> {
     signal_target: Option<(f32, Option<[f32; 3]>)>,
     signal_frame_cache: RefCell<Option<(EffectiveSignal, FrameInputs)>>,
     signal_render_visible: bool,
+    /// Whether the swing's footprint was in view at the last `update_render_elements`: what
+    /// keeps a running swing on the animation loop (design 2026-10-09 §5.1 "Hidden panes").
+    view_swing_visible: bool,
     /// Whether this tile was active at the last `update_render_elements`.
     active: bool,
     /// The input-activity gate at the last `update_render_elements` (design 2026-09-18 §3).
     input_active: bool,
     focus_crossfade: Option<FocusCrossfade>,
     focus_beam: Option<FocusBeam>,
+    view_swing: Option<ViewSwing>,
 
     /// Configurable properties of the layout.
     pub(super) options: Rc<Options>,
@@ -342,6 +348,8 @@ struct MaterialDynamics {
     glass_signal_fingerprint: GlassSignalFingerprint,
     glass_signal: GlassSignalInputs,
     optics: Vec<smithay::backend::renderer::gles::Uniform<'static>>,
+    /// This frame's pose of the rigid tilt; `None` at rest (design 2026-10-09 §6 "Commit").
+    view: Option<ViewPose>,
 }
 
 /// One point of the signal crossfade.
@@ -462,6 +470,52 @@ impl FocusBeam {
     }
 }
 
+/// The rigid tilt's swing on focus gain (design 2026-10-09 §3, §5). Everything is snapshotted
+/// at the start, so a reload or a material swap mid-run does not move the pane; the `Layout`
+/// starts it, never the tile's own focus flag.
+#[derive(Debug)]
+struct ViewSwing {
+    /// Start instant on the unadjusted clock.
+    started: Duration,
+    /// Peak angle, degrees.
+    peak: f64,
+    settle: Duration,
+    /// κ.
+    kappa: f64,
+    /// Unit direction in output-local logical coordinates.
+    dir: DVec2,
+}
+
+impl ViewSwing {
+    fn elapsed(&self, clock: &Clock) -> Duration {
+        clock.now_unadjusted().saturating_sub(self.started)
+    }
+
+    fn is_done(&self, clock: &Clock) -> bool {
+        clock.should_complete_instantly() || self.elapsed(clock) >= self.settle
+    }
+
+    /// The pose now; `None` once done, and on the frames where the curve is exactly zero.
+    fn pose(&self, clock: &Clock) -> Option<ViewPose> {
+        if self.is_done(clock) {
+            return None;
+        }
+        ViewPose::at(
+            self.peak,
+            self.settle,
+            self.elapsed(clock),
+            self.dir,
+            self.kappa,
+        )
+    }
+}
+
+/// A swing's direction with no usable origin: the pane's own seed keeps two panes apart, and
+/// the start instant keeps one pane's successive fallbacks from repeating.
+fn fallback_direction(material: &MaterialState, started: Duration) -> [f64; 2] {
+    view::seeded_direction(material.jelly_seed()[0].to_bits() ^ started.as_millis() as u32)
+}
+
 impl<W: LayoutElement> Tile<W> {
     pub fn new(
         window: W,
@@ -507,10 +561,12 @@ impl<W: LayoutElement> Tile<W> {
             signal_target: Some((0., None)),
             signal_frame_cache: RefCell::new(None),
             signal_render_visible: false,
+            view_swing_visible: false,
             active: false,
             input_active: true,
             focus_crossfade: None,
             focus_beam: None,
+            view_swing: None,
             options,
         }
     }
@@ -546,6 +602,7 @@ impl<W: LayoutElement> Tile<W> {
             }
         }
         self.cut_beam_if_forbidden();
+        self.cut_view_swing_if_forbidden();
 
         let round_max1 = |logical| round_logical_in_physical_max1(self.scale, logical);
 
@@ -582,6 +639,7 @@ impl<W: LayoutElement> Tile<W> {
         let resolved = resolve_material(self.window.rules().material.as_ref(), &self.options);
         apply_resolved(&mut self.material, resolved.as_ref());
         self.cut_beam_if_forbidden();
+        self.cut_view_swing_if_forbidden();
     }
 
     /// Crossfaded focus, 0 to 1.
@@ -592,14 +650,17 @@ impl<W: LayoutElement> Tile<W> {
             .unwrap_or(if self.active { 1. } else { 0. })
     }
 
-    /// Whether the policy and response allow the ring's beam to move at
-    /// all: `focus ring-light`, `motion full`, animations on. This is the
-    /// cut rule's test (design §1); it says nothing about the speed, which
-    /// is snapshotted per beam.
-    fn beam_allowed(&self, response: &ResolvedResponse) -> bool {
-        response.focus == niri_config::FocusResponse::RingLight
-            && self.options.signal.motion == niri_config::SignalMotionPolicy::Full
+    /// Whether the policy allows motion at all: `motion full`, animations on.
+    fn motion_allowed(&self) -> bool {
+        self.options.signal.motion == niri_config::SignalMotionPolicy::Full
             && !self.options.animations.off
+    }
+
+    /// Whether the policy and response allow the ring's beam to move at all: `focus
+    /// ring-light` and `motion_allowed`. This is the cut rule's test (design §1); it says
+    /// nothing about the speed, which is snapshotted per beam.
+    fn beam_allowed(&self, response: &ResolvedResponse) -> bool {
+        response.focus == niri_config::FocusResponse::RingLight && self.motion_allowed()
     }
 
     /// Start eligibility: allowed, and the response asks for a beam.
@@ -619,6 +680,83 @@ impl<W: LayoutElement> Tile<W> {
         if !allowed {
             self.focus_beam = None;
         }
+    }
+
+    /// Starts the swing for a focus gain the `Layout` observed (design 2026-10-09 §5). Nothing
+    /// happens without a material, at `view-tilt 0`, when motion is not allowed, on an
+    /// ineligible tile, or while a swing runs: a pane refocused mid-swing finishes the swing it
+    /// has.
+    pub fn start_view_swing(&mut self, from: SwingFrom) {
+        if self
+            .view_swing
+            .as_ref()
+            .is_some_and(|swing| !swing.is_done(&self.clock))
+        {
+            return;
+        }
+        let Some(material) = &self.material else {
+            return;
+        };
+        let response = material.material().response(None);
+        if response.view_tilt <= 0. || !self.motion_allowed() || !self.view_swing_eligible() {
+            return;
+        }
+        let started = self.clock.now_unadjusted();
+        let dir = match from {
+            SwingFrom::Origin(dir) => dir,
+            SwingFrom::Fallback => fallback_direction(material, started),
+        };
+        self.view_swing = Some(ViewSwing {
+            started,
+            peak: response.view_tilt,
+            settle: Duration::from_secs_f64(response.view_tilt_settle / 1000.),
+            kappa: response.view_distance,
+            dir: DVec2::from(dir),
+        });
+    }
+
+    /// What §5 asks of the tile itself: not fullscreen or opening, border and focus ring off,
+    /// and a background effect that does not draw.
+    fn view_swing_eligible(&self) -> bool {
+        !self.sizing_mode.is_fullscreen()
+            && self.fullscreen_progress() == 0.
+            && self.open_animation.is_none()
+            && self.border.is_off()
+            && self.focus_ring.is_off()
+            && !self.window.background_effect_visible()
+    }
+
+    /// Cut rule for the swing: it ends at rest the moment motion is no longer allowed. A reload
+    /// that only changes `view-tilt` or `view-distance` leaves a running swing on its snapshot.
+    fn cut_view_swing_if_forbidden(&mut self) {
+        if !self.motion_allowed() {
+            self.view_swing = None;
+        }
+    }
+
+    /// This frame's pose: the frozen renders' forced one, else the running swing's.
+    pub(crate) fn view_pose(&self) -> Option<ViewPose> {
+        #[cfg(test)]
+        if let Some(pose) = view::hooks::POSE.with(std::cell::Cell::get) {
+            return Some(pose);
+        }
+        self.view_swing
+            .as_ref()
+            .and_then(|swing| swing.pose(&self.clock))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn view_swing_start(&self) -> Option<(Duration, [f64; 2])> {
+        self.view_swing
+            .as_ref()
+            .map(|swing| (swing.started, swing.dir.to_array()))
+    }
+
+    /// The direction a fallback swing started at `started` takes on this tile, so layout tests
+    /// can tell a fallback from an origin direction.
+    #[cfg(test)]
+    pub(crate) fn fallback_direction_at(&self, started: Duration) -> [f64; 2] {
+        fallback_direction(self.material.as_ref().expect("a glass tile"), started)
     }
 
     /// Stage 1 plus crossfade bookkeeping. Returns the effective signal and
@@ -836,6 +974,8 @@ impl<W: LayoutElement> Tile<W> {
             glass_signal_fingerprint: GlassSignalFingerprint::quantize(&glass_signal),
             glass_signal,
             optics,
+            // A slab with no extent along the swing has no camera: it draws at rest.
+            view: self.view_pose().filter(|pose| frame.carries(pose)),
         }
     }
 
@@ -1049,6 +1189,14 @@ impl<W: LayoutElement> Tile<W> {
         {
             self.focus_beam = None;
         }
+
+        if self
+            .view_swing
+            .as_ref()
+            .is_some_and(|swing| swing.is_done(&self.clock))
+        {
+            self.view_swing = None;
+        }
     }
 
     /// Everything that needs another frame. The beam lives here and not in
@@ -1058,6 +1206,7 @@ impl<W: LayoutElement> Tile<W> {
     /// which a 16–24 s run must not hold up (design 2026-09-19 §2).
     /// The drag follower lives here for the same reason: it is cosmetic and must
     /// not hold up pointer focus after a drop.
+    /// The swing lives here for the same reason (design 2026-10-09 §5.1 "Hidden panes").
     pub fn are_animations_ongoing(&self) -> bool {
         self.are_transitions_ongoing()
             || self.has_drag_follower()
@@ -1067,6 +1216,11 @@ impl<W: LayoutElement> Tile<W> {
                     .focus_beam
                     .as_ref()
                     .is_some_and(|beam| !beam.is_done(&self.clock))
+            || self.view_swing_visible
+                && self
+                    .view_swing
+                    .as_ref()
+                    .is_some_and(|swing| !swing.is_done(&self.clock))
     }
 
     pub fn are_transitions_ongoing(&self) -> bool {
@@ -1096,6 +1250,7 @@ impl<W: LayoutElement> Tile<W> {
 
     pub fn clear_signal_render_visibility(&mut self) {
         self.signal_render_visible = false;
+        self.view_swing_visible = false;
     }
 
     /// `screen_view` is the output's area in this tile's coordinates, `None`
@@ -1160,6 +1315,15 @@ impl<W: LayoutElement> Tile<W> {
                 )
             })
         });
+        // A swing draws its footprint, which can reach the view while the resting slab does
+        // not: the lifted wall of a pane just off the edge (design 2026-10-09 §5.1 "Hidden
+        // panes"). The resting test still covers the swing's first frame, whose pose is rest.
+        self.view_swing_visible = self.signal_render_visible
+            || screen_view.is_some_and(|view| {
+                self.view_pose()
+                    .and_then(|pose| self.swing_footprint(Point::default(), pose))
+                    .is_some_and(|drawn| drawn.overlaps(view))
+            });
 
         let rules = self.window.rules();
         let animated_tile_size = self.animated_tile_size();
@@ -1977,6 +2141,12 @@ impl<W: LayoutElement> Tile<W> {
                                             let backdrop = backdrop.borrow();
                                             (backdrop.id().clone(), backdrop.commit())
                                         };
+                                        let view = dynamics.view.map(|pose| ElementView {
+                                            pose,
+                                            crop: ctx.signal_ticks.as_ref().map(|sink| sink.view),
+                                            wall_spill: view::wall_spill(),
+                                            grow: view::quad_grow(),
+                                        });
                                         let inputs = InputFingerprint {
                                             window: offscreen_elem.current_commit(),
                                             background_id,
@@ -1990,6 +2160,7 @@ impl<W: LayoutElement> Tile<W> {
                                             signal: dynamics.signal_fingerprint,
                                             glass_signal: dynamics.glass_signal_fingerprint,
                                             optics: dynamics.optics.clone(),
+                                            view,
                                         };
 
                                         let mat_elem = material.element(
@@ -1999,6 +2170,7 @@ impl<W: LayoutElement> Tile<W> {
                                             dynamics.signal_uniforms,
                                             dynamics.glass_signal,
                                             dynamics.optics,
+                                            view,
                                             self.scale,
                                             win_alpha,
                                             ctx.target,
@@ -2154,6 +2326,12 @@ impl<W: LayoutElement> Tile<W> {
                                     let backdrop = backdrop.borrow();
                                     (backdrop.id().clone(), backdrop.commit())
                                 };
+                                let view = dynamics.view.map(|pose| ElementView {
+                                    pose,
+                                    crop: ctx.signal_ticks.as_ref().map(|sink| sink.view),
+                                    wall_spill: view::wall_spill(),
+                                    grow: view::quad_grow(),
+                                });
                                 let inputs = InputFingerprint {
                                     window: offscreen_elem.current_commit(),
                                     background_id,
@@ -2167,6 +2345,7 @@ impl<W: LayoutElement> Tile<W> {
                                     signal: dynamics.signal_fingerprint,
                                     glass_signal: dynamics.glass_signal_fingerprint,
                                     optics: dynamics.optics.clone(),
+                                    view,
                                 };
 
                                 let elem = material.element(
@@ -2176,6 +2355,7 @@ impl<W: LayoutElement> Tile<W> {
                                     dynamics.signal_uniforms,
                                     dynamics.glass_signal,
                                     dynamics.optics,
+                                    view,
                                     self.scale,
                                     win_alpha,
                                     ctx.target,
@@ -2352,6 +2532,11 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(open) = &self.open_animation {
             let mut ctx = ctx.as_gles();
+            // The offscreen draws the tile at (0, 0): move the view the crop takes with it
+            // (design 2026-10-09 §6 "View crop").
+            if let Some(sink) = &mut ctx.signal_ticks {
+                sink.view.loc -= location;
+            }
             let mut elements = Vec::new();
             self.render_inner(
                 ctx.r(),
@@ -2381,6 +2566,11 @@ impl<W: LayoutElement> Tile<W> {
             }
         } else if let Some(alpha) = &self.alpha_animation {
             let mut ctx = ctx.as_gles();
+            // The offscreen draws the tile at (0, 0): move the view the crop takes with it
+            // (design 2026-10-09 §6 "View crop").
+            if let Some(sink) = &mut ctx.signal_ticks {
+                sink.view.loc -= location;
+            }
             let mut elements = Vec::new();
             self.render_inner(
                 ctx.r(),
@@ -2508,6 +2698,13 @@ impl<W: LayoutElement> Tile<W> {
             view.loc - Point::from((margin, margin)),
             Size::from((view.size.w + 2. * margin, view.size.h + 2. * margin)),
         );
+        // A swing draws its footprint, which contains the buffers (design 2026-10-09 §6).
+        if let Some(drawn) = self
+            .view_pose()
+            .and_then(|pose| self.swing_footprint(location, pose))
+        {
+            return !drawn.overlaps(view);
+        }
         let bevel = material.material().glass.bevel;
         let size = self.tile_size();
         let bobbed = location + self.bob_offset();
@@ -2516,6 +2713,33 @@ impl<W: LayoutElement> Tile<W> {
         !(slab_in_view(location, size, bevel, view)
             || slab_in_view(bobbed, size, bevel, view)
             || buffers.overlaps(view))
+    }
+
+    /// The swing's drawn area for a tile at `location` (design 2026-10-09 §6), from the
+    /// window's buffers, as `material_out_of_view` bounds the resting body. `None` without a
+    /// material, or for a slab that carries no swing, which draws at rest.
+    fn swing_footprint(
+        &self,
+        location: Point<f64, Logical>,
+        pose: ViewPose,
+    ) -> Option<Rectangle<f64, Logical>> {
+        let material = self.material.as_ref()?;
+        let bobbed = location + self.bob_offset();
+        let bbox = self.window.buf_bbox().to_f64();
+        let buffers = Rectangle::new(bobbed + self.window_loc() + bbox.loc, bbox.size);
+        let win = Rectangle::new(bobbed + self.window_loc(), self.animated_window_size());
+        let glass = &material.material().glass;
+        let frame = material_frame(win, buffers, glass, self.scale);
+        if !frame.carries(&pose) {
+            return None;
+        }
+        let view = ElementView {
+            pose,
+            crop: None,
+            wall_spill: 1.,
+            grow: 0.,
+        };
+        Some(drawn_area(&frame, Some(&view), glass.thickness, self.scale))
     }
 
     pub fn store_unmap_snapshot_if_empty(
@@ -2705,10 +2929,13 @@ impl<W: LayoutElement> Tile<W> {
 mod tests {
     use std::collections::HashMap;
 
+    use glam::DVec2;
+
     use super::*;
     use crate::animation::Clock;
     use crate::layout::tests::{TestWindow, TestWindowParams};
     use crate::render_helpers::material::optics::{self, OpticFrame};
+    use crate::render_helpers::material::view::SwingFrom;
     use crate::window::ResolvedWindowRules;
 
     fn options_for(glass: niri_config::ResolvedGlass, blur: niri_config::Blur) -> Options {
@@ -4281,5 +4508,416 @@ mod tests {
         assert_eq!(beam_uniforms(&ended), [0., 0., 0.]);
         tile.advance_animations();
         assert_eq!(beam_of(&tile), None);
+    }
+
+    fn swing_response() -> niri_config::ResolvedResponse {
+        niri_config::ResolvedResponse {
+            view_tilt: 10.,
+            view_tilt_settle: 900.,
+            view_distance: 6.,
+            ring_beam_speed: 0.,
+            ..Default::default()
+        }
+    }
+
+    /// `beam_tile` with the focus ring off, which a swing needs (design 2026-10-09 §5).
+    fn swing_tile(response: niri_config::ResolvedResponse, clock: Clock) -> Tile<TestWindow> {
+        swing_tile_with(flat_glass(), response, clock)
+    }
+
+    fn swing_tile_with(
+        glass: niri_config::ResolvedGlass,
+        response: niri_config::ResolvedResponse,
+        clock: Clock,
+    ) -> Tile<TestWindow> {
+        let mut tile = beam_tile(glass, response, clock);
+        let mut options = (*tile.options).clone();
+        options.layout.focus_ring.off = true;
+        tile.update_config(tile.view_size, tile.scale, Rc::new(options));
+        tile
+    }
+
+    fn pose_of(tile: &Tile<TestWindow>) -> Option<crate::render_helpers::material::view::ViewPose> {
+        render_dynamics(tile, 400., 300.).view
+    }
+
+    #[test]
+    fn the_swing_runs_its_curve_and_settles_to_exact_rest() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile(swing_response(), clock.clone());
+        tile.update_render_elements(false, true, Some(view), view);
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        assert_eq!(
+            pose_of(&tile),
+            None,
+            "the first frame is rest: the curve starts at 0"
+        );
+        assert!(tile.are_animations_ongoing());
+        assert!(
+            !tile.are_transitions_ongoing(),
+            "a swing is not a layout transition"
+        );
+
+        clock.set_unadjusted(secs(0.9 * 0.190381));
+        tile.update_render_elements(false, true, Some(view), view);
+        let peak = pose_of(&tile).unwrap();
+        assert!((peak.theta - 10f64.to_radians()).abs() < 1e-6 && (peak.weight - 1.).abs() < 1e-6);
+        assert_eq!((peak.dir, peak.kappa), (DVec2::X, 6.));
+
+        clock.set_unadjusted(secs(0.9 * 0.636));
+        tile.update_render_elements(false, true, Some(view), view);
+        assert!(pose_of(&tile).unwrap().theta < 0., "the overshoot");
+
+        clock.set_unadjusted(secs(0.9));
+        tile.update_render_elements(false, true, Some(view), view);
+        assert_eq!(pose_of(&tile), None);
+        tile.advance_animations();
+        assert_eq!(tile.view_swing_start(), None);
+
+        // Settled: no clock, no deadline, and the same fingerprint inputs at every later
+        // instant (design §8.2).
+        let settled = |tile: &Tile<TestWindow>| {
+            let d = render_dynamics(tile, 400., 300.);
+            (
+                d.jelly_fingerprint,
+                d.signal_fingerprint,
+                d.glass_signal_fingerprint,
+                d.optics,
+                d.view,
+            )
+        };
+        let first = settled(&tile);
+        for t in [1.0, 1.5, 3.0, 10.0] {
+            clock.set_unadjusted(secs(t));
+            tile.update_render_elements(false, true, Some(view), view);
+            tile.advance_animations();
+            assert!(!tile.are_animations_ongoing(), "at {t}");
+            assert_eq!(
+                tile.tick_deadline(Point::default(), view, secs(t)),
+                None,
+                "at {t}"
+            );
+            assert_eq!(settled(&tile), first, "fingerprint inputs moved at {t}");
+        }
+    }
+
+    #[test]
+    fn a_refocus_mid_swing_finishes_the_swing_it_has() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile(swing_response(), clock.clone());
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        clock.set_unadjusted(secs(0.5));
+        tile.start_view_swing(SwingFrom::Origin([0., 1.]));
+        assert_eq!(
+            tile.view_swing_start(),
+            Some((Duration::ZERO, [1., 0.])),
+            "no restart"
+        );
+        clock.set_unadjusted(secs(1.0));
+        tile.start_view_swing(SwingFrom::Origin([0., 1.]));
+        assert_eq!(
+            tile.view_swing_start(),
+            Some((secs(1.0), [0., 1.])),
+            "a new gain after the end"
+        );
+    }
+
+    #[test]
+    fn focus_loss_lets_the_swing_finish() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile(swing_response(), clock.clone());
+        tile.update_render_elements(true, true, Some(view), view);
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        tile.update_render_elements(false, true, Some(view), view);
+        assert!(
+            tile.view_swing_start().is_some(),
+            "the loss does not cut the swing"
+        );
+
+        // It runs on the now-unfocused pane, then ends on time (design §5.1).
+        clock.set_unadjusted(secs(0.9 * 0.190381));
+        tile.update_render_elements(false, true, Some(view), view);
+        tile.advance_animations();
+        assert!(pose_of(&tile).is_some(), "still swinging after the loss");
+        clock.set_unadjusted(secs(1.0));
+        tile.update_render_elements(false, true, Some(view), view);
+        tile.advance_animations();
+        assert_eq!(tile.view_swing_start(), None, "the swing finished");
+        assert_eq!(pose_of(&tile), None);
+        assert!(!tile.are_animations_ongoing(), "nothing animates from it");
+    }
+
+    #[test]
+    fn a_material_with_no_ring_still_swings() {
+        let response = niri_config::ResolvedResponse {
+            focus: niri_config::FocusResponse::None,
+            ..swing_response()
+        };
+        let mut tile = swing_tile(response, Clock::with_time(Duration::ZERO));
+        tile.start_view_swing(SwingFrom::Fallback);
+        assert!(tile.view_swing_start().is_some());
+    }
+
+    #[test]
+    fn no_swing_at_zero_tilt_or_on_an_ineligible_tile() {
+        let zero = niri_config::ResolvedResponse {
+            view_tilt: 0.,
+            ..swing_response()
+        };
+        let mut tile = swing_tile(zero, Clock::with_time(Duration::ZERO));
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        assert_eq!(tile.view_swing_start(), None, "view-tilt 0");
+
+        let ring_on = beam_tile(
+            flat_glass(),
+            swing_response(),
+            Clock::with_time(Duration::ZERO),
+        );
+        let mut ring_on = ring_on;
+        ring_on.start_view_swing(SwingFrom::Origin([1., 0.]));
+        assert_eq!(ring_on.view_swing_start(), None, "the focus ring is on");
+
+        let mut bordered = swing_tile(swing_response(), Clock::with_time(Duration::ZERO));
+        let mut options = (*bordered.options).clone();
+        options.layout.border.off = false;
+        bordered.update_config(bordered.view_size, bordered.scale, Rc::new(options));
+        bordered.start_view_swing(SwingFrom::Origin([1., 0.]));
+        assert_eq!(bordered.view_swing_start(), None, "the border is on");
+    }
+
+    #[test]
+    fn an_opening_tile_takes_no_swing() {
+        let mut tile = swing_tile(swing_response(), Clock::with_time(Duration::ZERO));
+        tile.start_open_animation();
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        assert_eq!(tile.view_swing_start(), None);
+    }
+
+    #[test]
+    fn reduced_motion_and_animations_off_forbid_and_cut_the_swing() {
+        for (policy, animations_off) in [
+            (niri_config::SignalMotionPolicy::Reduced, false),
+            (niri_config::SignalMotionPolicy::Off, false),
+            (niri_config::SignalMotionPolicy::Full, true),
+        ] {
+            let label = format!("{policy:?} animations_off={animations_off}");
+            let mut clock = Clock::with_time(Duration::ZERO);
+            let mut tile = swing_tile(swing_response(), clock.clone());
+            tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+            assert!(
+                tile.view_swing_start().is_some(),
+                "{label}: starts under full"
+            );
+            clock.set_unadjusted(secs(0.1));
+
+            let mut options = (*tile.options).clone();
+            options.signal.motion = policy;
+            options.animations.off = animations_off;
+            tile.update_config(tile.view_size, tile.scale, Rc::new(options));
+            assert_eq!(tile.view_swing_start(), None, "{label}: cut to rest");
+            assert_eq!(pose_of(&tile), None, "{label}");
+            tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+            assert_eq!(tile.view_swing_start(), None, "{label}: not started");
+        }
+    }
+
+    #[test]
+    fn a_reload_mid_swing_keeps_the_snapshot() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile(swing_response(), clock.clone());
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        let mut options = (*tile.options).clone();
+        let mut material = options.materials["frost"].clone();
+        material.responses[0].1.view_tilt = 0.;
+        material.responses[0].1.view_distance = 50.;
+        options.materials = Rc::new(HashMap::from([(String::from("frost"), material)]));
+        tile.update_config(tile.view_size, tile.scale, Rc::new(options));
+        clock.set_unadjusted(secs(0.9 * 0.190381));
+        let pose = pose_of(&tile).unwrap();
+        assert!(
+            (pose.theta - 10f64.to_radians()).abs() < 1e-6 && pose.kappa == 6.,
+            "{pose:?}"
+        );
+    }
+
+    #[test]
+    fn a_material_swap_mid_swing_keeps_the_snapshot() {
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile(swing_response(), clock.clone());
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        let before = tile.material.as_ref().unwrap().id().clone();
+        // Another definition under the same rule, as an is-focused rule swap gives: a new
+        // MaterialState (apply_resolved rebuilds on a name change), here with no tilt at all.
+        let mut options = (*tile.options).clone();
+        let mut other = options.materials["frost"].clone();
+        other.name = String::from("ice");
+        other.responses[0].1.view_tilt = 0.;
+        options.materials = Rc::new(HashMap::from([(String::from("frost"), other)]));
+        tile.update_config(tile.view_size, tile.scale, Rc::new(options));
+        assert_ne!(
+            tile.material.as_ref().unwrap().id(),
+            &before,
+            "the state was rebuilt"
+        );
+        clock.set_unadjusted(secs(0.9 * 0.190381));
+        let pose = pose_of(&tile).unwrap();
+        assert!((pose.theta - 10f64.to_radians()).abs() < 1e-6, "{pose:?}");
+    }
+
+    #[test]
+    fn fallback_directions_are_unit_and_differ_between_panes() {
+        let clock = Clock::with_time(Duration::ZERO);
+        let mut a = swing_tile(swing_response(), clock.clone());
+        let mut b = swing_tile(swing_response(), clock);
+        a.start_view_swing(SwingFrom::Fallback);
+        b.start_view_swing(SwingFrom::Fallback);
+        let (_, da) = a.view_swing_start().unwrap();
+        let (_, db) = b.view_swing_start().unwrap();
+        assert!((da[0].hypot(da[1]) - 1.).abs() < 1e-12);
+        assert_ne!(da, db, "each pane seeds its own direction");
+        assert_eq!(da, a.fallback_direction_at(Duration::ZERO));
+    }
+
+    #[test]
+    fn the_pose_hook_overrides_the_swing() {
+        use crate::render_helpers::material::view::{hooks, ViewPose};
+        let tile = swing_tile(swing_response(), Clock::with_time(Duration::ZERO));
+        let pose = ViewPose::identity(DVec2::X, 6.);
+        hooks::POSE.with(|hook| hook.set(Some(pose)));
+        assert_eq!(pose_of(&tile), Some(pose));
+        hooks::POSE.with(|hook| hook.set(None));
+        assert_eq!(pose_of(&tile), None);
+    }
+
+    #[test]
+    fn culling_uses_the_footprint_during_a_swing() {
+        use crate::render_helpers::material::view::{hooks, ViewPose};
+        let glass = niri_config::ResolvedGlass {
+            thickness: 31.2,
+            ..Default::default()
+        };
+        let tile = beam_tile(glass, swing_response(), Clock::with_time(Duration::ZERO));
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        // Slide the tile left until its body is culled at rest: it is then within 0.25 px of
+        // the view.
+        let mut x = 0.;
+        while !tile.material_out_of_view(Point::from((x, 100.)), view) {
+            x -= 0.25;
+        }
+        // The positive lobe lifts the right edge toward the camera, and its projection reaches
+        // a few percent of the half-width past its resting place.
+        hooks::POSE.with(|hook| {
+            hook.set(Some(ViewPose {
+                theta: 20f64.to_radians(),
+                dir: DVec2::X,
+                weight: 1.,
+                kappa: 1.5,
+            }))
+        });
+        let culled = tile.material_out_of_view(Point::from((x, 100.)), view);
+        hooks::POSE.with(|hook| hook.set(None));
+        assert!(!culled, "the swing's footprint reaches into the view");
+    }
+
+    #[test]
+    fn a_swing_whose_wall_alone_is_in_view_keeps_animating() {
+        // Plan review round 1: a 100 px pane with bevel 0 and thickness 200 at 20°, κ 6. Its
+        // resting right edge sits 10 px left of the view; the lifted wall reaches 29.8 px into
+        // it. The swing must keep requesting frames while only the wall is visible.
+        let glass = niri_config::ResolvedGlass {
+            bevel: 0.,
+            offset_x: 0.,
+            offset_y: 0.,
+            thickness: 200.,
+            ..Default::default()
+        };
+        let response = niri_config::ResolvedResponse {
+            view_tilt: 20.,
+            view_distance: 6.,
+            ..swing_response()
+        };
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile_with(glass, response, clock.clone());
+        let size = tile.tile_size();
+        assert_eq!(size.w, 100., "the case's pane");
+        let view = Rectangle::new(Point::from((size.w + 10., 0.)), Size::from((1280., 720.)));
+        tile.update_render_elements(true, true, Some(view), view);
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        clock.set_unadjusted(secs(0.9 * 0.190381));
+        tile.update_render_elements(true, true, Some(view), view);
+        let pose = tile.view_pose().unwrap();
+        let reach = tile.swing_footprint(Point::default(), pose).unwrap();
+        let into = reach.loc.x + reach.size.w - view.loc.x;
+        assert!(
+            into > 29.,
+            "the case: the wall reaches {into} px into the view"
+        );
+        assert!(
+            !tile.signal_render_visible,
+            "the case: the resting slab is out of view"
+        );
+        assert!(
+            tile.are_animations_ongoing(),
+            "the swing stopped scheduling frames"
+        );
+        // At rest the same tile is out of view and schedules nothing.
+        clock.set_unadjusted(secs(1.));
+        tile.update_render_elements(true, true, Some(view), view);
+        tile.advance_animations();
+        assert!(!tile.are_animations_ongoing());
+    }
+
+    #[test]
+    fn a_hidden_swing_schedules_no_frames() {
+        let view = Rectangle::from_size(Size::from((1280., 720.)));
+        let mut clock = Clock::with_time(Duration::ZERO);
+        let mut tile = swing_tile(swing_response(), clock.clone());
+        tile.update_render_elements(true, true, Some(view), view);
+        tile.start_view_swing(SwingFrom::Origin([1., 0.]));
+        clock.set_unadjusted(secs(0.9 * 0.190381));
+        tile.update_render_elements(true, true, Some(view), view);
+        assert!(tile.view_swing_visible && tile.are_animations_ongoing());
+        // The monitor clears every tile before it updates the visible ones: a tile it then
+        // skips keeps no stale visibility.
+        tile.clear_signal_render_visibility();
+        assert!(!tile.view_swing_visible);
+        assert!(
+            !tile.are_animations_ongoing(),
+            "a stale visibility held the loop"
+        );
+        // A hidden tile is updated with no view at all.
+        tile.update_render_elements(true, true, Some(view), view);
+        tile.update_render_elements(true, true, None, view);
+        assert!(!tile.view_swing_visible);
+        assert!(!tile.are_animations_ongoing());
+        assert!(
+            tile.view_swing_start().is_some(),
+            "the swing runs on, undrawn"
+        );
+    }
+
+    #[test]
+    fn a_zero_width_window_renders_at_rest_during_a_swing() {
+        use crate::render_helpers::material::view::{hooks, ViewPose};
+        // A flat slab of a 0 × 300 window has no extent along x: a swing along x has no camera
+        // (λ = w / (κE)), so the element takes no view and draws at rest.
+        let tile = swing_tile(swing_response(), Clock::with_time(Duration::ZERO));
+        let along = |dir| ViewPose {
+            theta: 10f64.to_radians(),
+            dir,
+            weight: 1.,
+            kappa: 6.,
+        };
+        hooks::POSE.with(|hook| hook.set(Some(along(DVec2::X))));
+        let across_nothing = render_dynamics(&tile, 0., 300.).view;
+        let across_the_width = render_dynamics(&tile, 400., 300.).view;
+        hooks::POSE.with(|hook| hook.set(Some(along(DVec2::Y))));
+        let along_the_height = render_dynamics(&tile, 0., 300.).view;
+        hooks::POSE.with(|hook| hook.set(None));
+        assert_eq!(across_nothing, None);
+        assert_eq!(across_the_width, Some(along(DVec2::X)));
+        assert_eq!(along_the_height, Some(along(DVec2::Y)));
     }
 }

@@ -1247,6 +1247,48 @@ mod tests {
     }
 
     #[test]
+    fn view_tilt_keys_default_off_bound_and_inherit() {
+        let parsed = parse_files(&[("config.kdl", r#"material "tg" { glass {}; }"#)]).unwrap();
+        let d = parsed.materials[0].resolve().response(None);
+        assert_eq!(
+            (d.view_tilt, d.view_tilt_settle, d.view_distance),
+            (0., 900., 6.),
+            "no swing unless asked"
+        );
+
+        let parsed = parse_files(&[(
+            "config.kdl",
+            r#"material "tg" { glass {}; response "default" { view-tilt 10; view-tilt-settle 1200; view-distance 2.5; }; response "still" {}; }"#,
+        )])
+        .unwrap();
+        let m = parsed.materials[0].resolve();
+        let d = m.response(None);
+        assert_eq!(
+            (d.view_tilt, d.view_tilt_settle, d.view_distance),
+            (10., 1200., 2.5)
+        );
+        let still = m.response(Some("still"));
+        assert_eq!(
+            (still.view_tilt, still.view_tilt_settle, still.view_distance),
+            (10., 1200., 2.5),
+            "inherits from default"
+        );
+
+        for (line, message) in [
+            ("view-tilt 21;", "value must be between 0 and 20"),
+            ("view-tilt -1;", "value must be between 0 and 20"),
+            ("view-tilt-settle 50;", "value must be between 100 and 5000"),
+            ("view-distance 1.4;", "value must be between 1.5 and 50"),
+            ("view-distance 51;", "value must be between 1.5 and 50"),
+        ] {
+            let config =
+                format!(r#"material "tg" {{ glass {{}}; response "default" {{ {line} }}; }}"#);
+            let err = parse_files_err(&[("config.kdl", &config)]);
+            assert!(err.contains(message), "{line}: {err}");
+        }
+    }
+
+    #[test]
     fn signal_idle_after_ms_defaults_and_bounds() {
         let parsed = parse_files(&[("config.kdl", "")]).unwrap();
         assert_eq!(parsed.signal.idle_after, Duration::from_millis(30_000));

@@ -40,7 +40,7 @@ const REST_LATER: Duration = Duration::from_secs(5);
 /// (premultiplied). Opaque pixels would bypass the slab.
 const CONTENT: u32 = 0x990a_0c0e;
 
-const ACCEPTED: &str = r##"
+pub(super) const ACCEPTED: &str = r##"
 material "terminal-glass" {
     glass {
         ior 1.28
@@ -199,6 +199,19 @@ fn open(f: &mut Fixture, id: ClientId, (w, h): (u16, u16)) -> WlSurface {
     surface
 }
 
+/// The gain: focus moves left, to the pane opened first. Both columns fit on
+/// the output, so the view does not move. The tile stamps the beam's start
+/// from the clock when its render elements next update, and a client dispatch
+/// would run that on the unfrozen clock, so the first render after the gain,
+/// frozen at its instant, is where the beam starts.
+pub(super) fn gain(f: &mut Fixture) {
+    f.niri().layout.focus_left();
+    f.niri_state().update_keyboard_focus();
+    f.niri().refresh_window_states();
+    f.niri().refresh_layout();
+    f.niri().refresh_window_rules();
+}
+
 /// Renders `pane` under `look` while another window holds focus, through
 /// its focus gain, and at rest. Returns the report and (tag, render) in
 /// order; dumps are named `<prefix><pane>-<tag>`.
@@ -227,16 +240,7 @@ fn sequence(
     let mut renders = Vec::new();
     renders.push(("inactive".to_owned(), render_at(&mut f, Duration::ZERO)));
 
-    // The gain: focus moves to the pane. Both columns fit on the output, so
-    // the view does not move. The tile stamps the beam's start from the clock
-    // when its render elements next update, and a client dispatch would run
-    // that on the unfrozen clock, so the first render after the gain, frozen
-    // at `GAIN`, is where the beam starts.
-    f.niri().layout.focus_left();
-    f.niri_state().update_keyboard_focus();
-    f.niri().refresh_window_states();
-    f.niri().refresh_layout();
-    f.niri().refresh_window_rules();
+    gain(&mut f);
     for ms in BEAM_MS {
         let pixels = render_at(&mut f, GAIN + Duration::from_millis(ms));
         renders.push((format!("beam-{ms:03}ms"), pixels));

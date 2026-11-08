@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use glam::DVec2;
 use niri_config::{CornerRadius, ResolvedGlass, ResolvedMaterial};
 use smithay::backend::renderer::element::{Element, Id, Kind, RenderElement, UnderlyingStorage};
 use smithay::backend::renderer::gles::{
@@ -14,6 +15,7 @@ use smithay::gpu_span_location;
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
+use self::view::{footprint, Bounds, Camera, ViewPose};
 use super::effect_buffer::EffectBuffer;
 use super::offscreen::OffscreenBuffer;
 use super::renderer::AsGlesFrame;
@@ -27,6 +29,7 @@ pub mod bevel;
 pub mod optics;
 pub mod ring;
 pub mod tint;
+pub mod view;
 
 /// Per-fragment background composition inputs, mirroring `XrayElement`'s
 /// two-layer stack for the one workspace the element belongs to.
@@ -187,6 +190,19 @@ pub fn glass_signal_inputs(
 
 static JELLY_SEED: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(test)]
+thread_local! {
+    /// The program each material draw on this thread bound, in draw order.
+    static BOUND_PROGRAMS: RefCell<Vec<ProgramType>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The programs material draws on this thread bound since the last call, in draw order: a
+/// render shows which of the two (§6 "Contingency") it drew with.
+#[cfg(test)]
+pub(crate) fn take_bound_programs() -> Vec<ProgramType> {
+    BOUND_PROGRAMS.take()
+}
+
 /// The material element's coordinate frame: the inflated element area plus
 /// every rect the shader needs, expressed in element UV.
 #[derive(Debug, Clone, PartialEq)]
@@ -202,6 +218,20 @@ pub struct MaterialFrame {
     /// Chamfer width in logical px: `bevel`, clamped to what the slab can
     /// carry — the band actually drawn.
     pub chamfer: f32,
+    /// The slab silhouette and the window-texture footprint, absolute logical: the rects
+    /// `slab_rect` and `geo_rect` express, which the swing's footprint projects (design
+    /// 2026-10-09 §6).
+    pub slab: Rectangle<f64, Logical>,
+    pub tex: Rectangle<f64, Logical>,
+}
+
+impl MaterialFrame {
+    /// Whether the slab can carry `pose`: its camera divides by the slab's extent along the
+    /// swing (§3.2), which a slab of no width or height lacks. Such a slab takes no view and
+    /// draws at rest.
+    pub fn carries(&self, pose: &ViewPose) -> bool {
+        view::extent(pose.dir, DVec2::new(self.slab.size.w, self.slab.size.h)) > 0.
+    }
 }
 
 /// Directional jelly flex derived from animation residuals — a port of the
@@ -488,8 +518,139 @@ pub fn material_frame(
             let max_chamfer = (slab.size.w.min(slab.size.h) / 2. - 1.).max(0.);
             glass.bevel.min(max_chamfer) as f32
         },
+        slab,
+        tex: tex_geo,
         area,
     }
+}
+
+/// The rigid tilt's per-frame inputs to the element (design 2026-10-09 §6).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ElementView {
+    pub pose: ViewPose,
+    /// The render view in the coordinates the tile draws in, when the render has one.
+    pub crop: Option<Rectangle<f64, Logical>>,
+    /// The wall's beam spill gain (§4.3).
+    pub wall_spill: f32,
+    /// How far past the computed geometry the quad is drawn, logical px; 0 outside the
+    /// containment test.
+    pub grow: f64,
+}
+
+/// A rect as the (min, max) corners `view` works in.
+fn bounds(r: Rectangle<f64, Logical>) -> Bounds {
+    (
+        DVec2::new(r.loc.x, r.loc.y),
+        DVec2::new(r.loc.x + r.size.w, r.loc.y + r.size.h),
+    )
+}
+
+/// The frame's camera under `pose`, on its slab. The slab must carry the pose
+/// (`MaterialFrame::carries`).
+fn frame_camera(frame: &MaterialFrame, pose: &ViewPose) -> Camera {
+    let (min, max) = bounds(frame.slab);
+    Camera::new(pose, min, max - min)
+}
+
+/// The element's drawn area (design 2026-10-09 §6): `frame.area` at rest; during a swing the
+/// footprint merged with it, cropped to the render view grown by one physical px, and rounded
+/// out to physical px. A crop that leaves nothing gives an empty rect.
+pub fn drawn_area(
+    frame: &MaterialFrame,
+    view: Option<&ElementView>,
+    thickness: f64,
+    scale: f64,
+) -> Rectangle<f64, Logical> {
+    let Some(view) = view else {
+        return frame.area;
+    };
+    let camera = frame_camera(frame, &view.pose);
+    let (lo, hi) = footprint(&camera, bounds(frame.slab), bounds(frame.tex), thickness);
+    let mut area = Rectangle::from_extremities((lo.x, lo.y), (hi.x, hi.y)).merge(frame.area);
+    if let Some(crop) = view.crop {
+        let px = 1. / scale;
+        let grown = Rectangle::new(
+            crop.loc - Point::from((px, px)),
+            crop.size + Size::from((2. * px, 2. * px)),
+        );
+        let Some(cropped) = area.intersection(grown) else {
+            return Rectangle::new(area.loc, Size::default());
+        };
+        area = cropped;
+    }
+    let g = view.grow;
+    let area = Rectangle::new(
+        area.loc - Point::from((g, g)),
+        area.size + Size::from((2. * g, 2. * g)),
+    );
+    let lo = Point::from((
+        (area.loc.x * scale).floor() / scale,
+        (area.loc.y * scale).floor() / scale,
+    ));
+    let hi = Point::from((
+        ((area.loc.x + area.size.w) * scale).ceil() / scale,
+        ((area.loc.y + area.size.h) * scale).ceil() / scale,
+    ));
+    Rectangle::from_extremities(lo, hi)
+}
+
+/// `mat_view_quad`: the drawn quad's UV mapped to the resting area's UV, offset then scale,
+/// from both rects as drawn (rounded to physical px), so the resting area's UV is what today's
+/// path samples. (0, 0, 1, 1) when the two agree.
+pub fn view_quad(
+    area: Rectangle<f64, Logical>,
+    drawn: Rectangle<f64, Logical>,
+    scale: f64,
+) -> [f32; 4] {
+    let scale = Scale::from(scale);
+    let a: Rectangle<i32, Physical> = area.to_physical_precise_round(scale);
+    let d: Rectangle<i32, Physical> = drawn.to_physical_precise_round(scale);
+    let (aw, ah) = (f64::from(a.size.w), f64::from(a.size.h));
+    [
+        (f64::from(d.loc.x - a.loc.x) / aw) as f32,
+        (f64::from(d.loc.y - a.loc.y) / ah) as f32,
+        (f64::from(d.size.w) / aw) as f32,
+        (f64::from(d.size.h) / ah) as f32,
+    ]
+}
+
+/// `mat_view_seed`: framebuffer px per element-local logical px, row-major (§4.4). smithay's
+/// projection is a signed permutation scaled to NDC, so its signs are the framebuffer's axes,
+/// and `gl_FragCoord` grows with NDC on both. `projection` is column-major.
+pub fn seed_basis(projection: &[f32; 9], scale: f64) -> [f32; 4] {
+    let sign = |v: f32| if v.abs() < 1e-12 { 0. } else { v.signum() };
+    let s = scale as f32;
+    [
+        sign(projection[0]) * s,
+        sign(projection[3]) * s,
+        sign(projection[1]) * s,
+        sign(projection[4]) * s,
+    ]
+}
+
+/// The view uniforms (design 2026-10-09 §4.1), which only the view variant declares: it is
+/// bound only while a swing runs (§6 "Contingency"), so `mat_view_on` is 1.
+fn view_uniforms(
+    view: &ElementView,
+    camera: &Camera,
+    quad: [f32; 4],
+    seed: [f32; 4],
+) -> [Uniform<'static>; 5] {
+    [
+        Uniform::new("mat_view_on", UniformValue::_1i(1)),
+        Uniform::new(
+            "mat_view",
+            [
+                camera.cos_m1 as f32,
+                camera.sin as f32,
+                camera.lambda as f32,
+                view.wall_spill,
+            ],
+        ),
+        Uniform::new("mat_view_dir", [camera.dir.x as f32, camera.dir.y as f32]),
+        Uniform::new("mat_view_quad", quad),
+        Uniform::new("mat_view_seed", seed),
+    ]
 }
 
 fn map_normalized_src(
@@ -612,6 +773,9 @@ pub struct InputFingerprint {
     /// optics repeat their values; an animated one changes them, which is
     /// damage.
     pub optics: Vec<Uniform<'static>>,
+    /// The rigid tilt's inputs this frame; `None` at rest, so a settled pane's fingerprint is
+    /// today's (design 2026-10-09 §6 "Commit").
+    pub view: Option<ElementView>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -666,8 +830,11 @@ impl MaterialState {
         self.jelly_seed
     }
 
+    /// Whether both material programs compiled: a tile draws the rest program and, while a
+    /// swing runs, the view variant, so one without the other is no material path.
     pub fn has_program(renderer: &mut GlesRenderer) -> bool {
-        Shaders::get(renderer).material.is_some()
+        let shaders = Shaders::get(renderer);
+        shaders.material.is_some() && shaders.material_view.is_some()
     }
 
     /// Advances the element commit counter if and only if a pixel input
@@ -696,6 +863,7 @@ impl MaterialState {
         signal: SignalUniforms,
         glass_signal: GlassSignalInputs,
         optics: Vec<Uniform<'static>>,
+        view: Option<ElementView>,
         scale: f64,
         alpha: f32,
         target: RenderTarget,
@@ -711,12 +879,19 @@ impl MaterialState {
         MaterialRenderElement {
             id: self.id.clone(),
             commit: self.advance_commit(target, inputs),
+            drawn: drawn_area(
+                &frame,
+                view.as_ref(),
+                self.config.material.glass.thickness,
+                scale,
+            ),
             frame,
             corner_radius,
             jelly,
             signal,
             glass_signal,
             optics,
+            view,
             jelly_seed: self.jelly_seed,
             scale,
             alpha,
@@ -775,6 +950,10 @@ pub struct MaterialRenderElement {
     glass_signal: GlassSignalInputs,
     /// Optic uniforms for this frame, appended after the core uniforms.
     optics: Vec<Uniform<'static>>,
+    /// The rigid tilt's inputs this frame; `None` at rest.
+    view: Option<ElementView>,
+    /// The area drawn: `frame.area` at rest, the cropped footprint during a swing.
+    drawn: Rectangle<f64, Logical>,
     jelly_seed: [f32; 3],
     scale: f64,
     alpha: f32,
@@ -806,7 +985,7 @@ impl Element for MaterialRenderElement {
     }
 
     fn geometry(&self, scale: Scale<f64>) -> Rectangle<i32, Physical> {
-        self.frame.area.to_physical_precise_round(scale)
+        self.drawn.to_physical_precise_round(scale)
     }
 
     fn alpha(&self) -> f32 {
@@ -844,7 +1023,22 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             let Some(subdraw) = plain_window_subdraw(
                 src,
                 dst,
-                self.frame.geo_rect,
+                if self.view.is_none() {
+                    self.frame.geo_rect
+                } else {
+                    // The window rect in the drawn quad's UV: the fallback draws it flat.
+                    let a = self.frame.area;
+                    let g = self.frame.geo_rect;
+                    let x = a.loc.x + f64::from(g[0]) * a.size.w;
+                    let y = a.loc.y + f64::from(g[1]) * a.size.h;
+                    let d = self.drawn;
+                    [
+                        ((x - d.loc.x) / d.size.w) as f32,
+                        ((y - d.loc.y) / d.size.h) as f32,
+                        (f64::from(g[2]) * a.size.w / d.size.w) as f32,
+                        (f64::from(g[3]) * a.size.h / d.size.h) as f32,
+                    ]
+                },
                 self.win_src,
                 damage,
                 opaque_regions,
@@ -930,6 +1124,20 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_bevel_profile", g.bevel_profile as f32),
         ];
         uniforms.extend(self.optics.iter().cloned());
+        // The view variant only while a swing runs (design 2026-10-09 §6 "Contingency"); at
+        // rest the base's program draws with the base's uniforms.
+        let program = match &self.view {
+            Some(view) => {
+                let camera = frame_camera(&self.frame, &view.pose);
+                let quad = view_quad(self.frame.area, self.drawn, self.scale);
+                let seed = seed_basis(frame.projection(), self.scale);
+                uniforms.extend(view_uniforms(view, &camera, quad, seed));
+                ProgramType::MaterialView
+            }
+            None => ProgramType::Material,
+        };
+        #[cfg(test)]
+        BOUND_PROGRAMS.with_borrow_mut(|bound| bound.push(program));
         let uniforms: Rc<[Uniform<'static>]> = uniforms.into();
         let textures = HashMap::from([
             (String::from("niri_tex_win"), self.win_texture.clone()),
@@ -942,8 +1150,8 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             ),
         ]);
         let inner = ShaderRenderElement::new(
-            ProgramType::Material,
-            self.frame.area.size,
+            program,
+            self.drawn.size,
             None,
             self.scale as f32,
             self.alpha,
@@ -1062,6 +1270,7 @@ mod tests {
             signal: SignalFingerprint::default(),
             glass_signal: GlassSignalFingerprint::default(),
             optics: Vec::new(),
+            view: None,
         }
     }
 
@@ -2329,5 +2538,234 @@ mod tests {
             "a reload that changes only accent-tint commits damage"
         );
         assert_eq!(at(0.4), at(0.4));
+    }
+
+    fn swing_view(pose: ViewPose, crop: Option<Rectangle<f64, Logical>>) -> ElementView {
+        ElementView {
+            pose,
+            crop,
+            wall_spill: 1.,
+            grow: 0.,
+        }
+    }
+
+    fn peak_pose() -> ViewPose {
+        ViewPose {
+            theta: 20f64.to_radians(),
+            dir: DVec2::new(0.6, 0.8),
+            weight: 1.,
+            kappa: 1.5,
+        }
+    }
+
+    #[test]
+    fn the_drawn_area_is_the_resting_area_at_rest_and_the_footprint_in_a_swing() {
+        let glass = ResolvedGlass::default();
+        let win = Rectangle::new(Point::new(100., 80.), Size::new(400., 300.));
+        let tex = Rectangle::new(Point::new(60., 40.), Size::new(480., 380.));
+        let frame = material_frame(win, tex, &glass, 1.);
+        assert_eq!(drawn_area(&frame, None, glass.thickness, 1.), frame.area);
+        let identity = swing_view(ViewPose::identity(DVec2::X, 6.), None);
+        assert_eq!(
+            drawn_area(&frame, Some(&identity), glass.thickness, 1.),
+            frame.area
+        );
+
+        let swing = swing_view(peak_pose(), None);
+        let drawn = drawn_area(&frame, Some(&swing), glass.thickness, 1.);
+        let camera = frame_camera(&frame, &peak_pose());
+        let (lo, hi) = footprint(
+            &camera,
+            bounds(frame.slab),
+            bounds(frame.tex),
+            glass.thickness,
+        );
+        assert!(drawn.contains_rect(frame.area), "{drawn:?}");
+        assert!(drawn.loc.x <= lo.x && drawn.loc.y <= lo.y);
+        assert!(drawn.loc.x + drawn.size.w >= hi.x && drawn.loc.y + drawn.size.h >= hi.y);
+
+        let crop = Rectangle::new(Point::new(0., 0.), Size::new(300., 1000.));
+        let cropped = drawn_area(
+            &frame,
+            Some(&swing_view(peak_pose(), Some(crop))),
+            glass.thickness,
+            1.,
+        );
+        assert_eq!(cropped.loc.x, drawn.loc.x.max(-1.));
+        assert_eq!(
+            cropped.loc.x + cropped.size.w,
+            301.,
+            "the crop grown by one physical px"
+        );
+        let away = Rectangle::new(Point::new(5000., 0.), Size::new(10., 10.));
+        let gone = drawn_area(
+            &frame,
+            Some(&swing_view(peak_pose(), Some(away))),
+            glass.thickness,
+            1.,
+        );
+        assert!(gone.is_empty(), "{gone:?}");
+    }
+
+    #[test]
+    fn a_slab_with_no_extent_along_the_swing_carries_no_view() {
+        // A zero-width window on a flat slab: no extent along x, so no camera (λ = w / (κE)).
+        let glass = ResolvedGlass {
+            bevel: 0.,
+            offset_x: 0.,
+            offset_y: 0.,
+            ..Default::default()
+        };
+        let win = Rectangle::new(Point::new(100., 80.), Size::new(0., 300.));
+        let frame = material_frame(win, win, &glass, 1.);
+        assert_eq!(frame.slab.size.w, 0., "the case");
+        let along_x = ViewPose {
+            dir: DVec2::X,
+            ..peak_pose()
+        };
+        assert!(!frame.carries(&along_x));
+        assert!(!frame.carries(&ViewPose::identity(DVec2::X, 6.)));
+        // Along y the slab has its height.
+        assert!(frame.carries(&ViewPose {
+            dir: DVec2::Y,
+            ..peak_pose()
+        }));
+        assert!(frame.carries(&peak_pose()));
+    }
+
+    #[test]
+    fn the_drawn_quad_maps_the_resting_area_at_fractional_scale() {
+        let glass = ResolvedGlass::default();
+        for scale in [1., 1.25, 1.5, 2.] {
+            let win = Rectangle::new(Point::new(100.4, 80.8), Size::new(400., 300.));
+            let frame = material_frame(win, win, &glass, scale);
+            let drawn = drawn_area(
+                &frame,
+                Some(&swing_view(peak_pose(), None)),
+                glass.thickness,
+                scale,
+            );
+            assert!(drawn.contains_rect(frame.area), "{scale}: {drawn:?}");
+            for v in [drawn.loc.x, drawn.loc.y, drawn.size.w, drawn.size.h] {
+                assert!(
+                    ((v * scale) - (v * scale).round()).abs() < 1e-9,
+                    "{scale}: {drawn:?}"
+                );
+            }
+            let q = view_quad(frame.area, drawn, scale);
+            let s = Scale::from(scale);
+            let a: Rectangle<i32, Physical> = frame.area.to_physical_precise_round(s);
+            let d: Rectangle<i32, Physical> = drawn.to_physical_precise_round(s);
+            // The drawn quad's UV at the area's physical corners is the area's UV 0 and 1.
+            for (corner, want) in [(a.loc, 0.), (a.loc + a.size.to_point(), 1.)] {
+                let u = f64::from(corner.x - d.loc.x) / f64::from(d.size.w);
+                let got = f64::from(q[0]) + u * f64::from(q[2]);
+                assert!((got - want).abs() < 1e-6, "{scale}: x {got} vs {want}");
+                let v = f64::from(corner.y - d.loc.y) / f64::from(d.size.h);
+                let got = f64::from(q[1]) + v * f64::from(q[3]);
+                assert!((got - want).abs() < 1e-6, "{scale}: y {got} vs {want}");
+            }
+            assert_eq!(view_quad(frame.area, frame.area, scale), [0., 0., 1., 1.]);
+        }
+    }
+
+    /// smithay's frame projection for an output of `mode` physical px under `transform`,
+    /// column-major: its glOrtho, then the transform's own matrix, then the GL flip
+    /// (`GlesRenderer::render`).
+    fn smithay_projection(transform: Transform, mode: (f32, f32)) -> [f32; 9] {
+        use glam::Mat3;
+
+        let m = |t: Transform| Mat3::from_cols_array(AsRef::<[f32; 9]>::as_ref(&t.matrix()));
+        let (w, h) = match transform {
+            Transform::_90 | Transform::_270 | Transform::Flipped90 | Transform::Flipped270 => {
+                (mode.1, mode.0)
+            }
+            _ => mode,
+        };
+        let ortho = Mat3::from_cols_array(&[2. / w, 0., 0., 0., -2. / h, 0., -1., 1., 1.]);
+        // Flipped180's matrix is smithay's `flip180`.
+        (m(Transform::Flipped180) * m(transform) * ortho).to_cols_array()
+    }
+
+    #[test]
+    fn the_seed_basis_follows_the_projection() {
+        // Column-major, as smithay's `projection()` returns it: Normal, 270° and 180°.
+        let normal = [2. / 1280., 0., 0., 0., 2. / 720., 0., -1., -1., 1.];
+        assert_eq!(seed_basis(&normal, 1.5), [1.5, 0., 0., 1.5]);
+        let turned = [0., -2. / 720., 0., 2. / 1280., 0., 0., -1., 1., 1.];
+        assert_eq!(seed_basis(&turned, 1.), [0., 1., -1., 0.]);
+        let flipped = [-2. / 1280., 0., 0., 0., -2. / 720., 0., 1., 1., 1.];
+        assert_eq!(seed_basis(&flipped, 2.), [-2., 0., 0., -2.]);
+
+        // The literals are smithay's own projections.
+        assert_eq!(smithay_projection(Transform::Normal, (1280., 720.)), normal);
+        assert_eq!(smithay_projection(Transform::_270, (1280., 720.)), turned);
+        assert_eq!(smithay_projection(Transform::_180, (1280., 720.)), flipped);
+
+        // Every transform, 90° and mirrored ones included: the basis is the framebuffer's
+        // derivative along each logical axis. gl_FragCoord is (NDC + 1) / 2 times the
+        // framebuffer's size in physical px, so d(fb)/d(logical) = P · fb / 2 · scale.
+        let mode = (1280f32, 720f32);
+        for transform in [
+            Transform::Normal,
+            Transform::_90,
+            Transform::_180,
+            Transform::_270,
+            Transform::Flipped,
+            Transform::Flipped90,
+            Transform::Flipped180,
+            Transform::Flipped270,
+        ] {
+            let p = smithay_projection(transform, mode);
+            let scale = 1.25;
+            let s = scale as f32;
+            let want = [
+                p[0] * mode.0 / 2. * s,
+                p[3] * mode.0 / 2. * s,
+                p[1] * mode.1 / 2. * s,
+                p[4] * mode.1 / 2. * s,
+            ];
+            let got = seed_basis(&p, scale);
+            for (g, w) in got.iter().zip(want) {
+                assert!((g - w).abs() < 1e-6, "{transform:?}: {got:?} vs {want:?}");
+            }
+        }
+        assert_eq!(
+            seed_basis(&smithay_projection(Transform::_90, mode), 1.),
+            [0., -1., 1., 0.]
+        );
+        assert_eq!(
+            seed_basis(&smithay_projection(Transform::Flipped, mode), 1.),
+            [-1., 0., 0., 1.]
+        );
+    }
+
+    #[test]
+    fn the_view_joins_the_fingerprint() {
+        let background_id = Id::new();
+        let backdrop_id = Id::new();
+        let at_rest = fingerprint(1, 1, &background_id, &backdrop_id);
+        assert_eq!(at_rest.view, None);
+        let swinging = InputFingerprint {
+            view: Some(swing_view(peak_pose(), None)),
+            ..at_rest.clone()
+        };
+        assert_ne!(at_rest, swinging);
+    }
+
+    #[test]
+    fn the_view_uniforms_at_the_identity_pose_correct_nothing() {
+        let id = swing_view(ViewPose::identity(DVec2::new(0.6, 0.8), 6.), None);
+        let camera = Camera::new(&id.pose, DVec2::ZERO, DVec2::splat(100.));
+        let on = view_uniforms(&id, &camera, [0., 0., 1., 1.], [1., 0., 0., 1.]);
+        assert_eq!(on[0], Uniform::new("mat_view_on", UniformValue::_1i(1)));
+        assert_eq!(
+            on[1],
+            Uniform::new("mat_view", [-0f32, 0., 0., 1.]),
+            "every correction is zero"
+        );
+        assert_eq!(on[2], Uniform::new("mat_view_dir", [0.6f32, 0.8]));
+        assert_eq!(on[3], Uniform::new("mat_view_quad", [0f32, 0., 1., 1.]));
+        assert_eq!(on[4], Uniform::new("mat_view_seed", [1f32, 0., 0., 1.]));
     }
 }

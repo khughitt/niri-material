@@ -203,7 +203,7 @@ impl HeadNoise {
 }
 
 /// splitmix64's finalizer, to 53 bits in [0, 1).
-fn hash01(mut x: u64) -> f64 {
+pub(super) fn hash01(mut x: u64) -> f64 {
     x = x.wrapping_mul(0x9E37_79B9_7F4A_7C15);
     x ^= x >> 30;
     x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);

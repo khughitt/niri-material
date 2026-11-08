@@ -231,6 +231,10 @@ impl LayoutElement for TestWindow {
         false
     }
 
+    fn background_effect_visible(&self) -> bool {
+        false
+    }
+
     fn configure_intent(&self) -> ConfigureIntent {
         ConfigureIntent::CanSend
     }

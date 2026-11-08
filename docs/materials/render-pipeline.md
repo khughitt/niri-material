@@ -38,7 +38,7 @@ topmost. Per output, per frame:
 3. **Tiles render** (`Tile::render_inner`). Push order, top to bottom:
    popups; the window body (material element, resize element, or the plain
    clipped window); the fullscreen backdrop; the border; the focus ring; the
-   shadow; the window's `background-effect` elements.
+   shadow; the window's `background-effect` elements. During a rigid-tilt swing the material element's geometry is its footprint (the section *Under a swing*); the other elements keep theirs.
 4. **Below the tiles**: Bottom and Background layer surfaces per workspace,
    the workspace background color, the workspace shadows, then the output
    backdrop.
@@ -128,6 +128,56 @@ Stages 2 to 7 operate on the normal, sampled backdrop, or additive light;
 they never read window pixels. The six hook sites are `normal`, `behind`,
 `within`, `specular`, `emissive`, and `post`; see `adding-an-optic.md`.
 
+## Under a swing (the rigid tilt)
+
+While a swing runs (`view-tilt`, design `2026-10-09-transient-rigid-tilt`),
+the element binds the material program's view variant, the same files
+compiled with `#define MATERIAL_VIEW` (`material_view_source`,
+`ProgramType::MaterialView`). Its `mat_view_on` is 1, and the shader takes
+one branch before stage 0:
+
+1. The drawn quad is the swing's footprint; `mat_view_quad` maps it back to
+   the resting area's UV.
+2. The camera ray through the pixel, turned into the slab's frame, meets the
+   window plane at `h₀`; the window texture (stage 0) is sampled there, up to
+   the near clip.
+3. A ray whose `h₀` lies on the flat face hits the glass there, and the
+   shortcut shades at `h₀`; it traces only within 4 physical px of the face
+   plane's cross-section, for the outline coverage. A ray that provably
+   misses the solid is a sure miss: coverage 0, no trace. Every other ray is
+   traced through the resting slab as a convex solid (golden-section and
+   bisection per quadrant piece). The hit is a top hit, shaded by stages 1–11 at the
+   hit point, or a wall hit below the rim, shaded with the wall's normal,
+   Fresnel and, while the beam runs, its spill. Whether the ray reaches the
+   wall is decided with the quadrant of the piece that contains the rim
+   depth (the earlier piece on a boundary), not the entry piece's, so a ray
+   entering through a seam below the rim between unequal corner radii is a
+   wall hit.
+4. Every backdrop sample (stage 3's taps, stage 6's reflection) projects
+   its exit point back to the screen. The Fresnel cosine, the iridescence
+   angle and the highlight's half-vector use the slab-local view direction.
+   The seed is the hit rounded to whole pixels: tap jitter and grain at
+   `scale=` 1 or below sit on whole pixels, while grain above `scale=` 1
+   adds the fractional remainder back and so glides with the hit.
+   Grain seeds from `gl_FragCoord`, so in an offscreen path (the alpha
+   path's view crop, the close snapshot) it moves with the offscreen origin,
+   as it does at rest; comparisons across such paths run with grain off.
+5. Coverage (stage 10) is the outline coverage (the signed screen distance
+   to the traced solid's outline) on misses, walls and face hits near the
+   outline. A face hit farther out keeps the resting slab's coverage, which
+   is 1 there.
+
+The swing runs on the unadjusted clock: `animations.slowdown` does not
+stretch it, as it does the ring beam. A slab with no extent along the swing
+direction cannot take a swing and renders at rest.
+
+At rest the element binds the rest program, which declares no view uniform
+and preprocesses to the shader text from before the tilt: every view line
+sits in an `#ifdef MATERIAL_VIEW` block, and a rest line the view path
+changed keeps its earlier text under `#else`. A single program with the
+branch behind one uniform test cost about 13 % per material draw at rest
+(design §6 "Contingency").
+
 ## 4. What the order settles
 
 - **Blur is upstream of everything.** `backdrop-blur` chooses the image the
@@ -194,6 +244,7 @@ they never read window pixels. The six hook sites are `normal`, `behind`,
 | `noise` `site=` | `glass.noiseSite` (pending, prism-be5abe) | source grain pass / 3b / 9 |
 | `noise` `type=` | `glass.noise`; `type=` (pending, prism-51f23b) | 3b |
 | `noise` `scale=` | (pending, prism-85f63a) | source grain pass / 3b / 9 |
+| response `view-tilt`, `view-tilt-settle`, `view-distance` | (pending, prism-2a8fea) | View branch (*Under a swing*) |
 
 Prism's `glass.inactive.*` keys write the same native parameters into the
 unfocused material definition; `glass.focusSplit` decides whether that

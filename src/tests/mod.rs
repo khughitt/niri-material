@@ -22,4 +22,5 @@ mod ring_pair;
 mod shell_hue;
 mod signal;
 mod transactions;
+mod view_tilt;
 mod window_opening;

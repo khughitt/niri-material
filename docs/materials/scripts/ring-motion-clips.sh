@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ring-motion-clips.sh: review clips for the ring beam
-# (docs/specs/2026-09-19-ring-beam-design.md §6, "Sheets"). Eight sequences
+# (docs/specs/2026-09-19-ring-beam-design.md §6, "Sheets"). Twelve sequences
 # from a nested headless instance, each one focus gain recorded as a burst of
 # full-frame screenshots as fast as the async screenshot path allows, plus 4x
 # crops of the focused pane's corners: top-left at rest and as the tail
@@ -24,6 +24,16 @@
 #                 is gone after 1500 px, before the lap closes
 #   beam-bevel0   the same on a flat slab: `bevel 0; offset-x 0; offset-y 0`
 #                 (no chamfer, so no spill)
+#   tilt-swing          the rigid tilt alone (beam off) at `view-tilt $TILT;
+#                       view-distance $KAPPA`: a 2.5 s burst from before the gain
+#                       and 4x crops of the gaining pane's corner through the swing
+#   tilt-swing-beam     the same with the beam on, at `ring-glow $BEAM_GLOW`:
+#                       the look the owner judges
+#   tilt-swing-slow     `view-tilt-settle 1400`, beside the 900 ms default
+#   tilt-swing-flipped  a scratch build with the swing's sign flipped: the
+#                       origin's edge comes forward first
+# Any tilt-swing sequence also gets swing-measured-sheet.py's sheet: the pane's
+# side edges measured per frame, since the swing is a few pixels at small angles.
 #
 # The scratch sequences build the tree twice more with one constant changed
 # each: a tracked-files copy under $OUT/src-<name> is edited with sed (the
@@ -33,8 +43,11 @@
 #
 # Env: NIRI_MATERIAL_WORK_ROOT (artifacts land under it), CAPTURE_TASK (the
 # task id authorizing the run), NIRI (default: this checkout's release build,
-# built here), BEAM_SCRATCH (default 1). Requires: weston, kitty, swaybg, jq,
-# ImageMagick, cargo (scratch sequences).
+# built here), BEAM_SCRATCH (default 1), TILT and KAPPA (the swing's view-tilt
+# and view-distance, default 10 and 6), BEAM_GLOW (tilt-swing-beam's ring-glow,
+# default 1, the shipped value). Requires: weston, kitty, swaybg, jq,
+# ImageMagick, cargo (scratch sequences), python3 with Pillow and matplotlib
+# (the swing sheet).
 set -euo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)
@@ -45,6 +58,10 @@ RUN=ring-clips-$$-$(date +%s)
 OUT=$EVIDENCE/ring-motion-clips-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # short: nested niri panics on long socket paths
 SEQUENCES=${SEQUENCES:-"beam-run beam-gap16 beam-nospill beam-splash beam-fast beam-wander beam-decay beam-bevel0"}
+TILT=${TILT:-10}; KAPPA=${KAPPA:-6}   # the owner's pick from the stills (Task 13)
+BEAM_GLOW=${BEAM_GLOW:-1}             # ring-glow's default; 3 is its ceiling
+TILT_SWINGS="tilt-swing tilt-swing-beam tilt-swing-slow tilt-swing-flipped"
+SWING_S=2.5   # view-tilt-settle is 900 ms; the rest of the burst shows the pane at rest
 BEAM_SCRATCH=${BEAM_SCRATCH:-1}
 RUN_S=15   # (P + L) / 300 on a two-column 1280x720 pane is under 12 s; 15 s keeps the tail clearing in frame
 UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; HOST_SEQ=0
@@ -108,9 +125,9 @@ KITTY_OPTS='"-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "
 # `bevel 10; ring-gap 8` is the spec's pairing under review, with the shipped
 # `ring-beam-speed 300` and `ring-glow 1`; SPEED, GAP and GLASS vary one of
 # them per fixture. The idle gate is off: the nested instance sees no input.
-write_config() {   # $1 = path; SPEED, GAP, GLASS, NOISE, NOISE_HZ, DECAY override the fixture's defaults
+write_config() {   # $1 = path; SPEED, GAP, GLOW, GLASS, NOISE, NOISE_HZ, DECAY, VTILT, VKAPPA, SETTLE override the fixture's defaults
     cat > "$1" <<EOF
-material "tg" { glass { ${GLASS:-bevel 10;} }; response "default" { ring-beam-speed ${SPEED:-300}; ring-gap ${GAP:-8}; ring-glow 1; ring-beam-noise ${NOISE:-0}; ring-beam-noise-hz ${NOISE_HZ:-3}; ring-beam-decay ${DECAY:-0}; }; }
+material "tg" { glass { ${GLASS:-bevel 10;} }; response "default" { ring-beam-speed ${SPEED:-300}; ring-gap ${GAP:-8}; ring-glow ${GLOW:-1}; ring-beam-noise ${NOISE:-0}; ring-beam-noise-hz ${NOISE_HZ:-3}; ring-beam-decay ${DECAY:-0}; view-tilt ${VTILT:-0}; view-distance ${VKAPPA:-6}; view-tilt-settle ${SETTLE:-900}; }; }
 window-rule { match app-id="^kitty$"; material "tg"; }
 layout { focus-ring { off; }; gaps 24; }
 hotkey-overlay { skip-at-startup; }
@@ -126,6 +143,9 @@ SPEED=900 write_config "$OUT/beam-fast.kdl"
 NOISE=0.5 NOISE_HZ=4 write_config "$OUT/beam-wander.kdl"
 DECAY=1500 write_config "$OUT/beam-decay.kdl"
 GLASS='bevel 0; offset-x 0; offset-y 0;' write_config "$OUT/beam-bevel0.kdl"
+SPEED=0 VTILT=$TILT VKAPPA=$KAPPA write_config "$OUT/tilt-swing.kdl"
+GLOW=$BEAM_GLOW VTILT=$TILT VKAPPA=$KAPPA write_config "$OUT/tilt-swing-beam.kdl"
+SPEED=0 VTILT=$TILT VKAPPA=$KAPPA SETTLE=1400 write_config "$OUT/tilt-swing-slow.kdl"
 
 # --- scratch builds ----------------------------------------------------------
 # A build with one constant changed, for the sheets that compare it: the
@@ -165,6 +185,12 @@ if wants_scratch beam-splash; then
         'src/render_helpers/material/ring.rs|s/^pub const BEAM_ENVELOPE: Envelope = Envelope::Plateau;$/pub const BEAM_ENVELOPE: Envelope = Envelope::Splash;/|pub const BEAM_ENVELOPE: Envelope = Envelope::Splash;')
     BINARIES+=(--binary "$NIRI_SPLASH")
 fi
+NIRI_FLIPPED=
+if wants_scratch tilt-swing-flipped; then
+    NIRI_FLIPPED=$(scratch_build flipped \
+        'src/render_helpers/material/view/mod.rs|s/^\( *\)theta: peak_deg.to_radians() \* shape,$/\1theta: -peak_deg.to_radians() * shape,/|theta: -peak_deg.to_radians() * shape,')
+    BINARIES+=(--binary "$NIRI_FLIPPED")
+fi
 
 # A build's tail refuses the first settle: wait for it before the preflight
 # (docs/specs/2026-10-08-capture-host-conditions-design.md §6.5).
@@ -174,7 +200,9 @@ capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basena
     --owner-pid $$ --tool weston --tool kitty || fail "preflight refused; see $OUT/capture.json"
 capture_meta identity "$OUT" --source "$ROOT" "${BINARIES[@]}" --input "$0" \
     --input "$OUT/beam.kdl" --input "$OUT/beam-gap16.kdl" --input "$OUT/beam-fast.kdl" \
-    --input "$OUT/beam-wander.kdl" --input "$OUT/beam-decay.kdl" --input "$OUT/beam-bevel0.kdl" || fail "identity refused"
+    --input "$OUT/beam-wander.kdl" --input "$OUT/beam-decay.kdl" --input "$OUT/beam-bevel0.kdl" \
+    --input "$OUT/tilt-swing.kdl" --input "$OUT/tilt-swing-beam.kdl" --input "$OUT/tilt-swing-slow.kdl" \
+    || fail "identity refused"
 
 # --- nested instance ---------------------------------------------------------
 start_nested() {   # $1 = config, $2 = sub-run name; sets NIRI_SOCKET
@@ -228,13 +256,14 @@ settle() {
 # --- bursts ------------------------------------------------------------------
 # A burst runs in the background so the drive continues while frames are
 # taken; each frame's request instant is recorded relative to the burst
-# start in frames.txt, the count and span in timing.txt.
-BURST_PID=
+# start (BURST_T0, taken before the fork so the drive can time its own
+# events on the same clock) in frames.txt, the count and span in timing.txt.
+BURST_PID=; BURST_T0=
 burst_start() {   # $1 = label, $2 = seconds
     local d=$OUT/$1; mkdir -p "$d"
+    BURST_T0=$(date +%s.%N)
     (
-        local t0 i=0 now f
-        t0=$(date +%s.%N)
+        local t0=$BURST_T0 i=0 now f
         while :; do
             now=$(date +%s.%N)
             awk -v a="$now" -v b="$t0" -v s="$2" 'BEGIN { exit !(a - b < s) }' || break
@@ -340,6 +369,48 @@ seq_beam_fast()    { beam_sequence beam-fast    "$OUT/beam-fast.kdl"   "$NIRI"; 
 seq_beam_wander()  { beam_sequence beam-wander  "$OUT/beam-wander.kdl" "$NIRI"; }
 seq_beam_decay()   { beam_sequence beam-decay   "$OUT/beam-decay.kdl"  "$NIRI"; }
 seq_beam_bevel0()  { beam_sequence beam-bevel0  "$OUT/beam-bevel0.kdl" "$NIRI"; }
+# 4x crops of the gaining pane's top-left corner through the swing: before,
+# at and after the overshoot (the crossing is at a third of the settle). The
+# times count from the gain, not the burst start: frames.txt offsets less
+# the gain's offset ($2, on the burst's clock).
+swing_crops() {   # $1 = label, $2 = gain offset from the burst start, s
+    local d=$OUT/$1-swing b=$OUT/$1 at pick f off
+    mkdir -p "$d"
+    for at in 0.15 0.3 0.45 0.7; do
+        pick=$(awk -v at="$at" -v g="$2" '{ o = $2 - g; d = o - at; if (d < 0) d = -d; if (best == "" || d < bd) { best = $1; bo = o; bd = d } } END { if (best != "") printf "%s %.3f\n", best, bo }' "$b/frames.txt")
+        [ -n "$pick" ] || fail "$1: no frame near $at s after the gain in $b/frames.txt"
+        read -r f off <<< "$pick"
+        magick "$b/$f" -crop 320x240+0+0 +repage -scale 400% "$d/at-$at.png"
+        echo "$1-swing: at-$at is $f (${off} s after the gain)" >> "$OUT/clips.txt"
+    done
+}
+# One focus gain on a two-pane scene over SWING_S, as beam_sequence. The gain instant is
+# taken on the burst's clock just before the focus message, and the frames are chosen from
+# it; a host too slow to take six frames inside the settle fails rather than showing rest.
+swing_sequence() {   # $1 = label, $2 = config, $3 = binary
+    local ids gain early saved=$NIRI
+    NIRI=$3
+    start_nested "$2" "$1"
+    spawn_kitty_to 2
+    ids=($(kitty_ids))
+    msg action focus-window --id "${ids[1]}"; settle
+    burst_start "$1" "$SWING_S"
+    gain=$(date +%s.%N)
+    msg action focus-window --id "${ids[0]}"
+    gain=$(awk -v a="$gain" -v b="$BURST_T0" 'BEGIN { printf "%.3f", a - b }')
+    burst_wait "$1"
+    echo "$1: gain at ${gain} s into the burst" >> "$OUT/clips.txt"
+    early=$(awk -v g="$gain" '$2 - g >= 0 && $2 - g < 0.9' "$OUT/$1/frames.txt" | wc -l)
+    [ "$early" -ge 6 ] || fail "$1: only $early frames inside the 900 ms settle after the gain"
+    swing_crops "$1" "$gain"
+    stop_nested
+    finish_sub_run "$1"
+    NIRI=$saved
+}
+seq_tilt_swing()         { swing_sequence tilt-swing         "$OUT/tilt-swing.kdl"      "$NIRI"; }
+seq_tilt_swing_beam()    { swing_sequence tilt-swing-beam    "$OUT/tilt-swing-beam.kdl" "$NIRI"; }
+seq_tilt_swing_slow()    { swing_sequence tilt-swing-slow    "$OUT/tilt-swing-slow.kdl" "$NIRI"; }
+seq_tilt_swing_flipped() { swing_sequence tilt-swing-flipped "$OUT/tilt-swing.kdl"      "$NIRI_FLIPPED"; }
 
 for s in $SEQUENCES; do
     case $s in
@@ -351,7 +422,16 @@ for s in $SEQUENCES; do
         beam-wander)  seq_beam_wander ;;
         beam-decay)   seq_beam_decay ;;
         beam-bevel0)  seq_beam_bevel0 ;;
+        tilt-swing)         seq_tilt_swing ;;
+        tilt-swing-beam)    seq_tilt_swing_beam ;;
+        tilt-swing-slow)    seq_tilt_swing_slow ;;
+        tilt-swing-flipped) if [ "$BEAM_SCRATCH" = 0 ]; then echo "$s: skipped (BEAM_SCRATCH=0)" | tee -a "$OUT/clips.txt"; else seq_tilt_swing_flipped; fi ;;
         *) fail "unknown sequence $s" ;;
+    esac
+done
+for s in $SEQUENCES; do
+    case " $TILT_SWINGS " in
+        *" $s "*) python3 -I docs/materials/scripts/swing-measured-sheet.py "$OUT" | tee -a "$OUT/clips.txt"; break ;;
     esac
 done
 echo "clips: OK; $OUT/clips.txt, capture record $OUT/capture.json"

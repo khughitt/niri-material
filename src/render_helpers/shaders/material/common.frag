@@ -65,3 +65,9 @@ vec3 oklabToLinear(vec3 lab) {
         -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
 }
 
+#ifdef MATERIAL_VIEW
+// The sub-pixel part of the grain seed's shift under a tilt (spec 2026-10-09 §4.4): the view
+// program's main sets it so value-noise grain glides with the glass. Only the view variant
+// declares it; the rest program and the grain pass keep the base text (§6 "Contingency").
+vec2 g_seed_glide = vec2(0.0);
+#endif

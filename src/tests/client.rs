@@ -387,6 +387,17 @@ impl State {
             .unwrap()
     }
 
+    /// A subsurface of `parent` at `(x, y)`, in sync mode: its state lands
+    /// with the parent's next commit.
+    pub fn create_subsurface(&mut self, parent: &WlSurface, x: i32, y: i32) -> WlSurface {
+        let compositor = self.compositor.as_ref().unwrap();
+        let subcompositor = self.subcompositor.as_ref().unwrap();
+        let surface = compositor.create_surface(&self.qh, ());
+        let subsurface = subcompositor.get_subsurface(&surface, parent, &self.qh, ());
+        subsurface.set_position(x, y);
+        surface
+    }
+
     /// An xdg popup on a layer surface, anchored at the layer's origin.
     pub fn create_layer_popup(&mut self, parent: &WlSurface, size: (i32, i32)) -> &mut Popup {
         let compositor = self.compositor.as_ref().unwrap();
@@ -529,6 +540,11 @@ impl Window {
 
     pub fn attach_null(&self) {
         self.surface.attach(None, 0, 0);
+    }
+
+    /// A `w`×`h` ARGB8888 shm buffer of `pixels`, damaged in full.
+    pub fn attach_new_shm_pixels(&self, w: i32, h: i32, pixels: &[u32]) {
+        attach_shm_pixels(&self.shm, &self.qh, &self.surface, w, h, pixels);
     }
 
     pub fn set_size(&self, w: u16, h: u16) {
@@ -677,6 +693,11 @@ impl LayerSurface {
         self.surface.attach(None, 0, 0);
     }
 
+    /// A `w`×`h` ARGB8888 shm buffer of `pixels`, damaged in full.
+    pub fn attach_new_shm_pixels(&self, w: i32, h: i32, pixels: &[u32]) {
+        attach_shm_pixels(&self.shm, &self.qh, &self.surface, w, h, pixels);
+    }
+
     pub fn set_size(&self, w: u16, h: u16) {
         self.viewport.set_destination(i32::from(w), i32::from(h));
     }
@@ -697,6 +718,32 @@ impl LayerSurface {
         }
         buf
     }
+}
+
+/// Attaches a `w`×`h` ARGB8888 shm buffer of `pixels` to `surface` and
+/// damages it in full.
+pub fn attach_shm_pixels(
+    shm: &WlShm,
+    qh: &QueueHandle<State>,
+    surface: &WlSurface,
+    w: i32,
+    h: i32,
+    pixels: &[u32],
+) {
+    use std::io::Write as _;
+    use std::os::fd::{AsFd as _, FromRawFd as _, OwnedFd};
+
+    assert_eq!(pixels.len(), (w * h) as usize);
+    let fd = unsafe { libc::memfd_create(c"niri-test-shm".as_ptr(), libc::MFD_CLOEXEC) };
+    assert!(fd >= 0, "memfd_create failed");
+    let mut file = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd) });
+    let bytes: Vec<u8> = pixels.iter().flat_map(|p| p.to_ne_bytes()).collect();
+    file.write_all(&bytes).unwrap();
+    let pool = shm.create_pool(file.as_fd(), w * h * 4, qh, ());
+    let buffer = pool.create_buffer(0, w, h, w * 4, wl_shm::Format::Argb8888, qh, ());
+    pool.destroy();
+    surface.attach(Some(&buffer), 0, 0);
+    surface.damage_buffer(0, 0, w, h);
 }
 
 impl Dispatch<WlCallback, Arc<SyncData>> for State {
@@ -1075,6 +1122,32 @@ impl Dispatch<WpViewport, ()> for State {
     }
 }
 
+impl Dispatch<WlSubcompositor, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlSubcompositor,
+        _event: <WlSubcompositor as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
+impl Dispatch<WlSubsurface, ()> for State {
+    fn event(
+        _state: &mut Self,
+        _proxy: &WlSubsurface,
+        _event: <WlSubsurface as wayland_client::Proxy>::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qhandle: &QueueHandle<Self>,
+    ) {
+        unreachable!()
+    }
+}
+
 impl Dispatch<XdgPopup, ()> for State {
     fn event(
         _state: &mut Self,
@@ -1111,32 +1184,6 @@ impl Dispatch<WlRegion, ()> for State {
         _state: &mut Self,
         _proxy: &WlRegion,
         _event: <WlRegion as wayland_client::Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        unreachable!()
-    }
-}
-
-impl Dispatch<WlSubcompositor, ()> for State {
-    fn event(
-        _state: &mut Self,
-        _proxy: &WlSubcompositor,
-        _event: <WlSubcompositor as wayland_client::Proxy>::Event,
-        _data: &(),
-        _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
-    ) {
-        unreachable!()
-    }
-}
-
-impl Dispatch<WlSubsurface, ()> for State {
-    fn event(
-        _state: &mut Self,
-        _proxy: &WlSubsurface,
-        _event: <WlSubsurface as wayland_client::Proxy>::Event,
         _data: &(),
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,

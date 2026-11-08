@@ -340,6 +340,9 @@ blocks. A material with no response blocks gets this built-in `default`:
 | `ring-beam-noise` | 0–1 | 0 |
 | `ring-beam-noise-hz` | 0–30 wanders per second | 3 |
 | `ring-beam-decay` | 0–20000 logical px | 0 (no decay) |
+| `view-tilt` | 0–20 degrees | 0 (off) |
+| `view-tilt-settle` | 100–5000 ms | 900 |
+| `view-distance` | 1.5–50 | 6 |
 | `ring-gap` | 0–128 logical px | 8 logical px |
 | `ring-glow` | 0–3 | 1.0 |
 | `ring-rest` | 0–3 | 1.0 |
@@ -514,6 +517,26 @@ response; the filament and the accent ring are otherwise the same band, so
 `accent "none"` turns off the signal tint alone. If the upgrade leaves two
 rings on screen, that is the layout's gradient ring underneath — turn it off
 with `focus-ring { off; }`.
+
+### Focus tilt
+
+`view-tilt` turns the pane briefly in depth when it gains focus: window
+content and glass swing as one body about the pane's centre, across the
+direction focus came from, and settle back to exactly face-on after
+`view-tilt-settle` ms. The side the focus came from presses in first; one
+small overshoot follows. While it turns, perspective engages with the angle
+and the slab's rounded edge and side wall come into view. `view-distance`
+is the camera's distance in multiples of the pane's extent along the swing:
+smaller is stronger perspective, larger shows more wall. On a horizontal
+swing the advancing wall shows on every moving frame when
+`sin(view-tilt) > 1 / (2 · view-distance)`.
+
+A swing starts only when the window's border and focus ring are off, its
+`background-effect` is neutral (`blur false; noise 0; saturation 1`, as
+Prism writes), it is not fullscreen or opening, and `signal { motion "full"; }`
+with animations on. A pane refocused mid-swing finishes the swing it has.
+The policy cuts a running swing to rest on the next frame. At rest nothing
+changes. Design: `docs/specs/2026-10-09-transient-rigid-tilt-design.md`.
 
 ## Signal motion and animation
 

@@ -79,6 +79,7 @@ use crate::window::ResolvedWindowRules;
 pub mod closing_window;
 pub mod drag_follower;
 pub mod floating;
+mod focus_origin;
 pub mod focus_ring;
 pub mod insert_hint_element;
 pub mod monitor;
@@ -279,6 +280,9 @@ pub trait LayoutElement {
     fn set_floating(&mut self, floating: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
+    /// Whether the window's background effect drew at its last render (design 2026-10-09 §5:
+    /// a swing needs it neutral).
+    fn background_effect_visible(&self) -> bool;
 
     fn is_urgent(&self) -> bool;
 
@@ -403,6 +407,9 @@ pub struct Layout<W: LayoutElement> {
     overview_open: bool,
     /// The overview zoom progress.
     overview_progress: Option<OverviewProgress>,
+    /// The last focus an update pass observed, where the next focus's swing comes from
+    /// (design 2026-10-09 §5).
+    focus_origin: Option<focus_origin::FocusOrigin<W::Id, Output>>,
     /// Configurable properties of the layout.
     options: Rc<Options>,
 }
@@ -761,6 +768,7 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            focus_origin: None,
             options: Rc::new(options),
         }
     }
@@ -786,6 +794,7 @@ impl<W: LayoutElement> Layout<W> {
             update_render_elements_time: Duration::ZERO,
             overview_open: false,
             overview_progress: None,
+            focus_origin: None,
             options: opts,
         }
     }
@@ -2910,6 +2919,15 @@ impl<W: LayoutElement> Layout<W> {
 
         self.update_insert_hint(output);
 
+        // The focus the swing observes (design 2026-10-09 §5): the one globally focused window,
+        // never a tile an interactive move carries.
+        let focused = if matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_))) {
+            None
+        } else {
+            self.focus_with_output()
+                .map(|(win, output)| (win.id().clone(), output.clone()))
+        };
+
         let MonitorSet::Normal {
             monitors,
             active_monitor_idx,
@@ -2928,6 +2946,11 @@ impl<W: LayoutElement> Layout<W> {
                     && idx == *active_monitor_idx
                     && !matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_)));
                 mon.set_overview_progress(self.overview_progress.as_ref());
+                if let Some((window, focused_output)) = &focused {
+                    if mon.output == *focused_output {
+                        focus_origin::observe(&mut self.focus_origin, mon, window);
+                    }
+                }
                 mon.update_render_elements(is_active, input_active);
             }
         }
