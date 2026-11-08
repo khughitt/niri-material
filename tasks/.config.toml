@@ -15,3 +15,30 @@ exclusive = false
 
 [git]
 commit = true
+
+[tags]
+adaptive = "Adapt visual parameters to observations, context, or user preferences."
+assets = "Shared visual assets, their registry, and consumers."
+bug = "An observed defect that needs diagnosis or correction."
+camera = "View geometry, camera transforms, and perspective."
+capture = "Capture observations and retain the evidence needed to judge them."
+cross-project = "Work spanning more than one registered project."
+design = "Design decisions and specifications for proposed behavior."
+docs = "Guides, reference documentation, and documentation maintenance."
+dynamics = "Motion, transient state, and time-dependent material responses."
+harness = "Visual and capture harnesses, fixtures, and evidence instruments."
+ipc = "Inter-process commands, counters, and event streams."
+layout = "Spatial arrangement and geometry of interface elements."
+lighting = "Scene illumination, light sources, and lighting transitions."
+material = "Glass and other material appearance and optical behavior."
+noise = "Noise processes and grain in material appearance or dynamics."
+performance = "Measured latency, resource use, and performance improvements."
+prism = "Integration with the appearance definitions and profiles owned by prism."
+rendering = "Visual rendering, shaders, and composition of the scene."
+signals = "Signals that drive visual responses and material state."
+sources = "Sources of signals that drive material behavior."
+spike = "A bounded exploratory prototype used to judge a direction."
+testing = "Test coverage, fixtures, test execution, and regression checks."
+tooling = "Development, maintenance, and verification tools."
+upstream = "Upstream changes, compatibility, and adoption of upstream fixes."
+quick-add = "Captured or routed through quick add."
