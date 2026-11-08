@@ -6,7 +6,7 @@ priority: 1
 process: direct
 owner: material-abc08c
 created: 2026-09-22T23:46:32Z
-updated: 2026-11-08T20:15:43Z
+updated: 2026-11-08T20:16:16Z
 started: 2026-11-08T20:02:05Z
 depends: [material-77db8a]
 related: [material-abc08c, material-fc84e5]
@@ -40,3 +40,6 @@ Reusable from the unmerged branch material-77db8a: the swing curve and settle (r
 - 2026-11-08T20:15:29Z (material-abc08c): attached: merge-review-418b0130-report.md (8350 bytes): independent review of the base merge 418b0130: accept, one minor
 - 2026-11-08T20:15:43Z (material-abc08c): Identify the current integration owner
   provenance: {"harness_session":"claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-11-08T20:16:16Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"evidence","path":"/mnt/ssd3/niri-material/ring-motion-clips-f905c9ed/ring-clips-978014-1793855426","state":"released","verification":"verified","purpose":"transferred to task material-fc84e5 (kept record written there 2026-11-08; manifest rechecked unchanged today)","next_owner":"none","cleanup_trigger":"none"}
+- 2026-11-08T20:16:16Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"scratch","path":"$WORK_ROOT/niri-material/material-c5f9d0","state":"released","verification":"verified","purpose":"transferred to task material-fc84e5 (kept record written there 2026-11-08; manifest rechecked unchanged today)","next_owner":"none","cleanup_trigger":"none"}
+- 2026-11-08T20:16:16Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"worktree","path":".worktrees/material-abc08c","state":"kept","verification":"verified","purpose":"material-abc08c branch awaiting local merge into materials-26.04; ignored target/ (regenerable) and .superpowers/ (ledger and merge review attached to material-6901e0; briefs, reports and diffs discarded with the tree)","next_owner":"session:claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","cleanup_trigger":"the local merge into materials-26.04 lands, then removal checks pass"}
