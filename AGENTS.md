@@ -1,15 +1,20 @@
 # niri-material — agent guide
 
-A fork of niri carrying the material rendering work. Tasks live in `tasks/`; the `tasks`
-skill applies. Designs and plans live under `docs/materials/`, `docs/specs/`, and
-`docs/plans/`. Before changing anything under `src/render_helpers/` or the
+A fork of niri carrying the material rendering work. Task records live in the
+project's records directory (`tasks where` names it); the `tasks` skill applies.
+New design specs, implementation plans, briefs and handoffs go there too
+(`docs/specs/`, `docs/plans/`, `docs/notes/` under it), committed in the records
+repository, never in this tree. The documents this tree already tracks under
+`docs/materials/`, `docs/specs/`, `docs/plans/` and `docs/notes/` stay here and are
+revised in place. Before changing anything under `src/render_helpers/` or the
 shaders, read `docs/materials/render-pipeline.md`: it is the pass order every
 rendering design assumes.
 
 ## Session protocol
 
-- `tasks prime`, then `tasks start <id>` before changing anything; `tasks done <id>` in
-  the same commit; `tasks check` before every commit.
+- `tasks prime`, then `tasks start <id>` before changing anything; `tasks done <id>`
+  once the work lands (the CLI commits the record in the records repository);
+  `tasks check` before every commit.
 - Fresh clone: `git config core.hooksPath .githooks` installs the hooks, including
   the Git LFS handoff.
 - .cargo/config.toml and target/ are per-machine and must not reach another

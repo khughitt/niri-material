@@ -64,7 +64,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +40/-4 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +103/-0 |
+| `AGENTS.md` | C | A | +108/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `docs/wiki/Configuration:-Layer-Rules.md` | B | M | +48/-0 |
@@ -134,7 +134,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_hold.py` | C | A | +500/-0 |
 | `tools/test_capture_meta.py` | C | A | +2063/-0 |
-| `tools/test_gates.py` | C | A | +284/-0 |
+| `tools/test_gates.py` | C | A | +283/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +883/-0 |
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |

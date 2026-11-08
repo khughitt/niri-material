@@ -50,7 +50,6 @@ class Gates(unittest.TestCase):
 
     def test_staged_paths_select_docs_only_conservatively(self):
         for name, expected in (("README.md", "hook-pre-commit-docs"),
-                               ("tasks/material-123456.md", "hook-pre-commit-docs"),
                                ("docs/specs/a.md", "hook-pre-commit-docs"),
                                ("docs/materials/scripts/a.py", "hook-pre-commit"),
                                ("docs/materials/material-config.md", "hook-pre-commit"),
