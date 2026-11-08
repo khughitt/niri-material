@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 20
+# ops-check version 21
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -22,6 +22,12 @@ exits 2 when it cannot run at all.
 - Conflicted copies: no tracked path may be a Dropbox conflicted copy.
 - Agent scratch: no tracked path may lie under a `.agents/` directory. The global ignore
   keeps one out of `git add`; only `git add -f` gets past it, and only the index shows that.
+- Root source: tracked source files (.py, .js, .mjs, .cjs, .ts, .tsx, .rs, .go, .sh) must
+  not sit at the repository root; move them into the source tree (see code-organization.md).
+  Tool configuration a tool requires at the root is exempt by name pattern: build.rs,
+  conftest.py, *.config.js, *.config.mjs, *.config.cjs, *.config.ts. A repository declares
+  exceptions in its root `.ops-check.toml` under `root_sources_allowed`; an entry naming
+  a path not tracked at the repository root is a finding.
 - Machine layout: no tracked file may carry this machine's layout — the home directory,
   the hostname, `WORK_ROOT`, a registered checkout or its parent directory (the sync root),
   or a value listed under `banned` in `$XDG_CONFIG_HOME/ops/ops-check.toml` (a tracker
@@ -37,8 +43,7 @@ exits 2 when it cannot run at all.
   overlay. A repository whose content is
   host configuration by design lists the path prefixes that may carry the layout under
   `layout_allowed` in a root `.ops-check.toml`; a malformed file exits 2.
-  `root_sources_allowed` is also accepted and validated in `.ops-check.toml` (enforced from
-  version 21).
+  `root_sources_allowed` in the same file exempts source files at the repository root.
   A layout-bearing local task attachment may suppress mechanical values only after
   `tasks attachments` verifies its live ledger and exact config/record/file bytes.
   Explicit banned values remain checked using a separate scan. Clean and banned-only
@@ -51,6 +56,7 @@ exits 2 when it cannot run at all.
   registered (CI, another host) the rule does not apply, and a registered ops without
   origin/HEAD exits 2.
 """
+import fnmatch
 import os
 import hashlib
 import json
@@ -89,6 +95,8 @@ TASK_RECORD = re.compile(r"^(?:tasks/[^/]+|([a-z][a-z0-9]{1,7})/tasks/\1-[0-9a-f
 PROJECT_CONFIG = ".ops-check.toml"
 PROJECT_KEYS = ("layout_allowed", "root_sources_allowed")
 LAYOUT_LINES = 10
+SOURCE_SUFFIXES = (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".rs", ".go", ".sh")
+ROOT_SOURCE_EXEMPT = ("build.rs", "conftest.py", "*.config.js", "*.config.mjs", "*.config.cjs", "*.config.ts")
 # Adopted contracts under tools/ -> their source in ops (ops bin/vendored's ADOPTED).
 ADOPTED = {
     "cli.toml": "cli.toml",
@@ -470,6 +478,23 @@ def layout_findings(root, files, values, explicit_banned):
             yield path, line, message
 
 
+def root_source_findings(root, files):
+    """(path, 0, message) for tracked source files sitting at the repository root
+    and stale or invalid root_sources_allowed entries in .ops-check.toml."""
+    allowed = project_config(root)["root_sources_allowed"]
+    root_files = {path for path in files if "/" not in path}
+    for name in allowed:
+        if "/" in name or name not in root_files:
+            yield PROJECT_CONFIG, 0, f"root_sources_allowed lists {name}, which is not a tracked file at the repository root"
+    allowed_set = set(allowed)
+    for path in files:
+        if "/" in path:
+            continue
+        suffix = pathlib.Path(path).suffix
+        if suffix in SOURCE_SUFFIXES and not any(fnmatch.fnmatchcase(path, pat) for pat in ROOT_SOURCE_EXEMPT) and path not in allowed_set:
+            yield path, 0, "source file at the repository root; move it into the source tree (see code-organization.md)"
+
+
 def landed_blobs(ops, source):
     """Every blob of `source` that ops's default branch has carried: each commit's change to
     it (a merge's against its first parent) and the tip's."""
@@ -618,6 +643,7 @@ def findings(root, projects, values, explicit_banned):
         if path.startswith(".agents/") or "/.agents/" in path:
             yield path, 0, "agent scratch under .agents/ is tracked"
     yield from layout_findings(root, files, values, explicit_banned)
+    yield from root_source_findings(root, files)
     yield from adopted_findings(root, set(files), projects)
 
 
