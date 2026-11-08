@@ -7,9 +7,9 @@ size: m
 complexity: mid
 process: direct
 created: 2026-11-08T20:03:45Z
-updated: 2026-11-08T20:03:45Z
+updated: 2026-11-08T20:14:57Z
 depends: []
-related: [material-3fb99a, material-c73cf0, material-2283b8, material-c5f9d0, material-fb9efc]
+related: [material-3fb99a, material-c73cf0, material-2283b8, material-c5f9d0, material-fb9efc, material-03fdf3]
 tags: [rendering, camera]
 source: material-6901e0
 agent: claude-code/claude-opus-5-5
@@ -81,3 +81,4 @@ Triage the minor findings the rigid tilt plan's task and final reviews deferred 
 
 - 2026-11-08T20:03:45Z (add): created
   provenance: {"harness_session":"claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","harness_session_source":"CLAUDE_CODE_SESSION_ID","origin":"agent"}
+- 2026-11-08T20:14:57Z (material-abc08c): added from the base-merge review (418b0130): performance.md:209 rigid tilt cost figures (0.66 ms at rest, 1.47 ms swing) predate material-03fdf3's grain shader speed-up; re-measure or label the revision
