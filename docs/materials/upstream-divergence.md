@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-348 paths differ: 57 class B (seam), 242 class A (fork-only), 49 class C (scaffolding).
+331 paths differ: 57 class B (seam), 225 class A (fork-only), 49 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
