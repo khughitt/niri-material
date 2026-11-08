@@ -1,13 +1,13 @@
 ---
 id: material-292de8
 title: Adopt bounded session startup in this project's agent guide
-status: blocked
+status: todo
 priority: 2
 size: s
 complexity: low
 process: direct
 created: 2026-10-24T16:13:47Z
-updated: 2026-11-08T16:23:10Z
+updated: 2026-11-08T16:23:25Z
 depends: []
 tags: []
 source: "tasks-e7424b:startup-material"
