@@ -3,12 +3,13 @@ id: material-6901e0
 title: "View tilt: a geometric tilt that moves window content and glass together"
 status: doing
 priority: 1
+process: direct
 owner: material-abc08c
 created: 2026-09-22T23:46:32Z
-updated: 2026-11-08T20:02:06Z
+updated: 2026-11-08T20:03:53Z
 started: 2026-11-08T20:02:05Z
 depends: [material-77db8a]
-related: [material-abc08c]
+related: [material-abc08c, material-fc84e5]
 parent: material-53f873
 tags: [rendering, camera]
 agent: "claude-code/claude-opus-5-5[1m]"
@@ -31,3 +32,5 @@ Reusable from the unmerged branch material-77db8a: the swing curve and settle (r
 - 2026-11-08T20:02:05Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"scratch","path":"$WORK_ROOT/niri-material/material-c5f9d0","state":"kept","verification":"verified","purpose":"ladder-sheet.py, tilt-amplitude-ladder.png (also attached to material-c5f9d0), and ref-1006-remeasure/ from the amplitude ladder","next_owner":"task:material-6901e0","cleanup_trigger":"after material-abc08c merges into materials-26.04","manifest":"$WORK_ROOT/niri-material/material-c5f9d0/manifest.json","sha256":"9130c1ef44c9b4b5056807a687d945b1d62b3e9db326eaf44456b4c2edb2b386"}
 - 2026-11-08T20:02:05Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"worktree","path":".worktrees/material-abc08c","state":"kept","verification":"verified","purpose":"material-abc08c branch (plan steps all done) and SDD workspace .superpowers/sdd/2026-10-09-transient-rigid-tilt","next_owner":"task:material-6901e0","cleanup_trigger":"after material-abc08c merges and the ledger rulings and deferred minors reach the task record"}
 - 2026-11-08T20:02:05Z (material-abc08c): retention checkpoint: verified 2026-11-08 on titan by this session; evidence manifest 124 listed files all present and unchanged (manifest sha256 9696b0fb...; src-flipped/ and target-scratch/ unlisted), scratch manifest 114 files unchanged with nothing unlisted (sha256 9130c1ef...), worktree present; received from material-c5f9d0 at its close
+- 2026-11-08T20:03:36Z (material-abc08c): process: direct — goal closeout: every plan step is done; remaining work is the main-into-branch merge, checks, local integration and cleanup
+- 2026-11-08T20:03:53Z (material-abc08c): deferred minors from every task review and both final reviews filed as material-fc84e5 (open owner)
