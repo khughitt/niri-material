@@ -6,7 +6,7 @@ priority: 1
 process: direct
 owner: material-abc08c
 created: 2026-09-22T23:46:32Z
-updated: 2026-11-08T20:03:53Z
+updated: 2026-11-08T20:14:49Z
 started: 2026-11-08T20:02:05Z
 depends: [material-77db8a]
 related: [material-abc08c, material-fc84e5]
@@ -34,3 +34,4 @@ Reusable from the unmerged branch material-77db8a: the swing curve and settle (r
 - 2026-11-08T20:02:05Z (material-abc08c): retention checkpoint: verified 2026-11-08 on titan by this session; evidence manifest 124 listed files all present and unchanged (manifest sha256 9696b0fb...; src-flipped/ and target-scratch/ unlisted), scratch manifest 114 files unchanged with nothing unlisted (sha256 9130c1ef...), worktree present; received from material-c5f9d0 at its close
 - 2026-11-08T20:03:36Z (material-abc08c): process: direct — goal closeout: every plan step is done; remaining work is the main-into-branch merge, checks, local integration and cleanup
 - 2026-11-08T20:03:53Z (material-abc08c): deferred minors from every task review and both final reviews filed as material-fc84e5 (open owner)
+- 2026-11-08T20:14:49Z (material-abc08c): review: impl round 1 — verdict: accept; findings: minor 1; reviewer: claude-code/claude-opus-5-5
