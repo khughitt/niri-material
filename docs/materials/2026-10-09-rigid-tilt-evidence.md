@@ -227,5 +227,7 @@ edge 0.72 px) and crosses rest at about 0.62 s; the flipped sign
 edge −0.08 px) and crosses rest at about 0.42 s. Each sequence's GIF shows the
 motion.
 
-Sign and settle verdict: pending. The owner gate covers the motion, the sign
-and `view-tilt-settle`, and the delegation covered the amplitude only.
+Sign and settle verdict (owner, 2026-11-08): the shipped sign (Row A) and the
+900 ms `view-tilt-settle` (Row A over Row C's 1400 ms). The code and the
+defaults are unchanged; Prism's starting values (`prism-2a8fea`) are
+`view-tilt 20; view-distance 3; view-tilt-settle 900`.
