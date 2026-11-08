@@ -1,17 +1,20 @@
 ---
 id: material-6901e0
 title: "View tilt: a geometric tilt that moves window content and glass together"
-status: doing
+status: done
 priority: 1
 process: direct
 owner: material-abc08c
 created: 2026-09-22T23:46:32Z
-updated: 2026-11-08T20:16:16Z
+updated: 2026-11-08T20:16:24Z
 started: 2026-11-08T20:02:05Z
+completed: 2026-11-08T20:16:24Z
+closed: 2026-11-08T20:16:24Z
 depends: [material-77db8a]
 related: [material-abc08c, material-fc84e5]
 parent: material-53f873
 tags: [rendering, camera]
+model: claude-opus-5-5
 agent: "claude-code/claude-opus-5-5[1m]"
 ---
 
@@ -43,3 +46,7 @@ Reusable from the unmerged branch material-77db8a: the swing curve and settle (r
 - 2026-11-08T20:16:16Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"evidence","path":"/mnt/ssd3/niri-material/ring-motion-clips-f905c9ed/ring-clips-978014-1793855426","state":"released","verification":"verified","purpose":"transferred to task material-fc84e5 (kept record written there 2026-11-08; manifest rechecked unchanged today)","next_owner":"none","cleanup_trigger":"none"}
 - 2026-11-08T20:16:16Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"scratch","path":"$WORK_ROOT/niri-material/material-c5f9d0","state":"released","verification":"verified","purpose":"transferred to task material-fc84e5 (kept record written there 2026-11-08; manifest rechecked unchanged today)","next_owner":"none","cleanup_trigger":"none"}
 - 2026-11-08T20:16:16Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"worktree","path":".worktrees/material-abc08c","state":"kept","verification":"verified","purpose":"material-abc08c branch awaiting local merge into materials-26.04; ignored target/ (regenerable) and .superpowers/ (ledger and merge review attached to material-6901e0; briefs, reports and diffs discarded with the tree)","next_owner":"session:claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","cleanup_trigger":"the local merge into materials-26.04 lands, then removal checks pass"}
+- 2026-11-08T20:16:24Z (material-abc08c): done
+  provenance: {"harness_session":"claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-11-08T20:16:24Z (material-abc08c): every plan step done; owner verdict 2026-11-08 (shipped sign, 900 ms); base merged at 418b0130, just test 831 passed 0 failed, merge review accepted (attached merge-review-418b0130-report.md); ledger attached as rigid-tilt-ledger.md; deferred minors owned by material-fc84e5
+  provenance: {"harness_session":"claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
