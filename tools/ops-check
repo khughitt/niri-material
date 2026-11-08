@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 19
+# ops-check version 20
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -37,16 +37,19 @@ exits 2 when it cannot run at all.
   overlay. A repository whose content is
   host configuration by design lists the path prefixes that may carry the layout under
   `layout_allowed` in a root `.ops-check.toml`; a malformed file exits 2.
+  `root_sources_allowed` is also accepted and validated in `.ops-check.toml` (enforced from
+  version 21).
   A layout-bearing local task attachment may suppress mechanical values only after
   `tasks attachments` verifies its live ledger and exact config/record/file bytes.
   Explicit banned values remain checked using a separate scan. Clean and banned-only
   attachments need no tracker query. Queries share five seconds and 1 MiB of captured
   stdout/stderr per project; failed checks exit 2, negative rows annotate existing layout.
 - Adopted copies: a tracked `tools/` copy of an adopted contract (cli.toml, cli_surface.py,
-  keys.toml) must be, as the working tree holds it, a version ops's default branch has
-  landed: a change to the contract lands in ops first and the project then runs `vendored
-  adopt`. Ops is found through the tasks registry; where it is not registered (CI, another
-  host) the rule does not apply, and a registered ops without origin/HEAD exits 2.
+  keys.toml, code-organization.md) must be, as the working tree holds it, a version ops's
+  default branch has landed: a change to the contract lands in ops first and the project
+  then runs `vendored adopt`. Ops is found through the tasks registry; where it is not
+  registered (CI, another host) the rule does not apply, and a registered ops without
+  origin/HEAD exits 2.
 """
 import os
 import hashlib
@@ -84,9 +87,15 @@ WORD = re.compile(r"\w[\w-]*$")
 # repository or work overlay, whose directory is named for the prefix (the tasks grammar).
 TASK_RECORD = re.compile(r"^(?:tasks/[^/]+|([a-z][a-z0-9]{1,7})/tasks/\1-[0-9a-f]{6})\.md$")
 PROJECT_CONFIG = ".ops-check.toml"
+PROJECT_KEYS = ("layout_allowed", "root_sources_allowed")
 LAYOUT_LINES = 10
 # Adopted contracts under tools/ -> their source in ops (ops bin/vendored's ADOPTED).
-ADOPTED = {"cli.toml": "cli.toml", "cli_surface.py": "bin/cli_surface.py", "keys.toml": "keys.toml"}
+ADOPTED = {
+    "cli.toml": "cli.toml",
+    "cli_surface.py": "bin/cli_surface.py",
+    "keys.toml": "keys.toml",
+    "code-organization.md": "docs/code-organization.md",
+}
 # A hostname that names no machine in particular is not layout.
 GENERIC_HOSTNAMES = ("localhost",)
 
@@ -184,10 +193,28 @@ def layout(env, projects, hostname, extra):
     return {value: what for value, what in values.items() if value not in ("", "/")}
 
 
+def project_config(root):
+    """Configuration in the repository's `.ops-check.toml`."""
+    path = pathlib.Path(root) / PROJECT_CONFIG
+    if not path.is_file():
+        return {key: () for key in PROJECT_KEYS}
+    try:
+        data = tomllib.loads(path.read_text())
+    except tomllib.TOMLDecodeError as error:
+        fail(f"{path}: {error}")
+    keys = set(data)
+    if not keys or not keys.issubset(PROJECT_KEYS):
+        allowed = ", ".join(f"`{k}`" for k in PROJECT_KEYS)
+        fail(f"{path}: expected one or more of {allowed}")
+    for key, values in data.items():
+        if not isinstance(values, list) or not all(isinstance(v, str) and v for v in values):
+            fail(f"{path}: expected `{key} = [...]`, a list of non-empty strings")
+    return {key: tuple(data.get(key, ())) for key in PROJECT_KEYS}
+
+
 def layout_allowed(root):
     """Path prefixes the repository's `.ops-check.toml` allows to carry the layout."""
-    path = root / PROJECT_CONFIG
-    return tuple(string_list(path, "layout_allowed")) if path.is_file() else ()
+    return project_config(root)["layout_allowed"]
 
 
 def scan_layout(raw, values, suppressible):

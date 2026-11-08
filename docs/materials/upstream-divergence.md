@@ -117,14 +117,14 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/tests/mod.rs` | B | M | +12/-0 |
 | `src/window/mapped.rs` | B | M | +48/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
-| `tools/README.md` | C | A | +29/-0 |
+| `tools/README.md` | C | A | +31/-0 |
 | `tools/capture-meta` | C | A | +1606/-0 |
 | `tools/capture_hold.py` | C | A | +600/-0 |
 | `tools/fake_capture_host.py` | C | A | +156/-0 |
 | `tools/fake_screencast.py` | C | A | +41/-0 |
 | `tools/hermetic_git.py` | C | A | +18/-0 |
 | `tools/identity-check` | C | A | +57/-0 |
-| `tools/ops-check` | C | A | +611/-0 |
+| `tools/ops-check` | C | A | +638/-0 |
 | `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/screencast_consumer.py` | C | A | +331/-0 |
