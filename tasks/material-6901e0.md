@@ -6,7 +6,7 @@ priority: 1
 process: direct
 owner: material-abc08c
 created: 2026-09-22T23:46:32Z
-updated: 2026-11-08T20:16:24Z
+updated: 2026-11-08T20:18:44Z
 started: 2026-11-08T20:02:05Z
 completed: 2026-11-08T20:16:24Z
 closed: 2026-11-08T20:16:24Z
@@ -50,3 +50,4 @@ Reusable from the unmerged branch material-77db8a: the swing curve and settle (r
   provenance: {"harness_session":"claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
 - 2026-11-08T20:16:24Z (material-abc08c): every plan step done; owner verdict 2026-11-08 (shipped sign, 900 ms); base merged at 418b0130, just test 831 passed 0 failed, merge review accepted (attached merge-review-418b0130-report.md); ledger attached as rigid-tilt-ledger.md; deferred minors owned by material-fc84e5
   provenance: {"harness_session":"claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-11-08T20:18:44Z (materials-26.04): retained: {"v":1,"host":"titan","kind":"worktree","path":".worktrees/material-abc08c","state":"released","verification":"verified","purpose":"removed after the local merge 84941e11 into materials-26.04; no host pointer resolved into it; tt-report run; ignored target/ discarded (regenerable) and .superpowers/ discarded after its ledger and merge review were attached to material-6901e0; branch material-abc08c deleted (merged)","next_owner":"none","cleanup_trigger":"none"}
