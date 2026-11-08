@@ -7,7 +7,7 @@ size: m
 complexity: mid
 process: direct
 created: 2026-11-08T20:03:45Z
-updated: 2026-11-08T20:14:57Z
+updated: 2026-11-08T20:16:08Z
 depends: []
 related: [material-3fb99a, material-c73cf0, material-2283b8, material-c5f9d0, material-fb9efc, material-03fdf3]
 tags: [rendering, camera]
@@ -82,3 +82,5 @@ Triage the minor findings the rigid tilt plan's task and final reviews deferred 
 - 2026-11-08T20:03:45Z (add): created
   provenance: {"harness_session":"claude-code:f2252ded-1918-4960-a1f1-d29c8039757f","harness_session_source":"CLAUDE_CODE_SESSION_ID","origin":"agent"}
 - 2026-11-08T20:14:57Z (material-abc08c): added from the base-merge review (418b0130): performance.md:209 rigid tilt cost figures (0.66 ms at rest, 1.47 ms swing) predate material-03fdf3's grain shader speed-up; re-measure or label the revision
+- 2026-11-08T20:16:08Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"evidence","path":"/mnt/ssd3/niri-material/ring-motion-clips-f905c9ed/ring-clips-978014-1793855426","state":"kept","verification":"verified","purpose":"raw sign and settle clips (GIFs, frames, swing-measured.json) behind the owner's 2026-11-08 verdict; the sheet is attached to material-c5f9d0; src-flipped/ and target-scratch/ are the rejected flipped build's regenerable inputs outside the manifest","next_owner":"task:material-fc84e5","cleanup_trigger":"when material-fc84e5 closes: decide whether the raw clips are still needed beyond the attached sheet","manifest":"/mnt/ssd3/niri-material/ring-motion-clips-f905c9ed/ring-clips-978014-1793855426/manifest.json","sha256":"9696b0fb76bf2dfd9c9b64b2783d2fb3fce646152a7cd5c6c2823d034a915e1b"}
+- 2026-11-08T20:16:08Z (material-abc08c): retained: {"v":1,"host":"titan","kind":"scratch","path":"$WORK_ROOT/niri-material/material-c5f9d0","state":"kept","verification":"verified","purpose":"ladder-sheet.py, tilt-amplitude-ladder.png (attached to material-c5f9d0), and ref-1006-remeasure/ from the amplitude ladder","next_owner":"task:material-fc84e5","cleanup_trigger":"when material-fc84e5 closes: decide whether ladder-sheet.py and ref-1006-remeasure/ are still needed","manifest":"$WORK_ROOT/niri-material/material-c5f9d0/manifest.json","sha256":"9130c1ef44c9b4b5056807a687d945b1d62b3e9db326eaf44456b4c2edb2b386"}
