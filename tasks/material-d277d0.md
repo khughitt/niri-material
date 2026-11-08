@@ -4,9 +4,10 @@ title: "Source: OSC 133 shell-integration watcher"
 status: idea
 priority: 2
 size: m
+reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-08T17:18:10Z
-depends: [material-a54d89, material-07bac9]
+updated: 2026-10-12T18:21:13Z
+depends: [material-a54d89, material-07bac9, material-9fb9ec]
 parent: material-9b8bf9
 tags: [signals, sources]
 ---
@@ -21,3 +22,6 @@ Done when a command started and finished in kitty and ghostty produces the confi
 
 - 2026-09-29T22:07:57Z (materials-26.04): scope: briefed; existing set/pulse/clear IPC covers command state; research material-07bac9 establishes terminal event delivery and reliable window mapping; brief: docs/notes/2026-09-29-signal-sources-brief.md
 - 2026-10-08T17:18:09Z (materials-26.04): curate: refined; body names the existing IPC, the open transport and window-join work, and the brief's deferral of a pty shim; added depends material-07bac9, the probe that wakes it. Process left unassessed: direct if 07bac9 names one hook for both terminals, planned if they diverge
+- 2026-10-10T14:05:12Z (materials-26.04): scope: briefed; no change: readmitted only by the 2026-10-08 curate refinement, which matches the brief; material-07bac9 (todo) is still the unanswered transport and window-join question that wakes it; brief: docs/notes/2026-09-29-signal-sources-brief.md
+- 2026-10-11T09:27:48Z (material-07bac9): transport finding: material-07bac9 proved kitty 0.49.2 start/exit 0/1 and Active plus Done/Error over existing IPC, including two OS windows in one PID via unique app IDs. Request planned design: launch identity/window-rule preservation, pane aggregation, finite activity TTL and explicit clear/reconnect cleanup; a Ghostty shell-hook/window-identity demonstration remains unknown. Recommend adapter ownership in material, opt-in installation in dots, no familiar dependency or PTY proxy. Evidence: docs/notes/2026-09-29-signal-sources-brief.md and 07bac9 attachment.
+- 2026-10-11T09:56:44Z (materials-26.04): scope: briefed; retained the kitty/Ghostty command-source outcome; filed Ghostty transport research material-53da57 and prerequisite identity/lifecycle design material-9fb9ec; added design dependency before implementation; abrupt-death/disconnect checks belong in that design and its later implementation plan; brief: docs/notes/2026-09-29-signal-sources-brief.md

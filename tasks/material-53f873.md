@@ -7,10 +7,11 @@ size: l
 complexity: high
 lane: true
 created: 2026-09-11T00:47:47Z
-updated: 2026-10-06T22:10:56Z
+updated: 2026-11-07T22:02:12Z
 depends: []
 tags: [quick-add, dynamics, rendering]
 source: "mindful:thought:3f94e656b70f4e5585c1cb60c166e4da"
+origin: mixed
 ---
 
 Make glass respond to movement and focus, then settle completely under the accepted settle contract. Next milestone: the reviewed design of a transient tilt with side walls (material-abc08c), built on material-be611b's height-field edge once its sheet is reviewed. The planar-tilt stills (material-89fb6b) were judged on 2026-10-06: one object, side walls first.
@@ -32,3 +33,4 @@ Source: mindful:thought:3f94e656b70f4e5585c1cb60c166e4da
 - 2026-10-02T23:08:32Z (materials-26.04): workstreams: now a lane (tag lane); scope unchanged; brief: docs/notes/2026-10-02-workstreams-brief.md
 - 2026-10-02T23:08:32Z (materials-26.04): workstreams: adopted lighting ideas material-1c5a30 and material-f3e4e4 (time-varying light); material-77db8a joins when its claim ends
 - 2026-10-02T23:47:23Z (materials-26.04): workstreams: retitled from 'Dynamics sprint: glass that is never fully static' to align with the accepted settle contract (material-f86183, material-0db905). First milestone: material-77db8a brought current with materials-26.04 and verified.
+- 2026-11-07T22:02:12Z (materials-26.04): origin backfill (tasks-0dfdf9): stage 1 unavailable (created 2026-09-11 before tasks-053e89); traced via mindful:thought:3f94e656b70f4e5585c1cb60c166e4da human thought by keith combined with agent settle-contract framing in docs/notes/2026-10-02-workstreams-brief.md -> origin=mixed

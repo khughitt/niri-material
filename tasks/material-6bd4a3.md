@@ -1,10 +1,10 @@
 ---
 id: material-6bd4a3
 title: Check whether per-case capture settles hold with the glass desktop up
-status: idea
+status: dropped
 priority: 1
 created: 2026-09-13T14:03:11Z
-updated: 2026-10-09T01:15:31Z
+updated: 2026-10-10T13:59:16Z
 depends: []
 parent: material-2834d7
 tags: []
@@ -20,3 +20,8 @@ Render-order readiness on 2026-09-12 refused at 23.5% GPU utilization with P5/P8
 - 2026-10-06T19:17:33Z (materials-26.04): scope: briefed; desktop-up preflight meetability is already observed, but repeated settles and lane isolation remain separate; retain thresholds and frame the evidence-class decision in a shared design; brief: docs/notes/2026-10-06-capture-lifecycle-brief.md
 - 2026-10-06T21:17:04Z (materials-26.04): Retitled in review: the original question (preflight meetable with the desktop up) is answered by the 2026-09-16 empty-workspace pass; what remains is whether repeated settles hold, framed by material-18c2a1.
 - 2026-10-09T01:15:31Z (capture-host-conditions): Reviewed decisions (material-18c2a1, docs/specs/2026-10-08-capture-host-conditions-design.md): nested measurements stay on a TTY until the desktop-idle pilot (material-3d48b0, under material-2834d7) passes against the pinned TTY reference; static pixel fixtures run on a desktop in use via --lane pixels; every measured launch must verify its renderer against the sampled GPU; dedicated refuses a live desktop and GPU clients before the hold. Thresholds unchanged.
+- 2026-10-10T13:46:24Z (materials-26.04): scope: drop; status unchanged; its remaining question (do repeated settles hold with the glass desktop up) is the §8.2 desktop-idle pilot material-3d48b0, decided in material-18c2a1 (docs/specs/2026-10-08-capture-host-conditions-design.md); brief: docs/notes/2026-10-06-capture-lifecycle-brief.md; proposal: drop as covered by material-3d48b0
+- 2026-10-10T13:59:16Z (materials-26.04): dropped
+  provenance: {"harness_session":"claude-code:e03a78b3-c4c1-462f-8f79-60750652c715","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-10T13:59:16Z (materials-26.04): Owner approved the scope drop: the remaining question (do repeated settles hold with the glass desktop up) is answered by the desktop-idle pilot material-3d48b0, decided in material-18c2a1
+  provenance: {"harness_session":"claude-code:e03a78b3-c4c1-462f-8f79-60750652c715","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

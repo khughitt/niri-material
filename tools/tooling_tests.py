@@ -18,6 +18,8 @@ import time
 import traceback
 import unittest
 
+from tools.hermetic_git import isolate
+
 LIFECYCLE_CLASSES = {'DriverCleanupTests', 'VtLibTests'}
 OPTIONAL_SKIPS = {
     'test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_old_ring_replaces_inherited_default_response_with_retained_candidate',
@@ -505,6 +507,9 @@ def check_paths():
     assert_static_coverage(Path.cwd(), patterns)
 
 def main():
+    # Parent and every --worker enter here, so no tooling case sees the host's git
+    # environment or config, whichever bucket it lands in.
+    isolate(os.environ)
     parser = argparse.ArgumentParser(description=__doc__)
     choices = parser.add_mutually_exclusive_group(required=True)
     choices.add_argument('--full', action='store_true')

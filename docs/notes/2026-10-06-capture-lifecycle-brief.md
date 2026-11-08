@@ -39,6 +39,12 @@ consumer questions are resolved; `material-925518` is shelved (see below).
   again and may fail while writing checksums. `finish_run` changes the record
   only on its first finish; lifecycle tests require later release immutability.
   Release success therefore cannot stand in for final fixture success.
+- Recheck on 2026-10-20 (`52c14d4d`): `material-9cf378` records continued
+  idle-budget support and its 2026-10-09 update to `4d03b5b` for renderer
+  verification and release-status propagation. Its normal DRM sub-run finish
+  boundary still needs inspection in the external checkout. `release` still
+  accepts no exit status; the newer `judge` command evaluates capture evidence,
+  not the final shell outcome. Both ideas now depend on their named follow-ups.
 
 ## Constraints
 
@@ -68,8 +74,8 @@ These follow-ups need no host capture; later measured execution declares
   `material-77db8a`. The hardware routes' host conditions are settled in the
   [per-route host conditions design](../specs/2026-10-08-capture-host-conditions-design.md);
   a software lane waits for a demonstrated consumer.
-- Is the external idle-budget DRM consumer still supported, and where should
-  normal completion call `finish_sub_run`? `material-282edc` checks the actual code.
+- Continued support is established by `material-9cf378`; where should normal
+  completion call `finish_sub_run`? `material-282edc` checks the actual code.
 - Which outcome can be recorded truthfully after hold restoration and checksum
   work, including early release and interrupted cleanup? `material-232940`
   designs the boundary; recovery without an observed status stays unknown.

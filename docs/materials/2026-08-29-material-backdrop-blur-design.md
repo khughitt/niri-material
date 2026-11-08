@@ -77,7 +77,13 @@ element and the stationary one bind **the same buffers and the same textures**:
 Identical `Rc` addresses, identical GL texture ids, identical dimensions and
 commit counter, in the same frame — one shows frost, the other does not. No
 buffer, blur, texture-selection, or configuration explanation can survive that.
-The divergence is entirely in the sampling geometry the shader is handed.
+
+The conclusion drawn from it at the time, that the divergence lay in the
+sampling geometry the shader is handed, was wrong. Frozen renders
+(`material-5d92cb`) showed the sampling and the alpha offscreen are correct: a
+tiled drag composites its tile at opacity 0.75, so a quarter of the sharp scene
+shows through the glass. See the
+[research result](../notes/2026-10-15-frost-drag-brief.md#research-result-material-5d92cb).
 
 The `unchanged:0` alternation on the backdrop buffer is therefore a red herring
 for this defect: both consumers read the same texture out of it.
@@ -88,22 +94,15 @@ survive either: the defect reproduces in the normal scrolling view, where
 `InteractiveMoveData::tile_render_location` applies `upscale(zoom)` with
 `zoom == 1`, so the dragged tile is not scaled down.
 
-The next probe should log, per element and per frame, the destination rect
-alongside `backdrop_rect` and the `XrayPos` the element was built with, so the
-ratio between sampled texels and destination pixels can be computed directly
-for the dragged and stationary elements and compared. That ratio is the last
-quantity that differs between two elements provably reading the same texture.
+The probe planned next, logging each element's destination rect beside its
+`backdrop_rect`, was overtaken by the frozen-render result above.
 
-**Known defect, found in burn-in 2026-08-30 and open.** Dragging a window
-between workspaces in overview drops the frost from the moment the insert hint
-appears; it returns when the drag ends. It is attributed to this work: with
-`backdrop-blur` off the glass survives the same drag intact. The
-interactive-move path keeps drawing the material from the same blurred buffers
-and GL textures as a stationary window in the same frame. Instrumentation has
-ruled out plain fallback, sharp-texture selection, buffer identity, blur
-strength, and overview scaling; the remaining divergence is the sampling
-geometry passed to the shader. The defect is cosmetic and transient, and the
-daily-driver burn-in passed with it recorded as acceptable.
+**Defect found in burn-in 2026-08-30, fixed by `material-e88df7`.** Dragging a
+window between workspaces in overview dropped the frost from the moment the
+insert hint appeared until the drag ended, in the normal view too. The cause
+was the drag opacity, not this work's sampling: a tile with a material now
+stays opaque for the whole interactive move, with the drag jelly as the move
+cue, and `src/tests/frost_drag.rs` holds it there.
 
 The retained capture hashes, exact reproduction inputs, ROI procedure, and
 cleanup proof are recorded in

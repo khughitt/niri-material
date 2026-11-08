@@ -1,14 +1,18 @@
 ---
 id: material-3d48b0
 title: Pilot nested measurements with the desktop idle against the pinned TTY reference
-status: todo
+status: done
 priority: 1
 size: s
 complexity: mid
 process: direct
 needs: [quiet]
+owner: material-3d48b0
 created: 2026-10-09T01:15:14Z
-updated: 2026-10-09T01:32:32Z
+updated: 2026-10-27T10:55:53Z
+started: 2026-10-11T12:04:57Z
+completed: 2026-10-27T10:55:53Z
+closed: 2026-10-27T10:55:53Z
 depends: []
 parent: material-2834d7
 tags: [capture]
@@ -21,3 +25,37 @@ Spec §8.2 pilot 2: reference runs, binary cb21ad03… and config hashes pinned 
 ## Notes
 
 - 2026-10-09T01:32:32Z (capture-host-conditions): From the final review of material-18c2a1: await_load needs load1 < 1.0 (preflight allows 2.0) and runs before the hold, with the desktop up. The offline rehearsal and the pilot should show whether it passes on a desktop-idle host before preflight is reached; a timeout there is this check, not a refused preflight.
+- 2026-10-11T12:04:57Z (materials-26.04): started
+  provenance: {"harness_session":"claude-code:94bf876f-10c5-43b5-9b79-bbaa31b7031d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-11T12:08:06Z (materials-26.04): Offline config rehearsal on 8a2d7e4f: write_cost_config regenerates none-b*.kdl aa09f751… and one-fine-1-b*.kdl bc488733…, equal to the pinned hashes and to all three reference runs; their niri-tracy-b is cb21ad03…. The pinned reference applies; no fresh TTY runs needed, so the pilot parks --needs idle.
+- 2026-10-11T12:16:17Z (materials-26.04): Stubbed end-to-end rehearsal (CAPTURE_META=:, desktop in use, HEAD e91c92a0) of the exact pilot command: PASS in 7 min (builds 3, 8 sub-runs 4). Its b-side medians (none 0.0886/0.0983, one-fine-1 0.2473/0.1377 ms) are unsettled busy-host numbers far below the TTY reference, not evidence; they suggest GPU clock state dominates (cf. material-f386ae).
+- 2026-10-11T12:16:17Z (materials-26.04): parked (waiting on user, quiet; idle, 25 min): Desktop-idle pilot run 1 (owner away, desktop up, nothing else working) from the main checkout: CAPTURE_TASK=material-3d48b0 OUT=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-idle-pilot-$(date +%s) NOISE_LAYERS_COST_PILOT=0 NOISE_LAYERS_COST_AB=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-hermite-rebuild-1791431057/niri-tracy-b docs/materials/scripts/noise-layers-cost.sh. Phases: build 3, await_load up to 5 (needs load1 < 1.0 with the desktop up; a timeout there is that check, not a refused preflight), preflight 1, 8 sub-runs 4 plus GPU cooldowns. Judge by spec §8.2: every settle settled, no disturbance, every renderer verified, provenance has b cb21ad03…, b config hashes aa09f751…/bc488733…, all four b medians in none [0.228352, 0.230400] and one-fine-1 [0.299008, 0.304128]. Write a run: note. If it passes, run 2 the same way (OUT …-idle-2-…) and judge it; on two passes admit desktop-idle in spec §5.3, map nested measurements to idle, record both run IDs in §8.2, done. On a failure record the reason and keep the route tty.
+  provenance: {"harness_session":"claude-code:94bf876f-10c5-43b5-9b79-bbaa31b7031d","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-16T11:49:37Z (materials-26.04): Not run in the 2026-10-16 quiet session: it needs the desktop up (idle) and the host was a bare TTY. Bearing from material-f386ae: noise-layers-cost medians are later-mode draws at the P8 idle clock (16 early draws at P0 1815 MHz, 0.041 ms; later at P8 210 MHz, 0.326 ms). A desktop that holds the GPU above P8 would move these medians for reasons unrelated to settles, so the pilot's interval check should record pstate/clocks (CAPTURE_GPU_CLOCKS=1) to tell the two apart.
+- 2026-10-17T13:08:34Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-17T13:08:40Z (materials-26.04): Since material-d2e552 (merged eadc3835) noise-layers-cost.sh samples GPU clocks by default. This pilot sets CAPTURE_GPU_CLOCKS=0 (spec §8.2) so it matches its unsampled TTY references; this overrules the 2026-10-16 note's CAPTURE_GPU_CLOCKS=1. A sampled full run would also refuse, rather than report, a desktop that holds the GPU above the idle clock. If the interval check fails, rerun once with CAPTURE_GPU_CLOCKS=1 to tell a held clock (draw_idle_clock_count, idle_graphics_mhz in metrics.txt) from settles.
+- 2026-10-17T13:08:46Z (materials-26.04): parked (waiting on user, quiet; idle, 25 min): Desktop-idle pilot run 1 (owner away, desktop up, nothing else working) from the main checkout: CAPTURE_TASK=material-3d48b0 CAPTURE_GPU_CLOCKS=0 OUT=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-idle-pilot-$(date +%s) NOISE_LAYERS_COST_PILOT=0 NOISE_LAYERS_COST_AB=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-hermite-rebuild-1791431057/niri-tracy-b docs/materials/scripts/noise-layers-cost.sh. Phases: build 3, await_load up to 5 (needs load1 < 1.0 with the desktop up; a timeout there is that check, not a refused preflight), preflight 1, 8 sub-runs 4 plus GPU cooldowns. Judge by spec §8.2: every settle settled, no disturbance, every renderer verified, provenance has b cb21ad03…, b config hashes aa09f751…/bc488733…, all four b medians (draw_median_ms) in none [0.228352, 0.230400] and one-fine-1 [0.299008, 0.304128]. Write a run: note. If it passes, run 2 the same way (OUT …-idle-2-…) and judge it; on two passes admit desktop-idle in spec §5.3, map nested measurements to idle, record both run IDs in §8.2, done. On a failure record the reason, rerun once with CAPTURE_GPU_CLOCKS=1 to attribute it (idle-clock keys in metrics.txt), and keep the route tty.
+  provenance: {"harness_session":"claude-code:05694925-34c9-4a16-ae62-2de8550ed7aa","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-18T03:52:41Z (materials-26.04): Not run in the 2026-10-17 quiet session either: the host was handed over as a bare TTY with the desktop stopped, and this pilot needs the desktop up and idle. It needs a night the owner leaves the desktop running (locked, monitors off) instead of dropping to a TTY.
+- 2026-10-27T09:52:01Z (materials-26.04): resumed
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:02:45Z (materials-26.04): run: 10 min (est 25, idle); build 5, await_load 5; refused: await_load timed out (load1 never < 1.0 within 5 min of the build; host rebooted 12 min earlier, and obs-index.service started its hourly pass at 06:00, ~40% CPU, 6 GB RSS, IO pressure avg60 10%). OUT /mnt/ssd3/niri-material/noise-layers-ab-idle-pilot-1793094737, log /mnt/ssd3/niri-material/idle-pilot-run1.log. No sub-run started, so nothing to judge.
+- 2026-10-27T10:21:46Z (materials-26.04): run: 14 min (est 25, idle); obs-index wait 1, build 3, await_load+preflight 2, 9 sub-runs 7, release 1; failed: interval. Run noise-layers-ab-idle-pilot-1793095623 (desktop up, hold applied: 14 user timers stopped, caffeine, monitors powered off; preflight quiet, baseline 9.125 W P8). All 9 settles settled, no disturbances, scan clean, all renderers verified, provenance has niri-tracy-b1 cb21ad03…, b configs aa09f751…/bc488733…. b medians: one-fine-1 0.302592, 0.303104 (in [0.299008, 0.304128]); none 0.230912, 0.230400 against I_none [0.228352, 0.230400]: none-b1-1 is one half-tick (0.000512 ms) above the upper bound, none-b1-2 on it. Both none medians sit at the top of the interval vs the reference's 0.229376. Next per the brief: one rerun with CAPTURE_GPU_CLOCKS=1 to attribute (idle-clock keys).
+- 2026-10-27T10:36:58Z (material-3d48b0): resumed
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:40:50Z (material-3d48b0): done
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:40:50Z (material-3d48b0): Desktop-idle pilot failed by one half-tick on none-b1-1 (0.230912 vs I_none upper 0.230400); clock-sampled attribution rerun passed with all draws at the 210 MHz idle clock, so no named cause. Route stays tty; result and run IDs recorded in spec §8.2; interval-rule question filed as material-0fff52.
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:46:59Z (material-3d48b0): review: impl round 1 — verdict: revise; findings: Important 1, Minor 5; reviewer: claude-code/claude-opus-5-5
+- 2026-10-27T10:47:11Z (material-3d48b0): resumed
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:53:20Z (material-3d48b0): review: impl round 2 — verdict: revise; findings: Important 1, Minor 5; reviewer: claude-code/claude-opus-5-5
+- 2026-10-27T10:53:58Z (material-3d48b0): Correction to the 10:21 run note and the 10:40 done message (review round 1): the pilot's hold found no lit connector (hold.connectors: []); the monitor was most likely already off from the desktop's own idle, but nothing watched it for a wake. The clock-sampled rerun is attribution only, not pass evidence. 'All draws at 210 MHz' means every draw after the start-up P0 burst and ramp. Spec §8.2 (7bfbc437) carries the corrected account.
+- 2026-10-27T10:55:35Z (material-3d48b0): review: impl round 3 — verdict: accept; findings: Minor 1; reviewer: claude-code/claude-opus-5-5
+- 2026-10-27T10:55:41Z (material-3d48b0): Round 3 Minor 1 (obs-index started ~2 min before the await_load window ended, not in its last minute) applied with the reviewer's wording; no further round.
+- 2026-10-27T10:55:53Z (material-3d48b0): done
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}
+- 2026-10-27T10:55:53Z (material-3d48b0): Desktop-idle pilot failed by one half-tick on none-b1-1 (0.230912 vs I_none upper 0.230400); a clock-sampled attribution rerun had every b median in I_c and no held clock, and no cause is named (the pilot's hold also left the monitor unwatched). Route stays tty. Result recorded in spec §8.2 after three review rounds (revise, revise, accept); interval-rule question filed as material-0fff52.
+  provenance: {"harness_session":"claude-code:e4fb3aae-129a-4879-92bc-63b198023ece","harness_session_source":"CLAUDE_CODE_SESSION_ID"}

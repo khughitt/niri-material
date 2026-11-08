@@ -373,8 +373,9 @@ impl WindowSignals {
 mod tests {
     use std::time::Duration;
 
-    use super::*;
     use niri_ipc::{ImpulseKind, SignalLevel as L, SignalMotion as M};
+
+    use super::*;
 
     fn ms(v: u64) -> Duration {
         Duration::from_millis(v)

@@ -52,3 +52,7 @@ note = "test client gains the virtual pointer manager; collides when upstream ap
 [[acknowledged]]
 path = "src/tests/mod.rs"
 note = "attention_idle test module declared beside upstream's; keep both"
+
+[[acknowledged]]
+path = "niri-config/Cargo.toml"
+note = "serde and serde_json added beside regex for pipeline.json generation; take upstream's versions, keep our two lines"

@@ -3,9 +3,10 @@ id: material-2ebf2c
 title: Perceptual difference metric for visual-vs-cost trade-offs
 status: idea
 priority: 2
+reviewed: true
 created: 2026-09-11T23:39:09Z
-updated: 2026-09-29T21:43:51Z
-depends: []
+updated: 2026-10-15T18:41:49Z
+depends: [material-31074f]
 parent: material-5d6b2c
 tags: [performance, testing]
 ---

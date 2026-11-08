@@ -4,9 +4,10 @@ title: Inactive desaturation post-process
 status: idea
 priority: 2
 size: s
+reviewed: true
 created: 2026-09-02T12:09:35Z
-updated: 2026-10-06T20:15:24Z
-depends: [material-a54d89]
+updated: 2026-10-17T17:35:25Z
+depends: [material-a54d89, material-d257d9]
 parent: material-0a4093
 tags: [signals, rendering]
 ---

@@ -1,7 +1,9 @@
 # Per-route host conditions for capture evidence
 
 **Status:** implemented on `capture-host-conditions` (plan
-`docs/plans/2026-10-08-capture-host-conditions.md`); pilots pending (§8.2).
+`docs/plans/2026-10-08-capture-host-conditions.md`). In §8.2, the pixel-route
+pilot passed on 2026-10-09 (`material-52dc6e`). The desktop-idle pilot failed on
+2026-10-27 (`material-3d48b0`), so nested measurements stay `tty`.
 Accepted for planning at spec review round 3 (2026-10-08). Revised after spec review
 round 1, which covered renderer logging, launchers outside the lib, pre-hold
 dedicated checks, renderer evidence on rejected launches, and the pilot's
@@ -493,7 +495,9 @@ for each attempt. None is part of the implementation.
        `bc488733c6c015d5546e8c503b15487098e471d1394f9255f84c95433c344cc3`
 
    **How the fixture runs the retained binary.** `noise-layers-cost.sh`'s
-   existing A/B mode: `NOISE_LAYERS_COST_PILOT=0`,
+   existing A/B mode: `NOISE_LAYERS_COST_PILOT=0`, `CAPTURE_GPU_CLOCKS=0`
+   (the references ran unsampled; the fixture samples by default since
+   material-d2e552),
    `NOISE_LAYERS_COST_AB=$NIRI_MATERIAL_WORK_ROOT/noise-layers-ab-hermite-rebuild-1791431057/niri-tracy-b`.
    This runs `none` and `one-fine-1`, two rounds per side. Side a is built from
    the checkout as usual and is not part of the comparison. Only the b-side
@@ -524,7 +528,8 @@ for each attempt. None is part of the implementation.
 
    **Passes when,** for both runs:
    - every settle is `settled`;
-   - no disturbance is recorded;
+   - no disturbance of severity `fail` is recorded (an annotated floor step or VT
+     login is reported in the run's `run:` note);
    - every renderer is `verified`;
    - `provenance.binaries` includes the pinned b hash;
    - the b-side config hashes equal the reference's;
@@ -534,6 +539,48 @@ for each attempt. None is part of the implementation.
    to `idle` in the queue, and records the run IDs here. A refused settle or an
    out-of-interval median is recorded with its reason, and the route stays
    `tty`. A retry needs a named cause first.
+
+   **Result (2026-10-27, `material-3d48b0`): failed; the route stays `tty`.**
+   A first attempt, `noise-layers-ab-idle-pilot-1793094737`, stopped at
+   `await_load` before any sub-run. load1 stayed at or above 1.0 after the
+   build, minutes after a reboot, and `obs-index` began its hourly pass in the
+   window's last two minutes. The pilot,
+   `noise-layers-ab-idle-pilot-1793095623`, ran unsampled with the desktop up
+   and the hold applied: 14 user timers stopped and idle inhibited. Its hold
+   found no lit connector (`hold.connectors: []`). The likely reason is that
+   the desktop's own idle had already powered the monitor off. Between the
+   desktop's start at 05:50 and the hold, the session journal's only DRM event
+   is a device change at 06:01:24. The rerun's hold power-off logs the same
+   event.
+   Nothing watched the monitor for a wake, so the clean release scan covers
+   timers and services only. Preflight read `quiet` on a 9.125 W P8 baseline.
+   All nine settles were `settled`, every renderer `verified`, and the pinned b
+   binary and both b config hashes were present. The `one-fine-1` medians,
+   0.302592 and 0.303104, lie in `I_c`. The `none` medians are 0.230912 and
+   0.230400. The second sits on the upper bound, inside the closed `I_none`.
+   The first lies one half-tick (0.000512 ms) above it, which alone fails the
+   pilot, so the second desktop-idle run was not taken.
+
+   One attribution rerun, `noise-layers-ab-idle-pilot-clocks-1793096533`, also
+   settled and verified throughout. It was sampled (`CAPTURE_GPU_CLOCKS=1`) and
+   built from a later source commit (that commit changed only a task record).
+   Because it was sampled, it is not pass evidence against the unsampled
+   reference. Its hold powered off and watched `card1-DP-1`, and its
+   b medians all lie in `I_c`: `none` 0.228352 and 0.229376, `one-fine-1`
+   0.302080 twice. In every case the window's first 16–20 draws are at P0
+   (10–16 of them) or ramping down through P8, as in `material-f386ae`, and
+   every later draw reads P8 at 210 MHz. The desktop did not hold the GPU above
+   its idle clock in this run. The pilot's hold differs from the rerun's in two
+   recorded ways. First, its monitor went unwatched, and no input is known to
+   have woken it. Second, `familiar-reap.service` was recorded active at the
+   hold. That per-minute sweep finished at 06:13:10.95, before the hold stopped
+   its timer and 37 s before the first sub-run. Neither is a named cause for
+   the miss. `I_none`
+   is only ±1 tick wide, because its six reference medians had no spread
+   (`w_none = 0`). Across these two desktop-idle runs the `none` b medians span
+   0.228352–0.230912 ms, against 0.229376 for every TTY reference. These rules
+   allow a retry only with a named cause. A different interval rule would be a
+   revision of this section, fixed before any further run (`material-0fff52`).
 
 ## 9. Out of scope
 

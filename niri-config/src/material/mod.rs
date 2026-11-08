@@ -12,6 +12,7 @@ use knuffel::errors::DecodeError;
 use crate::appearance::Color;
 use crate::FloatOrInt;
 
+pub mod face;
 pub mod optics;
 pub mod params;
 pub mod pipeline;

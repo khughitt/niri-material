@@ -3,9 +3,8 @@
 //! would pass to `jelly_state` and pins the phases (material-b3ce14).
 //! `-- --nocapture` prints the traces.
 
-use crate::render_helpers::material::{bevel_depth, jelly_state};
-
 use super::*;
+use crate::render_helpers::material::{bevel_depth, jelly_state};
 
 const FRAME_MS: i32 = 16;
 /// A mid-range flex from the motion sweep, on its pinned bevel 12 / thickness 20.

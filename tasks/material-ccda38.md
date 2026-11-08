@@ -8,7 +8,7 @@ complexity: high
 process: planned
 needs: [owner]
 created: 2026-10-06T20:28:21Z
-updated: 2026-10-06T21:03:54Z
+updated: 2026-10-13T09:18:39Z
 depends: []
 parent: material-53f873
 tags: [dynamics, rendering]
@@ -26,7 +26,7 @@ Verification contract: define frozen-clock gain/loss/refocus sequences and neutr
 
 Coordinate with material-77db8a's pending focus-gain view-tilt review; its branch's appearance is not accepted or on current main, and no cross-checkout renderer inspection is implied. Design may proceed from the current ring baseline; settle combined behavior only once the relevant branch is current and its review result is available. Related material-6d4de5 remains under its own existing scoping verdict and is not reprocessed.
 
-On the design result, update the dynamics brief and run tasks note on material-d873bf with the finding in the same commit, so the idea can be reconsidered. Owner judgement is required for the design and visual contract; no new measurement is claimed.
+On the design result, update the dynamics brief and run tasks note on material-d873bf with the finding before the result's branch merges, so the idea can be reconsidered. Owner judgement is required for the design and visual contract; no new measurement is claimed.
 
 ## Notes
 

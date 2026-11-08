@@ -1,13 +1,16 @@
 ---
 id: material-8867aa
 title: Aperiodic backdrop for the parameter sweep
-status: todo
+status: done
 priority: 2
 size: s
 complexity: mid
 process: direct
+owner: material-8867aa
 created: 2026-09-07T00:03:24Z
-updated: 2026-10-06T19:24:25Z
+updated: 2026-10-14T11:17:32Z
+started: 2026-10-14T11:09:01Z
+completed: 2026-10-14T11:17:31Z
 depends: []
 parent: material-49871a
 tags: [harness, rendering]
@@ -33,3 +36,15 @@ glass-parameter-sweep.sh paints a 20px grid backdrop. material-48dc76's thicknes
 - 2026-10-02T00:54:22Z (materials-26.04): Consumer: src/tests/ring_look.rs (accepted_ring_look) renders over flat gray, so refraction of the backdrop never shows in the accepted-look reference. An aperiodic backdrop there would let it cover edge refraction (material-be611b) too.
 - 2026-10-06T17:27:19Z (material-bb8480): material-bb8480 (2026-10-06): reuse its artifact rather than a separate backdrop. 'warp-calibration.py backdrop <png>' writes the calibrated field (aperiodic-s20260929, 1280x720, seed and octaves in a tEXt chunk); it has no repeat within the 24 px search and reads a 20 px shift exactly, where the grid refuses every pixel. Keep grid20 available by name so earlier sweep tables stay comparable, and record the backdrop name in each run's provenance. Open choice for this task: colour. The PNG is grey because tinting it by the grid's quadrant colours clips the bright quadrants, which the estimator flags as unfittable.
 - 2026-10-06T19:24:24Z (materials-26.04): scope: scoped; adopt the calibrated grayscale backdrop as an explicit sweep option; retain grid20 default and color-sensitive stimulus, preserve table-only provenance and historical tables; P2 small mid direct; brief: docs/notes/2026-09-29-glass-measurement-brief.md
+- 2026-10-14T11:09:01Z (materials-26.04): started
+  provenance: {"harness_session":"codex:01a13a0f-0b09-76c1-9caa-44ef073664ab","harness_session_source":"CODEX_THREAD_ID"}
+- 2026-10-14T11:09:25Z (material-8867aa): resumed
+  provenance: {"harness_session":"codex:01a13a0f-0b09-76c1-9caa-44ef073664ab","harness_session_source":"CODEX_THREAD_ID"}
+- 2026-10-14T11:15:00Z (material-8867aa): review: impl round 1 — verdict: revise; findings: Important 1; reviewer: codex
+- 2026-10-14T11:15:56Z (material-8867aa): Implementation uses the existing calibrated generator with seed 20260929 and retained backdrop.json; grid default and TSV columns preserved. Offline RED→GREEN routing/provenance checks pass. A real full-size run generated two byte-identical 1280x720 grayscale backdrops and passed all 5 original focused checks in 185.193 s; routine tests reduce only generator dimensions to stay within the tooling worker budget. Review correction refuses capture reuse of OUT before any retained artifacts change; regression proven RED→GREEN.
+- 2026-10-14T11:17:30Z (material-8867aa): review: impl round 2 — verdict: accept; findings: none; reviewer: codex
+- 2026-10-14T11:17:31Z (material-8867aa): Final verification: 6 focused tests pass; full tooling test-fast passed 472 tests in 25.676 s with the two documented optional retained-binary skips. Fresh scoped review accepted with no findings. Ruling: concurrent sweeps targeting the same OUT remain outside this single-operator harness task; no minor findings deferred. No live compositor capture or GPU sweep was run.
+- 2026-10-14T11:17:31Z (material-8867aa): done
+  provenance: {"harness_session":"codex:01a13a0f-0b09-76c1-9caa-44ef073664ab","harness_session_source":"CODEX_THREAD_ID"}
+- 2026-10-14T11:17:31Z (material-8867aa): Added named grid20/aperiodic-s20260929 backdrops, fixed-seed calibrated generation, early validation, retained provenance, unchanged table columns, and offline regression coverage; refuse capture reuse of an OUT containing retained captures.
+  provenance: {"harness_session":"codex:01a13a0f-0b09-76c1-9caa-44ef073664ab","harness_session_source":"CODEX_THREAD_ID"}

@@ -1478,6 +1478,20 @@ impl<W: LayoutElement> Monitor<W> {
         }
     }
 
+    /// The two workspaces the output shows and how far it is between them,
+    /// for the shell hue's switch blend (spec §4).
+    pub fn workspace_blend(&self) -> (WorkspaceId, WorkspaceId, f64) {
+        let last = self.workspaces.len() - 1;
+        let idx = self.workspace_render_idx().clamp(0., last as f64);
+        let lo = idx.floor() as usize;
+        let hi = (lo + 1).min(last);
+        (
+            self.workspaces[lo].id(),
+            self.workspaces[hi].id(),
+            idx - lo as f64,
+        )
+    }
+
     pub fn workspaces_render_geo(&self) -> impl Iterator<Item = Rectangle<f64, Logical>> {
         let scale = self.scale.fractional_scale();
         let zoom = self.overview_zoom();

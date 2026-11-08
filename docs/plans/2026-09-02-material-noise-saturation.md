@@ -34,7 +34,7 @@ YAML, Weston headless GL, ImageMagick.
 - Prism gains no new controls and no renderer change. Its generated niri KDL
   must remain byte-identical; only the `glass.backdropBlur` description and an
   explicit description assertion change.
-- Land the verified Prism commit in the requested `~/d/prism` checkout before
+- Land the verified Prism commit in the requested Prism checkout before
   closing the native parent task.
 - Do not add compatibility aliases, general postprocess abstractions, shared
   GLSL helpers, or a performance benchmark.
@@ -390,12 +390,12 @@ git commit -m "docs(glass): clarify backdrop blur inheritance"
 ```
 
 Name the worktree branch `docs/material-cad932`. After the commit passes, land
-it in the requested clean `~/d/prism` checkout by fast-forward only:
+it in the requested clean Prism checkout by fast-forward only:
 
 ```bash
-git -C ~/d/prism status --short --branch
-git -C ~/d/prism merge --ff-only docs/material-cad932
-git -C ~/d/prism status --short --branch
+git -C "<prism checkout>" status --short --branch
+git -C "<prism checkout>" merge --ff-only docs/material-cad932
+git -C "<prism checkout>" status --short --branch
 ```
 
 Expected: the first status reports clean `main`, the merge fast-forwards, and

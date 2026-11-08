@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use niri_config::Config;
 use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
-
 use wayland_client::protocol::wl_surface::WlSurface;
 
 use super::client::ClientId;
@@ -255,8 +254,9 @@ fn focus_clears_native_urgency_and_demotes_only_until_focus_slots() {
 
 #[test]
 fn ipc_entry_points_validate_and_mutate() {
-    use crate::niri::SetWindowSignalArgs;
     use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
+
+    use crate::niri::SetWindowSignalArgs;
 
     let mut f = Fixture::with_config(config(""));
     f.add_output(1, (1920, 1080));
@@ -331,8 +331,9 @@ fn ipc_entry_points_validate_and_mutate() {
 
 #[test]
 fn refresh_reconciles_deadline_timer_after_focus() {
-    use crate::niri::SetWindowSignalArgs;
     use niri_ipc::{SignalLevel, SignalMotion};
+
+    use crate::niri::SetWindowSignalArgs;
 
     let mut f = Fixture::with_config(config(""));
     f.add_output(1, (1920, 1080));
@@ -382,8 +383,9 @@ fn refresh_reconciles_deadline_timer_after_focus() {
 
 #[test]
 fn rewrite_replaces_the_deadline_and_close_cancels_it() {
-    use crate::niri::SetWindowSignalArgs;
     use niri_ipc::{SignalLevel, SignalMotion};
+
+    use crate::niri::SetWindowSignalArgs;
 
     let mut f = Fixture::with_config(config(""));
     f.add_output(1, (1920, 1080));
@@ -540,9 +542,11 @@ fn culled_workspace_stops_live_signal_transition() {
 
 #[test]
 fn crossfade_and_live_impulses_are_transitions_but_sustained_motion_is_not() {
-    use crate::niri::SetWindowSignalArgs;
-    use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
     use std::time::Duration;
+
+    use niri_ipc::{ImpulseKind, SignalLevel, SignalMotion};
+
+    use crate::niri::SetWindowSignalArgs;
 
     let mut f = Fixture::with_config(config(
         r#"

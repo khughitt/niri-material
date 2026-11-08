@@ -92,7 +92,7 @@ quiet host; they do not establish timing or board power.
   matched set over two uniform inputs and the calibrated texture, decode/correct
   per channel, and quantify straight-edge displacement against independent optical
   expectations and a photometric-only control. No production shader change or live
-  capture. Completion updates this brief and notes `material-343f27` in the same commit.
+  capture. Completion updates this brief and notes `material-343f27` before the result's branch merges.
 - <a id="matched-state-ring"></a>`material-0e80c1` and
   <a id="warp-calibration"></a>`material-bb8480` are completed investigations;
   their detailed findings remain in the linked findings note. Reuse the existing

@@ -10,6 +10,23 @@ for every table in this document.
 Part 1 is the first run of the sweep, against the parameter `prism-8e8a18`
 asked for. Part 2 runs the rest of `prism-5758d3`'s candidates.
 
+For new runs, the script accepts `BACKDROP=grid20` (the unchanged default used
+here) or `BACKDROP=aperiodic-s20260929`, the calibrated 1280x720 grayscale field
+from `warp-calibration.py backdrop` with seed `20260929`. For example, add the
+latter to a thickness sweep to avoid the grid's 20 px period. Use `grid20` for
+glass or blur saturation: the script rejects the grayscale option for that key.
+The aperiodic option does not make RMSE monotonic displacement or demonstrate
+bending. This addition does not rerun or revise the historical tables below.
+
+New captures retain `backdrop.json` (name, seed, generator identity and source
+hash, PNG hash, ImageMagick version) and show it above the unchanged TSV table.
+`TABLE_ONLY=1` uses that record, ignoring the current `BACKDROP`; when the record
+is absent it explicitly says `Backdrop: unrecorded`. It never regenerates the
+stimulus or infers identity for old captures. See the
+[design](../specs/2026-09-06-glass-parameter-sweep-design.md#scene).
+Capture mode refuses an output directory that already contains `cap-*.png`;
+use a fresh directory for each run to preserve capture/provenance pairing.
+
 # Part 1: refraction (`ior`)
 
 ```
@@ -392,16 +409,15 @@ wider than the features it blurs. Not a Prism slider.
 
 ## Instrument caveat: a periodic backdrop and displacing parameters
 
-The backdrop is a 20px grid so that any change registers across the ROI. The
-`ior` run notes that this is fine for RMSE and wrong for template matching. The
-thickness run adds a qualification: RMSE against the first capture is also
-unreliable for a parameter whose effect is to translate the backdrop, because a
+The backdrop for these historical runs is a 20px grid. RMSE against the first
+capture is unreliable for a parameter whose effect is to translate the backdrop, because a
 translation by a whole period is nearly invisible to it. Neighbouring deltas
 are less exposed, since the displacement between adjacent values is usually a
 fraction of a period, but a large step (`120` to `200`) can cross one. None of
 the other seven parameters translate the backdrop, so their tables are not
-affected. The fix, an aperiodic backdrop or a displacement instrument, belongs
-with `material-343f27`.
+affected. The named aperiodic option is now available under `material-8867aa`;
+it does not change these tables or replace the validated displacement
+instrument required by `material-343f27`.
 
 ## Summary for `prism-5758d3`
 

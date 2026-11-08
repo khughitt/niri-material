@@ -322,6 +322,23 @@ class DriverCleanupTests(unittest.TestCase):
         process.stdout.close()
         process.stderr.close()
 
+    def test_workers_run_with_hermetic_git_in_both_modes(self):
+        # The synthetic module never calls isolate: the coordinator must.
+        self.fixture("import json\nclass C(unittest.TestCase):\n"
+                     "    def test_env(self):\n"
+                     "        with open(os.environ['PROBE_OUT'], 'w') as out:\n"
+                     "            json.dump({k: v for k, v in os.environ.items() if k.startswith('GIT_')}, out)\n")
+        poisoned = dict(GIT_DIR=str(self.root / 'decoy.git'), GIT_INDEX_FILE=str(self.root / 'index'),
+                        GIT_CONFIG_GLOBAL=str(self.root / 'host-gitconfig'))
+        for command in (['--full', '--ci'], ['--fast']):
+            with self.subTest(command=command):
+                out = self.root / f'probe-{command[0][2:]}.json'
+                self.command = [sys.executable, '-m', 'tools.tooling_tests', *command]
+                run = self.run_suite(PROBE_OUT=str(out), **poisoned)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertEqual(json.loads(out.read_text()),
+                                 {'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'})
+
 
 class StaticCoverageTests(unittest.TestCase):
     def setUp(self):

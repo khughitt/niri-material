@@ -4,9 +4,10 @@ title: "Glass response: fireflies"
 status: idea
 priority: 2
 size: m
+reviewed: true
 created: 2026-09-02T12:09:34Z
-updated: 2026-09-29T21:32:24Z
-depends: [material-a54d89]
+updated: 2026-10-17T17:35:07Z
+depends: [material-a54d89, material-1c5a30]
 parent: material-0a4093
 tags: [signals, rendering]
 ---

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Installed by `git config core.hooksPath .githooks`. Lifecycle subjects and gate
 # wiring use parallel full tooling; other code uses fast tooling. Prose-only trees
-# retain static source and consistency checks. Both code routes record the same
-# hook-pre-commit target. Full tooling also runs in its own CI job and full gates.
+# retain static source and consistency checks. The fast code route records
+# hook-pre-commit-fast; the full route records hook-pre-commit. Full tooling also
+# runs in its own CI job and full gates.
 # Read staged paths strictly and NUL-delimited, including both rename endpoints.
 # A failed/empty classification takes the full route; full subjects win over docs.
 route=hook-pre-commit-full

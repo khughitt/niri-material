@@ -411,11 +411,11 @@ pub(crate) mod tests {
 
     /// The first entry, certified by convexity rather than by sampling alone. Ψ is convex on
     /// each piece (`bracketing_matches_the_certified_intersection` asserts it), so:
-    /// - a sample at or below 0 proves a hit, and the entry lies between it and the last
-    ///   positive sample before it (the sublevel set of a convex function is an interval);
+    /// - a sample at or below 0 proves a hit, and the entry lies between it and the last positive
+    ///   sample before it (the sublevel set of a convex function is an interval);
     /// - on an interval between samples, the chords through the two samples on either side,
-    ///   extended across it, bound a convex function from below; where both stay above 0
-    ///   the interval holds no hit.
+    ///   extended across it, bound a convex function from below; where both stay above 0 the
+    ///   interval holds no hit.
     ///
     /// Intervals neither cleared nor hit are halved, up to 48 times; what is left is
     /// unresolved. A thin dip between two samples is therefore found or reported, never

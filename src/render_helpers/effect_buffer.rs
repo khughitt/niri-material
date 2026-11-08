@@ -791,8 +791,9 @@ impl EffectBuffer {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use niri_config::NoiseType;
+
+    use super::*;
     #[test]
     fn each_invalidation_clears_what_depends_on_it_and_publishes_damage() {
         use Invalidation::*;

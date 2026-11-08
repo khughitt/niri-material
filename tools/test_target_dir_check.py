@@ -6,12 +6,13 @@ import sys
 import tempfile
 import unittest
 
+from tools.hermetic_git import isolate
+
 # Git exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE into hook processes and they
 # OVERRIDE `git -C <dir>`; check_cmd runs this suite from the pre-commit hook, so a
 # fixture's worktrees would otherwise land in THIS repository. Same scrub as
-# test_upstream_report.py.
-for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
-    del os.environ[_name]
+# test_upstream_report.py, and reads no host git config.
+isolate(os.environ)
 
 TOOL = pathlib.Path(__file__).with_name("target-dir-check")
 
@@ -24,11 +25,12 @@ class TargetDirCheckTest(unittest.TestCase):
         self.main = base / "main"
         self.main.mkdir()
         self.git(self.main, "init", "-q", "-b", "main")
+        # Confined before the first config write: an escaped one lands in this repository.
+        toplevel = self.git(self.main, "rev-parse", "--show-toplevel").strip()
+        self.assertEqual(pathlib.Path(toplevel), self.main, "fixture git escaped its temp dir")
         self.git(self.main, "config", "user.email", "fixture@example.invalid")
         self.git(self.main, "config", "user.name", "Fixture")
         self.git(self.main, "config", "commit.gpgsign", "false")
-        toplevel = self.git(self.main, "rev-parse", "--show-toplevel").strip()
-        self.assertEqual(pathlib.Path(toplevel), self.main, "fixture git escaped its temp dir")
         (self.main / "Cargo.toml").write_text(
             '[package]\nname = "fixture"\nversion = "0.1.0"\nedition = "2021"\n')
         (self.main / "src").mkdir()

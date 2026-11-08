@@ -8,12 +8,13 @@ import tempfile
 import textwrap
 import unittest
 
+from tools.hermetic_git import isolate
+
 # Git exports GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE into hook processes and they
 # OVERRIDE `git -C <dir>`; check_cmd runs this suite from the pre-commit hook, so a
 # fixture's commits would otherwise land in THIS repository. Same scrub as
-# test_upstream_report.py.
-for _name in [_key for _key in os.environ if _key.startswith("GIT_")]:
-    del os.environ[_name]
+# test_upstream_report.py, and reads no host git config.
+isolate(os.environ)
 
 spec = importlib.util.spec_from_loader(
     "package_pin",
@@ -44,9 +45,14 @@ def run(cwd, *args):
 class PinTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.root = pathlib.Path(self.tmp.name)
+        self.root = pathlib.Path(self.tmp.name).resolve()
         self.addCleanup(self.tmp.cleanup)
         run(self.root, "git", "init", "-q", "-b", "main")
+        # Confined before the first config write: an escaped one lands in this repository.
+        toplevel = subprocess.run(
+            ("git", "rev-parse", "--show-toplevel"), cwd=self.root, capture_output=True,
+            text=True, check=True).stdout.strip()
+        self.assertEqual(pathlib.Path(toplevel), self.root, "fixture git escaped its temp dir")
         run(self.root, "git", "config", "user.email", "test@example.com")
         run(self.root, "git", "config", "user.name", "Test")
         (self.root / "docs/materials").mkdir(parents=True)

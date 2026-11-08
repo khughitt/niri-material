@@ -509,7 +509,7 @@ hand-added to the generated fragment:
 ```bash
 prism set debug.backdrop false
 prism apply niri          # regenerates prism.kdl, dropping any hand edit
-git -C ~/d/dotfiles diff --quiet -- niri/config.kdl   # any blur{} edits reverted
+git -C "<dotfiles checkout>" diff --quiet -- niri/config.kdl   # any blur{} edits reverted
 ```
 
 Expected: the last command exits zero, `niri msg layers` shows no

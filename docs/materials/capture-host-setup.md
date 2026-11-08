@@ -52,7 +52,33 @@ Check without switching (a real `chvt` moves the display away):
 sudo -k; sudo -n -l /usr/bin/chvt     # prints /usr/bin/chvt, no password prompt
 ```
 
+## Powering the display down on a TTY (quiet sessions)
+
+A bare TTY never sleeps the display. Quiet sessions power it down once at
+queue start by blanking the framebuffer console. The owner's input wakes it.
+Dotfiles' `install-capture-sudoers` installs the rule (`50-fb-blank`), which
+allows exactly `tee /sys/class/graphics/fb0/blank`, along with `50-chvt` and
+`50-gpu-ctl`:
+
+```sh
+sudo -n -l | grep -F 'NOPASSWD: /usr/bin/tee /sys/class/graphics/fb0/blank'   # the rule itself
+pgrep -x niri || echo 4 | sudo -n tee /sys/class/graphics/fb0/blank
+cat /sys/class/drm/card1-DP-1/dpms                       # Off within ~2 s
+```
+
+The write only works with no compositor holding DRM master. The connector's
+`dpms` file is the reliable reading; fb0's `blank` goes stale. `sudo -n -l
+<cmd>` alone proves nothing on an account that also holds a general sudo rule
+with a cached timestamp, so check for the `NOPASSWD` line. `display-dim
+status` needs no check here: a session that never runs `display-dim set`
+leaves no saved-brightness record to restore.
+
 ## Monitor brightness over DDC/CI (overnight dimming)
+
+On the reference host the monitor, a GBT G34WQC A on DP-1, accepts DDC brightness writes but
+ignores them: `display-dim set` fails with `DDCRC_VERIFY`, while contrast
+writes take effect. Quiet sessions therefore blank the display instead (see
+above). The rest of this section applies to a monitor that honours VCP 0x10.
 
 `ddcutil` installs a udev rule (`60-ddcutil-i2c.rules`) that grants the
 active local session, including a TTY login, access to the display's I²C
@@ -90,7 +116,10 @@ itself is ops's `display-dim` (`ops-a1715a`).
 active user timer, the services named in
 `${XDG_CONFIG_HOME:-~/.config}/niri-material/capture-hold`, and on the
 desktop Noctalia's caffeine and monitor power. `release` restores them and
-scans the journal; a disturbed run fails its fixture.
+scans the journal; a disturbed run fails its fixture. A console login on
+another VT (a `getty@`/`autovt@` restart) is recorded as an annotation on the
+headless and pixels lanes and still fails a dedicated run
+([gates design](../specs/2026-10-17-capture-evidence-gates-design.md)).
 
 Restore is not schedule-preserving: `systemctl --user start` re-anchors
 each timer's `OnActiveSec` trigger at the restore instant (and an

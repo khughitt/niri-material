@@ -1,0 +1,57 @@
+#!/usr/bin/env python3
+"""Refuse a commit identity set in this repository's own git config.
+
+    tools/identity-check
+
+Commits here take their author and committer from the global config. A git fixture
+test run from the pre-commit hook inherits GIT_DIR, which overrides `git -C <tmp>`, so
+its `git config user.name ...` lands in this repository's .git/config instead of the
+fixture's. Nothing then looks wrong: every later commit, on every host the checkout
+syncs to, is authored by the fixture. On 2026-09-06 that made `Fixture
+<fixture@example.invalid>` the author of six weeks of commits (material-5184bf).
+
+So any user.name or user.email at local or worktree scope is refused. The check reads
+the repository git resolves from the environment, which inside a hook is the one being
+committed to. The check chains run it after the tooling tests, so a leak from the tests
+of the very commit being made fails that commit.
+
+Standard library only. Exits 1 when a local identity is set, 2 when it cannot run.
+"""
+import subprocess
+import sys
+
+SCOPES = ("local", "worktree")
+
+
+def main():
+    try:
+        result = subprocess.run(
+            ("git", "config", "--show-scope", "--get-regexp", r"^user\.(name|email)$"),
+            capture_output=True, text=True, check=False)
+        inside = subprocess.run(("git", "rev-parse", "--git-dir"),
+                                capture_output=True, text=True, check=False)
+    except OSError as error:
+        print(f"identity-check: cannot run git: {error}", file=sys.stderr)
+        return 2
+    if inside.returncode != 0:
+        print(f"identity-check: not a git repository: {inside.stderr.strip()}", file=sys.stderr)
+        return 2
+    # --get-regexp exits 1 when nothing matches.
+    if result.returncode not in (0, 1):
+        print(f"identity-check: git config: {result.stderr.strip()}", file=sys.stderr)
+        return 2
+    found = []
+    for line in result.stdout.splitlines():
+        scope, _, entry = line.partition("\t")
+        key, _, value = entry.partition(" ")
+        if scope in SCOPES:
+            found.append((scope, key, value))
+    for scope, key, value in found:
+        print(f"identity-check: {key}={value} ({scope}) overrides the global identity; "
+              f"a git fixture likely leaked into this repository's config. Remove it: "
+              f"git config --{scope} --unset {key}", file=sys.stderr)
+    return 1 if found else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -19,6 +19,8 @@ tt := "python3 tools/tt"
 # fast_cmd selects affected Rust packages; test_cmd stays Rust-only for CI.
 # check_cmd runs hygiene, target isolation, rustfmt, clippy, fast tooling and
 # repository consistency checks. Full checks substitute parallel tooling once.
+# identity-check follows the tooling, so a fixture leaking a commit identity into
+# .git/config fails the very commit whose tests leaked it.
 nextest_cmd := "cargo nextest run --status-level fail --final-status-level fail"
 fast_cmd := "python3 tools/test-affected --status-level fail --final-status-level fail"
 one_cmd := nextest_cmd
@@ -28,14 +30,14 @@ tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fa
 tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full 2>&1"
 tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --check-paths"
 hygiene_cmd := "python3 tools/ops-check"
-check_before_cmd := hygiene_cmd + " && python3 tools/target-dir-check && cargo fmt --all -- --check && cargo clippy --all --all-targets"
-check_after_cmd := "tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
+check_before_cmd := hygiene_cmd + " && python3 tools/target-dir-check && rustup run nightly cargo fmt --all -- --check && cargo clippy --all --all-targets"
+check_after_cmd := "python3 tools/identity-check && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
 check_cmd := check_before_cmd + " && " + tooling_fast_cmd + " && " + check_after_cmd
 full_check_cmd := check_before_cmd + " && " + tooling_full_cmd + " && " + check_after_cmd
 
 # Prose-only trees: material docs and wiki contain Rust test inputs.
 # Keep the repository-specific consistency checks in both commit paths.
-tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py docs/materials/scripts/vt-lib.sh docs/materials/scripts/optic-settling-smoke.sh docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/*-client.c .githooks/* justfile .github/workflows/*"
+tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py tools/hermetic_git.py docs/materials/scripts/vt-lib.sh docs/materials/scripts/optic-settling-smoke.sh docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/*-client.c .githooks/* justfile .github/workflows/*"
 docs_paths := "README.md AGENTS.md CONTRIBUTING.md docs/specs/*.md docs/plans/*.md docs/notes/*.md tasks/*.md"
 docs_check_cmd := hygiene_cmd + " && " + tooling_paths_cmd + " && " + check_after_cmd
 # The hooks regenerate and stage the divergence report before checking it: its
@@ -79,12 +81,13 @@ check-full:
 
 gate: check-full test
 
-# What the pre-commit hook runs: the report staged, then `check`'s command,
-# under its own hook target.
+# What the pre-commit hook runs for ordinary code: the report staged, then `check`'s
+# command, recorded under the fast route's own hook target.
 hook-pre-commit:
-    {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_cmd}}'
+    {{tt}} hook-pre-commit-fast -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_cmd}}'
 
-# Lifecycle subjects and wiring use the full coordinator, under the same target.
+# Lifecycle subjects and wiring use the full coordinator, recorded under the shared
+# code-commit target the fast route left behind.
 hook-pre-commit-full:
     {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{stage_report_cmd}} && {{full_check_cmd}}'
 

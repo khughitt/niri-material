@@ -14,6 +14,7 @@
 #   BLOCK         glass | blur - which KDL block receives the key   (required)
 #   KEY           KDL key, e.g. ior, thickness, noise               (required)
 #   VALUES        two or more ascending values, whitespace-separated(required)
+#   BACKDROP      grid20 (default) | aperiodic-s20260929
 #   ROI_BEVEL     override the derived bevel-band crop
 #   ROI_FACE      override the derived face-interior crop
 #   TABLE_ONLY    1 to recompute the table from captures already in OUT
@@ -24,7 +25,7 @@
 # consistent with backdrop refraction being broken. Measuring bending needs a
 # separately validated instrument: material-343f27.
 #
-# Requires: weston, kitty, swaybg, jq, rg, ImageMagick 7.
+# Requires: weston, kitty, swaybg, jq, rg, ImageMagick 7, Python 3.
 set -eu
 
 OUT=${OUT:?artifact directory}
@@ -89,17 +90,37 @@ done
 
 # ------------------------------------------------------------------ backdrop
 
-# A high-frequency field, so a change that displaces the backdrop registers
-# across the ROI rather than only where it crosses an edge. Periodic, which is
-# fine for RMSE and would be wrong for template matching - see the bending note
-# in the header.
+# The periodic grid can alias displacement even in RMSE. The calibrated grey
+# field avoids that period, but neither stimulus makes RMSE a bending metric.
 GRID_PERIOD=20
+if [ "$TABLE_ONLY" != 1 ]; then
+    for png in "$OUT"/cap-*.png; do
+        [ ! -e "$png" ] || fail "OUT already contains captures; use a fresh directory or TABLE_ONLY=1"
+    done
+    BACKDROP=${BACKDROP:-grid20}
+    BACKDROP_SEED=null
+    BACKDROP_GENERATOR=${BASH_SOURCE[0]}
+    case $BACKDROP in
+        grid20) ;;
+        aperiodic-s20260929)
+            [ "$KEY" != saturation ] \
+                || fail "BACKDROP=$BACKDROP is grayscale; saturation needs BACKDROP=grid20"
+            BACKDROP_SEED=20260929
+            BACKDROP_GENERATOR=$(dirname -- "${BASH_SOURCE[0]}")/warp-calibration.py ;;
+        *) fail "unknown BACKDROP: $BACKDROP (use grid20 or aperiodic-s20260929)" ;;
+    esac
+fi
 # Used only by the geometry probe, which renders opaque and without a material
 # so its bounding box is the window rect. Absent from the backdrop palette, so
 # nothing else in the frame can match it.
 GEOM_COLOR='#ff00ff'
 make_backdrop() {   # $1 out path
     local dst=$1 x y
+    if [ "$BACKDROP" = aperiodic-s20260929 ]; then
+        python3 "$BACKDROP_GENERATOR" backdrop "$dst" --seed "$BACKDROP_SEED" \
+            || fail "backdrop generation failed"
+        return
+    fi
     local args=(magick -size 1280x720 'xc:rgb(38,44,62)'
                 -fill 'rgb(150,60,52)' -draw "rectangle 0,0 639,359"
                 -fill 'rgb(48,120,80)' -draw "rectangle 640,360 1279,719"
@@ -321,6 +342,14 @@ if [ "$TABLE_ONLY" != 1 ]; then
     # opaque and carries no material, so its bounding box is the window rect
     # exactly; under the glass optics its edges would be tinted and refracted.
     make_backdrop "$OUT/backdrop.png"
+    jq -n --arg name "$BACKDROP" --argjson seed "$BACKDROP_SEED" \
+        --arg generator "docs/materials/scripts/$(basename -- "$BACKDROP_GENERATOR")" \
+        --arg generator_sha256 "$(sha256sum "$BACKDROP_GENERATOR" | cut -d' ' -f1)" \
+        --arg png_sha256 "$(sha256sum "$OUT/backdrop.png" | cut -d' ' -f1)" \
+        --arg imagemagick "$(magick -version | head -n1)" \
+        '{name: $name, seed: $seed, generator: $generator,
+          generator_sha256: $generator_sha256, png_sha256: $png_sha256,
+          imagemagick: $imagemagick}' > "$OUT/backdrop.json"
     write_config "$OUT/geom.kdl" "$OUT/backdrop.png" "" 0
     start_nested "$OUT/geom.kdl"
     spawn_probe sweep-geom "$GEOM_COLOR" 1
@@ -428,6 +457,12 @@ for ((i = 0; i < n; i++)); do
         "${VALUE_LIST[i]}" "$step" "$bn" "$bc" "$fn" "$fc" >> "$OUT/raw.tsv"
 done
 # ------------------------------------------------------------------- output
+if [ -f "$OUT/backdrop.json" ]; then
+    echo 'Backdrop (retained):'
+    jq . "$OUT/backdrop.json"
+else
+    echo 'Backdrop: unrecorded'
+fi
 # per_step divides the neighbour delta by the parameter step, because a caller
 # sampling densely in one region and coarsely in another gets smaller neighbour
 # deltas from the smaller step alone. normalized is computed from per_step for
@@ -471,6 +506,6 @@ END {
 }' "$OUT/raw.tsv" | tee "$OUT/sweep.tsv" | column -t -s "$(printf '\t')"
 
 if [ "$TABLE_ONLY" != 1 ]; then
-    sha256sum "$OUT"/*.png "$OUT"/*.kdl > "$OUT/SHA256SUMS"
+    sha256sum "$OUT"/*.png "$OUT"/*.kdl "$OUT/backdrop.json" > "$OUT/SHA256SUMS"
 fi
 echo "artifacts in $OUT" >&2

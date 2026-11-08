@@ -15,9 +15,14 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
+from tools.hermetic_git import isolate
 from tools.tooling_tests import assert_static_coverage, fast_mode
 
 from tools.optic_settling import FAMILIES, analyze_run, check_window, config_identity, main, parse_edges
+
+# A hook exports GIT_DIR, which overrides `git -C`; the source-commit lookups would
+# read another repository. Host git config stays out too.
+isolate(os.environ)
 
 
 class EdgeTests(unittest.TestCase):
@@ -586,6 +591,13 @@ class PrepareTests(unittest.TestCase):
             run = subprocess.run(['bash', str(script), 'prepare'], env=env, capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             manifest = json.loads((base / 'out/manifest.json').read_text())
+            # Read HEAD under an environment built for this call alone: the fixture and the
+            # smoke script both inherit the process environment, and would agree on a decoy.
+            clean = dict(os.environ)
+            isolate(clean)
+            checkout_head = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'],
+                                                    env=clean, text=True).strip()
+            self.assertEqual(manifest['source_commit'], checkout_head)
             self.assertEqual({case['family'] for case in manifest['cases']}, set(FAMILIES))
             self.assertEqual(list(base.glob('gos.*')), [])
             again = subprocess.run(['bash', str(script), 'prepare'], env=env, capture_output=True, text=True)

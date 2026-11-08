@@ -93,6 +93,13 @@ requires reviewed design and plan documents after a concrete gap is established.
   high complexity, planned. No duplicate research or design task is filed.
 - `material-0c7eed`: **briefed**; reuse `material-31074f`. Its completion note
   must wake this idea alongside its existing waiting ideas and update this brief.
+  Rerun 2026-10-10: the owner's later thought
+  `thought:766ce29a8cf53281108d5b33c42cb264` (collect parameter-change data,
+  refine ranges/defaults/scales from it, consider multi-parameter modes) is
+  already routed in Prism: edit data and learned ranges to `prism-3e59b5`,
+  modes to `prism-503759` (idea), which names this idea for interaction
+  structure. That is a candidate consumer, not an established one:
+  `prism-503759` must first name a concrete mode. No new task.
 - `material-764d8c`: **shelved** until a concrete base/Familiar/focus combination
   exceeds named definitions, response overrides and signal folding. Wake with
   desired values, operator semantics and an acceptance check. `material-8e3b73`

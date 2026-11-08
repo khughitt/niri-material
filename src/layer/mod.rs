@@ -33,6 +33,9 @@ pub struct ResolvedLayerRules {
 
     /// Rules for this layer surface's popups.
     pub popups: ResolvedPopupsRules,
+
+    /// Surface-family remap, replaced whole by later rules.
+    pub surface_remap: Option<niri_config::layer_rule::SurfaceRemap>,
 }
 
 impl ResolvedLayerRules {
@@ -83,6 +86,10 @@ impl ResolvedLayerRules {
                 .merge_with(&rule.background_effect);
 
             resolved.popups.merge_with(&rule.popups);
+
+            if let Some(x) = &rule.surface_remap {
+                resolved.surface_remap = Some(x.clone());
+            }
         }
 
         resolved

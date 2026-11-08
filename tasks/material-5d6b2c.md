@@ -6,10 +6,11 @@ priority: 1
 complexity: high
 lane: true
 created: 2026-09-11T23:34:15Z
-updated: 2026-10-03T16:48:07Z
+updated: 2026-11-07T22:02:42Z
 depends: []
 tags: [quick-add, performance]
 source: "mindful:thought:a476e6bcd1fd4297b70824758235d821"
+origin: mixed
 ---
 
 Make the GPU, CPU and memory cost of material rendering explicit so visual trade-offs can be chosen from measurements. First milestone: finish the remaining settle lifecycle evidence under material-f86183, then run a bounded cost pilot under material-31074f; material-233295 needs no quiet host.
@@ -27,3 +28,4 @@ Source: mindful:thought:a476e6bcd1fd4297b70824758235d821
 - 2026-09-12T19:24:30Z (materials-26.04): Complexity high: The goal still includes an unresolved per-element cost model and exploratory visibility, settling, and visual-cost trade-offs; the landed capture tooling supplies measurement infrastructure only.
 - 2026-10-02T23:08:32Z (materials-26.04): workstreams: now a lane (tag lane); scope unchanged; brief: docs/notes/2026-10-02-workstreams-brief.md
 - 2026-10-02T23:47:23Z (materials-26.04): workstreams: first milestone: remaining settle lifecycle evidence (material-f86183 children), then a bounded cost pilot under material-31074f. material-233295 needs no quiet host.
+- 2026-11-07T22:02:42Z (materials-26.04): origin backfill (tasks-0dfdf9): stage 1 unavailable (created 2026-09-11 before tasks-053e89); traced via mindful:thought:a476e6bcd1fd4297b70824758235d821 human thought by keith combined with agent workstreams lane decomposition in docs/notes/2026-10-02-workstreams-brief.md -> origin=mixed

@@ -35,14 +35,19 @@ rendering design assumes.
   and hands the host over, run that queue yourself: one run at a time, the lane's pilot
   before any full run, and a `run:` note for every attempt. The fixture's reproduction
   notes in the `niri-experiments` results doc give the commands and known pitfalls.
-  A TTY has no display sleep: run ops's `display-dim status` first (a stale
-  record means an earlier session did not restore; restore it),
-  `display-dim set 0.25` before the first run and `display-dim restore` after
-  the last, before the final report. `display-dim` is on `~/.local/bin` via
-  ops's install recipe; when the command is missing, that is a host setup
-  fault: say so in the report and file it against ops, never skip silently.
-  Dimming never gates a run; a monitor that rejects DDC stays undimmed and
-  the report says so.
+  A TTY has no display sleep. The reference host's monitor (G34WQC on DP-1)
+  ignores DDC brightness writes, so do not try `display-dim set` there. Power
+  the panel down once, at queue start, before the first preflight. Check that
+  `pgrep -x niri` finds nothing, run
+  `echo 4 | sudo -n tee /sys/class/graphics/fb0/blank`, and confirm that
+  `/sys/class/drm/card1-DP-1/dpms` reads `Off` within a few seconds. Read the
+  dpms file, not fb0's `blank` value, which goes stale. Never restore or
+  re-blank it; leave it to the owner's keyboard or mouse. A missing sudo rule
+  is a host setup fault, and a panel that stays `On` is reported; either way
+  run with the display lit, because blanking never gates a run. With the
+  desktop up, the capture hold powers the monitors off for each run and on
+  again at release (start-only behaviour there is `ops-cab84f`). Say in the
+  report that the display was powered down.
   The packages and host configuration every capture lane needs (sudoers, udev,
   AUR tools) are recorded in `docs/materials/capture-host-setup.md`.
 - Before removing a worktree, run `tt-report` so its fallback test-timing log is
@@ -55,6 +60,9 @@ rendering design assumes.
 
 ## Gates
 
+- Formatting uses nightly rustfmt, matching CI; stable ignores the import-grouping
+  settings. Install it with `rustup toolchain install nightly --profile minimal
+  --component rustfmt`, then format with `rustup run nightly cargo fmt --all`.
 - While editing Rust: `just test-one -p niri <name-filter>` or
   `just test-one -E 'test(foo) | test(bar)'` (nextest arguments). Then
   `just test-fast`, which selects changed workspace packages and their dependents
@@ -72,12 +80,17 @@ rendering design assumes.
   total by default and up to sixteen under a granted budget;
   both routes are capped by `NEXTEST_TEST_THREADS` when
   set; the cap must be a positive ASCII decimal integer.
+  A test module that runs git calls `isolate(os.environ)` from `tools/hermetic_git.py`
+  at import; the coordinator also applies it to every worker.
 - `just check` runs hygiene, target isolation, rustfmt, clippy, fast tooling and
-  task/report/pin checks; `just check-full` substitutes parallel full tooling.
+  identity/task/report/pin checks; `just check-full` substitutes parallel full tooling.
+  `tools/identity-check` refuses a repo-local user.name or user.email: the trace a
+  git fixture leaves when hook-inherited GIT_DIR redirects its `git config` here.
   Pre-commit uses full tooling for the narrow lifecycle subjects and gate wiring in
   `tooling_full_paths`, fast tooling for other code, and static source plus consistency
-  checks for root guides/tasks/specs/plans/notes. Both code routes record the same
-  `hook-pre-commit` target; every route checks lifecycle source coverage statically.
+  checks for root guides/tasks/specs/plans/notes. The fast route records
+  `hook-pre-commit-fast` and the full route `hook-pre-commit`; every route checks
+  lifecycle source coverage statically.
   Material docs and wiki retain code checks because Rust tests read their inputs.
 - CI runs the full suite (including doctests) for every branch/tag pushed to `origin`.
   Pre-push there runs `check` plus config and IPC tests through nextest;
