@@ -1,6 +1,6 @@
 //! The accent tint (docs/materials/glass-optics.md#accent-tint): what
 //! must hold for any weight. The look is judged by eye on the dumps
-//! (`accent_tint_dumps`, plan Task 6).
+//! (`accent_tint_dumps`).
 
 use std::time::Duration;
 

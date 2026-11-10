@@ -3402,7 +3402,7 @@ mod tests {
             "settled black",
         );
 
-        // black → orange from 2000 ms, at the spec's fractions.
+        // black → orange from 2000 ms, at the fractions below.
         set(&tile, orange);
         for (at, f) in [
             (ms(2000), 0.),
@@ -3938,7 +3938,7 @@ mod tests {
         assert_eq!(beam_of(&tile), None);
     }
 
-    /// The slow fixture of the design's timeout cases: a flat 1800 × 1200
+    /// The slow fixture of the timeout cases: a flat 1800 × 1200
     /// slab, gap 0, zero radii and zero jelly (`P = 6000`, `L = 1200`) at
     /// 50 px/s: a 120 s lap and a 144 s run.
     fn slow_tile(clock: Clock) -> Tile<TestWindow> {
@@ -4825,7 +4825,7 @@ mod tests {
 
     #[test]
     fn a_swing_whose_wall_alone_is_in_view_keeps_animating() {
-        // Plan review round 1: a 100 px pane with bevel 0 and thickness 200 at 20°, κ 6. Its
+        // Regression: a 100 px pane with bevel 0 and thickness 200 at 20°, κ 6. Its
         // resting right edge sits 10 px left of the view; the lifted wall reaches 29.8 px into
         // it. The swing must keep requesting frames while only the wall is visible.
         let glass = niri_config::ResolvedGlass {

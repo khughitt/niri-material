@@ -229,7 +229,7 @@ def load_baseline(root):
 
     Valid TOML is not a valid record. `carried = 1` parses fine and then explodes on
     `len()` with a traceback and the wrong exit code; a truncated hash pasted from
-    the design doc validates against nothing. Both are caught here, as ReportError,
+    a document validates against nothing. Both are caught here, as ReportError,
     so they reach the error boundary and exit 2."""
     record = tomllib.loads(read_index(root, BASELINE_PATH))
     if not isinstance(record, dict):

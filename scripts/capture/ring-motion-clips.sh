@@ -58,7 +58,7 @@ RUN=ring-clips-$$-$(date +%s)
 OUT=$EVIDENCE/ring-motion-clips-$(git rev-parse --short HEAD)/$RUN
 RT=$XDG_RUNTIME_DIR/$RUN-rt       # short: nested niri panics on long socket paths
 SEQUENCES=${SEQUENCES:-"beam-run beam-gap16 beam-nospill beam-splash beam-fast beam-wander beam-decay beam-bevel0"}
-TILT=${TILT:-10}; KAPPA=${KAPPA:-6}   # the owner's pick from the stills (Task 13)
+TILT=${TILT:-10}; KAPPA=${KAPPA:-6}   # the owner's pick from the stills
 BEAM_GLOW=${BEAM_GLOW:-1}             # ring-glow's default; 3 is its ceiling
 TILT_SWINGS="tilt-swing tilt-swing-beam tilt-swing-slow tilt-swing-flipped"
 SWING_S=2.5   # view-tilt-settle is 900 ms; the rest of the burst shows the pane at rest
@@ -122,7 +122,7 @@ magick -size 160x90 pattern:checkerboard -scale 800% "$CHECKER"
 KITTY_OPTS='"-o" "cursor_blink_interval=0" "-o" "cursor_stop_blinking_after=0" "-o" "background_opacity=0.6"'
 # The gradient focus ring is off so the beam is the only focus cue in frame,
 # and the startup hotkey overlay is skipped so nothing sits over the scene.
-# `bevel 10; ring-gap 8` is the spec's pairing under review, with the shipped
+# `bevel 10; ring-gap 8` is the pairing under review, with the shipped
 # `ring-beam-speed 300` and `ring-glow 1`; SPEED, GAP and GLASS vary one of
 # them per fixture. The idle gate is off: the nested instance sees no input.
 write_config() {   # $1 = path; SPEED, GAP, GLOW, GLASS, NOISE, NOISE_HZ, DECAY, VTILT, VKAPPA, SETTLE override the fixture's defaults

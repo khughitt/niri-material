@@ -716,7 +716,7 @@ gpu_round() {   # $1 = round; orders are reference/default/ring, default/ring/re
 # the retained roughness trace (different backdrop, geometry, and damage
 # driver) is not comparable and is not used as a gate.
 # The base commit has only the generic `draw shader` GPU zone, so the
-# reference checkout gets the same profiling-only wrapper Task 8 adds
+# reference checkout gets the same profiling-only wrapper the shipped code carries
 # (`MaterialRenderElement::draw`) before it is built. The wrapper changes no
 # rendering; it only names the zone. Exactly one call site must match.
 patch_reference_gpu_zone() {   # $1 = worktree path

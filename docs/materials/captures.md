@@ -141,9 +141,11 @@ only on `dedicated`.
 - **Settle windows.** On `headless`, when no sample in the window lists a
   graphics or compute client, a power departure beyond `settle_gpu_power_w` is
   annotated `unclaimed-power-step`, and a power IQR above `gpu_power_iqr_w` is
-  annotated `unclaimed-power-spread`. Every other departure fails. An entry
-  with annotations and no reasons is `settled`; settle prints each annotation
-  and exits 0.
+  annotated `unclaimed-power-spread`. Otherwise a power IQR is not judged in a
+  settle window on any lane (the preflight baseline does judge it on measured
+  lanes), and a power departure with a client present follows the rule above.
+  Every other kind of departure fails. An entry with annotations and no
+  reasons is `settled`; settle prints each annotation and exits 0.
 - **Release scan.** A `restart` of `getty@ttyN.service` or
   `autovt@ttyN.service` (a console login on another VT) is annotated
   `vt-login` on `headless` and `pixels` and fails on `dedicated`. Every other
@@ -192,9 +194,12 @@ connector's `dpms` could not be read).
 
 ## Capture JSON
 
-One `capture.json` at the top of the run directory, `"schema": 1`. Each
-section is written once by its verb; a second write is refused (exit 2), so a
-run directory cannot be half rerun. Times are RFC 3339 with offset (the
+One `capture.json` at the top of the run directory, `"schema": 1`. The
+`environment`, `baseline`, `preflight`, `provenance` and `hold` sections are
+written once by their verb, and a second write is refused (exit 2), so a run
+directory cannot be half rerun. The rest change after their first write:
+`sub_runs` entries are appended, the restore attempts of `hold_end` accumulate across
+retries, and the `finished` time of `run` is stamped later by release or a recoverer. Times are RFC 3339 with offset (the
 `_us` fields are epoch microseconds), hashes full SHA-256, and measured values
 carry their unit in the key. Fixtures add nothing to it.
 

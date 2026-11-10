@@ -86,7 +86,7 @@ mod tests {
     #[test]
     fn oklab_round_trips() {
         // The published matrices are inverse only to their 10 digits: the
-        // round trip errs by about 3e-8 to 2e-7 (plan review round 1), far
+        // round trip errs by about 3e-8 to 2e-7 (measured), far
         // below one 8-bit level (about 4e-3 at the darkest step).
         for rgb in [[0.2, 0.5, 0.9], [0.01, 0.003, 0.4], [0.9, 0.9, 0.1]] {
             let back = oklab_to_linear(linear_to_oklab(rgb));

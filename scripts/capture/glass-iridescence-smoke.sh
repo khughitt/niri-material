@@ -4,7 +4,7 @@
 # rather than the face, and its frame cost is recorded.
 #
 # Captures: plain (no node), zero (`iridescence 0`), on (`iridescence 0.8`),
-# and rainbow (the preset body) for the evidence doc. The chamfer ROI samples
+# and rainbow (the preset body) for comparison. The chamfer ROI samples
 # the visible chamfer; the face ROI is inside the window. Oklab a/b RMSE against
 # the zero capture measures added chroma. Cost is the GPU median of the
 # material draw for plain, zero, and on, three rounds in rotated order.

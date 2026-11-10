@@ -74,7 +74,7 @@ crease. With `thickness <= bevel` the glass thins to zero at the silhouette;
 otherwise a wall of `thickness - R` remains.
 
 The structural normal is `normalize(vec3(R * f'(u) * grad_u, 1))`, its slope
-capped at `BEVEL_SLOPE_CAP` (20, so `n.z >= 0.05`). `grad_u` blends the face
+capped at `BEVEL_SLOPE_CAP` (20, so `n.z` is at least about 0.0499, one over the square root of 401). `grad_u` blends the face
 box's exact outward gradient with the silhouette's softened one
 (`softOuterGrad`: softplus for each positive part, `tanhs` for each sign, in
 the log domain); the exact silhouette gradient would crease the normal where
@@ -205,8 +205,9 @@ White and fine grain add in encoding, signed and unclamped; lightness moves
 Oklab lightness on the clamped colour. Grain is screen-seeded and does not
 refract with the image. Amount 0 is neutral at every site.
 `src/tests/noise_site.rs` checks the identities between sites: an omitted
-site equals `glass`, and on a flat face at `ior` 1 `film` and `backdrop` match
-`glass` within one and two codes.
+site equals `glass`, and on a flat face at `ior` 1 `film` differs from
+`glass` by at most one code, and, with blur off, `backdrop` differs from
+`glass` by at most two codes on average.
 
 ## Noise layers
 

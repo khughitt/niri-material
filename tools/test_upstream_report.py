@@ -314,9 +314,9 @@ class Inventory(Fixture):
         row = by_path["src/renamed.rs"]
         self.assertTrue(row.status.startswith("R"), row.status)
         self.assertEqual(report.classify(row.status, row.path), "B")
-        # The baseline path survives, so Task 4's drift analysis can ask upstream
-        # about the old name. seam_paths and churn are asserted in Task 4, which is
-        # where they are implemented — Task 2 must pass its own gate on its own.
+        # The baseline path survives, so the drift analysis can ask upstream
+        # about the old name. seam_paths and churn are asserted with the drift
+        # analysis tests, which is where they are implemented.
         self.assertEqual(row.previous, "src/lib.rs")
 
     def test_disagreeing_diff_formats_are_an_error(self):
@@ -855,7 +855,7 @@ class Cli(Fixture):
                 self.assertNotIn("Traceback", result.stderr)
 
     def test_truncated_hash_exits_two(self):
-        """A short hash copied out of the design doc must not validate."""
+        """A short hash copied out of a document must not validate."""
         self.stage_working_document()
         text = (self.root / report.BASELINE_PATH).read_text()
         lines, replaced = [], 0

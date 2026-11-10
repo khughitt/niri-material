@@ -492,7 +492,7 @@ impl ResolvedResponse {
 /// A `material "name" { ... }` definition block.
 ///
 /// v1 has exactly one material type, so `glass` is a required single child
-/// and knuffel enforces the design's "exactly one material type block per
+/// and knuffel enforces the "exactly one material type block per
 /// definition" rule for us: a missing `glass` is a missing-node error and a
 /// second one is `duplicate node 'glass', single node expected`. When a
 /// second material type is added, this field becomes a hand-written

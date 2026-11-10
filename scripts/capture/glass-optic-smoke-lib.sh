@@ -393,7 +393,7 @@ roi() {
 }
 face_roi() { echo "200x400+$((PX + 60))+$((PY + 120))"; }
 # This headless capture presents the visible chamfer at the measured window's
-# left edge; the output transform makes the brief's right-band crop nearly flat.
+# left edge; the output transform makes a crop at the window's right band nearly flat.
 chamfer_roi() { echo "20x400+$((PX - 4))+$((PY + 120))"; }
 
 # --- comparison -------------------------------------------------------------

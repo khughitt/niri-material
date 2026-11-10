@@ -111,7 +111,7 @@ impl RemapSetup {
     /// Target Oklab for surface, container and outline at `blend`.
     pub fn family(&self, blend: HueBlend) -> [[f64; 3]; 3] {
         // `hue-chroma 0` is the static look: no project hue, whatever the
-        // workspace holds or how far a fade has got (plan review round 1).
+        // workspace holds or how far a fade has got.
         let blend = if self.hue_chroma > 0. {
             blend
         } else {

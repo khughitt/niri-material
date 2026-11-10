@@ -599,14 +599,14 @@ fn lin(c: u8) -> f64 {
 
 /// Channels whose reflection term changes by more than 0.02 (linear) when the
 /// perturbation is switched on: the reflection follows the perturbed
-/// direction. Calibrated in Task 7 Step 6: 364 real, 0 mutated, so the geometric
+/// direction. Calibrated by running it: 364 real, 0 mutated, so the geometric
 /// mean of 364 and max(0, 4) is 38.
 const REFLECTION_MOTION_MIN: usize = 38;
 
 #[test]
 fn the_reflection_follows_the_perturbed_direction_in_motion() {
-    // Reflection on, rounded bevel, at full flex (edge-highlight parses only
-    // from Task 8, and cancels out of the isolate anyway). Perturbed:
+    // Reflection on, rounded bevel, at full flex (edge-highlight is left out: it
+    // cancels out of the isolate anyway). Perturbed:
     // distortion and jelly ripple; flat: neither.
     let glass = |reflection: f64, perturbed: bool| {
         let perturbation = if perturbed {

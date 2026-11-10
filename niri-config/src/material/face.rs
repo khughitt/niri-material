@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn range_bounds_every_channel_not_neutral_luminance() {
-        // Review round 2: Y(T) passes this glass, a blue backdrop gets 12.5%.
+        // Y(T) passes this glass, but a blue backdrop gets 12.5%.
         let blue = glass("#000080", 30., 10., 1.28);
         let err = check_range("blue", &blue).unwrap_err();
         assert!(
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn worst_case_counterexample_is_accepted_and_inside_the_bound() {
-        // Review round 2: neutral T at about 1%, IOR 1.
+        // The worst case: neutral T at about 1%, IOR 1.
         let g = glass("#191919", 20., 10., 1.0);
         assert!(check_range("gray", &g).is_ok());
         let reference = lightness(&g, B_REF);

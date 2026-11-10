@@ -1639,8 +1639,8 @@ mod tests {
 
     #[test]
     fn material_duplicate_across_include_is_rejected() {
-        // Task 2's arm exists for exactly this: a context-local name set
-        // would not see across the include boundary.
+        // The duplicate check must see across the include boundary, which a
+        // context-local name set would not.
         let err = parse_files_err(&[
             (
                 "main.kdl",

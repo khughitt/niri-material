@@ -1149,7 +1149,7 @@ fn a_diagonal_swing_shows_the_corner_wall_where_the_mirror_does() {
 
 #[test]
 fn the_face_coverage_matches_the_mirror_at_bevel_0() {
-    // Plan review round 1: with bevel 0 the flat face reaches the silhouette, so face hits sit
+    // Regression: with bevel 0 the flat face reaches the silhouette, so face hits sit
     // on the outline. A 100 px slab at 20°, κ 1.5: at x = 52.5 the slab-local distance is
     // −0.4436 px against the projected −0.5305 px. The rendered coverage must follow the mirror
     // within the side bound (1/16 px of outline distance, times the smoothstep's slope 1.5).

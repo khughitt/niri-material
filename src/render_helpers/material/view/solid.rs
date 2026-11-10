@@ -507,7 +507,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_certifier_proves_misses_and_hits_on_known_functions() {
-        // Plan review round 2: a function positive everywhere reaches the chord bounds on the
+        // Regression: a function positive everywhere reaches the chord bounds on the
         // first pass, so a miss must come back certified, not panic.
         assert_eq!(certify(&|t: f64| 1. + t * t, 0., 1.), Certified::Miss);
         assert_eq!(

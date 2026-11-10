@@ -196,8 +196,8 @@ fn a_running_fade_keeps_the_layer_animating() {
 
 #[test]
 fn reload_without_the_rule_and_its_material_drops_the_remap() {
-    // Glass off: Prism removes both the material and the rule (plan review
-    // round 1). The layer must rebuild against the new rules, not panic.
+    // Glass off: Prism removes both the material and the rule (a regression). The layer must
+    // rebuild against the new rules, not panic.
     let mut f = Fixture::with_config(look(""));
     f.add_output(1, (1920, 1080));
     let id = f.add_client();
@@ -275,7 +275,7 @@ fn the_surface_remap_shader_compiles_on_the_test_renderer() {
 #[test]
 fn remap_damage_precedes_the_pixels_it_redraws() {
     // Elements are front to back, and smithay skips damage hidden behind a
-    // declared opaque region (plan review round 1): each remap damage element
+    // declared opaque region (a regression): each remap damage element
     // must come before the surface it redraws, popups included.
     let mut f = Fixture::with_config(look(""));
     // Fixture::with_config has no renderer; render_to_vec needs one.
@@ -341,9 +341,9 @@ fn remap_damage_precedes_the_pixels_it_redraws() {
 #[test]
 fn remap_damage_covers_the_drawn_surface_tree() {
     // The remap wraps every element of a surface tree, so its damage must
-    // cover the tree as drawn, not the window or layer geometry (task 5
-    // review): a popup whose buffer extends past its window geometry, and a
-    // layer subsurface outside the layer surface.
+    // cover the tree as drawn, not the window or layer geometry (a regression): a popup whose
+    // buffer extends past its window geometry, and a layer subsurface outside the layer
+    // surface.
     let mut f = Fixture::with_config(look(""));
     f.niri_state().backend.headless().add_renderer().unwrap();
     f.add_output(1, (1920, 1080));

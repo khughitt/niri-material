@@ -1871,7 +1871,7 @@ mod tests {
 
     #[test]
     fn material_frame_defaults_match_the_pre_change_geometry() {
-        // Pins the spec's re-parameterization claim: the shipped defaults
+        // Pins the re-parameterization: the shipped defaults
         // produce exactly the frame the old lip 6 / shift 6 constants did.
         let glass = ResolvedGlass::default();
         let win = Rectangle::new(Point::new(100., 50.), Size::new(200., 100.));

@@ -780,7 +780,7 @@ vec2 viewHit() {
         // Far from the outline the coverage is 1 either way. Within 4 physical px of the
         // face plane's cross-section (sigma + chamfer), the projected outline can be nearer
         // than the slab-local one: with bevel 0 the face reaches the silhouette, and a
-        // slab-local coverage errs past the side bound there (plan review round 1). The
+        // slab-local coverage errs past the side bound there. The
         // plane-to-screen map shrinks no distance by more than 2x over the configured
         // ranges, so 4 px slab-local is at least 2 px on screen.
         if (viewSigma(g_h0.xy, g_h0.xy - g_center) + g_chamfer > -4.0 * aa) {
