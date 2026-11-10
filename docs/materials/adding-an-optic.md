@@ -1,8 +1,12 @@
 # Adding an optic
 
-An optic is one stage of the glass pipeline: its KDL node, resolved values,
-uniforms, GLSL, and documentation. This recipe uses `noise` as the worked
-example. See `../specs/2026-09-10-material-optics-design.md` for the design.
+Type: guide; document types 1. An optic is one stage of the glass pipeline:
+its KDL node, resolved values, uniforms, GLSL, and documentation. This recipe
+uses `noise` as the worked example. Where each stage runs is in
+[render-pipeline.md](render-pipeline.md), what the existing optics compute and
+the specular hook's `Surface` in [glass-optics.md](glass-optics.md), the stage
+record in [pipeline-schema.md](pipeline-schema.md), and the parameter table in
+[material-config.md](material-config.md).
 
 ## 1. Config: `niri-config/src/material/optics/<name>.rs`
 

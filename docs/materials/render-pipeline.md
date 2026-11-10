@@ -1,12 +1,17 @@
 # Material render pipeline
 
-What runs in what order when a glass window is drawn, what each stage
-samples, and which parameter acts at which stage. Read this before touching
+Type: guide; document types 1. What runs in what order when a glass window is
+drawn, what each stage samples, and which parameter acts at which stage. Read
+this before touching
 `src/render_helpers/material/mod.rs`, `src/render_helpers/material/optics/`,
 `src/render_helpers/shaders/material/prelude.frag`,
 `src/render_helpers/shaders/material/main.frag`, and one shader file per optic,
-or the postprocess and effect-buffer code; it is the frame every rendering
-design in this directory assumes.
+or the postprocess and effect-buffer code; it is the frame the other material
+references assume. What each stage computes is in
+[glass-optics.md](glass-optics.md), the same order as data in
+[pipeline-schema.md](pipeline-schema.md), the parameters in
+[material-config.md](material-config.md), and the recipe for a new stage in
+[adding-an-optic.md](adding-an-optic.md).
 
 Sources: `src/niri.rs` (`fill_xray_elements`, `update_xray_render_elements`),
 `src/render_helpers/effect_buffer.rs`, `src/render_helpers/blur.rs`,
@@ -54,7 +59,7 @@ Elements that carry effects, and they are different programs:
 | --- | --- | --- |
 | Material element | `material.frag` | The window body composed over the glass slab. Everything in section 2. |
 | Background-effect element | `postprocess_and_clip` (`clipped_surface.frag` + `postprocess.frag`) | The sampled backdrop behind the window, with `blur { noise; saturation }` or the window rule's `background-effect` overrides, drawn *under* the window body. |
-| Surface remap element | `surface_remap.frag` (+ `common.frag`) | A layer surface's pixels with its surface family moved to the glass face and the held hue (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md). |
+| Surface remap element | `surface_remap.frag` (+ `common.frag`) | A layer surface's pixels with its surface family moved to the glass face and the held hue. |
 
 Prism's terminal window rule writes
 `background-effect { blur false; noise 0; saturation 1 }`, so for Prism-managed windows the second element is
@@ -126,11 +131,12 @@ runs only where the window is transparent or outside the window.
 
 Stages 2 to 7 operate on the normal, sampled backdrop, or additive light;
 they never read window pixels. The six hook sites are `normal`, `behind`,
-`within`, `specular`, `emissive`, and `post`; see `adding-an-optic.md`.
+`within`, `specular`, `emissive`, and `post`; see
+[adding-an-optic.md](adding-an-optic.md).
 
 ## Under a swing (the rigid tilt)
 
-While a swing runs (`view-tilt`, design `2026-10-09-transient-rigid-tilt`),
+While a swing runs (`view-tilt`),
 the element binds the material program's view variant, the same files
 compiled with `#define MATERIAL_VIEW` (`material_view_source`,
 `ProgramType::MaterialView`). Its `mat_view_on` is 1, and the shader takes
@@ -175,8 +181,7 @@ At rest the element binds the rest program, which declares no view uniform
 and preprocesses to the shader text from before the tilt: every view line
 sits in an `#ifdef MATERIAL_VIEW` block, and a rest line the view path
 changed keeps its earlier text under `#else`. A single program with the
-branch behind one uniform test cost about 13 % per material draw at rest
-(design §6 "Contingency").
+branch behind one uniform test cost about 13 % per material draw at rest.
 
 ## 4. What the order settles
 
@@ -220,7 +225,7 @@ branch behind one uniform test cost about 13 % per material draw at rest
 | Native | Prism key | Stage |
 | --- | --- | --- |
 | `bevel` | `glass.paneLip` (+ max pane shift) | 1, 3, 4 |
-| `bevel-profile` | `glass.bevelProfile` (pending, prism-7024c4) | 1, 3, 4 |
+| `bevel-profile` | `glass.bevelProfile` (pending) | 1, 3, 4 |
 | `offset-x` / `offset-y` | `glass.paneShiftX` / `glass.paneShiftY` | 1 |
 | `thickness` | `glass.thickness` | 1, 3, 4 |
 | `jelly-flex` | `glass.jellyFlex` | 1 |
@@ -231,20 +236,20 @@ branch behind one uniform test cost about 13 % per material draw at rest
 | `roughness` | `glass.roughness` | source selection before 3; 5 scattering; 6 highlight width |
 | `anisotropic-blur` | `glass.anisotropicBlur` | 3 |
 | `chromatic-aberration` | `glass.chromaticAberration` | 3, 5 |
-| `reflection` | `glass.reflection` (pending, prism-7024c4) | 6 |
-| `edge-highlight` | `glass.edgeHighlight` (pending, prism-7024c4) | 6 |
+| `reflection` | `glass.reflection` (pending) | 6 |
+| `edge-highlight` | `glass.edgeHighlight` (pending) | 6 |
 | `iridescence` | `glass.iridescence` | 6 |
 | `aurora`, `drift-hz`, `color` × 2 | `glass.aurora`, `glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB` | 5 |
 | `attenuation-color` | `glass.attenuationColor` | 4 |
 | `attenuation-distance` | `glass.attenuationDistance` | 4 |
 | response `accent-tint` | (none) | 4 |
-| `light-ior` | (pending, prism-0ea68f) | 5 |
-| `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent` | `glass.ring.gap`, (none), `glass.ring.color`, `glass.ring.beamSpeed`, `glass.ring.beamNoise`, `glass.ring.beamNoiseHz`, `glass.ring.decay`, `glass.ring.glow`, `glass.ring.rest`, `glass.ring.accent` (prism-f67834, pending) (`gap`, `beamSpeed`, `glow` on Prism's `prism-1514d3`, merged at the rollout) | 5 |
+| `light-ior` | (pending) | 5 |
+| `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent` | `glass.ring.gap`, (none), `glass.ring.color`, `glass.ring.beamSpeed`, `glass.ring.beamNoise`, `glass.ring.beamNoiseHz`, `glass.ring.decay`, `glass.ring.glow`, `glass.ring.rest`, `glass.ring.accent` (partly pending in Prism) | 5 |
 | `saturation` | `glass.saturation` | 3a |
-| `noise` `site=` | `glass.noiseSite` (pending, prism-be5abe) | source grain pass / 3b / 9 |
-| `noise` `type=` | `glass.noise`; `type=` (pending, prism-51f23b) | 3b |
-| `noise` `scale=` | (pending, prism-85f63a) | source grain pass / 3b / 9 |
-| response `view-tilt`, `view-tilt-settle`, `view-distance` | (pending, prism-2a8fea) | View branch (*Under a swing*) |
+| `noise` `site=` | `glass.noiseSite` (pending) | source grain pass / 3b / 9 |
+| `noise` `type=` | `glass.noise`; `type=` (pending) | 3b |
+| `noise` `scale=` | (pending) | source grain pass / 3b / 9 |
+| response `view-tilt`, `view-tilt-settle`, `view-distance` | (pending) | View branch (*Under a swing*) |
 
 Prism's `glass.inactive.*` keys write the same native parameters into the
 unfocused material definition; `glass.focusSplit` decides whether that
@@ -252,30 +257,23 @@ second definition exists.
 
 ## 6. The schema file
 
-The structure above is also data: `niri-config/src/material/pipeline.rs`
-holds the sites (carrier, composition law, orderable, coverage, cost), the
-stages (site, scope, the parameters each owns and reads, the response fields
-it reads, its optic hook and program), and the structural interactions, and
-tests pin them to `all_params()`, `ORDER`, the `Response` block, and the hook
-calls in each shader program. `resources/materials/pipeline.json` is
-generated from them (`MATERIAL_DOCS_UPDATE=1 just test-one -p niri-config
-material_pipeline_schema_matches_the_file` regenerates it) and
-is what prism vendors to validate its device rack. Design: prism
-`docs/specs/2026-10-04-pipeline-schema-design.md`.
+The structure above is also data: `resources/materials/pipeline.json`,
+generated from `niri-config/src/material/pipeline.rs` and pinned by tests to
+the parameters, the response block and the hook calls in each shader program.
+Prism vendors it to validate its device rack.
+[pipeline-schema.md](pipeline-schema.md) describes its fields, invariants and
+regeneration.
 
-## Related designs
+## Related references
 
-- `2026-08-22-v1-design.md` §2 and §4: the compositing contract and the
-  slab.
-- `2026-08-29-material-backdrop-blur-design.md`: why blur is a source
-  selection, not a pass.
-- `2026-09-01-material-roughness-design.md`: the prefilter pyramids.
-- `../specs/2026-09-02-material-noise-saturation-design.md` and
-  `../specs/2026-09-05-material-glass-noise-saturation-params-design.md`:
-  the original post placement and the unchanged inherit rule. Current behind
-  placement: `../specs/2026-09-12-material-render-order-design.md`.
-- `../specs/2026-09-05-ring-light-focus-response-design.md`: step 5.
-- `2026-09-02-material-signals-design.md`: the signal inputs to steps 5
-  to 7.
-- `../specs/2026-10-03-accent-tint-design.md`: the accent tint of step 4.
-- `performance.md`: what each stage above costs, and when it runs.
+- [glass-optics.md](glass-optics.md): what stages 1 to 9 compute, including
+  the compositing contract, the bevel, the accent tint of step 4 and the
+  noise sites.
+- [pipeline-schema.md](pipeline-schema.md): the sites, stages and
+  interactions as data.
+- [material-config.md](material-config.md): every parameter, its range,
+  default, inheritance, and the signal inputs to steps 5 to 7.
+- [adding-an-optic.md](adding-an-optic.md): the hook signatures and the
+  recipe for a new stage.
+- [performance.md](performance.md): what each stage above costs, and when it
+  runs.

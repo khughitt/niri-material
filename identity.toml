@@ -20,3 +20,14 @@ authority = [
     "docs/materials/upstream-divergence.md",
 ]
 subsystems = []
+
+# Public reference documents under ops's document-types standard; nested
+# references enter the set only by declaration.
+[documents]
+standard = 1
+references = [
+    "docs/materials/glass-optics.md",
+    "docs/materials/pipeline-schema.md",
+    "docs/materials/render-pipeline.md",
+    "docs/materials/adding-an-optic.md",
+]
