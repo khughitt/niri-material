@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# ops-check version 21
+# ops-check version 22
 """Hygiene checks shared by every project: `ops-check` from anywhere inside a repository.
 
 Vendored from ops bin/ops-check as tools/ops-check and run first in a project's check
@@ -49,10 +49,11 @@ exits 2 when it cannot run at all.
   Explicit banned values remain checked using a separate scan. Clean and banned-only
   attachments need no tracker query. Queries share five seconds and 1 MiB of captured
   stdout/stderr per project; failed checks exit 2, negative rows annotate existing layout.
-- Adopted copies: a tracked `tools/` copy of an adopted contract (cli.toml, cli_surface.py,
-  keys.toml, code-organization.md) must be, as the working tree holds it, a version ops's
-  default branch has landed: a change to the contract lands in ops first and the project
-  then runs `vendored adopt`. Ops is found through the tasks registry; where it is not
+- Adopted copies: a tracked `tools/` copy of an adopted contract (code-organization.md)
+  must be, as the working tree holds it, a version ops's default branch has landed: a
+  change to the contract lands in ops first and the project then runs `vendored adopt`.
+  Frozen copies (cli.toml, cli_surface.py, keys.toml) are not judged while per-project
+  surface files replace them. Ops is found through the tasks registry; where it is not
   registered (CI, another host) the rule does not apply, and a registered ops without
   origin/HEAD exits 2.
 """
@@ -99,9 +100,6 @@ SOURCE_SUFFIXES = (".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".rs", ".go", ".
 ROOT_SOURCE_EXEMPT = ("build.rs", "conftest.py", "*.config.js", "*.config.mjs", "*.config.cjs", "*.config.ts")
 # Adopted contracts under tools/ -> their source in ops (ops bin/vendored's ADOPTED).
 ADOPTED = {
-    "cli.toml": "cli.toml",
-    "cli_surface.py": "bin/cli_surface.py",
-    "keys.toml": "keys.toml",
     "code-organization.md": "docs/code-organization.md",
 }
 # A hostname that names no machine in particular is not layout.
