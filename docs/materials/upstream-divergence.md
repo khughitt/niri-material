@@ -1,5 +1,12 @@
 # Upstream divergence
 
+Type: guide; document types 1. How this fork diverges from upstream niri and
+how it moves to a new upstream release: the divergence classes, the feature
+table, the generated seam inventory and drift report, the rebase procedure
+and the rebase log. The acknowledged conflicts are recorded in
+`upstream-conflicts.toml` beside this file, and `tools/upstream-report`
+regenerates the marked regions.
+
 **Posture:** the fork is permanent. The material system is not going upstream.
 "Upstream candidate" here means a *seam*: a small change to an upstream file that,
 if accepted, would shrink our diff and make every rebase cheaper.
@@ -48,7 +55,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-341 paths differ: 58 class B (seam), 232 class A (fork-only), 51 class C (scaffolding).
+342 paths differ: 58 class B (seam), 233 class A (fork-only), 51 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -251,9 +258,7 @@ Conflict notices, verbatim and unparsed:
 
 ## Rebase procedure
 
-Triggered by a new upstream release tag, or quarterly, whichever comes first. The
-authoritative version, with the reasoning for each step, is
-`../specs/2026-09-06-upstream-divergence-design.md`.
+Triggered by a new upstream release tag, or quarterly, whichever comes first.
 
 1. `git fetch upstream --tags`, then `just upstream-report --drift --against <newtag>`.
    Never pass `--force` to this fetch: upstream's own `v26.04` tag object names a

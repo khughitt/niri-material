@@ -1,16 +1,21 @@
 # Material performance guide
 
-Where the GPU, CPU, memory and power go when glass is drawn, which parameters
-are expensive and why, and the levers that reduce cost. This is a map, not
-the evidence: every measured number below links to the section that measured
-it, and claims marked *code* are read from the source and not yet measured.
-The pass order is in [the render pipeline](render-pipeline.md); read it first.
+Type: guide; document types 1. Where the GPU, CPU, memory and power go when
+glass is drawn, which parameters are expensive and why, and the levers that
+reduce cost. Each measured number states its basis: what was measured, how,
+on which host and when. The reference host is an AMD Ryzen Threadripper 1950X
+with an NVIDIA RTX 3070; nested runs put niri under a headless Weston on that
+GPU. Claims marked *code* are read from the source and not measured. The pass
+order is in [the render pipeline](render-pipeline.md); read it first. How
+runs are recorded and gated is in [captures.md](captures.md).
 
 Two facts frame everything else:
 
 - **Damage decides whether anything runs.** A quiet scene does no material
-  work: the measured quiet windows show 0 redraws and 0 material draws
-  ([idle budget, *What is established*](2026-09-11-idle-budget-evidence.md#what-is-established)).
+  work: Tracy traces of nested niri on the reference host (2026-09-25)
+  showed 0 redraws and 0 material draws in every 20 s quiet window after
+  column moves and resizes, with animations off, jelly, a pinned aurora and a
+  drifting aurora under `motion "off"`, and over one 600 s hold.
   A window redraws when its own inputs change or when other output damage
   overlaps it (section 1).
 - **On a discrete GPU, frame time is not the cost that matters; wakeups and
@@ -31,8 +36,8 @@ Two facts frame everything else:
 (`MaterialRenderElement` keeps smithay's default `damage_since`), so a change
 to any of its inputs, such as a cursor blink in a terminal or a wallpaper
 change behind it, redraws the whole slab. Opaque window pixels still return
-after one texture read ([render pipeline §3](render-pipeline.md#3-inside-materialfrag-per-fragment),
-step 0).
+after one texture read (step 0 of
+[the per-fragment program](render-pipeline.md#3-inside-materialfrag-per-fragment)).
 
 ## 2. The backdrop chain: memory and caching
 
@@ -68,19 +73,19 @@ Invalidation (*code*: `effect_buffer.rs`, `cleared_by`):
 - Roughness and `ior` only select levels; they invalidate nothing. One
   pyramid build serves every window whatever roughness each picks.
 
-Measured, RTX 3070, nested headless Weston, a sharp and a blurred
-transparent window with roughness 0.5
-([noise placement, *Tracy costs*](2026-10-05-noise-placement-evidence.md#tracy-costs)):
-one backdrop damage, chain and both material draws together, totals
-1.83–1.88 ms; a wallpaper change damages twice. The GPU span medians inside
+Measured with Tracy GPU spans on the reference host, nested at 1280×720
+from a TTY with the desktop stopped, a sharp and a blurred transparent window
+with roughness 0.5, wallpaper changes and noise-amount drags as stimuli
+(2026-10-05): one backdrop damage, chain and both material draws together,
+totals 1.83–1.88 ms; a wallpaper change damages twice. The GPU span medians inside
 it are per call, and one damage runs several calls: `Blur::render`
 0.45 ms, `Prefilter::downsample` 0.27 ms, `Grain::render` 0.09 ms. Static
 scenes did no chain work. A change to the noise amount at
 `site="backdrop"` reruns the chain on both buffers, 1.42 ms per change,
 against 0.29 ms at `site="glass"`, which only redraws the material. In
-software rendering one wallpaper change caused one pyramid rebuild per
-source, then reuse
-([roughness smoke, *Tracy acceptance*](2026-09-02-material-roughness-smoke.md#tracy-acceptance)).
+software rendering (Tracy on Mesa llvmpipe, 2026-09-02) one wallpaper change
+caused one pyramid rebuild per source, then reuse: no further rebuild in the
+10 s before the trace ended.
 Blur `offset` changes the spread, not the cost; passes beyond about three
 add little, because the full and half levels dominate (*code*).
 
@@ -121,44 +126,66 @@ Arithmetic, by trigger (*code*):
 
 Measured:
 
-- RTX 3070, 456×640 window: 5–15 µs per whole material draw
-  ([hardware evidence, *Material-pass timing*](2026-09-11-material-hardware-evidence.md#material-pass-timing)).
-  Whole-draw medians with the behind stage (noise and saturation) or the
-  within stage (ring and aurora) active equalled the neutral baseline; no
-  difference was resolved in these captures, and the stages were not timed
-  on their own
-  ([render order, *Strict TTY cost matrix accepted*](2026-09-12-material-render-order-evidence.md#strict-tty-cost-matrix-accepted-2026-09-18)).
-- RTX 3070, the two-window scene of section 2: material draw medians
-  0.21–0.27 ms per call on backdrop damage, 0.03–0.15 ms per call on a noise
-  amount change
-  ([noise placement, *Tracy costs*](2026-10-05-noise-placement-evidence.md#tracy-costs)).
-- llvmpipe, 1280×720, relative only: roughness 0.08 +8.7 %; adding
-  `anisotropic-blur 1` and `chromatic-aberration 1` +508 %
-  ([roughness smoke, *Tracy acceptance*](2026-09-02-material-roughness-smoke.md#tracy-acceptance)).
-  Aurora +28.9 %
-  ([aurora evidence, *Metrics*](2026-09-10-material-aurora-evidence.md#metrics)).
-  Software timings rank shader cost; they do not predict GPU cost.
+- RTX 3070, 456×640 window, roughness 0: 5–15 µs per whole material draw
+  (`MaterialRenderElement::draw` GPU spans, medians of 14 warmed draws in
+  each of three runs, nested at 1280×720, 2026-09-11). Plain glass and
+  `aurora 0.5` at 4 Hz both had a 9.728 µs median; GPU clock variation left
+  the optics' relative overhead unresolved.
+- Whole-draw medians with the behind stage (noise and saturation) or the
+  within stage (ring and aurora) active equalled the neutral baseline: every
+  median was 0.020 ms (20,480 ns), +0.0 %, in Tracy matrices of nine rotated
+  sub-runs, all at P8, nested from a TTY with the desktop stopped
+  (2026-09-18). No difference was resolved, and the stages were not timed on
+  their own.
+- RTX 3070, the two-window scene of section 2 (the same 2026-10-05 run):
+  material draw medians 0.21–0.27 ms per call on backdrop damage,
+  0.03–0.15 ms per call on a noise amount change.
+- llvmpipe, relative only (Tracy draw medians of 14 events between 20 and
+  28 s, nested under a 1280×720 headless Weston on Mesa llvmpipe,
+  2026-09-02): roughness 0.08 +8.7 %; adding `anisotropic-blur 1` and
+  `chromatic-aberration 1` +508 %. Aurora +28.9 % (llvmpipe, a 456×640
+  window, 2026-09-10): `aurora 0.5` at 4 Hz cost 5.552 ms per material draw
+  against 4.308 ms plain. Software timings rank shader cost; they do not
+  predict GPU cost.
 
 ## 4. Redraws: what keeps the compositor awake
 
-| Source | Redraw rate | Settles | Evidence |
+| Source | Redraw rate | Settles | Basis |
 | --- | --- | --- | --- |
-| Aurora drift | `drift-hz` while input is active | One flush redraw after `idle-after-ms` (default 30 s), then 0 until input | [optic settling, *Verdict*](2026-09-30-optic-settling-evidence.md#verdict) |
-| Attention (breathe, pulse, flash) | One timer per output; 8–27/s; ten windows cost as one | To static after idle | [signals smoke, *GLES redraw behavior*](2026-09-03-material-signals-smoke.md#gles-redraw-behavior) |
-| Ring beam | Refresh rate for `(perimeter + tail) / ring-beam-speed`, or `ring-beam-decay / ring-beam-speed`: about 16 s for a 1280×720 pane at the default 300 px/s | 0 once the run ends; settled focus costs nothing | [ring beam, *Redraw counts*](2026-09-19-ring-beam-evidence.md#redraw-counts-2026-09-21-and-2026-09-20) |
-| Rigid tilt | Refresh rate for `view-tilt-settle` (900 ms default) after a focus gain, while the resting slab or the swing's footprint is in view; runs on the unadjusted clock, so `animations.slowdown` does not stretch it | 0 once the run ends | [rigid tilt evidence](2026-10-09-rigid-tilt-evidence.md) |
+| Aurora drift | `drift-hz` while input is active | One flush redraw after `idle-after-ms` (default 30 s), then 0 until input | Measured, a |
+| Attention (breathe, pulse, flash) | One timer per output; 8–27/s; ten windows cost as one | To static after idle | Measured, b |
+| Ring beam | Refresh rate for `(perimeter + tail) / ring-beam-speed`, or `ring-beam-decay / ring-beam-speed`: about 16 s for a 1280×720 pane at the default 300 px/s | 0 once the run ends; settled focus costs nothing | *code* for the run, c |
+| Rigid tilt | Refresh rate for `view-tilt-settle` (900 ms default) after a focus gain, while the resting slab or the swing's footprint is in view; runs on the unadjusted clock, so `animations.slowdown` does not stretch it | 0 once the run ends | *code*: `tile.rs` |
 | Focus and signal crossfades, impulses | Refresh rate for 0.4–1.5 s | 0 | *code*: `tile.rs` |
-| Jelly | No clock; rides move and resize animations | Resting jelly: 0 | [idle budget, *What is established*](2026-09-11-idle-budget-evidence.md#what-is-established) |
+| Jelly | No clock; rides move and resize animations | Resting jelly: 0 | Measured, d |
 
-Board power, one RTX 3070 experiment: DRM at 3440×1440, the GPU in P8
-throughout, idle baseline about 10.7 W
-([idle budget, *Isolated board power*](2026-09-11-idle-budget-evidence.md#isolated-board-power)
-and [*Re-run*](2026-09-11-idle-budget-evidence.md#re-run-on-48ba40a1)).
-Resting jelly showed no resolvable increase over plain glass in either run.
-A drifting aurora added +0.85–0.96 W at 4 Hz and +0.68–0.77 W at 2 Hz, so
-halving the rate saved only about a fifth. The clocks did not ramp; the
-evidence names redraws holding the board out of deeper idle as a possible
-cause and does not establish it.
+- a. Tracy redraw counts, nested at 1280×720 from a TTY with the desktop
+  stopped (2026-10-03): 18 redraws per 4.5 s active at 4 Hz and 9 under
+  `motion "reduced"`, one edge-flush redraw, then zero redraws and material
+  draws until resume. Before input settling existed, llvmpipe redraw counts
+  over 20 s (2026-09-10) were 80 at `drift-hz 4`, 40 under reduced motion
+  and 0 when pinned or with motion off.
+- b. Tracy `Niri::redraw` counts over 20 s, nested (2026-09-04): breathe
+  8.0/s, flash 15.9/s, pulse 26.6/s; ten breathe or ten flash windows
+  counted the same as one.
+- c. The run length is `ring.rs`'s `run_length` at the default speed.
+  Tracy redraw counts, nested on llvmpipe (2026-09-21): 0 redraws in the
+  12 s after a beam run, and 0 for a focused window whose beam had finished.
+- d. The 2026-09-25 quiet windows above, including the 600 s jelly hold.
+
+Board power was measured with an uninstrumented niri on DRM from a TTY with
+the desktop stopped: DP-1 at 3440×1440@59.999, scale 1, two transparent
+kitty windows, the board sampled at 1 Hz over 48 windows of 60 s warmup and
+30 s observation in ABBA/BAAB blocks, on 2026-09-27 and again on 2026-09-29
+on a later build. Every sample was in P8 at 210 MHz, and the idle baseline was
+about 10.7 W (10.61 W and 10.845 W). Resting jelly showed no resolvable
+increase over plain glass in either run (+0.015 W, upper estimate 0.13 W;
+then +0.005 W, upper estimate 0.19 W). A drifting aurora over resting jelly
+added +0.85–0.96 W at 4 Hz (upper estimates 1.11 W and 1.37 W) and
++0.68–0.77 W at 2 Hz (upper estimates 0.98 W and 1.03 W), so halving the
+rate saved only about a fifth. The clocks did not ramp; redraws holding the
+board out of deeper idle are a possible cause that these runs do not
+establish. Board power excludes CPU, monitor and total-system energy.
 
 ## 5. Focused and unfocused glass
 
@@ -173,14 +200,15 @@ The split is two material definitions chosen by `is-active` window rules
 - If the two definitions differ in `backdrop-blur` and both use roughness,
   the output keeps and rebuilds both the sharp and the blurred pyramid.
 - The unfocused definition is the natural place for concessions, since most
-  glass on screen is unfocused (idea `material-a91346`).
+  glass on screen is unfocused.
 
 ## 6. Hidden and covered windows
 
-Measured
-([hidden-window attribution, *Attribution*](2026-09-30-hidden-window-attribution-evidence.md#attribution)):
-hidden windows issue no material draws, and a hidden client drops to about
-1 Hz, but each of its commits still queues an output redraw. A window in an
+Measured with Tracy on nested niri from a TTY with the desktop stopped, a
+hidden probe in an inactive workspace, a hidden tab, an offscreen column and
+under an opaque cover (2026-10-01): hidden windows issue no material draws,
+and a hidden client drops from 60.2 fps to 1.0–1.2 fps (about 1 Hz), but each
+of its commits still queues an output redraw, 20 in 20 s. A window in an
 offscreen column or under an opaque cover still re-renders its offscreen on
 those redraws: `Tile::render_inner` renders it while building the tile's
 elements, before smithay's damage and occlusion pass decides what to draw
@@ -189,8 +217,9 @@ sustained optic under an opaque cover is unmeasured; *code*:
 `Tile::tick_deadline` stops scheduling only for windows out of view, not
 covered ones. A window under an opaque *glass* window still draws and gets
 full-rate frame callbacks, because no material element declares an opaque
-region (*code*, unmeasured). What a cull or an opaque region would need is in
-the [culling and damage audit](2026-10-08-culling-damage-boundaries-audit.md).
+region (*code*, unmeasured). A cull would have to come before `Tile::render`
+builds the tile's elements, so that the effect-buffer `prepare`, the offscreen
+render, `material_dynamics` and the deadline report are skipped together.
 
 ## 7. Parameters by cost
 
@@ -200,13 +229,13 @@ the [culling and damage audit](2026-10-08-culling-damage-boundaries-audit.md).
 | `anisotropic-blur` | Taps up to 8 | 0; frost through `backdrop-blur` and `roughness` instead |
 | `roughness` | Pyramid build per backdrop damage, memory, × 2 reads when fractional | 0, or `ior` 1 |
 | `backdrop-blur` | Blur chain per backdrop damage, 1.33 F per buffer | Same value across definitions, so one pyramid kind |
-| `noise site="backdrop"` | 1 F per buffer and a full-frame pass per damage; one setting every material must share | `glass` or `film`; backdrop grain is erased by 3 blur passes |
+| `noise site="backdrop"` | 1 F per buffer and a full-frame pass per damage; one setting every material must share | `glass` or `film`; backdrop grain is erased by 3 blur passes (none left in the 2026-10-05 nested smoke) |
 | `noise type=` | white < fine < lightness | white |
 | `distortion` | 12 simplex per pixel per draw | 0 |
 | `jelly-ripple` | 4 simplex per pixel during motion | Cheap at rest |
 | `aurora` | Redraws at `drift-hz`; close to 1 W in the measured setup | `drift-hz 0`, `aurora 0`, or `signal { motion "off" }`; a shorter `idle-after-ms` |
 | `ring-beam-speed`, `ring-beam-decay` | Refresh-rate run per focus gain | Faster speed or shorter decay; speed 0 or `signal { motion "off" }` removes the run |
-| `view-tilt` | During a swing only: the footprint quad (the bounding box of the projected slab and window, merged with the resting area and cropped to the view; its size grows with `view-tilt` and `thickness` and shrinks as `view-distance` grows) and the traced solid on the bevel band and wall, for `view-tilt-settle` per focus gain; about 1.47 ms per material draw (median; 1.95 ms maximum) and 32 ms of GPU time per gain at `view-tilt 10`, against 0.66 ms at rest (P8 idle clock, RTX 3070); at rest: nothing, since the view path is a second program bound only while a swing runs (the [cost A/B](2026-10-09-rigid-tilt-evidence.md#cost)) | 0 |
+| `view-tilt` | During a swing only: the footprint quad (the bounding box of the projected slab and window, merged with the resting area and cropped to the view; its size grows with `view-tilt` and `thickness` and shrinks as `view-distance` grows) and the traced solid on the bevel band and wall, for `view-tilt-settle` per focus gain; about 1.47 ms per material draw (median; 1.95 ms maximum) and 32 ms of GPU time per gain at `view-tilt 10`, against 0.66 ms at rest (Tracy, nested from a TTY with the desktop stopped, 330 draws within 0.9 s of six focus gains at P8, RTX 3070, 2026-10-16); at rest: nothing, since the view path is a second program bound only while a swing runs (an A/B against the build without it, within 0.002 ms) | 0 |
 | Window transparency, `bevel`, `offset-*` | The area that runs the shader | Opaque content, a narrower band |
 | `reflection` | One prefiltered background read per bevel fragment, two when the prefilter mix is fractional | 0 |
 | `bevel-profile` above 1 | A few operations per bevel fragment (the height field and its normal) | 1, a planar chamfer |
@@ -217,22 +246,19 @@ the [culling and damage audit](2026-10-08-culling-damage-boundaries-audit.md).
 Not built yet:
 
 - Culling invisible and covered windows before `Tile::render_inner`, which
-  skips their offscreen renders and their scheduling
-  (`material-7afc31`).
+  skips their offscreen renders and their scheduling.
 - Narrowed damage for `MaterialRenderElement`, so a cursor blink does not
   redraw the whole slab, and opaque regions, so elements behind its opaque
-  parts are skipped (`material-7f6d0e`).
-- Cost-tiered unfocused glass (`material-a91346`).
+  parts are skipped.
+- Cost-tiered unfocused glass.
 - Pyramid rebuilds only up to the highest requested level; freeing chain
   textures when a feature is turned off; building xray elements only when
   something consumes them (FIXME in `niri.rs`, `update_xray_render_elements`).
-- A per-frame cost counter over IPC (`material-a0cbb0`) and a per-element
-  cost model (`material-31074f`).
+- A per-frame cost counter over IPC and a per-element cost model.
 
 ## 9. Measuring
 
-Use the
-[capture protocol](../specs/2026-09-11-material-capture-protocol-design.md):
+Use the [capture protocol](captures.md):
 every run writes `capture.json` through `tools/capture-meta`, which records
 provenance and the environment and refuses a busy host, so two runs are
 comparable. Power and idle runs need the host to themselves

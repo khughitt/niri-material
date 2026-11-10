@@ -34,4 +34,8 @@ references = [
     "docs/materials/signals.md",
     "docs/materials/motion.md",
     "docs/materials/shell-remap.md",
+    "docs/materials/captures.md",
+    "docs/materials/capture-host-setup.md",
+    "docs/materials/performance.md",
+    "docs/materials/upstream-divergence.md",
 ]

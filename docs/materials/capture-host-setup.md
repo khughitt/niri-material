@@ -1,8 +1,9 @@
 # Capture host setup
 
-What a host needs before it can run this repository's capture lanes: the
-headless lane (nested niri under headless Weston) and the dedicated real-TTY
-lane ([design](../specs/2026-10-02-real-tty-settling-lane-design.md)). The
+Type: guide; document types 1. What a host needs before it can run this
+repository's capture lanes: the nested lanes (niri under headless Weston) and
+the dedicated real-TTY lane. The lanes, the record and the gates are in
+[captures.md](captures.md); the harnesses live in `scripts/capture/`. The
 commands are for Arch Linux; every item is an owner action, not something a
 capture script installs or grants. The drivers check these and refuse with
 the missing item named.
@@ -69,8 +70,8 @@ cat /sys/class/drm/card1-DP-1/dpms                       # Off within ~2 s
 The write only works with no compositor holding DRM master. The connector's
 `dpms` file is the reliable reading; fb0's `blank` goes stale. `sudo -n -l
 <cmd>` alone proves nothing on an account that also holds a general sudo rule
-with a cached timestamp, so check for the `NOPASSWD` line. `display-dim
-status` needs no check here: a session that never runs `display-dim set`
+with a cached timestamp, so check for the `NOPASSWD` line.
+`display-dim status` needs no check here: a session that never runs `display-dim set`
 leaves no saved-brightness record to restore.
 
 ## Monitor brightness over DDC/CI (overnight dimming)
@@ -95,7 +96,7 @@ ddcutil getvcp 10                                          # brightness and its 
 If `ddcutil detect` finds nothing, compare `sudo ddcutil detect`: success
 there means permissions; failure there too means the monitor or driver does
 not answer DDC, and overnight runs simply stay undimmed. The dimming helper
-itself is ops's `display-dim` (`ops-a1715a`).
+itself is ops's `display-dim`.
 
 ## Other host state the lanes assume
 
@@ -105,21 +106,20 @@ itself is ops's `display-dim` (`ops-a1715a`).
   documents the command list.
 - Runs that need an idle host start from a TTY login with the desktop
   stopped (`tasks quiet`, `--needs headless`).
-- The pixels lane (`docs/specs/2026-10-08-capture-host-conditions-design.md`)
-  needs no idle host and no `nvidia-smi`; it holds user timers and the
-  declared services only.
+- The pixels lane ([lanes](captures.md#lanes)) needs no idle host and no
+  `nvidia-smi`; it holds user timers and the declared services only.
 
 ## Disturber hold
 
 `capture-meta preflight` holds the host's disturbers for the whole run
-([design](../specs/2026-10-04-capture-disturber-hold-design.md)): every
+([disturber hold](captures.md#disturber-hold)): every
 active user timer, the services named in
-`${XDG_CONFIG_HOME:-~/.config}/niri-material/capture-hold`, and on the
-desktop Noctalia's caffeine and monitor power. `release` restores them and
+`${XDG_CONFIG_HOME:-~/.config}/niri-material/capture-hold`, and, on a
+measured lane with the desktop up, Noctalia's caffeine and monitor power. `release` restores them and
 scans the journal; a disturbed run fails its fixture. A console login on
 another VT (a `getty@`/`autovt@` restart) is recorded as an annotation on the
 headless and pixels lanes and still fails a dedicated run
-([gates design](../specs/2026-10-17-capture-evidence-gates-design.md)).
+([evidence gates](captures.md#evidence-gates)).
 
 Restore is not schedule-preserving: `systemctl --user start` re-anchors
 each timer's `OnActiveSec` trigger at the restore instant (and an
@@ -155,7 +155,7 @@ cases, which never passes as a pilot.
 
 ```sh
 OUT=$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-dev-$(date +%Y%m%d)-1 \
-  CASES='drm-aurora tty-resume screencast' CAPTURE_TASK=material-f7eb0b \
+  CASES='drm-aurora tty-resume screencast' CAPTURE_TASK=<task-id> \
   NIRI_BIN=<snapshot>/niri-tracy DRM_OUTPUT=DP-1 DRM_MODE=3440x1440@59.999 \
   scripts/capture/optic-settling-smoke.sh pilot --lane dedicated
 ```
