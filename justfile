@@ -17,8 +17,9 @@ tt := "python3 tools/tt"
 
 # Commands shared by the recipes and hooks. Avoid single quotes inside them.
 # fast_cmd selects affected Rust packages; test_cmd stays Rust-only for CI.
-# check_cmd runs hygiene, target isolation, rustfmt, clippy, fast tooling and
-# repository consistency checks. Full checks substitute parallel tooling once.
+# check_cmd runs hygiene (ops-check, then ops-docs check on the guides), target
+# isolation, rustfmt, clippy, fast tooling and repository consistency checks. Full
+# checks substitute parallel tooling once.
 # identity-check follows the tooling, so a fixture leaking a commit identity into
 # .git/config fails the very commit whose tests leaked it.
 nextest_cmd := "cargo nextest run --status-level fail --final-status-level fail"
@@ -29,7 +30,7 @@ test_cmd := "cargo test --all --exclude niri-visual-tests"
 tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fast 2>&1"
 tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full 2>&1"
 tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --check-paths"
-hygiene_cmd := "python3 tools/ops-check"
+hygiene_cmd := "python3 tools/ops-check && python3 tools/ops-docs check"
 check_before_cmd := hygiene_cmd + " && python3 tools/target-dir-check && rustup run nightly cargo fmt --all -- --check && cargo clippy --all --all-targets"
 check_after_cmd := "python3 tools/identity-check && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
 check_cmd := check_before_cmd + " && " + tooling_fast_cmd + " && " + check_after_cmd
@@ -38,7 +39,7 @@ full_check_cmd := check_before_cmd + " && " + tooling_full_cmd + " && " + check_
 # Prose-only trees: material docs and wiki contain Rust test inputs.
 # Keep the repository-specific consistency checks in both commit paths.
 tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py tools/hermetic_git.py docs/materials/scripts/vt-lib.sh docs/materials/scripts/optic-settling-smoke.sh docs/materials/scripts/glass-optic-smoke-lib.sh docs/materials/scripts/*-client.c .githooks/* justfile .github/workflows/*"
-docs_paths := "README.md AGENTS.md CONTRIBUTING.md docs/specs/*.md docs/plans/*.md docs/notes/*.md"
+docs_paths := "README.md AGENTS.md CLAUDE.md identity.toml CONTRIBUTING.md docs/specs/*.md docs/plans/*.md docs/notes/*.md"
 docs_check_cmd := hygiene_cmd + " && " + tooling_paths_cmd + " && " + check_after_cmd
 # The hooks regenerate and stage the divergence report before checking it: its
 # seam line counts move with nearly every source commit. `check` and CI only check.
@@ -59,6 +60,11 @@ setup_cmd := "git config core.hooksPath .githooks && if command -v work-link >/d
 
 setup:
     {{tt}} setup -- sh -c '{{setup_cmd}}'
+
+# Regenerate the identity regions in README.md and AGENTS.md from identity.toml; the
+# only thing that edits them, and every check route refuses a commit while they are stale.
+docs:
+    {{tt}} docs -- python3 tools/ops-docs write
 
 # Focused nextest arguments, preserved verbatim; override one_cmd for tooling tests.
 test-one +args:

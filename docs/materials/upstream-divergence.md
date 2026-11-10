@@ -48,7 +48,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-331 paths differ: 57 class B (seam), 225 class A (fork-only), 49 class C (scaffolding).
+335 paths differ: 58 class B (seam), 227 class A (fork-only), 50 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -64,13 +64,14 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +40/-4 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +108/-0 |
+| `AGENTS.md` | C | A | +120/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
+| `README.md` | B | M | +33/-0 |
 | `docs/wiki/Configuration:-Layer-Rules.md` | B | M | +48/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
-| `justfile` | C | A | +126/-0 |
+| `justfile` | C | A | +132/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/layer_rule.rs` | B | M | +69/-1 |
@@ -126,6 +127,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/hermetic_git.py` | C | A | +18/-0 |
 | `tools/identity-check` | C | A | +57/-0 |
 | `tools/ops-check` | C | A | +664/-0 |
+| `tools/ops-docs` | C | A | +1261/-0 |
 | `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/screencast_consumer.py` | C | A | +331/-0 |
@@ -134,7 +136,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_affected.py` | C | A | +49/-0 |
 | `tools/test_capture_hold.py` | C | A | +500/-0 |
 | `tools/test_capture_meta.py` | C | A | +2063/-0 |
-| `tools/test_gates.py` | C | A | +283/-0 |
+| `tools/test_gates.py` | C | A | +293/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +883/-0 |
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |

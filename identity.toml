@@ -1,0 +1,22 @@
+# What this project is. `tools/ops-docs write` renders it into the identity region of
+# README.md and AGENTS.md; `tools/ops-docs check` refuses a commit while they differ.
+# Reference: ops docs/project-guides.md
+name = "niri-material"
+aliases = ["niri"]
+# At most 80 characters: this line sits in every agent session in every project.
+purpose = "One glass material across niri, terminals, editor, and shell"
+# One to three sentences, at most 400 characters: what it does and for whom.
+abstract = """
+A permanent fork of the niri Wayland compositor that renders configurable glass \
+materials on windows: refraction through a bevel, backdrop blur, roughness, noise and \
+further optics, assigned by window rule and driven by per-window signals. It is the \
+compositor side of the shared glass material, and carries upstream niri's features \
+unchanged.
+"""
+# Documents that are the authority for what is built or decided; each must be tracked.
+authority = [
+    "docs/materials/material-config.md",
+    "docs/materials/render-pipeline.md",
+    "docs/materials/upstream-divergence.md",
+]
+subsystems = []

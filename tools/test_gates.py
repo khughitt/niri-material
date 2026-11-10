@@ -48,8 +48,18 @@ class Gates(unittest.TestCase):
         return subprocess.run(["sh", str(ROOT / ".githooks" / name), *args], cwd=self.root,
                               env=self.env, input=refs, capture_output=True, text=True)
 
+    def test_hygiene_checks_guides_after_ops_check(self):
+        # Every route runs hygiene_cmd, so a stale identity region fails each of them.
+        value = subprocess.run([self.just, "--justfile", str(ROOT / "justfile"), "--evaluate",
+                                "hygiene_cmd"], env=self.env, capture_output=True, text=True,
+                               check=True).stdout
+        self.assertEqual(value.split(" && "),
+                         ["python3 tools/ops-check", "python3 tools/ops-docs check"])
+
     def test_staged_paths_select_docs_only_conservatively(self):
         for name, expected in (("README.md", "hook-pre-commit-docs"),
+                               ("CLAUDE.md", "hook-pre-commit-docs"),
+                               ("identity.toml", "hook-pre-commit-docs"),
                                ("docs/specs/a.md", "hook-pre-commit-docs"),
                                ("docs/materials/scripts/a.py", "hook-pre-commit"),
                                ("docs/materials/material-config.md", "hook-pre-commit"),
