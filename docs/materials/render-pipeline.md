@@ -52,6 +52,7 @@ Layer surfaces (any layer) with a `surface-remap` rule draw through
 `surface_remap.frag` instead of the default texture program: their own
 pixels, before compositing. It is not a material stage and changes no pass
 order above; background effects behind the layer are unchanged.
+[shell-remap.md](shell-remap.md) describes the remap.
 
 Elements that carry effects, and they are different programs:
 
@@ -59,7 +60,7 @@ Elements that carry effects, and they are different programs:
 | --- | --- | --- |
 | Material element | `material.frag` | The window body composed over the glass slab. Everything in section 2. |
 | Background-effect element | `postprocess_and_clip` (`clipped_surface.frag` + `postprocess.frag`) | The sampled backdrop behind the window, with `blur { noise; saturation }` or the window rule's `background-effect` overrides, drawn *under* the window body. |
-| Surface remap element | `surface_remap.frag` (+ `common.frag`) | A layer surface's pixels with its surface family moved to the glass face and the held hue. |
+| Surface remap element | `surface_remap.frag` (+ `common.frag`) | A layer surface's pixels with its surface family moved to the glass face and the held hue ([shell-remap.md](shell-remap.md#oklab-remap)). |
 
 Prism's terminal window rule writes
 `background-effect { blur false; noise 0; saturation 1 }`, so for Prism-managed windows the second element is
@@ -277,7 +278,11 @@ regeneration.
 - [pipeline-schema.md](pipeline-schema.md): the sites, stages and
   interactions as data.
 - [material-config.md](material-config.md): every parameter, its range,
-  default, inheritance, and the signal inputs to steps 5 to 7.
+  default and inheritance.
+- [signals.md](signals.md): the signal inputs to steps 5 to 7 and when they
+  cost redraws.
+- [motion.md](motion.md): the ring beam, the jelly and the rigid tilt.
+- [shell-remap.md](shell-remap.md): the surface remap of layer surfaces.
 - [adding-an-optic.md](adding-an-optic.md): the hook signatures and the
   recipe for a new stage.
 - [performance.md](performance.md): what each stage above costs, and when it

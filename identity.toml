@@ -30,4 +30,8 @@ references = [
     "docs/materials/pipeline-schema.md",
     "docs/materials/render-pipeline.md",
     "docs/materials/adding-an-optic.md",
+    "docs/materials/material-config.md",
+    "docs/materials/signals.md",
+    "docs/materials/motion.md",
+    "docs/materials/shell-remap.md",
 ]
