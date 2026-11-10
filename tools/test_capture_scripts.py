@@ -23,7 +23,7 @@ glass-parameter-sweep.sh glass-render-order-metrics.py glass-render-order-smoke.
 hidden-window-attribution.sh idle-inhibit-client.c material-signals-smoke.sh
 noctalia-glass-palette.py noctalia-surfaces.sh noise-layers-bins.py noise-layers-cost.sh
 noise-placement-cost.sh optic-settling-smoke.sh ring-motion-clips.sh session-lock-client.c
-swing-measured-sheet.py vdrag.py view-tilt-sheet.py vt-lib.sh warp-calibration.py
+swing-measured-sheet.py vdrag.py view-tilt-cost.sh view_tilt_cost_zones.py view-tilt-sheet.py vt-lib.sh warp-calibration.py
 """.split()
 
 ROOT_ASSIGNMENT = re.compile(r'^(?:REPO|ROOT)=\$\(cd "\$(?:HERE|SCRIPTS)(/\.\.)+" && pwd\)\s*$', re.M)
