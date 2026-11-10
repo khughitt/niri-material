@@ -5,9 +5,10 @@ glass is drawn, which parameters are expensive and why, and the levers that
 reduce cost. Each measured number states its basis: what was measured, how,
 on which host and when. The reference host is an AMD Ryzen Threadripper 1950X
 with an NVIDIA RTX 3070; nested runs put niri under a headless Weston on that
-GPU. Claims marked *code* are read from the source and not measured. The pass
-order is in [the render pipeline](render-pipeline.md); read it first. How
-runs are recorded and gated is in [captures.md](captures.md).
+GPU unless a run is marked llvmpipe. Claims marked *code* are read from the
+source and not measured. The pass order is in
+[the render pipeline](render-pipeline.md); read it first. How runs are
+recorded and gated is in [captures.md](captures.md).
 
 Two facts frame everything else:
 
@@ -30,14 +31,14 @@ Two facts frame everything else:
 | --- | --- | --- | --- | --- |
 | Backdrop chain | Sharp render of the Background layer, backdrop grain, dual-Kawase blur, roughness pyramids (`effect_buffer.rs`, `grain.rs`, `blur.rs`) | The Background layer is damaged, or the blur or grain options change | Output pixels | Every material window on that output and render target |
 | Window | Window body into the tile offscreen; CPU `material_dynamics` and the input fingerprint (`tile.rs`, `material/mod.rs`) | Each frame the tile renders, while building render elements; the offscreen draws only on client damage | Window count | — |
-| Fragment | `material.frag` over the damaged part of the element | The fingerprint changed (client commit, backdrop commit, a moving optic, jelly or signal input), or accumulated output damage intersects the element, such as an overlapping window moving | Transparent window area plus the bevel band, × per-fragment samples | — |
+| Fragment | The material shader over the damaged part of the element | The fingerprint changed (client commit, backdrop commit, a moving optic, jelly or signal input), or accumulated output damage intersects the element, such as an overlapping window moving | Transparent window area plus the bevel band, × per-fragment samples | — |
 
 *Code:* the material element does not narrow its own damage
 (`MaterialRenderElement` keeps smithay's default `damage_since`), so a change
 to any of its inputs, such as a cursor blink in a terminal or a wallpaper
 change behind it, redraws the whole slab. Opaque window pixels still return
 after one texture read (step 0 of
-[the per-fragment program](render-pipeline.md#3-inside-materialfrag-per-fragment)).
+[the per-fragment program](render-pipeline.md#3-inside-the-material-shader-per-fragment)).
 
 ## 2. The backdrop chain: memory and caching
 

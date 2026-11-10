@@ -34,8 +34,8 @@ check_after_cmd := "python3 tools/identity-check && tasks check && python3 tools
 check_cmd := check_before_cmd + " && " + tooling_fast_cmd + " && " + check_after_cmd
 full_check_cmd := check_before_cmd + " && " + tooling_full_cmd + " && " + check_after_cmd
 
-# Prose-only trees: material docs and wiki contain Rust test inputs.
-# Keep the repository-specific consistency checks in both commit paths.
+# docs_paths holds root guides only: material docs and wiki contain Rust test
+# inputs, so they take a code route. Both routes keep the consistency checks.
 tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py tools/hermetic_git.py scripts/capture/vt-lib.sh scripts/capture/optic-settling-smoke.sh scripts/capture/glass-optic-smoke-lib.sh scripts/capture/*-client.c .githooks/* justfile .github/workflows/*"
 docs_paths := "README.md AGENTS.md CLAUDE.md identity.toml CONTRIBUTING.md"
 docs_check_cmd := hygiene_cmd + " && " + tooling_paths_cmd + " && " + check_after_cmd

@@ -58,7 +58,7 @@ Elements that carry effects, and they are different programs:
 
 | Element | Program | What it draws |
 | --- | --- | --- |
-| Material element | `material.frag` | The window body composed over the glass slab. Everything in section 2. |
+| Material element | The material shader (`material_source` in `shaders/mod.rs`) | The window body composed over the glass slab. Everything in section 2. |
 | Background-effect element | `postprocess_and_clip` (`clipped_surface.frag` + `postprocess.frag`) | The sampled backdrop behind the window, with `blur { noise; saturation }` or the window rule's `background-effect` overrides, drawn *under* the window body. |
 | Surface remap element | `surface_remap.frag` (+ `common.frag`) | A layer surface's pixels with its surface family moved to the glass face and the held hue ([shell-remap.md](shell-remap.md#oklab-remap)). |
 
@@ -108,7 +108,7 @@ pointer-focus refresh in `Niri::refresh_pointer_contents`, does not report it. S
 focus reports no deadline and a constant fingerprint. Sustained attention motion keeps its bucket deadline
 (`Tile::tick_deadline`) while the band is in view.
 
-## 3. Inside `material.frag`, per fragment
+## 3. Inside the material shader, per fragment
 
 The order below is the order in the shader. Every step after the first
 runs only where the window is transparent or outside the window.

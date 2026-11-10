@@ -72,7 +72,7 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   `just test`, `ci-test` and `ci-test-release` remain Rust-only, including doctests;
   the release job enables randomized/slow tests through environment variables.
   The separate Ubuntu `ci-tooling-test` job runs full parallel tooling, rejecting
-  dependency skips and allowing only the five named optional skips in the design.
+  dependency skips and allowing only the `OPTIONAL_SKIPS` in `tools/tooling_tests.py`.
 - Recipes record runs through `tools/tt`. Host recipes use `host-budget run` to set
   `CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS`; CI recipes do not need ops tooling.
 

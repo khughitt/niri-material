@@ -1,5 +1,5 @@
 #!/bin/sh
-# Static terminal content for focus-glass-spike.sh: a claude-code-like transcript.
+# Static terminal content for focus-ring-light.sh: a claude-code-like transcript.
 printf '\033[1;35m> \033[0mclaude (%s)\n\n' "$1"
 printf '\033[36m\342\217\272 Read\033[0m src/layout/tile.rs\n'
 printf '\033[36m\342\217\272 Bash\033[0m(cargo test -p niri-config)\n'
