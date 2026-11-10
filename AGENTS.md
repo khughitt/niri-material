@@ -62,7 +62,7 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   git fixture leaves when hook-inherited GIT_DIR redirects its `git config` here.
   Pre-commit uses full tooling for the narrow lifecycle subjects and gate wiring in
   `tooling_full_paths`, fast tooling for other code, and static source plus consistency
-  checks for root guides/tasks/specs/plans/notes. The fast route records
+  checks for the root guides and identity.toml (`docs_paths`). The fast route records
   `hook-pre-commit-fast` and the full route `hook-pre-commit`; every route checks
   lifecycle source coverage statically.
   Material docs and wiki retain code checks because Rust tests read their inputs.
