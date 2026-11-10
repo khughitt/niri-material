@@ -6,7 +6,7 @@
 #
 #   OUT=<fresh dir> NIRI_BIN=<identified Tracy binary> CAPTURE_TASK=<task> \
 #   NIRI_MATERIAL_WORK_ROOT=<evidence root> [PILOT_DIR=<passed pilot>] \
-#   docs/materials/scripts/optic-settling-smoke.sh prepare|pilot|matrix [--lane headless|dedicated]
+#   scripts/capture/optic-settling-smoke.sh prepare|pilot|matrix [--lane headless|dedicated]
 #
 # The case table (the manifest heredoc below) declares, per case, the optic
 # edges the trace must carry, the state of each interval between them (active
@@ -414,7 +414,7 @@ reserve_tracy_port
 # identified with their sources like the binary.
 IDENTITY_EXTRA=()
 PROTOCOLS=/usr/share/wayland-protocols
-build_client() {   # name, protocol XML...: docs/materials/scripts/<name>.c into $OUT/clients
+build_client() {   # name, protocol XML...: scripts/capture/<name>.c into $OUT/clients
     local name=$1 dir=$OUT/clients xml base sources=()
     shift
     mkdir -p "$dir"

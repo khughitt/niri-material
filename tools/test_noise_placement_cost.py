@@ -8,8 +8,8 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-SCRIPT = ROOT / "docs/materials/scripts/noise-placement-cost.sh"
-LIB = ROOT / "docs/materials/scripts/glass-optic-smoke-lib.sh"
+SCRIPT = ROOT / "scripts/capture/noise-placement-cost.sh"
+LIB = ROOT / "scripts/capture/glass-optic-smoke-lib.sh"
 
 
 def report_source():

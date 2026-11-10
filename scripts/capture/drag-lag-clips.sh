@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # drag-lag-clips.sh: review clips for the drag follow-lag stimulus
 # (docs/specs/2026-10-01-drag-follow-lag-design.md §7). Each sequence runs a nested
-# headless niri with one kitty and one vdrag client (docs/materials/scripts/vdrag.py).
+# headless niri with one kitty and one vdrag client (scripts/capture/vdrag.py).
 # vdrag drags its own window through xdg_toplevel.move, driven by a virtual pointer,
 # while a burst of screenshots records it, under the capture protocol
 # (tools/capture-meta: preflight, identity, settle before every launch, release).
@@ -33,7 +33,7 @@ SEQUENCES=${SEQUENCES:-"scroll-fast scroll-slow float-fast float-slow native"}
 RUN_S=4            # lift 0.7 s, slow segment 0.5 s, hold 0.6 s, release settling under 1 s
 GO_DELAY=0.2       # burst start to the go file
 LIFT_S=0.71        # 26 lift events at 125 Hz, then --lift-ms 500
-VDRAG=$ROOT/docs/materials/scripts/vdrag.py
+VDRAG=$ROOT/scripts/capture/vdrag.py
 UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; VDRAG_PID=; BURST_PID=; HOST_SEQ=0
 mkdir -p "$OUT" "$RT"
 

@@ -10,7 +10,7 @@ WIN = 7
 
 
 def load():
-    path = (Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+    path = (Path(__file__).resolve().parents[1] / 'scripts/capture'
             / 'warp-calibration.py')
     spec = importlib.util.spec_from_file_location('warp_calibration', path)
     module = importlib.util.module_from_spec(spec)

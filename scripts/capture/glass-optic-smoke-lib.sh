@@ -98,7 +98,7 @@ capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the insta
     local clocks=()
     [ "$CAPTURE_GPU_CLOCKS" = 0 ] || clocks=(--config gpu-clock-sampling=100ms)
     capture_meta identity "$OUT" --source "$ROOT" --binary "$NIRI" ${NIRI_TRACY:+--binary "$NIRI_TRACY"} \
-        --input "$ROOT/docs/materials/scripts/glass-optic-smoke-lib.sh" --input "$0" "${clocks[@]}" "$@" \
+        --input "$ROOT/scripts/capture/glass-optic-smoke-lib.sh" --input "$0" "${clocks[@]}" "$@" \
         || fail "identity refused"
 }
 # The previous launch's GPU work can hold P5 for a moment after its niri exits;

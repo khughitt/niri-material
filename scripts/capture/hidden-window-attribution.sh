@@ -3,7 +3,7 @@
 # cost compositor or client work? (material-d09741)
 #
 #   CAPTURE_TASK=material-d09741 NIRI_MATERIAL_WORK_ROOT=<evidence root> \
-#   OUT=<fresh dir> docs/materials/scripts/hidden-window-attribution.sh pilot|matrix
+#   OUT=<fresh dir> scripts/capture/hidden-window-attribution.sh pilot|matrix
 #
 # One workload per case: weston-simple-egl (app-id
 # org.freedesktop.weston.simple-egl) under a pinned glass material with
@@ -33,7 +33,7 @@ case $MODE in
 esac
 cd "$(git rev-parse --show-toplevel)"
 if [ "${HWA_REHEARSAL:-0}" = 1 ]; then CAPTURE_META=true; echo "REHEARSAL: no capture record; counts are not evidence" >&2; fi
-. docs/materials/scripts/glass-optic-smoke-lib.sh
+. scripts/capture/glass-optic-smoke-lib.sh
 
 PROBE=org.freedesktop.weston.simple-egl
 IDLE='printf "\033[?25l"; exec sleep 1800'

@@ -346,7 +346,7 @@ def assert_static_coverage(root: Path, patterns: Sequence[str]) -> None:
             raise ValueError(f'{source}:{line}: missing source {relative}')
         return relative
 
-    entry = root / 'docs/materials/scripts/optic-settling-smoke.sh'
+    entry = root / 'scripts/capture/optic-settling-smoke.sh'
     visited, active = set(), set()
 
     def shell(path, source='lifecycle entry', line=1):

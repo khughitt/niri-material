@@ -12,7 +12,7 @@ import unittest
 class RenderOrderMetricsTest(unittest.TestCase):
     @staticmethod
     def metrics():
-        path = (Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+        path = (Path(__file__).resolve().parents[1] / 'scripts/capture'
                 / 'glass-render-order-metrics.py')
         spec = importlib.util.spec_from_file_location('render_order_metrics', path)
         metrics = importlib.util.module_from_spec(spec)
@@ -142,7 +142,7 @@ class RenderOrderMetricsTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('magick'), 'ImageMagick is required for capture decoding')
     def test_cli_distinguishes_failed_gate_from_invalid_capture(self):
-        script = (Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+        script = (Path(__file__).resolve().parents[1] / 'scripts/capture'
                   / 'glass-render-order-metrics.py')
         with tempfile.TemporaryDirectory() as directory:
             paths = {}

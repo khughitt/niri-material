@@ -157,7 +157,7 @@ cases, which never passes as a pilot.
 OUT=$NIRI_MATERIAL_WORK_ROOT/optic-settling/tty-dev-$(date +%Y%m%d)-1 \
   CASES='drm-aurora tty-resume screencast' CAPTURE_TASK=material-f7eb0b \
   NIRI_BIN=<snapshot>/niri-tracy DRM_OUTPUT=DP-1 DRM_MODE=3440x1440@59.999 \
-  docs/materials/scripts/optic-settling-smoke.sh pilot --lane dedicated
+  scripts/capture/optic-settling-smoke.sh pilot --lane dedicated
 ```
 
 The pilot is the same command without `CASES` and with a fresh `OUT`

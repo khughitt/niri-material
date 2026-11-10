@@ -42,12 +42,12 @@ rather than retyping it (protocol:
 - `2026-09-10-material-optics-evidence.md`: decoded-pixel-identical captures before and after the saturation and noise optic migration.
 - `../specs/2026-09-30-glass-edge-optics-design.md`: the bevel as a height field (`bevel-profile`), Fresnel-weighted transmission, and the `reflection` and `edge-highlight` optics.
 - `2026-10-03-glass-edge-optics-evidence.md`: frozen-clock render evidence for each step (outside and face identical, bevel changes reported) and the contact sheet.
-- `scripts/glass-edge-compare.py`: before/after region checks over the frozen-clock harness dumps.
-- `scripts/glass-edge-sheet.sh`: headless contact sheet of the probe's corner over a real wallpaper, crossing bevel-profile, looks, reflection, edge-highlight and roughness.
+- `scripts/capture/glass-edge-compare.py`: before/after region checks over the frozen-clock harness dumps.
+- `scripts/capture/glass-edge-sheet.sh`: headless contact sheet of the probe's corner over a real wallpaper, crossing bevel-profile, looks, reflection, edge-highlight and roughness.
 - `2026-09-06-glass-parameter-sweep-evidence.md`: sweep tables for `ior`, thickness, roughness, noise and saturation, and the global `blur` block, with a per-slider summary for Prism.
-- `scripts/glass-parameter-sweep.sh`: headless harness that renders one KDL parameter at N values and tabulates the neighbouring deltas.
+- `scripts/capture/glass-parameter-sweep.sh`: headless harness that renders one KDL parameter at N values and tabulates the neighbouring deltas.
 - `2026-10-06-glass-warp-calibration-evidence.md`: offline calibration of a local displacement estimator against known warps and photometric-only controls; adopts it for the chamfer with a geometry mask, and names the flat-field render that separates bending from Fresnel and attenuation.
-- `scripts/warp-calibration.py`: that calibration, and the seeded aperiodic backdrop it measured.
+- `scripts/capture/warp-calibration.py`: that calibration, and the seeded aperiodic backdrop it measured.
 - `2026-09-04-focus-glass-spike.md`: focus-state glass spike; transparent terminals over an `is-active` material swap remove the terminal seam.
 - `2026-09-05-focus-ring-light-spike.md`: focus ring light spike; an embedded, refracted ring of light wins over motes, rays, shadow, noise, and canopy, and the static gradient ring is invisible on the dark focus glass.
 - `2026-09-05-ring-light-focus-smoke.md`: ring of light focus response wakeup, capture and DRM acceptance evidence.
@@ -59,7 +59,7 @@ rather than retyping it (protocol:
 - `render-pipeline.md`: the material render pipeline, pass by pass, and which parameter acts where. Read before any rendering change.
 - `performance.md`: where GPU, CPU, memory and power go in the material, which parameters are expensive, and the levers; a map onto the evidence docs.
 - `scripts/focus-glass-spike.sh`: headless harness for the focus-state glass captures.
-- `scripts/focus-ring-light.sh`: headless harness for the focus ring light captures and the measured filament checks.
+- `scripts/capture/focus-ring-light.sh`: headless harness for the focus ring light captures and the measured filament checks.
 - `plans/2026-08-22-repository-migration.md`: repository migration procedure.
 - `plans/2026-08-22-slice0.md`: renderer-seam plan.
 - `plans/2026-08-22-slice1.md`: config-and-assignment plan.

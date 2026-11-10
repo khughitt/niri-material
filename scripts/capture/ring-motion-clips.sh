@@ -431,7 +431,7 @@ for s in $SEQUENCES; do
 done
 for s in $SEQUENCES; do
     case " $TILT_SWINGS " in
-        *" $s "*) python3 -I docs/materials/scripts/swing-measured-sheet.py "$OUT" | tee -a "$OUT/clips.txt"; break ;;
+        *" $s "*) python3 -I scripts/capture/swing-measured-sheet.py "$OUT" | tee -a "$OUT/clips.txt"; break ;;
     esac
 done
 echo "clips: OK; $OUT/clips.txt, capture record $OUT/capture.json"

@@ -18,7 +18,7 @@ isolate(os.environ)
 class TraceCoverageTest(unittest.TestCase):
     def count(self, rows):
         lib = (Path(__file__).resolve().parents[1] /
-               'docs/materials/scripts/glass-optic-smoke-lib.sh').read_text()
+               'scripts/capture/glass-optic-smoke-lib.sh').read_text()
         functions = '\n'.join(re.search(r'^' + name + r'\(\) \{.*?^}', lib,
                                        re.S | re.M).group()
                               for name in ('col', 'trace_end', 'count_last20'))
@@ -51,7 +51,7 @@ class TraceCoverageTest(unittest.TestCase):
 
 
 class CaptureMetaAdoptionTest(unittest.TestCase):
-    LIB = (Path(__file__).resolve().parents[1] / 'docs/materials/scripts/glass-optic-smoke-lib.sh').read_text()
+    LIB = (Path(__file__).resolve().parents[1] / 'scripts/capture/glass-optic-smoke-lib.sh').read_text()
 
     def function(self, name):
         return re.search(r'^' + name + r'\(\) \{.*?^}', self.LIB, re.S | re.M).group()
@@ -178,12 +178,12 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
 
     def test_await_load_lives_in_the_lib_and_hidden_window_uses_it(self):
         self.assertIn('await_load', self.LIB)
-        hwa = (Path(__file__).resolve().parents[1] / 'docs/materials/scripts/hidden-window-attribution.sh').read_text()
+        hwa = (Path(__file__).resolve().parents[1] / 'scripts/capture/hidden-window-attribution.sh').read_text()
         self.assertNotRegex(hwa, r'^await_load\(\)', 'hidden-window keeps no copy')
         self.assertNotIn("rg -q 'GL Renderer:.*NVIDIA'", hwa)
         self.assertNotIn('export RUST_LOG=', hwa)
 
-    SCRIPTS = Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+    SCRIPTS = Path(__file__).resolve().parents[1] / 'scripts/capture'
 
     def script_function(self, script, name):
         return re.search(r'^' + name + r'\(\) \{.*?^}', (self.SCRIPTS / script).read_text(), re.S | re.M).group()
@@ -280,7 +280,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             self.assertRegex(preflight, rf'^preflight {re.escape(out)} --lane headless --task material-task '
                              r'--fixture test --owner-pid [0-9]+ --tool weston --tool kitty --tool tracy=0\.13\.1$')
             self.assertEqual(identity, f'identity {out} --source /source --binary /bin/niri '
-                             '--input /source/docs/materials/scripts/glass-optic-smoke-lib.sh '
+                             '--input /source/scripts/capture/glass-optic-smoke-lib.sh '
                              '--input test --config preset=aurora')
 
 
@@ -338,7 +338,7 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
             self.assertFalse((Path(out) / 'SHA256SUMS').exists())
 
     def test_clip_fixtures_fail_on_capture_release_failure(self):
-        scripts = Path(__file__).resolve().parents[1] / 'docs/materials/scripts'
+        scripts = Path(__file__).resolve().parents[1] / 'scripts/capture'
         for name in ('ring-motion-clips.sh', 'drag-lag-clips.sh', 'focus-swap-clips.sh'):
             text = (scripts / name).read_text()
             self.assertIn('capture_meta release "$OUT" || rc=1', text, name)
@@ -347,9 +347,9 @@ class CaptureMetaAdoptionTest(unittest.TestCase):
 
 class RenderOrderBehindMatrixTest(unittest.TestCase):
     SCRIPT = (Path(__file__).resolve().parents[1] /
-              'docs/materials/scripts/glass-render-order-smoke.sh').read_text()
+              'scripts/capture/glass-render-order-smoke.sh').read_text()
     LIB = (Path(__file__).resolve().parents[1] /
-           'docs/materials/scripts/glass-optic-smoke-lib.sh').read_text()
+           'scripts/capture/glass-optic-smoke-lib.sh').read_text()
 
     def function(self, name):
         match = re.search(r'^' + name + r'\(\) \{.*?^}', self.SCRIPT,
@@ -367,7 +367,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
 
     def focus_function(self, name):
         ring = (Path(__file__).resolve().parents[1] /
-                'docs/materials/scripts/focus-ring-light.sh').read_text()
+                'scripts/capture/focus-ring-light.sh').read_text()
         match = re.search(r'^' + name + r'\(\) \{.*?^}', ring, re.S | re.M)
         self.assertIsNotNone(match, f'missing old-ring shell function {name}')
         return match.group()
@@ -511,7 +511,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                 'within_aurora; within_attenuation; '
                 '[ "$(sed "s/^ *//" "$OUT/within-aurora-distortion.kdl" | grep -c "^distortion ")" -eq 1 ]; '
                 'grep -Fx "        distortion 0.4" "$OUT/within-aurora-distortion.kdl"; cat "$OUT/attenuation"')
-            lib = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/glass-optic-smoke-lib.sh'
+            lib = Path(__file__).resolve().parents[1] / 'scripts/capture/glass-optic-smoke-lib.sh'
             result = subprocess.run(['bash', '-eu', '-c', script, 'test', out, str(lib)],
                                     text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -537,7 +537,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
 
     def test_old_ring_rest_measurement_pins_roughness_and_response_values(self):
         ring = (Path(__file__).resolve().parents[1] /
-                'docs/materials/scripts/focus-ring-light.sh').read_text()
+                'scripts/capture/focus-ring-light.sh').read_text()
         for value in ('roughness 0', 'ring-color "#ccccff"',
                       'RING_GAP=5', 'RING_WIDTH=2.6', '--scatter 0'):
             self.assertIn(value, ring)
@@ -627,7 +627,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
 
     def test_old_aurora_gpu_case_cools_before_trace(self):
         aurora = (Path(__file__).resolve().parents[1] /
-                  'docs/materials/scripts/glass-aurora-smoke.sh').read_text()
+                  'scripts/capture/glass-aurora-smoke.sh').read_text()
         match = re.search(r'^gpu_case\(\) \{.*?^}', aurora, re.S | re.M)
         self.assertIsNotNone(match)
         with tempfile.TemporaryDirectory() as out:
@@ -665,7 +665,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                            FLEX_TEST_LOG=str(out / 'invocation'),
                            FLEX_TEST_EXIT=str(status))
                 result = subprocess.run(
-                    ['bash', str(root / 'docs/materials/scripts/focus-ring-light.sh')],
+                    ['bash', str(root / 'scripts/capture/focus-ring-light.sh')],
                     env=env, text=True, capture_output=True)
                 self.assertEqual(result.returncode, status, result.stderr)
                 self.assertEqual((out / 'invocation').read_text().splitlines(), [
@@ -676,7 +676,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
 
     def test_old_ring_records_per_frame_motion_reach_timing_and_geometry(self):
         ring = (Path(__file__).resolve().parents[1] /
-                'docs/materials/scripts/focus-ring-light.sh').read_text()
+                'scripts/capture/focus-ring-light.sh').read_text()
         for value in ('motion_pair_burst()', 'motion_record()', 'ring-motion-$label-move',
                       'ring-motion-$label-resize', 'ring-beam-speed 3000', 'toggles_start',
                       'window_layout_json', 'animated slab geometry',
@@ -727,7 +727,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                                'within_attenuation', 'within_opaque', 'additive_case', 'within_additive') +
                 '\nHERE=$(dirname "$2"); NIRI="$3"; PX=10; PY=20; face_roi() { echo 1x1+0+0; }; '\
                 'within_aurora_motion; within_attenuation; within_opaque; within_additive')
-            lib = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/glass-optic-smoke-lib.sh'
+            lib = Path(__file__).resolve().parents[1] / 'scripts/capture/glass-optic-smoke-lib.sh'
             result = subprocess.run(['bash', '-eu', '-c', script, 'test', out, str(lib), str(niri)],
                                     text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -785,7 +785,7 @@ class RenderOrderBehindMatrixTest(unittest.TestCase):
                 'clipped) assert_informative_grain bad clipped off 0 0 20 20 ;; '
                 'solid) assert_uniform_rgb solid solid 0 0 20 20 255 0 73.488 ;; '
                 'wrong) assert_uniform_rgb wrong wrong 0 0 20 20 255 0 73.488 ;; esac')
-            metrics = str(Path(__file__).resolve().parents[1] / 'docs/materials/scripts')
+            metrics = str(Path(__file__).resolve().parents[1] / 'scripts/capture')
             for case, expected in (('informative', 0), ('black', 1), ('clipped', 1),
                                    ('solid', 0), ('wrong', 1)):
                 with self.subTest(case=case):

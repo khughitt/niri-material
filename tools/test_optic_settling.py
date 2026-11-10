@@ -587,7 +587,7 @@ class PrepareTests(unittest.TestCase):
             env = dict(os.environ, OUT=str(base / 'out'), NIRI_BIN=str(niri),
                        NIRI_MATERIAL_WORK_ROOT=str(base), XDG_RUNTIME_DIR=str(base),
                        CAPTURE_META='/bin/true', PATH=f'{bin_dir}:{os.environ["PATH"]}')
-            script = root / 'docs/materials/scripts/optic-settling-smoke.sh'
+            script = root / 'scripts/capture/optic-settling-smoke.sh'
             run = subprocess.run(['bash', str(script), 'prepare'], env=env, capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
             manifest = json.loads((base / 'out/manifest.json').read_text())
@@ -643,7 +643,7 @@ class PrepareTests(unittest.TestCase):
                        NIRI_MATERIAL_WORK_ROOT=str(base), XDG_RUNTIME_DIR=str(base),
                        CAPTURE_META='/bin/true', DRM_OUTPUT='DP-1', DRM_MODE='3440x1440@59.999',
                        PATH=f'{bin_dir}:{os.environ["PATH"]}')
-            script = root / 'docs/materials/scripts/optic-settling-smoke.sh'
+            script = root / 'scripts/capture/optic-settling-smoke.sh'
             run = subprocess.run(['bash', str(script), 'prepare', '--lane', 'dedicated'], env=env,
                                  capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
@@ -784,7 +784,7 @@ def alive(pid):
         return False
 
 
-SMOKE = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/optic-settling-smoke.sh'
+SMOKE = Path(__file__).resolve().parents[1] / 'scripts/capture/optic-settling-smoke.sh'
 
 
 class LifecycleCoverageTests(unittest.TestCase):
@@ -806,7 +806,7 @@ class LifecycleCoverageTests(unittest.TestCase):
 class JournalSignalTests(unittest.TestCase):
     def test_term_during_journal_end_preserves_exit_and_cleanup(self):
         source = (Path(__file__).resolve().parents[1] /
-                  'docs/materials/scripts/optic-settling-smoke.sh').read_text()
+                  'scripts/capture/optic-settling-smoke.sh').read_text()
         body = source.split('stim() {', 1)[1].split('\n}\n', 1)[0]
         with tempfile.TemporaryDirectory() as directory:
             prefix = r"""
@@ -885,7 +885,7 @@ class DriverCleanupTests(unittest.TestCase):
                 pass
 
     def start(self, case, **env):
-        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        script = self.root / 'scripts/capture/optic-settling-smoke.sh'
         lane = env.pop('LANE_ARGS', '').split()
         run_env = dict(self.env, CASES=case, **env)
         if lane:
@@ -950,7 +950,7 @@ class DriverCleanupTests(unittest.TestCase):
             self.assertIn(' ./capture.json\n', sums)
 
     def test_exit_path_releases_before_writing_sums(self):
-        text = (self.root / 'docs/materials/scripts/optic-settling-smoke.sh').read_text()
+        text = (self.root / 'scripts/capture/optic-settling-smoke.sh').read_text()
         body = text[text.index('on_exit() {'):text.index('write_sums() {')]
         self.assertLess(body.index('capture_meta release "$OUT" || rc=1'), body.index('write_sums || rc=1'))
         self.assertNotIn("! -name capture.json", text)
@@ -998,7 +998,7 @@ class DriverCleanupTests(unittest.TestCase):
             path = self.stubs / name
             path.write_text('#!/bin/sh\n' + body)
             path.chmod(0o755)
-        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        script = self.root / 'scripts/capture/optic-settling-smoke.sh'
         prepare = subprocess.run(['bash', str(script), 'prepare'], cwd=self.root,
                                  env=dict(self.env, CASES='idle-inhibitor'),
                                  capture_output=True, text=True, timeout=60)
@@ -1017,7 +1017,7 @@ class DriverCleanupTests(unittest.TestCase):
     def test_stub_tools_need_a_stub_capture_record(self):
         env = dict(self.env)
         env.pop('CAPTURE_META')
-        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        script = self.root / 'scripts/capture/optic-settling-smoke.sh'
         run = subprocess.run(['bash', str(script), 'pilot'], cwd=self.root, env=env,
                              capture_output=True, text=True, timeout=60)
         self.assertNotEqual(run.returncode, 0)
@@ -1062,7 +1062,7 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertLess(meta.index('chvt 1'), max(i for i, line in enumerate(meta) if line.startswith('release ')))
 
     def test_stub_overrides_need_stub_tools(self):
-        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        script = self.root / 'scripts/capture/optic-settling-smoke.sh'
         for name, value in (('OPTIC_SETTLING_STUB_TIMESCALE', '0.05'),
                             ('OPTIC_SETTLING_STUB_DRM_SYSFS', str(self.base / 'drm'))):
             with self.subTest(name=name):
@@ -1074,7 +1074,7 @@ class DriverCleanupTests(unittest.TestCase):
                 self.assertIn('need OPTIC_SETTLING_STUB_TOOLS', run.stderr)
 
     def test_vt_overrides_need_stub_tools(self):
-        script = self.root / 'docs/materials/scripts/optic-settling-smoke.sh'
+        script = self.root / 'scripts/capture/optic-settling-smoke.sh'
         for name, value in (('VT_CHVT', '/bin/true'), ('VT_LOGINCTL', '/bin/true'),
                             ('VT_ACTIVE_FILE', str(self.base / 'active'))):
             with self.subTest(name=name):

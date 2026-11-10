@@ -61,7 +61,7 @@ class Gates(unittest.TestCase):
                                ("CLAUDE.md", "hook-pre-commit-docs"),
                                ("identity.toml", "hook-pre-commit-docs"),
                                ("docs/specs/a.md", "hook-pre-commit-docs"),
-                               ("docs/materials/scripts/a.py", "hook-pre-commit"),
+                               ("scripts/capture/a.py", "hook-pre-commit"),
                                ("docs/materials/material-config.md", "hook-pre-commit"),
                                ("docs/wiki/examples/a.frag", "hook-pre-commit"),
                                ("docs/wiki/Configuration.md", "hook-pre-commit"),
@@ -154,11 +154,11 @@ class Gates(unittest.TestCase):
         full = ['tools/optic_settling.py', 'tools/screencast_consumer.py', 'tools/fake_screencast.py',
                 'tools/test_optic_settling.py', 'tools/test_screencast_consumer.py', 'tools/test_vt_lib.py',
                 'tools/tooling_tests.py', 'tools/test_tooling_tests.py',
-                'docs/materials/scripts/vt-lib.sh', 'docs/materials/scripts/optic-settling-smoke.sh',
-                'docs/materials/scripts/glass-optic-smoke-lib.sh', 'docs/materials/scripts/window-client.c',
+                'scripts/capture/vt-lib.sh', 'scripts/capture/optic-settling-smoke.sh',
+                'scripts/capture/glass-optic-smoke-lib.sh', 'scripts/capture/window-client.c',
                 '.githooks/pre-commit', 'justfile', '.github/workflows/ci.yml']
         fast = ['tools/upstream-report', 'tools/package-pin', 'tools/test-affected', 'tools/tt',
-                'docs/materials/scripts/unrelated-capture.sh', 'src/layout/mod.rs']
+                'scripts/capture/unrelated-capture.sh', 'src/layout/mod.rs']
         for paths, expected in ((full, 'hook-pre-commit-full'), (fast, 'hook-pre-commit')):
             for name in paths:
                 with self.subTest(name=name):

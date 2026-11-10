@@ -184,6 +184,6 @@ Add an `## Optics` subsection to `material-config.md` stating the stage,
 effect, explicit neutral, and any omission/inheritance rule. Update the stage
 in `render-pipeline.md` and its Prism mapping when one exists.
 
-Run `just test`. Then use a smoke under `docs/materials/scripts/` to prove the
+Run `just test`. Then use a smoke under `scripts/capture/` to prove the
 neutral render, the intended effect, and frame cost. Compare decoded pixels
 and record the command's non-zero-on-difference exit status in an evidence doc.

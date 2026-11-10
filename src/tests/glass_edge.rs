@@ -7,7 +7,7 @@
 //! (see ring_pair.rs). Set `GLASS_EDGE_DUMP=<dir>` to write each case as
 //! `<case>.rgba` (raw RGBA), `<case>.png` and `<case>.json` (output size, the
 //! window, face and slab rectangles, the renderer), which
-//! docs/materials/scripts/glass-edge-compare.py reads.
+//! scripts/capture/glass-edge-compare.py reads.
 //!
 //! Each fixture gets the next jelly seed from a process-wide counter, and the
 //! aurora reads the seed. Dumps compare across commits because nextest runs

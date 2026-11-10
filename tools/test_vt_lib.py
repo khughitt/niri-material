@@ -13,7 +13,7 @@ from pathlib import Path
 
 from tools.tooling_tests import fast_mode
 
-LIB = Path(__file__).resolve().parents[1] / 'docs/materials/scripts/vt-lib.sh'
+LIB = Path(__file__).resolve().parents[1] / 'scripts/capture/vt-lib.sh'
 CHVT = ('#!/bin/sh\necho "$1" >> "$STUB_DIR/chvt.log"\n[ -z "${STUB_HANG:-}" ] || exec sleep 60\n'
         '[ -z "${STUB_STUCK:-}" ] || exit 0\nprintf "tty%s\\n" "$1" > "$VT_ACTIVE_FILE"\n')
 LOGINCTL = ('#!/bin/sh\ncase $1 in\n'

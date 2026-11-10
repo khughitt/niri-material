@@ -41,7 +41,7 @@ TOP_PID=$$
 trap 'exit 1' TERM
 die() { echo "FAIL: $*" >&2; kill -s TERM "$TOP_PID" 2>/dev/null || true; exit 1; }
 HERE=$(dirname "$(readlink -f "$0")")
-REPO=$(cd "$HERE/../../.." && pwd)
+REPO=$(cd "$HERE/../.." && pwd)
 # Run the deterministic case before resolving a capture binary or touching
 # host state. Preserve resize-flex as an entry point for existing callers.
 read -r -a cases <<< "${CASES:-baseline rest-confinement accent-midfade resize-flex ring-motion selectors tiny}"

@@ -4,7 +4,7 @@ import struct
 import unittest
 
 SPEC = importlib.util.spec_from_file_location(
-    "vdrag", pathlib.Path(__file__).resolve().parent.parent / "docs/materials/scripts/vdrag.py"
+    "vdrag", pathlib.Path(__file__).resolve().parent.parent / "scripts/capture/vdrag.py"
 )
 vdrag = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(vdrag)

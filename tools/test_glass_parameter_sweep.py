@@ -12,7 +12,7 @@ import unittest
 import zlib
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / 'docs/materials/scripts/glass-parameter-sweep.sh'
+SCRIPT = ROOT / 'scripts/capture/glass-parameter-sweep.sh'
 
 
 class GlassParameterSweepTest(unittest.TestCase):
@@ -75,7 +75,7 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
             record = json.loads((out / 'backdrop.json').read_text())
             self.assertEqual(record['name'], 'grid20')
             self.assertIsNone(record['seed'])
-            self.assertEqual(record['generator'], 'docs/materials/scripts/glass-parameter-sweep.sh')
+            self.assertEqual(record['generator'], 'scripts/capture/glass-parameter-sweep.sh')
             self.assertEqual(record['generator_sha256'], hashlib.sha256(SCRIPT.read_bytes()).hexdigest())
             pixels = subprocess.check_output([
                 'magick', str(out / 'backdrop.png'), '-depth', '8', 'rgb:-'])
@@ -93,7 +93,7 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
             record = json.loads((out / 'backdrop.json').read_text())
             self.assertEqual(record['name'], 'aperiodic-s20260929')
             self.assertEqual(record['seed'], 20260929)
-            generator = 'docs/materials/scripts/warp-calibration.py'
+            generator = 'scripts/capture/warp-calibration.py'
             self.assertEqual(record['generator'], generator)
             self.assertEqual(record['generator_sha256'],
                              hashlib.sha256((ROOT / generator).read_bytes()).hexdigest())

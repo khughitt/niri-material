@@ -2,7 +2,7 @@
 # material-signals-smoke.sh: nested headless fixture for the material signals
 # design (docs/materials/2026-09-02-material-signals-design.md, section 9).
 #
-# Usage: docs/materials/scripts/material-signals-smoke.sh MODE
+# Usage: scripts/capture/material-signals-smoke.sh MODE
 #   visual  build, drive one window through set/pulse/clear, screenshot the error flash
 #   ipc     event-stream round trip and every rejection case
 #   cases   Tracy redraw counts for every steady-state case

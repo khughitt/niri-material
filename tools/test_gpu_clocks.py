@@ -14,8 +14,8 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-LIB = ROOT / 'docs/materials/scripts/glass-optic-smoke-lib.sh'
-COST = ROOT / 'docs/materials/scripts/noise-layers-cost.sh'
+LIB = ROOT / 'scripts/capture/glass-optic-smoke-lib.sh'
+COST = ROOT / 'scripts/capture/noise-layers-cost.sh'
 
 
 class ClockSamplerTests(unittest.TestCase):

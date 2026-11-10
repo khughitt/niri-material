@@ -343,7 +343,7 @@ if [ "$TABLE_ONLY" != 1 ]; then
     # exactly; under the glass optics its edges would be tinted and refracted.
     make_backdrop "$OUT/backdrop.png"
     jq -n --arg name "$BACKDROP" --argjson seed "$BACKDROP_SEED" \
-        --arg generator "docs/materials/scripts/$(basename -- "$BACKDROP_GENERATOR")" \
+        --arg generator "scripts/capture/$(basename -- "$BACKDROP_GENERATOR")" \
         --arg generator_sha256 "$(sha256sum "$BACKDROP_GENERATOR" | cut -d' ' -f1)" \
         --arg png_sha256 "$(sha256sum "$OUT/backdrop.png" | cut -d' ' -f1)" \
         --arg imagemagick "$(magick -version | head -n1)" \
