@@ -6,20 +6,19 @@ glass: the per-window slots and their fold, the effective signal after the
 motion policy and the input gate, the `response` fields that map it to the
 ring, the tint, impulses and the tilt, the motion policy and its crossfade,
 when a signal costs redraws, and how a client derives a per-workspace summary.
-The requests that write signals and the `Window.signal` JSON are in
-[IPC.md](../wiki/IPC.md#window-signals); how the ring, jelly and tilt move in
-[motion.md](motion.md); the tint arithmetic in
-[glass-optics.md](glass-optics.md#accent-tint); the `glass` parameters in
-[material-config.md](material-config.md); the stage each input reaches in
+Requests and the `Window.signal` JSON:
+[IPC.md](../wiki/IPC.md#window-signals); the ring, jelly and tilt motion:
+[motion.md](motion.md); the tint: [glass-optics.md](glass-optics.md#accent-tint);
+`glass` parameters: [material-config.md](material-config.md); stages:
 [render-pipeline.md](render-pipeline.md).
 
 ## Effective signal
 
 A window keeps one slot per source (`WindowSignals` in
-`src/window/signal.rs`), ordered by when it was written. External sources
-write through IPC. The native `niri` slot exists exactly while the window is
-urgent: level `Demand`, motion `Pulse`, no accent, and its rise adds a `Ping`
-impulse. A focus change clears urgency and the native slot with it; a focus
+`src/window/signal.rs`), ordered by when it was written; external sources
+write them through IPC. The native `niri` slot exists exactly while the
+window is urgent: level `Demand`, motion `Pulse`, no accent; its rise adds a
+`Ping` impulse. A focus change clears urgency and the native slot with it; a focus
 gain also demotes every `--until-focus` slot once.
 
 `fold` turns the slots into the window's signal, or none when no slot exists:
@@ -32,8 +31,7 @@ gain also demotes every `--until-focus` slot once.
   slot's that has one, each chosen independently;
 - impulses live for `IMPULSE_LIFETIME` (1.5 s); a window keeps at most four.
 
-Each window has one timer at its next slot expiry or impulse end
-(`next_deadline`); when it fires, `advance` demotes and drops what is due.
+One timer per window at its next expiry (`next_deadline`) runs `advance`.
 
 `effective` in `src/render_helpers/signal.rs` then applies, in order: the
 `signal { motion }` policy (`off` makes motion `Static`; `reduced` turns
@@ -97,22 +95,9 @@ material "terminal-glass" {
     }
 
     response "default" {
-        accent "ring"
-        accent-tint 0
         focus "ring-light"
-        attention "rim-orbit"
-        ping "ripple"
-        done "sweep"
-        error "flash"
-        ring-beam-speed 300
-        ring-beam-noise 0
-        ring-beam-noise-hz 3
-        ring-beam-decay 0
-        ring-gap 8
-        ring-glow 1.0
-        ring-rest 1.0
-        ring-accent 1.0
-        ring-width 2.6
+        ring-beam-speed 900
+        ring-gap 6
         ring-color "#ccccff"
     }
 
@@ -134,141 +119,84 @@ slot), while `signal-tag` matches the window's folded signal tag. A window
 with no signal matches neither.
 
 The filament is one band shared by focus and signals. `focus "ring-light"`
-lights it on the focused window, in `ring-color`. On every focus gain one
-beam of that light runs the perimeter of the band once, clockwise from the
-top-left corner, at `ring-beam-speed` logical px/s: a bright head a few tens
-of pixels wide with a tail diffusing over a quarter of the perimeter (at most
-1200 px), fading in as it sets off and out as it returns to its start, the
-tail draining behind it. A lap takes `perimeter / ring-beam-speed`; at the
-default 300 px/s a full 1280×720 pane (perimeter about 3800 px) runs about
-16 s, tail included, and `ring-beam-speed 900` runs it three times as
-fast. The ring then settles to a dim, even resting glow and costs no redraws until the next focus gain (no
-deadline, a constant fingerprint). `ring-beam-speed 0` shows the resting glow
-without a beam; `signal { motion "reduced" }`, `motion "off"`, and
-`animations { off }` skip the beam the same way. A focus change mid-run
-restarts the beam on the newly focused window; focus loss ends it at once.
-The beam's shape and when its run ends are in
-[motion.md](motion.md#ring-beam).
-`ring-glow` scales the whole focus light — head, tail, resting glow and
-spill together — so their ratios hold while the total is tuned.
-`ring-rest` scales only the resting glow, the ring that stays on a focused
-window once the beam has passed: `0` leaves no resting ring while the beam
-still runs on every focus gain, and above `1` the resting ring is brighter
-than the beam's base. The comet rides on top of the resting level, so it
-keeps its own brightness at any `ring-rest`.
+lights it on the focused window, in `ring-color`: every focus gain runs one
+beam of that light once round the band, and the ring then settles to a dim
+resting glow that costs no redraws until the next gain. A focus change
+mid-run restarts the beam on the newly focused window; focus loss ends it.
+`signal { motion "reduced" }`, `motion "off"` and `animations { off }` skip
+the beam, its wander and its decay, leaving the resting glow. The beam's
+shape, its fades and when its run ends are in
+[motion.md](motion.md#ring-beam). The fields:
 
-`ring-beam-noise` makes the head's brightness wander as it travels, so the
-comet reads as a living light rather than a lamp on a track. It is the
-fraction either side of the head's own brightness that the wander reaches:
-`0` is a steady head (the default), `0.3` a gentle breathing, `1.0` a head
-that flares and nearly dies.
-`ring-beam-noise-hz` is how fast it wanders, in wanders per second; either
-value at `0` leaves the head steady.
-
-The wander rides the head alone. The tail is a trail the head has already
-left and stays smooth, and the resting glow is untouched — the quiet ring
-still costs no redraws and keeps its constant fingerprint, so a wandering
-head never puts a settled window back on a clock. It is seeded per window
-and per run, so two panes that gain focus together do not flicker in step
-and one pane's successive runs do not replay. The motion policies that skip
-the beam skip the wander with it.
-
-`ring-beam-decay` lets the comet die out on its way round: it is the
-distance, in logical px along the band, over which head and tail darken
-together until they are gone, falling as `(1 − distance / decay)²` so the
-light eases out rather than cutting off. `ring-beam-decay 1500` at the
-default speed is dark after 5 s, well before a full pane's lap closes. It is
-a distance, not a time, so the comet's reach is the same on every window and
-at every `ring-beam-speed`. The run ends where the comet goes dark, so a
-short decay also stops the redraws sooner; the resting glow is unaffected.
-`0`, the default, is no decay: the comet keeps its brightness for the whole
-lap. A decay longer than the lap and its tail
-still dims the comet along the way but never shortens the run. The motion
-policies that skip the beam skip the decay with it.
-
-`accepted_ring_look` in `src/tests/ring_look.rs` holds the owner's accepted
-terminal glass and ring (`ring-beam-decay 4150`, speed 4350,
-`ring-gap 6`, `ring-glow 1.2`). It renders that look through a real focus
-gain, on a pane longer than the decay and on one shorter than it, from the
-inactive material through the comet to rest. The renders are frozen and
-byte-identical from run to run. Set `RING_LOOK_DUMP=<dir>` before and after
-a change to ring or edge rendering, and compare the PNGs. The backdrop is
-flat gray, so refraction of the backdrop does not show there.
+- `ring-beam-speed`: the head's speed in logical px/s; a lap takes
+  `perimeter / ring-beam-speed`. `0` shows the resting glow without a beam.
+- `ring-glow`: scales the whole focus light (head, tail, resting glow and
+  spill), so their ratios hold while the total is tuned.
+- `ring-rest`: scales only the resting glow; `0` leaves no resting ring,
+  above `1` it is brighter than the beam's base. The comet keeps its own
+  brightness at any value.
+- `ring-beam-noise`: how far the head's brightness wanders either side of
+  its own level, as a fraction (`0` steady, `1.0` flares and nearly dies);
+  `ring-beam-noise-hz`: wanders per second. Either at `0` leaves the head
+  steady. The tail and the resting glow never wander, and the wander is
+  seeded per window and per run.
+- `ring-beam-decay`: the distance in logical px along the band over which
+  head and tail darken to nothing; a distance, so the comet's reach is the
+  same at every speed. A run ends where the comet goes dark, so a short
+  decay also stops the redraws sooner. `0` is no decay.
 
 `accent "ring"` lets a window signal light and tint the same band on any
-window. Both together show the filament in the accent color. `ring-accent`
-scales only the accent's own light on the band: at `0` a signal no longer
-outlines its window, but the accent still colors the focus light, so the
-comet and the resting ring run in the window's hue. The edge glint that
-`attention "rim-orbit"` tints with the accent is separate; `attention "none"`
-turns it off. The band sits
-`ring-gap` px inward from the edge of the flat face (where the chamfer ends),
-so it is always under the face and the bevel may shrink to make room; the
-light is refracted through the glass at its remaining interior depth and
-shows through translucent window pixels. On the chamfer the beam spills a
-little light outward from the face edge, fading to the outer edge, so the
-frame reads as lit by the beam. `ring-width` must be positive.
+window; with focus too, the filament shows in the accent color.
+`ring-accent` scales only the accent's own light on the band: at `0` a
+signal no longer outlines its window, but the accent still colors the focus
+light. The edge glint that `attention "rim-orbit"` tints with the accent is
+separate; `attention "none"` turns it off. The band sits `ring-gap` px
+inward from the edge of the flat face, always under the face, and shows
+through translucent window pixels; `ring-width` must be positive. So an
+opaque window shows no ring, and a face narrower than `2 * ring-gap` on
+either axis draws no ring at all. Set `focus-ring { off }` (globally or in
+a window rule) for material windows so the layout's gradient ring does not
+draw a second ring.
 
-`accent-tint` tints the glass body toward the signal accent's hue,
-independently of `accent`: `accent "none"` takes the accent off the band and
-leaves the tint. The weight moves hue and saturation only. The flat face
-transmits the same luminance as the untinted glass over a neutral backdrop,
-so dark glass stays dark; a saturated backdrop shifts, brighter in the
-channels the tint opens and darker in the others. The chamfer and the ring's
-light pass the same tinted glass: under `accent "ring"` the band and the
-focus light brighten with the tint, and under `accent "none"` a near-white
-`ring-color` band dims.
-Near-white glass has little room for hue at its own luminance, so the tint
-barely shows on the default glass. Without an accent the glass is unchanged,
-and the tint follows the accent's crossfade in and out. The arithmetic is
-in [glass-optics.md](glass-optics.md#accent-tint).
-On dark glass the recommended weight is `1`. The hue reads mainly through
-the band and the focus light, which pass the tinted glass; the body keeps
-its luminance, so under a translucent window it shifts only a few levels in
-hue, and lower weights barely register. The default stays 0.
-
-Two limits follow from the placement. An opaque window shows no ring: the
-band lies wholly under the face and there is no fallback band on the
-chamfer. A face narrower than `2 * ring-gap` on either axis has no beam
-line, and the ring — accent band, beam and resting glow — is not drawn
-on it. A `ring-sweep-ms`, `ring-inset`
-or `ring-drift-hz` line is rejected with the replacement named. Set
-`focus-ring { off }` (globally or in a window rule) for material windows so
-the gradient ring does not draw a second ring; non-material windows keep
-whatever ring the layout configures.
+`accent-tint` tints the glass body toward the accent's hue, independently
+of `accent` (`accent "none"` takes the accent off the band and leaves the
+tint). It moves hue and saturation only: over a neutral backdrop the face
+keeps its untinted luminance, so dark glass stays dark. The band and the
+focus light pass the same tinted glass, so under `accent "ring"` they
+brighten with the tint, and under `accent "none"` a near-white `ring-color`
+band dims. Near-white glass has little room for hue, so the tint barely
+shows on the default glass; on dark glass the recommended weight is `1`,
+and the hue reads mainly through the band and the focus light. Without an
+accent the glass is unchanged, and the tint follows the accent's
+crossfade. The arithmetic is in
+[glass-optics.md](glass-optics.md#accent-tint).
 
 **Retired keys.** `ring-sweep-ms`, `ring-inset` and `ring-drift-hz` are
 rejected by name with their replacement
 (`ring-sweep-ms was replaced by ring-beam-speed`,
 `ring-inset was replaced by ring-gap`); none is reinterpreted. Prism's
 `prism migrate` maps `glass.ring.sweepMs` to `glass.ring.beamSpeed` (`0`
-stays `0`, any positive value becomes the default 300). The filament is on
-by default, so a material window with no `response` block shows the ring on
-focus; `focus "none"` in the `default` response leaves a focused window
-unlit. Two rings on screen are the layout's gradient ring under the
-filament: turn it off with `focus-ring { off; }`.
+stays `0`; any other value becomes Prism's default for that key). The
+filament is on by default, so a material window with no `response` block
+shows the ring on focus; `focus "none"` in the `default` response leaves a
+focused window unlit.
 
 ### Focus tilt
 
-`view-tilt` turns the pane briefly in depth when it gains focus: window
-content and glass swing as one body about the pane's centre, across the
-direction focus came from, and settle back to exactly face-on after
-`view-tilt-settle` ms. The side the focus came from presses in first; one
-small overshoot follows. While it turns, perspective engages with the angle
-and the slab's rounded edge and side wall come into view. `view-distance`
-is the camera's distance in multiples of the pane's extent along the swing:
-smaller is stronger perspective, larger shows more wall. On a horizontal
-swing the advancing wall shows on every moving frame when
-`sin(view-tilt) > 1 / (2 · view-distance)`.
+`view-tilt` is the peak angle in degrees of a brief turn in depth on focus
+gain: window content and glass swing as one body, the side the focus came
+from pressing in first, and settle exactly face-on after
+`view-tilt-settle` ms. `view-distance` is the camera's distance in
+multiples of the pane's extent along the swing: smaller is stronger
+perspective, larger shows the side wall at smaller angles.
 
 A swing starts only when the window's border and focus ring are off, its
 background effect draws nothing (no xray or blur, `noise 0`, `saturation 1`;
 Prism writes `blur false; noise 0; saturation 1`), it is not fullscreen or
 opening, and `signal { motion "full"; }` with animations on. A pane
-refocused mid-swing finishes the swing it has.
-The policy cuts a running swing to rest on the next frame. At rest nothing
-changes. How the swing moves and how the tilted slab is drawn is in
-[motion.md](motion.md#rigid-tilt).
+refocused mid-swing finishes the swing it has; a policy change cuts a
+running swing to rest. How the swing moves and how the tilted slab is drawn
+are in [motion.md](motion.md#rigid-tilt).
 
 ## Signal motion and animation
 
@@ -288,23 +216,18 @@ animations {
 }
 ```
 
-`reduced` changes sustained `flash` to `pulse`, `pulse` to `breathe`, and an
-impulse `flash` response to `sweep`. `off` makes sustained motion static and
-drops impulse effects, while retaining the static accent and level
-crossfade. `material-signal` is the baseline signal crossfade; it defaults to
-400 ms with `ease-out-cubic` and follows the normal animation configuration,
-including `animations { off }`. The focus filament fades in and out with
-`material-signal` too; `reduced`, `off`, and `animations { off }` skip its
-focus-gain beam.
+`reduced` and `off` map motion and impulses as
+[Effective signal](#effective-signal) lists; `off` keeps the static accent
+and the level crossfade. `material-signal` is the signal and focus
+crossfade, 400 ms `ease-out-cubic` by default, following the normal
+animation configuration including `animations { off }`; `reduced`, `off`
+and `animations { off }` also skip the focus-gain beam.
 
-`idle-after-ms <int>` — sustained attention motion (`breathe`, `pulse`,
-`flash`) settles to the static indication (level and accent lit, no pulse),
-and Aurora holds its phase, once no input has arrived for this long. Attention
-resumes on its absolute clock; Aurora resumes from its held phase. Default
-30000; `0` disables both gates; at most 3600000, and the error
-is `idle-after-ms must be at most 3600000`. What the gate holds and what it
-leaves running is in [Redraw and idle budget](#redraw-and-idle-budget).
-
+`idle-after-ms <int>`: once no input has arrived for this long, sustained
+attention motion settles to the static indication and Aurora holds its
+phase ([Redraw and idle budget](#redraw-and-idle-budget)). Default 30000;
+`0` disables both gates; at most 3600000, and the error is
+`idle-after-ms must be at most 3600000`.
 
 ## Redraw and idle budget
 
@@ -326,9 +249,8 @@ the crossfades, live impulses, the focus beam and the tilt, runs on the
 animation loop while the band is visible and stops when it ends.
 
 The input gate is `signal { idle-after-ms }`. Input, a session resume and an
-unlock count as activity; idle inhibitors and client damage do not. The
-timer is armed at startup, so a compositor that never receives input still
-goes idle. Once idle:
+unlock count as activity; idle inhibitors and client damage do not; a
+compositor that never receives input still goes idle. Once idle:
 
 - sustained attention motion is `Static`: level and accent stay lit;
 - the shared optic timeline holds (`OpticTimeline` in `src/activity.rs`), so
@@ -337,12 +259,11 @@ goes idle. Once idle:
 - impulses, crossfades, the focus beam and the tilt are not gated: they are
   finite.
 
-On the next activity attention resumes on its absolute clock, in step with
-windows that never stopped, and Aurora resumes from its held phase without
-catching up. Either edge redraws only when some tile renders differently
-(`Layout::set_input_active`). A config reload recomputes idleness from the
-quiet time already elapsed. `src/tests/attention_idle.rs` covers these
-edges.
+On activity attention resumes on its absolute clock, in step with windows
+that never stopped, and Aurora from its held phase without catching up.
+Either edge redraws only when some tile renders differently
+(`Layout::set_input_active`); a reload recomputes idleness from the quiet
+time elapsed. `src/tests/attention_idle.rs` covers these edges.
 
 ## Workspace replay
 

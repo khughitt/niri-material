@@ -69,6 +69,14 @@ rendered expires after 120 s (`BEAM_MAX_RUN`). The speed is snapshotted at
 the start, so a reload that only changes `ring-beam-speed` leaves a running
 beam alone.
 
+`accepted_ring_look` in `src/tests/ring_look.rs` renders the owner's
+accepted terminal ring (`ring-beam-decay 4150`, speed 4350, `ring-gap 6`,
+`ring-glow 1.2`) through a real focus gain, from the inactive material
+through the comet to rest, as frozen, byte-identical renders. Set
+`RING_LOOK_DUMP=<dir>` before and after a change to ring or edge rendering
+and compare the PNGs; the backdrop is flat gray, so refraction does not
+show there.
+
 ## Focus activity
 
 Every focus gain on a tile whose response has `focus "ring-light"` starts
@@ -107,10 +115,13 @@ animations plus the drag lag below, and the size residual of a resize:
 - **Resize.** Each axis's size residual, scaled and saturated the same way,
   resizes the face (`mat_jelly_resize`).
 - **Activity.** tanh of the combined move and size residual's magnitude
-  over half the target's diagonal, plus any `ripple` impulse's envelope, at most 0.999. While it is
-  above 0 and `jelly-ripple` is set, `main.frag` perturbs the normal with
-  two octaves of simplex noise moving with time, scaled by
-  activity × `jelly-ripple`, and the ring glows up to three times brighter.
+  over half the target's diagonal, plus any `ripple` impulse's envelope, at
+  most 0.999. It is computed whatever `jelly-flex` is. The ring's accent and
+  focus light are multiplied by 1 + 2 × activity, so the ring brightens up
+  to three times during any move, resize or ripple impulse. While activity
+  is above 0 and `jelly-ripple` is set, `main.frag` also perturbs the normal
+  with two octaves of simplex noise moving with time, scaled by
+  activity × `jelly-ripple`.
 
 A zero residual is exactly rest. `JellyFingerprint` pins its time term at
 zero activity, so resting jelly adds no damage.
