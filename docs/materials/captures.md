@@ -63,9 +63,9 @@ live desktop socket) or `desktop`. Preflight does not refuse a desktop on the
    waits out the build's load (`await_load`), so the hold and the baseline
    exclude it. A run directory (`OUT`) must be fresh or empty.
 2. **`preflight <run-dir> --lane L --task ID --fixture NAME`** (`--seconds`,
-   default 20; `--owner-pid`, default the caller's parent; `--threshold
-   KEY=VALUE`; `--tool NAME[=VERSION]`; `--hold-settle`, default 10 s on a
-   measured lane, 0 on `pixels`). In order: write `run`; take the lock; restore
+   default 20; `--owner-pid`, default the invoking process, capture-meta's
+   parent pid; `--threshold KEY=VALUE`; `--tool NAME[=VERSION]`;
+   `--hold-settle`, default 10 s on a measured lane, 0 on `pixels`). In order: write `run`; take the lock; restore
    any stale hold whose owner died; refuse on the pre-hold checks (session,
    live desktop on `dedicated`, forbidden GPU clients); write the host hold
    file, start the guard and confirm it is active; apply the hold and write
@@ -228,8 +228,8 @@ sub-run entries without string `name` and `verdict`).
 
 ## Harnesses
 
-Every harness takes `CAPTURE_TASK` (the task authorizing the run, recorded
-as `task`) and `NIRI_MATERIAL_WORK_ROOT` (the per-machine evidence root, which
+Every harness that writes `capture.json` takes `CAPTURE_TASK` (the task
+authorizing the run, recorded as `task`) and `NIRI_MATERIAL_WORK_ROOT` (the per-machine evidence root, which
 also holds the retained Tracy 0.13.1 tools). Those sharing
 `glass-optic-smoke-lib.sh` also take `OUT`, a fresh directory; the lib owns
 Weston, niri, the settle-before-launch and renderer calls, and the exit trap.
