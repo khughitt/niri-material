@@ -10,10 +10,11 @@ float ggxPeakRatio(float x, float alpha) {
 }
 
 // A key-light lobe where the bevel's normal bisects the view and the light
-// (spec §3.3): the light sits at 45 degrees' elevation in the signal light's
-// direction, so H is 22.5 degrees off vertical. `tilt` fades it in from a
-// flat surface, which keeps a rounded face join dark at every roughness.
-// Not multiplied by F: it stands for a bright source. bevel.rs mirrors it.
+// (docs/materials/glass-optics.md#edge-highlight): the light sits at 45
+// degrees' elevation in the signal light's direction, so H is 22.5 degrees off
+// vertical. `tilt` fades it in from a flat surface, which keeps a rounded face
+// join dark at every roughness. Not multiplied by F: it stands for a bright
+// source. bevel.rs mirrors it.
 vec3 edge_highlight_specular(vec3 specular, Surface s) {
     if (mat_edge_highlight <= 0.0)
         return specular;

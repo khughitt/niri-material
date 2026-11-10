@@ -1,4 +1,4 @@
-//! Noise placement (design 2026-10-05-noise-placement-design.md §5, §8): the
+//! Noise placement (docs/materials/glass-optics.md#noise-placement): the
 //! three sites' identities, the backdrop grain's softening under blur, the
 //! coverage facts, and the damage contract, rendered in process through the
 //! headless GLES renderer under a frozen clock.

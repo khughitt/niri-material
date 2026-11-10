@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Noise layers smoke (design 2026-10-06-noise-layers-design.md §7.1, §7.2).
+# Noise layers smoke (docs/materials/glass-optics.md#noise-layers).
 # Default: the full matrix and the contact sheet. NOISE_LAYERS_PILOT=1 keeps
 # fine grain and scale 8, still exercising all six assertions and the sheet.
 # OUT must be fresh; BASE_NIRI pins the 37de154e release binary (the noise

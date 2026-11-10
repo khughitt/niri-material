@@ -1,7 +1,7 @@
 //! The attention idle gate through the fixture: the timer token invariant
 //! across an early fire and reloads, and the input → `notify_activity` →
 //! layout → timer wiring through a virtual pointer
-//! (docs/specs/2026-09-18-ring-focus-motion-design.md §3).
+//! (docs/materials/motion.md#focus-activity).
 //!
 //! Timer-only checkpoints call `f.state.server.dispatch()` directly:
 //! `Fixture::dispatch()` polls the outer loop and dispatches the server only
@@ -385,9 +385,8 @@ fn frame_sequence(f: &mut Fixture, output: &Output) -> u32 {
     f.niri().output_state[output].frame_callback_sequence
 }
 
-/// Spec §6, "one output removed/disabled; another lit", and the Outputs/DPMS
-/// row of §8's capture matrix, which no capture host with two outputs could
-/// drive: the shared timeline follows global input state alone.
+/// One output removed or disabled while another stays lit, a case no capture
+/// host with two outputs could drive: the shared timeline follows global input state alone.
 #[test]
 fn optic_settling_removing_one_of_two_outputs_keeps_the_shared_timeline() {
     let (mut f, _id) = aurora_fixture(true);

@@ -1,4 +1,4 @@
-//! Noise layers (design 2026-10-06-noise-layers-design.md §7.2, §8): slot
+//! Noise layers (docs/materials/glass-optics.md#noise-layers): slot
 //! identities, per-slot application and seeding, independence, and grain
 //! size with its normalisation and smoothness by position in the lattice
 //! cell, rendered in process through the headless GLES renderer under a frozen clock.
@@ -187,7 +187,7 @@ fn position_sds(g: &[(i32, i32, f64)], s: i32) -> Vec<f64> {
 /// Mean squared difference to the right and lower neighbours, per position
 /// class `(x mod s, y mod s)`, over the classes' mean. A lattice whose grain
 /// flattens at its points and steepens along its cell edges, the grid the
-/// owner saw at scale 8 (design §4), spreads these far from 1.
+/// owner saw at scale 8, spreads these far from 1.
 fn position_gradient_energies(
     g: &[(i32, i32, f64)],
     face: Rectangle<i32, Logical>,

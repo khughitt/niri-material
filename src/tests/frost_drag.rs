@@ -1,10 +1,8 @@
-//! A glass window keeps its frost while it is dragged by interactive move
-//! (material-e88df7).
+//! A glass window keeps its frost while it is dragged by interactive move.
 //!
 //! A tiled drag fades its tile to the drag alpha through the alpha offscreen,
-//! which lets a quarter of the sharp scene through the blurred glass (research
-//! in material-5d92cb). A tile with a material therefore stays opaque for the
-//! whole move.
+//! which lets a quarter of the sharp scene through the blurred glass. A tile with a material
+//! therefore stays opaque for the whole move.
 //!
 //! Two frosted windows over a 16 px checker placed within the backdrop. One is
 //! dragged onto bare wallpaper and rendered at a frozen instant; frost is

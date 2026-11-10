@@ -1,6 +1,6 @@
-// Optic: noise. Up to four layers (design 2026-10-06-noise-layers-design.md),
+// Optic: noise. Up to four layers (docs/materials/glass-optics.md#noise-layers),
 // one per vec4 component: amount, type (0 white, 1 fine, 2 lightness), site
-// (0 glass, 1 backdrop, 2 film; design 2026-10-05-noise-placement-design.md)
+// (0 glass, 1 backdrop, 2 film; docs/materials/glass-optics.md#noise-placement)
 // and scale (grain cell in physical pixels; 1 is per-pixel grain).
 // noise_behind applies the glass layers (render-pipeline.md stage 3b),
 // noise_source the backdrop layers in the effect-program grain pass,
@@ -66,7 +66,7 @@ vec4 noiseRow(vec4 acc, vec2 base, float py, float wm, float ws, float c) {
 // every row folds into one vec4 as it is hashed. The material program
 // inlines this path at eight call sites, and lattice values held as arrays
 // set its register count for every draw, noise or not: 128 registers
-// against 96 before the B-spline, +0.034 ms per material draw (material-03fdf3).
+// against 96 before the B-spline, +0.034 ms per material draw.
 float noiseValue(vec2 fragCoord, float type, float scale, vec2 offset) {
     if (scale <= 1.0)
         return type < 0.5 ? hash12(fragCoord + offset) - 0.5 : fineGrain(fragCoord + offset);

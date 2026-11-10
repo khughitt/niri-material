@@ -111,7 +111,7 @@ pub struct Tile<W: LayoutElement> {
     move_y_animation: Option<MoveAnimation>,
 
     /// Follow-lag of an interactive move: decays on the tile through release
-    /// (docs/specs/2026-10-01-drag-follow-lag-design.md §3).
+    /// (docs/materials/motion.md#drag-follow-lag).
     drag_follower: Option<DragFollower>,
 
     /// The animation of the tile's opacity.
@@ -145,11 +145,12 @@ pub struct Tile<W: LayoutElement> {
     signal_frame_cache: RefCell<Option<(EffectiveSignal, FrameInputs)>>,
     signal_render_visible: bool,
     /// Whether the swing's footprint was in view at the last `update_render_elements`: what
-    /// keeps a running swing on the animation loop (design 2026-10-09 §5.1 "Hidden panes").
+    /// keeps a running swing on the animation loop, even for a pane whose resting slab is hidden.
     view_swing_visible: bool,
     /// Whether this tile was active at the last `update_render_elements`.
     active: bool,
-    /// The input-activity gate at the last `update_render_elements` (design 2026-09-18 §3).
+    /// The input-activity gate at the last `update_render_elements`
+    /// (docs/materials/motion.md#focus-activity).
     input_active: bool,
     focus_crossfade: Option<FocusCrossfade>,
     focus_beam: Option<FocusBeam>,
@@ -335,7 +336,7 @@ struct SignalCrossfade {
     presence_from: f32,
     presence_to: f32,
     /// Tint chromaticity at each end (`accent_chroma`), held like the
-    /// accent when one side has none (accent-tint design §6).
+    /// accent when one side has none.
     tint_from: Option<[f32; 3]>,
     tint_to: Option<[f32; 3]>,
 }
@@ -348,7 +349,7 @@ struct MaterialDynamics {
     glass_signal_fingerprint: GlassSignalFingerprint,
     glass_signal: GlassSignalInputs,
     optics: Vec<smithay::backend::renderer::gles::Uniform<'static>>,
-    /// This frame's pose of the rigid tilt; `None` at rest (design 2026-10-09 §6 "Commit").
+    /// This frame's pose of the rigid tilt; `None` at rest.
     view: Option<ViewPose>,
 }
 
@@ -430,7 +431,7 @@ impl FocusCrossfade {
 }
 
 /// One beam of the ring's light around the face on focus gain
-/// (design 2026-09-19 §2). Only the start and the speed are snapshotted.
+/// (docs/materials/motion.md#ring-beam). Only the start and the speed are snapshotted.
 /// The run's end is decided in `material_dynamics`, on the perimeter of the
 /// face it has just computed for this frame — never on a cached limit, so a
 /// window that grows past an old limit keeps its beam.
@@ -470,9 +471,9 @@ impl FocusBeam {
     }
 }
 
-/// The rigid tilt's swing on focus gain (design 2026-10-09 §3, §5). Everything is snapshotted
-/// at the start, so a reload or a material swap mid-run does not move the pane; the `Layout`
-/// starts it, never the tile's own focus flag.
+/// The rigid tilt's swing on focus gain (docs/materials/motion.md#rigid-tilt). Everything is
+/// snapshotted at the start, so a reload or a material swap mid-run does not move the pane; the
+/// `Layout` starts it, never the tile's own focus flag.
 #[derive(Debug)]
 struct ViewSwing {
     /// Start instant on the unadjusted clock.
@@ -657,7 +658,7 @@ impl<W: LayoutElement> Tile<W> {
     }
 
     /// Whether the policy and response allow the ring's beam to move at all: `focus
-    /// ring-light` and `motion_allowed`. This is the cut rule's test (design §1); it says
+    /// ring-light` and `motion_allowed`. This is the cut rule's test; it says
     /// nothing about the speed, which is snapshotted per beam.
     fn beam_allowed(&self, response: &ResolvedResponse) -> bool {
         response.focus == niri_config::FocusResponse::RingLight && self.motion_allowed()
@@ -682,7 +683,8 @@ impl<W: LayoutElement> Tile<W> {
         }
     }
 
-    /// Starts the swing for a focus gain the `Layout` observed (design 2026-10-09 §5). Nothing
+    /// Starts the swing for a focus gain the `Layout` observed
+    /// (docs/materials/motion.md#swing-origin). Nothing
     /// happens without a material, at `view-tilt 0`, when motion is not allowed, on an
     /// ineligible tile, or while a swing runs: a pane refocused mid-swing finishes the swing it
     /// has.
@@ -715,7 +717,8 @@ impl<W: LayoutElement> Tile<W> {
         });
     }
 
-    /// What §5 asks of the tile itself: not fullscreen or opening, border and focus ring off,
+    /// What a swing asks of the tile itself (docs/materials/signals.md#focus-tilt): not
+    /// fullscreen or opening, border and focus ring off,
     /// and a background effect that does not draw.
     fn view_swing_eligible(&self) -> bool {
         !self.sizing_mode.is_fullscreen()
@@ -1203,10 +1206,10 @@ impl<W: LayoutElement> Tile<W> {
     /// `are_transitions_ongoing`: it schedules frames on the animation loop
     /// but is not a layout transition, and `are_transitions_ongoing` also
     /// gates the pointer-focus refresh in `Niri::refresh_pointer_contents`,
-    /// which a 16–24 s run must not hold up (design 2026-09-19 §2).
+    /// which a 16–24 s run must not hold up.
     /// The drag follower lives here for the same reason: it is cosmetic and must
     /// not hold up pointer focus after a drop.
-    /// The swing lives here for the same reason (design 2026-10-09 §5.1 "Hidden panes").
+    /// The swing lives here for the same reason.
     pub fn are_animations_ongoing(&self) -> bool {
         self.are_transitions_ongoing()
             || self.has_drag_follower()
@@ -1286,7 +1289,7 @@ impl<W: LayoutElement> Tile<W> {
                 from,
                 to: if is_active { 1. } else { 0. },
             });
-            // Start rule (design 2026-09-19 §2): every gain starts a beam,
+            // Start rule (docs/materials/motion.md#focus-activity): every gain starts a beam,
             // replacing a running one; loss ends it.
             if is_active {
                 if response.as_ref().is_some_and(|r| self.beam_permitted(r)) {
@@ -1316,8 +1319,8 @@ impl<W: LayoutElement> Tile<W> {
             })
         });
         // A swing draws its footprint, which can reach the view while the resting slab does
-        // not: the lifted wall of a pane just off the edge (design 2026-10-09 §5.1 "Hidden
-        // panes"). The resting test still covers the swing's first frame, whose pose is rest.
+        // not: the lifted wall of a pane just off the edge. The resting test still covers the
+        // swing's first frame, whose pose is rest.
         self.view_swing_visible = self.signal_render_visible
             || screen_view.is_some_and(|view| {
                 self.view_pose()
@@ -2517,7 +2520,7 @@ impl<W: LayoutElement> Tile<W> {
         // A material tile whose whole body is outside the output skips its window body: the
         // effect-buffer prepare, the offscreen pass, the dynamics and the element. Only for the
         // output, and never inside the open or alpha animation's offscreen or during a resize,
-        // whose areas the extent does not bound (culling audit 2026-10-08 §2). The cleared
+        // whose areas the extent does not bound. The cleared
         // offscreen data reads as not presented, as for a hidden tab.
         let cull_body = self.open_animation.is_none()
             && self.alpha_animation.is_none()
@@ -2533,7 +2536,7 @@ impl<W: LayoutElement> Tile<W> {
         if let Some(open) = &self.open_animation {
             let mut ctx = ctx.as_gles();
             // The offscreen draws the tile at (0, 0): move the view the crop takes with it
-            // (design 2026-10-09 §6 "View crop").
+            // (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt).
             if let Some(sink) = &mut ctx.signal_ticks {
                 sink.view.loc -= location;
             }
@@ -2567,7 +2570,7 @@ impl<W: LayoutElement> Tile<W> {
         } else if let Some(alpha) = &self.alpha_animation {
             let mut ctx = ctx.as_gles();
             // The offscreen draws the tile at (0, 0): move the view the crop takes with it
-            // (design 2026-10-09 §6 "View crop").
+            // (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt).
             if let Some(sink) = &mut ctx.signal_ticks {
                 sink.view.loc -= location;
             }
@@ -2611,7 +2614,7 @@ impl<W: LayoutElement> Tile<W> {
 
     /// Whether the input-activity gate changes what this tile renders: its
     /// window's signal has sustained motion while input is active. The gate
-    /// touches nothing else (design 2026-09-18 §3), so a tile without such a
+    /// touches nothing else, so a tile without such a
     /// signal needs no redraw when the gate flips.
     pub fn attention_gated(&self) -> bool {
         use crate::render_helpers::signal::effective;
@@ -2643,11 +2646,11 @@ impl<W: LayoutElement> Tile<W> {
     /// Next instant this tile needs a redraw for its material: the earliest
     /// of any optic's own change and the sustained-signal bucket boundary,
     /// while the slab band is in view. The focus beam runs on the animation
-    /// loop and has no arm here (design 2026-09-18 §2).
+    /// loop and has no arm here.
     ///
     /// The optic deadline does not sit behind the signal frame cache: an
     /// unfocused, signal-free window has no cache, and an animated optic
-    /// must keep it redrawing all the same (design §3).
+    /// must keep it redrawing all the same.
     pub fn tick_deadline(
         &self,
         location: Point<f64, Logical>,
@@ -2698,7 +2701,7 @@ impl<W: LayoutElement> Tile<W> {
             view.loc - Point::from((margin, margin)),
             Size::from((view.size.w + 2. * margin, view.size.h + 2. * margin)),
         );
-        // A swing draws its footprint, which contains the buffers (design 2026-10-09 §6).
+        // A swing draws its footprint, which contains the buffers.
         if let Some(drawn) = self
             .view_pose()
             .and_then(|pose| self.swing_footprint(location, pose))
@@ -2715,7 +2718,8 @@ impl<W: LayoutElement> Tile<W> {
             || buffers.overlaps(view))
     }
 
-    /// The swing's drawn area for a tile at `location` (design 2026-10-09 §6), from the
+    /// The swing's drawn area for a tile at `location`
+    /// (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt), from the
     /// window's buffers, as `material_out_of_view` bounds the resting body. `None` without a
     /// material, or for a slab that carries no swing, which draws at rest.
     fn swing_footprint(
@@ -3304,7 +3308,7 @@ mod tests {
         let derived = accent_chroma(up.at(1e-5).accent.unwrap());
         assert!((0..3).all(|i| (derived[i] - k_orange[i]).abs() < 1e-3));
 
-        // The uploaded coefficient has no step at either end (spec §8).
+        // The uploaded coefficient has no step at either end.
         let base = niri_config::Color::from_rgba8_unpremul(0x0d, 0x1d, 0x1e, 0xff);
         let upload = |k: Option<[f32; 3]>| accent_tint(base, 31.2, 11., k, 1.);
         for fade in [&up, &down] {
@@ -3545,7 +3549,7 @@ mod tests {
 
     #[test]
     fn an_unfocused_signal_free_aurora_tile_reports_its_next_bucket() {
-        // The scheduling gate of the optics design §3: no focus filament, no
+        // The optics' scheduling gate: no focus filament, no
         // signal, so no signal frame cache, and still a deadline from the
         // optic while the slab band is in view.
         let mut clock = Clock::with_time(Duration::ZERO);
@@ -3729,7 +3733,7 @@ mod tests {
     #[test]
     fn settled_focus_reports_no_deadline_and_no_transition() {
         // Already focused, crossfade done, beam done: the three settled
-        // gates of the design (§2).
+        // gates.
         let clock = Clock::with_time(Duration::ZERO);
         let mut tile = focus_tile(niri_config::FocusResponse::RingLight, clock);
         tile.active = true;
@@ -3890,7 +3894,7 @@ mod tests {
 
         // The window grows: the beam persists, the head keeps counting
         // from the same start, and the run now ends on the new geometry.
-        // The head is never repositioned (design 2026-09-19 §2), so on the
+        // The head is never repositioned, so on the
         // longer line `elapsed < P₂ / speed` again: the head re-enters the
         // new lap, `env` returns to 1 and the head visibly reappears.
         let t = (p1 + l1 + 1.) / 300.;
@@ -4520,7 +4524,7 @@ mod tests {
         }
     }
 
-    /// `beam_tile` with the focus ring off, which a swing needs (design 2026-10-09 §5).
+    /// `beam_tile` with the focus ring off, which a swing needs.
     fn swing_tile(response: niri_config::ResolvedResponse, clock: Clock) -> Tile<TestWindow> {
         swing_tile_with(flat_glass(), response, clock)
     }
@@ -4576,7 +4580,7 @@ mod tests {
         assert_eq!(tile.view_swing_start(), None);
 
         // Settled: no clock, no deadline, and the same fingerprint inputs at every later
-        // instant (design §8.2).
+        // instant.
         let settled = |tile: &Tile<TestWindow>| {
             let d = render_dynamics(tile, 400., 300.);
             (
@@ -4636,7 +4640,7 @@ mod tests {
             "the loss does not cut the swing"
         );
 
-        // It runs on the now-unfocused pane, then ends on time (design §5.1).
+        // It runs on the now-unfocused pane, then ends on time.
         clock.set_unadjusted(secs(0.9 * 0.190381));
         tile.update_render_elements(false, true, Some(view), view);
         tile.advance_animations();

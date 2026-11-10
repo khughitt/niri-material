@@ -1011,15 +1011,15 @@ mod tests {
         for (line, message) in [
             (
                 "ring-drift-hz 15;",
-                "ring-drift-hz was replaced by ring-beam-speed; see material-config.md",
+                "ring-drift-hz was replaced by ring-beam-speed; see signals.md",
             ),
             (
                 "ring-sweep-ms 1500;",
-                "ring-sweep-ms was replaced by ring-beam-speed; see material-config.md",
+                "ring-sweep-ms was replaced by ring-beam-speed; see signals.md",
             ),
             (
                 "ring-inset 5;",
-                "ring-inset was replaced by ring-gap; see material-config.md",
+                "ring-inset was replaced by ring-gap; see signals.md",
             ),
         ] {
             let err = parse_files_err(&[(
@@ -1759,7 +1759,8 @@ mod tests {
             "##,
         );
 
-        // Every omitted parameter falls back to the v1 design §4 default.
+        // Every omitted parameter falls back to its documented default
+        // (docs/materials/material-config.md).
         assert_eq!(
             parsed.materials[0].resolve().glass,
             ResolvedGlass::default()

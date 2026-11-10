@@ -1,4 +1,5 @@
-//! Effective signal and the pure envelope solver (design §3, §4).
+//! Effective signal and the pure envelope solver (docs/materials/signals.md#effective-signal,
+//! docs/materials/signals.md#redraw-and-idle-budget).
 
 use std::f32::consts::TAU;
 use std::time::Duration;
@@ -45,7 +46,7 @@ impl EffectiveSignal {
 }
 
 /// Stage 1: apply the global policy, the response block, and the
-/// input-activity gate (design 2026-09-18 §3): idle input makes sustained
+/// input-activity gate (docs/materials/motion.md#focus-activity): idle input makes sustained
 /// motion static and touches nothing else.
 pub fn effective(
     folded: &Folded,
@@ -106,8 +107,8 @@ pub struct SignalFrame {
     pub impulses: [ImpulseFrame; 4],
     /// Crossfaded accent presence, 0 to 1.
     pub presence: f32,
-    /// Tint chromaticity for `accent-tint` (design §5–§6); interpolated
-    /// between the crossfade's endpoints, never derived from `accent`.
+    /// Tint chromaticity for `accent-tint` (docs/materials/glass-optics.md#accent-tint);
+    /// interpolated between the crossfade's endpoints, never derived from `accent`.
     /// `None` exactly when `accent` is.
     pub tint_chroma: Option<[f32; 3]>,
     /// Crossfaded focus, 0 to 1.
@@ -167,7 +168,7 @@ pub fn luminance(c: [f32; 3]) -> f32 {
     0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
 }
 
-/// The tint chromaticity of a settled accent (accent-tint design §5): the
+/// The tint chromaticity of a settled accent: the
 /// straight linear accent scaled to unit luminance, or neutral for black.
 /// It carries hue and saturation only, never brightness.
 pub fn accent_chroma(accent: [f32; 3]) -> [f32; 3] {
@@ -232,7 +233,7 @@ pub fn breath(motion: SignalMotion, now: Duration, seed: f32) -> f32 {
     0.5 - 0.5 * phase.cos()
 }
 
-/// Next absolute-clock instant at which `breath` changes (design §4).
+/// Next absolute-clock instant at which `breath` changes.
 pub fn next_boundary(motion: SignalMotion, now: Duration) -> Option<Duration> {
     let period = period(motion)?;
     if motion == SignalMotion::Flash {
@@ -331,7 +332,7 @@ pub fn slab_in_view(
 
 /// Next redraw deadline for a tile: sustained signal motion, only while the
 /// slab band is in view. The focus beam runs on the animation loop and has
-/// no arm here (design 2026-09-18 §2).
+/// no arm here.
 pub fn tick_deadline(eff: &EffectiveSignal, in_view: bool, now: Duration) -> Option<Duration> {
     if !in_view || !eff.is_sustained() {
         return None;
@@ -339,7 +340,7 @@ pub fn tick_deadline(eff: &EffectiveSignal, in_view: bool, now: Duration) -> Opt
     next_boundary(eff.motion, now)
 }
 
-/// Stage 2: pure solve (design §3). `inputs` are the crossfaded values the
+/// Stage 2: pure solve. `inputs` are the crossfaded values the
 /// tile already computed plus the beam frame.
 pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs) -> SignalFrame {
     let mut impulses = [ImpulseFrame::default(); 4];
@@ -365,7 +366,7 @@ pub fn solve(e: &EffectiveSignal, now: Duration, seed: f32, inputs: FrameInputs)
     }
 }
 
-/// Quantized frame for damage tracking (design §4).
+/// Quantized frame for damage tracking (docs/materials/signals.md#redraw-and-idle-budget).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SignalFingerprint {
     level_q: i32,

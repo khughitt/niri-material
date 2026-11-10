@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Glass iridescence smoke (material-6102b2): the optic's neutral renders
+# Glass iridescence smoke: the optic's neutral renders
 # identically to the unconfigured material, its hue lands on the chamfer
 # rather than the face, and its frame cost is recorded.
 #

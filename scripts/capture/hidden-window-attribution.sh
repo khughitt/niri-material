@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # hidden-window-attribution.sh: does a material window nobody can see still
-# cost compositor or client work? (material-d09741)
+# cost compositor or client work?
 #
 #   CAPTURE_TASK=material-d09741 NIRI_MATERIAL_WORK_ROOT=<evidence root> \
 #   OUT=<fresh dir> scripts/capture/hidden-window-attribution.sh pilot|matrix

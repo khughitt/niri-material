@@ -1,6 +1,6 @@
 //! The glass's flat-face color over a reference backdrop, and the range in
 //! which the opaque shell can match it
-//! (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md §2).
+//! (docs/materials/shell-remap.md#face-effects).
 //!
 //! The terms mirror `main.frag`'s flat face: reflection and the facing term
 //! vanish there, so the face is the transmitted backdrop plus the specular
@@ -63,7 +63,7 @@ pub fn check_range(name: &str, glass: &ResolvedGlass) -> Result<(), String> {
 
 /// The model covers transmitted light and the specular floor only. Aurora
 /// lights the whole face and iridescence recolors the floor, so a material
-/// with either cannot be matched (spec §2, supported effects).
+/// with either cannot be matched.
 pub fn check_effects(name: &str, glass: &ResolvedGlass) -> Result<(), String> {
     let optic = if glass.aurora.amount > 0. {
         "aurora"

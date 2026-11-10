@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # drag-lag-clips.sh: review clips for the drag follow-lag stimulus
-# (docs/specs/2026-10-01-drag-follow-lag-design.md §7). Each sequence runs a nested
+# (docs/materials/motion.md#drag-follow-lag). Each sequence runs a nested
 # headless niri with one kitty and one vdrag client (scripts/capture/vdrag.py).
 # vdrag drags its own window through xdg_toplevel.move, driven by a virtual pointer,
 # while a burst of screenshots records it, under the capture protocol
@@ -113,7 +113,7 @@ write_config "$OUT/tiled.kdl"
 FLOAT=true write_config "$OUT/floating.kdl"
 
 # A build's tail refuses the first settle: wait for it before the preflight
-# (docs/specs/2026-10-08-capture-host-conditions-design.md §6.5).
+# (docs/materials/captures.md#exchange).
 for _ in $(seq 60); do awk '{ exit !($1 < 1.0) }' /proc/loadavg && break; sleep 5; done
 awk '{ exit !($1 < 1.0) }' /proc/loadavg || fail 'load1 did not fall below 1.0 within 5 min of the build'
 capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \

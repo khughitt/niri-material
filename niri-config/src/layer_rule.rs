@@ -43,7 +43,8 @@ pub struct Match {
 
 /// `surface-remap { … }`: recolor a layer surface's surface family to a
 /// glass face and the output's held hue
-/// (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md §3, §5).
+/// (docs/materials/shell-remap.md#oklab-remap,
+/// docs/materials/shell-remap.md#layer-materials).
 ///
 /// Every field but `hue-chroma` is required, and a later matching rule
 /// replaces the whole node, so the node a surface gets is always one that was

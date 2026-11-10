@@ -1,11 +1,11 @@
-//! The transient rigid tilt in f64 (docs/specs/2026-10-09-transient-rigid-tilt-design.md):
-//! the swing curve and its weight (§3.1), the pose and its direction (§3.2), the camera and
-//! the slab-local ray, the projection back to the screen and its near clip (§4.1), and the
-//! element footprint (§6). `prelude.frag` mirrors the camera and the projection under the same
+//! The transient rigid tilt in f64 (docs/materials/motion.md#rigid-tilt):
+//! the swing curve and its weight, the pose and its direction, the camera and
+//! the slab-local ray, the projection back to the screen and its near clip, and the
+//! element footprint. `prelude.frag` mirrors the camera and the projection under the same
 //! names. Coordinates are element-local logical px, y down, +z toward the viewer.
 //!
 //! Every map is the identity plus a correction that is exactly zero at θ = 0 and w = 0, so the
-//! identity reproduces its inputs bit for bit (§4.1).
+//! identity reproduces its inputs bit for bit.
 
 use std::f64::consts::PI;
 use std::time::Duration;
@@ -23,7 +23,7 @@ pub const COINCIDENT_PX: f64 = 1.;
 
 /// The swing's shape at `u` = elapsed / settle, g(u) / G: exactly 0 at u = 0, a peak of 1 at
 /// u = 0.1904, one zero crossing at u = 0.5, an overshoot to −0.1638 at u = 0.636, and exactly
-/// 0 from u = 1 on (§3.1).
+/// 0 from u = 1 on.
 pub fn swing_shape(u: f64) -> f64 {
     if u >= 1. {
         return 0.;
@@ -32,7 +32,7 @@ pub fn swing_shape(u: f64) -> f64 {
     (1. - u).powi(2) * (2. * PI * u).sin() / SWING_PEAK
 }
 
-/// The swing's pose on one frame (§3.2).
+/// The swing's pose on one frame.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ViewPose {
     /// Signed angle, radians: the side along +`dir` lifts while it is positive.
@@ -64,7 +64,7 @@ impl ViewPose {
         })
     }
 
-    /// θ = 0 and w = 0 with the view path on: the identity hook of §8.2.
+    /// θ = 0 and w = 0 with the view path on: the identity hook the rest-identity tests use.
     #[cfg(test)]
     pub fn identity(dir: DVec2, kappa: f64) -> Self {
         Self {
@@ -104,10 +104,10 @@ pub fn seeded_direction(seed: u32) -> [f64; 2] {
 }
 
 /// No point drawn during a swing is nearer the camera than this fraction of its distance: at
-/// most 4× magnification (§4.1).
+/// most 4× magnification.
 pub const VIEW_NEAR_CLIP: f64 = 0.75;
 
-/// One frame's rotation about the pivot and its camera (§3.2, §4.1). R turns by θ in the
+/// One frame's rotation about the pivot and its camera. R turns by θ in the
 /// (dir, z) plane, so the side along +dir lifts while θ > 0. The camera sits on the pivot's
 /// normal at D = κE / w.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -125,7 +125,7 @@ pub struct Camera {
 /// An axis-aligned box as (min, max).
 pub type Bounds = (DVec2, DVec2);
 
-/// E: a slab's extent along the unit direction `dir`, the length κ is a multiple of (§3.2).
+/// E: a slab's extent along the unit direction `dir`, the length κ multiplies.
 pub fn extent(dir: DVec2, slab_size: DVec2) -> f64 {
     dir.x.abs() * slab_size.x + dir.y.abs() * slab_size.y
 }
@@ -201,13 +201,13 @@ impl Camera {
         dq.truncate() + (exy - self.pivot) * (zeta / (1. - zeta))
     }
 
-    /// `toScreen` (§4.1 step 5).
+    /// `toScreen`.
     pub fn to_screen(&self, q: DVec3) -> DVec2 {
         q.truncate() + self.screen_shift(q)
     }
 }
 
-/// The element footprint during a swing (§6): the bounding box of the projections of the slab
+/// The element footprint during a swing: the bounding box of the projections of the slab
 /// box's eight corners and the texture rect's four, each set first clipped at ζ = 3/4. The kept
 /// vertices are the corners at or below the plane plus each edge's crossing of it.
 pub fn footprint(camera: &Camera, slab: Bounds, tex: Bounds, thickness: f64) -> Bounds {
@@ -255,7 +255,7 @@ pub fn footprint(camera: &Camera, slab: Bounds, tex: Bounds, thickness: f64) -> 
 }
 
 /// Whether a wall with in-plane outward normal `n0`, `h` px from the pivot, faces the camera
-/// under `pose` (§2.1): D sin|θ| (n₀ · ŝ) > h, with D = κE / w and ŝ = sign(θ) dir.
+/// under `pose`: D sin|θ| (n₀ · ŝ) > h, with D = κE / w and ŝ = sign(θ) dir.
 pub fn wall_faces_camera(pose: &ViewPose, extent: f64, n0: DVec2, h: f64) -> bool {
     if pose.theta == 0. {
         return false;
@@ -274,20 +274,20 @@ pub mod hooks {
     thread_local! {
         /// Forces this pose on every glass tile in place of its swing.
         pub static POSE: Cell<Option<ViewPose>> = const { Cell::new(None) };
-        /// Draws the quad this many logical px past the computed geometry (§8.2 "Containment").
+        /// Draws the quad this many logical px past the computed geometry.
         pub static GROW: Cell<f64> = const { Cell::new(0.) };
-        /// The wall's beam spill gain (§4.3); the still sheet turns it off (§8.3).
+        /// The wall's beam spill gain; the still sheet turns it off.
         pub static WALL_SPILL: Cell<f32> = const { Cell::new(1.) };
     }
 
     /// Restarts the process-wide jelly seed sequence, so the panes of a fixture built after it
-    /// take the same seeds, and with them the same beam head wander, as any other (§8.3).
+    /// take the same seeds, and with them the same beam head wander, as any other.
     pub fn reset_jelly_seed() {
         super::super::JELLY_SEED.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
-/// The wall's beam spill gain (§4.3): 1, or the still sheet's hook.
+/// The wall's beam spill gain: 1, or the still sheet's hook.
 pub fn wall_spill() -> f32 {
     #[cfg(test)]
     {
@@ -585,7 +585,7 @@ mod tests {
         for (slab_min, slab_size, tex) in [
             // A texture 150 px past the slab on every side.
             ((0., 0.), (640., 360.), ((-150., -150.), (790., 510.))),
-            // The (250, 250) texture corner of a 100 px slab (§6).
+            // The (250, 250) texture corner of a 100 px slab.
             ((-50., -50.), (100., 100.), ((-50., -50.), (250., 250.))),
         ] {
             let s = (
@@ -614,7 +614,7 @@ mod tests {
 
     #[test]
     fn a_decal_past_the_near_clip_has_a_finite_footprint() {
-        // A texture reaching x = 500 from the pivot of a 100 px slab at 20°, κ = 1.5 (§8.1).
+        // A texture reaching x = 500 from the pivot of a 100 px slab at 20°, κ = 1.5.
         let s = (DVec2::new(-50., -50.), DVec2::new(50., 50.));
         let t = (DVec2::new(-50., -50.), DVec2::new(500., 50.));
         let camera = Camera::new(&peak(20., DVec2::X, 1.5), s.0, DVec2::splat(100.));

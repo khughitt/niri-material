@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-position deviation of a signed grain image (noise layers design §7.2, 5).
+"""Per-position deviation of a signed grain image, for the noise layers smoke.
 
 Usage: noise-layers-bins.py <raw 16-bit MSB gray> <width> <height> <scale>
 

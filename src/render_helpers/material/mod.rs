@@ -118,14 +118,14 @@ fn scatter(roughness: f64, ior: f64) -> f32 {
     (roughness * (ior * 2. - 2.).clamp(0., 1.)) as f32
 }
 
-/// Glass-specific interpretation of a `SignalFrame` (design §6). The one
-/// place glass selectors are read.
+/// Glass-specific interpretation of a `SignalFrame` (docs/materials/signals.md#signal-responses).
+/// The one place glass selectors are read.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlassSignalInputs {
     pub activity_add: f32,
     pub chromatic_aberration: f64,
     pub distortion: f64,
-    /// `attenuation-color` after the accent tint (accent-tint design §5);
+    /// `attenuation-color` after the accent tint (docs/materials/glass-optics.md#accent-tint);
     /// the configured color, bit for bit, when untinted.
     pub attenuation_color: [f32; 4],
     pub samples: u8,
@@ -145,7 +145,7 @@ impl GlassSignalInputs {
     }
 }
 
-/// Glass-specific interpretation of a `SignalFrame` (design §6). The one
+/// Glass-specific interpretation of a `SignalFrame`. The one
 /// place glass selectors and the accent tint are read.
 pub fn glass_signal_inputs(
     frame: &SignalFrame,
@@ -197,7 +197,7 @@ thread_local! {
 }
 
 /// The programs material draws on this thread bound since the last call, in draw order: a
-/// render shows which of the two (§6 "Contingency") it drew with.
+/// render shows which of the two (rest or view program) it drew with.
 #[cfg(test)]
 pub(crate) fn take_bound_programs() -> Vec<ProgramType> {
     BOUND_PROGRAMS.take()
@@ -219,15 +219,14 @@ pub struct MaterialFrame {
     /// carry — the band actually drawn.
     pub chamfer: f32,
     /// The slab silhouette and the window-texture footprint, absolute logical: the rects
-    /// `slab_rect` and `geo_rect` express, which the swing's footprint projects (design
-    /// 2026-10-09 §6).
+    /// `slab_rect` and `geo_rect` express, which the swing's footprint projects.
     pub slab: Rectangle<f64, Logical>,
     pub tex: Rectangle<f64, Logical>,
 }
 
 impl MaterialFrame {
     /// Whether the slab can carry `pose`: its camera divides by the slab's extent along the
-    /// swing (§3.2), which a slab of no width or height lacks. Such a slab takes no view and
+    /// swing, which a slab of no width or height lacks. Such a slab takes no view and
     /// draws at rest.
     pub fn carries(&self, pose: &ViewPose) -> bool {
         view::extent(pose.dir, DVec2::new(self.slab.size.w, self.slab.size.h)) > 0.
@@ -524,13 +523,14 @@ pub fn material_frame(
     }
 }
 
-/// The rigid tilt's per-frame inputs to the element (design 2026-10-09 §6).
+/// The rigid tilt's per-frame inputs to the element
+/// (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ElementView {
     pub pose: ViewPose,
     /// The render view in the coordinates the tile draws in, when the render has one.
     pub crop: Option<Rectangle<f64, Logical>>,
-    /// The wall's beam spill gain (§4.3).
+    /// The wall's beam spill gain.
     pub wall_spill: f32,
     /// How far past the computed geometry the quad is drawn, logical px; 0 outside the
     /// containment test.
@@ -552,7 +552,7 @@ fn frame_camera(frame: &MaterialFrame, pose: &ViewPose) -> Camera {
     Camera::new(pose, min, max - min)
 }
 
-/// The element's drawn area (design 2026-10-09 §6): `frame.area` at rest; during a swing the
+/// The element's drawn area: `frame.area` at rest; during a swing the
 /// footprint merged with it, cropped to the render view grown by one physical px, and rounded
 /// out to physical px. A crop that leaves nothing gives an empty rect.
 pub fn drawn_area(
@@ -614,7 +614,7 @@ pub fn view_quad(
     ]
 }
 
-/// `mat_view_seed`: framebuffer px per element-local logical px, row-major (§4.4). smithay's
+/// `mat_view_seed`: framebuffer px per element-local logical px, row-major. smithay's
 /// projection is a signed permutation scaled to NDC, so its signs are the framebuffer's axes,
 /// and `gl_FragCoord` grows with NDC on both. `projection` is column-major.
 pub fn seed_basis(projection: &[f32; 9], scale: f64) -> [f32; 4] {
@@ -628,8 +628,8 @@ pub fn seed_basis(projection: &[f32; 9], scale: f64) -> [f32; 4] {
     ]
 }
 
-/// The view uniforms (design 2026-10-09 §4.1), which only the view variant declares: it is
-/// bound only while a swing runs (§6 "Contingency"), so `mat_view_on` is 1.
+/// The view uniforms (docs/materials/motion.md#tilted-slab-trace), which only the view variant
+/// declares: it is bound only while a swing runs, so `mat_view_on` is 1.
 fn view_uniforms(
     view: &ElementView,
     camera: &Camera,
@@ -774,7 +774,7 @@ pub struct InputFingerprint {
     /// damage.
     pub optics: Vec<Uniform<'static>>,
     /// The rigid tilt's inputs this frame; `None` at rest, so a settled pane's fingerprint is
-    /// today's (design 2026-10-09 §6 "Commit").
+    /// unchanged by the tilt.
     pub view: Option<ElementView>,
 }
 
@@ -1124,7 +1124,8 @@ impl RenderElement<GlesRenderer> for MaterialRenderElement {
             Uniform::new("mat_bevel_profile", g.bevel_profile as f32),
         ];
         uniforms.extend(self.optics.iter().cloned());
-        // The view variant only while a swing runs (design 2026-10-09 §6 "Contingency"); at
+        // The view variant only while a swing runs
+        // (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt); at
         // rest the base's program draws with the base's uniforms.
         let program = match &self.view {
             Some(view) => {

@@ -17,7 +17,6 @@ An empty selection is a result, not a failure: nothing runs, the exit is 0, and 
 line in nextest's summary shape is printed so the timing wrapper records `tests: 0`.
 A `cargo metadata` that fails to run or to parse runs the whole workspace and says so.
 nextest reports on stderr, which is merged into stdout here so the wrapper can count.
-Design: ops docs/specs/2026-09-04-test-ci-audit-design.md, section 4.5.
 """
 import json
 import pathlib

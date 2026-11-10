@@ -7,8 +7,7 @@
 # The host recipes run their command under `host-budget run`, which sets
 # CARGO_BUILD_JOBS and NEXTEST_TEST_THREADS from the host's CPU budget; the ci-
 # recipes do not, since CI has no ops tooling.
-# Design: ops docs/specs/2026-09-04-test-ci-audit-design.md and
-# docs/specs/2026-09-24-host-budget-design.md.
+# Reference: ops docs/tooling.md (the front door and host-budget run).
 
 set quiet
 set positional-arguments

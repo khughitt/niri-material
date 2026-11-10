@@ -8,7 +8,7 @@ test run from the pre-commit hook inherits GIT_DIR, which overrides `git -C <tmp
 its `git config user.name ...` lands in this repository's .git/config instead of the
 fixture's. Nothing then looks wrong: every later commit, on every host the checkout
 syncs to, is authored by the fixture. On 2026-09-06 that made `Fixture
-<fixture@example.invalid>` the author of six weeks of commits (material-5184bf).
+<fixture@example.invalid>` the author of six weeks of commits.
 
 So any user.name or user.email at local or worktree scope is refused. The check reads
 the repository git resolves from the environment, which inside a hook is the one being

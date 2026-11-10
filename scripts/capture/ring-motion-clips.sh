@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ring-motion-clips.sh: review clips for the ring beam
-# (docs/specs/2026-09-19-ring-beam-design.md §6, "Sheets"). Twelve sequences
+# (docs/materials/motion.md#ring-beam). Twelve sequences
 # from a nested headless instance, each one focus gain recorded as a burst of
 # full-frame screenshots as fast as the async screenshot path allows, plus 4x
 # crops of the focused pane's corners: top-left at rest and as the tail
@@ -193,7 +193,7 @@ if wants_scratch tilt-swing-flipped; then
 fi
 
 # A build's tail refuses the first settle: wait for it before the preflight
-# (docs/specs/2026-10-08-capture-host-conditions-design.md §6.5).
+# (docs/materials/captures.md#exchange).
 for _ in $(seq 60); do awk '{ exit !($1 < 1.0) }' /proc/loadavg && break; sleep 5; done
 awk '{ exit !($1 < 1.0) }' /proc/loadavg || fail 'load1 did not fall below 1.0 within 5 min of the build'
 capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \

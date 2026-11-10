@@ -1,12 +1,12 @@
 //! Replays a compositor event sequence through the existing event-stream reducer
 //! (`niri_ipc::state`) and folds a candidate per-workspace maximum signal level client-side.
 //!
-//! The question (material-c1330b) is whether a client can derive that summary from the existing
+//! The question is whether a client can derive that summary from the existing
 //! snapshots and events without a compositor summary event. "Maximum level" here is a candidate
 //! summary only, not an approved accent, motion or impulse fold.
 //!
-//! The event shapes and their order mirror what the compositor emits (see the brief
-//! docs/notes/2026-09-29-signal-model-extensions-brief.md, section "Workspace replay"):
+//! The event shapes and their order mirror what the compositor emits (see
+//! docs/materials/signals.md#workspace-replay):
 //!
 //! - every layout refresh runs `ipc_refresh_workspaces` before `ipc_refresh_windows`
 //!   (src/ipc/server.rs `ipc_refresh_layout`), and the compositor applies each event to its own

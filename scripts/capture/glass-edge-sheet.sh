@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Glass edge contact sheet (material-be611b, spec §6 "Visual judgement"): the
+# Glass edge contact sheet, for judging the edge by eye: the
 # probe's top-left corner over a real wallpaper, for bevel-profile {1, 2, 4}
 # crossed with three looks, each at reflection {0, 0.6} x edge-highlight
 # {0, 0.5} x roughness {0, 1}, plus a planar facet row at R / bevel = 0.414.

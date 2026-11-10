@@ -20,8 +20,8 @@ varying vec2 v_coords;
 uniform float tint;
 #endif
 
-// The shell remap (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md
-// §3). Mirrors RemapUniforms::apply in surface_remap.rs.
+// The shell remap (docs/materials/shell-remap.md#oklab-remap). Mirrors RemapUniforms::apply in
+// surface_remap.rs.
 uniform vec3 remap_anchor0;
 uniform vec3 remap_anchor1;
 uniform vec3 remap_anchor2;

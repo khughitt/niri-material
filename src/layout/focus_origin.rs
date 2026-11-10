@@ -1,5 +1,5 @@
-//! Where the rigid tilt's swing comes from (docs/specs/2026-10-09-transient-rigid-tilt-design.md
-//! §3.2, §5): the last focus an update pass observed. The `Layout` observes the one
+//! Where the rigid tilt's swing comes from (docs/materials/motion.md#swing-origin): the last
+//! focus an update pass observed. The `Layout` observes the one
 //! globally focused window, on its monitor, once per pass that visits it.
 
 use smithay::output::Output;

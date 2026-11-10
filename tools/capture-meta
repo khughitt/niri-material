@@ -28,7 +28,7 @@ TOOL = str(pathlib.Path(__file__).resolve())
 Host = ch.Host
 
 SCHEMA = 1
-RULES = "2026-10-17"   # the gate rules a run is judged by: docs/specs/2026-10-17-capture-evidence-gates-design.md
+RULES = "2026-10-17"   # the gate rules a run is judged by: docs/materials/captures.md#evidence-gates
 RECORD = "capture.json"
 LOCK_NAME = "capture-meta.lock"
 
@@ -429,7 +429,7 @@ SETTLE_DELTAS = (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", 
 
 def unclaimed_power(summary, lane):
     """GPU power is no claim of the nested lane, and with no GPU client in the window
-    nothing could have competed for it (2026-10-17 gates design §2)."""
+    nothing could have competed for it (docs/materials/captures.md#evidence-gates)."""
     clients = summary["gpu_clients"]
     return lane == "headless" and not clients["graphics"] and not clients["compute"]
 
@@ -615,7 +615,7 @@ def update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
 
 
 def _update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
-    """hold_end.scan is written once; hold_end.restore takes every attempt (spec §4.3);
+    """hold_end.scan is written once; hold_end.restore takes every attempt;
     hold_end.cleanup ({guard, owner_pid}) is written once, before the hold file can go, so
     a cleanup interrupted after this save can be finished from the record alone.
     The caller holds record_lock(run_dir)."""
@@ -817,7 +817,8 @@ def host_condition(socket):
 
 
 def pre_hold_reasons(lane, socket, gpu):
-    """Everything that can refuse before the hold changes the host (spec §7)."""
+    """Everything that can refuse before the hold changes the host
+    (docs/materials/captures.md#lanes)."""
     reasons = session_reasons(lane)
     if lane == "dedicated" and socket:
         reasons.append(f"a desktop niri is running at {socket}; the dedicated lane needs the desktop stopped")
@@ -875,7 +876,8 @@ RECOVERERS = ("guard", "next-preflight", "hand")
 
 
 def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
-    """Restore this run's hold, scan it once, record both (spec §4.3).
+    """Restore this run's hold, scan it once, record both
+    (docs/materials/captures.md#disturber-hold).
 
     The record is written inside the restore transaction, before the hold
     file goes, under record_lock. A kill at any point leaves the hold file
@@ -1121,7 +1123,7 @@ def cmd_settle(args):
 
 
 def begin(run_dir, sub_run, inputs, lock=lock_path):
-    """Opens a sub-run on the pixels lane: its inputs, no samples (spec §6.2)."""
+    """Opens a sub-run on the pixels lane: its inputs, no samples."""
     run_dir = pathlib.Path(run_dir)
     record = load_record(run_dir)
     for section in ("run", "preflight"):
@@ -1187,7 +1189,8 @@ def judge_renderer(lines, expected):
 
 
 def renderer(run_dir, sub_run, niri_log, weston_log):
-    """Judges and records one launch's compositor renderers before any stimulus (spec §6.3)."""
+    """Judges and records one launch's compositor renderers before any stimulus
+    (docs/materials/captures.md#evidence-gates)."""
     run_dir = pathlib.Path(run_dir)
     record = load_record(run_dir)
     lane = record.get("run", {}).get("lane")
@@ -1228,7 +1231,7 @@ def cmd_renderer(args):
 
 
 def unverified_launches(record):
-    """Settled measurement launches without a verified renderer, finished or open (spec §6.3)."""
+    """Settled measurement launches without a verified renderer, finished or open."""
     if record.get("run", {}).get("lane") not in MEASURED_LANES:
         return []
     return [e["name"] for e in record.get("sub_runs", [])
@@ -1312,7 +1315,7 @@ def threshold_supported(key, value):
 
 
 def judge_preflight(record):
-    """Preflight's rules are unchanged: the recorded verdict stands (2026-10-17 gates design §5)."""
+    """Preflight's rules are unchanged: the recorded verdict stands."""
     preflight = record.get("preflight")
     if preflight is None:
         return NO_EVIDENCE, "none", ["no preflight section"]
@@ -1515,7 +1518,7 @@ def render(record):
             if "renderer" in entry:
                 checked = f"  renderer {entry['renderer']['verdict']}"
             elif entry["verdict"] == "settled" and run.get("lane") in MEASURED_LANES:
-                checked = "  renderer unchecked"   # release refuses this run (spec §6.3)
+                checked = "  renderer unchecked"   # release refuses this run
             step = f"  step {entry['gpu_power_step_w']:+} W" if "gpu_power_step_w" in entry else ""
             lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{step}{checked}")
             lines += [f"    annotated {a['rule']}: {a['detail']}" for a in entry.get("annotations", [])]

@@ -1,4 +1,4 @@
-//! The owner's accepted ring look (material-519eeb), pinned as a reference.
+//! The owner's accepted ring look, pinned as a reference.
 //!
 //! `ACCEPTED` is the material pair Prism generated on 2026-10-01, when the
 //! owner accepted the ring beam with decay on a live a18ca619 session, copied
@@ -294,7 +294,7 @@ fn with_response(extra: &str) -> String {
     )
 }
 
-/// `ring-rest 0` (material-1d70db) removes the resting ring and nothing
+/// `ring-rest 0` removes the resting ring and nothing
 /// else: at rest the pane renders exactly as with no focus light, and the
 /// comet still runs after the gain.
 #[test]
@@ -370,7 +370,7 @@ fn unfocused_at_rest(look: &str, signal: bool) -> Vec<u8> {
     render_at(&mut f, REST_LATER)
 }
 
-/// `ring-accent 0` (material-48b514) takes the session hue's own outline away:
+/// `ring-accent 0` takes the session hue's own outline away:
 /// with the resting ring and the edge tint off too, an unfocused window with a
 /// signal renders exactly like one without, while at `ring-accent 1` the band
 /// shows.

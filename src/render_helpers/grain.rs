@@ -1,5 +1,5 @@
-//! The backdrop grain pass (`noise site=backdrop`, design
-//! `2026-10-05-noise-placement-design.md` §4): one full-quad draw that grains
+//! The backdrop grain pass (`noise site=backdrop`,
+//! `docs/materials/glass-optics.md#noise-placement`): one full-quad draw that grains
 //! an output's sharp effect-buffer texture into a sibling texture, which the
 //! blur, both prefilter pyramids and the direct sample then read.
 

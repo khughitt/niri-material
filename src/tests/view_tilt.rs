@@ -1,8 +1,8 @@
-//! Frozen-clock renders of the rigid tilt (docs/specs/2026-10-09-transient-rigid-tilt-design.md
-//! §8.2), through the real material shader in the headless backend, as ring_pair.rs renders.
-//! Set `VIEW_TILT_DUMP=<dir>` to write each render as `<name>.png`. Every fixture gets the next
-//! jelly seed; nextest runs each test in its own process, so dumps compare across commits.
-//! Run through `just test-one`, never `cargo test`.
+//! Frozen-clock renders of the rigid tilt (docs/materials/motion.md#rigid-tilt), through the real
+//! material shader in the headless backend, as ring_pair.rs renders. Set `VIEW_TILT_DUMP=<dir>` to
+//! write each render as `<name>.png`. Every fixture gets the next jelly seed; nextest runs each
+//! test in its own process, so dumps compare across commits. Run through `just test-one`, never
+//! `cargo test`.
 
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -41,8 +41,8 @@ pub(super) const GAIN: Duration = Duration::from_secs(1);
 /// Long after any run.
 pub(super) const REST: Duration = Duration::from_secs(4);
 
-/// The stock light glass with every optic §8.2 names on: reflection, the edge highlight, film
-/// and glass grain, aberration.
+/// The stock light glass with every optic the identity cases need on: reflection, the edge
+/// highlight, film and glass grain, aberration.
 pub(super) const STOCK: &str = r##"
                 ior 1.5
                 thickness 20
@@ -87,7 +87,7 @@ pub(super) struct Scene {
     /// The workspace background behind the pane.
     pub backdrop: &'static str,
     /// An opaque red subsurface of the pane at (x, y), w × h, relative to its top-left: the
-    /// texture then reaches past the slab (§6, §8.2 "Containment").
+    /// texture then reaches past the slab.
     pub subsurface: Option<[i32; 4]>,
     /// The output's size.
     pub output: (u16, u16),
@@ -283,7 +283,7 @@ pub(super) fn renders(scene: &Scene, pose: Option<ViewPose>, frames: &[Duration]
 }
 
 /// Like `render_at`, through the output path: the render creates its signal sink, so the view
-/// crop applies (§6).
+/// crop applies.
 pub(super) fn render_output_at(f: &mut Fixture, time: Duration) -> Vec<u8> {
     render_through(f, time, RenderTarget::Output)
 }
@@ -394,7 +394,7 @@ pub(super) fn grain0(glass: &str) -> String {
     lines.join("\n")
 }
 
-/// A real swing through the gain: the moving frames of §8.2's sequence.
+/// A real swing through the gain: its moving frames.
 pub(super) const SWING_MS: [u64; 6] = [50, 171, 300, 450, 572, 800];
 
 pub(super) fn swing_frames() -> Vec<Duration> {
@@ -433,7 +433,7 @@ fn black(pixels: &[u8]) -> usize {
         .count()
 }
 
-/// The identity cases of §8.2: the beam, aberration, reflection and grain on, and again for
+/// The identity cases: the beam, aberration, reflection and grain on, and again for
 /// bevel 0, thickness 0 and asymmetric corner radii, on translucent, clear and opaque content.
 fn identity_scenes() -> Vec<(String, Scene)> {
     let mut out = Vec::new();
@@ -493,7 +493,7 @@ fn every_identity_scene_parses_and_replaces_its_nodes() {
     assert!(bevel0(STOCK).contains("bevel 0") && !bevel0(STOCK).contains("bevel 12"));
 }
 
-/// §8.2 "Rest identity" across the two programs (§6 "Contingency"): the rest render binds the
+/// Rest identity across the two programs: the rest render binds the
 /// rest program, built from the base's text, and the forced identity pose gives every tile a
 /// view, so it binds the view variant. Each render's draws record the program they bound, and
 /// the two renders must agree byte for byte.
@@ -533,7 +533,7 @@ fn the_view_branch_at_the_identity_is_byte_identical_to_rest() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
-/// §8.2 "Zero rise in motion": no NaN reaches a pixel, and coverage stays in [0, 1]. The render
+/// Zero rise in motion: no NaN reaches a pixel, and coverage stays in [0, 1]. The render
 /// shows a NaN in the shading as black, but not a bad coverage: a NaN one fails `coverage > 0`
 /// and drops the glass, and one outside [0, 1] is clamped away over the opaque backdrop. So
 /// `zero_rise_is_the_box_or_the_plane` holds the mirror's coverage in [0, 1] for these solids.
@@ -637,10 +637,10 @@ fn after_the_run_nothing_animates_and_the_geometry_returns() {
 
 #[test]
 fn nothing_draws_outside_the_computed_geometry() {
-    // §8.2 "Containment": a subsurface outside the slab, every projected pixel of it drawn; then
+    // Containment: a subsurface outside the slab, every projected pixel of it drawn; then
     // a subsurface past the near clip, drawn up to the clip and nowhere past it. The first lies
     // beyond the pane on the side that lifts, so its projection leaves both the resting area and
-    // the slab box's own projection (§6: projecting the slab alone is not enough).
+    // the slab box's own projection (projecting the slab alone is not enough).
     let peak = |deg: f64, kappa: f64| ViewPose {
         theta: deg.to_radians(),
         dir: DVec2::X,
@@ -843,7 +843,7 @@ fn nothing_draws_outside_the_computed_geometry() {
 
 #[test]
 fn the_view_crop_follows_the_tile_into_an_offscreen() {
-    // §8.2 "View crop": a swing during an alpha animation, well away from the output's edges,
+    // View crop: a swing during an alpha animation, well away from the output's edges,
     // matches the same frame rendered directly; the bevel at negative offscreen coordinates is
     // drawn in full. LIVE's offsets put the slab up and left of the window, so the band lies
     // there; STOCK's put its corner on the tile's origin. Without grain: it is seeded per
@@ -921,7 +921,7 @@ fn a_tile_partly_off_the_left_edge_is_cropped_there_only() {
 
 #[test]
 fn a_close_snapshot_mid_swing_keeps_the_whole_posed_footprint() {
-    // §8.2 "View crop", through a real unmap mid-swing: the snapshot draws the tile at (0, 0)
+    // View crop, through a real unmap mid-swing: the snapshot draws the tile at (0, 0)
     // with no view, so nothing crops it, and the close animation's first frame matches the
     // posed frame before it. LIVE's slab reaches up and left of the tile's origin, which a crop
     // taken as the output rect in the snapshot's coordinates would cut; grain is off as in
@@ -1026,13 +1026,13 @@ fn sentinels(pixels: &[u8]) -> usize {
     pixels.chunks_exact(4).filter(|p| *p == SENTINEL).count()
 }
 
-/// The coverage probe's tolerance against the mirror: the §4.5 side bound (1/16 px of outline
+/// The coverage probe's tolerance against the mirror: the side bound (1/16 px of outline
 /// distance) times the smoothstep's steepest slope, 1.5, plus two 8-bit levels.
 const COVERAGE_TOL: f64 = 1.5 / 16. + 2. / 255.;
 
 #[test]
 fn walls_show_where_the_mirror_predicts() {
-    // §8.2 "Walls": at the peak, at 2° of a 10° swing at κ 6, and in the overshoot, along the
+    // Walls: at the peak, at 2° of a 10° swing at κ 6, and in the overshoot, along the
     // row through the pivot on each side edge: the wall pixels against the mirror's at pixel
     // centres, at most 1 px apart, and the wall's width against the mirror's ±1 px. The edge
     // along the lifting side (+x while θ > 0) is the advancing one: the mirror must show a wall
@@ -1099,7 +1099,7 @@ fn walls_show_where_the_mirror_predicts() {
 
 #[test]
 fn a_swing_below_the_reveal_threshold_shows_no_wall() {
-    // 11° at κ 2.5: θp ≤ 1 / (2κ), so no frame shows a wall (§3.2).
+    // 11° at κ 2.5: θp ≤ 1 / (2κ), so no frame shows a wall.
     for i in 1..20 {
         let shape = swing_shape(f64::from(i) / 20.);
         let pose = ViewPose {
@@ -1186,7 +1186,7 @@ fn the_face_coverage_matches_the_mirror_at_bevel_0() {
     }
 }
 
-/// §8.2 "Zero rise in motion", read in the shader: under the coverage probe, a real swing at
+/// Zero rise in motion, read in the shader: under the coverage probe, a real swing at
 /// bevel 0 and at thickness 0 (chamfer 12, so the rise is 0) marks no pixel of the pane's
 /// geometry as a coverage outside [0, 1] (NaN included), and draws the mirror's coverage at
 /// every one of them, within `the_face_coverage_matches_the_mirror_at_bevel_0`'s tolerance.
@@ -1265,7 +1265,7 @@ fn a_swing_with_zero_rise_draws_the_mirror_coverage() {
 
 #[test]
 fn grazing_edges_change_coverage_smoothly() {
-    // §8.2 "Grazing edges": across a slow sweep of θ, each outline pixel's coverage moves by no
+    // Grazing edges: across a slow sweep of θ, each outline pixel's coverage moves by no
     // more than 1.5 per px of the outline's motion plus twice the side bound (1/16 px), here
     // along rows through the middle of the straight sides.
     let mut prev: Option<(Vec<u8>, ViewPose)> = None;
@@ -1328,7 +1328,7 @@ fn grazing_edges_change_coverage_smoothly() {
 }
 
 /// An inactive material twice as thick, picked by an is-focused rule after the main one: the
-/// focus loss mid-swing is a hard cut of the slab (§5.1).
+/// focus loss mid-swing is a hard cut of the slab.
 const INACTIVE: &str = r##"
         material "tilt-inactive" {
             glass {
@@ -1411,7 +1411,7 @@ fn interaction_sequences_finish_at_rest() {
         |f: &mut Fixture, window: MappedId| pane_tile(f.niri(), window).0.view_swing_start();
 
     // Focus loss mid-swing: the material swap is the accepted hard cut, then the swing
-    // finishes on the unfocused pane (§5.1). The second window takes focus without a swing.
+    // finishes on the unfocused pane. The second window takes focus without a swing.
     let scene = Scene {
         after: format!("{INACTIVE}{}", flat_second()),
         ..Scene::new(&quiet, SWING)
@@ -1491,7 +1491,7 @@ fn interaction_sequences_finish_at_rest() {
         "a restart moved the 600 ms frame"
     );
 
-    // A resize mid-swing runs through (§5.1).
+    // A resize mid-swing runs through.
     let (mut f, pane) = fixture_pane(&Scene {
         after: flat_second(),
         ..Scene::new(&quiet, SWING)
@@ -1573,7 +1573,7 @@ fn interaction_sequences_finish_at_rest() {
         "a swing ran with animations off"
     );
 
-    // Ineligible panes take no swing (§5): border on, fullscreen, a visible background effect,
+    // Ineligible panes take no swing: border on, fullscreen, a visible background effect,
     // which a second rule adds (the main rule already has a `background-effect` node). The
     // eligible pane first, so the others cannot pass for want of a swing at all. Each pane is
     // drawn once before the gain, as any pane is before a refocus: whether its background
@@ -1605,7 +1605,7 @@ fn interaction_sequences_finish_at_rest() {
     assert!(black_frames.is_empty(), "black pixels in {black_frames:?}");
 }
 
-// The owner's still sheet (§8.3). The backdrop, the content and their colours are the
+// The owner's still sheet. The backdrop, the content and their colours are the
 // spike's (69431712:src/tests/tilt_spike.rs), verbatim.
 
 /// The window fill: the ring_look content, a dark fill at 0.6 opacity,
@@ -1809,7 +1809,7 @@ fn sheet_frame(light: bool, extra: &str, pose: Option<ViewPose>, spill: f32, ms:
 const PEAK_MS: u64 = 171;
 
 #[test]
-#[ignore = "the owner's still sheet (§8.3): run with VIEW_TILT_DUMP set, then view-tilt-sheet.py"]
+#[ignore = "the owner's still sheet: run with VIEW_TILT_DUMP set, then view-tilt-sheet.py"]
 fn still_sheet_frames() {
     assert!(
         std::env::var_os("VIEW_TILT_DUMP").is_some(),

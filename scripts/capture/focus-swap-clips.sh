@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# focus-swap-clips.sh: review clips for the focus-conditioned material swap
-# (material-8e3b73). The live Prism config selects `terminal-glass` for the
+# focus-swap-clips.sh: review clips for the focus-conditioned material swap.
+# The live Prism config selects `terminal-glass` for the
 # active kitty and `terminal-glass-inactive` for the others; a focus change
 # replaces both tiles' MaterialState, so the glass changes in one frame. Each
 # sequence is one focus drive on a two-pane scene, recorded as a burst of
@@ -146,7 +146,7 @@ write_config "$OUT/beam.kdl" terminal-glass terminal-glass-inactive \
     "terminal-glass|$ACTIVE_GLASS $AURORA_OFF|3200" "terminal-glass-inactive|$INACTIVE_GLASS $AURORA_OFF|3200"
 
 # A build's tail refuses the first settle: wait for it before the preflight
-# (docs/specs/2026-10-08-capture-host-conditions-design.md §6.5).
+# (docs/materials/captures.md#exchange).
 for _ in $(seq 60); do awk '{ exit !($1 < 1.0) }' /proc/loadavg && break; sleep 5; done
 awk '{ exit !($1 < 1.0) }' /proc/loadavg || fail 'load1 did not fall below 1.0 within 5 min of the build'
 capture_meta preflight "$OUT" --lane headless --task "$TASK" --fixture "$(basename "$0")" \

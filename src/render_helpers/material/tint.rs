@@ -1,4 +1,4 @@
-//! Accent tint of the attenuation color (docs/specs/2026-10-03-accent-tint-design.md §5).
+//! Accent tint of the attenuation color (docs/materials/glass-optics.md#accent-tint).
 
 use niri_config::Color;
 
@@ -11,7 +11,7 @@ fn luminance(c: [f64; 3]) -> f64 {
 
 /// The attenuation color to upload: `base` tinted toward `chroma` by
 /// `weight`, matched on the flat face's transmittance so the face passes the
-/// untinted luminance of a neutral backdrop at every weight (design §5).
+/// untinted luminance of a neutral backdrop at every weight.
 ///
 /// `chroma` is `accent_chroma` of the accent (or its crossfaded value);
 /// `weight` is `accent-tint × presence`. The neutral path returns the

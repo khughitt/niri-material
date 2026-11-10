@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # optic-settling-smoke.sh: bounded Tracy captures for sustained optic settling
-# (design docs/specs/2026-09-29-sustained-optic-settling-design.md §8, plan
-# Task 4). One case per check-family control, each a fresh nested niri under
-# a headless Weston host with an unfocused probe kitty under glass.
+# (docs/materials/captures.md#harnesses). One case per check-family control, each a
+# fresh nested niri under a headless Weston host with an unfocused probe kitty under
+# glass.
 #
 #   OUT=<fresh dir> NIRI_BIN=<identified Tracy binary> CAPTURE_TASK=<task> \
 #   NIRI_MATERIAL_WORK_ROOT=<evidence root> [PILOT_DIR=<passed pilot>] \
@@ -14,7 +14,7 @@
 # tools/optic_settling.py derives its own observation windows from those
 # declarations; this driver only records configs, a stimulus journal on
 # CLOCK_MONOTONIC (the clock of the edges' real_ns) and decoded pixels.
-# The dedicated lane (--lane dedicated; docs/specs/2026-10-02-real-tty-settling-lane-design.md)
+# The dedicated lane (--lane dedicated; docs/materials/captures.md#lanes)
 # runs niri on DRM from a TTY with the desktop stopped: drm-aurora, tty-resume,
 # unlock and screencast. It needs DRM_OUTPUT and DRM_MODE, switches VTs through
 # vt-lib.sh, and restores the starting VT on every exit. A second output stays
@@ -442,7 +442,7 @@ elif selected unlock; then
     LOCK_BIN=$OUT/clients/session-lock-client
 fi
 if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
-# The client builds' tail would refuse the first settle (spec §6.5); prepare
+# The client builds' tail would refuse the first settle; prepare
 # exits above, before any build, wait or preflight.
 await_load
 capture_preflight "$LANE"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Noise layers Tracy costs (design 2026-10-06-noise-layers-design.md §7.3):
+# Noise layers Tracy costs:
 # the material program's GPU span per damaged frame for stacks of fine
 # layers at scale 1 and 8, and the backdrop grain pass at scale 1 and 8.
 # Each case replaces the wallpaper DAMAGE_STEPS times at 1 Hz; every
@@ -13,8 +13,7 @@
 # Clock samples (CAPTURE_GPU_CLOCKS, on by default here) are joined to the
 # material draws in <case>.draw-clocks.csv, and metrics.txt adds the median of
 # the in-window draws that ran at the idle clock: the start-up burst runs at P0
-# and costs about an eighth as much (2026-10-06-noise-layers-evidence.md,
-# Hardware verdict). The `draw_median_ms` keys keep every in-window draw, as
+# and costs about an eighth as much. The `draw_median_ms` keys keep every in-window draw, as
 # earlier runs reported; CAPTURE_GPU_CLOCKS=0 keeps their unsampled condition.
 # One optional positional case name picks one case for any run; it is refused
 # with NOISE_LAYERS_COST_AB.

@@ -1,6 +1,6 @@
 """Hold host disturbers for the length of a quiet capture.
 
-Design: docs/specs/2026-10-04-capture-disturber-hold-design.md. capture-meta
+Reference: docs/materials/captures.md#disturber-hold. capture-meta
 drives the lifecycle and owns capture.json; this module owns the host side:
 what is held, the host hold file, applying and undoing each item, the
 journal scan, and the guard's watch loop. Every command goes through a Host,
@@ -392,7 +392,7 @@ def still_held(hold):
 
 
 def restore_transaction(host, lock_file, run_id, run_dir, by, record=None):
-    """Restore this run's hold as one transaction under guarded() (spec §4.3).
+    """Restore this run's hold as one transaction under guarded().
 
     Marks the hold `restoring` and fixes `until_us` (once, ever), undoes the
     still-held items in reverse order best-effort, records what remains in
@@ -483,7 +483,7 @@ def _disturbance(at_us, manager, unit, kind):
 
 
 def scan(host, hold, wakes):
-    """Disturbances in [started_us, until_us): see the spec, §5."""
+    """Disturbances in [started_us, until_us): see docs/materials/captures.md#disturber-hold."""
     start, end = hold["started_us"], hold["until_us"]
     timer_map = {m: {**hold["timer_map"].get(m, {}), **list_timers(host, m, all_=True)} for m in ("user", "system")}
     held = {i["unit"] for i in hold["items"] if i["kind"] in ("timer", "service")}
@@ -533,10 +533,10 @@ VT_ANNOTATED_LANES = ("headless", "pixels")
 
 
 def classify(disturbances, lane):
-    """Severity and rule for each flagged entry (2026-10-17 gates design §4.2). A console
-    login restarts its getty: a nested compositor never sees it, a DRM session on a VT
-    does. Every other kind fails on every lane, and so does everything when the lane is
-    unknown."""
+    """Severity and rule for each flagged entry (docs/materials/captures.md#evidence-gates).
+    A console login restarts its getty: a nested compositor never sees it, a DRM session
+    on a VT does. Every other kind fails on every lane, and so does everything when the
+    lane is unknown."""
     classified = []
     for d in disturbances:
         vt = d["kind"] == "restart" and VT_UNIT.fullmatch(d["unit"]) is not None
@@ -556,7 +556,7 @@ def _log_wake(lock_file, hold, record):
 
 
 def guard_loop(host, lock_file, run_id, run_dir, on_owner_dead, iterations=None):
-    """Watch the owner and the held monitors once a second (spec §4.4).
+    """Watch the owner and the held monitors once a second.
 
     Each round reads the hold and polls the monitors under guarded(), the
     lock restore_transaction marks `restoring` under, so a wake is either

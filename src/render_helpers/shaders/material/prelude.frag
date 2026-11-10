@@ -63,12 +63,11 @@ uniform float mat_sig_ring_accent;
 uniform float mat_light_ior;
 uniform float mat_bevel_profile;
 #ifdef MATERIAL_VIEW
-// The rigid tilt (spec 2026-10-09-transient-rigid-tilt §4): 1 while a swing runs. mat_view
-// carries cos θ − 1, sin θ, λ = w / (κE) and the wall spill gain; mat_view_dir is d;
-// mat_view_quad maps the drawn quad's UV to the resting area's UV (offset, scale);
-// mat_view_seed is framebuffer px per logical px, row-major. At the identity pose: 1,
-// (0, 0, 0, gain), d, (0, 0, 1, 1). Only this view variant declares them; it is bound only
-// while a swing runs (§6 "Contingency").
+// The rigid tilt (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt): 1 while a swing
+// runs. mat_view carries cos θ − 1, sin θ, λ = w / (κE) and the wall spill gain; mat_view_dir is d;
+// mat_view_quad maps the drawn quad's UV to the resting area's UV (offset, scale); mat_view_seed is
+// framebuffer px per logical px, row-major. At the identity pose: 1, (0, 0, 0, gain), d,
+// (0, 0, 1, 1). Only this view variant declares them; it is bound only while a swing runs.
 uniform int mat_view_on;
 uniform vec4 mat_view;
 uniform vec2 mat_view_dir;
@@ -87,7 +86,7 @@ vec2 g_face_half;
 vec4 g_face_r;
 
 // Glass edge constants: bevel.rs holds the same values under the same names,
-// and a test there checks these lines (spec 2026-09-30-glass-edge-optics §3.1).
+// and a test there checks these lines (docs/materials/glass-optics.md#bevel-profile).
 const float BEVEL_SLOPE_CAP = 20.0;
 const float BEVEL_OUTER_SOFTEN = 0.5;
 const float BEVEL_RIDGE_EPS = 0.0001;
@@ -97,7 +96,8 @@ const float BEVEL_TANH_CLAMP = 10.0;
 const float RAY_PATH_FLOOR = 0.25;
 const float TAP_MIN_Z = 0.05;
 
-// What a specular hook sees of the surface at this fragment (spec §3.4).
+// What a specular hook sees of the surface at this fragment
+// (docs/materials/glass-optics.md#specular-hook).
 struct Surface {
     vec2 p;            // element-local logical px
     vec2 v;            // element UV
@@ -333,7 +333,7 @@ float bevelProfileSlope(float u, float k) {
 
 // The slab's frame, independent of the fragment: the silhouette and the face that trails the
 // jelly, published for the filament and the traced solid. The view variant's slabSurface
-// starts with it; the rest program's keeps the base's inline copy (§6 "Contingency").
+// starts with it; the rest program's keeps the base's inline copy.
 void slabFrame(out float chamfer) {
     vec2 slab_min = mat_slab_rect.xy * mat_area_size;
     vec2 slab_size = mat_slab_rect.zw * mat_area_size;
@@ -385,7 +385,7 @@ void slabFrame(out float chamfer) {
 // the local height, and the across-bevel coordinate u with its direction.
 // The outer silhouette is the slab back and stays fixed; the face trails
 // the jelly. The bevel is a height field measured against both boundaries
-// (spec 2026-09-30-glass-edge-optics §3.1); bevel.rs mirrors it.
+// (docs/materials/glass-optics.md#bevel-profile); bevel.rs mirrors it.
 void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDist,
                  out float innerDist, out float chamferOut, out float height,
                  out float across, out vec2 acrossDir) {
@@ -486,9 +486,9 @@ void slabSurface(vec2 p, out float coverage, out vec3 normal, out float outerDis
 }
 #ifdef MATERIAL_VIEW
 
-// The view path's state for this fragment (spec 2026-10-09 §4.1). main sets it while
-// mat_view_on is 1. At the identity pose it keeps these initial values, the rest optics' own,
-// and no stage reads it outside a branch on g_view_on.
+// The view path's state for this fragment (docs/materials/motion.md#tilted-slab-trace). main sets
+// it while mat_view_on is 1. At the identity pose it keeps these initial values, the rest optics'
+// own, and no stage reads it outside a branch on g_view_on.
 bool g_view_on = false;
 vec3 g_ray = vec3(0.0, 0.0, -1.0);   // slab-local incident direction, unit
 vec3 g_view = vec3(0.0, 0.0, 1.0);   // toward the viewer: -g_ray
@@ -519,7 +519,7 @@ vec3 viewRotateDelta(vec3 v) {
     return vec3(mat_view_dir * da, dz);
 }
 
-// toScreen(q) − q.xy for a slab-local point (§4.1 step 5): into the world, then onto z = 0
+// toScreen(q) − q.xy for a slab-local point: into the world, then onto z = 0
 // along its camera ray. Exactly zero at the identity.
 vec2 viewScreenShift(vec3 q) {
     vec3 dq = viewRotateDelta(q - vec3(g_center, 0.0));
@@ -528,8 +528,8 @@ vec2 viewScreenShift(vec3 q) {
     return dq.xy + (exy - g_center) * (zeta / (1.0 - zeta));
 }
 
-// The camera ray through screen point p, slab-local, and its window-plane hit (§4.1 steps
-// 1–3). slabFrame must have run.
+// The camera ray through screen point p, slab-local, and its window-plane hit. slabFrame must
+// have run.
 void viewBegin(vec2 p) {
     vec2 rel = p - g_center;
     vec3 oShift = viewUnrotateDelta(vec3(rel, 0.0));
@@ -546,8 +546,8 @@ void viewBegin(vec2 p) {
         && viewRotateDelta(g_h0 - vec3(g_center, 0.0)).z * mat_view.z <= VIEW_NEAR_CLIP;
 }
 
-// The traced slab (spec 2026-10-09 §4.1 step 4, §4.5). view/solid.rs mirrors these line for
-// line under the same names.
+// The traced slab (docs/materials/motion.md#tilted-slab-trace). view/solid.rs mirrors these line
+// for line under the same names.
 const float VIEW_GOLDEN = 0.618033988749895;
 const int VIEW_GOLDEN_STEPS = 28;
 const int VIEW_BISECT_STEPS = 24;
@@ -560,7 +560,7 @@ bool g_wall = false;              // shade this fragment as the wall
 bool g_face_hit = false;          // the window-plane hit is on the flat face: it is shaded there
 bool g_face_near = false;         // and lies near the outline, so its coverage is the outline's
 float g_hit_z = 0.0;              // the shading point's depth
-float g_view_coverage = 0.0;      // the outline coverage (§4.5)
+float g_view_coverage = 0.0;      // the outline coverage
 float g_psi_min = 1e30;           // Ψmin over the segment, where, on which plane, in which quadrant
 float g_min_t = 0.0;
 vec3 g_min_plane = vec3(0.0, 0.0, 1.0);
@@ -584,7 +584,7 @@ vec2 viewSigmaGrad(vec2 xy, vec2 sel) {
     return sdRoundedBoxGrad(xy - g_center, g_half, vec4(r));
 }
 
-// Ψ (§4.1): <= 0 inside; X inverts bevelProfile. Without a rise Ψ is σ.
+// Ψ: <= 0 inside; X inverts bevelProfile. Without a rise Ψ is σ.
 float viewPsi(vec3 q, vec2 sel) {
     float sigma = viewSigma(q.xy, sel);
     if (g_rise <= 0.0)
@@ -614,8 +614,8 @@ vec3 viewPoint(float t) {
     return g_h0 + g_rho * (t * mat_thickness);
 }
 
-// The minimum of Ψ on [a, b], its ends included; a tie goes to an end, the start first
-// (§4.5 "Ties"). `end` is 0 for the interior, 1 at a, 2 at b.
+// The minimum of Ψ on [a, b], its ends included; a tie goes to an end, the start first.
+// `end` is 0 for the interior, 1 at a, 2 at b.
 float viewMinimise(float a, float b, vec2 sel, out float psi, out float end) {
     float lo = a;
     float hi = b;
@@ -656,7 +656,7 @@ float viewMinimise(float a, float b, vec2 sel, out float psi, out float end) {
     return t;
 }
 
-// Brackets the ray's entry (§4.1 "Bracketing"): the segment split where it crosses the
+// Brackets the ray's entry: the segment split where it crosses the
 // centre lines, each piece minimised in its own quadrant, the first piece that reaches 0
 // bisected. Then top or wall: below the rim and outside at the rim depth is the wall, Ψ there
 // taken in the quadrant of the piece that holds the rim depth (the earlier one on a seam).
@@ -742,7 +742,7 @@ void viewTrace() {
     g_wall = g_trace_t > rim && viewPsi(viewPoint(rim), rimSel) > 0.0;
 }
 
-// The outline distance m (§4.5): Ψmin over the norm of its screen gradient at the minimiser,
+// The outline distance m: Ψmin over the norm of its screen gradient at the minimiser,
 // held to its plane, as a correction to Ψmin that is exactly zero at the identity.
 float viewOutline() {
     vec3 q = viewPoint(g_min_t);
@@ -762,7 +762,7 @@ float viewOutline() {
     return g_psi_min + g_psi_min * (length(g0) - len) / len;
 }
 
-// The shading point's shift from the screen point viewBegin took (§4.1 step 4): the
+// The shading point's shift from the screen point viewBegin took: the
 // window-plane hit on the flat face; else, past a sure miss, the traced entry, or on a miss the
 // minimiser. Sets the coverage and whether to shade the wall. slabFrame and viewBegin must have
 // run, and main sets g_chamfer and g_rise.
@@ -791,7 +791,7 @@ vec2 viewHit() {
         }
         return g_h0_shift;
     }
-    // A sure miss (design 2026-10-09 §6): coverage exactly 0, no bracketing.
+    // A sure miss: coverage exactly 0, no bracketing.
     float rMin = min(min(g_outer_r.x, g_outer_r.y), min(g_outer_r.z, g_outer_r.w));
     if (viewSigmaR(g_h0.xy, rMin) - mat_thickness * length(g_rho.xy) > 0.0)
         return g_h0_shift;
@@ -803,7 +803,7 @@ vec2 viewHit() {
 #endif
 
 // The refracted ray's length to the backdrop plane under local height h
-// (spec §3.1 "Ray model"). On the face, t = (0, 0, -1) and L = h.
+// (docs/materials/glass-optics.md#slab-and-ray-model). On the face, t = (0, 0, -1) and L = h.
 float rayPath(vec3 t, float h) {
     return h / max(-t.z, RAY_PATH_FLOOR);
 }
@@ -826,7 +826,7 @@ vec3 tap(vec2 v, vec3 n, float ior, float h) {
 #endif
     vec2 vv = v + (refr.xy * rayPath(refr, h)) / mat_area_size;
 #ifdef MATERIAL_VIEW
-    // Under a tilt the exit point on the back plane goes through toScreen (§4.2).
+    // Under a tilt the exit point on the back plane goes through toScreen.
     if (g_view_on)
         vv += viewScreenShift(vec3(v * mat_area_size + refr.xy * rayPath(refr, h), -mat_thickness))
             / mat_area_size;

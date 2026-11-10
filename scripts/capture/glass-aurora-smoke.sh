@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Glass aurora smoke (material-8db3b0): the optic's neutral renders
+# Glass aurora smoke: the optic's neutral renders
 # identically to the unconfigured material; a pinned field (`drift-hz 0`)
 # is deterministic; a moving field on an unfocused, signal-free window
 # changes across a bucket boundary and not within one; the field adds

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Noise placement Tracy costs (design §7.3): cached static work, backdrop
+# Noise placement Tracy costs: cached static work, backdrop
 # damage and 10 Hz parameter changes, with both sites at equal workload.
 # NOISE_COST_PILOT=1 limits wallpaper changes to five; all six case blocks
 # and their assertions still run before committing to the full run.

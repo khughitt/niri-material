@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""A real screencast consumer for the optic-settling TTY lane (material-3acc86,
-docs/specs/2026-10-02-real-tty-settling-lane-design.md §4).
+"""A real screencast consumer for the optic-settling TTY lane
+(docs/materials/captures.md#harnesses).
 
 Opens an org.gnome.Mutter.ScreenCast session on the session bus (the case's
 private bus, where niri on DRM serves it), records one monitor with the

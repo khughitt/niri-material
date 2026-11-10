@@ -1,6 +1,6 @@
 # scripts/capture/vt-lib.sh
 # vt-lib.sh: verified VT switching and restoration for the dedicated capture
-# lane (docs/specs/2026-10-02-real-tty-settling-lane-design.md §4). Sourced;
+# lane (docs/materials/captures.md#lanes). Sourced;
 # the caller defines fail(). libseat's logind backend releases the seat on
 # exit without switching back, so the caller's exit handler must call
 # vt_restore. Tests override VT_ACTIVE_FILE, VT_CHVT and VT_LOGINCTL.

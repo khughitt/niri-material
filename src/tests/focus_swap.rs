@@ -1,5 +1,5 @@
-//! What a focus-conditioned material swap keeps and what it replaces
-//! (material-8e3b73). The live Prism config selects `terminal-glass` for the
+//! What a focus-conditioned material swap keeps and what it replaces.
+//! The live Prism config selects `terminal-glass` for the
 //! active window and `terminal-glass-inactive` for the others; these tests
 //! drive that rule pair through the real focus and window-rule path and
 //! record the `MaterialState` lifetime next to a same-definition control.

@@ -229,9 +229,10 @@ pub struct Niri {
     // however it may have none (when there are no outputs connected) or multiple (when mirroring).
     pub layout: Layout<Mapped>,
 
-    /// One deadline timer per window with pending slot or impulse expiry (design §1).
+    /// One deadline timer per window with pending slot or impulse expiry.
     pub signal_deadlines: HashMap<MappedId, RegistrationToken>,
-    /// Which project hue each workspace holds for remapped layers (spec §4).
+    /// Which project hue each workspace holds for remapped layers
+    /// (docs/materials/shell-remap.md#project-hue).
     pub shell_hue: crate::layout::shell_hue::ShellHue<WorkspaceId, MappedId>,
     /// Redraw armed for the next pending hue settle.
     pub shell_hue_timer: Option<RegistrationToken>,
@@ -375,7 +376,8 @@ pub struct Niri {
     /// Used for limiting the notify to once per iteration, so that it's not spammed with high
     /// resolution mice.
     pub notified_activity_this_iteration: bool,
-    /// Compositor-wide input activity for the attention gate (design 2026-09-18 §3).
+    /// Compositor-wide input activity for the attention gate
+    /// (docs/materials/motion.md#focus-activity).
     pub input_activity: crate::activity::InputActivity,
     /// The timer that checks `input_activity` for idleness; `Some` exactly while a source is
     /// registered (see `arm_input_idle_timer`).
@@ -500,7 +502,8 @@ pub struct OutputState {
     screen_transition: Option<ScreenTransition>,
     /// Damage tracker used for the debug damage visualization.
     pub debug_damage_tracker: OutputDamageTracker,
-    /// Earliest sustained-signal bucket boundary reported during the last render (design §4).
+    /// Earliest sustained-signal bucket boundary reported during the last render
+    /// (docs/materials/signals.md#redraw-and-idle-budget).
     pub signal_ticks: Rc<crate::render_helpers::SignalTicks>,
     /// Timer armed for that boundary, if any.
     pub signal_timer: Option<RegistrationToken>,
@@ -6733,7 +6736,7 @@ impl Niri {
 
         self.notified_activity_this_iteration = true;
 
-        // The attention gate (design 2026-09-18 §3). The timer is armed only
+        // The attention gate (docs/materials/motion.md#focus-activity). The timer is armed only
         // on the idle→active edge; while active, an early fire re-arms
         // itself, so per-input work is one `observe`.
         let now = get_monotonic_time();

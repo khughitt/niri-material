@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # focus-ring-light.sh: measured captures for the ring-of-light focus response
-# (docs/plans/2026-09-05-ring-light-focus-response.md). It nests niri under a
+# (docs/materials/motion.md#ring-of-light). It nests niri under a
 # headless Weston host, opens two transparent kitty windows over the dark
 # split glass from the focus-glass spike, and measures the filament in
 # linear light.

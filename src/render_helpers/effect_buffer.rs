@@ -28,7 +28,7 @@ enum Invalidation {
 }
 
 /// What an invalidation clears, and whether consumers must be told through
-/// the commit counter (design §4).
+/// the commit counter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Cleared {
     grain: bool,

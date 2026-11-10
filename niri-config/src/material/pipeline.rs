@@ -1,8 +1,7 @@
 //! The pipeline schema: sites, stages, and interactions as data.
 //!
-//! Design: prism `docs/specs/2026-10-04-pipeline-schema-design.md`,
-//! Sections 1 and 2. The tables below are the renderer's statement of what
-//! runs where; tests pin them to `all_params()`, `ORDER`, the response
+//! Reference: `docs/materials/pipeline-schema.md`. The tables below are the renderer's statement of
+//! what runs where; tests pin them to `all_params()`, `ORDER`, the response
 //! block, and (in niri) the shader hook calls, and `resources/materials/
 //! pipeline.json` is generated from them.
 
@@ -301,7 +300,7 @@ const RING_RESPONSES: &[&str] = &[
 const IMPULSE_RESPONSES: &[&str] = &["ping", "done", "error"];
 
 /// The rigid tilt's keys: they move the slab's frame, so the slab stage reads
-/// them (design 2026-10-09 §3.3).
+/// them (docs/materials/motion.md#rigid-tilt).
 const VIEW_RESPONSES: &[&str] = &["view-tilt", "view-tilt-settle", "view-distance"];
 
 /// Section 1 of the design, in pipeline order, corrected against the signal

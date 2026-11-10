@@ -19,7 +19,7 @@ has unstaged edits. `--check` stays the gate everywhere else.
 Exit status: 0 success, 1 a reportable finding (stale report, unstaged report
 edits under --stage, unacknowledged conflict), 2 an error (bad baseline, git failure, missing markers).
 
-Design: docs/specs/2026-09-06-upstream-divergence-design.md.
+Reference: docs/materials/upstream-divergence.md.
 """
 import argparse
 import collections

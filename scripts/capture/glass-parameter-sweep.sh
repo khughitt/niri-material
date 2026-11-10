@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
-# Glass parameter sweep (material-37cec9): render one KDL parameter at N values
+# Glass parameter sweep: render one KDL parameter at N values
 # on a headless Weston host and report the perceptual delta between neighbouring
 # captures, so the region where the effect stops changing is visible.
 #
 # This is a measurement tool, not a gate. A flat curve is a finding, not a
 # failure; exit is non-zero only when the harness itself could not measure.
-#
-# Design: docs/specs/2026-09-06-glass-parameter-sweep-design.md
 #
 # Env:
 #   NIRI          niri binary to run                                (required)
@@ -23,7 +21,7 @@
 # is evidence of ray bending: Fresnel varies with ior everywhere coverage > 0,
 # and the focus filament refracts through ior too, so a bevel delta is
 # consistent with backdrop refraction being broken. Measuring bending needs a
-# separately validated instrument: material-343f27.
+# separately validated instrument.
 #
 # Requires: weston, kitty, swaybg, jq, rg, ImageMagick 7, Python 3.
 set -eu
@@ -46,8 +44,8 @@ esac
 # jelly-flex and jelly-ripple are absent on purpose: jelly activity comes from
 # motion residuals (render_helpers/material/mod.rs) and the shader gates ripple
 # behind mat_jelly_activity > 0, so a settled window renders them identically at
-# every value. Use the companion motion sweep from material-36e968:
-# docs/materials/2026-09-11-jelly-motion-sweep.md.
+# every value: they need a motion stimulus, which this sweep does not drive
+# (docs/materials/motion.md#jelly).
 case $BLOCK:$KEY in
     glass:ior|glass:thickness|glass:attenuation-distance) ;;
     glass:chromatic-aberration|glass:distortion|glass:anisotropic-blur) ;;
@@ -55,7 +53,7 @@ case $BLOCK:$KEY in
     glass:iridescence|glass:aurora|glass:reflection|glass:edge-highlight|glass:bevel-profile) ;;
     blur:noise|blur:saturation|blur:passes|blur:offset) ;;
     glass:jelly-flex|glass:jelly-ripple)
-        fail "$KEY needs a motion stimulus; see docs/materials/2026-09-11-jelly-motion-sweep.md" ;;
+        fail "$KEY needs a motion stimulus, which this sweep does not drive; see docs/materials/motion.md#jelly" ;;
     *) fail "unsupported key for block $BLOCK: $KEY" ;;
 esac
 
@@ -206,7 +204,7 @@ KDL
             # script measures glass optics and the ring is a separate feature
             # with its own parameters, not because the ring is unstable here:
             # `animations { off; }` above already pins its drift phase, and two
-            # runs with the ring left on compare at AE 0 (material-0af212).
+            # runs with the ring left on compare at AE 0.
             printf '    }\n    response "default" {\n        focus "none"\n    }\n}\n'
             cat <<'KDL'
 window-rule {

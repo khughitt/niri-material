@@ -3,8 +3,7 @@
 Git hooks export GIT_DIR, GIT_WORK_TREE and GIT_INDEX_FILE, which override `git -C`, so
 a fixture run from a hook would write to the repository being committed to. A host's
 global or system config can declare hooks (config hooks, core.hooksPath) and settings
-that every fixture commit would then run; CI has neither. Design:
-docs/specs/2026-10-17-pre-commit-fast-hermetic-git-design.md.
+that every fixture commit would then run; CI has neither.
 """
 import os
 from collections.abc import MutableMapping

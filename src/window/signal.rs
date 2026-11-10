@@ -1,4 +1,5 @@
-//! Per-window signal store (design §1). Pure: no timers, no renderer.
+//! Per-window signal store (docs/materials/signals.md#effective-signal). Pure: no timers, no
+//! renderer.
 
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -121,7 +122,7 @@ impl std::fmt::Display for SignalError {
     }
 }
 
-/// The fold result (design §1).
+/// The fold result.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Folded {
     pub level: SignalLevel,
@@ -250,7 +251,7 @@ impl WindowSignals {
         Ok(())
     }
 
-    /// Native slot exists iff urgent (design §1).
+    /// Native slot exists iff urgent.
     pub fn set_native_urgent(&mut self, urgent: bool, now: Duration) -> bool {
         let exists = self.slots.iter().any(|(n, _)| n == NATIVE_SOURCE);
         match (urgent, exists) {

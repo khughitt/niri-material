@@ -1479,7 +1479,7 @@ impl<W: LayoutElement> Monitor<W> {
     }
 
     /// The two workspaces the output shows and how far it is between them,
-    /// for the shell hue's switch blend (spec §4).
+    /// for the shell hue's switch blend (docs/materials/shell-remap.md#project-hue).
     pub fn workspace_blend(&self) -> (WorkspaceId, WorkspaceId, f64) {
         let last = self.workspaces.len() - 1;
         let idx = self.workspace_render_idx().clamp(0., last as f64);

@@ -1,6 +1,6 @@
 # tools/test_vt_lib.py
 """vt-lib.sh on a stub VT: verified switching, spare-VT choice and
-restoration on every exit (docs/specs/2026-10-02-real-tty-settling-lane-design.md §4)."""
+restoration on every exit (docs/materials/captures.md#lanes)."""
 
 import json
 import os

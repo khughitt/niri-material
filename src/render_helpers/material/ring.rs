@@ -1,5 +1,5 @@
 //! The ring beam's geometry and envelope
-//! (docs/specs/2026-09-19-ring-beam-design.md §1–§2). Pure: the tile asks
+//! (docs/materials/motion.md#ring-beam). Pure: the tile asks
 //! this for the perimeter and the frame values, the shader mirrors `comet`.
 
 use std::f64::consts::{FRAC_PI_2, PI};
@@ -165,7 +165,7 @@ pub struct BeamFrame {
 }
 
 impl BeamFrame {
-    /// The resting state (spec §1.3): no head, no tail, only the glow.
+    /// The resting state: no head, no tail, only the glow.
     pub const REST: Self = Self {
         head: 0.,
         env: 0.,

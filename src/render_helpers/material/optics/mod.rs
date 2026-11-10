@@ -4,7 +4,7 @@
 //! entry's `glsl` in this order, the program's uniform list is extended with
 //! each entry's `uniforms`, each frame's uniform values come from `values`,
 //! and the redraw deadline takes the minimum of every `next_change`.
-//! Design: `docs/specs/2026-09-10-material-optics-design.md` §3.
+//! Stages: `docs/materials/render-pipeline.md`.
 
 use std::time::Duration;
 

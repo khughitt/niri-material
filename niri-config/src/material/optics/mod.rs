@@ -3,7 +3,7 @@
 //! Each optic owns its node struct, its resolved struct and defaults, its
 //! `resolve`, and its `params`. The renderer's `OPTICS` table must list the
 //! optics in `ORDER`; a test in niri pins the two.
-//! Design: `docs/specs/2026-09-10-material-optics-design.md` §2.
+//! Adding one: `docs/materials/adding-an-optic.md`.
 
 use super::params::ParamSpec;
 

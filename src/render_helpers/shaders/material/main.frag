@@ -8,9 +8,9 @@ void main() {
     vec2 p = v * mat_area_size;
 #ifdef MATERIAL_VIEW
 
-    // The rigid tilt (spec 2026-10-09 §4.1): the slab-local ray and its window-plane hit. The
-    // decal is sampled there, and the glass is shaded at the hit; every shift is exactly zero
-    // at the identity, and the seed stays on the pixel lattice (§4.4).
+    // The rigid tilt (docs/materials/motion.md#tilted-slab-trace): the slab-local ray and its
+    // window-plane hit. The decal is sampled there, and the glass is shaded at the hit; every shift
+    // is exactly zero at the identity, and the seed stays on the pixel lattice.
     vec2 winV = v;
     bool hasDecal = true;
     vec2 seed = gl_FragCoord.xy;
@@ -66,7 +66,7 @@ void main() {
     slabSurface(p, coverage, surfaceNormal, slabDist, innerDist, slabChamfer,
                 surfaceHeight, bevelAcross, acrossDir);
 #ifdef MATERIAL_VIEW
-    // The outline coverage and the wall (§4.3, §4.5). A face hit far from the outline keeps
+    // The outline coverage and the wall. A face hit far from the outline keeps
     // the coverage slabSurface gave it, which is 1 there.
     if (g_view_on && (!g_face_hit || g_face_near))
         coverage = g_view_coverage;
@@ -123,7 +123,7 @@ void main() {
         }
 #ifdef MATERIAL_VIEW
 
-        // The wall takes its normal as both normals (spec 2026-10-09 §4.3 "Specular"):
+        // The wall takes its normal as both normals:
         // distortion and ripple do not bend it.
         if (g_view_on && g_wall)
             n = surfaceNormal;
@@ -174,8 +174,8 @@ void main() {
 #endif
 
         // Beer-Lambert along the structural ray to the backdrop plane
-        // (spec §3.1): the face path is the thickness exactly; on the bevel
-        // the glass thins. Distortion moves taps but does not lengthen it.
+        // (docs/materials/glass-optics.md#slab-and-ray-model): the face path is the thickness
+        // exactly; on the bevel the glass thins. Distortion moves taps but does not lengthen it.
         float surfaceCosine = clamp(surfaceNormal.z, 0.0, 1.0);
 #ifdef MATERIAL_VIEW
         if (g_view_on)
@@ -189,8 +189,8 @@ void main() {
         float opticalDistance = rayPath(structuralRay, surfaceHeight);
         vec3 att = pow(clamp(mat_attenuation_color.rgb, vec3(0.001), vec3(1.0)),
                        vec3(opticalDistance / mat_attenuation_distance));
-        // Schlick from the configured IOR on the structural normal. What the
-        // surface reflects is not transmitted (spec §3.2).
+        // Schlick from the configured IOR on the structural normal. What the surface reflects is
+        // not transmitted (docs/materials/glass-optics.md#fresnel-transmission).
         float f0 = (mat_ior - 1.0) / (mat_ior + 1.0);
         f0 = f0 * f0;
         float fresnel = f0 + (1.0 - f0) * pow(1.0 - surfaceCosine, 5.0);
@@ -270,7 +270,7 @@ void main() {
                     spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * (1.0 - bevelAcross);
                 }
 #ifdef MATERIAL_VIEW
-                // Guided light leaves the slab at the wall at the face-edge strength (§4.3).
+                // Guided light leaves the slab at the wall at the face-edge strength.
                 if (g_wall)
                     spill = mat_sig_focus.x * BEAM_BASE * ringGlow * BEAM_SPILL * moving * mat_view.w;
 #endif
@@ -288,7 +288,7 @@ void main() {
 
         // Fresnel edge glint, on the Schlick term computed with the
         // attenuation. Replaces the legacy
-        // environment-probe specular on the chamfer; additive per the §2
+        // environment-probe specular on the chamfer; additive to the
         // slab terms. The strength constants are art-directed against the
         // legacy look and validated visually, not physically derived.
         float facing = 0.0;
@@ -338,7 +338,7 @@ void main() {
         glassed = vec4(glassColor, 1.0) * coverage;
     }
 
-    // §2 compositing contract: opaque window pixels pass through
+    // Compositing contract: opaque window pixels pass through
     // untouched; the slab contributes only through window transparency
     // and outside the window. Premultiplied throughout; window-rule
     // opacity arrives once, as niri_alpha.

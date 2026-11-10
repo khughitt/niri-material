@@ -88,7 +88,7 @@ pub struct Mapped {
     /// Whether this has an urgent indicator.
     is_urgent: bool,
 
-    /// Per-window signal store (design §1).
+    /// Per-window signal store (docs/materials/signals.md#effective-signal).
     signals: crate::window::signal::WindowSignals,
 
     /// Whether the signal deadline timer must be reconciled.

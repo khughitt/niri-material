@@ -280,8 +280,8 @@ pub trait LayoutElement {
     fn set_floating(&mut self, floating: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
-    /// Whether the window's background effect drew at its last render (design 2026-10-09 §5:
-    /// a swing needs it neutral).
+    /// Whether the window's background effect drew at its last render (a swing needs it
+    /// neutral; docs/materials/signals.md#focus-tilt).
     fn background_effect_visible(&self) -> bool;
 
     fn is_urgent(&self) -> bool;
@@ -408,7 +408,7 @@ pub struct Layout<W: LayoutElement> {
     /// The overview zoom progress.
     overview_progress: Option<OverviewProgress>,
     /// The last focus an update pass observed, where the next focus's swing comes from
-    /// (design 2026-10-09 §5).
+    /// (docs/materials/motion.md#swing-origin).
     focus_origin: Option<focus_origin::FocusOrigin<W::Id, Output>>,
     /// Configurable properties of the layout.
     options: Rc<Options>,
@@ -2851,8 +2851,8 @@ impl<W: LayoutElement> Layout<W> {
         false
     }
 
-    /// Input-activity gate for sustained attention motion (design
-    /// 2026-09-18 §3): false while the user has been idle for
+    /// Input-activity gate for sustained attention motion
+    /// (docs/materials/motion.md#focus-activity): false while the user has been idle for
     /// `signal { idle-after-ms }`. The shared clock's optic timeline holds
     /// the state. Set by `Niri` when its idle state changes; read on the
     /// next `update_render_elements`. Returns whether the change reaches
@@ -2919,8 +2919,8 @@ impl<W: LayoutElement> Layout<W> {
 
         self.update_insert_hint(output);
 
-        // The focus the swing observes (design 2026-10-09 §5): the one globally focused window,
-        // never a tile an interactive move carries.
+        // The focus the swing observes (docs/materials/motion.md#swing-origin): the one globally
+        // focused window, never a tile an interactive move carries.
         let focused = if matches!(self.interactive_move, Some(InteractiveMoveState::Moving(_))) {
             None
         } else {
@@ -4157,7 +4157,7 @@ impl<W: LayoutElement> Layout<W> {
                     return false;
                 }
 
-                // The follower sees the pointer's own motion, in workspace units (§3.4).
+                // The follower sees the pointer's own motion, in workspace units.
                 let zoom = self.overview_zoom();
                 move_.tile.drag_follow(delta.downscale(zoom));
 

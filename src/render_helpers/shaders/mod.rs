@@ -28,7 +28,8 @@ pub(crate) fn material_source() -> String {
     source
 }
 
-/// The material program's view variant (design 2026-10-09 §6 "Contingency"): the same source
+/// The material program's view variant
+/// (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt): the same source
 /// with `MATERIAL_VIEW` defined after the precision line, so the rigid tilt's `#ifdef` blocks
 /// compile in. `material_source()` defines nothing, so the rest program preprocesses to the
 /// base's text; the view variant is bound only while a swing runs.
@@ -116,8 +117,7 @@ pub(crate) fn material_uniform_names() -> Vec<UniformName<'static>> {
     names
 }
 
-/// The view variant's uniforms: the material program's, then the five view uniforms
-/// (design 2026-10-09 §4.1).
+/// The view variant's uniforms: the material program's, then the five view uniforms.
 pub(crate) fn material_view_uniform_names() -> Vec<UniformName<'static>> {
     let mut names = material_uniform_names();
     names.extend([
@@ -729,7 +729,7 @@ mod tests {
 
     /// `source` as the preprocessor leaves it with `MATERIAL_VIEW` defined (`view`) or not.
     /// The material files guard the view path with `#ifdef MATERIAL_VIEW`, an optional
-    /// `#else` and `#endif`, never nested (design 2026-10-09 §6 "Contingency"). Any other
+    /// `#else` and `#endif`, never nested. Any other
     /// preprocessor line fails: this model of the preprocessor would not see what it does.
     fn variant(source: &str, view: bool) -> String {
         let mut out = String::with_capacity(source.len());
@@ -974,7 +974,7 @@ mod tests {
                 "{name}"
             );
         }
-        // The rest program takes none of them (design 2026-10-09 §6 "Contingency").
+        // The rest program takes none of them.
         assert!(
             material_uniform_names()
                 .iter()

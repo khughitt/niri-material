@@ -35,7 +35,7 @@ impl FromStr for NoiseType {
     }
 }
 
-/// Where `noise` acts (design `2026-10-05-noise-placement-design.md` §3).
+/// Where `noise` acts (`docs/materials/glass-optics.md#noise-placement`).
 /// `Glass` is the behind hook on the material's averaged taps; `Backdrop`
 /// grains the output's shared effect-buffer texture before the blur and the
 /// prefilter pyramids; `Film` grains the encoded glass after the light.
@@ -65,8 +65,8 @@ impl FromStr for NoiseSite {
     }
 }
 
-/// How many `noise` nodes one material may write (design
-/// `2026-10-06-noise-layers-design.md` §3).
+/// How many `noise` nodes one material may write
+/// (`docs/materials/glass-optics.md#noise-layers`).
 pub const NOISE_LAYERS: usize = 4;
 
 /// `noise <amount> type=<type> site=<site> scale=<px>`, one layer.
@@ -162,7 +162,7 @@ pub struct BackdropLayer {
 }
 
 /// The grain an output's effect buffer applies: the backdrop-site layers,
-/// in order, that every material placing noise there agrees on (design §3).
+/// in order, that every material placing noise there agrees on.
 /// Slot `k` here is the `k`-th backdrop layer, which also picks its seed.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BackdropGrain {

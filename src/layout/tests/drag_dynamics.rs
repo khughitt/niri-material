@@ -1,6 +1,6 @@
 //! What jelly stimulus a pointer drag, hold and release produce, next to a
 //! native column move. Records the per-frame motion residual the renderer
-//! would pass to `jelly_state` and pins the phases (material-b3ce14).
+//! would pass to `jelly_state` and pins the phases.
 //! `-- --nocapture` prints the traces.
 
 use super::*;
@@ -413,7 +413,7 @@ fn render_location_ignores_lag() {
     );
 }
 
-/// Releases in the frame of the last drag step, in each layout (§6, release continuity).
+/// Releases in the frame of the last drag step, in each layout: the release is continuous.
 fn release_in_motion(
     mut layout: Layout<TestWindow>,
     id: usize,
@@ -553,7 +553,7 @@ fn release_run(steps: &[Point<f64, Logical>], follow: bool) -> Vec<ReleaseRow> {
     rows
 }
 
-/// The pinned opposing fixture (§4.4): a rightward drag released with the drop
+/// The pinned opposing fixture: a rightward drag released with the drop
 /// slot behind it. The probe gives lag -110.432 px and release +488 px.
 const OPPOSING: &[(f64, f64)] = &[(40., 0.), (40., 0.), (40., 0.), (40., 0.)];
 

@@ -343,11 +343,11 @@ The whole configuration is rejected with these validation errors:
 - duplicate response names: `duplicate response: <name>`;
 - a zero or negative ring width: `ring-width must be positive`;
 - the retired lap time:
-  `ring-sweep-ms was replaced by ring-beam-speed; see material-config.md`;
+  `ring-sweep-ms was replaced by ring-beam-speed; see signals.md`;
 - the retired outer-edge inset:
-  `ring-inset was replaced by ring-gap; see material-config.md`;
+  `ring-inset was replaced by ring-gap; see signals.md`;
 - the retired drift rate:
-  `ring-drift-hz was replaced by ring-beam-speed; see material-config.md`;
+  `ring-drift-hz was replaced by ring-beam-speed; see signals.md`;
 - an unknown window-rule reference: `unknown material: <name>`;
 - an unknown response reference:
   `material <name>: unknown response: <response>`;

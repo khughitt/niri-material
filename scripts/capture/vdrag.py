@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Scripted interactive drag for nested niri (docs/specs/2026-10-01-drag-follow-lag-design.md
-§7). Maps a striped wl_shm window (app-id vdrag), finds it with a zwlr_virtual_pointer_v1,
+"""Scripted interactive drag for nested niri (docs/materials/motion.md#drag-follow-lag).
+Maps a striped wl_shm window (app-id vdrag), finds it with a zwlr_virtual_pointer_v1,
 presses the left button on it and starts the move itself with xdg_toplevel.move, then
 moves at a fixed cadence, holds and releases. Stdlib only; exits non-zero on any
 protocol error or timeout."""

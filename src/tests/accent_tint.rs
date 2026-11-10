@@ -1,4 +1,4 @@
-//! The accent tint (docs/specs/2026-10-03-accent-tint-design.md §8): what
+//! The accent tint (docs/materials/glass-optics.md#accent-tint): what
 //! must hold for any weight. The look is judged by eye on the dumps
 //! (`accent_tint_dumps`, plan Task 6).
 
@@ -542,7 +542,7 @@ fn dump(dir: &std::path::Path, name: &str, pixels: &[u8]) {
     crate::utils::write_png_rgba8(file, OUT_W.into(), OUT_H.into(), pixels).unwrap();
 }
 
-/// The owner-review series (spec §8). Ignored by default; run with
+/// The owner-review series. Ignored by default; run with
 /// `ACCENT_TINT_DUMP=<dir> just test-one -p niri accent_tint_dumps --run-ignored only`.
 #[test]
 #[ignore = "writes owner-review PNGs; set ACCENT_TINT_DUMP"]

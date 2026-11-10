@@ -1,5 +1,5 @@
 //! The Layout starts the rigid tilt's swing from the focus origin
-//! (docs/specs/2026-10-09-transient-rigid-tilt-design.md §5).
+//! (docs/materials/motion.md#swing-origin).
 
 use super::*;
 

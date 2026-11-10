@@ -1,6 +1,6 @@
-//! Frozen-clock renders of the glass edge (material-be611b): the instrument
-//! for the glass edge optics' intended-change, neutrality and motion evidence
-//! (docs/plans/2026-10-02-glass-edge-optics.md).
+//! Frozen-clock renders of the glass edge: the instrument for the glass edge
+//! optics' intended-change, neutrality and motion evidence
+//! (docs/materials/glass-optics.md#bevel-profile).
 //!
 //! One window over a flat backdrop, rendered through the real material shader
 //! by the headless backend's GLES renderer, the way a screenshot renders it

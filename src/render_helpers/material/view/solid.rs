@@ -1,8 +1,8 @@
-//! The traced slab under a tilt (docs/specs/2026-10-09-transient-rigid-tilt-design.md §4.1
-//! step 4, §4.5): the resting slab as a convex solid Ψ ≤ 0, the ray's segment split where it
-//! crosses the silhouette's centre lines, golden-section and bisection bracketing per piece, and
-//! the outline distance that gives coverage. `prelude.frag` mirrors it line for line, and a test
-//! here pins the constants and lines the two share.
+//! The traced slab under a tilt (docs/materials/motion.md#tilted-slab-trace): the resting slab as a
+//! convex solid Ψ ≤ 0, the ray's segment split where it crosses the silhouette's centre lines,
+//! golden-section and bisection bracketing per piece, and the outline distance that gives coverage.
+//! `prelude.frag` mirrors it line for line, and a test here pins the constants and lines the two
+//! share.
 //!
 //! The segment runs from the window plane z = 0 to the back plane z = −T and is parameterised by
 //! depth, q(t) = h₀ + t·T·ρ with ρ = r / (−r.z), so z = −tT.
@@ -22,7 +22,7 @@ pub const VIEW_GOLDEN_STEPS: usize = 28;
 /// |ρ| ≤ 1.2, scale 4) ends within 1/64 physical px after 16; 24 leaves a margin.
 pub const VIEW_BISECT_STEPS: usize = 24;
 
-/// The resting slab as `slabSurface` frames it, without jelly (§4.1 "Jelly").
+/// The resting slab as `slabSurface` frames it, without jelly.
 #[derive(Debug, Clone, Copy)]
 pub struct Solid {
     pub center: DVec2,
@@ -55,7 +55,7 @@ impl Solid {
         sd_rounded_box_grad(xy - self.center, self.half, [r; 4])
     }
 
-    /// Ψ (§4.1): ≤ 0 inside. `X` inverts today's `bevelProfile`, so Ψ ≤ 0 is the set
+    /// Ψ: ≤ 0 inside. `X` inverts today's `bevelProfile`, so Ψ ≤ 0 is the set
     /// z ≤ height − T. Without a rise (bevel 0 or thickness 0) Ψ is σ. Mirrors `viewPsi`.
     pub fn psi(&self, q: DVec3, sel: DVec2) -> f64 {
         let sigma = self.sigma(q.truncate(), sel);
@@ -92,7 +92,7 @@ impl Solid {
     }
 }
 
-/// The ray through one screen point, set up as `viewBegin` sets it up (§4.1 steps 1–3).
+/// The ray through one screen point, set up as `viewBegin` sets it up.
 #[derive(Debug, Clone, Copy)]
 pub struct Segment {
     /// The slab-local direction, unnormalised.
@@ -131,7 +131,7 @@ impl Segment {
     }
 }
 
-/// One piece of the segment between centre-line crossings (§4.1 "Quadrant seams"): its ends,
+/// One piece of the segment between centre-line crossings: its ends,
 /// each end's plane normal, and the quadrant its midpoint lies in, whose radius the whole piece
 /// takes, so the piece is one convex function up to its ends.
 #[derive(Debug, Clone, Copy)]
@@ -183,8 +183,8 @@ enum End {
     Interior,
 }
 
-/// The minimum of `f` on [a, b], its ends included; a tie goes to an end, the start first
-/// (§4.5 "Ties"). Mirrors `viewMinimise`.
+/// The minimum of `f` on [a, b], its ends included; a tie goes to an end, the start first.
+/// Mirrors `viewMinimise`.
 fn minimise(f: &impl Fn(f64) -> f64, a: f64, b: f64) -> (f64, f64, End) {
     let (mut lo, mut hi) = (a, b);
     let mut c = hi - VIEW_GOLDEN * (hi - lo);
@@ -234,7 +234,7 @@ fn bisect(f: &impl Fn(f64) -> f64, lo: f64, hi: f64) -> f64 {
     hi
 }
 
-/// What one ray finds (§4.1 "Kinds of hit", §4.5).
+/// What one ray finds.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Trace {
     pub hit: bool,
@@ -252,7 +252,7 @@ pub struct Trace {
     pub min_sel: DVec2,
 }
 
-/// Brackets the ray's entry into the slab (§4.1 "Bracketing"). Mirrors `viewTrace`.
+/// Brackets the ray's entry into the slab. Mirrors `viewTrace`.
 pub fn trace(solid: &Solid, seg: &Segment) -> Trace {
     let thickness = solid.thickness;
     let mut best = Trace {
@@ -303,7 +303,7 @@ pub fn trace(solid: &Solid, seg: &Segment) -> Trace {
     best
 }
 
-/// The outline distance m (§4.5): Ψmin over the norm of its screen gradient, taken at the
+/// The outline distance m: Ψmin over the norm of its screen gradient, taken at the
 /// minimiser on the plane it is held to, and written as a correction to Ψmin that is exactly
 /// zero at the identity. Negative inside. Mirrors `viewOutline`.
 pub fn outline(solid: &Solid, camera: &Camera, seg: &Segment, tr: &Trace) -> f64 {
@@ -327,7 +327,7 @@ pub fn outline(solid: &Solid, camera: &Camera, seg: &Segment, tr: &Trace) -> f64
     tr.psi_min + tr.psi_min * (g0.length() - len) / len
 }
 
-/// The sure miss of `viewHit` (design 2026-10-09 §6): σ with the smallest radius is 1-Lipschitz
+/// The sure miss of `viewHit`: σ with the smallest radius is 1-Lipschitz
 /// and no larger than any quadrant's σ, and the bevel term is non-negative, so
 /// Ψ(q(t)) ≥ σ_min(h₀) − T·|ρ.xy| on the whole segment. Mirrors the test in `viewHit`.
 pub fn sure_miss(solid: &Solid, seg: &Segment) -> bool {
@@ -347,7 +347,7 @@ pub(crate) mod tests {
     use crate::render_helpers::material::view::tests::uniforms;
     use crate::render_helpers::material::view::{wall_faces_camera, ViewPose};
 
-    /// The entry depth's tolerance, logical px: §4.1's 1/64 physical px at scale 16, so it holds
+    /// The entry depth's tolerance, logical px: 1/64 physical px at scale 16, so it holds
     /// at every scale up to 16.
     const ENTRY_DEPTH_TOL: f64 = 1. / 1024.;
 
@@ -660,7 +660,7 @@ pub(crate) mod tests {
 
     #[test]
     fn asymmetric_radii_find_the_hit_in_a_later_piece() {
-        // (88, 12, 12, 12) on a 100 px slab (§4.1 "Quadrant seams"): at y = −49 the big
+        // (88, 12, 12, 12) on a 100 px slab: at y = −49 the big
         // top-left corner leaves x < 0 outside (σ ≈ +6.9) while x > 0 is inside (σ ≈ −1). In the
         // overshoot the rays drift toward +x as they descend, so a ray that starts at x < 0 can
         // enter only after it crosses x = 0, in its second piece.
@@ -669,8 +669,8 @@ pub(crate) mod tests {
             ..peak(10., DVec2::X, 6.)
         };
         let (solid, camera) = setup(DVec2::splat(50.), 0., [88., 12., 12., 12.], 31.2, 2., &pose);
-        // Bevel 0: the rim is the face plane, so every entry below it is a wall hit (§4.1
-        // "Kinds of hit"), the ones through the x = 0 seam included.
+        // Bevel 0: the rim is the face plane, so every entry below it is a wall hit, the ones
+        // through the x = 0 seam included.
         let rim = solid.rise() / solid.thickness;
         let (mut found, mut walls) = (0, 0);
         for i in 0..4000 {
@@ -723,7 +723,7 @@ pub(crate) mod tests {
                 let seg = Segment::new(&camera, s).unwrap();
                 let got = trace(&solid, &seg);
                 assert!(got.psi_min.is_finite() && got.t.is_finite(), "NaN at {s}");
-                // §8.2 "Zero rise in motion": coverage stays in [0, 1] (a NaN fails too).
+                // Zero rise in motion: coverage stays in [0, 1] (a NaN fails too).
                 let c = coverage(outline(&solid, &camera, &seg, &got));
                 assert!((0. ..=1.).contains(&c), "coverage {c} at {s}");
                 if thickness == 0. {
@@ -841,7 +841,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_rim_graze_ray_hits_where_a_fixed_march_misses() {
-        // §4.1: a peak ray of an 800 px slab at 10°, κ 6, profile 2, bevel 12, thickness 31.2 is
+        // A peak ray of an 800 px slab at 10°, κ 6, profile 2, bevel 12, thickness 31.2 is
         // inside only between depths −8.93 and −9.02 px on the receding edge.
         let (solid, camera) = setup(
             DVec2::new(400., 300.),
@@ -884,7 +884,7 @@ pub(crate) mod tests {
     // The table's 3.14 is a width in px, not π.
     #[allow(clippy::approx_constant)]
     fn peak_wall_widths_match_the_spec_table() {
-        // §2.1: the active slab, thickness 31.2 and bevel 12, so a wall 19.2 px deep below the
+        // The active slab, thickness 31.2 and bevel 12, so a wall 19.2 px deep below the
         // rim, at the swing's peak.
         for (peak_deg, widths) in [(10., [0.96, 1.77, 2.40]), (14., [2.36, 3.14, 3.76])] {
             for (kappa, want) in [4., 6., 10.].into_iter().zip(widths) {
@@ -961,7 +961,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// Today's coverage from the outline distance, `1 − smoothstep(−aa, 0, m)` (§4.5), at
+    /// Today's coverage from the outline distance, `1 − smoothstep(−aa, 0, m)`, at
     /// scale 1, where the band `aa` is one logical px.
     pub(crate) fn coverage(m: f64) -> f64 {
         let x = (m + 1.).clamp(0., 1.);
@@ -1037,7 +1037,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// The cases of §8.1: outer radius 0 (bevel 0, corner radius 0), 0.8 (bevel 0.8, corner
+    /// The corner cases: outer radius 0 (bevel 0, corner radius 0), 0.8 (bevel 0.8, corner
     /// radius 0) and 2 (bevel 0.8, corner radius 1.2); thickness 0, 0.01, 2, 31.2 and 200;
     /// horizontal, vertical and diagonal swings at 20° and κ 1.5, plus the diagonal at 6°, κ 6.
     fn bound_cases() -> Vec<(String, Solid, Camera)> {
@@ -1073,14 +1073,14 @@ pub(crate) mod tests {
         out
     }
 
-    /// Whether the §4.5 bound applies at a point: where coverage depends on m. Coverage,
-    /// `1 − smoothstep(−aa, 0, m)`, is exactly 0 for m ≥ 0, so a point where m and the exact
-    /// distance are both positive renders the same whatever m's error, and no sign can flip
-    /// there. That exempts the outer half of the band, where m does exceed the bound: past an
-    /// edge-on wall (thickness 200 at 20°, κ 1.5, on the lifting side) the face end takes the
-    /// minimiser, and m measures to the face edge's projection, up to 0.93 px off. Coverage
-    /// depends on m unless both are proven > 0, so a NaN is never exempt: it falls through to the
-    /// bound assertion and fails it.
+    /// Whether the outline distance's error bound applies at a point: where coverage depends on m.
+    /// Coverage, `1 − smoothstep(−aa, 0, m)`, is exactly 0 for m ≥ 0, so a point where m and
+    /// the exact distance are both positive renders the same whatever m's error, and no sign
+    /// can flip there. That exempts the outer half of the band, where m does exceed the bound:
+    /// past an edge-on wall (thickness 200 at 20°, κ 1.5, on the lifting side) the face end
+    /// takes the minimiser, and m measures to the face edge's projection, up to 0.93 px off.
+    /// Coverage depends on m unless both are proven > 0, so a NaN is never exempt: it falls
+    /// through to the bound assertion and fails it.
     fn coverage_depends_on(m: f64, exact: f64) -> bool {
         !(m > 0. && exact > 0.)
     }
@@ -1137,7 +1137,7 @@ pub(crate) mod tests {
         assert!(asserted > 10000, "only {asserted} side points asserted");
     }
 
-    /// The corner check of §8.1: a screen grid at `spacing` over ±(r + 1.5) px around the
+    /// The corner check: a screen grid at `spacing` over ±(r + 1.5) px around the
     /// projected arc centre on the face plane and on the back plane, against the signed distance
     /// to the boundary polyline traced from an interior anchor at `chord` spacing.
     fn check_corner(
@@ -1269,7 +1269,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    #[ignore = "the dense corner grid of §8.1, minutes in a debug build: run with --run-ignored only"]
+    #[ignore = "the dense corner grid, minutes in a debug build: run with --run-ignored only"]
     fn the_outline_distance_meets_its_bound_at_corners() {
         let (mut worst, mut asserted, mut exempt, mut checks) = (0f64, 0, 0, 0);
         for (name, solid, camera) in bound_cases() {
@@ -1283,7 +1283,7 @@ pub(crate) mod tests {
                 (asserted, exempt, checks) = (asserted + c.asserted, exempt + c.exempt, checks + 1);
             }
         }
-        assert_eq!(checks, 192, "every case and corner of §8.1");
+        assert_eq!(checks, 192, "every case and corner");
         eprintln!(
             "worst corner error over every case: {worst:.4} px (bound 0.5); {asserted} points \
              asserted, {exempt} exempt (m and exact both > 0)"
@@ -1292,7 +1292,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_seam_step_keeps_coverage_in_range_and_continuous_within_each_piece() {
-        // §4.5 "Exception": (88, 12, 12, 12) steps 8.6 px at the top seam, already at rest.
+        // The seam exception: (88, 12, 12, 12) steps 8.6 px at the top seam, already at rest.
         let (solid, camera) = setup(
             DVec2::splat(50.),
             0.8,

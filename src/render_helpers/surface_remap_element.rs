@@ -1,5 +1,5 @@
 //! A layer surface drawn through the surface remap program
-//! (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md §7). Geometry,
+//! (docs/materials/shell-remap.md#oklab-remap). Geometry,
 //! damage and opaque regions are the client's: the remap moves colors only.
 
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;

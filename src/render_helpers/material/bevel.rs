@@ -1,6 +1,7 @@
 //! The glass edge in f64: the two-boundary bevel coordinate, the height-field
 //! profile, the softened outer gradient, the bevel normal, and the refracted
-//! ray's path (docs/specs/2026-09-30-glass-edge-optics-design.md §3.1).
+//! ray's path (docs/materials/glass-optics.md#bevel-profile,
+//! docs/materials/glass-optics.md#slab-and-ray-model).
 //! `prelude.frag` mirrors these functions, and a test pins the constants the
 //! two share. Coordinates are logical px, y down, +z toward the viewer.
 
@@ -86,7 +87,7 @@ pub fn tanhs(t: f64) -> f64 {
     (e - 1.) / (e + 1.)
 }
 
-/// The outer box's softened outward gradient (spec §3.1): softplus for each
+/// The outer box's softened outward gradient: softplus for each
 /// positive part, `tanhs` for each sign, normalized in the log domain. ZERO on
 /// the ridge between parallel sides. Mirrors `softOuterGrad`.
 pub fn soft_outer_grad(p: DVec2, b: DVec2, radii: Radii) -> DVec2 {
@@ -293,10 +294,9 @@ fn smoothstep(e0: f64, e1: f64, x: f64) -> f64 {
     t * t * (3. - 2. * t)
 }
 
-/// The edge highlight's weight before its gain (spec §3.3): a GGX lobe where
-/// the perturbed normal bisects the view and a key light at 45 degrees'
-/// elevation, faded in by the structural tilt. Mirrors
-/// `edge_highlight_specular`.
+/// The edge highlight's weight before its gain (docs/materials/glass-optics.md#edge-highlight): a
+/// GGX lobe where the perturbed normal bisects the view and a key light at 45 degrees' elevation,
+/// faded in by the structural tilt. Mirrors `edge_highlight_specular`.
 pub fn highlight_weight(structural: DVec3, perturbed: DVec3, light: DVec2, roughness: f64) -> f64 {
     let l = light.normalize().extend(1.).normalize();
     let h = (l + DVec3::Z).normalize();
@@ -322,7 +322,8 @@ mod tests {
 
     #[test]
     fn the_reference_table_holds() {
-        // Spec §3.1: (thickness, k, u, h, n.z, L, displacement) at chamfer 12, ior 1.28.
+        // The reference table: (thickness, k, u, h, n.z, L, displacement) at chamfer 12,
+        // ior 1.28.
         let rows = [
             (6., 1., 0., 6.00, 0.894, 6.03, 0.64),
             (6., 1., 0.9, 0.60, 0.894, 0.60, 0.06),

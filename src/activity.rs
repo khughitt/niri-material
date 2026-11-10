@@ -1,5 +1,5 @@
 //! Compositor-wide input activity for the attention gate
-//! (docs/specs/2026-09-18-ring-focus-motion-design.md §3). Pure: the
+//! (docs/materials/motion.md#focus-activity). Pure: the
 //! event-loop timer in `Niri` asks this what to do and when.
 
 use std::time::Duration;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline calibration of a local glass-warp estimator (material-bb8480).
+"""Offline calibration of a local glass-warp estimator.
 
 No renderer runs. A seeded aperiodic backdrop and a replica of the sweep's
 20 px grid are warped by known displacement fields and changed by known

@@ -1,4 +1,4 @@
-//! Matched ring-on/off renders at one frozen mid-resize instant (material-0e80c1).
+//! Matched ring-on/off renders at one frozen mid-resize instant.
 //!
 //! The headless backend's surfaceless GLES renderer draws the real material
 //! shader into a texture, the way a screenshot does, with the clock frozen by
@@ -58,7 +58,7 @@ const BINDING: Glass = Glass {
     bevel: 10.,
     gap: 2.,
 };
-// The cap test's density rows (spec 2026-10-01-filament-shift-cap-design):
+// The cap test's density rows (docs/materials/glass-optics.md#filament-shift-cap):
 // the shared shift reaches the cap from light-ior about 10.1, 5.6 and 0.41.
 const IOR102: Glass = Glass {
     name: "ior102",
@@ -534,7 +534,7 @@ fn matched_pairs(glass: &Glass) -> String {
     report
 }
 
-/// The cap's guard (spec 2026-10-01-filament-shift-cap-design): one band core
+/// The cap's guard (docs/materials/glass-optics.md#filament-shift-cap): one band core
 /// per edge. `samples` are (value, inward distance) across one window edge,
 /// in any order; the face edge sits `face_inset` px inward. The core is the
 /// brightest face sample, positive and within 2 px of `face_inset + gap`.
@@ -804,8 +804,7 @@ fn one_core_rejects_an_unlit_or_misplaced_core() {
         .contains("expected near"));
 }
 
-/// The half-gap cap keeps one band core per edge on dense glass (spec
-/// 2026-10-01-filament-shift-cap-design). Also prints, per row, what
+/// The half-gap cap keeps one band core per edge on dense glass. Also prints, per row, what
 /// light-ior still changes with the ring on; where the cap binds that is
 /// nothing.
 #[test]

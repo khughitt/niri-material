@@ -1,12 +1,12 @@
 //! Follow-lag stimulus for an interactive move: a damped spring point that chases the
 //! pointer, whose lag the jelly receives as motion residual
-//! (docs/specs/2026-10-01-drag-follow-lag-design.md).
+//! (docs/materials/motion.md#drag-follow-lag).
 
 use std::time::Duration;
 
 use smithay::utils::{Logical, Point};
 
-/// Below both, the follower is settled and the tile drops it (§3.8).
+/// Below both, the follower is settled and the tile drops it.
 const SETTLE_LAG: f64 = 0.05;
 const SETTLE_VELOCITY: f64 = 1.;
 /// Damping ratios this close to 1 use the critically damped form.
@@ -19,7 +19,7 @@ pub struct FollowSpring {
 }
 
 impl FollowSpring {
-    /// Window-movement's spring; none when it is off or eased (§4.3).
+    /// Window-movement's spring; none when it is off or eased.
     pub fn from_config(anim: &niri_config::Animation) -> Option<Self> {
         if anim.off {
             return None;
@@ -55,7 +55,7 @@ impl FollowSpring {
                 e * (v0 * c - (beta * v0 + w0 * w0 * x0) / w1 * s),
             )
         } else {
-            // Two decaying exponentials; never cosh/sinh, which overflow (§5).
+            // Two decaying exponentials; never cosh/sinh, which overflow.
             let beta = z * w0;
             let w2 = w0 * (z * z - 1.).sqrt();
             // λ1 = −β + ω2 written without cancellation: λ1·λ2 = ω0².
@@ -78,7 +78,7 @@ struct Axis {
 }
 
 /// The anchor (t₀, L₀, V₀) is the only state; reads evaluate the closed form forward
-/// from it, and reads before it return it (§3.1–3.4).
+/// from it, and reads before it return it.
 #[derive(Debug, Clone)]
 pub struct DragFollower {
     spring: FollowSpring,
@@ -126,7 +126,7 @@ impl DragFollower {
         self.y = y;
     }
 
-    /// The target moved by `delta`; the follower did not (§3.4).
+    /// The target moved by `delta`; the follower did not.
     pub fn shift(&mut self, now: Duration, delta: Point<f64, Logical>) {
         self.reanchor(now);
         self.x.lag -= delta.x;

@@ -13,10 +13,10 @@
 # Env: OUT (artifact dir), NIRI_MATERIAL_WORK_ROOT (holds the retained Tracy
 # 0.13.1 tools under material-roughness-b220152d/tools).
 # Every run records provenance and machine quietness through tools/capture-meta
-# (docs/specs/2026-09-11-material-capture-protocol-design.md). The entry script
+# (docs/materials/captures.md#capture-json). The entry script
 # builds, waits out the build's load (await_load) and calls
 # `capture_preflight headless` (or `pixels`, for static-pixel evidence:
-# docs/specs/2026-10-08-capture-host-conditions-design.md), then
+# docs/materials/captures.md#lanes), then
 # `capture_identity`; start_nested settles (or begins) before every launch and
 # verifies the launch's renderer. This lib never preflights on its own: idle-budget sources it in a
 # mode that must stay offline.
@@ -90,7 +90,7 @@ capture_preflight() {
 }
 # Timing helpers refuse on the pixels lane, which claims no time or cost.
 no_timing_on_pixels() {
-    [ "${CAPTURE_LANE:-}" != pixels ] || fail "$1 records timing; the pixels lane claims none (docs/specs/2026-10-08-capture-host-conditions-design.md)"
+    [ "${CAPTURE_LANE:-}" != pixels ] || fail "$1 records timing; the pixels lane claims none (docs/materials/captures.md#lanes)"
 }
 # After build_binaries: both binaries, this lib, and the calling script are the
 # static inputs. Extra --input/--config arguments pass through.
@@ -103,7 +103,7 @@ capture_identity() {   # NIRI_TRACY is unset for fixtures that measure the insta
 }
 # The previous launch's GPU work can hold P5 for a moment after its niri exits;
 # settling straight away lands that tail in the window and refuses the run (the
-# idle GPU holds P8: material-3db428, material-124f1f). Wait for 3 s of
+# idle GPU holds P8). Wait for 3 s of
 # consecutive P8 samples, at most 120 polls (60 s), before the settle. The
 # settle gate itself is unchanged. Waits are logged to $OUT/cooldown.txt.
 # Skipped when CAPTURE_META substitutes the tool (tests, rehearsals on a busy
@@ -143,7 +143,8 @@ finish_sub_run() {
 }
 log_size() { if [ -e "$1" ]; then wc -c < "$1"; else echo 0; fi; }
 # One launch's renderer lines: the logs are appended across launches, so read
-# from the offsets taken before this launch started (spec §6.3).
+# from the offsets taken before this launch started
+# (docs/materials/captures.md#evidence-gates).
 verify_renderer() {   # $1 sub-run, $2 niri log, $3 its offset, [$4 weston log, $5 its offset]
     tail -c "+$(($3 + 1))" "$2" > "$OUT/$1.niri.renderer.log"
     local weston=()
@@ -430,8 +431,8 @@ signed_diff() {
         -composite -colorspace Gray -depth 16 "$3" || fail "signed diff $3 failed"
 }
 
-# Every cell is captured twice in its session and the two must be identical
-# (spec §7.2 assertion 1); the second capture is kept as <name>-again.png.
+# Every cell is captured twice in its session and the two must be identical;
+# the second capture is kept as <name>-again.png.
 shot_twice() {   # $1 binary, $2 name
     shot "$1" "$2"
     sleep 1

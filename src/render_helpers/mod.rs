@@ -60,7 +60,7 @@ pub mod texture;
 pub mod xray;
 
 /// Per-output accumulator for the earliest sustained-signal bucket boundary
-/// among tiles that actually rendered (design §4).
+/// among tiles that actually rendered (docs/materials/signals.md#redraw-and-idle-budget).
 #[derive(Debug, Default)]
 pub struct SignalTicks {
     pub next: Cell<Option<Duration>>,

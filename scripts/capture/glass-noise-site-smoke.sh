@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Noise placement baseline smoke (design §7.2). Default: the full matrix.
+# Noise placement baseline smoke (docs/materials/glass-optics.md#noise-placement).
+# Default: the full matrix.
 # NOISE_SITE_PILOT=1 selects fine grain and the blurred roughness endpoints,
 # still exercising all seven assertions. OUT must be fresh; BASE_NIRI pins
 # the b261ad1a release binary; CAPTURE_TASK and NIRI_MATERIAL_WORK_ROOT are required.
@@ -50,7 +51,7 @@ cell() {   # $1 name, $2 binary, $3 glass extra, $4 blur passes
 }
 calibrate_probe_rect "$NIRI" 0
 
-# The spec's matrix (§7.2): site × blur × kind on the identity fixture.
+# The matrix: site × blur × kind on the identity fixture.
 for kind in "${KINDS[@]}"; do
     cell "omitted-$kind"       "$NIRI"      "noise 0.3 type=\"$kind\""                      3
     cell "baseline-$kind"      "$BASE_NIRI" "noise 0.3 type=\"$kind\""                      3

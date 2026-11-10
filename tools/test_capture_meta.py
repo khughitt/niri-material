@@ -768,7 +768,7 @@ def window(power, iqr=0.2, util=0.0, cpu=1.0, mem=80.0, pstates=("P8",), graphic
 
 
 class GateSettleTests(unittest.TestCase):
-    """Recorded windows from retained runs (2026-10-17 gates design §6.1)."""
+    """Recorded windows from retained runs, judged under the evidence gates."""
 
     def judged(self, summary, baseline, lane="headless"):
         return cm.judge_window(summary, baseline, cm.DEFAULT_THRESHOLDS, lane)

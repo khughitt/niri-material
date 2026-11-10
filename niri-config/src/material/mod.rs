@@ -1,8 +1,8 @@
 //! Material definitions.
 //!
 //! This is the config surface for the native material system; the parameter
-//! table, its defaults and its ranges are specified in
-//! `docs/materials/2026-08-22-v1-design.md` §4.
+//! table, its defaults and its ranges are documented in
+//! `docs/materials/material-config.md`.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -369,7 +369,8 @@ pub struct ResolvedResponse {
     /// accent still tints the focus light at 0.
     pub ring_accent: f64,
     /// Glass-body tint toward the signal accent's hue, 0–1; zero is off.
-    /// Independent of `accent`, which governs the band (accent-tint design §3–§4).
+    /// Independent of `accent`, which governs the band
+    /// (docs/materials/glass-optics.md#accent-tint).
     pub accent_tint: f64,
     pub focus: FocusResponse,
     /// Filament base color; alpha is ignored.
@@ -385,12 +386,12 @@ pub struct ResolvedResponse {
     /// zero is no decay.
     pub ring_beam_decay: f64,
     /// Peak angle of the rigid tilt on focus gain, degrees; zero is no swing
-    /// (design 2026-10-09 §3.1).
+    /// (docs/materials/motion.md#rigid-tilt).
     pub view_tilt: f64,
     /// How long the swing runs, ms.
     pub view_tilt_settle: f64,
     /// κ: the camera's distance in multiples of the pane's extent along the
-    /// swing (design 2026-10-09 §3.2).
+    /// swing (docs/materials/motion.md#rigid-tilt).
     pub view_distance: f64,
 }
 
@@ -564,7 +565,7 @@ pub struct Glass {
     pub bevel: Option<FloatOrInt<0, 128>>,
     /// Bevel profile exponent: 1 is a planar chamfer, 2 a quarter-round, and
     /// higher values a squircle that stays flat longer and rolls off harder
-    /// (docs/specs/2026-09-30-glass-edge-optics-design.md §3.1).
+    /// (docs/materials/glass-optics.md#bevel-profile).
     #[knuffel(child, unwrap(argument))]
     pub bevel_profile: Option<FloatOrInt<1, 8>>,
     #[knuffel(child, unwrap(argument))]
@@ -629,7 +630,8 @@ pub struct ResolvedGlass {
 }
 
 impl Default for ResolvedGlass {
-    // The v1 design §4 defaults, which are the proven niri-glass.json values.
+    // The documented defaults (docs/materials/material-config.md), which are
+    // the proven niri-glass.json values.
     fn default() -> Self {
         Self {
             ior: 1.5,
@@ -776,7 +778,7 @@ pub fn core_params() -> Vec<params::ParamSpec> {
 }
 
 impl Material {
-    /// Resolves the definition, applying the design §4 default for every
+    /// Resolves the definition, applying the documented default for every
     /// omitted parameter.
     pub fn resolve(&self) -> ResolvedMaterial {
         let g = &self.glass;
@@ -893,7 +895,7 @@ impl Material {
             .any(|response| response.ring_drift_hz.is_some())
         {
             return Err(String::from(
-                "ring-drift-hz was replaced by ring-beam-speed; see material-config.md",
+                "ring-drift-hz was replaced by ring-beam-speed; see signals.md",
             ));
         }
         if self
@@ -902,7 +904,7 @@ impl Material {
             .any(|response| response.ring_sweep_ms.is_some())
         {
             return Err(String::from(
-                "ring-sweep-ms was replaced by ring-beam-speed; see material-config.md",
+                "ring-sweep-ms was replaced by ring-beam-speed; see signals.md",
             ));
         }
         if self
@@ -911,7 +913,7 @@ impl Material {
             .any(|response| response.ring_inset.is_some())
         {
             return Err(String::from(
-                "ring-inset was replaced by ring-gap; see material-config.md",
+                "ring-inset was replaced by ring-gap; see signals.md",
             ));
         }
 

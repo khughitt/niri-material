@@ -1,5 +1,5 @@
 //! Color math for the shell's surface remap
-//! (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md §3, §4).
+//! (docs/materials/shell-remap.md#oklab-remap).
 //!
 //! `RemapSetup` turns a validated `surface-remap` node and its glass into
 //! source anchors and target families; `RemapUniforms` is what
@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn muted_primary_overlays_move_with_the_family() {
-        // Spec §3: true for the live and blue palettes, not the vivid one.
+        // True for the live and blue palettes, not the vivid one.
         for p in &PALETTES[..2] {
             let u = uniforms_for(p);
             for alpha in [0.04, 0.08, 0.12, 0.16] {

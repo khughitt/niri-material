@@ -1,7 +1,7 @@
 //! sRGB transfer functions and Oklab (Björn Ottosson, public domain) in f64.
 //!
 //! The same formulas as `src/render_helpers/shaders/material/common.frag`;
-//! the shell remap (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md)
+//! the shell remap (docs/materials/shell-remap.md)
 //! validates and prepares its uniforms with these.
 
 use crate::appearance::Color;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Noctalia surfaces in a nested niri (material-e27dbc): a surface inventory and
+# Noctalia surfaces in a nested niri: a surface inventory and
 # a panel comparison across appearance cases, without the live desktop.
 #
 # Each case runs a headless Weston, a nested niri and an isolated Noctalia:
@@ -19,7 +19,7 @@
 #             glass: bar and attached panels at 0.55 like the floating ones,
 #             panel corners scaled to the windows' 20 px, and the glass's
 #             noise (0.03) and saturation (0.95) on the shell's blur.
-#   matched   treated, plus the glass's hue and darkness (material-b156e7): a
+#   matched   treated, plus the glass's hue and darkness: a
 #             custom palette that keeps the wallpaper palette's accents and
 #             text but moves the surface family to the glass's rendered color
 #             (noctalia-glass-palette.py), with the bar and attached panels at

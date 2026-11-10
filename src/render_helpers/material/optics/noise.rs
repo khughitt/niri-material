@@ -168,7 +168,7 @@ mod tests {
 
     /// Correlation of two fine-lattice values `d` apart, from the high-pass
     /// definition `h(p) - mean(h at p's eight neighbours)`, by enumerating
-    /// each value's hash coefficients (design §4).
+    /// each value's hash coefficients.
     fn fine_corner_correlation(d: (i32, i32)) -> f64 {
         let coefficients = |c: (i32, i32)| {
             let mut m = HashMap::new();

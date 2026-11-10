@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # material-signals-smoke.sh: nested headless fixture for the material signals
-# design (docs/materials/2026-09-02-material-signals-design.md, section 9).
+# (docs/materials/signals.md).
 #
 # Usage: scripts/capture/material-signals-smoke.sh MODE
 #   visual  build, drive one window through set/pulse/clear, screenshot the error flash

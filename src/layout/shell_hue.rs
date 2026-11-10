@@ -1,5 +1,5 @@
 //! Which project hue each workspace holds for the shell
-//! (docs/specs/2026-10-16-noctalia-glass-cohesion-design.md §4).
+//! (docs/materials/shell-remap.md#project-hue).
 //!
 //! Pure: the caller passes what each workspace shows at `now`. A window
 //! counts once it has stayed its workspace's active window for
@@ -16,7 +16,7 @@ use niri_config::Color;
 use crate::animation::{Animation, Clock};
 use crate::render_helpers::surface_remap::{HueBlend, OutputHue};
 
-/// How long a window must stay active before it counts (spec §8).
+/// How long a window must stay active before it counts.
 pub const HOLD_DWELL: Duration = Duration::from_millis(1000);
 
 /// One workspace as the resolver sees it this frame.

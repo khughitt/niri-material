@@ -1,6 +1,6 @@
 //! Parameter metadata: the facts the docs table and the parser share.
 //!
-//! Design: `docs/specs/2026-09-10-material-optics-design.md` §6.
+//! The table they render: `docs/materials/material-config.md`.
 
 use super::{Milli, Positive, ResolvedGlass};
 use crate::appearance::Color;

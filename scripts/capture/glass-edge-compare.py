@@ -13,7 +13,7 @@ in one dir. Regions come from <case>.json: `all`; `window`, inside the window;
 farther than 2 px outside the slab rectangle; `bevel`, inside the slab and
 outside the face. Values are 8-bit sRGB; predictions run in linear light.
 
-predict-face (spec §6, ring and aurora off): AFTER = (1 - f0) * (BEFORE - S) + S
+predict-face (ring and aurora off): AFTER = (1 - f0) * (BEFORE - S) + S
 with S = 0.15 * f0, the face's constant glint. predict-within (ring and aurora
 on): AFTER_ON = (1 - f0) * (BEFORE_OFF - S) + S + (BEFORE_ON - BEFORE_OFF).
 "Within one code value" is |after - round(prediction)| <= 1: the 8-bit inputs

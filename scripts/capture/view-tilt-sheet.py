@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The owner's still sheet for the rigid tilt (design 2026-10-09 §8.3).
+"""The owner's still sheet for the rigid tilt.
 
 Usage: view-tilt-sheet.py <VIEW_TILT_DUMP dir> <out dir>
 

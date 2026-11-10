@@ -1,7 +1,7 @@
 // session-lock-client.c: a PAM-free ext_session_lock_v1 client for the
-// optic-settling TTY lane (docs/specs/2026-10-02-real-tty-settling-lane-design.md
-// §4). Locks on start, gives every output a solid lock surface, prints
-// "locked" when the compositor confirms, and on SIGUSR1 unlocks and exits 0.
+// optic-settling TTY lane (docs/materials/captures.md#lanes). Locks on start,
+// gives every output a solid lock surface, prints "locked" when the compositor
+// confirms, and on SIGUSR1 unlocks and exits 0.
 // It never authenticates: niri's SessionLockHandler::unlock runs exactly as
 // for any lock client. SIGTERM/SIGINT exit 2 without unlocking; a refused or
 // ended lock ("finished") exits 1. An unlock request (SIGUSR1) that arrives

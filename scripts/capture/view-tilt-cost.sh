@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rigid tilt GPU cost (design 2026-10-09-transient-rigid-tilt §8.5): a same-session A/B of
+# Rigid tilt GPU cost (docs/materials/motion.md#rigid-tilt): a same-session A/B of
 # this tree's niri-tracy (a) against a kept baseline built from the branch's base (b),
 # alternating a, b, a, b so a shift between sessions cannot pass for one between binaries.
 # Rest cases, each with the live look and the beam off: `view-tilt 0`, `view-tilt 10` with no

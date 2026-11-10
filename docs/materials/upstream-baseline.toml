@@ -2,7 +2,7 @@
 #
 # Validation compares TREES, never commit identities: patched-26.04~2 is a different
 # commit object from v26.04 carrying the identical tree, because this repository's
-# history was rewritten. See docs/specs/2026-09-06-upstream-divergence-design.md.
+# history was rewritten. See docs/materials/upstream-divergence.md.
 #
 # carried is oldest-first. Its length is the depth at which the baseline tree must
 # appear below patched_commit.

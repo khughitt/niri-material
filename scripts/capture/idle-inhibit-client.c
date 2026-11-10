@@ -1,5 +1,5 @@
-// A real zwp_idle_inhibit_manager_v1 client for the optic-settling capture
-// (material-80caf4): one mapped xdg_toplevel (app_id gos-inhibit) with a
+// A real zwp_idle_inhibit_manager_v1 client for the optic-settling capture:
+// one mapped xdg_toplevel (app_id gos-inhibit) with a
 // solid shm buffer, holding an idle inhibitor on its surface until SIGTERM,
 // SIGINT or a close request. niri counts an inhibitor only while its surface
 // has a primary scanout output, so the window must be mapped and drawn.
