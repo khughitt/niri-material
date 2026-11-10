@@ -180,8 +180,8 @@ impl BeamFrame {
 ///
 /// This rides the head alone. The tail is a trail the head already left,
 /// so re-wandering it would make the whole comet breathe rather than its
-/// light flicker, and the resting glow must stay a constant fingerprint
-/// (spec 1.3) or the quiet ring would be back on a clock.
+/// light flicker, and the resting glow must stay a constant fingerprint or the quiet ring would be
+/// back on a clock.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct HeadNoise {
     pub intensity: f64,

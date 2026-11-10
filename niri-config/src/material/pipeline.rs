@@ -268,7 +268,8 @@ const fn effect_optic(name: &'static str, hook: &'static str) -> Option<OpticRef
     })
 }
 
-/// A stage active only while an enum parameter picks it (design Section 2).
+/// A stage active only while an enum parameter picks it
+/// (`docs/materials/pipeline-schema.md#stages`).
 const fn select(stage: Stage, param: &'static str, variant: &'static str) -> Stage {
     Stage {
         selector: Some(Selector { param, variant }),
@@ -303,9 +304,9 @@ const IMPULSE_RESPONSES: &[&str] = &["ping", "done", "error"];
 /// them (docs/materials/motion.md#rigid-tilt).
 const VIEW_RESPONSES: &[&str] = &["view-tilt", "view-tilt-settle", "view-distance"];
 
-/// Section 1 of the design, in pipeline order, corrected against the signal
-/// code: impulse-driven and presence-driven stages are animated and list the
-/// responses that drive them, and every taps stage reads the prefilter controls.
+/// The stages in pipeline order (`docs/materials/pipeline-schema.md#stages`): impulse-driven and
+/// presence-driven stages are animated and list the responses that drive them, and every taps stage
+/// reads the prefilter controls.
 pub static STAGES: &[Stage] = &[
     select(
         stage(
@@ -635,7 +636,7 @@ pub static INTERACTIONS: &[Interaction] = &[
     },
 ];
 
-/// The selector rules (design Section 2): a selector names an `Enum`
+/// The selector rules (`docs/materials/pipeline-schema.md#invariants`): a selector names an `Enum`
 /// parameter the stage owns or reads and one of its variants; across the
 /// stages that select on one parameter, every variant selects exactly one
 /// stage and every stage is the same optic. Checked on `STAGES` by a test,

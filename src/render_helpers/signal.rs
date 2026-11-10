@@ -260,7 +260,7 @@ pub fn next_boundary(motion: SignalMotion, now: Duration) -> Option<Duration> {
 }
 
 /// Effective drift rate: the response's rate under the motion policy and
-/// the global animation switch (design: Inputs and motion).
+/// the global animation switch: full keeps it, reduced halves it, off or animations off stop it.
 pub fn drift_rate(hz: f64, policy: SignalMotionPolicy, animations_off: bool) -> f64 {
     if animations_off {
         return 0.;

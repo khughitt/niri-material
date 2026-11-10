@@ -628,8 +628,8 @@ pub fn seed_basis(projection: &[f32; 9], scale: f64) -> [f32; 4] {
     ]
 }
 
-/// The view uniforms (docs/materials/motion.md#tilted-slab-trace), which only the view variant
-/// declares: it is bound only while a swing runs, so `mat_view_on` is 1.
+/// The view uniforms (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt), which
+/// only the view variant declares: it is bound only while a swing runs, so `mat_view_on` is 1.
 fn view_uniforms(
     view: &ElementView,
     camera: &Camera,

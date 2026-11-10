@@ -2535,8 +2535,7 @@ impl<W: LayoutElement> Tile<W> {
 
         if let Some(open) = &self.open_animation {
             let mut ctx = ctx.as_gles();
-            // The offscreen draws the tile at (0, 0): move the view the crop takes with it
-            // (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt).
+            // The offscreen draws the tile at (0, 0): move the view the crop takes with it.
             if let Some(sink) = &mut ctx.signal_ticks {
                 sink.view.loc -= location;
             }
@@ -2569,8 +2568,7 @@ impl<W: LayoutElement> Tile<W> {
             }
         } else if let Some(alpha) = &self.alpha_animation {
             let mut ctx = ctx.as_gles();
-            // The offscreen draws the tile at (0, 0): move the view the crop takes with it
-            // (docs/materials/render-pipeline.md#under-a-swing-the-rigid-tilt).
+            // The offscreen draws the tile at (0, 0): move the view the crop takes with it.
             if let Some(sink) = &mut ctx.signal_ticks {
                 sink.view.loc -= location;
             }

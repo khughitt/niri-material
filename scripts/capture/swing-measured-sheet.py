@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The owner's measured sheet for the rigid tilt swing (plan 2026-10-09, Task 15).
+"""The owner's measured sheet for the rigid tilt swing.
 
 Usage: swing-measured-sheet.py <ring-motion-clips run dir>
 
