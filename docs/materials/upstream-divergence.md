@@ -74,7 +74,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `AGENTS.md` | C | A | +120/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
-| `README.md` | B | M | +33/-0 |
+| `README.md` | B | M | +36/-0 |
 | `docs/wiki/Configuration:-Layer-Rules.md` | B | M | +48/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
@@ -144,7 +144,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_capture_hold.py` | C | A | +500/-0 |
 | `tools/test_capture_meta.py` | C | A | +2063/-0 |
 | `tools/test_capture_scripts.py` | C | A | +66/-0 |
-| `tools/test_gates.py` | C | A | +293/-0 |
+| `tools/test_gates.py` | C | A | +294/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +883/-0 |
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |

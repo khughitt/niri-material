@@ -79,13 +79,12 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
 ## Layout
 
 - Task records live in the project's records directory (`tasks where` names it).
-  New design specs, implementation plans, briefs and handoffs go there too
-  (`docs/specs/`, `docs/plans/`, `docs/notes/` under it), committed in the records
-  repository, never in this tree. The documents this tree already tracks under
-  `docs/materials/`, `docs/specs/`, `docs/plans/` and `docs/notes/` stay here and are
-  revised in place.
-- `docs/materials/`: the material documentation, indexed by its README;
+  New design specs, implementation plans, briefs, handoffs and measurement
+  evidence go there too, committed in the records repository, never in this tree.
+- `docs/materials/`: the typed public references, indexed by its README;
   `docs/wiki/` and the README below its fork header are upstream niri's.
+- `scripts/capture/`: the capture harnesses, described in
+  `docs/materials/captures.md`.
 - `tools/`: the repository's tooling and its tests; the files `tools/README.md`
   names (`tt`, `ops-check`, `ops-docs`) are vendored from ops and never edited here.
 
@@ -97,8 +96,9 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
 - Live captures that need an idle host (settle-gated traces, DRM power runs) are parked
   for `tasks quiet`. When the user starts a session from a TTY with the desktop stopped
   and hands the host over, run that queue yourself: one run at a time, the lane's pilot
-  before any full run, and a `run:` note for every attempt. The fixture's reproduction
-  notes in the `niri-experiments` results doc give the commands and known pitfalls.
+  before any full run, and a `run:` note for every attempt. The harnesses are in
+  `scripts/capture/`; `docs/materials/captures.md` gives the lanes, the gates and the
+  known failure modes. Record each run's evidence in the records directory.
   A TTY has no display sleep. The reference host's monitor (G34WQC on DP-1)
   ignores DDC brightness writes, so do not try `display-dim set` there. Power
   the panel down once, at queue start, before the first preflight. Check that

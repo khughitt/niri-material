@@ -51,10 +51,22 @@ Two presets ship in `/usr/share/niri/materials/` (`aurora`, `rainbow`), used wit
 ## Documentation
 
 - [Material configuration](../docs/materials/material-config.md): every parameter,
-  presets, signal responses, and window-rule validation.
+  presets, and window-rule validation.
+- [Material signals](../docs/materials/signals.md): how a window signal reaches the
+  glass, and the `response` blocks.
+- [Window signal IPC](../docs/wiki/IPC.md#window-signals).
+- [Material motion](../docs/materials/motion.md): the ring of light, jelly and tilt.
+- [Shell remap](../docs/materials/shell-remap.md): matching a shell's layer surfaces
+  to a material.
 - [Render pipeline](../docs/materials/render-pipeline.md): the pass order the
   material draws in.
-- [Window signal IPC](../docs/wiki/IPC.md#window-signals).
+- [Glass optics](../docs/materials/glass-optics.md): what the glass shader computes.
+- [Pipeline schema](../docs/materials/pipeline-schema.md): the glass pipeline as data.
+- [Adding an optic](../docs/materials/adding-an-optic.md): the recipe for a new
+  pipeline stage.
+- [Performance](../docs/materials/performance.md): where the cost goes and the levers.
+- [Captures](../docs/materials/captures.md) and
+  [capture host setup](../docs/materials/capture-host-setup.md): measuring a run.
 - [Upstream divergence](../docs/materials/upstream-divergence.md): every upstream
   file the fork touches, and how it is rebased onto a new niri release.
 

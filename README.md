@@ -17,14 +17,17 @@ pinned on a commit by `tools/package-pin`.
 
 Materials are declared in the niri config and assigned by window rule:
 `docs/materials/material-config.md` is the reference for every parameter, with an
-example. Everything else is configured as in upstream niri.
+example; `docs/materials/README.md` indexes the rest of the material references
+(signals, motion, shell remap, render pipeline, performance, captures). Everything
+else is configured as in upstream niri.
 
 ## Layout
 
 - `src/render_helpers/material/`, `src/render_helpers/shaders/material/`: the material
   renderer and its shaders.
 - `niri-config/src/material/`: material and glass configuration.
-- `docs/materials/`: the material documentation, indexed by its README.
+- `docs/materials/`: the typed material references, indexed by its README.
+- `scripts/capture/`: the capture harnesses, described in `docs/materials/captures.md`.
 - `tools/`: test and gate tooling; `packaging/`: the Arch package.
 - Everything else is upstream niri, whose README follows unchanged. What this fork
   changes is listed in `docs/materials/upstream-divergence.md`.
