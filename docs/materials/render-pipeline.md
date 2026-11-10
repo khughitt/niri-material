@@ -225,7 +225,7 @@ branch behind one uniform test cost about 13 % per material draw at rest.
 | Native | Prism key | Stage |
 | --- | --- | --- |
 | `bevel` | `glass.paneLip` (+ max pane shift) | 1, 3, 4 |
-| `bevel-profile` | `glass.bevelProfile` (pending) | 1, 3, 4 |
+| `bevel-profile` | `glass.bevelProfile` | 1, 3, 4 |
 | `offset-x` / `offset-y` | `glass.paneShiftX` / `glass.paneShiftY` | 1 |
 | `thickness` | `glass.thickness` | 1, 3, 4 |
 | `jelly-flex` | `glass.jellyFlex` | 1 |
@@ -236,20 +236,25 @@ branch behind one uniform test cost about 13 % per material draw at rest.
 | `roughness` | `glass.roughness` | source selection before 3; 5 scattering; 6 highlight width |
 | `anisotropic-blur` | `glass.anisotropicBlur` | 3 |
 | `chromatic-aberration` | `glass.chromaticAberration` | 3, 5 |
-| `reflection` | `glass.reflection` (pending) | 6 |
-| `edge-highlight` | `glass.edgeHighlight` (pending) | 6 |
+| `reflection` | `glass.reflection` | 6 |
+| `edge-highlight` | `glass.edgeHighlight` | 6 |
 | `iridescence` | `glass.iridescence` | 6 |
 | `aurora`, `drift-hz`, `color` × 2 | `glass.aurora`, `glass.auroraDriftHz`, `glass.auroraColorA`, `glass.auroraColorB` | 5 |
 | `attenuation-color` | `glass.attenuationColor` | 4 |
 | `attenuation-distance` | `glass.attenuationDistance` | 4 |
-| response `accent-tint` | (none) | 4 |
-| `light-ior` | (pending) | 5 |
-| `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent` | `glass.ring.gap`, (none), `glass.ring.color`, `glass.ring.beamSpeed`, `glass.ring.beamNoise`, `glass.ring.beamNoiseHz`, `glass.ring.decay`, `glass.ring.glow`, `glass.ring.rest`, `glass.ring.accent` (partly pending in Prism) | 5 |
+| response `accent-tint` | `glass.accentTint` | 4 |
+| `light-ior` | `glass.lightIor` | 5 |
+| `ring-gap`, `ring-width`, `ring-color`, `ring-beam-speed`, `ring-beam-noise`, `ring-beam-noise-hz`, `ring-beam-decay`, `ring-glow`, `ring-rest`, `ring-accent` | `glass.ring.gap`, `glass.ring.width`, `glass.ring.color`, `glass.ring.beamSpeed`, `glass.ring.beamNoise`, `glass.ring.beamNoiseHz`, `glass.ring.decay`, `glass.ring.glow`, `glass.ring.rest`, `glass.ring.accent` | 5 |
 | `saturation` | `glass.saturation` | 3a |
-| `noise` `site=` | `glass.noiseSite` (pending) | source grain pass / 3b / 9 |
-| `noise` `type=` | `glass.noise`; `type=` (pending) | 3b |
-| `noise` `scale=` | (pending) | source grain pass / 3b / 9 |
-| response `view-tilt`, `view-tilt-settle`, `view-distance` | (pending) | View branch (*Under a swing*) |
+| `noise`, `type=` | `glass.noise`, `glass.noiseType` | 3b |
+| `noise` `site=` | (none) | source grain pass / 3b / 9 |
+| `noise` `scale=` | (none) | source grain pass / 3b / 9 |
+| response `view-tilt`, `view-tilt-settle`, `view-distance` | (none) | View branch (*Under a swing*) |
+
+Prism does not yet expose `noise site=`, `noise scale=`, or the `view-tilt`,
+`view-tilt-settle` and `view-distance` responses: it writes none of them, so
+Prism-managed glass runs them at their defaults (one glass-site layer at
+scale 1, no swing).
 
 Prism's `glass.inactive.*` keys write the same native parameters into the
 unfocused material definition; `glass.focusSplit` decides whether that

@@ -11,7 +11,8 @@ record in [pipeline-schema.md](pipeline-schema.md), and the parameter table in
 ## 1. Config: `niri-config/src/material/optics/<name>.rs`
 
 Define the knuffel node, a resolved struct with `Default`, `resolve`, and the
-parameter metadata. `noise` carries an amount, a `type=` property and a `site=` property:
+parameter metadata. `noise` is a repeated node: up to four layers, each an
+amount with `type=`, `site=` and `scale=` properties. Abridged from its file:
 
 ```rust
 #[derive(knuffel::Decode, Debug, Clone, Copy, PartialEq)]
@@ -22,21 +23,44 @@ pub struct Noise {
     pub kind: Option<NoiseType>,
     #[knuffel(property(name = "site"), str)]
     pub site: Option<NoiseSite>,
+    #[knuffel(property)]
+    pub scale: Option<FloatOrInt<1, 16>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ResolvedNoiseLayer {
+    pub amount: f64,
+    pub kind: NoiseType,
+    pub site: NoiseSite,
+    pub scale: f64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ResolvedNoise {
-    pub amount: Option<f64>,
-    pub kind: NoiseType,
-    pub site: NoiseSite,
+    pub layers: [Option<ResolvedNoiseLayer>; NOISE_LAYERS],
 }
 
-pub fn resolve(node: Option<Noise>) -> ResolvedNoise {
-    ResolvedNoise {
-        amount: node.map(|n| n.amount.0),
-        kind: node.and_then(|n| n.kind).unwrap_or_default(),
-        site: node.and_then(|n| n.site).unwrap_or_default(),
+pub fn resolve(nodes: &[Noise]) -> ResolvedNoise {
+    let mut layers = [None; NOISE_LAYERS];
+    for (slot, node) in layers.iter_mut().zip(nodes) {
+        *slot = Some(ResolvedNoiseLayer {
+            amount: node.amount.0,
+            kind: node.kind.unwrap_or_default(),
+            site: node.site.unwrap_or_default(),
+            scale: node.scale.map_or(1., |scale| scale.0),
+        });
     }
+    ResolvedNoise { layers }
+}
+
+pub fn validate(nodes: &[Noise]) -> Result<(), String> {
+    if nodes.len() > NOISE_LAYERS {
+        return Err(format!(
+            "at most {NOISE_LAYERS} noise layers, found {}",
+            nodes.len()
+        ));
+    }
+    Ok(())
 }
 
 pub fn params() -> Vec<ParamSpec> {
@@ -45,7 +69,7 @@ pub fn params() -> Vec<ParamSpec> {
             node: "noise",
             kind: ParamKind::inherit::<FloatOrInt<0, 1>>(),
             write: |v| format!("noise {v}"),
-            read: Some(|g| g.noise.amount),
+            read: Some(|g| g.noise.layers[0].map(|layer| layer.amount)),
         },
         ParamSpec {
             node: "noise type=",
@@ -56,9 +80,14 @@ pub fn params() -> Vec<ParamSpec> {
             write: |v| format!("noise 0.5 type=\"{v}\""),
             read: None,
         },
+        // "noise site=" (Enum, as type=) and "noise scale=":
+        // ParamKind::float::<FloatOrInt<1, 16>>(1., "px").
     ]
 }
 ```
+
+A single-valued optic is simpler: `reflection` is `FloatOrInt<0, 1>`, its
+resolved struct holds one `amount`, and `resolve` takes `Option<Reflection>`.
 
 `ParamKind::float::<T>(default, unit)` and `ParamKind::inherit::<T>()` take
 their range from the node field's `Bounded` type. `read` returns the resolved
@@ -66,15 +95,18 @@ scalar. `material_parameter_specs_match_the_parser` writes each scalar bound
 and an out-of-range value through `write`; the `node` string is the remaining
 hand-maintained fact, so spell it as the table should show it (`"noise type="`).
 
-Add `validate(&self) -> Result<(), String>` only for a real cross-parameter
-rule, and call it from `Material::validate`.
+Add a `validate` only for a real rule (noise's caps the layer count), and call
+it from `Material::validate`; noise's error gets the material's name prefixed
+there.
 
 Register the optic in niri-config:
 
 - `src/material/optics/mod.rs`: export the module, append its name to `ORDER`, and extend
   `params()` with its specs.
-- `src/material/mod.rs`: add the optional node to `Glass`, the resolved value to
-  `ResolvedGlass` and its default, and call `resolve` from `Material::resolve`.
+- `src/material/mod.rs`: add the node to `Glass` (an optional child, or
+  `children(name = ...)` into a `Vec` for a repeated node, as `noise`), the
+  resolved value to `ResolvedGlass` and its default, and call `resolve` from
+  `Material::resolve`.
 - `src/lib.rs`: re-export its public types.
 
 Keep parse, default, and validation-error tests beside the material tests in
@@ -101,25 +133,22 @@ sRGB formulas and return linear light; neutral returns before conversion.
 therefore owns remaining-path attenuation. `emissive` is surface-only light:
 it must return an unattenuated contribution even though its signature carries
 `att`.
-`post` is the empty site after final encoding, reserved for screen-space film.
+`post` acts on the encoded glass after final encoding and before coverage;
+`noise_post` applies the film-site grain layers there.
 
-`specular` receives the fragment's `Surface`: `p` (element-local logical px),
-`v` (element UV), `structural` (the slab's normal), `perturbed` (after
-distortion and jelly ripple), `cosine` (`structural.z`, clamped to [0, 1]),
-`fresnel` (Schlick at the structural normal), `across` (`u`: 0 at the face
-edge, 1 at the silhouette, 0 on the face), `acrossDir` (`normalize(grad u)`,
-outward across the bevel), and `outerDist` (signed distance to the silhouette,
-negative inside).
+`specular` receives the accumulated specular light and the fragment's
+`Surface`, and returns the new total; the fields and the call order are in
+[glass-optics.md](glass-optics.md#specular-hook).
 
 A hyphenated optic name keeps its hyphen in `NAME`, `ORDER` and the KDL node,
 and becomes underscores in file, module, hook and uniform names
 (`edge-highlight`: `edge_highlight.frag`, `edge_highlight_specular`,
 `mat_edge_highlight`).
 
-The file is concatenated after `prelude.frag`, which provides `snoise`,
-`snoiseFractal`, `hash12`, `fineGrain`, the colour conversions,
-`sdRoundedBox`, the slab globals, `mat_jelly_seed`, `mat_thickness`, and
-`mat_ior`. Put the neutral check first. Neutral is an explicit resolved value;
+The file is concatenated after `common.frag`, which provides `hash12`,
+`fineGrain` and the colour conversions, and `prelude.frag`, which provides
+`snoise`, `snoiseFractal`, `sdRoundedBox`, the slab globals,
+`mat_jelly_seed`, `mat_thickness`, and `mat_ior`. Put the neutral check first. Neutral is an explicit resolved value;
 omission may instead inherit a non-neutral global blur value, as `noise` and
 `saturation` do while backdrop blur is effective.
 
@@ -133,14 +162,18 @@ pub struct NoiseOptic;
 impl Optic for NoiseOptic {
     const NAME: &'static str = "noise";
     const GLSL: &'static str = include_str!("../../shaders/material/noise.frag");
+    // One vec4 per property, one component per layer slot.
     const UNIFORMS: &'static [(&'static str, UniformType)] = &[
-        ("mat_noise", UniformType::_1f),
-        ("mat_noise_type", UniformType::_1f),
-        ("mat_noise_site", UniformType::_1f),
+        ("mat_noise", UniformType::_4f),
+        ("mat_noise_type", UniformType::_4f),
+        ("mat_noise_site", UniformType::_4f),
+        ("mat_noise_scale", UniformType::_4f),
     ];
 
     fn values(glass: &ResolvedGlass, ctx: &OpticFrame<'_>) -> Vec<Uniform<'static>> {
-        // One Uniform per UNIFORMS entry, in the same order.
+        // One Uniform per UNIFORMS entry, in the same order: each written
+        // layer fills its slot; with no node written, slot 0's amount
+        // inherits ctx.blur.noise while ctx.backdrop_blur is set.
     }
 
     // Override only when values change without a configuration change.
@@ -188,6 +221,8 @@ Add an `## Optics` subsection to `material-config.md` stating the stage,
 effect, explicit neutral, and any omission/inheritance rule. Update the stage
 in `render-pipeline.md` and its Prism mapping when one exists.
 
-Run `just test`. Then use a smoke under `scripts/capture/` to prove the
-neutral render, the intended effect, and frame cost. Compare decoded pixels
-and record the command's non-zero-on-difference exit status in an evidence doc.
+Run `just test`. Then prove the neutral render, the intended effect, and frame
+cost with a smoke under `scripts/capture/`, built on `glass-optic-smoke-lib.sh`
+as the existing `glass-*-smoke.sh` harnesses are: compare decoded pixels, and
+report the command with its non-zero-on-difference exit status when the change
+is reviewed.
