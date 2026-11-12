@@ -287,6 +287,7 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
                   f'    if [ "$1" = --full ]; then exec "{marker}" full "$@"; fi\n'
                   f'    if [ "$1" = --check-paths ]; then exec "{marker}" paths "$@"; fi\n'
                   '  fi\nfi\n'
+                  f'if [ "$1" = tools/ops-docs ]; then shift; exec "{marker}" docs "$@"; fi\n'
                   f'exec "{self.real_python}" "$@"')
         self.stub('just', f'exec "{self.just}" "$@"')
         replacements = {
@@ -296,6 +297,7 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
             'check_after_cmd': f'"{marker} after"',
             'check_code_base_cmd': f'"{marker} lint"',
             'stage_report_cmd': f'"{marker} stage"',
+            'setup_cmd': f'"{marker} setup"',
             'fast_cmd': f'"{marker} affected"',
             'test_cmd': f'"{marker} rust"',
             'push_fast_cmd': f'"{marker} push"',
@@ -520,6 +522,8 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
         one_script = self.root / 'one.py'
         one_script.write_text("import sys\nprint('Ran 1 test in 0.001s', file=sys.stderr)\n")
         for args in (
+            ('setup',),
+            ('docs',),
             ('hook-pre-commit-docs',),
             ('check-hygiene',),
             ('--set', 'one_cmd', f'{self.real_python} {one_script}', 'test-one', 'focused'),
@@ -790,3 +794,21 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertEqual(len(hygiene_indices), 1)
         self.assertEqual(len(tooling_indices), 1)
         self.assertLess(hygiene_indices[0], tooling_indices[0])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            xdg = Path(tmp) / 'xdg'
+            xdg.mkdir()
+            runner_env = {
+                'PATH': '/usr/local/bin:/usr/bin:/bin',
+                'HOME': str(Path('/') / 'home' / 'runner'),
+                'XDG_CONFIG_HOME': str(xdg),
+            }
+            isolate(runner_env)
+            ops_run = subprocess.run(
+                [shutil.which('python3'), 'tools/ops-check'],
+                cwd=ROOT,
+                env=runner_env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(ops_run.returncode, 0, ops_run.stderr)

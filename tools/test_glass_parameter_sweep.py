@@ -51,18 +51,26 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
 ''')
         python.chmod(0o755)
 
-    def run_sweep(self, out, **overrides):
+    def base_env(self):
         env = {
             'PATH': str(self.bin) + os.pathsep + os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin'),
             'HOME': str(self.home),
             'XDG_CONFIG_HOME': str(self.xdg),
             'XDG_RUNTIME_DIR': str(self.root),
-            'OUT': str(out),
-            'BLOCK': 'glass',
-            'KEY': 'thickness',
-            'VALUES': '0 20',
-            'NIRI': str(self.bin / 'niri'),
+            'TMPDIR': str(self.root),
         }
+        isolate(env)
+        return env
+
+    def run_sweep(self, out, **overrides):
+        env = self.base_env()
+        env.update(
+            OUT=str(out),
+            BLOCK='glass',
+            KEY='thickness',
+            VALUES='0 20',
+            NIRI=str(self.bin / 'niri'),
+        )
         env.update(overrides)
         isolate(env)
         with subprocess.Popen(['bash', str(SCRIPT)], env=env, text=True,
@@ -94,8 +102,10 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
             self.assertIsNone(record['seed'])
             self.assertEqual(record['generator'], 'scripts/capture/glass-parameter-sweep.sh')
             self.assertEqual(record['generator_sha256'], hashlib.sha256(SCRIPT.read_bytes()).hexdigest())
-            pixels = subprocess.check_output([
-                'magick', str(out / 'backdrop.png'), '-depth', '8', 'rgb:-'])
+            pixels = subprocess.check_output(
+                ['magick', str(out / 'backdrop.png'), '-depth', '8', 'rgb:-'],
+                env=self.base_env(),
+            )
             # Interior samples in the original four quadrant colors, off grid lines.
             for x, y, rgb in ((10, 10, (150, 60, 52)), (650, 10, (120, 96, 40)),
                               (10, 370, (38, 44, 62)), (650, 370, (48, 120, 80))):
@@ -153,8 +163,11 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
         (out / 'values.txt').write_text('0\n20\n')
         (out / 'roi.txt').write_text('bevel\t2x2+0+0\nface\t2x2+2+2\n')
         for i in range(2):
-            subprocess.run(['magick', '-size', '4x4', 'xc:gray',
-                            str(out / f'cap-{i:03d}.png')], check=True)
+            subprocess.run(
+                ['magick', '-size', '4x4', 'xc:gray', str(out / f'cap-{i:03d}.png')],
+                env=self.base_env(),
+                check=True,
+            )
         return out
 
     @unittest.skipUnless(shutil.which('magick'), 'ImageMagick 7 required')

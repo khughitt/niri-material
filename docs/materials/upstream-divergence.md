@@ -68,7 +68,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
 | `.github/dependabot.yml` | B | D | +0/-24 |
-| `.github/workflows/ci.yml` | B | M | +77/-4 |
+| `.github/workflows/ci.yml` | B | M | +78/-5 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
 | `AGENTS.md` | C | A | +109/-0 |
@@ -144,9 +144,9 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_capture_hold.py` | C | A | +500/-0 |
 | `tools/test_capture_meta.py` | C | A | +2063/-0 |
 | `tools/test_capture_scripts.py` | C | A | +66/-0 |
-| `tools/test_gates.py` | C | A | +792/-0 |
+| `tools/test_gates.py` | C | A | +814/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +883/-0 |
-| `tools/test_glass_parameter_sweep.py` | C | A | +253/-0 |
+| `tools/test_glass_parameter_sweep.py` | C | A | +266/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
 | `tools/test_gpu_clocks.py` | C | A | +434/-0 |
 | `tools/test_hermetic_git.py` | C | A | +141/-0 |

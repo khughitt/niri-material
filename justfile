@@ -84,7 +84,7 @@ test:
 
 # Deliberate local full Rust suite, forced regardless of `.tt.toml`.
 test-full:
-    TT_FORCE=1 {{just_executable()}} --justfile {{justfile()}} test
+    TT_FORCE=1 '{{just_executable()}}' --justfile '{{justfile()}}' test
 
 # Fixed config and IPC nextest slice for CI-covered pushes (broad target).
 test-push-fast:
