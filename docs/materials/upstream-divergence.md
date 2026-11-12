@@ -56,7 +56,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-234 paths differ: 58 class B (seam), 154 class A (fork-only), 22 class C (scaffolding).
+235 paths differ: 58 class B (seam), 154 class A (fork-only), 23 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -72,7 +72,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +78/-5 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +113/-0 |
+| `AGENTS.md` | C | A | +118/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
 | `README.md` | B | M | +37/-0 |
@@ -137,6 +137,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mapped.rs` | B | M | +54/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/README.md` | C | A | +31/-0 |
+| `tools/code-organization.md` | C | A | +97/-0 |
 | `tools/ops-check` | C | A | +662/-0 |
 | `tools/ops-docs` | C | A | +1272/-0 |
 | `tools/tt` | C | A | +728/-0 |

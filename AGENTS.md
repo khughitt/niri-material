@@ -4,6 +4,7 @@
 One glass material across niri, terminals, editor, and shell
 
 Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.md`, `docs/materials/upstream-divergence.md`
+Code follows `tools/code-organization.md`.
 <!-- ops:identity end -->
 
 ## Setup
@@ -79,7 +80,11 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   `docs/materials/captures.md`.
 - `scripts/gates/` and `scripts/testing/` hold repository maintenance; `tests/` mirrors
   tooling, with `tests/fixtures/` for test data. `tools/` holds only the ops copies
-  named in `tools/README.md`, never edited here.
+  named in `tools/README.md`, never edited here; this distribution home is interim.
+
+- Layout deviation: upstream niri Rust crate/source layout is retained; reorganizing it would block upstream merges.
+- Layout deviation: Python maintenance and C capture tooling stay in `scripts/` and `tests/` beside Rust, rather than separate language roots, because they support this application.
+- Layout deviation: existing flat `scripts/capture/` lane prefixes and Python CLI filename spelling stay stable for documented operator entry points; new Python modules use snake_case.
 
 ## Rules
 

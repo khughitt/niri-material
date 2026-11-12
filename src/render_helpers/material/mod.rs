@@ -1,3 +1,5 @@
+//! Render glass materials, their optical stages and animated responses.
+
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;

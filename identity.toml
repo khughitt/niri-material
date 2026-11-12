@@ -21,6 +21,9 @@ authority = [
 ]
 subsystems = []
 
+[code]
+standard = 1
+
 # Public reference documents under ops's document-types standard; nested
 # references enter the set only by declaration.
 [documents]
