@@ -640,13 +640,13 @@ class CiWorkflowTests(unittest.TestCase):
         'build': '20',
         'build-musl': '20',
         'visual-tests': '20',
-        'msrv': '20',
-        'clippy': '20',
+        'msrv': '15',
+        'clippy': '15',
         'fedora': '20',
         'publish-docs': '20',
         'publish-wiki': '20',
         'test': '25',
-        'freebsd': '25',
+        'freebsd': '35',
         'randomized-tests': '30',
         'nix': '30',
     }
@@ -767,6 +767,10 @@ class CiWorkflowTests(unittest.TestCase):
                 self.assertEqual(scalars.get('runs-on'), 'ubuntu-24.04')
                 self.assertEqual(scalars.get('timeout-minutes'), self.EXPECTED_TIMEOUTS[name])
                 self.assertEqual(jobs[name]['permissions'], {})
+        self.assertEqual(
+            sum(int(jobs[name]['scalars']['timeout-minutes']) for name in self.VERIFICATION_JOBS),
+            255,
+        )
 
         for name in self.PUBLISH_JOBS:
             with self.subTest(publish_job=name):
