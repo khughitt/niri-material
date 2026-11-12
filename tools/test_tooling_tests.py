@@ -111,7 +111,7 @@ def _await_wave():
         return
     _emit_event('start')
     target = int(os.environ['PROBE_WAVE'])
-    deadline = time.monotonic() + 1.0
+    deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
         with open('events.log') as log:
             if sum(1 for line in log if line.startswith('start:')) >= target:

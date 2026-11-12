@@ -612,3 +612,181 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
         self.assertEqual(malformed.returncode, 2)
         self.assertIn('cannot inspect test execution policy', malformed.stderr)
         self.assertFalse((self.root / 'recipe').exists())
+
+
+class CiWorkflowTests(unittest.TestCase):
+    VERIFICATION_JOBS = (
+        'tooling-test',
+        'test',
+        'build',
+        'build-musl',
+        'randomized-tests',
+        'visual-tests',
+        'msrv',
+        'clippy',
+        'rustfmt',
+        'fedora',
+        'freebsd',
+        'nix',
+    )
+    PUBLISH_JOBS = ('publish-wiki', 'publish-docs')
+    EXPECTED_TIMEOUTS = {
+        'rustfmt': '10',
+        'tooling-test': '15',
+        'build': '20',
+        'build-musl': '20',
+        'visual-tests': '20',
+        'msrv': '20',
+        'clippy': '20',
+        'fedora': '20',
+        'publish-docs': '20',
+        'publish-wiki': '20',
+        'test': '25',
+        'freebsd': '25',
+        'randomized-tests': '30',
+        'nix': '30',
+    }
+
+    @staticmethod
+    def _strip_comment(raw: str) -> str:
+        in_single = False
+        in_double = False
+        for index, char in enumerate(raw):
+            if char == "'" and not in_double:
+                in_single = not in_single
+            elif char == '"' and not in_single:
+                in_double = not in_double
+            elif char == '#' and not in_single and not in_double and (index == 0 or raw[index - 1].isspace()):
+                return raw[:index].rstrip()
+        return raw.rstrip()
+
+    @classmethod
+    def _parse_ci_workflow(cls):
+        text = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
+        top_sections = {}
+        current_top = None
+        for raw_line in text.splitlines():
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith('#'):
+                continue
+            indent = len(raw_line) - len(raw_line.lstrip(' '))
+            if indent == 0:
+                key, _, rest = cls._strip_comment(raw_line).partition(':')
+                current_top = key.strip()
+                top_sections[current_top] = []
+                if rest.strip():
+                    top_sections[current_top].append((0, rest.strip()))
+            elif current_top is not None:
+                top_sections[current_top].append((indent, cls._strip_comment(raw_line.lstrip(' '))))
+
+        def mapping_at(entries, target_indent):
+            result = {}
+            for indent, content in entries:
+                if indent == target_indent and ':' in content and not content.startswith('- '):
+                    key, _, value = content.partition(':')
+                    result[key.strip()] = value.strip()
+            return result
+
+        jobs = {}
+        current_job = None
+        for indent, content in top_sections.get('jobs', []):
+            if indent == 2 and content.endswith(':'):
+                current_job = content[:-1].strip()
+                jobs[current_job] = []
+            elif current_job is not None and indent >= 4:
+                jobs[current_job].append((indent, content))
+
+        parsed_jobs = {}
+        for job_name, entries in jobs.items():
+            scalars = mapping_at(entries, 4)
+            permissions = {}
+            in_permissions = False
+            for indent, content in entries:
+                if indent == 4:
+                    in_permissions = content == 'permissions:'
+                elif in_permissions and indent == 6 and ':' in content:
+                    k, _, v = content.partition(':')
+                    permissions[k.strip()] = v.strip()
+            steps = []
+            current_step = None
+            in_steps = False
+            for indent, content in entries:
+                if indent == 4:
+                    in_steps = content == 'steps:'
+                    if not in_steps:
+                        current_step = None
+                    continue
+                if not in_steps:
+                    continue
+                if indent == 6 and content.startswith('- '):
+                    current_step = [content[2:]]
+                    steps.append(current_step)
+                elif current_step is not None and indent > 6:
+                    current_step.append(content)
+            parsed_jobs[job_name] = {
+                'scalars': scalars,
+                'permissions': permissions,
+                'steps': ['\n'.join(step) for step in steps],
+            }
+
+        return text, {
+            'permissions': mapping_at(top_sections.get('permissions', []), 2),
+            'concurrency': mapping_at(top_sections.get('concurrency', []), 2),
+            'env': mapping_at(top_sections.get('env', []), 2),
+            'jobs': parsed_jobs,
+        }
+
+    def test_workflow_hardening_deduplication_timeouts_and_tooling_hygiene(self):
+        text, workflow = self._parse_ci_workflow()
+        self.assertNotIn('pull_request_target', text)
+        self.assertEqual(workflow['permissions'], {'contents': 'read'})
+        self.assertEqual(
+            workflow['concurrency'],
+            {
+                'group': '${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}',
+                'cancel-in-progress': "${{ github.ref != 'refs/heads/main' }}",
+            },
+        )
+        self.assertIn(workflow['env'].get('TT_FORCE'), ('"1"', "'1'"))
+
+        jobs = workflow['jobs']
+        self.assertEqual(set(jobs), set(self.VERIFICATION_JOBS) | set(self.PUBLISH_JOBS))
+
+        expected_pr_guard = (
+            "github.event_name != 'pull_request' || "
+            "github.event.pull_request.head.repo.full_name != github.repository"
+        )
+        for name in self.VERIFICATION_JOBS:
+            with self.subTest(verification_job=name):
+                scalars = jobs[name]['scalars']
+                self.assertEqual(scalars.get('if'), expected_pr_guard)
+                self.assertEqual(scalars.get('runs-on'), 'ubuntu-24.04')
+                self.assertEqual(scalars.get('timeout-minutes'), self.EXPECTED_TIMEOUTS[name])
+                self.assertEqual(jobs[name]['permissions'], {})
+
+        for name in self.PUBLISH_JOBS:
+            with self.subTest(publish_job=name):
+                scalars = jobs[name]['scalars']
+                self.assertEqual(
+                    scalars.get('if'),
+                    "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+                )
+                self.assertEqual(scalars.get('runs-on'), 'ubuntu-24.04')
+                self.assertEqual(scalars.get('timeout-minutes'), self.EXPECTED_TIMEOUTS[name])
+                self.assertEqual(jobs[name]['permissions'], {'contents': 'write'})
+
+        tooling_steps = jobs['tooling-test']['steps']
+        checkout_steps = [s for s in tooling_steps if 'uses: actions/checkout@v6' in s]
+        self.assertEqual(len(checkout_steps), 1)
+        self.assertIn('fetch-depth: 0', checkout_steps[0])
+
+        hygiene_chain = (
+            'python3 tools/ops-check && python3 tools/ops-docs check && '
+            'python3 tools/identity-check && python3 tools/upstream-report --check && '
+            'python3 tools/package-pin --check'
+        )
+        hygiene_indices = [i for i, s in enumerate(tooling_steps) if hygiene_chain in s]
+        tooling_indices = [i for i, s in enumerate(tooling_steps) if 'just ci-tooling-test' in s]
+        self.assertEqual(len(hygiene_indices), 1)
+        self.assertEqual(len(tooling_indices), 1)
+        self.assertLess(hygiene_indices[0], tooling_indices[0])

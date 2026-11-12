@@ -32,47 +32,36 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
 
 ## Gates
 
-- Formatting uses nightly rustfmt, matching CI; stable ignores the import-grouping
-  settings. Install it with `rustup toolchain install nightly --profile minimal
-  --component rustfmt`, then format with `rustup run nightly cargo fmt --all`.
+- Formatting uses nightly rustfmt (`rustup toolchain install nightly --profile minimal
+  --component rustfmt`, then `rustup run nightly cargo fmt --all`), matching CI.
 - While editing Rust: `just test-one -p niri <name-filter>` or
-  `just test-one -E 'test(foo) | test(bar)'` (nextest arguments). Then
-  `just test-fast`, which selects changed workspace packages and their dependents
-  against HEAD, excluding the visual viewer. Neither runs doctests.
+  `just test-one -E 'test(foo) | test(bar)'`, then `just test-fast` (changed packages
+  and dependents against HEAD, excluding the visual viewer; neither runs doctests).
 - For Python tooling: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_gates`;
   `just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`
-  runs all tooling in parallel. The Rust affected selector does not select Python.
-  Sequential reference discovery uses the same override with
-  `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1`.
-  Raw discovery inherits exported `NIRI_TOOLING_FAST=1` and skips DriverCleanupTests
-  and VtLibTests; only unset, `0` and `1` are valid. Repository commands set their mode.
-  Fast tooling uses `python3 -m tools.tooling_tests --fast`, keeping each test
-  module in one worker job (largest first) across a dynamic worker pool. Full
-  tooling schedules one worker job per lifecycle case first, followed by one worker
-  job per non-lifecycle module (largest first); both routes bound active children
-  by `min(worker_limit(), len(jobs))` (`10` by default, up to `16` under a granted
-  `NEXTEST_TEST_THREADS` budget, which must be a positive ASCII decimal integer).
-  A test module that runs git calls `isolate(os.environ)` from `tools/hermetic_git.py`
-  at import; the coordinator also applies it to every worker.
-- `just check` runs hygiene (`tools/ops-check`, then `tools/ops-docs check`), target
-  isolation, rustfmt, clippy, fast tooling and identity/task/report/pin checks;
-  `just check-full` substitutes parallel full tooling. `just docs` regenerates the
-  identity regions of README.md and AGENTS.md from identity.toml.
-  `tools/identity-check` refuses a repo-local user.name or user.email: the trace a
-  git fixture leaves when hook-inherited GIT_DIR redirects its `git config` here.
-  Pre-commit uses full tooling for the narrow lifecycle subjects and gate wiring in
-  `tooling_full_paths`, fast tooling for other code, and static source plus consistency
-  checks for the root guides and identity.toml (`docs_paths`). The fast route records
-  `hook-pre-commit-fast` and the full route `hook-pre-commit`; every route checks
-  lifecycle source coverage statically.
-  Material docs and wiki retain code checks because Rust tests read their inputs.
-- CI runs the full suite (including doctests) for every branch/tag pushed to `origin`.
-  Pre-push there runs `check` plus config and IPC tests through nextest;
-  other remotes or unclassified pushes run `just gate` (full check plus Rust tests).
-  `just test`, `ci-test` and `ci-test-release` remain Rust-only, including doctests;
-  the release job enables randomized/slow tests through environment variables.
-  The separate Ubuntu `ci-tooling-test` job runs full parallel tooling, rejecting
-  dependency skips and allowing only the `OPTIONAL_SKIPS` in `tools/tooling_tests.py`.
+  runs all tooling in parallel (the Rust affected selector does not select Python).
+  When editing ImageMagick-backed capture scripts or tests, run
+  `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_glass_optic_smoke tools.test_glass_render_order_metrics tools.test_glass_parameter_sweep`.
+  Sequential discovery uses `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1`
+  (`NIRI_TOOLING_FAST=1` skips DriverCleanupTests and VtLibTests; only unset, `0`, `1`
+  are valid). Fast tooling (`--fast`) runs one worker per module (largest first); full
+  tooling (`--full`) runs lifecycle cases first, then remaining modules, capped by
+  `min(worker_limit(), len(jobs))` (`10` default, up to `16` under `NEXTEST_TEST_THREADS`).
+  Git-running test modules and the coordinator call `isolate(os.environ)` (`tools/hermetic_git.py`).
+- `just check-hygiene` runs mandatory hygiene (`tools/ops-check`, `tools/ops-docs` check),
+  target isolation, static lifecycle path coverage, and `tools/identity-check`/task/report/pin
+  checks. `just check-code` and `just check-code-full` run rustfmt, clippy, fast or full
+  tooling, and post-test `tools/identity-check`; `just check` and `just check-full` compose
+  both. `just docs` regenerates identity regions from identity.toml. Pre-commit routes
+  `tooling_full_paths` to `hook-pre-commit-full`, other code to `hook-pre-commit`
+  (material docs/wiki included), and `docs_paths` to `hook-pre-commit-docs`. Post-split
+  `hook-*` rows in `tools/tt` time mandatory report staging and hygiene, while broad child
+  runs/skips record on `check-code*`, `test-push-fast`, and `test` (not comparable to pre-split hook rows).
+- CI runs the full suite (including doctests) on every `origin` push. Pre-push there
+  chains mandatory hygiene with `just check-code` and `just test-push-fast`; other pushes
+  run `just gate` (`just check-full` and `just test`). `just test-full` forces `just test`.
+  `ci-test` and `ci-test-release` run Rust tests; Ubuntu `ci-tooling-test` runs full
+  parallel tooling, allowing only `OPTIONAL_SKIPS` in `tools/tooling_tests.py`.
 - Recipes record runs through `tools/tt`. Host recipes use `host-budget run` to set
   `CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS`; CI recipes do not need ops tooling.
 

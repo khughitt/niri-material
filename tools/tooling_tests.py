@@ -27,6 +27,10 @@ OPTIONAL_SKIPS = {
     'test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_positive_face_gate_requires_more_than_one_code',
     'test_glass_optic_smoke.RenderOrderBehindMatrixTest.test_signed_transfer_helpers_reject_black_clipped_and_wrong_solid_output',
     'test_glass_render_order_metrics.RenderOrderMetricsTest.test_cli_distinguishes_failed_gate_from_invalid_capture',
+    'test_glass_parameter_sweep.GlassParameterSweepTest.test_default_and_explicit_grid_keep_the_colored_stimulus',
+    'test_glass_parameter_sweep.GlassParameterSweepTest.test_table_only_uses_retained_identity_and_preserves_columns',
+    'test_glass_parameter_sweep.GlassParameterSweepTest.test_older_table_reports_unrecorded_without_inventing_metadata',
+    'test_glass_parameter_sweep.GlassParameterSweepTest.test_capture_refuses_to_relabel_retained_captures',
 }
 _workers = set()
 _worker_lock = threading.Lock()

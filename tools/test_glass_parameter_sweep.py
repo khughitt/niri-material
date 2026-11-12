@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import struct
 import subprocess
@@ -10,6 +11,11 @@ import sys
 import tempfile
 import unittest
 import zlib
+
+from tools.hermetic_git import isolate
+from tools.tooling_tests import OPTIONAL_SKIPS
+
+isolate(os.environ)
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/capture/glass-parameter-sweep.sh'
@@ -20,8 +26,11 @@ class GlassParameterSweepTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
+        self.home = self.root / 'home'
+        self.xdg = self.root / 'xdg'
         self.bin = self.root / 'bin'
-        self.bin.mkdir()
+        for directory in (self.home, self.xdg, self.bin):
+            directory.mkdir()
         # Stop at the first compositor boundary; generation and metadata are real.
         for name, body in (
             ('niri', 'echo offline-test'),
@@ -43,12 +52,19 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
         python.chmod(0o755)
 
     def run_sweep(self, out, **overrides):
-        env = {k: v for k, v in os.environ.items() if k not in (
-            'BACKDROP', 'TABLE_ONLY', 'ROI_BEVEL', 'ROI_FACE')}
-        env.update(OUT=str(out), BLOCK='glass', KEY='thickness', VALUES='0 20',
-                   NIRI=str(self.bin / 'niri'), XDG_RUNTIME_DIR=str(self.root),
-                   PATH=str(self.bin) + os.pathsep + os.environ['PATH'])
+        env = {
+            'PATH': str(self.bin) + os.pathsep + os.environ.get('PATH', '/usr/local/bin:/usr/bin:/bin'),
+            'HOME': str(self.home),
+            'XDG_CONFIG_HOME': str(self.xdg),
+            'XDG_RUNTIME_DIR': str(self.root),
+            'OUT': str(out),
+            'BLOCK': 'glass',
+            'KEY': 'thickness',
+            'VALUES': '0 20',
+            'NIRI': str(self.bin / 'niri'),
+        }
         env.update(overrides)
+        isolate(env)
         with subprocess.Popen(['bash', str(SCRIPT)], env=env, text=True,
                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                               start_new_session=True) as process:
@@ -68,6 +84,7 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
         self.assertTrue((out / 'backdrop.json').is_file(), 'capture must retain backdrop identity')
         return out
 
+    @unittest.skipUnless(shutil.which('magick'), 'ImageMagick 7 required')
     def test_default_and_explicit_grid_keep_the_colored_stimulus(self):
         default = self.capture_backdrop('default')
         explicit = self.capture_backdrop('explicit', BACKDROP='grid20')
@@ -140,6 +157,7 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
                             str(out / f'cap-{i:03d}.png')], check=True)
         return out
 
+    @unittest.skipUnless(shutil.which('magick'), 'ImageMagick 7 required')
     def test_table_only_uses_retained_identity_and_preserves_columns(self):
         out = self.prepared_captures()
         record = dict(name='aperiodic-s20260929', seed=20260929,
@@ -162,6 +180,7 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
             'thickness\t20\t20\t0\t0\t0\t0.0000\t0\t0\t0\t0.0000',
         ])
 
+    @unittest.skipUnless(shutil.which('magick'), 'ImageMagick 7 required')
     def test_older_table_reports_unrecorded_without_inventing_metadata(self):
         out = self.prepared_captures()
         result = self.run_sweep(out, TABLE_ONLY='1', BACKDROP='aperiodic-s20260929')
@@ -170,6 +189,7 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
         self.assertFalse((out / 'backdrop.json').exists())
         self.assertFalse((out / 'backdrop.png').exists())
 
+    @unittest.skipUnless(shutil.which('magick'), 'ImageMagick 7 required')
     def test_capture_refuses_to_relabel_retained_captures(self):
         out = self.prepared_captures()
         (out / 'backdrop.json').write_text('{"name":"aperiodic-s20260929"}')
@@ -179,6 +199,54 @@ os.execv(sys.executable, [sys.executable, *sys.argv[1:]])
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('already contains captures', result.stderr)
         self.assertEqual({path.name: path.read_bytes() for path in out.iterdir()}, before)
+
+
+class GlassParameterSweepSkipTest(unittest.TestCase):
+    MAGICK_CASES = {
+        'test_glass_parameter_sweep.GlassParameterSweepTest.test_default_and_explicit_grid_keep_the_colored_stimulus',
+        'test_glass_parameter_sweep.GlassParameterSweepTest.test_table_only_uses_retained_identity_and_preserves_columns',
+        'test_glass_parameter_sweep.GlassParameterSweepTest.test_older_table_reports_unrecorded_without_inventing_metadata',
+        'test_glass_parameter_sweep.GlassParameterSweepTest.test_capture_refuses_to_relabel_retained_captures',
+    }
+
+    def test_without_magick_skips_four_cases_and_passes_two_offline_cases(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / 'home'
+            xdg = root / 'xdg'
+            no_magick_bin = root / 'no-magick-bin'
+            for path in (home, xdg, no_magick_bin):
+                path.mkdir()
+            for tool in (
+                'bash', 'sh', 'env', 'mkdir', 'awk', 'dirname', 'mktemp', 'basename',
+                'seq', 'sleep', 'jq', 'sha256sum', 'cut', 'head', 'grep', 'rm', 'ln',
+                'ls', 'cat', 'wc', 'tee', 'column', 'printf', 'sort', 'tail', 'kill',
+            ):
+                resolved = shutil.which(tool)
+                if resolved is not None:
+                    (no_magick_bin / tool).symlink_to(resolved)
+            self.assertIsNone(shutil.which('magick', path=str(no_magick_bin)))
+
+            env = {
+                'PATH': str(no_magick_bin),
+                'HOME': str(home),
+                'XDG_CONFIG_HOME': str(xdg),
+                'PYTHONPATH': str(ROOT),
+            }
+            isolate(env)
+            run = subprocess.run(
+                [sys.executable, '-m', 'unittest', 'tools.test_glass_parameter_sweep.GlassParameterSweepTest'],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+            self.assertIn('Ran 6 tests', run.stderr)
+            self.assertIn('OK (skipped=4)', run.stderr)
+            self.assertTrue(self.MAGICK_CASES.issubset(OPTIONAL_SKIPS))
+            self.assertEqual(len(OPTIONAL_SKIPS), 9)
 
 
 if __name__ == '__main__':

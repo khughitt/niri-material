@@ -7,7 +7,15 @@ on:
   schedule:
     - cron: '0 0 1 * *' # Monthly
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 env:
+  TT_FORCE: "1"
   DEPS_APT: curl gcc clang libudev-dev libgbm-dev libxkbcommon-dev libegl1-mesa-dev libwayland-dev libinput-dev libdbus-1-dev libsystemd-dev libseat-dev libpipewire-0.3-dev libpango1.0-dev libdisplay-info-dev
   DEPS_DNF: cargo gcc clang libudev-devel libgbm-devel libxkbcommon-devel wayland-devel libinput-devel dbus-devel systemd-devel libseat-devel pipewire-devel pango-devel cairo-gobject-devel libdisplay-info-devel
   DEPS_APK: cargo clang-libclang eudev-dev glib-dev libdisplay-info-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pango-dev pipewire-dev tar
@@ -15,11 +23,14 @@ env:
 
 jobs:
   tooling-test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     name: full tooling tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           show-progress: false
       - uses: dtolnay/rust-toolchain@1.99.0
       - uses: extractions/setup-just@v4
@@ -30,15 +41,19 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends python3 git jq procps dbus python3-gi gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-pipewire
           gst-inspect-1.0 pipewiresrc
+      - name: Check portable repository hygiene
+        run: python3 tools/ops-check && python3 tools/ops-docs check && python3 tools/identity-check && python3 tools/upstream-report --check && python3 tools/package-pin --check
       - name: Test tooling with guarded optional skips
         run: just ci-tooling-test
 
   test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
 
     name: test
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v6
@@ -63,11 +78,13 @@ jobs:
         run: just ci-test
 
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
 
     name: check feature combinations
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v6
@@ -105,11 +122,13 @@ jobs:
         run: cargo build --features profile-with-tracy
 
   build-musl:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
 
     name: alpine musl
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     container: alpine:3
     steps:
       - uses: actions/checkout@v6
@@ -127,11 +146,13 @@ jobs:
   # Job that runs randomized tests for a longer period of time.
   # Also runs normal slow tests.
   randomized-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
 
     name: randomized and slow tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     env:
       RUST_BACKTRACE: 1
@@ -164,11 +185,13 @@ jobs:
         run: just ci-test-release
 
   visual-tests:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
 
     name: visual tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v6
@@ -188,11 +211,13 @@ jobs:
         run: cargo build --package niri-visual-tests
 
   msrv:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
 
     name: msrv
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v6
@@ -211,11 +236,13 @@ jobs:
       - run: cargo check --all-targets
 
   clippy:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
 
     name: clippy
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v6
@@ -237,7 +264,9 @@ jobs:
         run: cargo clippy --all --all-targets
 
   rustfmt:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@v6
@@ -252,7 +281,9 @@ jobs:
         run: cargo fmt --all -- --check
 
   fedora:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     container: fedora:42
 
     steps:
@@ -269,7 +300,9 @@ jobs:
       - run: cargo build --all
 
   freebsd:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     env:
       CARGO_HOME: /home/runner/work/niri/niri/cargo-home
 
@@ -317,7 +350,9 @@ jobs:
               --no-default-features --features dbus,xdp-gnome-screencast
 
   nix:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -343,6 +378,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
@@ -360,6 +396,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
         with:
