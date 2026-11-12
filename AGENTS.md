@@ -10,7 +10,7 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
 
 - `just setup` after a clone or `git worktree add`: it installs the hooks
   (`core.hooksPath .githooks`, including the Git LFS handoff), keeps `.worktrees`
-  off the synced tree, and runs `tools/target-dir-check`.
+  off the synced tree, and runs `scripts/gates/target-dir-check`.
 - .cargo/config.toml and target/ are per-machine and must not reach another
   machine: both carry `user.com.dropbox.ignored=1`, so the shared tree holds neither.
   Without a .cargo/config.toml cargo builds into target/, which is what a fresh
@@ -27,7 +27,7 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   crates as fresh (cargo keys them by root-relative path and checks them by mtime): a
   "no field" error the source contradicts, or a binary mixing the other tree's crates
   with no error at all. `just setup` after `git worktree add` and `just check` run
-  `tools/target-dir-check`, which refuses a worktree that shares; the first build in a
+  `scripts/gates/target-dir-check`, which refuses a worktree that shares; the first build in a
   worktree is a full one.
 
 ## Gates
@@ -36,19 +36,19 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   --component rustfmt`, then `rustup run nightly cargo fmt --all`), matching CI.
 - Focused inner-loop `just test-one` always runs locally: for Rust,
   `just test-one -p niri <name-filter>` or `just test-one -E 'test(foo) | test(bar)'`;
-  for Python, `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_gates`.
+  for Python, `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tests.gates.test_gates`.
   When editing ImageMagick-backed capture scripts or tests, run
-  `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_glass_optic_smoke tools.test_glass_render_order_metrics tools.test_glass_parameter_sweep`.
-  Sequential discovery uses `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1`
+  `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tests.capture.test_glass_optic_smoke tests.capture.test_glass_render_order_metrics tests.capture.test_glass_parameter_sweep`.
+  Sequential discovery uses `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tests -t . 2>&1`
   (`NIRI_TOOLING_FAST=1` skips DriverCleanupTests and VtLibTests; only unset, `0`, `1`
   are valid). Fast tooling (`--fast`) runs one worker per module (largest first); full
   tooling (`--full`) runs lifecycle cases first, then remaining modules, capped by
   `min(worker_limit(), len(jobs))` (`10` default, up to `16` under `NEXTEST_TEST_THREADS`).
-  Git-running test modules and the coordinator call `isolate(os.environ)` (`tools/hermetic_git.py`).
+  Git-running test modules and the coordinator call `isolate(os.environ)` (`scripts/testing/hermetic_git.py`).
 - Mandatory hygiene always runs locally: `just check-hygiene` (`tools/ops-check`,
-  `tools/ops-docs` check, `tools/target-dir-check`, `tools/tooling_tests.py --check-paths`,
-  `tools/identity-check`, `tasks check`, `tools/upstream-report --check`,
-  `tools/package-pin --check`), commit-hook `tools/upstream-report --stage`, and
+  `tools/ops-docs` check, `scripts/gates/target-dir-check`, `scripts/testing/tooling_tests.py --check-paths`,
+  `scripts/gates/identity-check`, `tasks check`, `scripts/gates/upstream-report --check`,
+  `scripts/gates/package-pin --check`), commit-hook `scripts/gates/upstream-report --stage`, and
   `git lfs pre-push`. `just docs` regenerates identity regions from identity.toml.
   Pre-commit routes `tooling_full_paths` to `hook-pre-commit-full`, other code to
   `hook-pre-commit` (material docs/wiki included), and `docs_paths` to `hook-pre-commit-docs`.
@@ -59,9 +59,9 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   child runs/skips record on `check-code*`, `test-push-fast`, and `test`).
 - GitHub Actions `ci.yml` runs the full suite (including doctests, `ci-test`,
   `ci-test-release`, and Ubuntu `ci-tooling-test` with `OPTIONAL_SKIPS` in
-  `tools/tooling_tests.py`) on every `origin` push under `TT_FORCE=1`. Deliberate local
+  `scripts/testing/tooling_tests.py`) on every `origin` push under `TT_FORCE=1`. Deliberate local
   broad runs use `just test-full` or `TT_FORCE=1 just <recipe>` (for full Python tooling,
-  `TT_FORCE=1 just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`).
+  `TT_FORCE=1 just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m scripts.testing.tooling_tests --full' test-fast`).
 - Rollback sets `automatic_broad = true` in `.tt.toml` (or removes `.tt.toml`), restores
   enabled cadence in `AGENTS.md` and `test_committed_root_policy_matches_broad_targets_and_forces_cleanly`,
   and records `policy: enabled at <RFC3339-UTC> revision <full-sha>` on material-ec0e0b.
@@ -77,8 +77,9 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   `docs/wiki/` and the README below its fork header are upstream niri's.
 - `scripts/capture/`: the capture harnesses, described in
   `docs/materials/captures.md`.
-- `tools/`: the repository's tooling and its tests; the files `tools/README.md`
-  names (`tt`, `ops-check`, `ops-docs`) are vendored from ops and never edited here.
+- `scripts/gates/` and `scripts/testing/` hold repository maintenance; `tests/` mirrors
+  tooling, with `tests/fixtures/` for test data. `tools/` holds only the ops copies
+  named in `tools/README.md`, never edited here.
 
 ## Rules
 

@@ -4,7 +4,7 @@
 # headless niri with one kitty and one vdrag client (scripts/capture/vdrag.py).
 # vdrag drags its own window through xdg_toplevel.move, driven by a virtual pointer,
 # while a burst of screenshots records it, under the capture protocol
-# (tools/capture-meta: preflight, identity, settle before every launch, release).
+# (scripts/capture/capture-meta: preflight, identity, settle before every launch, release).
 # The clips are for the owner's judgment against the native column move; this script
 # records, it does not grade. It does check that the timed segment ran as an
 # interactive move (IPC reports no workspace for a window being moved), not a view pan.
@@ -37,7 +37,7 @@ VDRAG=$ROOT/scripts/capture/vdrag.py
 UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; VDRAG_PID=; BURST_PID=; HOST_SEQ=0
 mkdir -p "$OUT" "$RT"
 
-capture_meta() { python3 "$ROOT/tools/capture-meta" "$@"; }
+capture_meta() { python3 "$ROOT/scripts/capture/capture-meta" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # After a sequence's host is down; a sequence cut short is never finished.
 finish_sub_run() { capture_meta finish "$OUT" --sub-run "$1" || fail "finish refused for $1; see $OUT/capture.json"; }

@@ -11,7 +11,7 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
 After cloning, `just setup` installs the git hooks (including the Git LFS handoff) and
 checks that the checkout builds into a cargo target dir of its own. Build it as upstream
 niri builds (`cargo build --release`); the Arch package in `packaging/arch/PKGBUILD` is
-pinned on a commit by `tools/package-pin`.
+pinned on a commit by `scripts/gates/package-pin`.
 
 ## Usage
 
@@ -28,7 +28,8 @@ captures). Everything else is configured as in upstream niri.
 - `niri-config/src/material/`: material and glass configuration.
 - `docs/materials/`: the typed material references, indexed by its README.
 - `scripts/capture/`: the capture harnesses, described in `docs/materials/captures.md`.
-- `tools/`: test and gate tooling; `packaging/`: the Arch package.
+- `scripts/`: capture, gate and testing tooling; `tests/`: tooling tests and fixtures.
+- `tools/`: ops-distributed files; `packaging/`: the Arch package.
 - Everything else is upstream niri, whose README follows unchanged. What this fork
   changes is listed in `docs/materials/upstream-divergence.md`.
 

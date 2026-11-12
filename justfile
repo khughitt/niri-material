@@ -24,17 +24,17 @@ tt := "python3 tools/tt"
 # identity-check so a fixture leaking a commit identity into .git/config fails
 # the run whose tests leaked it even when hygiene already ran first.
 nextest_cmd := "cargo nextest run --status-level fail --final-status-level fail"
-fast_cmd := "python3 tools/test-affected --status-level fail --final-status-level fail"
+fast_cmd := "python3 scripts/gates/test-affected --status-level fail --final-status-level fail"
 one_cmd := nextest_cmd
 test_cmd := "cargo test --all --exclude niri-visual-tests"
 # Explicit flags override a caller's exported fast mode.
-tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fast 2>&1"
-tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full 2>&1"
-tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --check-paths"
+tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m scripts.testing.tooling_tests --fast 2>&1"
+tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m scripts.testing.tooling_tests --full 2>&1"
+tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m scripts.testing.tooling_tests --check-paths"
 hygiene_cmd := "python3 tools/ops-check && python3 tools/ops-docs check"
-target_dir_cmd := "python3 tools/target-dir-check"
-identity_cmd := "python3 tools/identity-check"
-check_after_cmd := identity_cmd + " && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
+target_dir_cmd := "python3 scripts/gates/target-dir-check"
+identity_cmd := "python3 scripts/gates/identity-check"
+check_after_cmd := identity_cmd + " && tasks check && python3 scripts/gates/upstream-report --check && python3 scripts/gates/package-pin --check"
 check_hygiene_cmd := hygiene_cmd + " && " + target_dir_cmd + " && " + tooling_paths_cmd + " && " + check_after_cmd
 docs_check_cmd := check_hygiene_cmd
 check_code_base_cmd := "rustup run nightly cargo fmt --all -- --check && cargo clippy --all --all-targets"
@@ -43,11 +43,11 @@ check_code_full_cmd := check_code_base_cmd + " && " + tooling_full_cmd + " && " 
 
 # docs_paths holds root guides only: material docs and wiki contain Rust test
 # inputs, so they take a code route. Both routes keep the consistency checks.
-tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py tools/hermetic_git.py scripts/capture/vt-lib.sh scripts/capture/optic-settling-smoke.sh scripts/capture/glass-optic-smoke-lib.sh scripts/capture/*-client.c .githooks/* justfile .github/workflows/* .tt.toml"
+tooling_full_paths := "scripts/__init__.py scripts/capture/__init__.py scripts/gates/__init__.py scripts/testing/*.py tests/__init__.py tests/capture/__init__.py tests/testing/__init__.py tests/fixtures/__init__.py tests/fixtures/capture/*.py scripts/capture/optic_settling.py scripts/capture/screencast_consumer.py tests/fixtures/capture/fake_screencast.py tests/capture/test_optic_settling.py tests/capture/test_screencast_consumer.py tests/capture/test_vt_lib.py scripts/testing/tooling_tests.py tests/testing/test_tooling_tests.py scripts/testing/hermetic_git.py scripts/capture/vt-lib.sh scripts/capture/optic-settling-smoke.sh scripts/capture/glass-optic-smoke-lib.sh scripts/capture/*-client.c .githooks/* justfile .github/workflows/* .tt.toml"
 docs_paths := "README.md AGENTS.md CLAUDE.md identity.toml CONTRIBUTING.md"
 # The hooks regenerate and stage the divergence report before checking it: its
 # seam line counts move with nearly every source commit. `check` and CI only check.
-stage_report_cmd := "python3 tools/upstream-report --stage"
+stage_report_cmd := "python3 scripts/gates/upstream-report --stage"
 
 # ci.yml has an unfiltered push trigger; its test job runs the full suite on origin.
 ci_suite_refs := "refs/heads/* refs/tags/*"
@@ -59,8 +59,8 @@ push_fast_cmd := nextest_cmd + " --package niri-config --package niri-ipc"
 
 # A fresh checkout, right after `git worktree add`: the hooks, .worktrees off the
 # synced tree (work-link, when this machine has dotfiles; its own exit status when
-# present), and a cargo target dir of its own (tools/target-dir-check).
-setup_cmd := "git config core.hooksPath .githooks && if command -v work-link >/dev/null; then work-link --ensure .worktrees; fi && python3 tools/target-dir-check"
+# present), and a cargo target dir of its own (scripts/gates/target-dir-check).
+setup_cmd := "git config core.hooksPath .githooks && if command -v work-link >/dev/null; then work-link --ensure .worktrees; fi && python3 scripts/gates/target-dir-check"
 
 setup:
     {{tt}} setup -- sh -c '{{setup_cmd}}'
@@ -132,7 +132,7 @@ hook-pre-push: && check-code-full test
 
 # Separate full tooling job: guarded optional skips, no host-budget dependency.
 ci-tooling-test:
-    {{tt}} ci-tooling-test -- sh -c 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full --ci 2>&1'
+    {{tt}} ci-tooling-test -- sh -c 'env NIRI_TOOLING_FAST=0 python3 -m scripts.testing.tooling_tests --full --ci 2>&1'
 
 # Rust CI runs the full suite with captured success output and quiet status lines.
 ci-test:
@@ -145,9 +145,9 @@ ci-test-release:
 # Pin the Arch package on a commit (default HEAD) and derive pkgver, the source
 # commit, and NIRI_BUILD_COMMIT from it. `check` verifies the three still agree.
 package-pin commit="HEAD":
-    python3 tools/package-pin {{commit}}
+    python3 scripts/gates/package-pin {{commit}}
 
 # Regenerate the upstream divergence report. Pass --drift for the drift block
 # (needs `git fetch upstream --tags` first), --check to verify staged freshness.
 upstream-report *args:
-    python3 tools/upstream-report {{args}}
+    python3 scripts/gates/upstream-report {{args}}

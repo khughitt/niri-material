@@ -5,7 +5,7 @@
 # replaces both tiles' MaterialState, so the glass changes in one frame. Each
 # sequence is one focus drive on a two-pane scene, recorded as a burst of
 # full-frame screenshots (about three a second on the headless host, the
-# async screenshot path's rate) under the capture protocol (tools/capture-meta:
+# async screenshot path's rate) under the capture protocol (scripts/capture/capture-meta:
 # preflight, identity, settle before every launch, release). Per sequence it
 # writes a GIF, a contact sheet, per-pane frame-to-frame RMSE (diffs.txt) and
 # the largest step's before/after pair. The clips are for the owner's
@@ -49,7 +49,7 @@ MOVE_MS=${MOVE_MS:-100}
 UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; HOST_SEQ=0
 mkdir -p "$OUT" "$RT"
 
-capture_meta() { python3 "$ROOT/tools/capture-meta" "$@"; }
+capture_meta() { python3 "$ROOT/scripts/capture/capture-meta" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # After a sequence's host is down; a sequence cut short is never finished.
 finish_sub_run() { capture_meta finish "$OUT" --sub-run "$1" || fail "finish refused for $1; see $OUT/capture.json"; }

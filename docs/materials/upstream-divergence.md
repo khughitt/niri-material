@@ -4,7 +4,7 @@ Type: guide; document types 1. How this fork diverges from upstream niri and
 how it moves to a new upstream release: the divergence classes, the feature
 table, the generated seam inventory and drift report, the rebase procedure
 and the rebase log. The acknowledged conflicts are recorded in
-`upstream-conflicts.toml` beside this file, and `tools/upstream-report`
+`upstream-conflicts.toml` beside this file, and `scripts/gates/upstream-report`
 regenerates the marked regions.
 
 **Posture:** the fork is permanent. The material system is not going upstream.
@@ -23,8 +23,9 @@ against a true 176. Nothing here consults ancestry.
 - **B — seam edits to upstream files.** Where conflicts are expected as a matter of
   course, and the only class where "upstream candidate" is meaningful.
 - **C — vendored tooling and project scaffolding.** `tools/`, `.githooks/`,
-  `justfile`, `packaging/`. Fork-only by construction, but tracked because
-  `tools/tt` has an external source of truth in ops.
+  `justfile`, `packaging/`, `.agents/`, `scripts/gates/` and `scripts/testing/`.
+  Capture scripts and tooling tests are class A; distributed tools and repository
+  gate/testing infrastructure are listed as class C.
 - **D — carried upstream patches.** The #4147 IPC commits, listed in
   `upstream-baseline.toml` as `carried`. Retired when their content is present in
   the release tag we move to — which is not the same moment upstream merges them.
@@ -55,7 +56,7 @@ Generated from the git index against the baseline tree. Do not edit by hand; run
 <!-- BEGIN GENERATED: local -->
 Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 
-224 paths differ: 58 class B (seam), 115 class A (fork-only), 51 class C (scaffolding).
+234 paths differ: 58 class B (seam), 154 class A (fork-only), 22 class C (scaffolding).
 
 | Path | Class | Status | +/- |
 | --- | --- | --- | --- |
@@ -71,10 +72,10 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.github/workflows/ci.yml` | B | M | +78/-5 |
 | `.github/workflows/release.yml` | B | D | +0/-66 |
 | `.gitignore` | B | M | +3/-1 |
-| `AGENTS.md` | C | A | +112/-0 |
+| `AGENTS.md` | C | A | +113/-0 |
 | `Cargo.lock` | B | M | +2/-0 |
 | `Cargo.toml` | B | M | +4/-0 |
-| `README.md` | B | M | +36/-0 |
+| `README.md` | B | M | +37/-0 |
 | `docs/wiki/Configuration:-Layer-Rules.md` | B | M | +48/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
@@ -92,6 +93,15 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `niri-visual-tests/src/test_window.rs` | B | M | +19/-1 |
 | `packaging/arch/.gitignore` | C | A | +6/-0 |
 | `packaging/arch/PKGBUILD` | C | A | +96/-0 |
+| `scripts/gates/__init__.py` | C | A | +3/-0 |
+| `scripts/gates/identity-check` | C | A | +57/-0 |
+| `scripts/gates/package-pin` | C | A | +109/-0 |
+| `scripts/gates/target-dir-check` | C | A | +144/-0 |
+| `scripts/gates/test-affected` | C | A | +135/-0 |
+| `scripts/gates/upstream-report` | C | A | +740/-0 |
+| `scripts/testing/__init__.py` | C | A | +3/-0 |
+| `scripts/testing/hermetic_git.py` | C | A | +17/-0 |
+| `scripts/testing/tooling_tests.py` | C | A | +560/-0 |
 | `src/animation/clock.rs` | B | M | +95/-0 |
 | `src/backend/tty.rs` | B | M | +1/-0 |
 | `src/backend/winit.rs` | B | M | +1/-0 |
@@ -127,49 +137,11 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `src/window/mapped.rs` | B | M | +54/-0 |
 | `src/window/mod.rs` | B | M | +36/-2 |
 | `tools/README.md` | C | A | +31/-0 |
-| `tools/capture-meta` | C | A | +1609/-0 |
-| `tools/capture_hold.py` | C | A | +600/-0 |
-| `tools/fake_capture_host.py` | C | A | +156/-0 |
-| `tools/fake_screencast.py` | C | A | +41/-0 |
-| `tools/hermetic_git.py` | C | A | +17/-0 |
-| `tools/identity-check` | C | A | +57/-0 |
 | `tools/ops-check` | C | A | +662/-0 |
 | `tools/ops-docs` | C | A | +1272/-0 |
-| `tools/optic_settling.py` | C | A | +611/-0 |
-| `tools/package-pin` | C | A | +109/-0 |
-| `tools/screencast_consumer.py` | C | A | +331/-0 |
-| `tools/target-dir-check` | C | A | +144/-0 |
-| `tools/test-affected` | C | A | +134/-0 |
-| `tools/test_affected.py` | C | A | +49/-0 |
-| `tools/test_capture_hold.py` | C | A | +500/-0 |
-| `tools/test_capture_meta.py` | C | A | +2063/-0 |
-| `tools/test_capture_scripts.py` | C | A | +66/-0 |
-| `tools/test_gates.py` | C | A | +873/-0 |
-| `tools/test_glass_optic_smoke.py` | C | A | +883/-0 |
-| `tools/test_glass_parameter_sweep.py` | C | A | +266/-0 |
-| `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
-| `tools/test_gpu_clocks.py` | C | A | +434/-0 |
-| `tools/test_hermetic_git.py` | C | A | +141/-0 |
-| `tools/test_identity_check.py` | C | A | +91/-0 |
-| `tools/test_noise_placement_cost.py` | C | A | +102/-0 |
-| `tools/test_optic_settling.py` | C | A | +1463/-0 |
-| `tools/test_package_pin.py` | C | A | +123/-0 |
-| `tools/test_screencast_consumer.py` | C | A | +375/-0 |
-| `tools/test_target_dir_check.py` | C | A | +182/-0 |
-| `tools/test_tooling_tests.py` | C | A | +588/-0 |
-| `tools/test_upstream_report.py` | C | A | +956/-0 |
-| `tools/test_vdrag.py` | C | A | +54/-0 |
-| `tools/test_vt_lib.py` | C | A | +161/-0 |
-| `tools/test_warp_calibration.py` | C | A | +87/-0 |
-| `tools/testdata/renderer/niri-default.log` | C | A | +1/-0 |
-| `tools/testdata/renderer/niri-llvmpipe.log` | C | A | +1/-0 |
-| `tools/testdata/renderer/niri-nvidia.log` | C | A | +2/-0 |
-| `tools/testdata/renderer/weston-nvidia.log` | C | A | +3/-0 |
-| `tools/tooling_tests.py` | C | A | +545/-0 |
 | `tools/tt` | C | A | +728/-0 |
-| `tools/upstream-report` | C | A | +738/-0 |
 
-Class A paths are counted, not listed: fork-only additions with no upstream counterpart. Class C is listed because `tools/tt` has an external source of truth in ops. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can. Task records under `tasks/` are not counted.
+Class A paths are counted, not listed: fork-only additions with no upstream counterpart, including capture scripts and tooling tests. Class C lists distributed tools and gate/testing infrastructure. Because class A is counted, editing an existing class-A file's contents can never make this block stale; only adding or removing one can. Task records under `tasks/` are not counted.
 <!-- END GENERATED: local -->
 
 ## Upstream drift

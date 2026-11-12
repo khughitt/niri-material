@@ -260,7 +260,7 @@ Not built yet:
 ## 9. Measuring
 
 Use the [capture protocol](captures.md):
-every run writes `capture.json` through `tools/capture-meta`, which records
+every run writes `capture.json` through `scripts/capture/capture-meta`, which records
 provenance and the environment and refuses a busy host, so two runs are
 comparable. Power and idle runs need the host to themselves
 ([capture host setup](capture-host-setup.md); parked under `tasks quiet`).

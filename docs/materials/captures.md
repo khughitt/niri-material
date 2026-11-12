@@ -1,8 +1,8 @@
 # Captures
 
 Type: protocol, data model; document types 1. The `capture.json` record is
-schema version 1, the only version `tools/capture-meta` writes or reads. The
-gate rules are version `2026-10-17` (`RULES` in `tools/capture-meta`), which
+schema version 1, the only version `scripts/capture/capture-meta` writes or reads. The
+gate rules are version `2026-10-17` (`RULES` in `scripts/capture/capture-meta`), which
 every preflight records as `rules`; a record without it was judged by the
 earlier rules, which failed every flagged scan entry and every
 out-of-tolerance window. This covers how a capture harness records a
@@ -19,10 +19,10 @@ is in [performance.md](performance.md).
   It builds, launches compositors, drives stimuli, writes its own results
   (`manifest.json`, `analysis.json`, traces, images) and, last,
   `SHA256SUMS` over the run directory.
-- **`capture-meta`** (`tools/capture-meta`): owns `capture.json`, the lock and
+- **`capture-meta`** (`scripts/capture/capture-meta`): owns `capture.json`, the lock and
   the gates. Exit status 0 passed, 1 refused (the run must not proceed),
   2 cannot run (the tool could not do its job). A fixture stops on 1 and 2 alike.
-- **The hold** (`tools/capture_hold.py`): stops and restores the host's
+- **The hold** (`scripts/capture/capture_hold.py`): stops and restores the host's
   disturbers, keeps the host hold file and scans the journal.
 - **The guard:** a transient user unit, `capture-meta-guard-<key>.service`,
   running `capture-meta guard <run-dir>`. It watches the fixture's pid and the
@@ -250,7 +250,7 @@ The three clip fixtures make their own run directory under the evidence root.
 Support files: `vt-lib.sh` (verified `chvt` switching), `idle-inhibit-client.c`
 and `session-lock-client.c` (built per run), `vdrag.py` (a scripted drag),
 `focus-glass-content.sh`, and offline analysis scripts (`*.py`). On the
-dedicated lane, `tools/screencast_consumer.py` is the screencast client: a
+dedicated lane, `scripts/capture/screencast_consumer.py` is the screencast client: a
 ScreenCast session on the case's private bus recording one monitor with the
 cursor hidden, consumed as DMA-BUFs through GStreamer GL; it prints
 `ready <node>`, journals each frame's `CLOCK_MONOTONIC` arrival, saves a

@@ -27,10 +27,10 @@ jobs:
           show-progress: false
 
       - name: Tooling tests
-        run: python3 -m unittest discover -s tools
+        run: python3 -m unittest discover -s tests -t .
 
       - name: Report freshness
-        run: python3 tools/upstream-report --check
+        run: python3 scripts/gates/upstream-report --check
 
       - name: Fetch upstream
         if: github.event_name != 'pull_request'
@@ -44,7 +44,7 @@ jobs:
         id: drift
         run: |
           set +e
-          python3 tools/upstream-report --drift 2>drift.err
+          python3 scripts/gates/upstream-report --drift 2>drift.err
           echo "status=$?" >> "$GITHUB_OUTPUT"
           set -e
           cat drift.err

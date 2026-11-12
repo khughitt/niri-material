@@ -12,7 +12,7 @@
 #
 # Env: OUT (artifact dir), NIRI_MATERIAL_WORK_ROOT (holds the retained Tracy
 # 0.13.1 tools under material-roughness-b220152d/tools).
-# Every run records provenance and machine quietness through tools/capture-meta
+# Every run records provenance and machine quietness through scripts/capture/capture-meta
 # (docs/materials/captures.md#capture-json). The entry script
 # builds, waits out the build's load (await_load) and calls
 # `capture_preflight headless` (or `pixels`, for static-pixel evidence:
@@ -76,7 +76,7 @@ trap 'exit 143' TERM
 
 # --- capture record ---------------------------------------------------------
 # CAPTURE_META lets a test substitute a recording stub; unset, it is the tool.
-capture_meta() { ${CAPTURE_META:-python3 "$ROOT/tools/capture-meta"} "$@"; }
+capture_meta() { ${CAPTURE_META:-python3 "$ROOT/scripts/capture/capture-meta"} "$@"; }
 # Entry scripts call this after building. The fixture name is the calling
 # script; the task id comes from CAPTURE_TASK, which every smoke sets.
 # niri logs its GL renderer only with the GLES target at info; every launch

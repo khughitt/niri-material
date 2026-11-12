@@ -33,7 +33,7 @@ paru -S wlrctl        # or any AUR helper / makepkg
 ```
 
 `host-budget`, `host-load` and `display-dim` come from the ops repository's
-`bin/`, linked onto `~/.local/bin` by its install recipe. `tools/capture-meta` ships with this repository.
+`bin/`, linked onto `~/.local/bin` by its install recipe. `scripts/capture/capture-meta` ships with this repository.
 
 ## Passwordless VT switching (real-TTY lane)
 
@@ -142,7 +142,7 @@ dropbox.service
 ```
 
 After a killed run the guard unit (`capture-meta-guard-*.service`) restores
-within seconds. If it could not, `tools/capture-meta restore` restores by
+within seconds. If it could not, `scripts/capture/capture-meta restore` restores by
 hand; `$XDG_RUNTIME_DIR/capture-meta.hold.json` lists what is still held
 under `held`, each item with its restore command.
 

@@ -11,7 +11,7 @@
 # The case table (the manifest heredoc below) declares, per case, the optic
 # edges the trace must carry, the state of each interval between them (active
 # at a cadence, static, settled), the journaled stimuli and the pixel pairs.
-# tools/optic_settling.py derives its own observation windows from those
+# scripts/capture/optic_settling.py derives its own observation windows from those
 # declarations; this driver only records configs, a stimulus journal on
 # CLOCK_MONOTONIC (the clock of the edges' real_ns) and decoded pixels.
 # The dedicated lane (--lane dedicated; docs/materials/captures.md#lanes)
@@ -169,7 +169,7 @@ fi
 # Offline stub runs only: a time scale for the drive schedule and stand-ins
 # for the consumer and lock client. A recorded run never uses them.
 TIMESCALE=${OPTIC_SETTLING_STUB_TIMESCALE-1}
-CAST_CONSUMER=${OPTIC_SETTLING_STUB_CONSUMER:-$ROOT/tools/screencast_consumer.py}
+CAST_CONSUMER=${OPTIC_SETTLING_STUB_CONSUMER:-$ROOT/scripts/capture/screencast_consumer.py}
 DRM_SYSFS=${OPTIC_SETTLING_STUB_DRM_SYSFS:-/sys/class/drm}
 if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
     [ "$TIMESCALE" = 1 ] \
@@ -380,7 +380,7 @@ for name in "${ALL_CASES[@]}"; do write_case_configs "$name" "$OUT/$name"; done
 python3 - "$ROOT" "$OUT" <<'PY'
 import json, pathlib, sys
 sys.path.insert(0, sys.argv[1])
-from tools.optic_settling import config_identity
+from scripts.capture.optic_settling import config_identity
 out = pathlib.Path(sys.argv[2])
 manifest = json.loads((out / 'manifest.json').read_text())
 for case in manifest['cases']:
@@ -393,7 +393,7 @@ if [ "$MODE" = matrix ]; then
     python3 - "$PILOT_DIR" "$OUT/manifest.json" "$ROOT" <<'PY'
 import json, pathlib, re, sys
 sys.path.insert(0, sys.argv[3])
-from tools.optic_settling import run_config_identity
+from scripts.capture.optic_settling import run_config_identity
 pilot = pathlib.Path(sys.argv[1]); current = json.loads(pathlib.Path(sys.argv[2]).read_text())
 out = pathlib.Path(sys.argv[2]).parent
 analysis = json.loads((pilot / 'analysis.json').read_text())
@@ -448,7 +448,7 @@ elif selected unlock; then
     build_client session-lock-client "$PROTOCOLS/staging/ext-session-lock/ext-session-lock-v1.xml"
     LOCK_BIN=$OUT/clients/session-lock-client
 fi
-if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/tools/screencast_consumer.py"); fi
+if selected screencast; then IDENTITY_EXTRA+=(--input "$ROOT/scripts/capture/screencast_consumer.py"); fi
 # The client builds' tail would refuse the first settle; prepare
 # exits above, before any build, wait or preflight.
 await_load
@@ -930,4 +930,4 @@ for name in "${RUN_CASES[@]}"; do
     echo "case $name" >&2
     run_case "$name"
 done
-python3 "$ROOT/tools/optic_settling.py" "$OUT"
+python3 "$ROOT/scripts/capture/optic_settling.py" "$OUT"

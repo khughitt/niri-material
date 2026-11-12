@@ -42,7 +42,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends python3 git jq procps dbus python3-gi gir1.2-gstreamer-1.0 gir1.2-gst-plugins-base-1.0 gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-pipewire
           gst-inspect-1.0 pipewiresrc
       - name: Check portable repository hygiene
-        run: python3 tools/ops-check && python3 tools/ops-docs check && python3 tools/identity-check && python3 tools/upstream-report --check && python3 tools/package-pin --check
+        run: python3 tools/ops-check && python3 tools/ops-docs check && python3 scripts/gates/identity-check && python3 scripts/gates/upstream-report --check && python3 scripts/gates/package-pin --check
       - name: Test tooling with guarded optional skips
         run: just ci-tooling-test
 

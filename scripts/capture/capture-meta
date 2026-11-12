@@ -1,0 +1,1609 @@
+#!/usr/bin/env python3
+"""Record I/O and display for material performance captures."""
+import argparse
+import contextlib
+import dataclasses
+import datetime
+import fcntl
+import hashlib
+import json
+import math
+import os
+import pathlib
+import platform
+import re
+import shutil
+import socket
+import statistics
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+from scripts.capture import capture_hold as ch  # noqa: E402
+from scripts.capture.capture_hold import CannotRun, Refused, guarded  # noqa: E402
+
+TOOL = str(pathlib.Path(__file__).resolve())
+Host = ch.Host
+
+SCHEMA = 1
+RULES = "2026-10-17"   # the gate rules a run is judged by: docs/materials/captures.md#evidence-gates
+RECORD = "capture.json"
+LOCK_NAME = "capture-meta.lock"
+
+
+
+def lock_path():
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if not runtime:
+        raise CannotRun("XDG_RUNTIME_DIR is unset; the lock has nowhere to live")
+    return pathlib.Path(runtime) / LOCK_NAME
+
+
+def _validate_owner(owner_pid, run_id):
+    if (isinstance(owner_pid, bool) or not isinstance(owner_pid, int) or owner_pid <= 0
+            or not isinstance(run_id, str) or not run_id):
+        raise CannotRun("lock owner_pid must be a positive integer and run_id a nonempty string")
+
+
+def pid_alive(pid):
+    _validate_owner(pid, "pid-check")
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as error:
+        raise CannotRun(f"cannot check pid {pid}: {error}") from error
+    return True
+
+
+
+def _read_lock(path):
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    except UnicodeError as error:
+        raise CannotRun(f"lock {path} is unreadable ({error}); remove it by hand if no capture is running") from error
+    except OSError as error:
+        raise CannotRun(f"lock {path}: {error}") from error
+    try:
+        holder = json.loads(text)
+    except (json.JSONDecodeError, UnicodeError) as error:
+        raise CannotRun(f"lock {path} is unreadable ({error}); remove it by hand if no capture is running") from error
+    if not isinstance(holder, dict):
+        raise CannotRun(f"lock {path} has no owner_pid/run_id; remove it by hand if no capture is running")
+    try:
+        _validate_owner(holder.get("owner_pid"), holder.get("run_id"))
+    except CannotRun as error:
+        raise CannotRun(f"lock {path} has no owner_pid/run_id; remove it by hand if no capture is running") from error
+    if not isinstance(holder.get("run_dir"), str) or not pathlib.Path(holder["run_dir"]).is_absolute():
+        raise CannotRun(f"lock {path} has no absolute run_dir; remove it by hand if no capture is running")
+    return holder
+
+
+def read_lock(path):
+    path = pathlib.Path(path)
+    with guarded(path):
+        return _read_lock(path)
+
+
+def _publish_lock(path, owner_pid, run_id, run_dir):
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        tmp.write_text(json.dumps({"owner_pid": owner_pid, "run_id": run_id, "run_dir": run_dir}))
+        os.link(tmp, path)
+    except OSError as error:
+        raise CannotRun(f"cannot publish lock {path}: {error}") from error
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError as error:
+            raise CannotRun(f"cannot remove temporary lock {tmp}: {error}") from error
+
+
+def acquire_lock(path, owner_pid, run_id, alive=pid_alive, *, run_dir):
+    _validate_owner(owner_pid, run_id)
+    run_dir = str(pathlib.Path(run_dir).resolve())
+    path = pathlib.Path(path)
+    with guarded(path):
+        holder = _read_lock(path)
+        if holder is None:
+            _publish_lock(path, owner_pid, run_id, run_dir)
+            return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "run_dir": run_dir, "reclaimed": False}
+        if alive(holder["owner_pid"]):
+            raise Refused(f"lock {path} held by pid {holder['owner_pid']} for run {holder['run_id']}")
+        try:
+            path.unlink()
+        except OSError as error:
+            raise CannotRun(f"cannot reclaim lock {path}: {error}") from error
+        _publish_lock(path, owner_pid, run_id, run_dir)
+        return {"path": str(path), "owner_pid": owner_pid, "run_id": run_id, "run_dir": run_dir, "reclaimed": True,
+                "previous_owner_pid": holder["owner_pid"]}
+
+
+def release_lock(path, owner_pid, run_id, *, run_dir):
+    _validate_owner(owner_pid, run_id)
+    run_dir = str(pathlib.Path(run_dir).resolve())
+    path = pathlib.Path(path)
+    with guarded(path):
+        try:
+            holder = _read_lock(path)
+        except CannotRun:
+            return False
+        if holder is None:
+            return True
+        if (holder["owner_pid"] != owner_pid or holder["run_id"] != run_id
+                or holder["run_dir"] != run_dir):
+            return False
+        try:
+            path.unlink()
+        except OSError as error:
+            raise CannotRun(f"cannot release lock {path}: {error}") from error
+        return True
+
+
+@dataclasses.dataclass
+class Sample:
+    cpu_busy_pct: float
+    load1: float
+    mem_available_kib: int
+    mem_total_kib: int
+    gpu_util_pct: float
+    gpu_power_w: float
+    gpu_clock_mhz: int
+    gpu_pstate: str
+    gpu_clients: dict
+
+
+class ProcReader:
+    def __init__(self, root=None):
+        self.root = pathlib.Path(root or os.environ.get("CAPTURE_META_PROC", "/proc"))
+
+    def cpu_ticks(self):
+        try:
+            values = [int(v) for v in (self.root / "stat").read_text().splitlines()[0].split()[1:]]
+            if len(values) < 8: raise ValueError("expected CPU counters through steal")
+            idle = values[3] + values[4]
+            total = sum(values[:8])
+            return total - idle, total
+        except (OSError, IndexError, ValueError) as error:
+            raise CannotRun(f"cannot read CPU ticks: {error}") from error
+
+    def load1(self):
+        try:
+            value = float((self.root / "loadavg").read_text().split()[0])
+            if not math.isfinite(value) or value < 0: raise ValueError("invalid load")
+            return value
+        except (OSError, IndexError, ValueError) as error:
+            raise CannotRun(f"cannot read load average: {error}") from error
+
+    def meminfo(self):
+        try:
+            info = {}
+            for line in (self.root / "meminfo").read_text().splitlines():
+                key, _, rest = line.partition(":")
+                info[key] = int(rest.split()[0])
+            return info["MemAvailable"], info["MemTotal"]
+        except (OSError, IndexError, KeyError, ValueError) as error:
+            raise CannotRun(f"cannot read memory info: {error}") from error
+
+
+class GpuReader:
+    QUERY = ("nvidia-smi", "--query-gpu=utilization.gpu,power.draw,clocks.gr,pstate", "--format=csv,noheader,nounits")
+    STATIC = ("nvidia-smi", "--query-gpu=name,uuid,driver_version", "--format=csv,noheader")
+
+    def __init__(self):
+        if shutil.which("nvidia-smi") is None:
+            raise CannotRun("nvidia-smi not found; no GPU sampler for this host")
+
+    def _run(self, *command):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+        except OSError as error:
+            raise CannotRun(f"{' '.join(command)}: {error}") from error
+        if result.returncode != 0:
+            error = result.stderr.strip() or result.stdout.strip() or f"exit {result.returncode}"
+            raise CannotRun(f"{' '.join(command)}: {error}")
+        return result.stdout
+
+    def query(self):
+        rows = [r.strip() for r in self._run(*self.QUERY).strip().splitlines()]
+        if len(rows) != 1:
+            raise CannotRun(f"exactly one GPU expected, nvidia-smi listed {len(rows)}")
+        fields = [x.strip() for x in rows[0].split(",")]
+        if len(fields) != 4:
+            raise CannotRun("nvidia-smi telemetry CSV is malformed")
+        util, power, clock, pstate = fields
+        return validate_telemetry({"util_pct": parse_number(util, "utilization.gpu"),
+                                   "power_w": parse_number(power, "power.draw"),
+                                   "clock_mhz": parse_number(clock, "clocks.gr"), "pstate": pstate})
+
+    def clients(self): return parse_clients(self._run("nvidia-smi", "-q", "-x"))
+
+    def static(self):
+        fields = [x.strip() for x in self._run(*self.STATIC).strip().split(",")]
+        if len(fields) != 3 or not all(fields):
+            raise CannotRun("nvidia-smi static CSV is malformed")
+        name, uuid, driver = fields
+        return {"name": name, "uuid": uuid, "driver": driver}
+
+
+def has_load_top(report):
+    load = report.get("load") if isinstance(report, dict) else None
+    top = load.get("top") if isinstance(load, dict) else None
+    return isinstance(top, list) and all(isinstance(p, dict) for p in top)
+
+
+class HostLoadReader:
+    """Names the processes carrying CPU load, through ops's `host-load`."""
+
+    TOP = 5
+
+    def __init__(self):
+        if shutil.which("host-load") is None:
+            raise CannotRun("host-load not found on PATH; run `just install` in the ops checkout to put it on ~/.local/bin")
+
+    def report(self):
+        command = ["host-load", "--json", "--section", "load", "-n", str(self.TOP)]
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            stdout, stderr = process.communicate()
+        except OSError as error:
+            raise CannotRun(f"{' '.join(command)}: {error}") from error
+        if process.returncode != 0:
+            raise CannotRun(f"{' '.join(command)}: exit {process.returncode}: {(stderr or stdout).strip()}")
+        try:
+            report = json.loads(stdout)
+        except json.JSONDecodeError as error:
+            raise CannotRun(f"{' '.join(command)}: output is not JSON: {error}") from error
+        if not has_load_top(report):
+            raise CannotRun(f"{' '.join(command)}: report has no load.top list")
+        # host-load samples itself while it samples the host; it is never the load being named.
+        report["load"]["top"] = [p for p in report["load"]["top"] if p.get("pid") != process.pid]
+        return report
+
+
+def parse_number(text, field):
+    try: value = float(text)
+    except (TypeError, ValueError) as error:
+        raise CannotRun(f"nvidia-smi {field}: {text!r} is not a number") from error
+    if not math.isfinite(value): raise CannotRun(f"nvidia-smi {field}: {text!r} is not finite")
+    return value
+
+
+def validate_telemetry(q):
+    try:
+        if not math.isfinite(q["util_pct"]) or not 0.0 <= q["util_pct"] <= 100.0: raise ValueError("utilization outside 0-100")
+        if not math.isfinite(q["power_w"]) or not 0.0 < q["power_w"] < 2000.0: raise ValueError("power outside plausible range")
+        if not math.isfinite(q["clock_mhz"]) or not 0 < q["clock_mhz"] < 10000: raise ValueError("clock outside plausible range")
+    except (KeyError, TypeError, ValueError) as error:
+        raise CannotRun(str(error)) from error
+    if not isinstance(q.get("pstate"), str) or not re.fullmatch(r"P\d{1,2}", q["pstate"]): raise CannotRun(f"invalid pstate {q.get('pstate')!r}")
+    q["clock_mhz"] = int(q["clock_mhz"])
+    return q
+
+
+def parse_clients(xml_text):
+    try: root = ET.fromstring(xml_text)
+    except (ET.ParseError, TypeError, UnicodeError) as error: raise CannotRun(f"malformed nvidia-smi XML: {error}") from error
+    gpus = root.findall("gpu")
+    if len(gpus) != 1: raise CannotRun(f"exactly one GPU expected, found {len(gpus)}")
+    processes = gpus[0].find("processes")
+    if processes is None or (processes.text or "").strip(): raise CannotRun("incomplete process inventory")
+    clients = {"compute": [], "graphics": []}
+    for info in processes.findall("process_info"):
+        kind = (info.findtext("type") or "").strip()
+        name = pathlib.PurePath((info.findtext("process_name") or "").strip()).name
+        if kind not in ("G", "C", "C+G", "G+C") or not name: raise CannotRun("malformed process entry")
+        clients["graphics" if kind == "G" else "compute"].append(name)
+    return clients
+
+
+def sample_stream(proc, gpu, seconds, sleep=time.sleep):
+    samples = []
+    try:
+        busy0, total0 = proc.cpu_ticks()
+        if busy0 < 0 or total0 < 0 or busy0 > total0: raise ValueError("invalid initial CPU ticks")
+    except (CannotRun, TypeError, ValueError) as error:
+        raise error if isinstance(error, CannotRun) else CannotRun(str(error)) from error
+    for _ in range(seconds):
+        sleep(1)
+        try:
+            busy1, total1 = proc.cpu_ticks(); delta = total1 - total0
+            if busy1 < busy0 or total1 <= total0 or busy1 > total1 or busy1 - busy0 > delta:
+                raise ValueError("invalid CPU tick delta")
+            available, mem_total = proc.meminfo()
+            if available < 0 or mem_total <= 0 or available > mem_total: raise ValueError("invalid memory sample")
+            q = gpu.query()
+            if not isinstance(q, dict) or set(q) != {"util_pct", "power_w", "clock_mhz", "pstate"}:
+                raise ValueError("malformed GPU telemetry sample")
+            q = validate_telemetry(q)
+            clients = gpu.clients()
+            if (not isinstance(clients, dict) or set(clients) != {"compute", "graphics"}
+                    or any(not isinstance(v, list) or any(not isinstance(c, str) or not c for c in v)
+                           for v in clients.values())):
+                raise ValueError("invalid GPU client sample")
+            load = proc.load1()
+            if not math.isfinite(load) or load < 0: raise ValueError("invalid load sample")
+            cpu = 100.0 * (busy1 - busy0) / delta
+            samples.append(Sample(cpu, load, available, mem_total, q["util_pct"], q["power_w"], q["clock_mhz"], q["pstate"], clients))
+            busy0, total0 = busy1, total1
+        except (CannotRun, KeyError, TypeError, ValueError, ZeroDivisionError) as error:
+            raise error if isinstance(error, CannotRun) else CannotRun(str(error)) from error
+    return samples
+
+
+def median(values): return float(statistics.median(values))
+
+
+def iqr(values):
+    if len(values) < 2: return 0.0
+    q = statistics.quantiles(sorted(values), n=4, method="inclusive")
+    return round(q[2] - q[0], 3)
+
+
+def summarize(samples):
+    total = samples[0].mem_total_kib
+    clients = {key: sorted({c for s in samples for c in s.gpu_clients[key]}) for key in ("compute", "graphics")}
+    return {
+        "samples": len(samples),
+        "cpu_busy_pct": round(median([s.cpu_busy_pct for s in samples]), 1),
+        "load1": round(median([s.load1 for s in samples]), 2),
+        "mem_available_kib": int(median([s.mem_available_kib for s in samples])),
+        "mem_total_kib": total,
+        "mem_available_pct": round(100.0 * median([s.mem_available_kib for s in samples]) / total, 1),
+        "gpu_util_pct": round(median([s.gpu_util_pct for s in samples]), 1),
+        "gpu_power_w": round(median([s.gpu_power_w for s in samples]), 3),
+        "gpu_power_iqr_w": iqr([s.gpu_power_w for s in samples]),
+        "gpu_clock_mhz": int(median([s.gpu_clock_mhz for s in samples])),
+        "gpu_pstates": sorted({s.gpu_pstate for s in samples}),
+        "gpu_clients": clients,
+    }
+
+
+DEFAULT_THRESHOLDS = {
+    "cpu_busy_pct": 10.0, "load1": 2.0, "mem_available_pct_min": 20.0,
+    "gpu_util_pct": 5.0, "gpu_pstate": "P8", "gpu_power_iqr_w": 1.0,
+    "settle_cpu_busy_pct": 5.0, "settle_mem_pct": 5.0,
+    "settle_gpu_util_pct": 3.0, "settle_gpu_power_w": 1.5,
+}
+
+
+def parse_thresholds(pairs):
+    result = dict(DEFAULT_THRESHOLDS)
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or key not in result: raise CannotRun(f"unknown threshold {key!r}")
+        if key == "gpu_pstate":
+            if not re.fullmatch(r"P\d{1,2}", value): raise CannotRun(f"invalid P-state {value!r}")
+            result[key] = value; continue
+        number = parse_number(value, f"threshold {key}")
+        if number < 0: raise CannotRun(f"threshold {key} must be nonnegative")
+        result[key] = number
+    return result
+
+
+def client_reasons(inventories, lane):
+    reasons = []
+    compute = sorted({c for inv in inventories for c in inv["compute"]})
+    if compute: reasons.append(f"compute clients present: {', '.join(compute)}")
+    if lane == "dedicated":
+        graphics = sorted({c for inv in inventories for c in inv["graphics"]})
+        if graphics: reasons.append(f"gpu_clients present on the dedicated lane: {', '.join(graphics)}")
+    return reasons
+
+
+def judge_quiet(summary, samples, thresholds, lane):
+    reasons = []
+    for key in ("cpu_busy_pct", "load1", "gpu_util_pct"):
+        if summary[key] > thresholds[key]: reasons.append(f"{key} {summary[key]} exceeds {thresholds[key]}")
+    floor = thresholds["mem_available_pct_min"]
+    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples): reasons.append(f"mem_available_pct below {floor}")
+    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]: reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
+    if summary["gpu_power_iqr_w"] > thresholds["gpu_power_iqr_w"]: reasons.append(f"gpu_power_iqr_w {summary['gpu_power_iqr_w']} exceeds {thresholds['gpu_power_iqr_w']}")
+    return reasons + client_reasons([s.gpu_clients for s in samples], lane)
+
+
+HOST_LOAD_KEYS = ("cpu_busy_pct", "load1")
+MEASURED_LANES = ("headless", "dedicated")
+PIXEL_HOLD_KINDS = ("timer", "service")
+
+
+def describe_process(p):
+    facts = [f"{p.get('cpu_pct')}% cpu", f"{p.get('age_s')} s old", "tty" if p.get("tty") else "no tty"]
+    if p.get("scope_dead"): facts.append("scope dead")
+    return f"{p.get('comm')} pid {p.get('pid')} {', '.join(facts)}"
+
+
+def describe_load(top):
+    return "; ".join(describe_process(p) for p in top) or "no process named"
+
+
+SETTLE_DELTAS = (("cpu_busy_pct", "settle_cpu_busy_pct"), ("mem_available_pct", "settle_mem_pct"),
+                 ("gpu_util_pct", "settle_gpu_util_pct"), ("gpu_power_w", "settle_gpu_power_w"))
+
+
+def unclaimed_power(summary, lane):
+    """GPU power is no claim of the nested lane, and with no GPU client in the window
+    nothing could have competed for it (docs/materials/captures.md#evidence-gates)."""
+    clients = summary["gpu_clients"]
+    return lane == "headless" and not clients["graphics"] and not clients["compute"]
+
+
+def judge_window(summary, baseline, thresholds, lane):
+    """The settle rules a window's summary carries: (reasons, annotations). settle and judge share it."""
+    reasons, annotations = [], []
+    unclaimed = unclaimed_power(summary, lane)
+    for key, limit in SETTLE_DELTAS:
+        delta = summary[key] - baseline[key]
+        if abs(delta) <= thresholds[limit]:
+            continue
+        if key == "gpu_power_w" and unclaimed:
+            side = "above" if delta > 0 else "below"
+            annotations.append({"rule": "unclaimed-power-step",
+                                "detail": f"gpu_power_w {summary[key]} is {round(abs(delta), 3)} {side} "
+                                          f"baseline {baseline[key]}; no GPU client in the window"})
+            continue
+        verb = "exceeds" if delta > 0 else "falls below"
+        reasons.append(f"{key} {summary[key]} {verb} baseline {baseline[key]} by more than {thresholds[limit]}")
+    if unclaimed and summary["gpu_power_iqr_w"] > thresholds["gpu_power_iqr_w"]:
+        annotations.append({"rule": "unclaimed-power-spread",
+                            "detail": f"gpu_power_iqr_w {summary['gpu_power_iqr_w']} exceeds "
+                                      f"{thresholds['gpu_power_iqr_w']}; no GPU client in the window"})
+    if summary["gpu_pstates"] != [thresholds["gpu_pstate"]]:
+        reasons.append(f"gpu_pstate {summary['gpu_pstates']} not always {thresholds['gpu_pstate']}")
+    return reasons + client_reasons([summary["gpu_clients"]], lane), annotations
+
+
+def judge_settled(summary, samples, baseline, thresholds, lane):
+    reasons, annotations = judge_window(summary, baseline, thresholds, lane)
+    floor = thresholds["mem_available_pct_min"]
+    if any(100.0 * s.mem_available_kib / s.mem_total_kib < floor for s in samples):
+        reasons.append(f"mem_available_pct below floor {floor}")
+    return reasons, annotations
+
+
+def load_record(run_dir):
+    path = pathlib.Path(run_dir) / RECORD
+    try:
+        if not path.exists():
+            return {}
+        record = json.loads(path.read_text())
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise CannotRun(f"{path}: cannot read record: {error}") from error
+    if not isinstance(record, dict):
+        raise CannotRun(f"{path}: record root must be an object")
+    if record.get("schema") != SCHEMA:
+        raise CannotRun(f"{path}: schema {record.get('schema')!r}, expected {SCHEMA}")
+    validate_record(record, path)
+    return record
+
+
+def validate_record(record, path=RECORD):
+    def section(name):
+        if name not in record:
+            return None
+        value = record[name]
+        if not isinstance(value, dict):
+            raise CannotRun(f"{path}: {name} must be an object")
+        return value
+
+    run = section("run")
+    if run is not None and not isinstance(run.get("id"), str):
+        raise CannotRun(f"{path}: run.id must be a string")
+    environment = section("environment")
+    if environment is not None:
+        for name in ("session", "tools"):
+            if not isinstance(environment.get(name), dict):
+                raise CannotRun(f"{path}: environment.{name} must be an object")
+        if "gpu" in environment and not isinstance(environment["gpu"], dict):
+            raise CannotRun(f"{path}: environment.gpu must be an object")
+        if any(not isinstance(key, str) or not isinstance(value, str)
+               for key, value in environment["tools"].items()):
+            raise CannotRun(f"{path}: environment.tools entries must be strings")
+    section("baseline")
+    preflight = section("preflight")
+    if preflight is not None:
+        for name, kind in (("reasons", list), ("thresholds", dict), ("lock", dict)):
+            if name in preflight and not isinstance(preflight[name], kind):
+                raise CannotRun(f"{path}: preflight.{name} must be a {kind.__name__}")
+        if "host_load" in preflight and not has_load_top(preflight["host_load"]):
+            raise CannotRun(f"{path}: preflight.host_load must carry a load.top list")
+    provenance = section("provenance")
+    if provenance is not None:
+        for name in ("source", "config"):
+            if not isinstance(provenance.get(name), dict):
+                raise CannotRun(f"{path}: provenance.{name} must be an object")
+        for name in ("binaries", "inputs"):
+            items = provenance.get(name)
+            if not isinstance(items, list):
+                raise CannotRun(f"{path}: provenance.{name} must be a list")
+            if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
+                   or not isinstance(item.get("sha256"), str) for item in items):
+                raise CannotRun(f"{path}: provenance.{name} entries need string name and sha256")
+    hold = section("hold")
+    if hold is not None and not isinstance(hold.get("items"), list):
+        raise CannotRun(f"{path}: hold.items must be a list")
+    end = section("hold_end")
+    if end is not None:
+        restore = end.get("restore")
+        if restore is not None and (not isinstance(restore, dict) or restore.get("state") not in ("complete", "failed")
+                                    or not isinstance(restore.get("attempts"), list)):
+            raise CannotRun(f"{path}: hold_end.restore needs state complete|failed and an attempts list")
+        cleanup = end.get("cleanup")
+        if cleanup is not None and (not isinstance(cleanup, dict) or not isinstance(cleanup.get("guard"), str)
+                                    or isinstance(cleanup.get("owner_pid"), bool)
+                                    or not isinstance(cleanup.get("owner_pid"), int)):
+            raise CannotRun(f"{path}: hold_end.cleanup needs a guard name and an owner_pid")
+        scan = end.get("scan")
+        if scan is not None and (not isinstance(scan, dict) or scan.get("verdict") not in SCAN_VERDICTS
+                                 or not isinstance(scan.get("disturbances"), list)):
+            raise CannotRun(f"{path}: hold_end.scan needs a verdict and a disturbances list")
+    if "sub_runs" in record:
+        sub_runs = record["sub_runs"]
+        if not isinstance(sub_runs, list):
+            raise CannotRun(f"{path}: sub_runs must be a list")
+        if any(not isinstance(item, dict) or not isinstance(item.get("name"), str)
+               or not isinstance(item.get("verdict"), str) for item in sub_runs):
+            raise CannotRun(f"{path}: sub_runs entries need string name and verdict")
+        if any("renderer" in item and (not isinstance(item["renderer"], dict)
+                                       or not isinstance(item["renderer"].get("verdict"), str)) for item in sub_runs):
+            raise CannotRun(f"{path}: sub_runs renderer needs a verdict")
+
+
+def save_record(run_dir, record):
+    path = pathlib.Path(run_dir) / RECORD
+    record["schema"] = SCHEMA
+    tmp = path.with_name(f"{RECORD}.tmp.{os.getpid()}")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps(record, indent=2, sort_keys=False) + "\n")
+        tmp.replace(path)
+    except (OSError, TypeError, ValueError) as error:
+        raise CannotRun(f"{path}: cannot write record: {error}") from error
+
+
+@contextlib.contextmanager
+def record_lock(run_dir):
+    """Serializes every read-modify-write of capture.json: preflight's sections, settle's
+    sub-runs, and the hold's end, which a restore writes while it holds guarded(). The order
+    is always guarded() then record_lock, never the reverse. The flock is on the run
+    directory itself, so no lock file joins the run's SHA256SUMS."""
+    run_dir = pathlib.Path(run_dir)
+    try:
+        run_dir.mkdir(parents=True, exist_ok=True)
+        fd = os.open(run_dir, os.O_RDONLY)
+    except OSError as error:
+        raise CannotRun(f"record lock {run_dir}: {error}") from error
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def write_section(run_dir, name, value):
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        if name in record:
+            raise CannotRun(f"{RECORD} already has a {name!r} section; use a fresh run directory")
+        record[name] = value
+        save_record(run_dir, record)
+
+
+def append_sub_run(run_dir, entry):
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        sub_runs = record.get("sub_runs", [])
+        if not isinstance(sub_runs, list):
+            raise CannotRun(f"{RECORD}: sub_runs must be a list")
+        sub_runs.append(entry)
+        record["sub_runs"] = sub_runs
+        save_record(run_dir, record)
+
+
+SCAN_VERDICTS = ("clean", "annotated", "disturbed", "unscanned", "not-run")
+
+
+def update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
+    with record_lock(run_dir):
+        return _update_hold_end(run_dir, scan, attempt, cleanup)
+
+
+def _update_hold_end(run_dir, scan=None, attempt=None, cleanup=None):
+    """hold_end.scan is written once; hold_end.restore takes every attempt;
+    hold_end.cleanup ({guard, owner_pid}) is written once, before the hold file can go, so
+    a cleanup interrupted after this save can be finished from the record alone.
+    The caller holds record_lock(run_dir)."""
+    record = load_record(run_dir)
+    end = record.get("hold_end", {})
+    if cleanup is not None and "cleanup" not in end:
+        end["cleanup"] = cleanup
+    if scan is not None:
+        if "scan" in end:
+            raise CannotRun(f"{RECORD}: hold_end.scan is written once")
+        end["scan"] = scan
+    if attempt is not None:
+        restore = end.setdefault("restore", {"state": "failed", "attempts": []})
+        restore["attempts"].append(attempt)
+        restore["state"] = "failed" if attempt["failures"] else "complete"
+    record["hold_end"] = end
+    save_record(run_dir, record)
+    return end
+
+
+def describe_disturbance(d):
+    severity = f" [{d['severity']}]" if "severity" in d else ""
+    return f"{d['kind']} {d['unit']} ({d['manager']}) at {d['at']}{severity}"
+
+
+def failure_list(attempt):
+    return "; ".join(f"{f.get('unit') or f['kind']}: {f['restore']}" for f in attempt["failures"])
+
+
+def exit_for(end):
+    restore, scan = end.get("restore", {}), end.get("scan", {})
+    if restore.get("state") == "failed":
+        raise CannotRun(f"hold not fully restored; restore by hand: {failure_list(restore['attempts'][-1])}")
+    verdict = scan.get("verdict")
+    if verdict == "annotated":
+        for d in scan["disturbances"]:
+            print(f"capture-meta: annotated: {describe_disturbance(d)}", file=sys.stderr)
+        return
+    if verdict == "clean":
+        return
+    if verdict == "disturbed":
+        raise Refused("disturbed: " + "; ".join(describe_disturbance(d) for d in scan["disturbances"]))
+    if verdict == "unscanned":
+        raise CannotRun(f"journal scan failed ({scan.get('error')}); the run is not evidence until rescanned")
+    if verdict == "not-run":
+        message = "preflight failed; its hold was rolled back"
+        raise Refused(message) if scan.get("preflight_exit") == 1 else CannotRun(message)
+    raise CannotRun(f"{RECORD}: hold_end has no scan verdict")
+
+
+def sha256_file(path):
+    try:
+        with open(path, "rb") as stream:
+            return hashlib.file_digest(stream, "sha256").hexdigest()
+    except OSError as error:
+        raise CannotRun(f"cannot hash {path}: {error}") from error
+
+
+def git(checkout, *args):
+    try:
+        result = subprocess.run(("git", "-C", str(checkout), *args), capture_output=True, check=False)
+    except OSError as error:
+        raise CannotRun(f"git {' '.join(args)} in {checkout}: {error}") from error
+    if result.returncode != 0:
+        raise CannotRun(f"git {' '.join(args)} in {checkout}: {os.fsdecode(result.stderr).strip()}")
+    return result.stdout
+
+
+def source_facts(checkout):
+    """Describe HEAD and hash everything the working tree adds to it."""
+    commit = os.fsdecode(git(checkout, "rev-parse", "HEAD")).strip()
+    branch = os.fsdecode(git(checkout, "rev-parse", "--abbrev-ref", "HEAD")).strip()
+    diff = git(checkout, "diff", "HEAD")
+    untracked = sorted(os.fsdecode(path) for path in
+                       git(checkout, "ls-files", "--others", "--exclude-standard", "-z").split(b"\0") if path)
+    facts = {"commit": commit, "branch": branch, "dirty": bool(diff.strip()) or bool(untracked)}
+    if facts["dirty"]:
+        digest = hashlib.sha256(diff)
+        for rel in untracked:
+            digest.update(os.fsencode(rel) + b"\0")
+            path = pathlib.Path(checkout) / rel
+            try:
+                content_hash = (hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+                                if path.is_symlink() else sha256_file(path))
+            except OSError as error:
+                raise CannotRun(f"cannot hash symlink {path}: {error}") from error
+            digest.update(content_hash.encode() + b"\0")
+        facts["diff_sha256"] = digest.hexdigest()
+        facts["untracked"] = untracked
+    return facts
+
+
+def hashed(paths):
+    paths = [pathlib.Path(path) for path in paths]
+    for path in paths:
+        if not path.is_file():
+            raise Refused(f"{path} does not exist; the fixture named it as a binary or input")
+    return [{"name": path.name, "sha256": sha256_file(path)} for path in paths]
+
+
+def parse_pairs(pairs, flag):
+    config = {}
+    for pair in pairs or []:
+        key, sep, value = pair.partition("=")
+        if not sep or not key:
+            raise CannotRun(f"{flag} {pair!r}: expected KEY=VALUE")
+        config[key] = value
+    return config
+
+
+def identity(run_dir, source, binaries, inputs, config):
+    count = len(binaries)
+    files = hashed([*binaries, *inputs])
+    section = {"source": source_facts(source), "binaries": files[:count], "inputs": files[count:],
+               "config": parse_pairs(config, "--config")}
+    write_section(run_dir, "provenance", section)
+
+
+def cmd_identity(args):
+    identity(args.run_dir, args.source, args.binary, args.input, args.config)
+
+
+def now_rfc3339():
+    return datetime.datetime.now().astimezone().replace(microsecond=0).isoformat()
+
+
+def duration_s(started, finished, what):
+    try:
+        seconds = (datetime.datetime.fromisoformat(finished) - datetime.datetime.fromisoformat(started)).total_seconds()
+    except (TypeError, ValueError) as error:
+        raise CannotRun(f"{RECORD}: {what} needs RFC 3339 start and finish times: {error}") from error
+    return int(seconds)
+
+
+def tool_versions(tools):
+    versions = {}
+    for spec in tools or []:
+        name, sep, version = spec.partition("=")
+        if not name:
+            raise CannotRun("tool name must not be empty")
+        if sep:
+            versions[name] = version
+            continue
+        try:
+            result = subprocess.run([name, "--version"], capture_output=True, text=True, check=False)
+        except OSError as error:
+            raise CannotRun(f"{name} --version: {error}") from error
+        first = (result.stdout or result.stderr).strip().splitlines()
+        versions[name] = first[0] if first else f"exit {result.returncode}"
+    return versions
+
+
+def cpu_model():
+    try:
+        for line in pathlib.Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                return line.partition(":")[2].strip()
+    except OSError as error:
+        raise CannotRun(f"cannot read CPU model: {error}") from error
+    return platform.processor() or "unknown"
+
+
+def environment(gpu, tools, proc):
+    _, total_kib = proc.meminfo()
+    env = {
+        "kernel": platform.release(),
+        "cpu": cpu_model(),
+        "cpu_threads": os.cpu_count(),
+        "memory_total_kib": total_kib,
+        "session": {"type": os.environ.get("XDG_SESSION_TYPE", ""),
+                    "display": os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY") or ""},
+        "tools": tool_versions(tools),
+    }
+    if gpu is not None:
+        env["gpu"] = {**gpu.static(), "device": os.environ.get("CAPTURE_META_RENDER_NODE", "/dev/dri/renderD128")}
+    return env
+
+
+def run_section(run_dir, lane, task, fixture):
+    return {"id": pathlib.Path(run_dir).resolve().name, "task": task, "fixture": fixture, "lane": lane,
+            "started": now_rfc3339(), "host": socket.gethostname()}
+
+
+def session_reasons(lane):
+    if lane != "dedicated":
+        return []
+    reasons = []
+    if os.environ.get("XDG_SESSION_TYPE") != "tty":
+        reasons.append(f"XDG_SESSION_TYPE is {os.environ.get('XDG_SESSION_TYPE')!r}, dedicated lane needs 'tty'")
+    for key in ("DISPLAY", "WAYLAND_DISPLAY"):
+        if os.environ.get(key):
+            reasons.append(f"{key} is set; dedicated lane must have no display")
+    return reasons
+
+
+def host_condition(socket):
+    """Observed, never declared: whether someone is working at a live desktop is not visible here."""
+    return "tty" if os.environ.get("XDG_SESSION_TYPE") == "tty" and not socket else "desktop"
+
+
+def pre_hold_reasons(lane, socket, gpu):
+    """Everything that can refuse before the hold changes the host
+    (docs/materials/captures.md#lanes)."""
+    reasons = session_reasons(lane)
+    if lane == "dedicated" and socket:
+        reasons.append(f"a desktop niri is running at {socket}; the dedicated lane needs the desktop stopped")
+    if lane in MEASURED_LANES:
+        reasons += client_reasons([gpu.clients()], lane)
+    return reasons
+
+
+def hold_section(hold, plan, recovered):
+    return {"started": ch.rfc3339(hold["started_us"]), "started_us": hold["started_us"], "items": hold["items"],
+            "not_held": plan["not_held"], "socket": plan["socket"], "config": plan["config"],
+            "desktop": plan["desktop"], "timer_map": plan["timer_map"], "active_at_hold": plan["active_at_hold"],
+            "system_timers": plan["system_timers"], "connectors": hold["connectors"], "guard": hold["guard"],
+            "owner_pid": hold["owner_pid"], "recovered": recovered}
+
+
+def start_guard(host, hold):
+    env = {key: host.env[key] for key in ("XDG_RUNTIME_DIR", "PATH", "WAYLAND_DISPLAY", "XDG_CONFIG_HOME",
+                                          "CAPTURE_META_SYSFS") if host.env.get(key)}
+    if hold["socket"]:
+        env["NIRI_SOCKET"] = hold["socket"]
+    ch.checked(host, "systemd-run", "--user", f"--unit={hold['guard']}", "--collect", "--quiet",
+               "--property=Type=exec", *(f"--setenv={k}={v}" for k, v in env.items()),
+               sys.executable, TOOL, "guard", hold["run_dir"])
+    state = host.run("systemctl", "--user", "is-active", hold["guard"]).stdout.strip()
+    if state != "active":
+        raise CannotRun(f"guard {hold['guard']} is {state or 'unknown'}, not active; nothing was held")
+
+
+def refresh_record_sum(run_dir):
+    """Recovery can complete capture.json after a fixture has written its manifest."""
+    manifest = run_dir / "SHA256SUMS"
+    try:
+        text = manifest.read_text()
+    except FileNotFoundError:
+        return
+    lines = text.splitlines(keepends=True)
+    updated = []
+    for line in lines:
+        match = re.fullmatch(r"[0-9a-fA-F]{64} ([ *])((?:\./)?capture\.json)(\n?)", line)
+        if match:
+            line = hashlib.sha256((run_dir / RECORD).read_bytes()).hexdigest() + " " + "".join(match.groups())
+        updated.append(line)
+    replacement = "".join(updated)
+    if replacement != text:
+        tmp = manifest.with_name(f"{manifest.name}.tmp.{os.getpid()}")
+        tmp.write_text(replacement)
+        tmp.replace(manifest)
+
+
+# Who restores a hold whose fixture never released: its end time is stamped then,
+# or the record would never get one. Preflight's own rollback is not among them:
+# the fixture is alive and releases from its exit trap.
+RECOVERERS = ("guard", "next-preflight", "hand")
+
+
+def restore_run(host, lock_file, run_dir, run_id, by, preflight_exit=None):
+    """Restore this run's hold, scan it once, record both
+    (docs/materials/captures.md#disturber-hold).
+
+    The record is written inside the restore transaction, before the hold
+    file goes, under record_lock. A kill at any point leaves the hold file
+    (the next attempt finishes the record, scanning the same items) or a
+    complete record (release finishes the leftovers without touching it).
+    A recoverer (RECOVERERS) also stamps the run's end when no release did.
+    Returns {"attempt", "hold_end"}, or None when no hold file names the run.
+    """
+    run_dir = pathlib.Path(run_dir)
+    written = {}
+
+    def record(hold, wakes, attempt):
+        if not (run_dir / RECORD).exists():
+            return
+        with record_lock(run_dir):
+            record_end(hold, wakes, attempt)
+            if by in RECOVERERS:
+                recovered = load_record(run_dir)
+                if "run" in recovered and stamp_finish(recovered, by):
+                    save_record(run_dir, recovered)
+            refresh_record_sum(run_dir)
+
+    def record_end(hold, wakes, attempt):
+        current = load_record(run_dir)
+        end = current.get("hold_end", {})
+        if attempt["undone"] == 0 and "scan" in end and end.get("restore", {}).get("state") == "complete":
+            written["hold_end"] = end      # a leftover after a saved record: nothing new to say
+            return
+        scan = None
+        if "scan" not in end:
+            base = {"until_us": hold["until_us"], "disturbances": []}
+            if preflight_exit is not None:
+                scan = {**base, "verdict": "not-run", "preflight_exit": preflight_exit}
+            elif hold.get("wake_error"):
+                scan = {**base, "verdict": "unscanned", "error": hold["wake_error"]}
+            else:
+                try:
+                    _, flagged = ch.scan(host, hold, wakes)
+                    verdict, disturbances = ch.classify(flagged, current.get("run", {}).get("lane"))
+                    scan = {**base, "verdict": verdict, "disturbances": disturbances}
+                except CannotRun as error:
+                    scan = {**base, "verdict": "unscanned", "error": str(error)}
+        written["hold_end"] = _update_hold_end(run_dir, scan, attempt,
+                                               {"guard": hold["guard"], "owner_pid": hold["owner_pid"]})
+
+    result = ch.restore_transaction(host, lock_file, run_id, run_dir, by, record)
+    if result is None:
+        return None
+    hold, attempt = result
+    if not attempt["failures"]:
+        finish_cleanup(host, lock_file, hold, run_id, run_dir, stop_guard=by != "guard")
+    return {"attempt": attempt, "hold_end": written.get("hold_end")}
+
+
+def finish_cleanup(host, lock_file, hold, run_id, run_dir, stop_guard=True):
+    """After every item is back: stop the guard and release the lock. Both are idempotent."""
+    if stop_guard:
+        host.run("systemctl", "--user", "stop", hold["guard"])
+    release_lock(lock_file, hold["owner_pid"], run_id, run_dir=run_dir)   # hold: the hold file or hold_end.cleanup
+
+
+def finish_leftovers(lock_file, run_dir, run, record):
+    """A kill after a complete hold_end was saved can leave the hold file, the guard or the
+    lock behind. Finish them without touching the record, from hold_end.cleanup, which the
+    same save wrote (the record may have no hold or preflight section at all)."""
+    if ch.hold_names_run(lock_file, run["id"], run_dir):
+        with record_lock(run_dir):
+            refresh_record_sum(run_dir)
+    ch.finalize(lock_file, run["id"], run_dir)
+    cleanup = record["hold_end"].get("cleanup")
+    if cleanup is None:
+        raise CannotRun(f"{RECORD}: hold_end is complete but has no cleanup identity; "
+                        "stop capture-meta-guard-*.service and remove the lock by hand if they remain")
+    finish_cleanup(Host(), lock_file, cleanup, run["id"], run_dir)
+
+
+def recover_stale(host, lock_file):
+    with guarded(lock_file):
+        stale = ch.read_hold(ch.hold_file(lock_file))
+    if stale is None:
+        return None
+    result = restore_run(host, lock_file, stale["run_dir"], stale["run_id"], "next-preflight")
+    if result is None:
+        return None
+    if result["attempt"]["failures"]:
+        raise Refused(f"a stale hold from run {stale['run_id']} could not be restored: "
+                      f"{failure_list(result['attempt'])}")
+    return {"run_id": stale["run_id"], "items": [i.get("unit") or i["kind"] for i in stale["items"]], "failures": []}
+
+
+def preflight(run_dir, lane, task, fixture, seconds, owner_pid, thresholds, tools, proc, gpu, host_load,
+              host, sleep=time.sleep, lock=lock_path, hold_settle=10, launch_guard=None):
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        raise CannotRun("seconds must be a positive integer")
+    if isinstance(hold_settle, bool) or not isinstance(hold_settle, int) or hold_settle < 0:
+        raise CannotRun("hold_settle must be a nonnegative integer")
+    _validate_owner(owner_pid, "preflight")
+    run_dir = pathlib.Path(run_dir)
+    run = run_section(run_dir, lane, task, fixture)
+    write_section(run_dir, "run", run)
+    lock_file = lock()
+    try:
+        lock_info = acquire_lock(lock_file, owner_pid, run["id"], run_dir=run_dir)
+    except Refused as error:
+        write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": [str(error)],
+                                             "thresholds": thresholds, "rules": RULES})
+        raise
+    held = False
+    try:
+        # guarded() is per open file: every hold step takes it after acquire_lock has returned, never inside it.
+        recovered = recover_stale(host, lock_file)
+        socket = ch.desktop_socket(host)
+        condition = host_condition(socket)
+        early = pre_hold_reasons(lane, socket, gpu)
+        if early:
+            write_section(run_dir, "preflight", {"verdict": "refused", "at": now_rfc3339(), "reasons": early,
+                                                 "thresholds": thresholds, "lock": lock_info,
+                                                 "host_condition": condition, "rules": RULES})
+            raise Refused("; ".join(early))
+        kinds = ch.HOLD_KINDS if lane in MEASURED_LANES else PIXEL_HOLD_KINDS
+        plan = ch.plan_hold(host, socket, kinds)
+        hold = ch.create_hold(lock_file, run["id"], run_dir, owner_pid, plan, host.now_us())
+        held = True
+        (launch_guard or start_guard)(host, hold)
+        hold = ch.apply_hold(host, lock_file, run["id"], run_dir, plan)
+        write_section(run_dir, "hold", hold_section(hold, plan, recovered))
+        sleep(hold_settle)
+        if lane == "pixels":
+            write_section(run_dir, "environment", environment(gpu, tools, proc))
+            write_section(run_dir, "preflight", {"verdict": "unsampled", "at": now_rfc3339(), "lock": lock_info,
+                                                 "host_condition": condition, "rules": RULES})
+            return
+        write_section(run_dir, "environment", environment(gpu, tools, proc))
+        samples = sample_stream(proc, gpu, seconds, sleep)
+        summary = summarize(samples)
+        write_section(run_dir, "baseline", {"seconds": seconds, **summary})
+        reasons = judge_quiet(summary, samples, thresholds, lane)
+        section = {"verdict": "quiet" if not reasons else "refused", "at": now_rfc3339(),
+                   "reasons": reasons, "thresholds": thresholds, "lock": lock_info,
+                   "host_condition": condition, "rules": RULES}
+        message = "; ".join(reasons)
+        if any(summary[key] > thresholds[key] for key in HOST_LOAD_KEYS):
+            try:
+                section["host_load"] = host_load.report()
+            except CannotRun as error:
+                raise CannotRun(f"preflight refused ({message}) and could not name the load: {error}") from error
+            message += f"; load carried by: {describe_load(section['host_load']['load']['top'])}"
+        write_section(run_dir, "preflight", section)
+        if reasons:
+            raise Refused(message)
+    except BaseException as error:
+        if not held:
+            release_lock(lock_file, owner_pid, run["id"], run_dir=run_dir)
+            raise
+        code = 1 if isinstance(error, Refused) else 2
+        result = restore_run(host, lock_file, run_dir, run["id"], "preflight", preflight_exit=code)
+        if result is None:
+            release_lock(lock_file, owner_pid, run["id"], run_dir=run_dir)
+        elif result["attempt"]["failures"]:
+            raise CannotRun(f"{error}; the hold could not be rolled back: {failure_list(result['attempt'])}") from error
+        raise
+
+
+def cmd_preflight(args):
+    measured = args.lane in MEASURED_LANES
+    gpu = GpuReader() if measured or shutil.which("nvidia-smi") else None
+    hold_settle = args.hold_settle if args.hold_settle is not None else (10 if measured else 0)
+    preflight(args.run_dir, args.lane, args.task, args.fixture, args.seconds,
+              args.owner_pid if args.owner_pid is not None else os.getppid(),
+              parse_thresholds(args.threshold), args.tool, ProcReader(), gpu,
+              HostLoadReader() if measured else None, Host(), hold_settle=hold_settle)
+
+
+def require_lock(record, run_dir, lock):
+    expected = record["preflight"].get("lock")
+    holder = read_lock(lock())
+    if (not isinstance(expected, dict) or holder is None or holder.get("run_id") != record["run"].get("id")
+            or holder.get("owner_pid") != expected.get("owner_pid")
+            or holder.get("run_dir") != str(pathlib.Path(run_dir).resolve())):
+        raise Refused(f"lock no longer names this run ({record['run'].get('id')}); holder: {holder}")
+
+
+def settle(run_dir, sub_run, inputs, seconds, proc, gpu, sleep=time.sleep, lock=lock_path):
+    if isinstance(seconds, bool) or not isinstance(seconds, int) or seconds <= 0:
+        raise CannotRun("seconds must be a positive integer")
+    run_dir = pathlib.Path(run_dir)
+    record = load_record(run_dir)
+    if record.get("run", {}).get("lane") == "pixels":
+        raise CannotRun("settle samples the GPU; a pixels run opens sub-runs with begin")
+    for section in ("run", "baseline", "preflight"):
+        if section not in record:
+            raise CannotRun(f"settle needs a preflighted run; {RECORD} has no {section!r}")
+    verdict = record["preflight"].get("verdict")
+    if not isinstance(verdict, str):
+        raise CannotRun(f"{RECORD}: preflight.verdict must be a string")
+    if verdict != "quiet":
+        raise Refused("preflight was refused; nothing to settle into")
+    required = {"cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w"}
+    if (not required <= record["baseline"].keys()
+            or any(isinstance(record["baseline"][key], bool)
+                   or not isinstance(record["baseline"][key], (int, float))
+                   or not math.isfinite(record["baseline"][key]) for key in required)):
+        raise CannotRun(f"{RECORD}: baseline is missing settle metrics")
+    if record["run"].get("lane") not in MEASURED_LANES:
+        raise CannotRun(f"{RECORD}: run.lane must be headless or dedicated")
+    thresholds = record["preflight"].get("thresholds")
+    expected = record["preflight"].get("lock")
+    threshold_keys = {"settle_cpu_busy_pct", "settle_mem_pct", "settle_gpu_util_pct",
+                      "settle_gpu_power_w", "mem_available_pct_min", "gpu_pstate", "gpu_power_iqr_w"}
+    if (not isinstance(thresholds, dict) or not threshold_keys <= thresholds.keys()
+            or not isinstance(expected, dict) or "owner_pid" not in expected
+            or isinstance(expected["owner_pid"], bool) or not isinstance(expected["owner_pid"], int)
+            or expected["owner_pid"] <= 0):
+        raise CannotRun(f"{RECORD}: quiet preflight needs thresholds and lock owner_pid")
+    if (any(isinstance(thresholds[key], bool) or not isinstance(thresholds[key], (int, float))
+            or not math.isfinite(thresholds[key]) for key in threshold_keys - {"gpu_pstate"})
+            or not isinstance(thresholds["gpu_pstate"], str)):
+        raise CannotRun(f"{RECORD}: settle thresholds are malformed")
+    require_lock(record, run_dir, lock)
+    entry_inputs = hashed(inputs)
+    started = now_rfc3339()
+    samples = sample_stream(proc, gpu, seconds, sleep)
+    summary = summarize(samples)
+    reasons, annotations = judge_settled(summary, samples, record["baseline"], thresholds, record["run"]["lane"])
+    previous = next((e["gpu_power_w"] for e in reversed(record.get("sub_runs", []))
+                     if e["verdict"] == "settled" and "gpu_power_w" in e), record["baseline"]["gpu_power_w"])
+    entry = {"name": sub_run, "started": started, "settled_at": now_rfc3339(), "seconds": seconds, **summary,
+             "gpu_power_step_w": round(summary["gpu_power_w"] - previous, 3),
+             "inputs": entry_inputs, "verdict": "settled" if not reasons else "refused"}
+    if annotations:
+        entry["annotations"] = annotations
+    if reasons:
+        entry["reason"] = "; ".join(reasons)
+    append_sub_run(run_dir, entry)
+    for annotation in annotations:
+        print(f"capture-meta: annotated: {annotation['rule']}: {annotation['detail']}", file=sys.stderr)
+    if reasons:
+        raise Refused(entry["reason"])
+
+
+def cmd_settle(args):
+    settle(args.run_dir, args.sub_run, args.input, args.seconds, ProcReader(), GpuReader())
+
+
+def begin(run_dir, sub_run, inputs, lock=lock_path):
+    """Opens a sub-run on the pixels lane: its inputs, no samples."""
+    run_dir = pathlib.Path(run_dir)
+    record = load_record(run_dir)
+    for section in ("run", "preflight"):
+        if section not in record:
+            raise CannotRun(f"begin needs a preflighted run; {RECORD} has no {section!r}")
+    if record["run"].get("lane") != "pixels":
+        raise CannotRun("begin is for pixels runs; measured lanes settle")
+    if record["preflight"].get("verdict") != "unsampled":
+        raise Refused("preflight did not pass; nothing to begin")
+    require_lock(record, run_dir, lock)
+    append_sub_run(run_dir, {"name": sub_run, "started": now_rfc3339(), "inputs": hashed(inputs),
+                             "verdict": "begun"})
+
+
+def cmd_begin(args):
+    begin(args.run_dir, args.sub_run, args.input)
+
+
+def finish_sub_run(run_dir, sub_run):
+    """Stamps the end of the latest settled sub-run of that name. A sub-run a fixture
+    abandons (a failure, a kill) is never finished, and the record shows it open."""
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        entry = next((e for e in reversed(record.get("sub_runs", [])) if e["name"] == sub_run), None)
+        if entry is None:
+            raise CannotRun(f"{RECORD} has no sub-run {sub_run!r} to finish")
+        if entry["verdict"] not in ("settled", "begun"):
+            raise CannotRun(f"sub-run {sub_run!r} was {entry['verdict']}; nothing ran to finish")
+        if "finished" in entry:
+            raise CannotRun(f"sub-run {sub_run!r} is already finished; settle it again to start another")
+        entry["finished"] = now_rfc3339()
+        entry["duration_s"] = duration_s(entry.get("started"), entry["finished"], f"sub-run {sub_run!r}")
+        save_record(run_dir, record)
+
+
+def cmd_finish(args):
+    finish_sub_run(args.run_dir, args.sub_run)
+
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+RENDERER_LINE = {"niri": re.compile(r'GL Renderer: "(.+)"'), "weston": re.compile(r"\] GL renderer: (.+)$")}
+SOFTWARE = re.compile(r"llvmpipe|software rasterizer", re.I)
+
+
+def renderer_lines(path, compositor):
+    try:
+        text = pathlib.Path(path).read_text(errors="replace")
+    except OSError as error:
+        raise CannotRun(f"cannot read {compositor} log {path}: {error}") from error
+    pattern = RENDERER_LINE[compositor]
+    return [m.group(1).strip() for line in ANSI.sub("", text).splitlines() if (m := pattern.search(line))]
+
+
+def judge_renderer(lines, expected):
+    """expected None: the pixels lane records without requiring."""
+    if not lines:
+        return "missing"
+    if expected is None:
+        return "recorded"
+    if any(expected not in line or SOFTWARE.search(line) for line in lines):
+        return "mismatch"
+    return "verified"
+
+
+def renderer(run_dir, sub_run, niri_log, weston_log):
+    """Judges and records one launch's compositor renderers before any stimulus
+    (docs/materials/captures.md#evidence-gates)."""
+    run_dir = pathlib.Path(run_dir)
+    record = load_record(run_dir)
+    lane = record.get("run", {}).get("lane")
+    if lane == "dedicated" and weston_log is not None:
+        raise CannotRun("the dedicated lane runs no Weston; drop --weston-log")
+    if lane in ("headless", "pixels") and weston_log is None:
+        raise CannotRun(f"the {lane} lane runs niri under Weston; pass --weston-log")
+    measured = lane in MEASURED_LANES
+    expected = record.get("environment", {}).get("gpu", {}).get("name")
+    if measured and not expected:
+        raise CannotRun(f"{RECORD} has no environment.gpu.name to verify against")
+    logs = {"niri": niri_log, **({"weston": weston_log} if weston_log is not None else {})}
+    result = {"at": now_rfc3339()}
+    if measured:
+        result["expected"] = expected
+    for compositor, path in logs.items():
+        lines = renderer_lines(path, compositor)
+        result[compositor] = {"verdict": judge_renderer(lines, expected if measured else None), "lines": lines}
+    verdicts = [result[c]["verdict"] for c in logs]
+    result["verdict"] = ("verified" if all(v == "verified" for v in verdicts) else "refused") if measured else "recorded"
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        entry = next((e for e in reversed(record.get("sub_runs", [])) if e["name"] == sub_run
+                      and e["verdict"] in ("settled", "begun") and "finished" not in e), None)
+        if entry is None:
+            raise CannotRun(f"{RECORD} has no open sub-run {sub_run!r} to check")
+        if "renderer" in entry:
+            raise CannotRun(f"sub-run {sub_run!r} already has its renderer checked; one launch per sub-run")
+        entry["renderer"] = result
+        save_record(run_dir, record)
+    if measured and result["verdict"] != "verified":
+        found = "; ".join(f"{c} {result[c]['verdict']} {result[c]['lines']}" for c in logs)
+        raise Refused(f"{sub_run}: renderer is not {expected}: {found}")
+
+
+def cmd_renderer(args):
+    renderer(args.run_dir, args.sub_run, args.niri_log, args.weston_log)
+
+
+def unverified_launches(record):
+    """Settled measurement launches without a verified renderer, finished or open."""
+    if record.get("run", {}).get("lane") not in MEASURED_LANES:
+        return []
+    return [e["name"] for e in record.get("sub_runs", [])
+            if e["verdict"] == "settled" and e.get("renderer", {}).get("verdict") != "verified"]
+
+
+def stamp_finish(record, by):
+    """Stamps the run's end once, naming who stamped it. A recoverer's time is when it
+    restored the hold, not when the fixture died: about a second late from the guard,
+    an upper bound from a later preflight or a hand restore. Returns whether it stamped."""
+    run = record["run"]
+    if "finished" in run:
+        return False
+    run["finished"] = now_rfc3339()
+    run["duration_s"] = duration_s(run.get("started"), run["finished"], "run")
+    run["finished_by"] = by
+    return True
+
+
+def finish_run(run_dir):
+    """The first release ends the run, after its hold is restored or not: every fixture
+    releases from its EXIT trap, so a refused or aborted run is stamped too. A later
+    release leaves the stamp alone, as it does one a recoverer wrote."""
+    with record_lock(run_dir):
+        record = load_record(run_dir)
+        if stamp_finish(record, "release"):
+            save_record(run_dir, record)
+            refresh_record_sum(pathlib.Path(run_dir))
+
+
+def cmd_release(args):
+    run_dir = pathlib.Path(args.run_dir)
+    record = load_record(run_dir)
+    run = record.get("run")
+    if not run:
+        return
+    try:
+        release(run_dir, record, run)
+    finally:
+        finish_run(run_dir)
+
+
+def release(run_dir, record, run):
+    lock_file = lock_path()
+    end = record.get("hold_end")
+    state = (end or {}).get("restore", {}).get("state")
+    if state != "complete" and ch.hold_names_run(lock_file, run["id"], run_dir):
+        result = restore_run(Host(), lock_file, run_dir, run["id"], "release")
+        if result is not None:
+            end = result["hold_end"]
+    elif state == "complete":
+        finish_leftovers(lock_file, run_dir, run, record)
+    if end is not None:
+        exit_for(end)
+        missing = unverified_launches(load_record(run_dir))
+        if missing:
+            raise Refused(f"launches without a verified renderer: {', '.join(missing)}")
+        return
+    owner = record.get("preflight", {}).get("lock", {}).get("owner_pid")
+    if owner is None:
+        if read_lock(lock_file) is not None:
+            raise Refused(f"lock is not this run's ({run.get('id')}); left in place")
+        return
+    if not release_lock(lock_file, owner, run["id"], run_dir=run_dir):
+        raise Refused(f"lock is not this run's ({run['id']}); left in place")
+
+
+PASS, FAIL, NO_EVIDENCE = "pass", "fail", "no evidence"
+WINDOW_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w", "gpu_power_iqr_w",
+               "gpu_pstates", "gpu_clients")
+BASELINE_KEYS = ("cpu_busy_pct", "mem_available_pct", "gpu_util_pct", "gpu_power_w")
+
+
+def threshold_supported(key, value):
+    """Whether settle could have applied this recorded threshold. Some early pixel runs
+    recorded a hand-written P-state policy ("any (user-authorized pixel-only run)") that
+    no settle rule reads."""
+    if key == "gpu_pstate":
+        return isinstance(value, str) and re.fullmatch(r"P\d{1,2}", value) is not None
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def judge_preflight(record):
+    """Preflight's rules are unchanged: the recorded verdict stands."""
+    preflight = record.get("preflight")
+    if preflight is None:
+        return NO_EVIDENCE, "none", ["no preflight section"]
+    verdict = preflight.get("verdict")
+    if verdict in ("quiet", "unsampled"):
+        return PASS, verdict, []
+    if verdict == "refused":
+        return FAIL, verdict, [f"refused: {r}" for r in preflight.get("reasons") or ["no reason recorded"]]
+    return NO_EVIDENCE, str(verdict), [f"verdict {verdict!r} is not one preflight writes"]
+
+
+def judge_windows(record):
+    """Re-applies the settle rules to every sampled sub-run. The per-sample memory floor is
+    not recorded, so a refusal that names it stands."""
+    entries = [e for e in record.get("sub_runs", []) if e["verdict"] in ("settled", "refused")]
+    recorded = ", ".join(f"{sum(e['verdict'] == v for e in entries)} {v}" for v in ("settled", "refused"))
+    if not entries:
+        return PASS, "no sampled sub-runs", []
+    baseline = record.get("baseline")
+    if not isinstance(baseline, dict) or any(key not in baseline for key in BASELINE_KEYS):
+        return NO_EVIDENCE, recorded, ["sub-runs were sampled but the baseline is missing"]
+    kept = (record.get("preflight") or {}).get("thresholds") or {}
+    thresholds = {**DEFAULT_THRESHOLDS, **kept}
+    unsupported = [f"{key}={thresholds[key]!r}" for key in DEFAULT_THRESHOLDS
+                   if not threshold_supported(key, thresholds[key])]
+    if unsupported:
+        return NO_EVIDENCE, recorded, [f"recorded thresholds settle never applies: {', '.join(unsupported)}; "
+                                       "windows not re-judged"]
+    lines, failed = [], False
+    missing = sorted(set(DEFAULT_THRESHOLDS) - set(kept))
+    if missing:
+        lines.append(f"thresholds not recorded, judged at today's defaults: {', '.join(missing)}")
+    lane = record.get("run", {}).get("lane")
+    for entry in entries:
+        if any(key not in entry for key in WINDOW_KEYS):
+            failed = failed or entry["verdict"] == "refused"
+            lines.append(f"{entry['name']}: window not recorded; kept as {entry['verdict']}")
+            continue
+        reasons, annotations = judge_window(entry, baseline, thresholds, lane)
+        if "mem_available_pct below floor" in entry.get("reason", ""):
+            reasons.append("mem_available_pct below floor (recorded; samples not kept)")
+            lines.append(f"{entry['name']}: {entry['verdict']} on the memory floor; samples not kept, "
+                         "the recorded verdict stands")
+        now = "refused" if reasons else "settled"
+        failed = failed or bool(reasons)
+        if now != entry["verdict"]:
+            why = "; ".join(reasons) or "; ".join(f"{a['rule']}: {a['detail']}" for a in annotations)
+            lines.append(f"{entry['name']}: recorded {entry['verdict']}, now {now} ({why})")
+    return (FAIL if failed else PASS), recorded, lines
+
+
+def judge_scan(record):
+    """The scan's state decides before any entry is classified: an empty disturbance list
+    means none found only in a scan that ran."""
+    end = record.get("hold_end") or {}
+    scan = end.get("scan")
+    if scan is None:
+        if "hold" not in record:
+            return PASS, "none", ["no hold: predates the disturber hold, or preflight refused before holding"]
+        return NO_EVIDENCE, "none", ["hold recorded but never released; no scan"]
+    verdict = scan["verdict"]
+    if end.get("restore", {}).get("state") == "failed":
+        return NO_EVIDENCE, verdict, ["hold not fully restored"]
+    if verdict == "unscanned":
+        return NO_EVIDENCE, verdict, [f"unscanned ({scan.get('error')})"]
+    if verdict == "not-run":
+        code = scan.get("preflight_exit")
+        return (FAIL if code == 1 else NO_EVIDENCE), verdict, [f"preflight rolled back its hold (exit {code})"]
+    now, entries = ch.classify(scan["disturbances"], record.get("run", {}).get("lane"))
+    lines = [f"recorded {verdict}, now {now}"] if now != verdict else []
+    lines += [describe_disturbance(d) for d in entries]
+    return (FAIL if now == "disturbed" else PASS), verdict, lines
+
+
+def judge_record(record):
+    return {"preflight": judge_preflight(record), "settle": judge_windows(record), "scan": judge_scan(record)}
+
+
+def cmd_judge(args):
+    """Re-judges a run under the current rules from its capture.json alone; writes nothing."""
+    if not (pathlib.Path(args.run_dir) / RECORD).is_file():
+        raise CannotRun(f"no {RECORD} in {args.run_dir}")
+    record = load_record(args.run_dir)
+    try:
+        parts = judge_record(record)
+    except (KeyError, TypeError, ValueError, AttributeError) as error:
+        # validate_record checks sections, not each entry's shape: a hand-edited record is unreadable, never a failure
+        raise CannotRun(f"{RECORD}: malformed record, cannot be judged: {type(error).__name__} {error}") from error
+    rules = (record.get("preflight") or {}).get("rules", "before 2026-10-17")
+    print(f"judge {record.get('run', {}).get('id')}  rules recorded {rules}, current {RULES}")
+    for name, (outcome, recorded, lines) in parts.items():
+        print(f"  {name}: {outcome} (recorded {recorded})")
+        for line in lines:
+            print(f"    {line}")
+    def named(outcome):
+        return ", ".join(name for name, part in parts.items() if part[0] == outcome)
+    if named(NO_EVIDENCE):
+        raise CannotRun(f"no evidence: {named(NO_EVIDENCE)}")
+    if named(FAIL):
+        raise Refused(f"fails under the current rules: {named(FAIL)}")
+
+
+def guard(host, lock_file, run_dir, iterations=None):
+    run_dir = pathlib.Path(run_dir).resolve()
+    def owner_dead():
+        result = restore_run(host, lock_file, run_dir, run_dir.name, "guard")
+        return result is None or not result["attempt"]["failures"]
+    return ch.guard_loop(host, lock_file, run_dir.name, run_dir, owner_dead, iterations)
+
+
+def cmd_guard(args):
+    guard(Host(), lock_path(), args.run_dir)
+
+
+def cmd_restore(args):
+    lock_file = lock_path()
+    with guarded(lock_file):
+        hold = ch.read_hold(ch.hold_file(lock_file))
+    if hold is None:
+        return
+    host = Host()
+    if host.pid_alive(hold["owner_pid"]):
+        raise Refused(f"run {hold['run_id']}'s owner pid {hold['owner_pid']} is alive; release that run instead")
+    result = restore_run(host, lock_file, hold["run_dir"], hold["run_id"], "hand")
+    if result is not None and result["attempt"]["failures"]:
+        raise CannotRun(f"still held: {failure_list(result['attempt'])}")
+
+
+def render(record):
+    lines = []
+    run = record.get("run", {})
+    lines.append(f"run {run.get('id')}  task {run.get('task')}  fixture {run.get('fixture')}  lane {run.get('lane')}")
+    finished = (f"finished {run['finished']} ({run.get('duration_s')} s, by {run.get('finished_by')})"
+                if "finished" in run else "not finished")
+    lines.append(f"started {run.get('started')}  {finished}  host {run.get('host')}")
+    env = record.get("environment")
+    if env:
+        gpu = env.get("gpu", {})
+        lines += ["", "environment",
+                  f"  kernel {env.get('kernel')}",
+                  f"  cpu {env.get('cpu')} ({env.get('cpu_threads')} threads)",
+                  f"  memory {env.get('memory_total_kib')} KiB",
+                  *([f"  gpu {gpu.get('name')} {gpu.get('driver')} {gpu.get('device')}"] if gpu else []),
+                  f"  session {env.get('session', {}).get('type')} {env.get('session', {}).get('display')}" ]
+        for tool, version in sorted(env.get("tools", {}).items()):
+            lines.append(f"  {tool} {version}")
+    if run.get("lane") == "pixels":
+        lines.append("  GPU not sampled: pixels lane")
+    baseline = record.get("baseline")
+    if baseline:
+        lines += ["", "baseline"] + [f"  {key} {value}" for key, value in baseline.items()]
+    preflight = record.get("preflight")
+    if preflight:
+        at = f" at {preflight['at']}" if "at" in preflight else ""
+        condition = f"  host {preflight['host_condition']}" if "host_condition" in preflight else ""
+        rules = f"  rules {preflight['rules']}" if "rules" in preflight else ""
+        lines += ["", f"preflight {preflight.get('verdict')}{at}{condition}{rules}"]
+        for reason in preflight.get("reasons", []):
+            lines.append(f"  {reason}")
+        host_load = preflight.get("host_load")
+        if host_load:
+            lines.append(f"  load carried by (host-load at {host_load.get('at')})")
+            lines += [f"    {describe_process(p)}" for p in host_load["load"]["top"]]
+    provenance = record.get("provenance")
+    if provenance:
+        source = provenance.get("source", {})
+        lines += ["", "provenance",
+                  f"  source {source.get('commit')} {source.get('branch')}{' dirty' if source.get('dirty') else ''}"]
+        for binary in provenance.get("binaries", []):
+            lines.append(f"  binary {binary['name']} {binary['sha256']}")
+        for item in provenance.get("inputs", []):
+            lines.append(f"  input {item['name']} {item['sha256']}")
+        for key, value in provenance.get("config", {}).items():
+            lines.append(f"  {key}={value}")
+    hold = record.get("hold")
+    if hold:
+        names = [item.get("unit") or item["kind"] for item in hold.get("items", [])]
+        lines += ["", f"hold  desktop {hold.get('desktop')}  {len(names)} items: {', '.join(names)}"]
+        lines += [f"  not held: {n.get('unit') or n['kind']} ({n['reason']})" for n in hold.get("not_held", [])]
+    end = record.get("hold_end")
+    if end:
+        restore, scan = end.get("restore", {}), end.get("scan", {})
+        last = (restore.get("attempts") or [{}])[-1].get("by")
+        verdict = scan.get("verdict")
+        if verdict == "annotated":
+            verdict = f"annotated ({len(scan['disturbances'])})"
+        lines.append(f"hold end  restore {restore.get('state')} ({last})  scan {verdict}")
+        lines += [f"  {describe_disturbance(d)}" for d in scan.get("disturbances", [])]
+    sub_runs = record.get("sub_runs")
+    if sub_runs:
+        lines += ["", "sub-runs"]
+        for entry in sub_runs:
+            reason = f" ({entry['reason']})" if entry.get("reason") else ""
+            span = ""
+            if "finished" in entry:
+                span = f"  {entry.get('started')} to {entry['finished']} ({entry.get('duration_s')} s)"
+            elif "started" in entry and entry["verdict"] in ("settled", "begun"):
+                span = f"  {entry['started']}, never finished"
+            checked = ""
+            if "renderer" in entry:
+                checked = f"  renderer {entry['renderer']['verdict']}"
+            elif entry["verdict"] == "settled" and run.get("lane") in MEASURED_LANES:
+                checked = "  renderer unchecked"   # release refuses this run
+            step = f"  step {entry['gpu_power_step_w']:+} W" if "gpu_power_step_w" in entry else ""
+            lines.append(f"  {entry['name']}: {entry['verdict']}{reason}{span}{step}{checked}")
+            lines += [f"    annotated {a['rule']}: {a['detail']}" for a in entry.get("annotations", [])]
+    return "\n".join(lines) + "\n"
+
+
+def cmd_show(args):
+    record = load_record(args.run_dir)
+    if not record:
+        raise CannotRun(f"no {RECORD} in {args.run_dir}")
+    sys.stdout.write(render(record))
+
+
+def build_parser():
+    parser = argparse.ArgumentParser(prog="capture-meta")
+    subs = parser.add_subparsers(dest="command", required=True)
+    show = subs.add_parser("show")
+    show.add_argument("run_dir")
+    show.set_defaults(func=cmd_show)
+    pre = subs.add_parser("preflight")
+    pre.add_argument("run_dir")
+    pre.add_argument("--lane", choices=("pixels", "headless", "dedicated"), required=True)
+    pre.add_argument("--task", required=True)
+    pre.add_argument("--fixture", required=True)
+    pre.add_argument("--seconds", type=int, default=20)
+    pre.add_argument("--owner-pid", type=int, default=None)
+    pre.add_argument("--threshold", action="append", default=[])
+    pre.add_argument("--tool", action="append", default=[])
+    pre.add_argument("--hold-settle", type=int, default=None)
+    pre.set_defaults(func=cmd_preflight)
+    ident = subs.add_parser("identity")
+    ident.add_argument("run_dir")
+    ident.add_argument("--source", required=True)
+    ident.add_argument("--binary", action="append", default=[])
+    ident.add_argument("--input", action="append", default=[])
+    ident.add_argument("--config", action="append", default=[])
+    ident.set_defaults(func=cmd_identity)
+    st = subs.add_parser("settle")
+    st.add_argument("run_dir")
+    st.add_argument("--sub-run", required=True)
+    st.add_argument("--input", action="append", default=[])
+    st.add_argument("--seconds", type=int, default=10)
+    st.set_defaults(func=cmd_settle)
+    bg = subs.add_parser("begin")
+    bg.add_argument("run_dir")
+    bg.add_argument("--sub-run", required=True)
+    bg.add_argument("--input", action="append", default=[])
+    bg.set_defaults(func=cmd_begin)
+    fin = subs.add_parser("finish")
+    fin.add_argument("run_dir")
+    fin.add_argument("--sub-run", required=True)
+    fin.set_defaults(func=cmd_finish)
+    rnd = subs.add_parser("renderer")
+    rnd.add_argument("run_dir")
+    rnd.add_argument("--sub-run", required=True)
+    rnd.add_argument("--niri-log", required=True, type=pathlib.Path)
+    rnd.add_argument("--weston-log", type=pathlib.Path, default=None)
+    rnd.set_defaults(func=cmd_renderer)
+    rel = subs.add_parser("release")
+    rel.add_argument("run_dir")
+    rel.set_defaults(func=cmd_release)
+    grd = subs.add_parser("guard")
+    grd.add_argument("run_dir")
+    grd.set_defaults(func=cmd_guard)
+    rst = subs.add_parser("restore")
+    rst.set_defaults(func=cmd_restore)
+    jdg = subs.add_parser("judge")
+    jdg.add_argument("run_dir")
+    jdg.set_defaults(func=cmd_judge)
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        args.func(args)
+    except Refused as error:
+        print(f"capture-meta: refused: {error}", file=sys.stderr)
+        return 1
+    except CannotRun as error:
+        print(f"capture-meta: {error}", file=sys.stderr)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

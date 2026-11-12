@@ -6,7 +6,7 @@
 # crops of the focused pane's corners: top-left at rest and as the tail
 # clears, and at mid-pass the corner the beam head is nearest (it has left
 # the top-left corner by then), under the capture protocol
-# (tools/capture-meta: preflight, identity, settle before every launch,
+# (scripts/capture/capture-meta: preflight, identity, settle before every launch,
 # release). The clips are for the
 # owner's judgment of head, tail, glow, spill and gap; this script records,
 # it does not grade.
@@ -67,7 +67,7 @@ RUN_S=15   # (P + L) / 300 on a two-column 1280x720 pane is under 12 s; 15 s kee
 UNIT=; HOST_SOCKET=; NIRI_PID=; NIRI_SOCKET=; HOST_SEQ=0
 mkdir -p "$OUT" "$RT"
 
-capture_meta() { python3 "$ROOT/tools/capture-meta" "$@"; }
+capture_meta() { python3 "$ROOT/scripts/capture/capture-meta" "$@"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 # After a sequence's host is down; a sequence cut short is never finished.
 finish_sub_run() { capture_meta finish "$OUT" --sub-run "$1" || fail "finish refused for $1; see $OUT/capture.json"; }
