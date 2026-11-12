@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 from tools.hermetic_git import isolate
@@ -616,6 +617,60 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
         self.assertEqual(malformed.returncode, 2)
         self.assertIn('cannot inspect test execution policy', malformed.stderr)
         self.assertFalse((self.root / 'recipe').exists())
+
+    def test_committed_root_policy_matches_broad_targets_and_forces_cleanly(self):
+        # Rollback to automatic_broad = true updates or removes this assertion alongside .tt.toml and AGENTS.md.
+        root_policy = ROOT / '.tt.toml'
+        parsed = tomllib.loads(root_policy.read_text(encoding='utf-8'))
+        self.assertIs(parsed.get('automatic_broad'), False)
+        self.assertEqual(parsed.get('broad_targets'), BROAD_TARGETS)
+
+        self.recipe_fixture()
+        shutil.copy2(root_policy, self.root / '.tt.toml')
+
+        self.reset_gate_logs()
+        skipped_test = self.run_recipe('test')
+        self.assertEqual(skipped_test.returncode, 0, skipped_test.stderr)
+        self.assertEqual(self.recipe_events(), [])
+        test_rows = self.timings()
+        self.assertEqual(len(test_rows), 1)
+        self.assertEqual(
+            (test_rows[0]['target'], test_rows[0]['execution'], test_rows[0]['execution_reason'],
+             test_rows[0]['exit'], test_rows[0]['tests']),
+            ('test', 'skipped', 'policy-disabled', None, None),
+        )
+
+        self.reset_gate_logs()
+        check_run = self.run_recipe('check')
+        self.assertEqual(check_run.returncode, 0, check_run.stderr)
+        self.assertEqual(
+            [event['kind'] for event in self.recipe_events()],
+            ['hygiene', 'target-dir', 'paths', 'after'],
+        )
+        check_rows = self.timings()
+        self.assertEqual(
+            [(r['target'], r['execution'], r['execution_reason']) for r in check_rows],
+            [('check-hygiene', 'ran', 'default'), ('check-code', 'skipped', 'policy-disabled')],
+        )
+
+        self.reset_gate_logs()
+        forced_ok = self.run_recipe('test-full')
+        self.assertEqual(forced_ok.returncode, 0, forced_ok.stderr)
+        self.assertEqual([event['kind'] for event in self.recipe_events()], ['rust'])
+        ok_rows = self.timings()
+        self.assertEqual(
+            [(r['target'], r['execution'], r['execution_reason'], r['exit'], r['tests']) for r in ok_rows],
+            [('test', 'ran', 'forced', 0, 5)],
+        )
+
+        self.reset_gate_logs()
+        forced_fail = self.run_recipe('test-full', env={**self.env, 'FAIL_EVENT': 'rust'})
+        self.assertEqual(forced_fail.returncode, 7)
+        fail_rows = self.timings()
+        self.assertEqual(
+            [(r['target'], r['execution'], r['execution_reason'], r['exit']) for r in fail_rows],
+            [('test', 'ran', 'forced', 7)],
+        )
 
 
 class CiWorkflowTests(unittest.TestCase):

@@ -34,12 +34,9 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
 
 - Formatting uses nightly rustfmt (`rustup toolchain install nightly --profile minimal
   --component rustfmt`, then `rustup run nightly cargo fmt --all`), matching CI.
-- While editing Rust: `just test-one -p niri <name-filter>` or
-  `just test-one -E 'test(foo) | test(bar)'`, then `just test-fast` (changed packages
-  and dependents against HEAD, excluding the visual viewer; neither runs doctests).
-- For Python tooling: `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_gates`;
-  `just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`
-  runs all tooling in parallel (the Rust affected selector does not select Python).
+- Focused inner-loop `just test-one` always runs locally: for Rust,
+  `just test-one -p niri <name-filter>` or `just test-one -E 'test(foo) | test(bar)'`;
+  for Python, `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_gates`.
   When editing ImageMagick-backed capture scripts or tests, run
   `just --set one_cmd 'env NIRI_TOOLING_FAST=0 python3 -m unittest' test-one tools.test_glass_optic_smoke tools.test_glass_render_order_metrics tools.test_glass_parameter_sweep`.
   Sequential discovery uses `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1`
@@ -48,20 +45,26 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   tooling (`--full`) runs lifecycle cases first, then remaining modules, capped by
   `min(worker_limit(), len(jobs))` (`10` default, up to `16` under `NEXTEST_TEST_THREADS`).
   Git-running test modules and the coordinator call `isolate(os.environ)` (`tools/hermetic_git.py`).
-- `just check-hygiene` runs mandatory hygiene (`tools/ops-check`, `tools/ops-docs` check),
-  target isolation, static lifecycle path coverage, and `tools/identity-check`/task/report/pin
-  checks. `just check-code` and `just check-code-full` run rustfmt, clippy, fast or full
-  tooling, and post-test `tools/identity-check`; `just check` and `just check-full` compose
-  both. `just docs` regenerates identity regions from identity.toml. Pre-commit routes
-  `tooling_full_paths` to `hook-pre-commit-full`, other code to `hook-pre-commit`
-  (material docs/wiki included), and `docs_paths` to `hook-pre-commit-docs`. Post-split
-  `hook-*` rows in `tools/tt` time mandatory report staging and hygiene, while broad child
-  runs/skips record on `check-code*`, `test-push-fast`, and `test` (not comparable to pre-split hook rows).
-- CI runs the full suite (including doctests) on every `origin` push. Pre-push there
-  chains mandatory hygiene with `just check-code` and `just test-push-fast`; other pushes
-  run `just gate` (`just check-full` and `just test`). `just test-full` forces `just test`.
-  `ci-test` and `ci-test-release` run Rust tests; Ubuntu `ci-tooling-test` runs full
-  parallel tooling, allowing only `OPTIONAL_SKIPS` in `tools/tooling_tests.py`.
+- Mandatory hygiene always runs locally: `just check-hygiene` (`tools/ops-check`,
+  `tools/ops-docs` check, `tools/target-dir-check`, `tools/tooling_tests.py --check-paths`,
+  `tools/identity-check`, `tasks check`, `tools/upstream-report --check`,
+  `tools/package-pin --check`), commit-hook `tools/upstream-report --stage`, and
+  `git lfs pre-push`. `just docs` regenerates identity regions from identity.toml.
+  Pre-commit routes `tooling_full_paths` to `hook-pre-commit-full`, other code to
+  `hook-pre-commit` (material docs/wiki included), and `docs_paths` to `hook-pre-commit-docs`.
+- `.tt.toml` (`automatic_broad = false`) skips routine local runs of the 8 broad targets
+  (`check-code`, `check-code-full`, `ci-test`, `ci-test-release`, `ci-tooling-test`,
+  `test`, `test-fast`, `test-push-fast`), including inside `check`, `check-full`, `gate`,
+  and `hook-*` (`hook-*` rows in `tools/tt` time mandatory staging/hygiene while broad
+  child runs/skips record on `check-code*`, `test-push-fast`, and `test`).
+- GitHub Actions `ci.yml` runs the full suite (including doctests, `ci-test`,
+  `ci-test-release`, and Ubuntu `ci-tooling-test` with `OPTIONAL_SKIPS` in
+  `tools/tooling_tests.py`) on every `origin` push under `TT_FORCE=1`. Deliberate local
+  broad runs use `just test-full` or `TT_FORCE=1 just <recipe>` (for full Python tooling,
+  `TT_FORCE=1 just --set fast_cmd 'env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full' test-fast`).
+- Rollback sets `automatic_broad = true` in `.tt.toml` (or removes `.tt.toml`), restores
+  enabled cadence in `AGENTS.md` and `test_committed_root_policy_matches_broad_targets_and_forces_cleanly`,
+  and records `policy: enabled at <RFC3339-UTC> revision <full-sha>` on material-ec0e0b.
 - Recipes record runs through `tools/tt`. Host recipes use `host-budget run` to set
   `CARGO_BUILD_JOBS` and `NEXTEST_TEST_THREADS`; CI recipes do not need ops tooling.
 

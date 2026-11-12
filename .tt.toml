@@ -1,0 +1,11 @@
+automatic_broad = false
+broad_targets = [
+  "check-code",
+  "check-code-full",
+  "ci-test",
+  "ci-test-release",
+  "ci-tooling-test",
+  "test",
+  "test-fast",
+  "test-push-fast",
+]
