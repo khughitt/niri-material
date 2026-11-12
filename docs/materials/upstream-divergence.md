@@ -156,7 +156,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_package_pin.py` | C | A | +123/-0 |
 | `tools/test_screencast_consumer.py` | C | A | +375/-0 |
 | `tools/test_target_dir_check.py` | C | A | +182/-0 |
-| `tools/test_tooling_tests.py` | C | A | +428/-0 |
+| `tools/test_tooling_tests.py` | C | A | +588/-0 |
 | `tools/test_upstream_report.py` | C | A | +956/-0 |
 | `tools/test_vdrag.py` | C | A | +54/-0 |
 | `tools/test_vt_lib.py` | C | A | +161/-0 |
@@ -165,7 +165,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/testdata/renderer/niri-llvmpipe.log` | C | A | +1/-0 |
 | `tools/testdata/renderer/niri-nvidia.log` | C | A | +2/-0 |
 | `tools/testdata/renderer/weston-nvidia.log` | C | A | +3/-0 |
-| `tools/tooling_tests.py` | C | A | +546/-0 |
+| `tools/tooling_tests.py` | C | A | +541/-0 |
 | `tools/tt` | C | A | +728/-0 |
 | `tools/upstream-report` | C | A | +738/-0 |
 

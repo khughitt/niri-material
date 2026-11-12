@@ -51,18 +51,12 @@ def worker_limit() -> int:
     return min(16, int(raw))
 
 
-MODULE_BUCKETS = 4
-
-
-def module_buckets(cases: Sequence[unittest.TestCase], count: int) -> list[list[str]]:
-    """Whole modules per bucket, largest first into the emptiest; no empty buckets."""
-    modules = {}
+def module_jobs(cases: Sequence[unittest.TestCase]) -> list[list[str]]:
+    """One job per whole module, largest first, preserving discovery order."""
+    modules: dict[str, list[str]] = {}
     for case in cases:
         modules.setdefault(type(case).__module__, []).append(case.id())
-    buckets = [[] for _ in range(count)]
-    for ids in sorted(modules.values(), key=len, reverse=True):
-        min(buckets, key=len).extend(ids)
-    return [bucket for bucket in buckets if bucket]
+    return sorted(modules.values(), key=len, reverse=True)
 
 
 def flatten(suite: unittest.TestSuite) -> list[unittest.TestCase]:
@@ -218,9 +212,6 @@ def run_job(ids: list[str], mode: str) -> dict[str, object]:
 def run_tooling(ci: bool = False, fast: bool = False) -> int:
     global _result_dir
     limit = worker_limit()  # fail before discovery or spawning
-    buckets = min(MODULE_BUCKETS, limit)
-    if fast:
-        limit = buckets
     mode = '1' if fast else '0'
     os.environ['NIRI_TOOLING_FAST'] = mode
     loader = unittest.defaultTestLoader
@@ -235,26 +226,30 @@ def run_tooling(ci: bool = False, fast: bool = False) -> int:
                 if getattr(subject, '__unittest_skip__', False) and case.id() not in OPTIONAL_SKIPS:
                     raise ValueError(f'unexpected CI skip: {case.id()}: {subject.__unittest_skip_why__}')
     if fast:
-        jobs = module_buckets(inventory, buckets)
+        jobs = module_jobs(inventory)
     else:
-        # Remainder buckets go first so they never queue behind the slow lifecycle cases.
+        # Lifecycle cases start first so multi-second sleep cases never trail the pool.
         lifecycle = [case.id() for case in inventory if type(case).__name__ in LIFECYCLE_CLASSES]
         remainder = [case for case in inventory if type(case).__name__ not in LIFECYCLE_CLASSES]
-        jobs = module_buckets(remainder, buckets) + [[case_id] for case_id in lifecycle]
+        jobs = [[case_id] for case_id in lifecycle] + module_jobs(remainder)
     expected = {case.id() for case in inventory}
     assigned = [case_id for job in jobs for case_id in job]
     if len(assigned) != len(expected) or set(assigned) != expected:
         raise RuntimeError('tooling discovery partition lost or duplicated cases')
+    children = min(limit, len(jobs))
     _cancelled.clear()
     before = time.monotonic()
-    print(f'{"Fast" if fast else "Full"} tooling: {len(inventory)} cases, {limit} children', flush=True)
-    with tempfile.TemporaryDirectory() as directory:
-        _result_dir = directory
-        with ThreadPoolExecutor(max_workers=limit) as pool:
-            try:
-                results = list(pool.map(lambda ids: run_job(ids, mode), jobs))
-            finally:
-                cancel_pending_and_reap_workers()
+    print(f'{"Fast" if fast else "Full"} tooling: {len(inventory)} cases, {children} children', flush=True)
+    if children == 0:
+        results = []
+    else:
+        with tempfile.TemporaryDirectory() as directory:
+            _result_dir = directory
+            with ThreadPoolExecutor(max_workers=children) as pool:
+                try:
+                    results = list(pool.map(lambda ids: run_job(ids, mode), jobs))
+                finally:
+                    cancel_pending_and_reap_workers()
     errors = sum(len(result['errors']) for result in results)
     failures = sum(len(result['failures']) for result in results)
     expected_failures = sum(len(result['expected_failures']) for result in results)
@@ -508,7 +503,7 @@ def check_paths():
 
 def main():
     # Parent and every --worker enter here, so no tooling case sees the host's git
-    # environment or config, whichever bucket it lands in.
+    # environment or config, whichever worker it runs in.
     isolate(os.environ)
     parser = argparse.ArgumentParser(description=__doc__)
     choices = parser.add_mutually_exclusive_group(required=True)

@@ -10,7 +10,8 @@ import time
 import unittest
 from unittest import mock
 
-from tools.tooling_tests import fast_mode, flatten, worker_limit
+from tools.hermetic_git import isolate
+from tools.tooling_tests import fast_mode, flatten, module_jobs, worker_limit
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,17 +40,88 @@ class ModeTests(unittest.TestCase):
                     worker_limit()
 
     def test_raw_imports_validate_before_skipping(self):
-        for module in ('tools.test_optic_settling', 'tools.test_vt_lib'):
-            run = subprocess.run([sys.executable, '-c', f'import {module}'], cwd=ROOT,
-                                 env=dict(os.environ, NIRI_TOOLING_FAST='typo'),
-                                 capture_output=True, text=True, timeout=15)
-            self.assertNotEqual(run.returncode, 0)
-            self.assertIn('NIRI_TOOLING_FAST', run.stderr)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / 'home'
+            xdg = root / 'xdg'
+            home.mkdir()
+            xdg.mkdir()
+            env = {
+                'PATH': os.environ['PATH'],
+                'HOME': str(home),
+                'XDG_CONFIG_HOME': str(xdg),
+                'PYTHONPATH': str(ROOT),
+                'NIRI_TOOLING_FAST': 'typo',
+            }
+            isolate(env)
+            for module in ('tools.test_optic_settling', 'tools.test_vt_lib'):
+                run = subprocess.run([sys.executable, '-c', f'import {module}'], cwd=ROOT,
+                                     env=env, capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn('NIRI_TOOLING_FAST', run.stderr)
+
+    def test_module_jobs_groups_whole_modules_largest_first(self):
+        self.assertEqual(module_jobs([]), [])
+        small_cls = type('Small', (unittest.TestCase,), {
+            '__module__': 'test_small',
+            'test_only': lambda self: None,
+        })
+        big_cls = type('Big', (unittest.TestCase,), {
+            '__module__': 'test_big',
+            'test_first': lambda self: None,
+            'test_second': lambda self: None,
+            'test_third': lambda self: None,
+        })
+        mid_a = type('MidA', (unittest.TestCase,), {
+            '__module__': 'test_mid',
+            'test_one': lambda self: None,
+        })
+        mid_b = type('MidB', (unittest.TestCase,), {
+            '__module__': 'test_mid',
+            'test_two': lambda self: None,
+        })
+        cases = [
+            small_cls('test_only'),
+            mid_a('test_one'),
+            big_cls('test_first'),
+            big_cls('test_second'),
+            big_cls('test_third'),
+            mid_b('test_two'),
+        ]
+        self.assertEqual(module_jobs(cases), [
+            ['test_big.Big.test_first', 'test_big.Big.test_second', 'test_big.Big.test_third'],
+            ['test_mid.MidA.test_one', 'test_mid.MidB.test_two'],
+            ['test_small.Small.test_only'],
+        ])
 
     def test_flatten_rejects_duplicate_native_ids(self):
         case = unittest.FunctionTestCase(lambda: None)
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             flatten(unittest.TestSuite([case, unittest.TestSuite([case])]))
+
+
+EVENT_HELPERS = '''def _emit_event(kind):
+    fd = os.open('events.log', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    try:
+        os.write(fd, f'{kind}:{os.getpid()}\\n'.encode())
+    finally:
+        os.close(fd)
+def _await_wave():
+    if 'PROBE_WAVE' not in os.environ:
+        return
+    _emit_event('start')
+    target = int(os.environ['PROBE_WAVE'])
+    deadline = time.monotonic() + 1.0
+    while time.monotonic() < deadline:
+        with open('events.log') as log:
+            if sum(1 for line in log if line.startswith('start:')) >= target:
+                break
+        time.sleep(0.01)
+    time.sleep(0.12)
+def _finish_wave():
+    if 'PROBE_WAVE' in os.environ:
+        _emit_event('end')
+'''
 
 
 class CoordinatorTests(unittest.TestCase):
@@ -58,16 +130,56 @@ class CoordinatorTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         (self.root / 'tools').mkdir()
-        self.env = dict(os.environ, PYTHONPATH=str(ROOT), NIRI_TOOLING_FAST='1',
-                        NEXTEST_TEST_THREADS='10')
+        home = self.root / 'home'
+        xdg = self.root / 'xdg'
+        home.mkdir()
+        xdg.mkdir()
+        self.env = {
+            'PATH': os.environ['PATH'],
+            'HOME': str(home),
+            'XDG_CONFIG_HOME': str(xdg),
+            'PYTHONPATH': str(ROOT),
+            'NIRI_TOOLING_FAST': '1',
+            'NEXTEST_TEST_THREADS': '10',
+        }
+        isolate(self.env)
         self.command = [sys.executable, '-m', 'tools.tooling_tests', '--full', '--ci']
 
     def fixture(self, body, module='test_probe.py'):
         (self.root / 'tools' / module).write_text('import unittest, os, subprocess, time\n' + body)
 
     def run_suite(self, **env):
-        return subprocess.run(self.command, cwd=self.root, env=dict(self.env, **env),
+        run_env = self.env.copy()
+        run_env.update(env)
+        return subprocess.run(self.command, cwd=self.root, env=run_env,
                               capture_output=True, text=True, timeout=30)
+
+    def assert_worker_events(self, expected_workers, max_concurrency):
+        raw = (self.root / 'events.log').read_text().splitlines()
+        events = []
+        active = set()
+        started = []
+        ended = []
+        peak = 0
+        for line in raw:
+            kind, pid = line.split(':')
+            self.assertIn(kind, ('start', 'end'))
+            events.append((kind, pid))
+            if kind == 'start':
+                self.assertNotIn(pid, active)
+                self.assertNotIn(pid, started)
+                active.add(pid)
+                started.append(pid)
+                peak = max(peak, len(active))
+            else:
+                self.assertIn(pid, active)
+                active.remove(pid)
+                ended.append(pid)
+        self.assertEqual(active, set())
+        self.assertEqual(len(started), expected_workers)
+        self.assertEqual(set(started), set(ended))
+        self.assertEqual(peak, max_concurrency)
+        return events, started
 
     def test_full_overrides_fast_and_budget_one_preserves_all_ids(self):
         self.fixture('''class Remainder(unittest.TestCase):
@@ -87,7 +199,8 @@ class DriverCleanupTests(Remainder):
             'test_probe.DriverCleanupTests.test_first:0'})
         self.assertEqual(len(lines), 3)
 
-    def test_full_buckets_remainder_modules_and_isolates_lifecycle_cases(self):
+    def test_full_orders_lifecycle_jobs_before_module_jobs_and_caps_children(self):
+        hooks = EVENT_HELPERS + 'def setUpModule(): _await_wave()\ndef tearDownModule(): _finish_wave()\n'
         cases = '''    def record(self):
         with open(self.id() + '.pid', 'a') as out:
             out.write(os.environ['NIRI_TOOLING_FAST'] + ':' + str(os.getpid()) + '\\n')
@@ -96,35 +209,66 @@ class DriverCleanupTests(Remainder):
 '''
         modules = ('alpha', 'beta', 'gamma', 'delta')
         for name in modules:
-            self.fixture('class Cases(unittest.TestCase):\n' + cases, f'test_{name}.py')
-        self.fixture('class DriverCleanupTests(unittest.TestCase):\n' + cases, 'test_life.py')
-        lifecycle = ['test_life.DriverCleanupTests.test_one', 'test_life.DriverCleanupTests.test_two']
-        expected = {f'test_{name}.Cases.test_{case}' for name in modules for case in ('one', 'two')}
+            self.fixture(hooks + 'class Cases(unittest.TestCase):\n' + cases, f'test_{name}.py')
+        self.fixture(
+            hooks + 'class Cases(unittest.TestCase):\n' + cases +
+            'class DriverCleanupTests(unittest.TestCase):\n'
+            '    def test_one(self):\n'
+            '        with open(self.id() + ".pid", "a") as out:\n'
+            '            out.write(os.environ["NIRI_TOOLING_FAST"] + ":" + str(os.getpid()) + "\\n")\n',
+            'test_mixed.py',
+        )
+        self.fixture(hooks + 'class DriverCleanupTests(unittest.TestCase):\n' + cases, 'test_life.py')
+        all_modules = (*modules, 'mixed')
+        lifecycle = [
+            'test_life.DriverCleanupTests.test_one',
+            'test_life.DriverCleanupTests.test_two',
+            'test_mixed.DriverCleanupTests.test_one',
+        ]
+        expected = {f'test_{name}.Cases.test_{case}' for name in all_modules for case in ('one', 'two')}
         expected.update(lifecycle)
-        for budget, children, remainder_processes in (('10', 10, 4), ('1', 1, 1)):
+        for budget, children in (('10', 8), ('3', 3), ('1', 1)):
             with self.subTest(budget=budget):
+                (self.root / 'events.log').unlink(missing_ok=True)
                 for path in self.root.glob('*.pid'):
                     path.unlink()
-                run = self.run_suite(NEXTEST_TEST_THREADS=budget)
+                run = self.run_suite(NEXTEST_TEST_THREADS=budget, PROBE_WAVE=str(children))
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-                self.assertIn(f'Full tooling: 10 cases, {children} children', run.stdout)
-                self.assertIn('Ran 10 tests', run.stdout)
+                self.assertIn(f'Full tooling: 13 cases, {children} children', run.stdout)
+                self.assertIn('Ran 13 tests', run.stdout)
                 runs = {path.name.removesuffix('.pid'): path.read_text().splitlines()
                         for path in self.root.glob('*.pid')}
                 self.assertEqual(set(runs), expected)
                 self.assertTrue(all(len(lines) == 1 for lines in runs.values()), runs)
                 pid = {case_id: lines[0].split(':')[1] for case_id, lines in runs.items()}
                 self.assertEqual({lines[0].split(':')[0] for lines in runs.values()}, {'0'})
-                for name in modules:
+                for name in all_modules:
                     self.assertEqual(pid[f'test_{name}.Cases.test_one'], pid[f'test_{name}.Cases.test_two'])
                 remainder = {pid[case_id] for case_id in expected if '.Cases.' in case_id}
-                self.assertEqual(len(remainder), remainder_processes)
-                self.assertEqual(len({pid[case_id] for case_id in lifecycle}), 2)
-                self.assertFalse(remainder & {pid[case_id] for case_id in lifecycle})
+                life_pids = {pid[case_id] for case_id in lifecycle}
+                self.assertEqual(len(remainder), 5)
+                self.assertEqual(len(life_pids), 3)
+                self.assertFalse(remainder & life_pids)
+                events, started_pids = self.assert_worker_events(8, children)
+                by_pid = {}
+                for case_id, worker_pid in pid.items():
+                    by_pid.setdefault(worker_pid, set()).add(case_id)
+                if budget == '1':
+                    self.assertEqual(
+                        events,
+                        [pair for worker_pid in started_pids for pair in (('start', worker_pid), ('end', worker_pid))],
+                    )
+                    self.assertEqual(
+                        {cid for worker_pid in started_pids[:3] for cid in by_pid[worker_pid]},
+                        set(lifecycle),
+                    )
 
     def test_fast_preserves_native_inventory_and_module_fixtures(self):
-        body = '''def setUpModule():
+        body = EVENT_HELPERS + '''def setUpModule():
     with open(__name__ + '.module', 'a') as out: out.write(str(os.getpid()) + '\\n')
+    _await_wave()
+def tearDownModule():
+    _finish_wave()
 class Cases(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -144,11 +288,14 @@ class DriverCleanupTests(unittest.TestCase):
 ''', 'test_beta.py')
         self.fixture(body, 'test_gamma.py')
         self.fixture(body, 'test_delta.py')
+        self.fixture(body, 'test_epsilon.py')
+        native_env = self.env.copy()
+        native_env['NIRI_TOOLING_FAST'] = '1'
         native = subprocess.run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tools'],
-                                cwd=self.root, env=dict(self.env, NIRI_TOOLING_FAST='1'),
+                                cwd=self.root, env=native_env,
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(native.returncode, 0, native.stdout + native.stderr)
-        self.assertIn('Ran 10 tests', native.stderr)
+        self.assertIn('Ran 12 tests', native.stderr)
         self.assertIn('skipped=1, expected failures=1', native.stderr)
         native_seen = {path.name: [line.rsplit(':', 1)[0] for line in path.read_text().splitlines()]
                        for path in self.root.glob('*.seen')}
@@ -158,21 +305,24 @@ class DriverCleanupTests(unittest.TestCase):
             'test_beta.DriverCleanupTests.test_slow',
             'test_gamma.Cases.test_one', 'test_gamma.Cases.test_two',
             'test_delta.Cases.test_one', 'test_delta.Cases.test_two',
+            'test_epsilon.Cases.test_one', 'test_epsilon.Cases.test_two',
         }
         self.command = [sys.executable, '-m', 'tools.tooling_tests', '--fast']
-        for budget, children in (('10', 4), ('1', 1)):
+        for budget, children in (('10', 5), ('2', 2), ('1', 1)):
             with self.subTest(budget=budget):
+                (self.root / 'events.log').unlink(missing_ok=True)
                 for suffix in ('seen', 'class', 'module'):
                     for path in self.root.glob('*.' + suffix):
                         path.unlink()
-                run = self.run_suite(NIRI_TOOLING_FAST='0', NEXTEST_TEST_THREADS=budget)
+                run = self.run_suite(NIRI_TOOLING_FAST='0', NEXTEST_TEST_THREADS=budget,
+                                     PROBE_WAVE=str(children))
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-                self.assertIn(f'Fast tooling: 10 cases, {children} children', run.stdout)
+                self.assertIn(f'Fast tooling: 12 cases, {children} children', run.stdout)
                 self.assertIn('OK (skipped=1, expected failures=1)', run.stdout)
                 ids = [line[5:].rsplit(': ', 1)[0] for line in run.stdout.splitlines()
                        if line.startswith('case ')]
                 self.assertEqual(set(ids), expected)
-                self.assertEqual(len(ids), 10)
+                self.assertEqual(len(ids), 12)
                 pids = set()
                 for path in self.root.glob('*.seen'):
                     lines = path.read_text().splitlines()
@@ -183,7 +333,17 @@ class DriverCleanupTests(unittest.TestCase):
                     for suffix in ('class', 'module'):
                         self.assertEqual(path.with_suffix('.' + suffix).read_text().splitlines(),
                                          list(worker_pids))
-                self.assertEqual(len(pids), children)
+                self.assertEqual(len(pids), 5)
+                self.assert_worker_events(5, children)
+
+    def test_empty_discovery_succeeds_without_spawning_workers(self):
+        for args, label in ((['--full', '--ci'], 'Full'), (['--fast'], 'Fast')):
+            with self.subTest(args=args):
+                self.command = [sys.executable, '-m', 'tools.tooling_tests', *args]
+                run = self.run_suite()
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertIn(f'{label} tooling: 0 cases, 0 children', run.stdout)
+                self.assertIn('Ran 0 tests', run.stdout)
 
     def test_fast_rejects_ci_and_public_worker_mode_before_discovery(self):
         self.fixture("open('imported', 'w').close()\nclass C(unittest.TestCase):\n    def test_ok(self): pass\n")

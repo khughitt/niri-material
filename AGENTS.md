@@ -46,12 +46,12 @@ Authority: `docs/materials/material-config.md`, `docs/materials/render-pipeline.
   `env NIRI_TOOLING_FAST=0 python3 -m unittest discover -s tools 2>&1`.
   Raw discovery inherits exported `NIRI_TOOLING_FAST=1` and skips DriverCleanupTests
   and VtLibTests; only unset, `0` and `1` are valid. Repository commands set their mode.
-  Fast tooling uses `python3 -m tools.tooling_tests --fast` with four children and
-  keeps whole modules in one worker. Full tooling splits the non-lifecycle remainder
-  into four module buckets beside one process per lifecycle case, with ten children
-  total by default and up to sixteen under a granted budget;
-  both routes are capped by `NEXTEST_TEST_THREADS` when
-  set; the cap must be a positive ASCII decimal integer.
+  Fast tooling uses `python3 -m tools.tooling_tests --fast`, keeping each test
+  module in one worker job (largest first) across a dynamic worker pool. Full
+  tooling schedules one worker job per lifecycle case first, followed by one worker
+  job per non-lifecycle module (largest first); both routes bound active children
+  by `min(worker_limit(), len(jobs))` (`10` by default, up to `16` under a granted
+  `NEXTEST_TEST_THREADS` budget, which must be a positive ASCII decimal integer).
   A test module that runs git calls `isolate(os.environ)` from `tools/hermetic_git.py`
   at import; the coordinator also applies it to every worker.
 - `just check` runs hygiene (`tools/ops-check`, then `tools/ops-docs check`), target
