@@ -1,8 +1,11 @@
-# Front door: `just test-one <nextest args>` while editing; `just test-fast`
-# (affected-only) before committing. Docs-only commits take the docs checks.
-# CI-covered pushes take check + nextest; other pushes take full check + Rust tests.
-# The git hooks call `hook-pre-commit` and `hook-pre-push`, which run the very same
-# commands under their own target names so the report can price the hooks.
+# Front door: `just test-one <nextest args>` while editing; `just check-hygiene` for
+# fast static hygiene and consistency checks; `just test-full` to force the full Rust
+# suite regardless of `.tt.toml`. Docs-only commits take the mandatory hygiene route.
+# CI-covered pushes pair mandatory hygiene with `check-code` + `test-push-fast`;
+# other pushes pair mandatory hygiene with `check-code-full` + `test`.
+# The git hooks time mandatory staging/hygiene on their `hook-*` targets and chain
+# skippable broad targets as subsequent dependencies (`&&`) so `tools/tt` prices and
+# governs each stage cleanly.
 # Every recipe runs through the vendored timing wrapper tools/tt (ops bin/tt).
 # The host recipes run their command under `host-budget run`, which sets
 # CARGO_BUILD_JOBS and NEXTEST_TEST_THREADS from the host's CPU budget; the ci-
@@ -15,11 +18,11 @@ tt := "python3 tools/tt"
 
 # Commands shared by the recipes and hooks. Avoid single quotes inside them.
 # fast_cmd selects affected Rust packages; test_cmd stays Rust-only for CI.
-# check_cmd runs hygiene (ops-check, then ops-docs check on the guides), target
-# isolation, rustfmt, clippy, fast tooling and repository consistency checks. Full
-# checks substitute parallel tooling once.
-# identity-check follows the tooling, so a fixture leaking a commit identity into
-# .git/config fails the very commit whose tests leaked it.
+# check_hygiene_cmd runs mandatory hygiene (ops-check, ops-docs check), target
+# isolation, static lifecycle path coverage, and repository consistency checks.
+# check_code_cmd and check_code_full_cmd run rustfmt, clippy, tooling tests, and
+# identity-check so a fixture leaking a commit identity into .git/config fails
+# the run whose tests leaked it even when hygiene already ran first.
 nextest_cmd := "cargo nextest run --status-level fail --final-status-level fail"
 fast_cmd := "python3 tools/test-affected --status-level fail --final-status-level fail"
 one_cmd := nextest_cmd
@@ -29,16 +32,19 @@ tooling_fast_cmd := "env NIRI_TOOLING_FAST=1 python3 -m tools.tooling_tests --fa
 tooling_full_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --full 2>&1"
 tooling_paths_cmd := "env NIRI_TOOLING_FAST=0 python3 -m tools.tooling_tests --check-paths"
 hygiene_cmd := "python3 tools/ops-check && python3 tools/ops-docs check"
-check_before_cmd := hygiene_cmd + " && python3 tools/target-dir-check && rustup run nightly cargo fmt --all -- --check && cargo clippy --all --all-targets"
-check_after_cmd := "python3 tools/identity-check && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
-check_cmd := check_before_cmd + " && " + tooling_fast_cmd + " && " + check_after_cmd
-full_check_cmd := check_before_cmd + " && " + tooling_full_cmd + " && " + check_after_cmd
+target_dir_cmd := "python3 tools/target-dir-check"
+identity_cmd := "python3 tools/identity-check"
+check_after_cmd := identity_cmd + " && tasks check && python3 tools/upstream-report --check && python3 tools/package-pin --check"
+check_hygiene_cmd := hygiene_cmd + " && " + target_dir_cmd + " && " + tooling_paths_cmd + " && " + check_after_cmd
+docs_check_cmd := check_hygiene_cmd
+check_code_base_cmd := "rustup run nightly cargo fmt --all -- --check && cargo clippy --all --all-targets"
+check_code_cmd := check_code_base_cmd + " && " + tooling_fast_cmd + " && " + identity_cmd
+check_code_full_cmd := check_code_base_cmd + " && " + tooling_full_cmd + " && " + identity_cmd
 
 # docs_paths holds root guides only: material docs and wiki contain Rust test
 # inputs, so they take a code route. Both routes keep the consistency checks.
-tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py tools/hermetic_git.py scripts/capture/vt-lib.sh scripts/capture/optic-settling-smoke.sh scripts/capture/glass-optic-smoke-lib.sh scripts/capture/*-client.c .githooks/* justfile .github/workflows/*"
+tooling_full_paths := "tools/optic_settling.py tools/screencast_consumer.py tools/fake_screencast.py tools/test_optic_settling.py tools/test_screencast_consumer.py tools/test_vt_lib.py tools/tooling_tests.py tools/test_tooling_tests.py tools/hermetic_git.py scripts/capture/vt-lib.sh scripts/capture/optic-settling-smoke.sh scripts/capture/glass-optic-smoke-lib.sh scripts/capture/*-client.c .githooks/* justfile .github/workflows/* .tt.toml"
 docs_paths := "README.md AGENTS.md CLAUDE.md identity.toml CONTRIBUTING.md"
-docs_check_cmd := hygiene_cmd + " && " + tooling_paths_cmd + " && " + check_after_cmd
 # The hooks regenerate and stage the divergence report before checking it: its
 # seam line counts move with nearly every source commit. `check` and CI only check.
 stage_report_cmd := "python3 tools/upstream-report --stage"
@@ -68,44 +74,61 @@ docs:
 test-one +args:
     {{tt}} test-one -- host-budget run -- sh -c '{{one_cmd}} "$@" 2>&1' test-one "$@"
 
-# Affected-only: the inner loop.
+# Affected-only Rust packages (broad target governed by `.tt.toml` when present).
 test-fast:
     {{tt}} test-fast -- host-budget run -- sh -c '{{fast_cmd}}'
 
-# The full suite.
+# The full Rust suite (broad target governed by `.tt.toml` when present).
 test:
     {{tt}} test -- host-budget run -- sh -c '{{test_cmd}} -- --quiet'
 
-# Format, clippy, tooling tests, tasks check.
-check:
-    {{tt}} check -- host-budget run -- sh -c '{{check_cmd}}'
+# Deliberate local full Rust suite, forced regardless of `.tt.toml`.
+test-full:
+    TT_FORCE=1 {{just_executable()}} --justfile {{justfile()}} test
 
-check-full:
-    {{tt}} check-full -- host-budget run -- sh -c '{{full_check_cmd}}'
+# Fixed config and IPC nextest slice for CI-covered pushes (broad target).
+test-push-fast:
+    {{tt}} test-push-fast -- host-budget run -- sh -c '{{push_fast_cmd}} 2>&1'
+
+# Mandatory static hygiene, target isolation, path coverage, and consistency checks.
+check-hygiene:
+    {{tt}} check-hygiene -- host-budget run -- sh -c '{{check_hygiene_cmd}}'
+
+# Broad Rust lint + fast parallel tooling + post-test identity check.
+check-code:
+    {{tt}} check-code -- host-budget run -- sh -c '{{check_code_cmd}}'
+
+# Broad Rust lint + full parallel tooling + post-test identity check.
+check-code-full:
+    {{tt}} check-code-full -- host-budget run -- sh -c '{{check_code_full_cmd}}'
+
+# Mandatory hygiene followed by skippable fast code checks.
+check: check-hygiene check-code
+
+# Mandatory hygiene followed by skippable full code checks.
+check-full: check-hygiene check-code-full
 
 gate: check-full test
 
-# What the pre-commit hook runs for ordinary code: the report staged, then `check`'s
-# command, recorded under the fast route's own hook target.
-hook-pre-commit:
-    {{tt}} hook-pre-commit-fast -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_cmd}}'
+# Ordinary code commits: mandatory report staging + hygiene, then `check-code`.
+hook-pre-commit: && check-code
+    {{tt}} hook-pre-commit-fast -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_hygiene_cmd}}'
 
-# Lifecycle subjects and wiring use the full coordinator, recorded under the shared
-# code-commit target the fast route left behind.
-hook-pre-commit-full:
-    {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{stage_report_cmd}} && {{full_check_cmd}}'
+# Lifecycle subjects and gate wiring: mandatory report staging + hygiene, then `check-code-full`.
+hook-pre-commit-full: && check-code-full
+    {{tt}} hook-pre-commit -- host-budget run -- sh -c '{{stage_report_cmd}} && {{check_hygiene_cmd}}'
 
-# Docs/task-only commits retain source/consistency checks without compiling Rust.
+# Docs/task-only commits retain mandatory staging + hygiene without compiling Rust.
 hook-pre-commit-docs:
     {{tt}} hook-pre-commit-docs -- host-budget run -- sh -c '{{stage_report_cmd}} && {{docs_check_cmd}}'
 
-# CI-covered pushes: checks plus the fixed nextest set.
-hook-pre-push-fast:
-    {{tt}} hook-pre-push-fast -- host-budget run -- sh -c '{{check_cmd}} && {{push_fast_cmd}} 2>&1'
+# CI-covered pushes: mandatory hygiene, then `check-code` and `test-push-fast`.
+hook-pre-push-fast: && check-code test-push-fast
+    {{tt}} hook-pre-push-fast -- host-budget run -- sh -c '{{check_hygiene_cmd}}'
 
-# Other pushes: the same commands as `gate`, under one hook target.
-hook-pre-push:
-    {{tt}} hook-pre-push -- host-budget run -- sh -c '{{full_check_cmd}} && {{test_cmd}} -- --quiet'
+# Other pushes: mandatory hygiene, then `check-code-full` and `test`.
+hook-pre-push: && check-code-full test
+    {{tt}} hook-pre-push -- host-budget run -- sh -c '{{check_hygiene_cmd}}'
 
 # Separate full tooling job: guarded optional skips, no host-budget dependency.
 ci-tooling-test:

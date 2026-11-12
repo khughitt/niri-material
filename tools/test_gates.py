@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -14,25 +15,64 @@ isolate(os.environ)
 
 ROOT = Path(__file__).resolve().parent.parent
 
+BROAD_TARGETS = [
+    "check-code",
+    "check-code-full",
+    "ci-test",
+    "ci-test-release",
+    "ci-tooling-test",
+    "test",
+    "test-fast",
+    "test-push-fast",
+]
+
 
 class Gates(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
-        self.bin = self.root / "bin"
-        self.bin.mkdir()
-        # Fixtures provide host-budget themselves; CI has no shared ops tooling.
-        self.env = dict(os.environ, PATH=f"{self.bin}:/usr/local/bin:/usr/bin:/bin",
-                        TT_LOG=str(self.root / "timings.jsonl"), GATE_TMP=str(self.root))
+        base = Path(self.tmp.name)
+        self.home = base / "home"
+        self.xdg = base / "xdg"
+        self.bin = base / "bin"
+        self.root = base / "repo"
+        for directory in (self.home, self.xdg, self.bin, self.root,
+                          self.root / "tools", self.root / "tasks"):
+            directory.mkdir(parents=True)
+        shutil.copy2(ROOT / "justfile", self.root / "justfile")
+        shutil.copy2(ROOT / "tools" / "tt", self.root / "tools" / "tt")
+        (self.root / "tasks" / ".config.toml").write_text('prefix = "fixture"\n', encoding="utf-8")
+        # Fixtures provide host-budget themselves and never inherit host credentials or HOME.
+        self.env = {
+            "PATH": f"{self.bin}:/usr/local/bin:/usr/bin:/bin",
+            "HOME": str(self.home),
+            "XDG_CONFIG_HOME": str(self.xdg),
+            "TT_LOG": str(self.root / "timings.jsonl"),
+            "GATE_TMP": str(self.root),
+        }
+        isolate(self.env)
         self.git = shutil.which("git")
         self.just = shutil.which("just")
+        self.real_python = shutil.which("python3")
         self.stub('host-budget', '[ "$1" = run ] || exit 2\nshift\n'
                   '[ "$1" = -- ] || exit 2\nshift\nexec "$@"')
+        self.stub(
+            "ssh",
+            'printf "%s\\n" "$*" >> "$GATE_TMP/ssh-argv"\n'
+            'printf "serveraliveinterval %s\\n" "${FAKE_SSH_ALIVE:-60}"',
+        )
         self.run_git("init", "-q")
-        self.stub("just", 'if [ "$1" = --evaluate ] && [ "$2" = "${EVAL_FAIL:-}" ]; then printf %s origin; exit 1; fi\n'
-                  f'if [ "$1" = --evaluate ]; then exec "{self.just}" --justfile "{ROOT / "justfile"}" "$@"; fi\n'
-                  'printf %s "$1" > "$GATE_TMP/recipe"')
+        self.stub(
+            "just",
+            'if [ "$1" = --evaluate ] && [ "$2" = "${EVAL_FAIL:-}" ]; then printf %s origin; exit 1; fi\n'
+            f'if [ "$1" = --evaluate ]; then exec "{self.just}" --justfile "{self.root / "justfile"}" "$@"; fi\n'
+            'printf %s "$1" > "$GATE_TMP/recipe"\n'
+            f'exec "{self.real_python}" -c \'import json, os, pathlib; '
+            'keys = ("GIT_INDEX_FILE", "GIT_DIR", "GIT_LITERAL_PATHSPECS", '
+            '"GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_ICASE_PATHSPECS"); '
+            'pathlib.Path(os.environ["GATE_TMP"], "just-env.json").write_text('
+            'json.dumps({k: os.environ.get(k) for k in keys}))\'',
+        )
         self.stub("git", 'if [ "$1" = lfs ]; then cat > "$GATE_TMP/lfs-refs"; exit "${LFS_EXIT:-0}"; fi\n'
                   f'exec "{self.git}" "$@"')
 
@@ -41,18 +81,48 @@ class Gates(unittest.TestCase):
         path.write_text(f"#!/bin/sh\n{body}\n")
         path.chmod(0o755)
 
-    def run_git(self, *args):
-        subprocess.run([self.git, *args], cwd=self.root, check=True, capture_output=True)
+    def run_git(self, *args, env=None):
+        subprocess.run([self.git, *args], cwd=self.root,
+                       env=self.env if env is None else env,
+                       check=True, capture_output=True)
 
-    def hook(self, name, *args, refs=""):
+    def hook(self, name, *args, refs="", env=None):
         return subprocess.run(["sh", str(ROOT / ".githooks" / name), *args], cwd=self.root,
-                              env=self.env, input=refs, capture_output=True, text=True)
+                              env=self.env if env is None else env, input=refs,
+                              capture_output=True, text=True)
+
+    def write_policy(self, *, automatic_broad=False, broad_targets=BROAD_TARGETS):
+        rendered = ", ".join(json.dumps(target) for target in broad_targets)
+        value = "true" if automatic_broad else "false"
+        (self.root / ".tt.toml").write_text(
+            f"automatic_broad = {value}\nbroad_targets = [{rendered}]\n",
+            encoding="utf-8",
+        )
+
+    def timings(self):
+        path = self.root / "timings.jsonl"
+        if not path.exists():
+            return []
+        return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+    def reset_gate_logs(self):
+        (self.root / "events").unlink(missing_ok=True)
+        (self.root / "timings.jsonl").unlink(missing_ok=True)
+
+    def run_recipe(self, *args, env=None):
+        return subprocess.run(
+            [self.just, *args],
+            cwd=self.root,
+            env=self.env if env is None else env,
+            capture_output=True,
+            text=True,
+        )
 
     def test_hygiene_checks_guides_after_ops_check(self):
         # Every route runs hygiene_cmd, so a stale identity region fails each of them.
-        value = subprocess.run([self.just, "--justfile", str(ROOT / "justfile"), "--evaluate",
-                                "hygiene_cmd"], env=self.env, capture_output=True, text=True,
-                               check=True).stdout
+        value = subprocess.run([self.just, "--justfile", str(self.root / "justfile"), "--evaluate",
+                                "hygiene_cmd"], cwd=self.root, env=self.env,
+                               capture_output=True, text=True, check=True).stdout
         self.assertEqual(value.split(" && "),
                          ["python3 tools/ops-check", "python3 tools/ops-docs check"])
 
@@ -114,36 +184,32 @@ class Gates(unittest.TestCase):
         argv.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]), flush=True)\n"
                         "print('Ran 1 test in 0.001s', file=sys.stderr)\n")
         args = ["-E", "test(foo) | test(bar)", "a b", "it's", "$HOME", "*"]
-        result = subprocess.run([self.just, "--set", "one_cmd", f"python3 {argv}",
-                                 "test-one", *args], cwd=ROOT, env=self.env,
-                                capture_output=True, text=True)
+        result = self.run_recipe("--set", "one_cmd", f"python3 {argv}", "test-one", *args)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout.splitlines()[0]), args)
-        record = json.loads((self.root / "timings.jsonl").read_text().splitlines()[-1])
+        record = self.timings()[-1]
         self.assertEqual((record["target"], record["tests"]), ("test-one", 1))
 
     def test_focused_recipe_requires_arguments(self):
-        result = subprocess.run([self.just, "test-one"], cwd=ROOT, env=self.env,
-                                capture_output=True, text=True)
+        result = self.run_recipe("test-one")
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.root / "timings.jsonl").exists())
 
     def test_focused_recipe_records_failure_through_host_budget(self):
         script = self.root / 'fail.py'
         script.write_text("import sys\nprint('Ran 1 test in 0.001s', file=sys.stderr)\nsys.exit(7)\n")
-        result = subprocess.run([self.just, '--set', 'one_cmd', f'python3 {script}',
-                                 'test-one', 'ignored'], cwd=ROOT, env=self.env,
-                                capture_output=True, text=True)
+        result = self.run_recipe('--set', 'one_cmd', f'python3 {script}', 'test-one', 'ignored')
         self.assertNotEqual(result.returncode, 0)
-        record = json.loads((self.root / 'timings.jsonl').read_text().splitlines()[-1])
+        record = self.timings()[-1]
         self.assertEqual((record['exit'], record['tests']), (7, 1))
 
     def stage(self, *names):
         self.run_git('read-tree', '--empty')
         for name in names:
             path = self.root / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text('changed\n')
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('changed\n')
         self.run_git('add', '--', *names)
 
     def assert_commit_route(self, expected):
@@ -157,7 +223,7 @@ class Gates(unittest.TestCase):
                 'tools/tooling_tests.py', 'tools/test_tooling_tests.py',
                 'scripts/capture/vt-lib.sh', 'scripts/capture/optic-settling-smoke.sh',
                 'scripts/capture/glass-optic-smoke-lib.sh', 'scripts/capture/window-client.c',
-                '.githooks/pre-commit', 'justfile', '.github/workflows/ci.yml']
+                '.githooks/pre-commit', 'justfile', '.github/workflows/ci.yml', '.tt.toml']
         fast = ['tools/upstream-report', 'tools/package-pin', 'tools/test-affected', 'tools/tt',
                 'scripts/capture/unrelated-capture.sh', 'src/layout/mod.rs']
         for paths, expected in ((full, 'hook-pre-commit-full'), (fast, 'hook-pre-commit')):
@@ -210,10 +276,10 @@ shift
 case "$kind" in
     fast) printf 'Ran 2 tests in 0.001s\\n' >&2 ;;
     full) printf 'Ran 3 tests in 0.001s\\n' >&2 ;;
+    affected) printf 'test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n' ;;
     rust|push) printf 'test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\\n' ;;
 esac
 if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
-        real_python = shutil.which('python3')
         self.stub('python3', 'if [ "$1" = -m ]; then\n'
                   f'  if [ "$2" = unittest ]; then shift 2; exec "{marker}" fast "$@"; fi\n'
                   '  if [ "$2" = tools.tooling_tests ]; then shift 2;\n'
@@ -221,74 +287,328 @@ if [ "${FAIL_EVENT-}" = "$kind" ]; then exit 7; fi''')
                   f'    if [ "$1" = --full ]; then exec "{marker}" full "$@"; fi\n'
                   f'    if [ "$1" = --check-paths ]; then exec "{marker}" paths "$@"; fi\n'
                   '  fi\nfi\n'
-                  f'exec "{real_python}" "$@"')
-        overrides = []
-        for name, kind in (('check_before_cmd', 'before'), ('check_after_cmd', 'after'),
-                           ('hygiene_cmd', 'hygiene'), ('stage_report_cmd', 'stage'),
-                           ('test_cmd', 'rust'), ('push_fast_cmd', 'push')):
-            overrides += ['--set', name, f'{marker} {kind}']
+                  f'exec "{self.real_python}" "$@"')
+        self.stub('just', f'exec "{self.just}" "$@"')
+        replacements = {
+            'hygiene_cmd': f'"{marker} hygiene"',
+            'target_dir_cmd': f'"{marker} target-dir"',
+            'identity_cmd': f'"{marker} identity"',
+            'check_after_cmd': f'"{marker} after"',
+            'check_code_base_cmd': f'"{marker} lint"',
+            'stage_report_cmd': f'"{marker} stage"',
+            'fast_cmd': f'"{marker} affected"',
+            'test_cmd': f'"{marker} rust"',
+            'push_fast_cmd': f'"{marker} push"',
+        }
+        justfile_path = self.root / 'justfile'
+        lines = []
+        for line in justfile_path.read_text(encoding='utf-8').splitlines():
+            match = re.match(r'^([a-z_]+)\s*:=\s*.*$', line)
+            if match and match.group(1) in replacements:
+                line = f'{match.group(1)} := {replacements[match.group(1)]}'
+            lines.append(line)
+        justfile_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
         self.env['NIRI_TOOLING_FAST'] = '1'
-        return overrides
 
     def recipe_events(self):
-        fields = (self.root / 'events').read_bytes().decode().split('\0')
+        events_path = self.root / 'events'
+        if not events_path.exists():
+            return []
+        fields = events_path.read_bytes().decode().split('\0')
         self.assertEqual(fields.pop(), '')
         events = []
         while fields:
             kind, mode, count = fields[:3]
             count = int(count)
-            events.append(dict(kind=kind, mode=None if mode=='unset' else mode,
+            events.append(dict(kind=kind, mode=None if mode == 'unset' else mode,
                                args=fields[3:3 + count]))
             del fields[:3 + count]
         return events
 
     def test_recipe_composition_modes_counts_and_route_hook_targets(self):
-        overrides = self.recipe_fixture()
+        self.recipe_fixture()
+        hygiene_events = ['hygiene', 'target-dir', 'paths', 'after']
+        code_fast_events = ['lint', 'fast', 'identity']
+        code_full_events = ['lint', 'full', 'identity']
         cases = [
-            ('check', ['before', 'fast', 'after']),
-            ('check-full', ['before', 'full', 'after']),
-            ('gate', ['before', 'full', 'after', 'rust']),
-            ('hook-pre-commit', ['stage', 'before', 'fast', 'after']),
-            ('hook-pre-commit-full', ['stage', 'before', 'full', 'after']),
-            ('hook-pre-commit-docs', ['stage', 'hygiene', 'paths', 'after']),
-            ('hook-pre-push-fast', ['before', 'fast', 'after', 'push']),
-            ('hook-pre-push', ['before', 'full', 'after', 'rust']),
-            ('test', ['rust']), ('ci-test', ['rust']), ('ci-test-release', ['rust']),
-            ('ci-tooling-test', ['full']),
+            ('check-hygiene', hygiene_events, [('check-hygiene', None)]),
+            ('check-code', code_fast_events, [('check-code', 2)]),
+            ('check-code-full', code_full_events, [('check-code-full', 3)]),
+            ('check', hygiene_events + code_fast_events, [('check-hygiene', None), ('check-code', 2)]),
+            ('check-full', hygiene_events + code_full_events, [('check-hygiene', None), ('check-code-full', 3)]),
+            ('gate', hygiene_events + code_full_events + ['rust'],
+             [('check-hygiene', None), ('check-code-full', 3), ('test', 5)]),
+            ('hook-pre-commit', ['stage'] + hygiene_events + code_fast_events,
+             [('hook-pre-commit-fast', None), ('check-code', 2)]),
+            ('hook-pre-commit-full', ['stage'] + hygiene_events + code_full_events,
+             [('hook-pre-commit', None), ('check-code-full', 3)]),
+            ('hook-pre-commit-docs', ['stage'] + hygiene_events, [('hook-pre-commit-docs', None)]),
+            ('hook-pre-push-fast', hygiene_events + code_fast_events + ['push'],
+             [('hook-pre-push-fast', None), ('check-code', 2), ('test-push-fast', 5)]),
+            ('hook-pre-push', hygiene_events + code_full_events + ['rust'],
+             [('hook-pre-push', None), ('check-code-full', 3), ('test', 5)]),
+            ('test-fast', ['affected'], [('test-fast', 4)]),
+            ('test-push-fast', ['push'], [('test-push-fast', 5)]),
+            ('test', ['rust'], [('test', 5)]),
+            ('test-full', ['rust'], [('test', 5)]),
+            ('ci-tooling-test', ['full'], [('ci-tooling-test', 3)]),
+            ('ci-test', ['rust'], [('ci-test', 5)]),
+            ('ci-test-release', ['rust'], [('ci-test-release', 5)]),
         ]
-        for recipe, expected in cases:
+        for recipe, expected_events, expected_rows in cases:
             with self.subTest(recipe=recipe):
-                (self.root / 'events').unlink(missing_ok=True)
-                (self.root / 'timings.jsonl').unlink(missing_ok=True)
-                run = subprocess.run([self.just, *overrides, recipe], cwd=ROOT, env=self.env,
-                                     capture_output=True, text=True)
+                self.reset_gate_logs()
+                run = self.run_recipe(recipe)
                 self.assertEqual(run.returncode, 0, run.stderr)
                 events = self.recipe_events()
-                self.assertEqual([event['kind'] for event in events], expected)
+                self.assertEqual([event['kind'] for event in events], expected_events)
                 for event in events:
                     if event['kind'] in ('fast', 'full', 'paths'):
-                        self.assertEqual(event['mode'], '1' if event['kind']=='fast' else '0')
+                        self.assertEqual(event['mode'], '1' if event['kind'] == 'fast' else '0')
                     if event['kind'] == 'fast':
                         self.assertIn('--fast', event['args'])
-                records = [json.loads(line) for line in (self.root / 'timings.jsonl').read_text().splitlines()]
-                if recipe in ('hook-pre-commit', 'hook-pre-commit-full'):
-                    expected_target = 'hook-pre-commit-fast' if recipe == 'hook-pre-commit' else 'hook-pre-commit'
-                    self.assertEqual((records[-1]['target'], records[-1]['tests']),
-                                     (expected_target, 2 if recipe=='hook-pre-commit' else 3))
-                if recipe == 'hook-pre-commit-docs':
-                    self.assertIsNone(records[-1]['tests'])
+                records = self.timings()
+                self.assertEqual([(r['target'], r['tests']) for r in records], expected_rows)
+                expected_reason = 'forced' if recipe == 'test-full' else 'default'
+                for record in records:
+                    self.assertEqual((record['execution'], record['execution_reason']), ('ran', expected_reason))
                 if recipe == 'ci-tooling-test':
                     self.assertIn('--ci', events[0]['args'])
                 if recipe == 'ci-test-release':
                     self.assertIn('--release', events[0]['args'])
 
-    def test_full_recipe_failure_stops_before_following_stages(self):
-        overrides = self.recipe_fixture()
-        self.env['FAIL_EVENT'] = 'full'
-        run = subprocess.run([self.just, *overrides, 'hook-pre-commit-full'], cwd=ROOT,
-                             env=self.env, capture_output=True, text=True)
-        self.assertNotEqual(run.returncode, 0)
-        events = [event['kind'] for event in self.recipe_events()]
-        self.assertEqual(events, ['stage', 'before', 'full'])
-        record = json.loads((self.root / 'timings.jsonl').read_text().splitlines()[-1])
-        self.assertEqual((record['target'], record['exit'], record['tests']), ('hook-pre-commit', 7, 3))
+    def test_mandatory_hygiene_or_broad_stage_failure_stops_before_following_stages(self):
+        self.recipe_fixture()
+        for recipe, expected_target, expected_events in (
+            ('check', 'check-hygiene', ['hygiene']),
+            ('gate', 'check-hygiene', ['hygiene']),
+            ('hook-pre-commit-full', 'hook-pre-commit', ['stage', 'hygiene']),
+            ('hook-pre-push', 'hook-pre-push', ['hygiene']),
+        ):
+            with self.subTest(stage='hygiene', recipe=recipe):
+                self.reset_gate_logs()
+                run = self.run_recipe(recipe, env={**self.env, 'FAIL_EVENT': 'hygiene'})
+                self.assertEqual(run.returncode, 7, run.stderr)
+                self.assertEqual([e['kind'] for e in self.recipe_events()], expected_events)
+                records = self.timings()
+                self.assertEqual([(r['target'], r['exit']) for r in records], [(expected_target, 7)])
+
+        for recipe, expected_events, expected_rows in (
+            ('hook-pre-commit-full', ['stage', 'hygiene', 'target-dir', 'paths', 'after', 'lint', 'full'],
+             [('hook-pre-commit', 0, None), ('check-code-full', 7, 3)]),
+            ('hook-pre-push', ['hygiene', 'target-dir', 'paths', 'after', 'lint', 'full'],
+             [('hook-pre-push', 0, None), ('check-code-full', 7, 3)]),
+        ):
+            with self.subTest(stage='broad', recipe=recipe):
+                self.reset_gate_logs()
+                run = self.run_recipe(recipe, env={**self.env, 'FAIL_EVENT': 'full'})
+                self.assertEqual(run.returncode, 7, run.stderr)
+                self.assertEqual([e['kind'] for e in self.recipe_events()], expected_events)
+                records = self.timings()
+                self.assertEqual([(r['target'], r['exit'], r['tests']) for r in records], expected_rows)
+
+    def test_policy_disabled_skips_broad_targets_preserves_mandatory_hygiene_and_supports_rollback(self):
+        self.recipe_fixture()
+        self.write_policy(automatic_broad=False)
+
+        for target in BROAD_TARGETS:
+            with self.subTest(broad=target):
+                self.reset_gate_logs()
+                run = self.run_recipe(target)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(self.recipe_events(), [])
+                records = self.timings()
+                self.assertEqual(len(records), 1)
+                self.assertEqual(
+                    (records[0]['target'], records[0]['execution'],
+                     records[0]['execution_reason'], records[0]['exit'], records[0]['tests']),
+                    (target, 'skipped', 'policy-disabled', None, None),
+                )
+
+        hygiene_events = ['hygiene', 'target-dir', 'paths', 'after']
+        composite_cases = [
+            ('hook-pre-commit', ['stage'] + hygiene_events, 'hook-pre-commit-fast', ['check-code']),
+            ('hook-pre-commit-full', ['stage'] + hygiene_events, 'hook-pre-commit', ['check-code-full']),
+            ('hook-pre-commit-docs', ['stage'] + hygiene_events, 'hook-pre-commit-docs', []),
+            ('check', hygiene_events, 'check-hygiene', ['check-code']),
+            ('check-full', hygiene_events, 'check-hygiene', ['check-code-full']),
+            ('gate', hygiene_events, 'check-hygiene', ['check-code-full', 'test']),
+            ('hook-pre-push-fast', hygiene_events, 'hook-pre-push-fast', ['check-code', 'test-push-fast']),
+            ('hook-pre-push', hygiene_events, 'hook-pre-push', ['check-code-full', 'test']),
+        ]
+        for recipe, expected_events, mandatory_target, skipped_children in composite_cases:
+            with self.subTest(composite=recipe):
+                self.reset_gate_logs()
+                run = self.run_recipe(recipe)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual([e['kind'] for e in self.recipe_events()], expected_events)
+                records = self.timings()
+                self.assertEqual(
+                    [(r['target'], r['execution'], r['execution_reason']) for r in records],
+                    [(mandatory_target, 'ran', 'default')]
+                    + [(child, 'skipped', 'policy-disabled') for child in skipped_children],
+                )
+                self.reset_gate_logs()
+                fail_run = self.run_recipe(recipe, env={**self.env, 'FAIL_EVENT': 'hygiene'})
+                self.assertEqual(fail_run.returncode, 7, fail_run.stderr)
+                fail_records = self.timings()
+                self.assertEqual([(r['target'], r['exit']) for r in fail_records], [(mandatory_target, 7)])
+
+        self.reset_gate_logs()
+        one_script = self.root / 'one.py'
+        one_script.write_text("import sys\nprint('Ran 1 test in 0.001s', file=sys.stderr)\n")
+        one_run = self.run_recipe('--set', 'one_cmd', f'{self.real_python} {one_script}', 'test-one', 'focused')
+        self.assertEqual(one_run.returncode, 0, one_run.stderr)
+        one_records = self.timings()
+        self.assertEqual(
+            [(r['target'], r['execution'], r['execution_reason'], r['tests']) for r in one_records],
+            [('test-one', 'ran', 'default', 1)],
+        )
+
+        self.reset_gate_logs()
+        full_run = self.run_recipe('test-full')
+        self.assertEqual(full_run.returncode, 0, full_run.stderr)
+        self.assertEqual([e['kind'] for e in self.recipe_events()], ['rust'])
+        self.assertEqual(
+            [(r['target'], r['execution'], r['execution_reason'], r['tests']) for r in self.timings()],
+            [('test', 'ran', 'forced', 5)],
+        )
+        self.reset_gate_logs()
+        full_fail = self.run_recipe('test-full', env={**self.env, 'FAIL_EVENT': 'rust'})
+        self.assertEqual(full_fail.returncode, 7, full_fail.stderr)
+        self.assertEqual([(r['target'], r['exit']) for r in self.timings()], [('test', 7)])
+
+        # Rollback toggle: automatic_broad = true resumes broad execution with policy-enabled.
+        self.write_policy(automatic_broad=True)
+        self.reset_gate_logs()
+        rollback_test = self.run_recipe('test')
+        self.assertEqual(rollback_test.returncode, 0, rollback_test.stderr)
+        self.assertEqual([e['kind'] for e in self.recipe_events()], ['rust'])
+        self.assertEqual(
+            [(r['target'], r['execution'], r['execution_reason']) for r in self.timings()],
+            [('test', 'ran', 'policy-enabled')],
+        )
+        self.reset_gate_logs()
+        rollback_check = self.run_recipe('check')
+        self.assertEqual(rollback_check.returncode, 0, rollback_check.stderr)
+        self.assertEqual(
+            [(r['target'], r['execution'], r['execution_reason']) for r in self.timings()],
+            [('check-hygiene', 'ran', 'default'), ('check-code', 'ran', 'policy-enabled')],
+        )
+
+    def test_hosted_env_refuses_broad_skips_without_tt_force_but_allows_docs_and_hygiene_only(self):
+        self.recipe_fixture()
+        self.write_policy(automatic_broad=False)
+        hosted_env = {**self.env, 'GITHUB_ACTIONS': 'true'}
+
+        for recipe in [
+            *BROAD_TARGETS,
+            'check',
+            'check-full',
+            'gate',
+            'hook-pre-commit',
+            'hook-pre-commit-full',
+            'hook-pre-push-fast',
+            'hook-pre-push',
+        ]:
+            with self.subTest(refused=recipe):
+                self.reset_gate_logs()
+                run = self.run_recipe(recipe, env=hosted_env)
+                self.assertEqual(run.returncode, 2, run.stderr)
+                self.assertIn('hosted verification would be skipped', run.stderr)
+
+        one_script = self.root / 'one.py'
+        one_script.write_text("import sys\nprint('Ran 1 test in 0.001s', file=sys.stderr)\n")
+        for args in (
+            ('hook-pre-commit-docs',),
+            ('check-hygiene',),
+            ('--set', 'one_cmd', f'{self.real_python} {one_script}', 'test-one', 'focused'),
+            ('test-full',),
+        ):
+            with self.subTest(allowed=args[-1]):
+                self.reset_gate_logs()
+                run = self.run_recipe(*args, env=hosted_env)
+                self.assertEqual(run.returncode, 0, run.stderr)
+
+    def test_hooks_clear_pathspec_env_vars_and_pre_commit_preserves_git_index_file(self):
+        self.stage('tools/optic_settling.py')
+        alt_index = self.root / 'alt.index'
+        readme = self.root / 'README.md'
+        readme.write_text('docs only\n', encoding='utf-8')
+        alt_env = {**self.env, 'GIT_INDEX_FILE': str(alt_index)}
+        self.run_git('read-tree', '--empty', env=alt_env)
+        self.run_git('add', '--', 'README.md', env=alt_env)
+
+        pathspec_vars = {
+            'GIT_LITERAL_PATHSPECS': '1',
+            'GIT_GLOB_PATHSPECS': '1',
+            'GIT_NOGLOB_PATHSPECS': '1',
+            'GIT_ICASE_PATHSPECS': '1',
+        }
+        commit_run = self.hook('pre-commit', env={**alt_env, **pathspec_vars})
+        self.assertEqual(commit_run.returncode, 0, commit_run.stderr)
+        self.assertEqual((self.root / 'recipe').read_text(), 'hook-pre-commit-docs')
+        commit_just_env = json.loads((self.root / 'just-env.json').read_text())
+        self.assertEqual(commit_just_env['GIT_INDEX_FILE'], str(alt_index))
+        for key in pathspec_vars:
+            self.assertIsNone(commit_just_env[key], key)
+
+        branch = f"refs/heads/topic {'1' * 40} refs/heads/topic {'2' * 40}\n"
+        push_run = self.hook(
+            'pre-push', 'origin', 'https://example.invalid/repo', refs=branch,
+            env={**self.env, 'GIT_DIR': str(self.root / '.git'), **pathspec_vars},
+        )
+        self.assertEqual(push_run.returncode, 0, push_run.stderr)
+        push_just_env = json.loads((self.root / 'just-env.json').read_text())
+        self.assertIsNone(push_just_env['GIT_DIR'])
+        for key in pathspec_vars:
+            self.assertIsNone(push_just_env[key], key)
+
+    def test_pre_push_enforces_ssh_keepalive_and_warns_on_uncovered_policy_skip(self):
+        branch = f"refs/heads/topic {'1' * 40} refs/heads/topic {'2' * 40}\n"
+
+        https_run = self.hook('pre-push', 'origin', 'https://example.invalid/repo', refs=branch)
+        self.assertEqual(https_run.returncode, 0, https_run.stderr)
+        self.assertFalse((self.root / 'ssh-argv').exists())
+
+        for url in ('git@example.invalid:org/repo', 'ssh://git@example.invalid:2222/org/repo'):
+            with self.subTest(url=url):
+                for name in ('ssh-argv', 'lfs-refs', 'recipe'):
+                    (self.root / name).unlink(missing_ok=True)
+                refused = self.hook('pre-push', 'origin', url, refs=branch,
+                                    env={**self.env, 'FAKE_SSH_ALIVE': '0'})
+                self.assertEqual(refused.returncode, 1)
+                self.assertIn('ServerAliveInterval 60', refused.stderr)
+                self.assertFalse((self.root / 'lfs-refs').exists())
+                self.assertFalse((self.root / 'recipe').exists())
+
+                for name in ('ssh-argv', 'lfs-refs', 'recipe'):
+                    (self.root / name).unlink(missing_ok=True)
+                allowed = self.hook('pre-push', 'origin', url, refs=branch,
+                                    env={**self.env, 'FAKE_SSH_ALIVE': '60'})
+                self.assertEqual(allowed.returncode, 0, allowed.stderr)
+                self.assertEqual((self.root / 'recipe').read_text(), 'hook-pre-push-fast')
+
+        self.write_policy(automatic_broad=False)
+        (self.root / 'recipe').unlink(missing_ok=True)
+        uncovered = self.hook('pre-push', 'backup', 'https://example.invalid/repo', refs=branch)
+        self.assertEqual(uncovered.returncode, 0, uncovered.stderr)
+        self.assertEqual((self.root / 'recipe').read_text(), 'hook-pre-push')
+        self.assertIn(
+            'pre-push: local test skipped by policy; remote full-suite coverage is not declared '
+            'for this push. Use TT_FORCE=1 for deliberate local verification.',
+            uncovered.stderr,
+        )
+
+        (self.root / 'recipe').unlink(missing_ok=True)
+        covered = self.hook('pre-push', 'origin', 'https://example.invalid/repo', refs=branch)
+        self.assertEqual(covered.returncode, 0, covered.stderr)
+        self.assertEqual((self.root / 'recipe').read_text(), 'hook-pre-push-fast')
+        self.assertEqual(covered.stderr, '')
+
+        (self.root / '.tt.toml').write_text('automatic_broad = "broken"\n', encoding='utf-8')
+        (self.root / 'recipe').unlink(missing_ok=True)
+        malformed = self.hook('pre-push', 'backup', 'https://example.invalid/repo', refs=branch)
+        self.assertEqual(malformed.returncode, 2)
+        self.assertIn('cannot inspect test execution policy', malformed.stderr)
+        self.assertFalse((self.root / 'recipe').exists())

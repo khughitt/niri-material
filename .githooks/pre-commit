@@ -6,6 +6,8 @@
 # tooling also runs in its own CI job and full gates.
 # Read staged paths strictly and NUL-delimited, including both rename endpoints.
 # A failed/empty classification takes the full route; full subjects win over docs.
+# Clear caller pathspec-mode variables while preserving GIT_INDEX_FILE for staging.
+unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS
 route=hook-pre-commit-full
 if docs=$(just --evaluate docs_paths 2>/dev/null) && full=$(just --evaluate tooling_full_paths 2>/dev/null); then
     if selected=$(python3 -c '

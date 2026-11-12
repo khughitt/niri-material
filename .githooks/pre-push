@@ -62,5 +62,30 @@ fi
 printf %s "$refs" | git lfs pre-push "$@" || exit
 # The suite creates sandbox Git repositories; hook variables must not follow it.
 git_local_vars=$(git rev-parse --local-env-vars) || exit 1
+# shellcheck disable=SC2086
 unset $git_local_vars
+# git rev-parse --local-env-vars omits pathspec-mode variables; clear them too.
+unset GIT_LITERAL_PATHSPECS GIT_GLOB_PATHSPECS GIT_NOGLOB_PATHSPECS GIT_ICASE_PATHSPECS
+# Warn when local policy skips a suite for which this push declares no remote cover.
+# Load the project's configured wrapper, so this hook has no second policy parser.
+if [ "$recipe" = hook-pre-push ]; then
+    tt_command=$(just --evaluate tt 2>/dev/null) || tt_command=
+    if [ -n "$tt_command" ]; then
+        python3 - "$tt_command" <<'PY' || exit $?
+import importlib.machinery, importlib.util, os, pathlib, shlex, sys
+try:
+    command = shlex.split(sys.argv[1])
+    loader = importlib.machinery.SourceFileLoader('tt_policy', command[-1])
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    tt = importlib.util.module_from_spec(spec)
+    loader.exec_module(tt)
+    execution, _ = tt.execution_decision('test', tt.read_policy(pathlib.Path.cwd()), os.environ)
+    if execution == 'skipped':
+        sys.stderr.write('pre-push: local test skipped by policy; remote full-suite coverage is not declared for this push. Use TT_FORCE=1 for deliberate local verification.\n')
+except (ValueError, OSError, IndexError, AttributeError) as error:
+    sys.stderr.write(f'pre-push: cannot inspect test execution policy: {error}\n')
+    sys.exit(2)
+PY
+    fi
+fi
 printf %s "$refs" | exec just "$recipe"

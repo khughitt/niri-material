@@ -62,8 +62,8 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `.githooks/post-checkout` | C | A | +3/-0 |
 | `.githooks/post-commit` | C | A | +3/-0 |
 | `.githooks/post-merge` | C | A | +3/-0 |
-| `.githooks/pre-commit` | C | A | +32/-0 |
-| `.githooks/pre-push` | C | A | +66/-0 |
+| `.githooks/pre-commit` | C | A | +34/-0 |
+| `.githooks/pre-push` | C | A | +91/-0 |
 | `.github/FUNDING.yml` | B | D | +0/-1 |
 | `.github/ISSUE_TEMPLATE/bug_report.md` | B | M | +2/-0 |
 | `.github/ISSUE_TEMPLATE/config.yml` | B | M | +6/-9 |
@@ -78,7 +78,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `docs/wiki/Configuration:-Layer-Rules.md` | B | M | +48/-0 |
 | `docs/wiki/IPC.md` | B | M | +71/-0 |
 | `docs/wiki/Nvidia.md` | B | M | +7/-31 |
-| `justfile` | C | A | +130/-0 |
+| `justfile` | C | A | +153/-0 |
 | `niri-config/Cargo.toml` | B | M | +2/-0 |
 | `niri-config/src/animations.rs` | B | M | +35/-0 |
 | `niri-config/src/layer_rule.rs` | B | M | +70/-1 |
@@ -144,7 +144,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/test_capture_hold.py` | C | A | +500/-0 |
 | `tools/test_capture_meta.py` | C | A | +2063/-0 |
 | `tools/test_capture_scripts.py` | C | A | +66/-0 |
-| `tools/test_gates.py` | C | A | +294/-0 |
+| `tools/test_gates.py` | C | A | +614/-0 |
 | `tools/test_glass_optic_smoke.py` | C | A | +883/-0 |
 | `tools/test_glass_parameter_sweep.py` | C | A | +185/-0 |
 | `tools/test_glass_render_order_metrics.py` | C | A | +199/-0 |
