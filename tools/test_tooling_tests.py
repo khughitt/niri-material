@@ -116,8 +116,8 @@ def _await_wave():
         with open('events.log') as log:
             if sum(1 for line in log if line.startswith('start:')) >= target:
                 break
-        time.sleep(0.01)
-    time.sleep(0.12)
+        time.sleep(0.005)
+    time.sleep(0.03)
 def _finish_wave():
     if 'PROBE_WAVE' in os.environ:
         _emit_event('end')
