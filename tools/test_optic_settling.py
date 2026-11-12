@@ -809,6 +809,20 @@ class JournalSignalTests(unittest.TestCase):
                   'scripts/capture/optic-settling-smoke.sh').read_text()
         body = source.split('stim() {', 1)[1].split('\n}\n', 1)[0]
         with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            case_dir = base / 'case'
+            home = base / 'home'
+            xdg = base / 'xdg'
+            case_dir.mkdir()
+            home.mkdir()
+            xdg.mkdir()
+            env = {
+                'PATH': os.environ['PATH'],
+                'HOME': str(home),
+                'XDG_CONFIG_HOME': str(xdg),
+                'CASE_DIR': str(case_dir),
+            }
+            isolate(env)
             prefix = r"""
 set -eu
 on_exit() { local rc=$?; trap - EXIT; trap : INT TERM HUP; printf 'cleanup\n'; exit "$rc"; }
@@ -821,11 +835,141 @@ mono() {
 """
             run = subprocess.run(['bash', '-c', prefix + 'stim() {' + body +
                                   '\n}\nstim lock 2 true\n'],
-                                 env=dict(os.environ, CASE_DIR=directory),
+                                 env=env,
                                  capture_output=True, text=True, timeout=15)
         self.assertEqual(run.returncode, 143, run.stderr)
         self.assertEqual(run.stderr, '')
         self.assertIn('cleanup', run.stdout)
+
+
+class StubTimingTests(unittest.TestCase):
+    def setUp(self):
+        self.root = Path(__file__).resolve().parents[1]
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        self.home = self.base / 'home'
+        self.xdg = self.base / 'xdg'
+        self.home.mkdir()
+        self.xdg.mkdir()
+
+    def base_env(self, **extra):
+        env = {
+            'PATH': os.environ['PATH'],
+            'HOME': str(self.home),
+            'XDG_CONFIG_HOME': str(self.xdg),
+        }
+        env.update(extra)
+        isolate(env)
+        return env
+
+    def extract_fn(self, text: str, name: str) -> str:
+        match = re.search(rf'^{re.escape(name)}\(\) \{{.*?^}}', text, re.S | re.M)
+        self.assertIsNotNone(match, f'missing {name}() in optic-settling-smoke.sh')
+        return match.group(0)
+
+    def test_nap_scales_by_timescale_while_nap_raw_and_vt_out_keep_away_hold(self):
+        text = SMOKE.read_text()
+        nap_raw_fn = self.extract_fn(text, 'nap_raw')
+        nap_fn = self.extract_fn(text, 'nap')
+        calibrate_fn = self.extract_fn(text, 'calibrate_drm_probe')
+        vt_out_fn = self.extract_fn(text, 'vt_out')
+        self.assertIn('\n    nap 2\n', calibrate_fn)
+        self.assertNotIn('sleep 2', calibrate_fn)
+        self.assertIn('nap_raw 3', vt_out_fn)
+        self.assertNotIn('nap 3', vt_out_fn)
+
+        env = self.base_env(TIMESCALE='0.05')
+        started = time.monotonic()
+        scaled = subprocess.run(
+            ['bash', '-c', f'set -eu\nSLEEP_PID=\n{nap_raw_fn}\n{nap_fn}\nnap 2\n'],
+            env=env, capture_output=True, text=True, timeout=10)
+        scaled_elapsed = time.monotonic() - started
+        self.assertEqual(scaled.returncode, 0, scaled.stderr)
+        self.assertLess(scaled_elapsed, 0.6)
+
+        started = time.monotonic()
+        raw = subprocess.run(
+            ['bash', '-c', f'set -eu\nSLEEP_PID=\n{nap_raw_fn}\nnap_raw 0.3\n'],
+            env=env, capture_output=True, text=True, timeout=10)
+        raw_elapsed = time.monotonic() - started
+        self.assertEqual(raw.returncode, 0, raw.stderr)
+        self.assertGreaterEqual(raw_elapsed, 0.25)
+
+    def test_malformed_or_nonpositive_stub_timescale_fails_early(self):
+        bin_dir = self.base / 'bin'
+        tools_dir = self.base / 'tools'
+        rt_dir = self.base / 'rt'
+        bin_dir.mkdir()
+        tools_dir.mkdir()
+        rt_dir.mkdir()
+        niri = bin_dir / 'niri'
+        niri.write_text('#!/bin/sh\n[ "$1" = validate ]\n')
+        magick = bin_dir / 'magick'
+        magick.write_text('#!/bin/sh\nfor arg do :; done\nprintf image > "$arg"\n')
+        niri.chmod(0o755)
+        magick.chmod(0o755)
+        source = subprocess.check_output(
+            ['git', '-C', str(self.root), 'rev-parse', 'HEAD'],
+            env=self.base_env(), text=True).strip()
+        Path(str(niri) + '.identity.json').write_text(json.dumps(dict(
+            source_commit=source, features=['profile-with-tracy'],
+            binary_sha256=hashlib.sha256(niri.read_bytes()).hexdigest())))
+        for index, bad in enumerate(('0', '0.0', '-0.05', 'typo', '')):
+            with self.subTest(bad=bad):
+                env = self.base_env(
+                    PATH=f'{bin_dir}:{os.environ["PATH"]}',
+                    OUT=str(self.base / f'out-{index}'),
+                    NIRI_BIN=str(niri),
+                    NIRI_MATERIAL_WORK_ROOT=str(self.base),
+                    XDG_RUNTIME_DIR=str(rt_dir),
+                    CAPTURE_META='/bin/true',
+                    OPTIC_SETTLING_STUB_TOOLS=str(tools_dir),
+                    OPTIC_SETTLING_STUB_TIMESCALE=bad,
+                )
+                run = subprocess.run(
+                    ['bash', str(SMOKE), 'prepare'],
+                    cwd=self.root, env=env, capture_output=True, text=True, timeout=15)
+                self.assertNotEqual(run.returncode, 0, f'accepted invalid TIMESCALE={bad!r}')
+                self.assertIn('OPTIC_SETTLING_STUB_TIMESCALE', run.stderr)
+
+    def test_await_gpu_rest_skips_only_when_capture_meta_is_nonempty(self):
+        await_fn = self.extract_fn(SMOKE.read_text(), 'await_gpu_rest')
+        bin_dir = self.base / 'bin'
+        bin_dir.mkdir()
+        smi = bin_dir / 'nvidia-smi'
+        smi.write_text('#!/bin/sh\necho call >> "$SMI_LOG"\necho P8\n')
+        smi.chmod(0o755)
+
+        skip_log = self.base / 'skip.log'
+        started = time.monotonic()
+        skipped = subprocess.run(
+            ['bash', '-c', f'set -eu\nfail() {{ echo "FAIL: $*" >&2; exit 1; }}\n{await_fn}\nawait_gpu_rest\n'],
+            env=self.base_env(
+                PATH=f'{bin_dir}:{os.environ["PATH"]}',
+                SMI_LOG=str(skip_log),
+                CAPTURE_META='/bin/true',
+            ),
+            capture_output=True, text=True, timeout=10)
+        skip_elapsed = time.monotonic() - started
+        self.assertEqual(skipped.returncode, 0, skipped.stderr)
+        self.assertLess(skip_elapsed, 0.3)
+        self.assertFalse(skip_log.exists())
+
+        for label, extra in (('unset', {}), ('empty', {'CAPTURE_META': ''})):
+            with self.subTest(label=label):
+                call_log = self.base / f'{label}.log'
+                polled = subprocess.run(
+                    ['bash', '-c',
+                     f'set -eu\nfail() {{ echo "FAIL: $*" >&2; exit 1; }}\nsleep() {{ :; }}\n{await_fn}\nawait_gpu_rest\n'],
+                    env=self.base_env(
+                        PATH=f'{bin_dir}:{os.environ["PATH"]}',
+                        SMI_LOG=str(call_log),
+                        **extra,
+                    ),
+                    capture_output=True, text=True, timeout=10)
+                self.assertEqual(polled.returncode, 0, polled.stderr)
+                self.assertEqual(len(call_log.read_text().splitlines()), 6)
 
 
 @unittest.skipIf(fast_mode(), 'NIRI_TOOLING_FAST=1; use full validation or NIRI_TOOLING_FAST=0')
@@ -840,6 +984,10 @@ class DriverCleanupTests(unittest.TestCase):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.base = Path(temporary.name)
+        self.home = self.base / 'home'
+        self.xdg = self.base / 'xdg'
+        self.home.mkdir()
+        self.xdg.mkdir()
         self.stubs = self.base / 'stubs'
         for name, body in STUBS.items():
             path = self.stubs / name
@@ -852,16 +1000,27 @@ class DriverCleanupTests(unittest.TestCase):
         self.runtime = self.base / 'rt'
         self.runtime.mkdir()
         niri = self.stubs / 'bin/niri'
-        source = subprocess.check_output(['git', '-C', str(self.root), 'rev-parse', 'HEAD'], text=True).strip()
+        self.out = self.base / 'out'
+        self.env = {
+            'PATH': f'{self.stubs / "bin"}:{os.environ["PATH"]}',
+            'HOME': str(self.home),
+            'XDG_CONFIG_HOME': str(self.xdg),
+            'XDG_RUNTIME_DIR': str(self.runtime),
+            'OUT': str(self.out),
+            'NIRI_BIN': str(niri),
+            'CAPTURE_TASK': 'material-test',
+            'NIRI_MATERIAL_WORK_ROOT': str(self.base),
+            'CAPTURE_META': str(self.stubs / 'capture-meta'),
+            'STUB_DIR': str(self.stubs),
+            'OPTIC_SETTLING_STUB_TOOLS': str(self.stubs / 'tools'),
+        }
+        isolate(self.env)
+        source = subprocess.check_output(
+            ['git', '-C', str(self.root), 'rev-parse', 'HEAD'],
+            env=self.env, text=True).strip()
         Path(str(niri) + '.identity.json').write_text(json.dumps(dict(
             source_commit=source, features=['profile-with-tracy'],
             binary_sha256=hashlib.sha256(niri.read_bytes()).hexdigest())))
-        self.out = self.base / 'out'
-        self.env = dict(os.environ, OUT=str(self.out), NIRI_BIN=str(niri), CAPTURE_TASK='material-test',
-                        NIRI_MATERIAL_WORK_ROOT=str(self.base), XDG_RUNTIME_DIR=str(self.runtime),
-                        CAPTURE_META=str(self.stubs / 'capture-meta'), STUB_DIR=str(self.stubs),
-                        OPTIC_SETTLING_STUB_TOOLS=str(self.stubs / 'tools'),
-                        PATH=f'{self.stubs / "bin"}:{os.environ["PATH"]}')
         self.addCleanup(self.kill_leftovers)
         self.drm = self.sysfs({'card1-DP-1': 'connected', 'card1-HDMI-A-1': 'disconnected'})
 
@@ -944,7 +1103,7 @@ class DriverCleanupTests(unittest.TestCase):
         self.assertIn(' ./manifest.json\n', sums)
         self.assertIn(f' ./{case}/journal.tsv\n', sums)
         check = subprocess.run(['sha256sum', '-c', '--quiet', 'SHA256SUMS'], cwd=self.out,
-                               capture_output=True, text=True)
+                               env=self.env, capture_output=True, text=True)
         self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
         if (self.out / 'capture.json').exists():
             self.assertIn(' ./capture.json\n', sums)
@@ -968,13 +1127,16 @@ class DriverCleanupTests(unittest.TestCase):
         self.assert_cleaned_up('startup-no-input')
 
     def test_term_during_export(self):
-        # gate-off drives only its keepalive (12 s), then exports.
-        driver = self.start('gate-off', STUB_EXPORT_S='600')
+        # gate-off drives only its keepalive (12 s, scaled by 0.05 in stub mode), then exports.
+        started = time.monotonic()
+        driver = self.start('gate-off', STUB_EXPORT_S='600', OPTIC_SETTLING_STUB_TIMESCALE='0.05')
         self.await_marker(driver, 'export-started', 60)
         time.sleep(0.2)
         elapsed, stderr = self.terminate(driver)
+        total_elapsed = time.monotonic() - started
         self.assertEqual(driver.returncode, 143, stderr)
         self.assertLess(elapsed, self.BOUND_S, stderr)
+        self.assertLess(total_elapsed, 6.0, stderr)
         self.assertTrue((self.out / 'gate-off/capture.tracy').is_file())
         self.assert_cleaned_up('gate-off')
 
@@ -1288,7 +1450,7 @@ class DriverCleanupTests(unittest.TestCase):
         old = self.base / 'optic-settling/pilot-old'
         old.mkdir(parents=True)
         shutil.copy(shutil.which('sleep'), old / 'binary')
-        leftover = subprocess.Popen([str(old / 'binary'), '60'])
+        leftover = subprocess.Popen([str(old / 'binary'), '60'], env=self.env)
         self.addCleanup(leftover.wait)
         self.addCleanup(leftover.kill)
         stderr = self.refused()

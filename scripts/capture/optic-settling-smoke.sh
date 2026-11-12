@@ -131,10 +131,15 @@ trap on_exit EXIT
 # can last (sleeps, the stimulus schedule, exports) runs in the background
 # under `wait`, which a signal interrupts at once, with its pid recorded for
 # on_exit to reap.
-nap() {
+nap_raw() {
     sleep "$1" & SLEEP_PID=$!
     wait "$SLEEP_PID"
     SLEEP_PID=
+}
+nap() {
+    local d
+    d=$(awk -v d="$1" -v t="$TIMESCALE" 'BEGIN { printf "%.6f", d * t }')
+    nap_raw "$d"
 }
 # Keep exports interruptible; the shared helper's foreground export cannot
 # be reaped promptly when the driver receives TERM.
@@ -163,7 +168,7 @@ if [ -n "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
 fi
 # Offline stub runs only: a time scale for the drive schedule and stand-ins
 # for the consumer and lock client. A recorded run never uses them.
-TIMESCALE=${OPTIC_SETTLING_STUB_TIMESCALE:-1}
+TIMESCALE=${OPTIC_SETTLING_STUB_TIMESCALE-1}
 CAST_CONSUMER=${OPTIC_SETTLING_STUB_CONSUMER:-$ROOT/tools/screencast_consumer.py}
 DRM_SYSFS=${OPTIC_SETTLING_STUB_DRM_SYSFS:-/sys/class/drm}
 if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
@@ -175,6 +180,8 @@ if [ -z "${OPTIC_SETTLING_STUB_TOOLS:-}" ]; then
     [ -z "${VT_LOGINCTL:-}" ] || fail 'VT_LOGINCTL needs OPTIC_SETTLING_STUB_TOOLS'
     [ "$VT_ACTIVE_FILE" = /sys/class/tty/tty0/active ] || fail 'VT_ACTIVE_FILE needs OPTIC_SETTLING_STUB_TOOLS'
 fi
+TIMESCALE="$TIMESCALE" awk 'BEGIN { t = ENVIRON["TIMESCALE"]; exit !(t ~ /^([0-9]+(\.[0-9]+)?|\.[0-9]+)$/ && t + 0 > 0) }' \
+    || fail "OPTIC_SETTLING_STUB_TIMESCALE must be a positive decimal number: $TIMESCALE"
 cp "$NIRI_BIN" "$OUT/binary"
 cp "$NIRI_BIN.identity.json" "$OUT/binary.identity.json"
 NIRI=$OUT/binary
@@ -510,7 +517,7 @@ calibrate_drm_probe() {
     start_host "$NIRI" "$OUT/geometry-drm.kdl" geometry-drm
     spawn_geometry_probe "$NIRI"
     steal_focus "$NIRI"
-    sleep 2
+    nap 2
     shot "$NIRI" geometry-drm
     measure_rect "$OUT/geometry-drm.png" > "$OUT/probe-rect-drm.txt"
     # info: prints no trailing newline, and `read` fails at EOF without one.
@@ -589,6 +596,7 @@ grab_screencopy() {   # wlr-screencopy through grim; no screencast consumer
 # The GPU leaves P8 for a few seconds after a compositor exits; the next
 # case's settle must not see that tail.
 await_gpu_rest() {
+    [ -z "${CAPTURE_META:-}" ] || return 0
     local streak=0
     for _ in $(seq 60); do
         if [ "$(nvidia-smi --query-gpu=pstate --format=csv,noheader)" = P8 ]; then
@@ -705,7 +713,7 @@ post_drm_aurora() { post_held; }
 # verified; each window stays under 6 s.
 vt_out() {
     vt_switch "$VT_SPARE" || fail "$CASE: did not reach spare VT $VT_SPARE"
-    nap 3   # backgrounded, so TERM while away is handled at once
+    nap_raw 3   # backgrounded, so TERM while away is handled at once
 }
 vt_return() { vt_switch "$VT_HOME" || fail "$CASE: the return to VT $VT_HOME did not land"; }
 drive_tty_resume() { keepalive; at 26; stim vt-out 0 vt_out; stim vt-return 1.5 vt_return; }
