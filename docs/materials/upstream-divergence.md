@@ -134,7 +134,7 @@ Baseline `v26.04` (`8ed0da44d974`), tree `7b010d1b3ab2`, carrying 2 patch(es).
 | `tools/hermetic_git.py` | C | A | +17/-0 |
 | `tools/identity-check` | C | A | +57/-0 |
 | `tools/ops-check` | C | A | +662/-0 |
-| `tools/ops-docs` | C | A | +1261/-0 |
+| `tools/ops-docs` | C | A | +1272/-0 |
 | `tools/optic_settling.py` | C | A | +611/-0 |
 | `tools/package-pin` | C | A | +109/-0 |
 | `tools/screencast_consumer.py` | C | A | +331/-0 |
